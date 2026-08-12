@@ -41,8 +41,8 @@ install with them blocked.
 
 If you add a dependency that ships an install script, `npm run test:unit` will
 fail until you record a decision about it in `allowScripts` — a unit test reads
-`package-lock.json` and compares. Add the entry with `npm install-scripts deny
-<pkg>` rather than by hand.
+`package-lock.json` and compares. Record it with
+`npm install-scripts deny <pkg>` rather than editing the field by hand.
 
 **Your `npm install` almost certainly ignores that policy, and so does every CI
 job but one.** `allowScripts` is understood only by npm 12 and later, npm 12

@@ -97,6 +97,15 @@ chosen over the alternatives. The built site uploads as an artifact, because
 reviewing a documentation change against the rendered page beats reading a diff
 of markdown.
 
+It also compiles every page as a **Vue template**, which produces one failure
+mode that has nothing to do with links: an angle-bracket placeholder in prose,
+`<pkg>` or `<id>`, is read as an unclosed HTML element and fails the build with
+`Element is missing end tag`. A code span protects it — but only if the span
+does not wrap across a line. `` `npm install-scripts deny <pkg>` `` split over
+two source lines broke this job on 2026-08-12 while rendering as ordinary code
+in every other markdown viewer. Keep such a span on one line, or use a fenced
+block.
+
 **`docs:links:self`** resolves every link that points back at this repository —
 `https://github.com/Shai-Alit/sas-py-vscode/blob/main/…` — against the working
 tree, and fails if it names a file that is not there. No network, so it is safe

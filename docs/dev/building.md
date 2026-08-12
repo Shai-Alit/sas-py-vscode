@@ -128,6 +128,17 @@ that excludes it. Upgrading TypeScript past the range does not fail loudly; it
 silently disables every type-aware lint rule, which is most of the value in the
 config. Upgrade both together, and check `npm ls typescript-eslint` afterwards.
 
+**`node_modules` is not portable across platforms.** esbuild ships a native
+binary per platform, so a tree installed under WSL or a Linux container and then
+used from Windows fails with *"You installed esbuild for another platform than
+the one you're currently using"*. Nothing is corrupt; the wrong optional package
+is on disk. Run `npm ci` on the platform you are building from. The lockfile
+records all 26 esbuild targets, so `npm ci` is always sufficient and never needs
+a lockfile change. If you genuinely alternate between two platforms against one
+checkout, `npm install --no-save @esbuild/<platform>` adds the second binary
+without touching `package.json` or the lockfile — esbuild picks the right one at
+runtime when both are present.
+
 **`activationEvents` is empty, on purpose.** Since VS Code 1.74, a command
 declared in `contributes.commands` activates its extension implicitly — the
 [activation events reference](https://code.visualstudio.com/api/references/activation-events)

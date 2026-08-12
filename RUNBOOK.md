@@ -213,6 +213,12 @@ is wired and type-checked but has never been executed. Do this once here so the
 first failure is found while the harness is the only thing that could have
 caused it.
 
+⚠️ **Run `npm ci` first if the agent has run `npm install` against this checkout.**
+The sandbox is Linux and your shell is Windows; they share the working tree, so
+`node_modules` ends up holding the wrong esbuild binary and `npm run build` fails
+before any test runs. This is a stale install, not a broken build. The lockfile
+carries every platform, so `npm ci` is always enough.
+
 ⛔ Merge 0c before 0d-i.
 
 ```bash

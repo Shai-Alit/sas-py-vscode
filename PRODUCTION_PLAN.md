@@ -351,9 +351,9 @@ copy, check that internal and external links resolve, and type-check every
 
 **0d-ii-a — Supply chain.** The dependency audit gate — hard on the production
 tree at any severity, allow-listed with expiry dates on the dev tree — and the
-install-script policy: an `allowScripts` field in `package.json` denying all five
-packages that ask to run code at install time, enforced by a dedicated
-`supply-chain` CI job. *Medium.*
+install-script policy: an `allowScripts` field in `package.json` denying every
+package that asks to run code at install time, enforced by a dedicated
+`supply-chain` CI job and by a unit test that reads the lockfile. *Medium.*
 
 **0d-ii-b — Scanning.** CodeQL, a repo-local scanner for credential-shaped
 strings, and the adapted `AI-PR-REVIEWERS-RUNBOOK.md` checked into the repo for

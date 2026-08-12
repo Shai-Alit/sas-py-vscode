@@ -22,6 +22,7 @@
   "allowScripts": {
     "@vscode/vsce-sign": false,
     "esbuild": false,
+    "fsevents": false,
     "keytar": false,
     "msw": false
   },

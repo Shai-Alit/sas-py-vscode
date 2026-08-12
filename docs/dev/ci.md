@@ -296,6 +296,27 @@ As with `check:package`, exit codes are split — **1** means the policy was
 violated, **2** means the script or its input is wrong — and the classification
 logic checks itself against a fixed set of cases on every run.
 
+**An audit that could not run exits 2, not 0.** This is worth knowing because
+`npm audit --json` reports its own failure exactly the way it reports success:
+well-formed JSON, on stdout. Aimed at an unreachable registry it prints
+`{"message": "… connect ECONNREFUSED …", "error": {…}}` and exits **0**. So
+neither obvious signal is usable — the exit code is non-zero when the audit
+*worked* and found something, zero when it never ran, and the JSON parses either
+way. Without a shape check, that payload reads as an empty `vulnerabilities` map
+and the production rule announces a clean tree. Both audits also run under a
+two-minute timeout, so a hung registry fails this job rather than holding a
+runner open until GitHub reclaims it.
+
+### The deny-list is checked, not trusted
+
+`allowScripts` is written by hand, and `npm run test:unit` fails if it has fallen
+behind `package-lock.json` — either a package marked `hasInstallScript` with no
+entry, or an entry matching nothing. This runs in the unit tier rather than here
+because it needs no network and no npm 12: it is a comparison between two files
+in the repository, and a contributor should hit it on their own machine, before
+CI. The first version of the list was missing `fsevents`, which is optional and
+darwin-only and so invisible on the machine it was written on.
+
 This blocks a pull request where the weekly link sweep does not, and the
 difference is repetition. A rotted external link fails every run from now until
 someone fixes something they do not control. An advisory fails once, and the

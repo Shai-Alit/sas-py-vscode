@@ -347,11 +347,37 @@ does it. The 3 → 6 jump in 0d-i-b, which came purely from adding VitePress, is
 the case this is built for: a gate on the raw total ratchets upward every time a
 dev tool lands and gets switched off within a month.
 
-☑ **Settled 2026-08-12: deny all five install scripts.** This reverses what this
-runbook previously assumed. Every one of `@vscode/vsce-sign`, `esbuild` (0.28.2
-and 0.21.5), `keytar` and `msw` is deniable, proven by running the real commands
-with all five blocked: 70 unit tests pass, and `npm run build`, `npm run docs:build`
+☑ **Corrected 2026-08-12 after PR review: a failed audit was reading as a clean
+one.** Measured — `npm audit --json --registry=http://127.0.0.1:1` prints
+`{"message": "… connect ECONNREFUSED …", "error": {…}}` and exits **0**. So the
+exit code is useless in both directions (non-zero when the audit worked and found
+something, zero when it never ran) and the parse succeeds either way. With no
+`vulnerabilities` key the report read as an empty map and the production rule —
+the one with no allow-list — printed "clean". `runAudit` now validates the shape
+of the report and exits **2**, so a network failure is never filed as a security
+finding. The same review, and the Codex reviewer independently, caught that
+`execFileSync` had no timeout; both audits now run under a two-minute one, per
+`CONTRIBUTING.md`'s rule that every network call has a timeout and an abort path.
+
+☑ **Settled 2026-08-12: deny every install script.** This reverses what this
+runbook previously assumed. `@vscode/vsce-sign`, `esbuild` (0.28.2 and 0.21.5),
+`keytar` and `msw` are all deniable, proven by running the real commands with
+them blocked: 70 unit tests pass, and `npm run build`, `npm run docs:build`
 and `npm run package` all succeed.
+
+**Corrected 2026-08-12 after PR review: the deny-list was missing `fsevents`,**
+which the lockfile also marks `hasInstallScript`. Six lockfile entries, five
+package names — `esbuild` appears twice. It was missed because it is optional and
+`os: ["darwin"]`, so it never installs on the machine the list was written on,
+and the `supply-chain` job runs on `ubuntu-latest` and so can never exercise the
+denial either. Denying it is safe on the evidence — the published 2.3.3 tarball
+ships a prebuilt `fsevents.node` and its packed `package.json` has no `install`
+or `postinstall`; only the registry packument claims one — but *safe on the
+evidence* is not *demonstrated*, and the ADR says so. The durable fix is the unit
+test: `test/unit/audit-gate.test.ts` now reads `package-lock.json` and fails if
+any package with an install script has no entry in `allowScripts`, or if an entry
+matches nothing. Dependabot edits this lockfile most weeks; a hand-maintained
+list would have drifted again.
 
 **`esbuild`'s postinstall is not load-bearing**, contrary to the earlier note
 here. esbuild ≥0.19 resolves its platform binary through `optionalDependencies`;
@@ -385,7 +411,7 @@ installed explicitly, and the Node floor and the six-leg matrix are left alone.
 
 ☑ **Divergence noted in `docs/dev/building.md`, 2026-08-12.** New section,
 *Install scripts, and why your install differs from CI's*: the policy, the fact
-that every job but `supply-chain` runs npm 10.x and therefore *does* run all five
+that every job but `supply-chain` runs npm 10.x and therefore *does* run those
 scripts, the `npm config get strict-allow-scripts` trap, and the
 `npm install-scripts ls` / `deny` / `approve` loop. It also records a fragility
 worth knowing: `.nvmrc` says `22` unpinned, which is the only reason CI clears

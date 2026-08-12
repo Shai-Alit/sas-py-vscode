@@ -31,12 +31,18 @@ other needs a real deployment. See [testing.md](testing.md).
 ## Install scripts, and why your install differs from CI's
 
 Nothing in this dependency tree is allowed to run code at install time. The
-policy is the `allowScripts` field in `package.json`, and all five install
-scripts in the tree — `@vscode/vsce-sign`, `esbuild` (at two versions), `keytar`,
-`msw` — are denied. The reasoning is [ADR-0005](../adr/0005-supply-chain-policy.md);
-the short version is that this is the cheapest supply-chain attack there is, and
-denying all five was proven harmless by running the real build, test, docs and
-package commands against a clean install with them blocked.
+policy is the `allowScripts` field in `package.json`, and every package that can
+run a script — `@vscode/vsce-sign`, `esbuild` (at two versions), `fsevents`,
+`keytar`, `msw` — is denied. The reasoning is
+[ADR-0005](../adr/0005-supply-chain-policy.md); the short version is that this is
+the cheapest supply-chain attack there is, and denying them was proven harmless
+by running the real build, test, docs and package commands against a clean
+install with them blocked.
+
+If you add a dependency that ships an install script, `npm run test:unit` will
+fail until you record a decision about it in `allowScripts` — a unit test reads
+`package-lock.json` and compares. Add the entry with `npm install-scripts deny
+<pkg>` rather than by hand.
 
 **Your `npm install` almost certainly ignores that policy, and so does every CI
 job but one.** `allowScripts` is understood only by npm 12 and later, npm 12

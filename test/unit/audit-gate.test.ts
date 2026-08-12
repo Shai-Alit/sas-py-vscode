@@ -36,6 +36,11 @@ interface CheckAudit {
     stale: AllowlistEntry[];
   };
   parseAllowlist: (text: string) => AllowlistEntry[];
+  runAudit: (
+    extraArgs?: string[],
+    options?: { command?: string; baseArgs?: string[]; timeoutMs?: number },
+  ) => unknown;
+  assertUsableReport: (report: unknown, ran?: string) => unknown;
 }
 
 const REPO_ROOT = path.resolve(__dirname, "..", "..", "..");
@@ -339,6 +344,209 @@ describe("advisory allow-list parsing", () => {
     assert.ok(
       parsed.length > 0,
       "the committed allow-list should not be empty",
+    );
+  });
+});
+
+/**
+ * `npm audit` is a network call, and CONTRIBUTING.md's rule that every network
+ * call has a timeout and an abort path has no carve-out for build tooling. The
+ * `supply-chain` job's own `timeout-minutes` would eventually stop a hang, but
+ * it stops it as a cancelled job with no explanation, and it does nothing at all
+ * for somebody running the command locally.
+ *
+ * This substitutes a process that is guaranteed never to exit, so the timeout is
+ * tested against a real hang rather than against a network failure that has to
+ * be waited for and may never arrive.
+ */
+describe("audit timeout", () => {
+  let runAudit: CheckAudit["runAudit"];
+
+  before(async () => {
+    ({ runAudit } = await loadScript<CheckAudit>("check-audit.mjs"));
+  });
+
+  // `process.execPath` rather than `sleep`, which does not exist on the Windows
+  // leg of the matrix. The arguments have to be substituted as well as the
+  // command: a node asked to run a file called `audit` fails immediately, which
+  // would have made this test pass for entirely the wrong reason.
+  const hang = {
+    command: process.execPath,
+    baseArgs: ["-e", "setTimeout(() => {}, 60_000)"],
+    timeoutMs: 250,
+  };
+
+  it("gives up on a hung registry instead of waiting forever", () => {
+    const started = Date.now();
+    assert.throws(
+      () => runAudit([], hang),
+      /did not finish within 0\.25s and was killed/,
+    );
+    assert.ok(
+      Date.now() - started < 5000,
+      "the timeout should end the call, not merely be reported afterwards",
+    );
+  });
+
+  // The distinction the message draws is the useful part: an unreachable
+  // registry is not evidence about the dependency tree, and a build that
+  // conflates the two teaches people to re-run it rather than read it.
+  it("says the timeout is not a verdict about the tree", () => {
+    assert.throws(
+      () => runAudit([], hang),
+      /not a verdict about the dependency tree/,
+    );
+  });
+});
+
+// A gate that cannot tell "looked and found nothing" from "could not look" is
+// worse than no gate, because its silence is believed. The payload below is not
+// invented: it is what `npm audit --json --registry=http://127.0.0.1:1` printed,
+// and it came with exit code **0**, so neither the status nor the parse can be
+// the thing that catches it.
+describe("audit failure is not an empty audit", () => {
+  let assertUsableReport: CheckAudit["assertUsableReport"];
+  let collectAdvisories: CheckAudit["collectAdvisories"];
+  let runAudit: CheckAudit["runAudit"];
+
+  before(async () => {
+    ({ assertUsableReport, collectAdvisories, runAudit } =
+      await loadScript<CheckAudit>("check-audit.mjs"));
+  });
+
+  const unreachableRegistry = {
+    message:
+      "request to http://127.0.0.1:1/-/npm/v1/security/audits/quick failed, " +
+      "reason: connect ECONNREFUSED 127.0.0.1:1",
+    error: { summary: "", detail: "" },
+  };
+
+  it("refuses a report that says the registry was unreachable", () => {
+    assert.throws(
+      () => assertUsableReport(unreachableRegistry),
+      /reported a failure instead of a result/,
+    );
+  });
+
+  // `error.summary` and `error.detail` were both empty strings in the measured
+  // payload, so a message built only from `error` says nothing at all. The text
+  // that names the cause lives in `message`.
+  it("quotes the reason npm gave", () => {
+    assert.throws(
+      () => assertUsableReport(unreachableRegistry),
+      /ECONNREFUSED 127\.0\.0\.1:1/,
+    );
+  });
+
+  it("refuses a payload with no vulnerabilities map", () => {
+    assert.throws(
+      () => assertUsableReport({}),
+      /returned no `vulnerabilities` map/,
+    );
+  });
+
+  it("refuses a null vulnerabilities map", () => {
+    assert.throws(
+      () => assertUsableReport({ vulnerabilities: null }),
+      /returned no `vulnerabilities` map/,
+    );
+  });
+
+  it("accepts a genuinely clean report", () => {
+    const clean = { vulnerabilities: {}, metadata: { vulnerabilities: {} } };
+    assert.deepEqual(assertUsableReport(clean), clean);
+    assert.deepEqual(collectAdvisories(clean), []);
+  });
+
+  // The end-to-end statement of the bug: run something that behaves exactly as
+  // the failing `npm audit` did — valid JSON on stdout, exit 0 — and require
+  // that `runAudit` refuses it rather than handing back a report that reads as
+  // an empty tree.
+  it("refuses it through runAudit, where exit 0 offers no warning", () => {
+    assert.throws(
+      () =>
+        runAudit([], {
+          command: process.execPath,
+          baseArgs: [
+            "-e",
+            "console.log(JSON.stringify({message:'connect ECONNREFUSED 127.0.0.1:1',error:{summary:'',detail:''}}))",
+          ],
+        }),
+      /reported a failure instead of a result/,
+    );
+  });
+});
+
+// The deny-list in `package.json` is written by hand, and it drifted the first
+// time it was written: `fsevents` ships an install script and was left out,
+// because it is optional and darwin-only and so never appears in an install on
+// the machine the list was written on. Dependabot changes this lockfile most
+// weeks. So rather than fix the one entry, assert the property — every package
+// that can run code at install time has been decided about, out loud.
+describe("install-script policy", () => {
+  const lockfile = JSON.parse(
+    readFileSync(path.join(REPO_ROOT, "package-lock.json"), "utf8"),
+  ) as { packages: Record<string, { hasInstallScript?: boolean }> };
+  const manifest = JSON.parse(
+    readFileSync(path.join(REPO_ROOT, "package.json"), "utf8"),
+    // `unknown`, not `boolean`: this is untyped JSON read off disk, and the
+    // assertion below wants to catch a value that is merely falsy — a `"false"`
+    // string, say — rather than trust the annotation.
+  ) as { allowScripts?: Record<string, unknown> };
+
+  // Keyed on the package *name*, not the lockfile path: `allowScripts` is keyed
+  // by name, and two different paths can share one — this tree has esbuild at
+  // both 0.28.2 and 0.21.5, which is why six lockfile entries are five names.
+  const installScriptNames = [
+    ...new Set(
+      Object.entries(lockfile.packages)
+        .filter(([, node]) => node.hasInstallScript === true)
+        .map(([location]) => location.replace(/^.*node_modules\//, "")),
+    ),
+  ].sort();
+
+  it("finds the packages that run code at install time", () => {
+    assert.ok(
+      installScriptNames.length > 0,
+      "no install scripts found at all — the lockfile shape probably changed, " +
+        "which would make every other assertion here vacuous",
+    );
+  });
+
+  it("has an explicit decision recorded for every one of them", () => {
+    const undecided = installScriptNames.filter(
+      (name) => !Object.hasOwn(manifest.allowScripts ?? {}, name),
+    );
+    assert.deepEqual(
+      undecided,
+      [],
+      "these packages run code at install time and package.json says nothing " +
+        "about them; add them to allowScripts",
+    );
+  });
+
+  // Separate from the test above on purpose. That one guards a property and
+  // should never need editing. This one states today's policy — deny everything —
+  // and a slice that deliberately allows something is supposed to come here and
+  // change it.
+  it("denies all of them", () => {
+    assert.deepEqual(
+      Object.entries(manifest.allowScripts ?? {})
+        .filter(([, allowed]) => allowed !== false)
+        .map(([name]) => name),
+      [],
+    );
+  });
+
+  it("does not deny packages that are not in the tree", () => {
+    const unused = Object.keys(manifest.allowScripts ?? {}).filter(
+      (name) => !installScriptNames.includes(name),
+    );
+    assert.deepEqual(
+      unused,
+      [],
+      "these entries no longer match anything in the lockfile; a stale denial " +
+        "reads as coverage it is not providing",
     );
   });
 });

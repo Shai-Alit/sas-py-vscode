@@ -63,6 +63,16 @@ const ALLOWLIST = join(HERE, "advisory-allowlist.json");
 // npm is a shell shim on Windows; execFile will not find bare `npm` there.
 const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
+// `npm audit` talks to the registry, and CONTRIBUTING.md's rule that every
+// network call has a timeout and an abort path has no carve-out for build
+// tooling. Two minutes is roughly ten times the observed run and well inside the
+// job's own 10-minute ceiling, so this fires on a wedged connection rather than
+// on a slow one — and it fires with a message that names the cause, which is the
+// part a job-level timeout cannot do. SIGKILL rather than SIGTERM because the
+// thing being killed is a process that has already stopped responding.
+const AUDIT_TIMEOUT_MS = 120_000;
+const AUDIT_KILL_SIGNAL = "SIGKILL";
+
 /**
  * Flattens an `npm audit --json` report into one entry per distinct advisory.
  *
@@ -196,35 +206,119 @@ export function parseAllowlist(text) {
  *
  * npm exits non-zero *because* it found vulnerabilities, which is the normal
  * case here and not an error, so the status is ignored and the payload is what
- * decides. A genuinely broken run is caught by the parse failing instead.
+ * decides. The payload is then checked by `assertUsableReport`, because a
+ * genuinely broken run is *not* caught by the parse failing — see there.
+ *
+ * The timeout is checked *before* the stdout fallback, and that order is the
+ * whole reason this is not one branch. A run that is killed part-way can still
+ * have written something to stdout, and "npm exited non-zero but printed a
+ * report" is precisely the case the fallback exists to accept — so without the
+ * earlier check, a truncated audit could be read as a result. It would almost
+ * certainly fail to parse, but "almost certainly" is not the standard for a
+ * check whose whole job is to notice things.
+ *
+ * `command`, `baseArgs` and `timeoutMs` are parameters so the timeout path can
+ * be tested against a process that is guaranteed to hang, rather than by waiting
+ * on a real network failure that may never arrive. All three are needed for
+ * that: substituting only the command gets a `node` that is asked to run a file
+ * called `audit`, which fails immediately instead of hanging.
  */
-export function runAudit(extraArgs = []) {
-  const args = ["audit", "--json", ...extraArgs];
+export function runAudit(
+  extraArgs = [],
+  {
+    command = NPM,
+    baseArgs = ["audit", "--json"],
+    timeoutMs = AUDIT_TIMEOUT_MS,
+  } = {},
+) {
+  const args = [...baseArgs, ...extraArgs];
+  // Named in every failure message, so a report always says what was actually
+  // run rather than what the reader assumes was run.
+  const ran = `${command} ${args.join(" ")}`;
   let stdout;
   try {
-    stdout = execFileSync(NPM, args, {
+    stdout = execFileSync(command, args, {
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: timeoutMs,
+      killSignal: AUDIT_KILL_SIGNAL,
     });
   } catch (error) {
-    stdout = error.stdout;
-    if (typeof stdout !== "string" || stdout.trim() === "") {
+    if (error?.code === "ETIMEDOUT") {
       throw new Error(
-        `\`npm ${args.join(" ")}\` produced no report: ${error.message}`,
+        `\`${ran}\` did not finish within ${timeoutMs / 1000}s and was killed. ` +
+          `The registry is unreachable or hanging; this is not a verdict about ` +
+          `the dependency tree.`,
         { cause: error },
       );
     }
+
+    stdout = error.stdout;
+    if (typeof stdout !== "string" || stdout.trim() === "") {
+      throw new Error(`\`${ran}\` produced no report: ${error.message}`, {
+        cause: error,
+      });
+    }
   }
 
+  let report;
   try {
-    return JSON.parse(stdout);
+    report = JSON.parse(stdout);
   } catch (error) {
+    throw new Error(`\`${ran}\` output was not JSON: ${error.message}`, {
+      cause: error,
+    });
+  }
+  return assertUsableReport(report, ran);
+}
+
+/**
+ * Rejects a payload that is not evidence about the dependency tree.
+ *
+ * This exists because `npm audit --json` reports its *own* failure the same way
+ * it reports success: as well-formed JSON on stdout. Measured against an
+ * unreachable registry, `npm audit --json --registry=http://127.0.0.1:1` printed
+ *
+ *     {"message": "request to … failed, reason: connect ECONNREFUSED …",
+ *      "error": {"summary": "", "detail": ""}}
+ *
+ * and exited **0**. So neither of the two signals a caller would reach for can
+ * be trusted: the exit code is non-zero when the audit *succeeded* and found
+ * something, and zero when the audit could not run at all; and the parse
+ * succeeds either way.
+ *
+ * Left unchecked, that payload has no `vulnerabilities` key, `collectAdvisories`
+ * reads it as an empty map, and the production rule — the one rule here with no
+ * allow-list and no escape hatch — prints "production tree clean". A security
+ * gate that answers "clean" when it could not look is worse than no gate,
+ * because it is believed. Note also that `error.summary` and `error.detail` were
+ * both empty strings, so the useful text is in `message`; anything reporting
+ * this failure has to read both.
+ *
+ * Failing here means the checker or its environment is broken, not that the
+ * tree is bad, so `main` turns it into exit 2 rather than exit 1.
+ */
+export function assertUsableReport(report, ran = "npm audit --json") {
+  const detail = report?.message ?? report?.error?.summary ?? report?.error;
+  if (report?.error !== undefined || report?.message !== undefined) {
     throw new Error(
-      `\`npm ${args.join(" ")}\` output was not JSON: ${error.message}`,
-      { cause: error },
+      `\`${ran}\` reported a failure instead of a result: ` +
+        `${typeof detail === "string" && detail !== "" ? detail : JSON.stringify(report?.error)}. ` +
+        `The audit did not run; this is not a verdict about the dependency tree.`,
     );
   }
+  if (
+    typeof report?.vulnerabilities !== "object" ||
+    report.vulnerabilities === null
+  ) {
+    throw new Error(
+      `\`${ran}\` returned no \`vulnerabilities\` map, so there is nothing to ` +
+        `check. The audit did not run; this is not a verdict about the ` +
+        `dependency tree.`,
+    );
+  }
+  return report;
 }
 
 /**
@@ -237,6 +331,15 @@ export function runAudit(extraArgs = []) {
  * failure being guarded against is the one where somebody edits this file and
  * does not run the tests.
  */
+function threw(run) {
+  try {
+    run();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function selfCheck() {
   const advisory = {
     id: "GHSA-aaaa-bbbb-cccc",
@@ -273,6 +376,21 @@ function selfCheck() {
       "string via ignored",
       collectAdvisories({ vulnerabilities: { a: { via: ["b"] } } }).length,
       0,
+    ],
+    // The three shapes that must never be mistaken for a clean tree. These are
+    // here rather than only in the unit tests because this is the failure that
+    // looks exactly like success: an audit that could not reach the registry
+    // still prints JSON and still exits 0.
+    [
+      "registry failure rejected",
+      threw(() => assertUsableReport({ message: "ECONNREFUSED", error: {} })),
+      true,
+    ],
+    ["empty report rejected", threw(() => assertUsableReport({})), true],
+    [
+      "real report accepted",
+      threw(() => assertUsableReport({ vulnerabilities: {}, metadata: {} })),
+      false,
     ],
   ];
 

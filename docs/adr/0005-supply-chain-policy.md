@@ -41,18 +41,41 @@ available, and a policy had to exist for the case where it is not.
 
 ## Decision
 
-### Nothing in the tree runs code at install time
+### Nothing in the tree may run code at install time
 
-All five install scripts present — `@vscode/vsce-sign`, `esbuild` at both 0.28.2
-and 0.21.5, `keytar`, and `msw` — are **denied**, via the `allowScripts` field in
-`package.json`. `.npmrc` sets `strict-allow-scripts=true`, which turns npm's
-"install scripts were blocked" warning into `ESTRICTALLOWSCRIPTS` and a non-zero
-exit, so a new dependency that wants to run code at install time fails the build
-until somebody approves or denies it deliberately.
+Every package in the tree that can run code at install time is **denied**, via
+the `allowScripts` field in `package.json`. The lockfile carries six entries
+marked `hasInstallScript` across five package names — `@vscode/vsce-sign`,
+`esbuild` (at both 0.28.2 and 0.21.5, hence six entries), `fsevents`, `keytar`
+and `msw`. `.npmrc` sets `strict-allow-scripts=true`, which turns npm's "install
+scripts were blocked" warning into `ESTRICTALLOWSCRIPTS` and a non-zero exit, so
+a new dependency that wants to run code at install time fails the build until
+somebody approves or denies it deliberately.
 
-This is not a guess about what those scripts do. It was proven by installing
-clean with all five blocked and then running the real commands: 70 unit tests
-pass, `npm run build`, `npm run docs:build` and `npm run package` all succeed.
+The list is checked rather than trusted. `test/unit/audit-gate.test.ts` reads
+`package-lock.json` and fails if any package marked `hasInstallScript` has no
+entry in `allowScripts`, or if an entry no longer matches anything. That test
+exists because this list was wrong the first time it was written: `fsevents` was
+missed, since it is optional and darwin-only and so never appears in an install
+on a Linux or Windows machine. A hand-maintained list against a lockfile that
+Dependabot edits most weeks will drift again; the test makes the next drift a
+red build rather than a silent gap.
+
+Denying them is not a guess about what those scripts do. It was proven by
+installing clean with everything blocked and then running the real commands: 70
+unit tests pass, `npm run build`, `npm run docs:build` and `npm run package` all
+succeed.
+
+**`fsevents` is the one entry that is reasoned about rather than exercised.** The
+`supply-chain` job runs on `ubuntu-latest`, where npm skips the package
+altogether, so that job can never demonstrate that denying it is harmless; the
+`test` matrix does include `macos-latest`, but it installs with npm 10, which has
+no `allowScripts` at all. What is known: the published 2.3.3 tarball contains a
+prebuilt `fsevents.node` and its packed `package.json` declares no `install` or
+`postinstall` script — only the registry packument claims one — so there is
+nothing for the denial to break. The gap is stated here rather than papered over,
+and closes on its own when the npm floor moves and every leg can enforce the
+policy.
 
 **esbuild's postinstall is not load-bearing**, which is the finding that made
 this a blanket deny rather than a list of exceptions. esbuild ≥0.19 resolves its
@@ -98,6 +121,21 @@ have looked like diligence while doing it.
 **Every entry expires.** An allow-list without expiry dates is a mute button.
 When one lapses the build fails and somebody re-reads the advisory, which is the
 entire mechanism; the initial entries are dated 2026-11-12, three months out.
+
+**An audit that could not run is not a clean audit**, and the checker refuses to
+confuse the two. This needs saying because `npm audit --json` reports its own
+failure the way it reports success — as well-formed JSON, on stdout. Pointed at
+an unreachable registry it printed `{"message": "… connect ECONNREFUSED …",
+"error": {…}}` and exited **0**. Neither signal a caller would reach for can be
+trusted: the exit code is non-zero when the audit *succeeded* and found
+something, zero when it never ran, and the parse succeeds either way. Unchecked,
+that payload reads as an empty `vulnerabilities` map and the production rule —
+the one rule with no allow-list — announces a clean tree. So the shape of the
+report is validated before it is believed, and the failure exits **2** (the
+checker or its environment is broken) rather than **1** (the tree is bad), so
+that a network problem is never filed as a security finding. The two audits also
+carry a two-minute timeout: a hung registry has to fail the job, not hold it
+open.
 
 ### It is enforced in one CI job, not everywhere
 
@@ -174,9 +212,11 @@ folded away.
 **Costs.** Running the policy locally needs npm 12, which needs Node 22.22.2 or
 newer — so a contributor on the project's claimed Node floor cannot reproduce the
 `supply-chain` job at all, and this is the first place in the toolchain where
-"CI runs commands you can run" is not strictly true. Five install scripts denied
+"CI runs commands you can run" is not strictly true. Denying install scripts
 means that if one of them ever *does* become load-bearing, the failure appears at
-first build rather than at install, one step further from its cause. The
+first build rather than at install, one step further from its cause. Denying
+`fsevents` is asserted rather than demonstrated, because no CI leg both installs
+it and enforces the policy. The
 allow-list is maintenance: seven entries come due on 2026-11-12 and somebody has
 to re-read seven advisories, which is the deliberate trade but is not free.
 `check:audit` needs the network, so it is not part of `npm run verify`.

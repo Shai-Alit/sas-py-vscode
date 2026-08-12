@@ -44,13 +44,30 @@ const MAX_BYTES = 10 * 1024 * 1024;
  * Rules are ordered, and the first match wins — the name it reports is what
  * the self-test below pins, so reordering them is a visible change rather than
  * a silent one.
+ *
+ * `credential` is deliberately first. Every rule here fails the build, so
+ * ordering cannot change *whether* a file is caught, only what the failure is
+ * called — and a `scripts/creds.json` reported as "source" tells a reader to go
+ * tidy up their ignore patterns, where the same file reported as "credential"
+ * tells them to rotate a token. The cheaper message to act on wrongly is the
+ * one to avoid.
  */
 const DENY = [
   {
+    name: "credential",
+    why: "this is the failure that must never happen — see SECURITY.md",
+    test: (p) =>
+      /(^|\/)creds\.json$/.test(p) ||
+      /(^|\/)\.env(\.|$)/.test(p) ||
+      /\.(pem|key|pfx|p12|jks|keystore)$/.test(p) ||
+      /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/.test(p),
+  },
+  {
     name: "source",
-    why: "TypeScript sources and the build/lint configuration are not needed at runtime and make the package a second, drifting copy of the repository",
+    why: "TypeScript sources and the build/dependency configuration are not needed at runtime and make the package a second, drifting copy of the repository",
     test: (p) =>
       /^(src|test|scripts)\//.test(p) ||
+      /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml)$/.test(p) ||
       (p.endsWith(".ts") && !p.endsWith(".d.ts")),
   },
   {
@@ -64,19 +81,10 @@ const DENY = [
     test: (p) => p.endsWith(".map"),
   },
   {
-    name: "credential",
-    why: "this is the failure that must never happen — see SECURITY.md",
-    test: (p) =>
-      /(^|\/)creds\.json$/.test(p) ||
-      /(^|\/)\.env(\.|$)/.test(p) ||
-      /\.(pem|key|pfx|p12|jks|keystore)$/.test(p) ||
-      /(^|\/)id_(rsa|dsa|ecdsa|ed25519)$/.test(p),
-  },
-  {
     name: "internal document",
-    why: "planning and probe records are for maintainers; they date badly and say things about deployments that a published package should not",
+    why: "planning and probe records are for maintainers; they date badly and say things about deployments that a published package should not, and the policy files describe a GitHub workflow a package consumer cannot use",
     test: (p) =>
-      /(^|\/)(PRODUCTION_PLAN|RUNBOOK|PROBE-FINDINGS|CONTRIBUTING|CODE_OF_CONDUCT)\.md$/.test(
+      /(^|\/)(PRODUCTION_PLAN|RUNBOOK|PROBE-FINDINGS|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$/.test(
         p,
       ) || /^docs\//.test(p),
   },
@@ -134,6 +142,9 @@ const SELF_TEST = [
   ["src/extension.ts", "source"],
   ["test/unit/harness.test.ts", "source"],
   ["scripts/check-copyright.mjs", "source"],
+  // Under a `source`-first ordering this came out "source", which is true but
+  // buries the lede. Pinned here so the ordering cannot drift back.
+  ["scripts/creds.json", "credential"],
   ["dist/extension.js.map", "source map"],
   ["out/src/extension.js", "build output"],
   ["node_modules/left-pad/index.js", "build output"],
@@ -143,7 +154,12 @@ const SELF_TEST = [
   [".env.local", "credential"],
   ["certs/viya.pem", "credential"],
   ["RUNBOOK.md", "internal document"],
+  ["SECURITY.md", "internal document"],
   ["docs/dev/ci.md", "internal document"],
+  // vsce's own defaultIgnore drops the lockfile, so this never reaches these
+  // rules in practice. Pinned anyway: "something else already handles it" is
+  // exactly the assumption that stops being true after a tooling upgrade.
+  ["package-lock.json", "source"],
   [".github/workflows/ci.yml", "repository metadata"],
 ];
 

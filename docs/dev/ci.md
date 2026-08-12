@@ -84,6 +84,11 @@ Two things worth knowing before you edit it:
   package and `LICENSE` becomes `LICENSE.txt`. The required-files list was
   written with the repository's names and was wrong; running the checker against
   a real package is what corrected it.
+- **Rule order is the message, not the verdict.** First match wins, and every
+  rule fails the build, so ordering only changes what the failure is *called*.
+  `credential` is first because "source" tells you to tidy an ignore pattern
+  while "credential" tells you to rotate a token, and a `scripts/creds.json`
+  matches both.
 - **The rules check themselves.** The script classifies a fixed list of example
   paths on every run and exits 2 if any of them comes out differently than
   expected. A regex that stops matching does not announce itself — the run just

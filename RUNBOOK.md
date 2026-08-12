@@ -147,11 +147,17 @@ git push -u origin phase-0a-ii-ai-reviewers
 gh pr create --base main --head phase-0a-ii-ai-reviewers --fill
 ```
 
-> **Expected on the 0a-ii PR itself: neither reviewer will comment.** The Claude
-> action requires `claude-review.yml` to be byte-identical to the copy on `main`
-> (it isn't yet), and the Codex workflow checks out `base.sha` where
-> `ai_review.py` doesn't exist yet. Both skip. This is correct behaviour, not a
-> failure — it's the bootstrap gate, and it only bites once.
+> **Expected on the 0a-ii PR itself: neither reviewer will post a review.** For a
+> same-repo `pull_request` event GitHub runs the workflow files *from the PR head*,
+> so both jobs genuinely execute — they just can't succeed yet. The Codex workflow
+> deliberately checks out `base.sha`, where `ai_review.py` does not exist on `main`
+> yet, so it has nothing to run. That much is the bootstrap gate, and it only bites
+> once.
+>
+> **A red X on the Claude job here is *not* the gate — investigate it.** That job
+> reaches `azure/login` on every PR, so any failure there is a real configuration
+> defect that would recur on 0b and every slice after. Read the error rather than
+> waving it through; see the AADSTS700213 note in Section E.
 
 ☐ Merge 0a-ii, then run the **Section E smoke test**. Do not start 0b until both
 bots have demonstrably posted on the smoke-test PR — if they're broken, you want
@@ -449,6 +455,17 @@ gh pr create --base main --head ci-reviewer-smoke-test --fill
 signals: `is_error: false`, `subtype: success`, `num_turns > 1`, a real non-zero
 `total_cost_usd`, and `modelUsage` entries with `provider: "foundry"`.
 
+> **If `azure/login` fails with `AADSTS700213: No matching federated identity
+> record found`:** the repo is emitting GitHub's *immutable* OIDC subject. Repos
+> created, renamed, or transferred after **2026-07-15** present
+> `repo:<owner>@<ownerId>/<repo>@<repoId>:pull_request` instead of the classic
+> `repo:<owner>/<repo>:pull_request`, and Entra matches the subject as an exact
+> string. Copy the subject **verbatim from the error** — it is authoritative, and a
+> hand-derived one reproduces the same opaque failure — then add a second federated
+> credential carrying it. Fixed here on 2026-08-12 by adding
+> `sas-py-vscode-pr-review-immutable`. This is why `viyapy`, which predates the
+> cutoff, was unaffected.
+>
 > **If you see `is_error: true`, `num_turns: 1`, `$0`, and a flat ~180s duration:
 > that is not a hang.** It is the SDK retrying a 401 ten times. The cause is
 > almost always a missing **Cognitive Services User** role on the service

@@ -430,6 +430,13 @@ Do this immediately after 0a-ii merges. Full detail in `AI-PR-REVIEWERS-RUNBOOK.
 
 ☐ **E1.** Confirm the workflows are on `main`. Nothing works until they are.
 
+> **Also confirm the Claude GitHub App is installed on the repo** —
+> https://github.com/apps/claude → Configure → repository access. This is a
+> per-repo step, it is not Azure, and nothing in the workflow file or the Entra
+> config hints at it. Without it `azure/login` succeeds and the action then dies
+> with `401 Unauthorized - Claude Code is not installed on this repository`.
+> Installed here 2026-08-12.
+
 ☐ **E2.** Create a throwaway branch with deliberately bad code. Seed it with
 defects that match the *retailored* prompts, so a silent bot and a working bot
 look different: a `fetch` with no timeout, an empty `catch` with no fail-soft

@@ -344,7 +344,7 @@ maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small/medium
 
 ### Phase 1 — Authentication and connection profiles
 
-**1a — Connection profiles.** `SASPY.connectionProfiles` setting with the
+**1a — Connection profiles.** `pythonOnViya.connectionProfiles` setting with the
 JSON-Schema `if`/`then` shape, `ProfileConfig`, profile add/edit/delete/switch
 commands, status bar item. Collapsed to a single Viya profile type — no SSH/COM/IOM
 branches. *Medium.*
@@ -472,8 +472,8 @@ correct squiggle positions; clear on re-run; optional quick actions. *Small/medi
 code from 2b onward; this slice completes them, hardens the
 contracts ↔ dialect ↔ fixtures checker, and wires it into CI as a gate. *Small/medium.*
 
-**5b — Live test tier.** Opt-in, env-gated live tests (`SASPY_TEST_4_*` /
-`SASPY_TEST_35_*`), with the 3.5 tier as a skipped scaffold. Nothing live runs in
+**5b — Live test tier.** Opt-in, env-gated live tests (`PYTHON_ON_VIYA_TEST_4_*` /
+`PYTHON_ON_VIYA_TEST_35_*`), with the 3.5 tier as a skipped scaffold. Nothing live runs in
 default CI. *Medium.*
 
 **5c — Docs publishing and release engineering.** The docs themselves were written
@@ -608,7 +608,7 @@ data**. The viyapy generation-parameterised fixture idiom applies: happy paths r
 once per generation so a dialect regression fails loudly.
 
 **Live tests are gated three ways**: an opt-in npm script, per-generation env vars
-(`SASPY_TEST_4_HOST` / `_TOKEN` / …), and a separate `ALLOW_MUTATION` flag for
+(`PYTHON_ON_VIYA_TEST_4_HOST` / `_TOKEN` / …), and a separate `ALLOW_MUTATION` flag for
 anything that writes to the deployment. Mutating tests are self-cleaning with
 per-run unique names and cleanup in `finally`.
 
@@ -712,17 +712,27 @@ marketplace listing, the release checklist — not the first time docs get writt
    relicenses from MIT in slice 0a, matching upstream so ported files carry no
    conflict, and gaining the explicit §3 patent grant that matters when
    interoperating with a commercial vendor's product. Recorded as ADR-0000.
-1. **Extension identifier and display name** (Phase 0a). Must not imply official
-   SAS provenance — this is an independent project reusing Apache-2.0 code.
-   *Needs your call.*
-2. **Configuration namespace** (Phase 0b). `SASPY.*` is used **provisionally**
-   throughout this document; it must not collide with the SAS extension's `SAS.*`
-   if both are installed. *Needs your call — every `SASPY` reference here changes
-   with it.*
-3. **Workspace-trust posture** (Phase 0b). *Recommend `"limited"` — see §3, 0b.*
-4. **Web/browser extension target** (Phase 0b). Constrains bundling, the mocking
-   library, and `CAHelper.ts` (node-only `fs`/`tls`). *Recommend node-only; decide
-   explicitly rather than by default.*
+1. ~~**Extension identifier and display name**~~ — **SETTLED 2026-08-12:
+   "Python on Viya", identifier `python-on-viya`.** Names the function rather than
+   leading with the SAS trademark, consistent with `NOTICE`'s statement that this
+   is not an official SAS product. Recorded as ADR-0001, executed in 0b.
+2. ~~**Configuration namespace**~~ — **SETTLED 2026-08-12: `pythonOnViya.*`**,
+   matching the extension identifier per VS Code convention. The provisional
+   `SASPY.*` is **withdrawn**: `saspy` is the name of SAS's own official
+   Python-to-SAS package, so that prefix would have collided with a real SAS
+   product in both search results and users' expectations — a worse problem than
+   the `SAS.*` collision it was chosen to avoid. Recorded as ADR-0001, executed in
+   0b. Every `SASPY` reference in this document is superseded by `pythonOnViya`.
+3. ~~**Workspace-trust posture**~~ — **SETTLED 2026-08-12: `"limited"`.** Editing,
+   syntax, and profile management work in untrusted folders; connecting and
+   executing require trust. Executing code on a remote server from an unvetted
+   folder is precisely the risk workspace trust exists to gate. Recorded as
+   ADR-0002, executed in 0b.
+4. ~~**Web/browser extension target**~~ — **SETTLED 2026-08-12: node-only.**
+   Halves the build and test matrix through Phases 1–5, and avoids letting the web
+   host's ban on Node APIs constrain the OAuth loopback listener and secret
+   handling before those are even built. Revisit as a Phase 6+ item, not never.
+   Recorded as ADR-0003, executed in 0b.
 5. **Coexistence with the SAS extension** (Phase 1a). If both are installed, share
    connection profiles or keep them separate? Sharing is friendlier but couples us
    to their schema. *Recommend separate for v1.*

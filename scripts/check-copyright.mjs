@@ -4,16 +4,30 @@
 /**
  * Enforces the licensing obligations recorded in ADR-0000.
  *
- * Two distinct requirements, and the second is the one that is easy to forget:
+ * Three requirements, and the later ones are the ones that are easy to forget:
  *
  *   1. Every source file carries a copyright line and an SPDX identifier.
- *   2. Any file derived from sassoftware/vscode-sas-extension **preserves the
- *      original SAS copyright header AND states that it has been modified.**
- *      Apache-2.0 §4(b) requires the modification notice; preserving the header
- *      alone does not satisfy it. This is a licence obligation, not a courtesy.
+ *   2. Any file carrying the SAS copyright header **also states that it has
+ *      been modified.** Apache-2.0 §4(b) requires the modification notice;
+ *      preserving the header alone does not satisfy it. This is a licence
+ *      obligation, not a courtesy.
+ *   3. Any file that names the upstream repository **declares which kind of
+ *      relationship it has to it** — `Ported from:` or `Structure follows:`.
  *
- * Adapted in spirit from the upstream extension's check-copyright.mjs, extended
- * with requirement 2.
+ * Requirement 3 closes a hole that requirements 1 and 2 cannot see. They key off
+ * the presence of the SAS header, so a genuinely ported file that simply dropped
+ * that header passed silently — the check could only catch the careful mistake,
+ * not the careless one. Forcing an explicit declaration inverts that: the file
+ * has to say what it is, and `Ported from:` then drags requirement 2 back in.
+ *
+ * It cannot verify that the declaration is *true*; nothing mechanical can. What
+ * it buys is that the claim is present, specific, and reviewable, instead of
+ * absent and inferred differently by every reader.
+ *
+ * Structure follows: tools/check-copyright.mjs in
+ * sassoftware/vscode-sas-extension (Apache-2.0) — same idea, no copied code,
+ * extended with requirements 2 and 3. That file carries no copyright header of
+ * its own, so there is none to retain here.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -35,6 +49,20 @@ const SPDX = /SPDX-License-Identifier:\s*Apache-2\.0/;
 const COPYRIGHT = /Copyright\s*(?:©|\(c\)|\(C\))/;
 const UPSTREAM = /SAS Institute/i;
 const MODIFIED = /Modified\s+(?:from\s+the\s+original|by)\b/i;
+
+// The repository slug, not the company name: a file may mention SAS Institute
+// in passing, but naming the repo means it stands in some relationship to that
+// code, and requirement 3 wants that relationship spelled out.
+const UPSTREAM_REPO = /sassoftware\/vscode-sas-extension/i;
+
+// A declaration is a header line that *starts* with the marker, not any mention
+// of it. This file is the proof that the distinction is needed: the doc comment
+// above names both markers while explaining them, and an unanchored match read
+// that prose as a claim of authorship and failed the checker against itself.
+// The same trap is one paragraph up in `extractHeader` — a file that discusses
+// a rule is not a file that is subject to it.
+const PORTED = /^[ \t]*(?:\/\/|\*|#)?[ \t]*Ported from:/im;
+const STRUCTURE = /^[ \t]*(?:\/\/|\*|#)?[ \t]*Structure follows:/im;
 
 /**
  * Returns the leading comment block of a file — everything from the top down to
@@ -124,6 +152,24 @@ for (const file of files) {
     failures.push([
       name,
       "carries the SAS Institute copyright but no modification notice — Apache-2.0 §4(b) requires ported files to state that they have been changed. Add: 'Modified from the original by the Python on Viya contributors.'",
+    ]);
+  }
+
+  if (
+    UPSTREAM_REPO.test(header) &&
+    !PORTED.test(header) &&
+    !STRUCTURE.test(header)
+  ) {
+    failures.push([
+      name,
+      "names sassoftware/vscode-sas-extension without declaring the relationship. Add either 'Ported from: <upstream path>' (code was copied — also keep the SAS copyright header, where the upstream file has one, and a modification notice) or 'Structure follows: <upstream path>' (written here, upstream consulted for shape). See CONTRIBUTING.md.",
+    ]);
+  }
+
+  if (PORTED.test(header) && !MODIFIED.test(header)) {
+    failures.push([
+      name,
+      "declares 'Ported from:' but carries no modification notice — Apache-2.0 §4(b) requires one. Add: 'Modified from the original by the Python on Viya contributors.'",
     ]);
   }
 }

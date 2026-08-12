@@ -12,13 +12,21 @@ under the Apache License, Version 2.0.
     Copyright (c) SAS Institute Inc.
     Licensed under the Apache License, Version 2.0
 
-Derived files retain their original SAS Institute copyright header and, per
-Apache License 2.0 section 4(b), carry a prominent notice stating that they have
-been modified. The specific areas derived from that project are the Viya
-connection and authentication layer, the Compute service REST client, and parts
-of the repository tooling. See docs/adr/0000-repository-licence.md for the
-licensing rationale and CONTRIBUTING.md for the header requirements enforced in
-CI.
+Files containing code ported from that project retain the original SAS Institute
+copyright header, where the upstream file carries one, and per Apache License 2.0
+section 4(b) carry a prominent notice stating that they have been modified. Some
+upstream files carry no copyright header at all — those under client/test/ are
+the notable case — so for those there is no header to retain, and the derived
+file says so explicitly.
+
+Files whose structure was informed by an upstream file, but which contain no
+copied code, declare that relationship in their header and do not add a SAS
+copyright line, because nothing of SAS's authorship is present in them.
+
+The specific areas derived from that project are the Viya connection and
+authentication layer, the Compute service REST client, and parts of the
+repository tooling. See docs/adr/0000-repository-licence.md for the licensing
+rationale and CONTRIBUTING.md for the header requirements enforced in CI.
 
 ================================================================================
 This project is an independent effort. It is NOT an official SAS Institute

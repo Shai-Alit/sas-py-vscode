@@ -53,8 +53,12 @@ bake into `LICENSE` and `package.json` and are painful to change later:
   Executed in 0b.
 - ☑ **#4 Web/browser target** — **settled 2026-08-12: node-only**, revisitable at
   Phase 6+. ADR-0003. Executed in 0b.
-- **#6 Coverage threshold** — the *starting* number only; you set the real value in
-  0c once the harness exists and can report an honest baseline. **Still open.**
+- ☑ **#6 Coverage threshold** — **settled 2026-08-12: measure, then ratchet.** The
+  honest baseline in 0c is **0%**: the only shipped module is the activation entry
+  point, it imports `vscode`, and the unit tier cannot load it. Thresholds live in
+  `.c8rc.json`, go up and never down, and **a slice that adds code to `src/` raises
+  them in the same pull request**. Vendored generated OpenAPI clients are excluded
+  from the denominator. See `docs/dev/testing.md`.
 
 ---
 
@@ -193,10 +197,34 @@ git add -A && git commit -m "test: add mocha/test-electron harness and HTTP mock
 git push -u origin phase-0c-test-harness
 gh pr create --base main --head phase-0c-test-harness --fill
 ```
-☐ **Set the coverage starting threshold** now that the harness exists
-(`PRODUCTION_PLAN.md` §6, open decision #6). Pick a number the harness actually
-meets; it ratchets up per phase. **Exclude the vendored generated OpenAPI clients
-from the denominator**, or the ratchet is trivially gamed.
+☑ **Coverage starting threshold set** (open decision #6, settled above): 0%,
+which is what the suite honestly measures, plus the ratchet rule that makes the
+number climb. **Exclude the vendored generated OpenAPI clients from the
+denominator**, or the ratchet is trivially gamed.
+
+☐ **From here on, every slice that adds code to `src/` raises the thresholds in
+`.c8rc.json` in the same pull request** — run `npm run coverage`, read the
+summary table, round down, commit. This line is the ratchet; without it the
+starting number of 0 is where coverage stays.
+
+☑ **`npm run test:integration` run locally, 2026-08-12** — 3 passing, exit code 0,
+against a freshly downloaded VS Code 1.133.0 on win32-x64. This tier cannot run
+in a headless agent sandbox, so it was wired and type-checked blind; running it
+once here confirmed the two-halves runner, the discovery, the activation
+contract, and command registration all work against a real editor.
+
+☑ **Running the integration tier breaks `npm run lint` — fixed 2026-08-12.**
+`.vscode-test/` is git-ignored, ESLint flat config does not read `.gitignore`,
+and linting a gigabyte of downloaded VS Code exhausts the V8 heap. Found by
+running the tiers in the order a contributor would. If `npm run lint` ever dies
+with *"FATAL ERROR: Reached heap limit"* rather than reporting a rule violation,
+suspect a newly generated directory missing from the ignores block, not a rule.
+
+⚠️ **Run `npm ci` first if the agent has run `npm install` against this checkout.**
+The sandbox is Linux and your shell is Windows; they share the working tree, so
+`node_modules` ends up holding the wrong esbuild binary and `npm run build` fails
+before any test runs. This is a stale install, not a broken build. The lockfile
+carries every platform, so `npm ci` is always enough.
 
 ⛔ Merge 0c before 0d-i.
 
@@ -224,6 +252,15 @@ gh pr create --base main --head phase-0d-ii-security-scanning --fill
 ☐ Also check `AI-PR-REVIEWERS-RUNBOOK.md` into `docs/dev/` here, so a future
 maintainer can re-derive the reviewer setup without hunting through the viyapy
 project folder.
+
+☐ **Triage the three advisories `npm ci` reported on 2026-08-12** (1 low, 1
+moderate, 1 high) as part of designing the audit gate, rather than reflexively
+running `npm audit fix --force`. All three are in **dev**-only dependencies, so
+nothing reaches the VSIX — but they run on contributor machines and in CI, which
+is not nothing. The likely family is `@vscode/vsce`, which drags in the archived
+`keytar@7.9.0` and an old `glob@10.5.0`. Decide deliberately whether the gate
+fails on `--omit=dev` only, or on everything with documented exceptions; a gate
+that cries wolf about a packaging tool gets switched off within a month.
 
 ☐ Merge 0d-ii. Phase 0 is complete; start Phase 1.
 

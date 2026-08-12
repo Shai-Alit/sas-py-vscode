@@ -18,11 +18,15 @@ npm run verify
 `verify` is the whole gate, and it is the same chain CI runs in slice 0d-i:
 
 ```
-format:check  →  lint  →  typecheck  →  check:copyright  →  build
+format:check  →  lint  →  typecheck  →  check:copyright  →  build  →  coverage
 ```
 
 Run it before you push. If it passes locally it passes in CI; if it does not,
 that divergence is a bug in the toolchain and worth reporting.
+
+The last step runs the unit tests under c8 and enforces the coverage ratchet.
+The integration and live tiers are not in `verify` — one needs a display and the
+other needs a real deployment. See [testing.md](testing.md).
 
 ## The inner loop
 
@@ -48,10 +52,13 @@ the host provides that module at runtime, and bundling it breaks loading. Only
 which is why the packaged extension is a few kilobytes rather than a few
 megabytes.
 
-**tsc** never emits. esbuild strips types without checking them, so type errors
-would otherwise sail straight into a bundle. `npm run typecheck` is the only
-thing that actually type-checks, which is why it is in `verify` and why a build
-passing is not evidence of anything.
+**tsc** never emits anything that ships. esbuild strips types without checking
+them, so type errors would otherwise sail straight into a bundle. `npm run
+typecheck` is the only thing that actually type-checks, which is why it is in
+`verify` and why a build passing is not evidence of anything. It checks two
+projects: `tsconfig.json` for the extension, and `tsconfig.test.json` for the
+extension *and* the tests. The tests do emit — to `out/`, for Mocha to run — via
+`npm run compile:test`; `out/` is git-ignored and never packaged.
 
 **ESLint** (`eslint.config.mjs`) is type-aware, and deliberately encodes several
 `CONTRIBUTING.md` rules as lint errors rather than leaving them to review:
@@ -59,8 +66,9 @@ passing is not evidence of anything.
 - `no-console` — shipped code logs through the output channel, not stdout.
 - `no-empty` with `allowEmptyCatch: false` — silent failure is banned.
 - `Math.random` is restricted, naming the upstream PKCE defect in the message.
-- Two `no-restricted-syntax` selectors reject Viya version comparisons
-  everywhere except `src/dialects/`.
+- Three `no-restricted-syntax` selectors reject Viya version comparisons
+  everywhere except `src/dialects/` — a comparison on either side, a comparison
+  against the literal `"3.5"`, and a `switch` on a version field.
 
 A rule you can lint for is a rule you stop arguing about. If you have a
 legitimate reason to break one, disable it on the line with a comment saying
@@ -70,11 +78,23 @@ why — a reviewer will read that comment.
 last in the config to switch off anything stylistic, so the two never fight.
 
 **`scripts/check-copyright.mjs`** enforces the licence obligations. Every source
-file needs a copyright line and an SPDX identifier. Files ported from
-`sassoftware/vscode-sas-extension` must additionally carry a modification
-notice — Apache-2.0 §4(b) requires it, and preserving the SAS header alone does
-not satisfy it. The check reads only the leading comment block, so mentioning
-SAS Institute in the body of a file is fine.
+file needs a copyright line and an SPDX identifier. Any file that names
+`sassoftware/vscode-sas-extension` in its header must declare the relationship
+on a line beginning `Ported from:` or `Structure follows:`, and a `Ported from:`
+file must additionally carry a modification notice — Apache-2.0 §4(b) requires
+it, and preserving the SAS header alone does not satisfy it.
+
+That third rule exists because the first two could only catch the careful
+mistake. They key off the presence of the SAS copyright header, so a ported file
+that dropped the header entirely passed silently. Requiring the file to say what
+it is inverts that. The check cannot tell whether the declaration is *true* —
+nothing mechanical can — but a claim that is present and specific is reviewable,
+where an absent one gets inferred differently by every reader.
+
+The check reads only the leading comment block, so mentioning SAS Institute in
+the body of a file is fine, and the declaration markers must begin a line so
+that a file *discussing* the rule is not caught by it. This file's own checker
+was the first thing to trip that.
 
 ## Localisation
 
@@ -107,6 +127,27 @@ globally, add it to that list.
 that excludes it. Upgrading TypeScript past the range does not fail loudly; it
 silently disables every type-aware lint rule, which is most of the value in the
 config. Upgrade both together, and check `npm ls typescript-eslint` afterwards.
+
+**`node_modules` is not portable across platforms.** esbuild ships a native
+binary per platform, so a tree installed under WSL or a Linux container and then
+used from Windows fails with *"You installed esbuild for another platform than
+the one you're currently using"*. Nothing is corrupt; the wrong optional package
+is on disk. Run `npm ci` on the platform you are building from. The lockfile
+records all 26 esbuild targets, so `npm ci` is always sufficient and never needs
+a lockfile change. If you genuinely alternate between two platforms against one
+checkout, `npm install --no-save @esbuild/<platform>` adds the second binary
+without touching `package.json` or the lockfile — esbuild picks the right one at
+runtime when both are present.
+
+**ESLint does not read `.gitignore`.** Flat config has one ignore list, in
+`eslint.config.mjs`, and it has to repeat every generated directory by hand.
+Prettier 3 reads `.gitignore` by default, which is why `.prettierignore` is much
+shorter — the two files disagreeing is expected. The failure mode is memorable:
+after the first `npm run test:integration`, `.vscode-test/` holds about a
+gigabyte of downloaded VS Code, and linting its minified bundles kills the
+process with *"FATAL ERROR: Reached heap limit"* on a tree whose source has not
+changed. `test/unit/eslint-ignores.test.ts` asserts the ignores through ESLint's
+own resolver so the two lists cannot drift apart again.
 
 **`activationEvents` is empty, on purpose.** Since VS Code 1.74, a command
 declared in `contributes.commands` activates its extension implicitly — the

@@ -16,6 +16,10 @@ coverage/
 .vscode-test-web/
 test-results/
 
+# Throwaway test files. Excluded from tsconfig.test.json, ESLint, and the
+# copyright check as well — all four have to agree, or the exemption is a trap.
+test/scratch/
+
 # Localisation build output (l10n/bundle.l10n.json is generated, not authored)
 l10n/bundle.l10n.json
 

@@ -1,0 +1,24 @@
+{
+  // The tests compile with exactly the same strictness as the extension, and
+  // differ in only two ways: a wider `rootDir` so `test/` is in scope, and
+  // `mocha` added to `types`.
+  //
+  // Two configs rather than one, deliberately. If `describe` and `it` were in
+  // scope while writing `src/`, a test-only import could reach into production
+  // code and nothing would complain until someone loaded the extension. Keeping
+  // the test globals out of the extension's type space makes that mistake a
+  // compile error instead of a runtime one.
+  //
+  // Emits to `out/`, mirroring the source tree: `out/src/**` and `out/test/**`.
+  // Mocha runs the compiled JavaScript. That is one more step than `ts-node`,
+  // but it is the same JavaScript the extension host would load, and it removes
+  // a whole class of "passes under the transpiler, fails when bundled" bugs.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "out",
+    "types": ["node", "vscode", "mocha"]
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist", "out", "test/scratch"]
+}

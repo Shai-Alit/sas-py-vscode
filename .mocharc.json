@@ -1,0 +1,34 @@
+{
+  // Mocha runs compiled JavaScript out of `out/`, not TypeScript through a
+  // transpiler hook. See tsconfig.test.json for why.
+  "spec": ["out/test/unit/**/*.test.js"],
+
+  // Node's built-in source-map support, so a failing assertion points at the
+  // `.ts` line you wrote. Cheaper and less fragile than a `source-map-support`
+  // dependency, and it needs no `require` hook.
+  "node-option": ["enable-source-maps"],
+
+  // A unit test does no I/O: no network (the mock server refuses unhandled
+  // requests), no VS Code, no disk beyond reading a fixture. Anything taking
+  // longer than two seconds is not slow, it is stuck — and a generous timeout
+  // only delays that diagnosis. The integration and live tiers set their own.
+  "timeout": 2000,
+
+  // A run that executes no tests has not passed. Mocha's default is to exit 0
+  // in that case, so this is a real behaviour change and not decoration —
+  // verified against mocha 11.8.0, where a spec file that registers nothing
+  // exits 1 with this on and 0 with it off.
+  //
+  // It does not cover a `spec` that matches no files at all: Mocha already
+  // fails that with "No test files found", flag or no flag. What it catches is
+  // the case where files load and produce nothing — every test in a file
+  // commented out, or a `--grep` that matches nothing.
+  //
+  // Worth knowing before editing any key here: Mocha silently ignores keys it
+  // does not recognise. A typo in this file is not an error, it is a setting
+  // that quietly stops applying, so changes here want a probe rather than a
+  // green run.
+  "fail-zero": true,
+
+  "color": true
+}

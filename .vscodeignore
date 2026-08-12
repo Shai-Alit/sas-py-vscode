@@ -18,6 +18,10 @@ coverage/**
 esbuild.mjs
 eslint.config.mjs
 tsconfig.json
+tsconfig.test.json
+.mocharc.json
+.mocharc.live.json
+.c8rc.json
 
 PRODUCTION_PLAN.md
 PROBE-FINDINGS.md

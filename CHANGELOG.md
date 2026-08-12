@@ -27,6 +27,28 @@ called out under **Changed** with a migration note.
   trust posture), and ADR-0003 (extension host target).
 - `docs/dev/building.md` — prerequisites, the inner loop, and the toolchain
   constraints that fail silently rather than loudly.
+- Three-tier test harness: Mocha with `node:assert/strict` and Sinon for unit
+  tests, `@vscode/test-electron` for integration tests that launch a real editor,
+  and an opt-in live tier gated three separate ways behind
+  `PYTHON_ON_VIYA_TEST_*` environment variables.
+- HTTP mocking at the boundary with [msw](https://mswjs.io), configured so an
+  unmocked request fails the test rather than escaping to the network.
+- Coverage via c8 with a ratchet: thresholds start at zero, and every slice that
+  adds code to `src/` raises them in the same pull request. `npm run coverage`
+  joins `npm run verify`.
+- `docs/dev/testing.md` — the three tiers, the fixture rules, and the reasoning
+  behind what the stack deliberately leaves out.
+- Copyright check now requires any file referencing the upstream SAS extension
+  to declare the relationship as `Ported from:` or `Structure follows:`, closing
+  a gap where a ported file that dropped the SAS header passed silently.
+
+### Fixed
+
+- `npm run lint` no longer runs out of memory after the integration tier has been
+  run once. ESLint flat config does not read `.gitignore`, so the gigabyte of VS
+  Code that `@vscode/test-electron` downloads into `.vscode-test/` was being
+  linted; the ignore list now covers it, and a unit test asserts that through
+  ESLint's own resolver.
 
 ### Changed
 

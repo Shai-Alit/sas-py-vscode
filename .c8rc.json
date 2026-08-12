@@ -1,0 +1,13 @@
+{
+  "src": ["out/src"],
+  "all": true,
+  "exclude": ["out/test/**", "test/**"],
+  "excludeAfterRemap": true,
+  "reporter": ["text", "lcov"],
+  "reports-dir": "coverage",
+  "check-coverage": true,
+  "lines": 0,
+  "statements": 0,
+  "functions": 0,
+  "branches": 0
+}

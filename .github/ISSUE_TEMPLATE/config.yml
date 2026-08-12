@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Shai-Alit/sas-py-vscode/security/advisories/new
+    about: Report privately. Please do not open a public issue for a security problem.
+  - name: SAS Viya or SAS extension problem
+    url: https://github.com/sassoftware/vscode-sas-extension/issues
+    about: For issues in SAS Institute's own products, not this independent project.

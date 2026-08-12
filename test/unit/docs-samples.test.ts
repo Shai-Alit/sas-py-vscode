@@ -18,6 +18,11 @@ interface Block {
 interface CheckDocsSamples {
   extractBlocks: (markdown: string) => Block[];
   hasFlag: (block: Block, keyword: string) => boolean;
+  repoRelativeTarget: (declared: string) => {
+    location?: string;
+    reason?: string;
+  };
+  withinRepository: (root: string, candidate: string) => boolean;
 }
 
 /**
@@ -154,6 +159,116 @@ describe("docs sample extraction", () => {
       () => extractBlocks(["prose", `${fence}ts`, "const a = 1;"].join("\n")),
       /unterminated .* fence opened on line 2/,
       "an unterminated fence turns the rest of the page into a code block; it is a markdown bug worth naming.",
+    );
+  });
+});
+
+/**
+ * The `path=` flag is the one place in this toolchain where a string written in
+ * a markdown file chooses a filename to write to. Anyone who can open a pull
+ * request can edit `docs/`, so the flag is untrusted input and is tested as
+ * such — every case below is a way out of the repository, or something that
+ * looks like one.
+ */
+describe("docs sample path= validation", () => {
+  let repoRelativeTarget: CheckDocsSamples["repoRelativeTarget"];
+  let withinRepository: CheckDocsSamples["withinRepository"];
+
+  before(async () => {
+    ({ repoRelativeTarget, withinRepository } =
+      await loadScript<CheckDocsSamples>("check-docs-samples.mjs"));
+  });
+
+  it("accepts an ordinary repository-relative path", () => {
+    assert.equal(
+      repoRelativeTarget("test/unit/example.test.ts").location,
+      "test/unit/example.test.ts",
+    );
+  });
+
+  it("accepts a Windows-style separator, because contributors type them", () => {
+    assert.equal(
+      repoRelativeTarget("test\\unit\\example.test.ts").location,
+      "test/unit/example.test.ts",
+    );
+  });
+
+  it("rejects a path that climbs out with ..", () => {
+    for (const declared of [
+      "../outside.ts",
+      "test/../../outside.ts",
+      "test\\..\\..\\outside.ts",
+    ]) {
+      assert.match(
+        repoRelativeTarget(declared).reason ?? "",
+        /climbs out/,
+        declared,
+      );
+    }
+  });
+
+  it("rejects an absolute path, including a UNC share", () => {
+    for (const declared of [
+      "/etc/passwd",
+      "//attacker/share/x.ts",
+      "\\\\attacker\\share\\x.ts",
+    ]) {
+      assert.match(
+        repoRelativeTarget(declared).reason ?? "",
+        /absolute path/,
+        declared,
+      );
+    }
+  });
+
+  it("rejects a Windows drive letter, which is not repository-relative", () => {
+    // Raised in review as an escape. It is not one — `join` keeps a
+    // drive-qualified second argument *inside* the first, unlike `resolve` —
+    // but it is still not a path in this repository, and on Windows it fails
+    // at write time with an error about an invalid filename rather than an
+    // error about the flag that caused it. Both forms matter: `C:/x` is
+    // rooted, `C:x` is relative to the drive's current directory.
+    for (const declared of ["C:/temp/x.ts", "c:\\temp\\x.ts", "C:x.ts"]) {
+      assert.match(
+        repoRelativeTarget(declared).reason ?? "",
+        /Windows drive/,
+        declared,
+      );
+    }
+  });
+
+  it("rejects an empty declaration rather than writing to the repository root", () => {
+    // Not reachable through the flag syntax today: flags are split on
+    // whitespace, so a bare `path=` never matches `path=(.+)` and the block is
+    // treated as standalone instead. Asserted anyway, because the function is
+    // exported and an empty location would resolve to the repository root —
+    // the one input where "contained by the repository" is true and writing is
+    // still wrong.
+    assert.match(repoRelativeTarget("   ").reason ?? "", /is empty/);
+  });
+
+  it("normalises away the segments that mean nothing", () => {
+    assert.equal(
+      repoRelativeTarget("./test//unit/./x.ts").location,
+      "test/unit/x.ts",
+    );
+  });
+
+  it("confirms containment against the resolver, not against the string", () => {
+    // The guarantee, as opposed to the error message. Written with posix paths
+    // so it asserts the same thing on every platform in the matrix.
+    assert.equal(withinRepository("/repo", "/repo/test/x.ts"), true);
+    assert.equal(withinRepository("/repo", "/repo/../elsewhere/x.ts"), false);
+    assert.equal(withinRepository("/repo", "/elsewhere/x.ts"), false);
+    assert.equal(
+      withinRepository("/repo", "/repo"),
+      false,
+      "the root is not a file inside itself",
+    );
+    assert.equal(
+      withinRepository("/repo", "/repo-sibling/x.ts"),
+      false,
+      "a sibling whose name merely starts the same way is outside",
     );
   });
 });

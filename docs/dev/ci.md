@@ -76,6 +76,15 @@ That `path=` mechanism exists because of what the first real sample turned out
 to be: a mocha test. Without it, the only sample a checker can verify is one
 that imports nothing, which is not a useful class of sample.
 
+It is also the one place in this toolchain where a string written in a document
+chooses a filename to write to, so it is validated as untrusted input: a
+location must be relative, free of `..`, and not drive-qualified, and the
+resolved target is asserted to be inside the repository before the write. The
+rule is stated positively rather than as a list of forbidden shapes, because
+enumerating the ways out of a directory is a game you lose eventually — the
+containment assertion is the actual guarantee, and the syntactic rules exist to
+produce an error message that names the flag rather than the symptom.
+
 **`docs:build`** builds the VitePress site. This is a link check wearing a
 build's clothes — VitePress fails on dead internal links by default and
 `ignoreDeadLinks` is deliberately not set, which is the main reason it was

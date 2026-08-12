@@ -45,7 +45,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
@@ -144,6 +144,63 @@ function slugify(path) {
 }
 
 /**
+ * Validates a `path=` flag as a location inside the repository.
+ *
+ * This script writes a file to wherever `path=` says, so the flag is an
+ * instruction to write to a path taken from a document. Documents get edited by
+ * anyone who can open a pull request, which makes this the one place in the
+ * toolchain where a string in `docs/` chooses a filename.
+ *
+ * The rule is stated positively — a location is a relative path, made of
+ * ordinary segments, inside the repository — because the blocklist form of this
+ * check invites you to enumerate the ways out, and the list is longer than it
+ * looks. `..` and a leading `/` are the obvious two. `C:/temp/x.ts` is a third:
+ * harmless-looking, and rejected here not because `join` would honour it (it
+ * would not — see `withinRepository`) but because it is not a repository-relative
+ * path and the failure it does cause, an unwritable filename on Windows, would
+ * be reported as something else entirely.
+ *
+ * Returns the cleaned location, or a `reason` phrased to complete the sentence
+ * "declares path=X, which …".
+ */
+export function repoRelativeTarget(declared) {
+  const location = declared.replace(/\\/g, "/").trim();
+
+  if (location === "") return { reason: "is empty" };
+  if (/^[A-Za-z]:/.test(location)) {
+    return {
+      reason: "names a Windows drive rather than a path in the repository",
+    };
+  }
+  if (location.startsWith("/")) {
+    return { reason: "is an absolute path, not a path in the repository" };
+  }
+
+  const segments = location.split("/");
+  if (segments.includes("..")) {
+    return { reason: "climbs out of the repository with `..`" };
+  }
+
+  return { location: segments.filter((s) => s !== "" && s !== ".").join("/") };
+}
+
+/**
+ * True when `candidate` really does land inside `root`.
+ *
+ * `repoRelativeTarget` already rejects everything that could get out, so on the
+ * face of it this is redundant — and it is, right up until someone changes a
+ * `join` to a `resolve` in a refactor that looks like a no-op. It is not:
+ * `join("C:\\repo", "C:/tmp/x")` is `C:\repo\C:\tmp\x`, while `resolve` of the
+ * same two arguments is `C:\tmp\x`. The syntactic check is what produces a good
+ * error message; this is what makes the guarantee, and it holds against a
+ * mistake nobody would catch in review.
+ */
+export function withinRepository(root, candidate) {
+  const rel = relative(root, resolve(root, candidate));
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
  * The tsconfig that owns a repository-relative location. Test files compile
  * with mocha globals and a wider `rootDir`; everything else does not, and the
  * separation is load-bearing (see the comment at the top of tsconfig.test.json).
@@ -238,13 +295,14 @@ function main() {
       for (const flag of block.flags) {
         const declared = /^path=(.+)$/i.exec(flag);
         if (!declared) continue;
-        location = declared[1].replace(/\\/g, "/");
-        if (location.startsWith("/") || location.split("/").includes("..")) {
+        const checked = repoRelativeTarget(declared[1]);
+        if (checked.reason !== undefined) {
           console.error(
-            `check-docs-samples: ${relative(ROOT, file)} line ${block.startLine - 1} declares path=${location}, which escapes the repository.`,
+            `check-docs-samples: ${relative(ROOT, file)} line ${block.startLine - 1} declares path=${declared[1]}, which ${checked.reason}.`,
           );
           process.exit(2);
         }
+        location = checked.location;
       }
 
       samples.push({
@@ -288,6 +346,15 @@ function main() {
       group.forEach((sample, index) => {
         const generated = `__docs-sample-${index + 1}.ts`;
         const target = join(ROOT, dirname(sample.location), generated);
+        if (!withinRepository(ROOT, target)) {
+          // Unreachable via repoRelativeTarget, and asserted anyway: this is
+          // the line that turns a document into a filename, and the cost of
+          // being wrong here is a write outside the workspace.
+          console.error(
+            `check-docs-samples: refusing to write ${target}, which is outside the repository.`,
+          );
+          process.exit(2);
+        }
         mkdirSync(dirname(target), { recursive: true });
         writeFileSync(target, `${sample.content}\n`, "utf8");
         written.push(target);

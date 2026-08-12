@@ -61,7 +61,11 @@ called out under **Changed** with a migration note.
   `docs/`. A sample that imports from the repository declares where it lives
   (` ```ts path=test/unit/example.test.ts `) and is checked against the project
   that owns that directory; a deliberate fragment marks itself ` ```ts no-check `
-  and is counted in the output.
+  and is counted in the output. That `path=` is the one place where a string in
+  a document chooses a filename to write to, so it is validated as untrusted
+  input — a location must be relative, free of `..`, not drive-qualified, and
+  the resolved target is asserted to be inside the repository before anything is
+  written.
 - `npm run docs:links` and a weekly `link-check` workflow that sweeps external
   links and opens a `link-rot` issue instead of failing a pull request. A 403 or
   429 is reported as unverified rather than broken, because that is what a

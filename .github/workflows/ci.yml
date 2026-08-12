@@ -159,3 +159,48 @@ jobs:
           path: dist/python-on-viya.vsix
           if-no-files-found: error
           retention-days: 14
+
+  # Two questions about the dependency tree: what is allowed to run code at
+  # install time, and which advisories have been looked at. See ADR-0005.
+  #
+  # This job is pinned rather than folded into the matrix, and that is the whole
+  # design. `allowScripts` is understood only by npm 12+, and npm 12 requires
+  # Node ^22.22.2 || ^24.15.0 || >=26.0.0 — above the 20.19.0 floor that
+  # `engines.node` claims and that two legs of `test` deliberately exercise. So
+  # the control cannot run everywhere without moving the project's support
+  # floor, which is not a decision a security slice should make as a side
+  # effect. It runs in the one place that can run it.
+  #
+  # Be clear-eyed about what that buys: every *other* job here installs with
+  # those install scripts running, because the runners' bundled npm is 10.x.
+  # This job is the gate on what enters the lockfile, not a guarantee about how
+  # any given machine installed it. docs/dev/ci.md says so out loud.
+  supply-chain:
+    name: supply-chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # No Node release ships npm 12 — even Node 26 ships 11.x — so it is always
+      # a deliberate install. Pinned to the major because a future npm major
+      # could change what `allowScripts` means, and that should arrive as a
+      # decision rather than as a Tuesday morning surprise.
+      - run: npm install -g npm@^12.0.0
+
+      # `strict-allow-scripts=true` in .npmrc turns npm's "install scripts
+      # blocked" warning into ESTRICTALLOWSCRIPTS and a non-zero exit, so a new
+      # dependency that wants to run code at install time fails here until
+      # somebody approves or denies it on purpose.
+      - run: npm ci
+
+      # Advisories: nothing at all in the production tree, and nothing in the
+      # dev tree that is not in scripts/advisory-allowlist.json with a reason
+      # and an unexpired date. Needs the network, which is why it is not part of
+      # `npm run verify`.
+      - run: npm run check:audit

@@ -19,6 +19,13 @@
     "vscode": "^1.104.0",
     "node": ">=20.19.0"
   },
+  "allowScripts": {
+    "@vscode/vsce-sign": false,
+    "esbuild": false,
+    "fsevents": false,
+    "keytar": false,
+    "msw": false
+  },
   "categories": [
     "Programming Languages",
     "Data Science",
@@ -87,6 +94,7 @@
     "format:check": "prettier --check .",
     "check:copyright": "node scripts/check-copyright.mjs",
     "check:package": "node scripts/check-package.mjs",
+    "check:audit": "node scripts/check-audit.mjs",
     "check:docs": "npm run docs:reference:check && npm run docs:samples && npm run docs:links:self && npm run docs:build",
     "docs:reference": "node scripts/generate-reference.mjs",
     "docs:reference:check": "node scripts/generate-reference.mjs --check",

@@ -84,6 +84,35 @@ called out under **Changed** with a migration note.
   Docusaurus, why external links are swept on a schedule rather than gated, why
   self-links are resolved on disk instead, and why TypeDoc waits for an exported
   API.
+- A `supply-chain` CI job answering two questions about the dependency tree: what
+  may run code at install time, and which advisories somebody has actually read.
+- An install-script policy. Every package that can run code at install time —
+  `@vscode/vsce-sign`, `esbuild` at two versions, `fsevents`, `keytar` and `msw` —
+  is denied through `allowScripts` in `package.json`, and `strict-allow-scripts`
+  turns npm's "scripts were blocked" warning into a failed build. Denying them was
+  proven harmless against a clean install: the unit tests, the build, the docs
+  build and packaging all pass without them. A unit test reads `package-lock.json`
+  and fails if anything marked `hasInstallScript` is missing from the list, because
+  the list was written by hand and had already drifted once — `fsevents` is
+  optional and darwin-only, so it never shows up in an install on the machine the
+  list was written on.
+- `npm run check:audit`, which fails on any advisory in the production tree at any
+  severity — that tree has no dependencies in it, so an advisory there is news —
+  and requires every dev-tree advisory to appear in
+  `scripts/advisory-allowlist.json` with a reason and an unexpired date. The
+  allow-list is keyed on the GHSA identifier rather than the package, because
+  `npm audit` counts packages: its "6 vulnerabilities" covered 7 advisories, and
+  the one it folded away was a high-severity Windows-specific `vite` issue. An
+  audit that could not run is not reported as a clean one: `npm audit --json`
+  announces its own failure as valid JSON on stdout and exits 0, so the report is
+  checked for shape before it is believed, and a broken run exits 2 rather than
+  passing. Both audits have a two-minute timeout, so a hung registry fails the
+  job instead of holding it open.
+- ADR-0005 (supply chain policy), recording why the audit gate is asymmetric
+  between the production and development trees, why every allow-list entry
+  expires, why esbuild's `postinstall` turned out not to be load-bearing, and why
+  the whole thing runs in one pinned CI job — `allowScripts` needs npm 12, which
+  needs a Node newer than this project's supported floor.
 
 ### Fixed
 

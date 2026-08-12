@@ -1,15 +1,20 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-`main`. Four jobs: `verify`, `test`, `docs`, and `package`. A fifth check,
-`.github/workflows/link-check.yml`, runs weekly and is deliberately not part of
-the gate.
+`main`. Five jobs: `verify`, `test`, `docs`, `package`, and `supply-chain`. A
+separate workflow, `.github/workflows/link-check.yml`, runs weekly and is
+deliberately not part of the gate.
 
 The organising principle is that **CI runs commands you can run**. There is no
 step in this workflow that exists only in CI, no environment variable that
 changes behaviour there, and no "works locally, fails in CI" surface beyond the
 operating system itself. If a job is red, the command in its log is the command
 to run on your own machine.
+
+`supply-chain` is the one job that bends this, and it says so in its own section
+below: it needs a newer npm than the one your machine probably has, and it needs
+the network. The commands are still real commands, and the section tells you
+which two to run.
 
 ## verify
 
@@ -91,6 +96,15 @@ build's clothes — VitePress fails on dead internal links by default and
 chosen over the alternatives. The built site uploads as an artifact, because
 reviewing a documentation change against the rendered page beats reading a diff
 of markdown.
+
+It also compiles every page as a **Vue template**, which produces one failure
+mode that has nothing to do with links: an angle-bracket placeholder in prose,
+`<pkg>` or `<id>`, is read as an unclosed HTML element and fails the build with
+`Element is missing end tag`. A code span protects it — but only if the span
+does not wrap across a line. `` `npm install-scripts deny <pkg>` `` split over
+two source lines broke this job on 2026-08-12 while rendering as ordinary code
+in every other markdown viewer. Keep such a span on one line, or use a fenced
+block.
 
 **`docs:links:self`** resolves every link that points back at this repository —
 `https://github.com/Shai-Alit/sas-py-vscode/blob/main/…` — against the working
@@ -205,15 +219,124 @@ Exit codes are split: **1** means the package is wrong (fix `.vscodeignore`),
 **2** means the script or its input is wrong (missing archive, not a zip, or
 rules that failed their own examples).
 
+## supply-chain
+
+Two questions about the dependency tree, and nothing else: **what is allowed to
+run code at install time**, and **which advisories has somebody actually read**.
+The reasoning behind both answers is [ADR-0005](../adr/0005-supply-chain-policy.md);
+this section is about the job.
+
+```
+npm install -g npm@^12.0.0  →  npm ci  →  npm run check:audit
+```
+
+### Why this job is pinned instead of folded into the matrix
+
+The install-script policy is the `allowScripts` field in `package.json`, and
+`allowScripts` is understood **only by npm 12 and later**. npm 12 in turn
+requires Node `^22.22.2 || ^24.15.0 || >=26.0.0` — above the **20.19.0** floor
+that `engines.node` claims and that two legs of `test` deliberately exercise. The
+control therefore cannot run everywhere without moving the project's supported
+Node floor, and moving a support floor is not something a security slice should
+do as a side effect. So it runs in exactly one place, on one pinned npm.
+
+Be clear-eyed about what that buys. Every *other* job in this workflow installs
+with those install scripts **running**, because the GitHub runners' bundled npm
+is 10.x. This job is a gate on what is allowed to enter the lockfile. It is not a
+guarantee about how any particular machine performed its install, and it never
+claimed to be.
+
+The npm version is pinned to `^12.0.0` rather than `latest` because a future npm
+major could change what `allowScripts` means, and that should arrive as a
+decision somebody makes rather than as a Tuesday-morning surprise. No Node
+release ships npm 12 — Node 26.7.0 still ships npm 11.19.0 — so it is always a
+deliberate install.
+
+The job takes its Node version from `.nvmrc` like every other job, and `.nvmrc`
+says `22` rather than an exact version, so it resolves to the newest 22.x and
+clears npm 12's `^22.22.2` floor. Pinning `.nvmrc` to an exact 22.x below that
+would break this job on its `npm install -g` step, for reasons that would have
+nothing to do with the change that pinned it.
+
+### The trap in `strict-allow-scripts`
+
+`.npmrc` sets `strict-allow-scripts=true`, which promotes npm's "install scripts
+were blocked" *warning* into `ESTRICTALLOWSCRIPTS` and a non-zero exit. That is
+what turns a line of log nobody reads into a failed build.
+
+**npm 10 accepts that key, reports it as `true`, and does nothing with it.**
+`npm config get strict-allow-scripts` will happily tell you the control is on. It
+is not on; the key simply is not implemented in that version. This is the whole
+reason the job installs a specific npm rather than trusting whatever is present —
+a control that can silently evaporate while still reporting itself as enabled is
+worse than no control, because you stop looking.
+
+### check:audit
+
+`npm run check:audit` (`scripts/check-audit.mjs`) runs two audits and applies two
+different rules:
+
+- **Production tree** — `npm audit --omit=dev`. Any advisory at any severity
+  fails, and there is no allow-list. The extension has **zero** runtime
+  dependencies, so this tree is empty and an advisory appearing in it is news, not
+  routine.
+- **Dev tree** — every advisory must appear in `scripts/advisory-allowlist.json`
+  with a reason and an **unexpired** date. An entry that matches no current
+  advisory also fails, because a line that silently allows nothing is either a
+  fixed advisory nobody cleaned up or a typo in an identifier, and those are
+  indistinguishable from the outside.
+
+It needs the network, which is why it is not part of `npm run verify`.
+
+**The allow-list is keyed on the GHSA identifier**, and that is load-bearing.
+`npm audit` is organised by package, and its headline count is packages too: on
+2026-08-12 it reported "6 vulnerabilities" covering **7** distinct advisories,
+because three separate `vite` advisories collapse into one line of human-readable
+output. One of the three was a **high**-severity Windows-specific issue that the
+summary never named. An allow-list keyed on anything coarser than the advisory id
+would have silenced it.
+
+To add an entry you need the id, a `why` that is reasoning rather than a
+restatement, and an `expires`. The expiry is the point: an allow-list without
+expiry dates is just a mute button. When one lapses the build fails and somebody
+re-reads the advisory, which is the whole mechanism.
+
+As with `check:package`, exit codes are split — **1** means the policy was
+violated, **2** means the script or its input is wrong — and the classification
+logic checks itself against a fixed set of cases on every run.
+
+**An audit that could not run exits 2, not 0.** This is worth knowing because
+`npm audit --json` reports its own failure exactly the way it reports success:
+well-formed JSON, on stdout. Aimed at an unreachable registry it prints
+`{"message": "… connect ECONNREFUSED …", "error": {…}}` and exits **0**. So
+neither obvious signal is usable — the exit code is non-zero when the audit
+*worked* and found something, zero when it never ran, and the JSON parses either
+way. Without a shape check, that payload reads as an empty `vulnerabilities` map
+and the production rule announces a clean tree. Both audits also run under a
+two-minute timeout, so a hung registry fails this job rather than holding a
+runner open until GitHub reclaims it.
+
+### The deny-list is checked, not trusted
+
+`allowScripts` is written by hand, and `npm run test:unit` fails if it has fallen
+behind `package-lock.json` — either a package marked `hasInstallScript` with no
+entry, or an entry matching nothing. This runs in the unit tier rather than here
+because it needs no network and no npm 12: it is a comparison between two files
+in the repository, and a contributor should hit it on their own machine, before
+CI. The first version of the list was missing `fsevents`, which is optional and
+darwin-only and so invisible on the machine it was written on.
+
+This blocks a pull request where the weekly link sweep does not, and the
+difference is repetition. A rotted external link fails every run from now until
+someone fixes something they do not control. An advisory fails once, and the
+response is a dated line in a file that the contributor can write in the same
+pull request.
+
 ## What is deliberately not here yet
 
-- **Dependency audit, secret scanning, and CodeQL** — slice 0d-ii. Every
-  advisory `npm ci` currently reports is dev-only, and that is structural rather
-  than lucky: the extension has no runtime dependencies at all, so
-  `npm ls --omit=dev` prints an empty tree and nothing in `npm audit` can reach a
-  user. Adding VitePress took the count from three to six (`vite` → `esbuild`),
-  which is what a `--production` audit gate would have to be built to ignore.
-  They get triaged when that gate is designed, not by reflex.
+- **Secret scanning and CodeQL** — slice 0d-ii-b. The dependency audit landed in
+  0d-ii-a and is the `supply-chain` job above; static analysis and a
+  credential-shape scanner are the other half.
 - **An API reference** — `src/` has no exported surface worth documenting yet,
   so TypeDoc waits for one rather than generating a page of nothing.
 - **Deploying the site** — slice 5c. The `docs` job builds it and uploads it;

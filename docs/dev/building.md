@@ -28,6 +28,54 @@ The last step runs the unit tests under c8 and enforces the coverage ratchet.
 The integration and live tiers are not in `verify` — one needs a display and the
 other needs a real deployment. See [testing.md](testing.md).
 
+## Install scripts, and why your install differs from CI's
+
+Nothing in this dependency tree is allowed to run code at install time. The
+policy is the `allowScripts` field in `package.json`, and every package that can
+run a script — `@vscode/vsce-sign`, `esbuild` (at two versions), `fsevents`,
+`keytar`, `msw` — is denied. The reasoning is
+[ADR-0005](../adr/0005-supply-chain-policy.md); the short version is that this is
+the cheapest supply-chain attack there is, and denying them was proven harmless
+by running the real build, test, docs and package commands against a clean
+install with them blocked.
+
+If you add a dependency that ships an install script, `npm run test:unit` will
+fail until you record a decision about it in `allowScripts` — a unit test reads
+`package-lock.json` and compares. Record it with
+`npm install-scripts deny <pkg>` rather than editing the field by hand.
+
+**Your `npm install` almost certainly ignores that policy, and so does every CI
+job but one.** `allowScripts` is understood only by npm 12 and later, npm 12
+requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`, and no Node release bundles it
+— Node 26 still ships npm 11.x. The policy is enforced in exactly one place, the
+`supply-chain` CI job, which installs npm 12 explicitly. That job is the gate on
+what may enter the lockfile; it is not a claim about how your laptop installed
+anything.
+
+Two consequences worth internalising:
+
+- **Do not trust `npm config get strict-allow-scripts`.** npm 10 accepts that key
+  from `.npmrc` and reports it as `true` while implementing nothing at all. It
+  will tell you the control is on when it is not.
+- `.nvmrc` says `22`, unpinned, so CI resolves the newest 22.x and satisfies npm
+  12's floor. If that ever gets pinned to an exact version below **22.22.2**, the
+  `supply-chain` job stops being able to install npm 12 and will fail on the
+  install step rather than on anything to do with your change.
+
+If `npm ci` warns that install scripts were blocked and names a package you have
+not seen before, that is the control working — a new dependency wants to run code
+on your machine. Look at it, then record a decision:
+
+```bash
+npm install-scripts ls              # what wants to run, and from where
+npm install-scripts deny <package>  # the default answer
+npm install-scripts approve <package>
+```
+
+Let those commands write the `package.json` entry rather than hand-editing it,
+and say in the pull request why an approval is necessary — that is the one part
+of this a reviewer cannot check mechanically.
+
 ## The inner loop
 
 Press <kbd>F5</kbd>. That runs the `watch` build task and opens a second VS Code

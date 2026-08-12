@@ -315,47 +315,154 @@ PRODUCTION_PLAN.md §4.1. The short version: VitePress fails its own build on
 dead internal links, so the link gate rides along with a build we already run,
 and external rot is somebody else's outage rather than a reason to redden a PR.
 
+☑ **0d-ii split into 0d-ii-a and 0d-ii-b, 2026-08-12.** Same reasoning that split
+0d-i: the supply-chain half is a policy decision backed by an experiment, the
+scanning half is largely workflow wiring, and a reviewer should not have to hold
+both at once.
+
 ```bash
-# 0d-ii — security scanning
-git checkout main && git pull --ff-only && git checkout -b phase-0d-ii-security-scanning
-#   … 🤖 implement 0d-ii …
-git add -A && git commit -m "ci: add dependency audit, secret scanning, and CodeQL"
-git push -u origin phase-0d-ii-security-scanning
-gh pr create --base main --head phase-0d-ii-security-scanning --fill
+# 0d-ii-a — supply chain (audit gate + install-script policy)
+git checkout main && git pull --ff-only && git checkout -b phase-0d-ii-a-supply-chain
+#   … 🤖 implement 0d-ii-a …
+git add -A && git commit -F .git/COMMIT_0D_II_A.txt   # message written 2026-08-12
+git push -u origin phase-0d-ii-a-supply-chain
+gh pr create --base main --head phase-0d-ii-a-supply-chain --fill
 ```
+
+☑ **Settled 2026-08-12: all six advisories are unfixable, so the gate cannot fail
+on the dev tree as it stands.** Measured, not assumed. `mocha@11.8.0` is the
+latest stable and still depends on `diff@^7.0.0` and `serialize-javascript@^6.0.2`,
+both inside the vulnerable ranges; mocha 12 is only at `rc.6`. `npm audit fix
+--force` proposes mocha@11.3.0, which is a **downgrade** from what is installed
+and fixes nothing. `vitepress@1.6.4` is latest and pins `vite@^5.4.14` → `esbuild@0.21.5`;
+the only escape is `vitepress@2.0.0-alpha.19`. Re-check before assuming any of
+this is still true.
+
+☑ **Settled 2026-08-12: the gate is hard on production, allow-listed on dev.**
+`npm audit --omit=dev` fails at any severity — vacuous today, because the
+production tree is empty, but it is the real gate the day a runtime dependency
+lands. Dev advisories fail too unless they appear in a dated allow-list with an
+expiry, so a pull request that introduces a *new* one goes red at the moment it
+does it. The 3 → 6 jump in 0d-i-b, which came purely from adding VitePress, is
+the case this is built for: a gate on the raw total ratchets upward every time a
+dev tool lands and gets switched off within a month.
+
+☑ **Corrected 2026-08-12 after PR review: a failed audit was reading as a clean
+one.** Measured — `npm audit --json --registry=http://127.0.0.1:1` prints
+`{"message": "… connect ECONNREFUSED …", "error": {…}}` and exits **0**. So the
+exit code is useless in both directions (non-zero when the audit worked and found
+something, zero when it never ran) and the parse succeeds either way. With no
+`vulnerabilities` key the report read as an empty map and the production rule —
+the one with no allow-list — printed "clean". `runAudit` now validates the shape
+of the report and exits **2**, so a network failure is never filed as a security
+finding. The same review, and the Codex reviewer independently, caught that
+`execFileSync` had no timeout; both audits now run under a two-minute one, per
+`CONTRIBUTING.md`'s rule that every network call has a timeout and an abort path.
+
+☑ **Settled 2026-08-12: deny every install script.** This reverses what this
+runbook previously assumed. `@vscode/vsce-sign`, `esbuild` (0.28.2 and 0.21.5),
+`keytar` and `msw` are all deniable, proven by running the real commands with
+them blocked: 70 unit tests pass, and `npm run build`, `npm run docs:build`
+and `npm run package` all succeed.
+
+**Corrected 2026-08-12 after PR review: the deny-list was missing `fsevents`,**
+which the lockfile also marks `hasInstallScript`. Six lockfile entries, five
+package names — `esbuild` appears twice. It was missed because it is optional and
+`os: ["darwin"]`, so it never installs on the machine the list was written on,
+and the `supply-chain` job runs on `ubuntu-latest` and so can never exercise the
+denial either. Denying it is safe on the evidence — the published 2.3.3 tarball
+ships a prebuilt `fsevents.node` and its packed `package.json` has no `install`
+or `postinstall`; only the registry packument claims one — but *safe on the
+evidence* is not *demonstrated*, and the ADR says so. The durable fix is the unit
+test: `test/unit/audit-gate.test.ts` now reads `package-lock.json` and fails if
+any package with an install script has no entry in `allowScripts`, or if an entry
+matches nothing. Dependabot edits this lockfile most weeks; a hand-maintained
+list would have drifted again.
+
+**`esbuild`'s postinstall is not load-bearing**, contrary to the earlier note
+here. esbuild ≥0.19 resolves its platform binary through `optionalDependencies`;
+`install.js` only validates. Swapping in a genuine wrong-version binary produced
+a clear build-time error from the runtime guard at `esbuild/lib/main.js:930` —
+`Cannot start service: Host version "0.28.2" does not match binary version "0.21.5"`.
+Blocking the script moves the loud failure from install to first build and makes
+the message *more* specific, not less.
+
+**The policy lives in `package.json`, not `.npmrc`** — also a correction. npm's
+config documentation says the `.npmrc` `allow-scripts` key is for one-off and
+global contexts, and that passing `--allow-scripts` during a project-scoped
+`npm ci` is an error. The project field is `allowScripts`, which additionally
+supports explicit denials, and a denial is silently skipped rather than warned
+about forever. Let `npm install-scripts deny <pkg>` write it rather than hand-editing.
+
+☑ **Settled 2026-08-12: enforced in one dedicated CI job, not everywhere.**
+`allowScripts` is understood only by **npm 12.0.0+** — bisected; no 11.x release
+has it — and npm 12 requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`, so it
+**cannot run on the Node 20.19.0 floor** this project claims and tests in two
+matrix legs. No Node release ships npm 12 either; even Node 26.7.0 ships 11.19.0.
+So the control goes in a single `supply-chain` job pinned to Node 22 with npm 12
+installed explicitly, and the Node floor and the six-leg matrix are left alone.
+
+> **The trap this avoids:** npm 10 accepts `strict-allow-scripts=true` from
+> `.npmrc` and reports it as `true` while doing nothing at all. Setting it and
+> assuming it applies everywhere would have bought a control that silently does
+> not exist on most of the matrix. `engine-strict` with `engines.npm` would make
+> that loud, but it would also fail every Node 20 leg, which is why the floor
+> question had to be answered first.
+
+☑ **Divergence noted in `docs/dev/building.md`, 2026-08-12.** New section,
+*Install scripts, and why your install differs from CI's*: the policy, the fact
+that every job but `supply-chain` runs npm 10.x and therefore *does* run those
+scripts, the `npm config get strict-allow-scripts` trap, and the
+`npm install-scripts ls` / `deny` / `approve` loop. It also records a fragility
+worth knowing: `.nvmrc` says `22` unpinned, which is the only reason CI clears
+npm 12's `^22.22.2` floor — pinning it to an exact lower 22.x breaks the job on
+its `npm install -g` step for reasons unrelated to the change that pinned it.
+
+☐ Add the new `supply-chain` check to branch protection after it first reports —
+same `PUT` as above, which re-derives the contexts from what actually ran.
+
+```bash
+# 0d-ii-b — scanning (CodeQL + credential shapes + reviewer runbook)
+git checkout main && git pull --ff-only && git checkout -b phase-0d-ii-b-scanning
+#   … 🤖 implement 0d-ii-b …
+git add -A && git commit -m "ci: add CodeQL and a credential-shape scanner"
+git push -u origin phase-0d-ii-b-scanning
+gh pr create --base main --head phase-0d-ii-b-scanning --fill
+```
+
+☐ **GitHub's secret scanning does not cover this repository's actual risk.** It
+matches *partner patterns* — known token formats from specific vendors. A Viya
+bearer token is a generic JWT, and `creds.json` is expected to sit in the working
+tree by design. So 0d-ii-b adds a repo-local scanner for credential-shaped
+strings alongside the GitHub feature, rather than instead of it.
 
 ☐ Also check `AI-PR-REVIEWERS-RUNBOOK.md` into `docs/dev/` here, so a future
 maintainer can re-derive the reviewer setup without hunting through the viyapy
 project folder.
 
-☐ **Triage the six advisories `npm ci` reported on 2026-08-12** (1 low, 3
-moderate, 2 high) as part of designing the audit gate, rather than reflexively
-running `npm audit fix --force`. Named: `diff`/`mocha`, `serialize-javascript`,
-`esbuild`, `vite`/`vitepress`. All are **dev**-only, and structurally so —
-`npm ls --omit=dev` prints an empty tree, because the extension has no runtime
-dependencies at all — so nothing reaches the VSIX. They still run on contributor
-machines and in CI, which is not nothing; the `vite` path traversal and the
-`esbuild` dev-server advisory are both *local dev server* issues, which is
-exactly the surface `npm run docs:dev` opens.
+☐ **Enable the repository-side settings** (all free on a public repo, and this
+repo went public 2026-08-12): Dependabot alerts, secret scanning, push
+protection, and private vulnerability reporting.
 
-Note that the count went 3 → 6 in 0d-i-b, purely from adding VitePress. That is
-the shape of the problem: a gate on the raw total ratchets upward every time a
-dev tool lands and gets switched off within a month. Decide deliberately whether
-it fails on `--omit=dev` only (which here means never), or on everything with
-documented, expiring exceptions.
+```bash
+gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input - <<'JSON'
+{
+  "security_and_analysis": {
+    "secret_scanning": { "status": "enabled" },
+    "secret_scanning_push_protection": { "status": "enabled" }
+  }
+}
+JSON
+gh api -X PUT  repos/Shai-Alit/sas-py-vscode/vulnerability-alerts
+gh api -X PUT  repos/Shai-Alit/sas-py-vscode/private-vulnerability-reporting
+```
 
-☐ **Decide the install-script policy.** `npm ci` now warns that five packages
-have `install`/`postinstall` scripts not covered by `allowScripts`:
-`@vscode/vsce-sign`, `esbuild` (twice, two versions), `keytar@7.9.0`, and `msw`.
-Arbitrary code at install time is the supply-chain surface that actually gets
-exploited, and `esbuild`'s postinstall is load-bearing — it fetches the platform
-binary, and this project has already been bitten once by a `node_modules` tree
-with the wrong one. So the answer is an explicit allow-list, not
-`ignore-scripts=true`. Pin it in `.npmrc` in the same pull request as the audit
-gate, and say in `docs/dev/building.md` what a contributor should do when the
-warning names something new.
+☐ Tighten **Settings → Actions → General → Fork pull request workflows** to
+require approval for **all outside collaborators**. Deferred from the going-public
+audit; no workflow uses `pull_request_target`, so fork PRs cannot currently reach
+the Azure secrets, but this closes the door rather than relying on that holding.
 
-☐ Merge 0d-ii. Phase 0 is complete; start Phase 1.
+☐ Merge 0d-ii-b. Phase 0 is complete; start Phase 1.
 
 ### Phase 1 — Authentication
 

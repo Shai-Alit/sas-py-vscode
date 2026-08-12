@@ -472,8 +472,8 @@ correct squiggle positions; clear on re-run; optional quick actions. *Small/medi
 code from 2b onward; this slice completes them, hardens the
 contracts ↔ dialect ↔ fixtures checker, and wires it into CI as a gate. *Small/medium.*
 
-**5b — Live test tier.** Opt-in, env-gated live tests (`PYTHON_ON_VIYA_TEST_4_*` /
-`PYTHON_ON_VIYA_TEST_35_*`), with the 3.5 tier as a skipped scaffold. Nothing live runs in
+**5b — Live test tier.** Opt-in, env-gated live tests (`PYTHON_ON_VIYA_TEST_VIYA4_*` /
+`PYTHON_ON_VIYA_TEST_VIYA35_*`), with the 3.5 tier as a skipped scaffold. Nothing live runs in
 default CI. *Medium.*
 
 **5c — Docs publishing and release engineering.** The docs themselves were written
@@ -608,8 +608,8 @@ data**. The viyapy generation-parameterised fixture idiom applies: happy paths r
 once per generation so a dialect regression fails loudly.
 
 **Live tests are gated three ways**: an opt-in npm script, per-generation env vars
-(`PYTHON_ON_VIYA_TEST_4_HOST` / `_TOKEN` / …), and a separate `ALLOW_MUTATION` flag for
-anything that writes to the deployment. Mutating tests are self-cleaning with
+(`PYTHON_ON_VIYA_TEST_VIYA4_URL` / `_TOKEN` / …), and a separate
+`PYTHON_ON_VIYA_ALLOW_MUTATION` flag for anything that writes to the deployment. Mutating tests are self-cleaning with
 per-run unique names and cleanup in `finally`.
 
 **Coverage** starts at a threshold the Phase 0 harness actually meets and ratchets
@@ -736,9 +736,16 @@ marketplace listing, the release checklist — not the first time docs get writt
 5. **Coexistence with the SAS extension** (Phase 1a). If both are installed, share
    connection profiles or keep them separate? Sharing is friendlier but couples us
    to their schema. *Recommend separate for v1.*
-6. **Coverage starting threshold** (Phase 0c). Set once the harness exists.
-   **Exclude the vendored generated OpenAPI clients from the denominator**, or the
-   ratchet is trivially gamed.
+6. ~~**Coverage starting threshold**~~ — **SETTLED 2026-08-12: 0%, with a
+   ratchet.** The only shipped module is the activation entry point; it imports
+   `vscode`, so it is unloadable outside an extension host and invisible to c8.
+   Any non-zero number would have been fiction. The rule that makes zero safe is
+   the ratchet: **a slice that adds code to `src/` raises the thresholds in the
+   same pull request**, to just under whatever the suite then measures.
+   Thresholds go up and never down. The vendored generated OpenAPI clients are
+   the one sanctioned exclusion from the denominator — everything else stays in,
+   because excluding hard-to-test code is how a ratchet gets gamed. Recorded in
+   `.c8rc.json` and `docs/dev/testing.md`, executed in 0c.
 7. **Notebook format** (Phase 9a). ipynb-compatible vs bespoke. *Recommend ipynb —
    the Python ecosystem expects it — but defer until Phase 9.*
 8. **Package installation into Viya** (Phase 10). Governance question, not a

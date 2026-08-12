@@ -1,0 +1,23 @@
+{
+  // Mocha runs compiled JavaScript out of `out/`, not TypeScript through a
+  // transpiler hook. See tsconfig.test.json for why.
+  "spec": ["out/test/unit/**/*.test.js"],
+
+  // Node's built-in source-map support, so a failing assertion points at the
+  // `.ts` line you wrote. Cheaper and less fragile than a `source-map-support`
+  // dependency, and it needs no `require` hook.
+  "node-option": ["enable-source-maps"],
+
+  // A unit test does no I/O: no network (the mock server refuses unhandled
+  // requests), no VS Code, no disk beyond reading a fixture. Anything taking
+  // longer than two seconds is not slow, it is stuck — and a generous timeout
+  // only delays that diagnosis. The integration and live tiers set their own.
+  "timeout": 2000,
+
+  // A run that finds no tests has not passed, whatever the exit code says.
+  // This is the setting that catches a stale glob after a directory rename,
+  // which otherwise reads as a green build with an empty test suite.
+  "fail-zero": true,
+
+  "color": true
+}

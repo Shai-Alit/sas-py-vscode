@@ -88,8 +88,8 @@ test.** Fixtures live under `test/fixtures/viya4/` and `test/fixtures/viya35/`;
 happy paths run once per generation so a dialect regression fails loudly.
 
 Live tests are gated three ways: the opt-in script, per-generation environment
-variables, and a separate `ALLOW_MUTATION` flag for anything that writes to a
-deployment. Mutating tests use per-run unique names and clean up in `finally`.
+variables, and a separate `PYTHON_ON_VIYA_ALLOW_MUTATION` flag for anything that
+writes to a deployment. Mutating tests use per-run unique names and clean up in `finally`.
 
 ## Documentation
 

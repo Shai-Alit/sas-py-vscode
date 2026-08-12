@@ -18,11 +18,15 @@ npm run verify
 `verify` is the whole gate, and it is the same chain CI runs in slice 0d-i:
 
 ```
-format:check  →  lint  →  typecheck  →  check:copyright  →  build
+format:check  →  lint  →  typecheck  →  check:copyright  →  build  →  coverage
 ```
 
 Run it before you push. If it passes locally it passes in CI; if it does not,
 that divergence is a bug in the toolchain and worth reporting.
+
+The last step runs the unit tests under c8 and enforces the coverage ratchet.
+The integration and live tiers are not in `verify` — one needs a display and the
+other needs a real deployment. See [testing.md](testing.md).
 
 ## The inner loop
 
@@ -48,10 +52,13 @@ the host provides that module at runtime, and bundling it breaks loading. Only
 which is why the packaged extension is a few kilobytes rather than a few
 megabytes.
 
-**tsc** never emits. esbuild strips types without checking them, so type errors
-would otherwise sail straight into a bundle. `npm run typecheck` is the only
-thing that actually type-checks, which is why it is in `verify` and why a build
-passing is not evidence of anything.
+**tsc** never emits anything that ships. esbuild strips types without checking
+them, so type errors would otherwise sail straight into a bundle. `npm run
+typecheck` is the only thing that actually type-checks, which is why it is in
+`verify` and why a build passing is not evidence of anything. It checks two
+projects: `tsconfig.json` for the extension, and `tsconfig.test.json` for the
+extension *and* the tests. The tests do emit — to `out/`, for Mocha to run — via
+`npm run compile:test`; `out/` is git-ignored and never packaged.
 
 **ESLint** (`eslint.config.mjs`) is type-aware, and deliberately encodes several
 `CONTRIBUTING.md` rules as lint errors rather than leaving them to review:
@@ -59,8 +66,9 @@ passing is not evidence of anything.
 - `no-console` — shipped code logs through the output channel, not stdout.
 - `no-empty` with `allowEmptyCatch: false` — silent failure is banned.
 - `Math.random` is restricted, naming the upstream PKCE defect in the message.
-- Two `no-restricted-syntax` selectors reject Viya version comparisons
-  everywhere except `src/dialects/`.
+- Three `no-restricted-syntax` selectors reject Viya version comparisons
+  everywhere except `src/dialects/` — a comparison on either side, a comparison
+  against the literal `"3.5"`, and a `switch` on a version field.
 
 A rule you can lint for is a rule you stop arguing about. If you have a
 legitimate reason to break one, disable it on the line with a comment saying

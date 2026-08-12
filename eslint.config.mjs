@@ -108,6 +108,38 @@ export default tseslint.config(
     },
   },
 
+  // Tests are linted as strictly as the source they exercise. A test that only
+  // compiles under looser rules is testing something the extension cannot do.
+  //
+  // Type information comes from tsconfig.test.json rather than the project
+  // service, because the nearest tsconfig.json to `test/` is the extension's,
+  // and that one deliberately does not include test files.
+  {
+    files: ["test/**/*.ts"],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.strictTypeChecked,
+      tseslint.configs.stylisticTypeChecked,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.test.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      globals: { ...globals.node, ...globals.mocha },
+    },
+    rules: {
+      // A test runner reports to a terminal. There is no output channel here,
+      // and no user to protect from it.
+      "no-console": "off",
+
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        { prefer: "type-imports", fixStyle: "inline-type-imports" },
+      ],
+    },
+  },
+
   // Build and tooling scripts: plain ESM, no type information available.
   {
     files: ["**/*.mjs"],

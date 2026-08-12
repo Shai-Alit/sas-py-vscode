@@ -1,0 +1,18 @@
+{
+  // The live tier gets its own config file rather than a `--spec` override on
+  // the command line, because `--spec` does not replace the `spec` in
+  // `.mocharc.json` — Mocha merges the two, and `npm run test:live` would
+  // quietly run the unit suite as well. Verified, not assumed.
+  "spec": ["out/test/live/**/*.test.js"],
+
+  "node-option": ["enable-source-maps"],
+
+  // These tests cross a network to a real deployment. Two seconds is the right
+  // number for a unit test and the wrong one here.
+  "timeout": 30000,
+
+  // Deliberately absent: `fail-zero`. Every test in this tier skips itself when
+  // its generation is not configured, and a machine with no Viya 3.5 to point
+  // at should report skips rather than a failure.
+  "color": true
+}

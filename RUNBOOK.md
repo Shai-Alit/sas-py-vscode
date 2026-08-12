@@ -53,8 +53,12 @@ bake into `LICENSE` and `package.json` and are painful to change later:
   Executed in 0b.
 - ☑ **#4 Web/browser target** — **settled 2026-08-12: node-only**, revisitable at
   Phase 6+. ADR-0003. Executed in 0b.
-- **#6 Coverage threshold** — the *starting* number only; you set the real value in
-  0c once the harness exists and can report an honest baseline. **Still open.**
+- ☑ **#6 Coverage threshold** — **settled 2026-08-12: measure, then ratchet.** The
+  honest baseline in 0c is **0%**: the only shipped module is the activation entry
+  point, it imports `vscode`, and the unit tier cannot load it. Thresholds live in
+  `.c8rc.json`, go up and never down, and **a slice that adds code to `src/` raises
+  them in the same pull request**. Vendored generated OpenAPI clients are excluded
+  from the denominator. See `docs/dev/testing.md`.
 
 ---
 
@@ -193,10 +197,21 @@ git add -A && git commit -m "test: add mocha/test-electron harness and HTTP mock
 git push -u origin phase-0c-test-harness
 gh pr create --base main --head phase-0c-test-harness --fill
 ```
-☐ **Set the coverage starting threshold** now that the harness exists
-(`PRODUCTION_PLAN.md` §6, open decision #6). Pick a number the harness actually
-meets; it ratchets up per phase. **Exclude the vendored generated OpenAPI clients
-from the denominator**, or the ratchet is trivially gamed.
+☑ **Coverage starting threshold set** (open decision #6, settled above): 0%,
+which is what the suite honestly measures, plus the ratchet rule that makes the
+number climb. **Exclude the vendored generated OpenAPI clients from the
+denominator**, or the ratchet is trivially gamed.
+
+☐ **From here on, every slice that adds code to `src/` raises the thresholds in
+`.c8rc.json` in the same pull request** — run `npm run coverage`, read the
+summary table, round down, commit. This line is the ratchet; without it the
+starting number of 0 is where coverage stays.
+
+☐ **Run `npm run test:integration` locally before merging 0c.** It downloads and
+launches a real VS Code and so cannot run in a headless agent sandbox — the tier
+is wired and type-checked but has never been executed. Do this once here so the
+first failure is found while the harness is the only thing that could have
+caused it.
 
 ⛔ Merge 0c before 0d-i.
 

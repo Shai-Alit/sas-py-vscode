@@ -11,8 +11,13 @@
   // number for a unit test and the wrong one here.
   "timeout": 30000,
 
-  // Deliberately absent: `fail-zero`. Every test in this tier skips itself when
-  // its generation is not configured, and a machine with no Viya 3.5 to point
-  // at should report skips rather than a failure.
+  // Deliberately absent: `fail-zero`. A machine with no Viya to point at should
+  // report skips, not a failure.
+  //
+  // Today that would hold even with the flag on, because these suites register
+  // a pending test and Mocha counts pending tests as encountered. The flag stays
+  // off for the pattern one refactor away: a `describe` that reads the gate and
+  // returns before registering any `it` produces a genuinely empty run, and on
+  // an unconfigured machine that is the correct outcome rather than an error.
   "color": true
 }

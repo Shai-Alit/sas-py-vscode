@@ -655,7 +655,8 @@ documenting — the API reference from TSDoc via TypeDoc. Hand-written copies of
 machine-readable facts go stale silently — the same failure mode as the test
 anti-goal in §4. CI regenerates and fails if the committed output differs.
 
-> **Settled 2026-08-12 (in 0d-i-b): TypeDoc is deferred.** `src/` is one
+> **Settled 2026-08-12 (in 0d-i-b): TypeDoc is deferred.** Recorded as
+> [ADR-0004](docs/adr/0004-documentation-toolchain.md). `src/` is one
 > activation file with no exported surface, so a generated API reference would be
 > an empty page sitting under a diff gate, churning on every early change and
 > documenting nothing. The settings and command reference ships now; TypeDoc
@@ -695,7 +696,9 @@ the site, the marketplace listing, the release checklist — not the first time 
 get written.
 
 > **Settled 2026-08-12 (in 0d-i-b): VitePress, and external links are swept on a
-> schedule rather than gated on pull requests.**
+> schedule rather than gated on pull requests.** Recorded in full, with the
+> rejected alternatives, as
+> [ADR-0004](docs/adr/0004-documentation-toolchain.md).
 >
 > VitePress over Docusaurus — which is what upstream runs — because it is
 > markdown-first and needs almost no restructuring of `docs/`, and because its

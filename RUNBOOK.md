@@ -267,7 +267,8 @@ the plan wanted CI to fail on a diff against a file `.gitignore` was keeping out
 of the repo, and only one of those could survive.
 
 ☑ **Settled 2026-08-12, in 0d-i-b: VitePress; external links swept weekly, not
-gated on PRs; TypeDoc deferred until there is an exported API.** Rationale in
+gated on PRs; TypeDoc deferred until there is an exported API.** Recorded as
+[ADR-0004](docs/adr/0004-documentation-toolchain.md); summarised in
 PRODUCTION_PLAN.md §4.1. The short version: VitePress fails its own build on
 dead internal links, so the link gate rides along with a build we already run,
 and external rot is somebody else's outage rather than a reason to redden a PR.

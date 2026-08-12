@@ -54,10 +54,10 @@ session and need no wrapper.
 
 ## docs
 
-One step, `npm run check:docs`, which is three checks in a row:
+One step, `npm run check:docs`, which is four checks in a row:
 
 ```
-docs:reference:check  →  docs:samples  →  docs:build
+docs:reference:check  →  docs:samples  →  docs:links:self  →  docs:build
 ```
 
 **`docs:reference:check`** regenerates the settings and command tables from
@@ -82,6 +82,36 @@ build's clothes — VitePress fails on dead internal links by default and
 chosen over the alternatives. The built site uploads as an artifact, because
 reviewing a documentation change against the rendered page beats reading a diff
 of markdown.
+
+**`docs:links:self`** resolves every link that points back at this repository —
+`https://github.com/Shai-Alit/sas-py-vscode/blob/main/…` — against the working
+tree, and fails if it names a file that is not there. No network, so it is safe
+in front of a pull request.
+
+This exists because of the shape of the documents. VitePress's `srcDir` is
+`docs/`, so a relative link that climbs above it — to `PROBE-FINDINGS.md`,
+`CONTRIBUTING.md`, `test/fixtures/README.md` — names a file the site cannot
+resolve or publish, and those three are written as absolute GitHub URLs
+instead. Left there, that would be a quiet downgrade: a link checked on every
+pull request by a build that fails becomes a link checked once a week by a
+sweep that files an issue.
+
+It is also, less obviously, a link that would be checked *wrongly*. **GitHub
+answers 404, not 403, for a private repository**, so while this repo is private
+every self-link reads as broken to an anonymous client. The first live run of
+the weekly sweep reported five broken links and all five were fine — a report
+that is mostly false on its first outing, which is precisely the cry-wolf
+failure the sweep is designed around.
+
+Resolving them on disk fixes both at once, and is better than either thing it
+replaces: exact rather than probabilistic, and early enough that a rename is
+caught by the pull request doing the renaming. GitHub *feature* URLs under the
+same repository — `/commits/main`, `/security/advisories/new` — have no file
+behind them, so they are skipped and counted as skipped.
+
+Alternatives rejected: symlinking those files into `docs/` (two copies of one
+document, and Windows checkouts handle symlinks poorly), and setting
+`ignoreDeadLinks` to a pattern (blunting the gate for every link, to fix three).
 
 ## Link check (weekly, not a gate)
 

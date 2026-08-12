@@ -66,6 +66,18 @@ called out under **Changed** with a migration note.
   links and opens a `link-rot` issue instead of failing a pull request. A 403 or
   429 is reported as unverified rather than broken, because that is what a
   working link returns when the far end dislikes a datacentre IP.
+- `npm run docs:links:self`, part of `check:docs`, which resolves every link that
+  points back at this repository against the working tree and fails the build if
+  it names a file that is not there. Links out of `docs/` have to be written as
+  absolute GitHub URLs because VitePress cannot resolve a path above its
+  `srcDir`; checking them on disk keeps them gated per pull request, and is the
+  only correct check while the repository is private — GitHub answers 404, not
+  403, to an anonymous request for a private repo, so the first live run of the
+  weekly sweep reported five broken links and all five were fine.
+- ADR-0004 (documentation toolchain), recording why VitePress was chosen over
+  Docusaurus, why external links are swept on a schedule rather than gated, why
+  self-links are resolved on disk instead, and why TypeDoc waits for an exported
+  API.
 
 ### Fixed
 

@@ -65,9 +65,16 @@ Every slice follows this. It is the same loop viyapy uses.
 ### B1 — Cut the branch
 
 ```bash
-git checkout main && git pull
-git checkout -b phase-<slice>-<slug>
+git checkout main && git pull --ff-only && git checkout -b phase-<slice>-<slug>
 ```
+
+> **Why this is one chained line.** It used to be two lines, and that cost a
+> rebase on slice 0b. `git pull` aborted — local edits would have been
+> overwritten — but the next line ran anyway and cut the branch from a stale
+> `main`. The slice was built, committed, pushed, and a PR opened before anyone
+> noticed, and the PR diff duplicated three files that had already merged.
+> `&&` stops the sequence dead, and `--ff-only` refuses to paper over divergence
+> with a merge commit. Do not split this back into separate lines.
 
 🤖 **Implement.** Agent writes code + tests + fixtures + docs + `CHANGELOG.md`
 entry under `[Unreleased]`, in scoped Conventional Commits.
@@ -90,8 +97,9 @@ gh pr merge --squash --delete-branch
 ```
 
 > **⛔ Merge barrier.** Slices within a phase are sequential. The
-> `git checkout main && git pull` at the top of the next slice only picks up the
-> previous one if that PR is **already merged**. Do not batch-run these blocks.
+> `git pull --ff-only` at the top of the next slice only picks up the previous
+> one if that PR is **already merged**. Do not batch-run these blocks — and if a
+> pull fails, stop and fix it rather than running the rest of the block.
 
 ### Conventions
 
@@ -121,8 +129,7 @@ into the repo and stands up the `docs/` skeleton (`PRODUCTION_PLAN.md` §4.1).
 
 ```bash
 # 0a — scaffold, hygiene, and licensing
-git checkout main && git pull
-git checkout -b phase-0a-scaffold
+git checkout main && git pull --ff-only && git checkout -b phase-0a-scaffold
 #   … 🤖 implement 0a …
 git add -A
 # hold back files that belong to later slices, not to 0a
@@ -143,8 +150,7 @@ gh pr create --base main --head phase-0a-scaffold --fill
 
 ```bash
 # 0a-ii — AI reviewer bootstrap (files already prepared in .github/)
-git checkout main && git pull
-git checkout -b phase-0a-ii-ai-reviewers
+git checkout main && git pull --ff-only && git checkout -b phase-0a-ii-ai-reviewers
 git add .github/workflows/claude-review.yml .github/workflows/ai-review.yml .github/scripts/ai_review.py
 git commit -m "ci: add Claude and Codex PR reviewer workflows"
 git push -u origin phase-0a-ii-ai-reviewers
@@ -171,8 +177,7 @@ to know now, not after four more slices have merged unreviewed.
 
 ```bash
 # 0b — TypeScript toolchain
-git checkout main && git pull
-git checkout -b phase-0b-toolchain
+git checkout main && git pull --ff-only && git checkout -b phase-0b-toolchain
 #   … 🤖 implement 0b …
 git add -A && git commit -m "chore(ci): add TypeScript toolchain, lint, and bundling"
 git push -u origin phase-0b-toolchain
@@ -182,8 +187,7 @@ gh pr create --base main --head phase-0b-toolchain --fill
 
 ```bash
 # 0c — test harness
-git checkout main && git pull
-git checkout -b phase-0c-test-harness
+git checkout main && git pull --ff-only && git checkout -b phase-0c-test-harness
 #   … 🤖 implement 0c …
 git add -A && git commit -m "test: add mocha/test-electron harness and HTTP mocking layer"
 git push -u origin phase-0c-test-harness
@@ -198,8 +202,7 @@ from the denominator**, or the ratchet is trivially gamed.
 
 ```bash
 # 0d-i — core CI and packaging
-git checkout main && git pull
-git checkout -b phase-0d-i-core-ci
+git checkout main && git pull --ff-only && git checkout -b phase-0d-i-core-ci
 #   … 🤖 implement 0d-i …
 git add -A && git commit -m "ci: add lint, type-check, test matrix, and vsix packaging"
 git push -u origin phase-0d-i-core-ci
@@ -211,8 +214,7 @@ gh pr create --base main --head phase-0d-i-core-ci --fill
 
 ```bash
 # 0d-ii — security scanning
-git checkout main && git pull
-git checkout -b phase-0d-ii-security-scanning
+git checkout main && git pull --ff-only && git checkout -b phase-0d-ii-security-scanning
 #   … 🤖 implement 0d-ii …
 git add -A && git commit -m "ci: add dependency audit, secret scanning, and CodeQL"
 git push -u origin phase-0d-ii-security-scanning
@@ -401,8 +403,7 @@ before writing the serializer.
 ☐ **D4.** Tag from the merge commit on `main`:
 
 ```bash
-git checkout main && git pull
-git tag v0.1.0
+git checkout main && git pull --ff-only && git tag v0.1.0
 git push origin v0.1.0
 ```
 
@@ -452,8 +453,7 @@ reviewer that misses **all** of those is misconfigured, not merely quiet.
 The file `test/scratch/reviewer-smoke.ts` is already prepared in your working copy.
 
 ```bash
-git checkout main && git pull
-git checkout -b ci-reviewer-smoke-test
+git checkout main && git pull --ff-only && git checkout -b ci-reviewer-smoke-test
 git add test/scratch/reviewer-smoke.ts
 git commit -m "test: reviewer smoke test"
 git push -u origin ci-reviewer-smoke-test

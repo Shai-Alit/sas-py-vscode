@@ -54,6 +54,12 @@ state. Fixtures are sanitised of hostnames, tokens, user names, and paths before
 being committed. Secret scanning runs in CI, but it should never be the thing that
 catches you.
 
+The one place this is enforced mechanically today is packaging: `npm run package`
+runs `npm run check:package`, which opens the built `.vsix` and fails if anything
+shaped like a credential — `creds.json`, a `.env`, a key or certificate — got
+swept in. `.vscodeignore` is allow-by-default, so that mistake ships silently
+otherwise. See [docs/dev/ci.md](docs/dev/ci.md).
+
 **No `console.log` in shipped code.** Use the output channel.
 
 **All user-facing strings go through `l10n.t()`.**

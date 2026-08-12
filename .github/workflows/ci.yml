@@ -1,0 +1,128 @@
+name: CI
+
+# The gate. Everything here is reproducible locally — `npm run verify` is the
+# same command, not a subset of it — so a red build is always something you can
+# reproduce on your own machine. See docs/dev/ci.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Read-only by default. No job here needs to write to the repository, and the
+# two jobs that produce something write it to an artifact instead. If a future
+# job needs more, grant it on that job rather than widening this.
+permissions:
+  contents: read
+
+# A superseded run tells you about code nobody is looking at any more. Keyed on
+# the PR when there is one and the ref otherwise, so pushes to main are not
+# cancelled by each other's PRs.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Everything platform-independent, once. Splitting these into separate steps
+  # would give prettier failure annotations and would also let CI and the local
+  # command drift apart a step at a time; running the real `verify` is worth
+  # reading one extra line of log to find out which stage failed.
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          # The version contributors are told to use, read from one place so
+          # this file cannot disagree with it.
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `ci`, never `install`: it installs exactly the lockfile and fails if
+      # package.json and the lockfile disagree, which is a thing worth failing on.
+      - run: npm ci
+
+      - run: npm run verify
+
+      # Uploaded even on failure — when the coverage ratchet is what failed, the
+      # report is the thing you need to see.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The tiers that can behave differently per platform. Both Node versions are
+  # deliberate: 20.19.0 is the exact floor `engines.node` claims to support, and
+  # a claimed floor nobody tests is a guess. When this line is dropped, the
+  # floor in package.json has to move with it.
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      # One platform failing is information about that platform, not a reason to
+      # stop finding out about the others.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: ["20.19.0", "22"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run test:unit
+
+      # The integration tier launches a real VS Code, which needs a display.
+      # Windows and macOS runners have one; Linux does not, so it gets a virtual
+      # framebuffer. `-a` picks a free display number rather than assuming :99
+      # is unused. xvfb is preinstalled on the GitHub Ubuntu image, so nothing
+      # is installed here — if that ever changes this step fails loudly, which
+      # is better than an apt-get on every run to guard against a maybe.
+      - name: integration tier (Linux, under Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run test:integration
+
+      - name: integration tier
+        if: runner.os != 'Linux'
+        run: npm run test:integration
+
+  # Proves the extension can actually be packaged, and — via check:package,
+  # which `npm run package` chains — that the package contains what it should
+  # and nothing else. That second half is the point: .vscodeignore is
+  # allow-by-default, so a packaging mistake ships rather than failing.
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run package
+
+      # Installable from any run. Reviewing behaviour is much easier when the
+      # reviewer can install the branch instead of building it.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-on-viya-vsix
+          path: dist/python-on-viya.vsix
+          if-no-files-found: error
+          retention-days: 14

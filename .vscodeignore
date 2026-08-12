@@ -1,5 +1,15 @@
+# What does NOT go into the .vsix.
+#
+# This file is allow-by-default: anything not matched here ships. That is the
+# wrong default for a repository whose working tree is expected to contain a
+# creds.json with live Viya tokens, so `npm run check:package` reads the built
+# archive afterwards and fails on anything that got through. Treat that check as
+# the guarantee and this file as the mechanism.
+
 .github/**
 .vscode/**
+.vscode-test/**
+.vscode-test-web/**
 docs/**
 node_modules/**
 out/**
@@ -33,3 +43,17 @@ SECURITY.md
 **/*.map
 **/*.ts
 **/*.vsix
+
+# Secrets. Every one of these is also in .gitignore, so in a clean checkout
+# none of them exist — which is exactly why they are easy to leave out here and
+# why they are worth listing anyway. A contributor following CONTRIBUTING.md
+# stages creds.json in the working tree deliberately, and `vsce package` reads
+# the working tree, not the index.
+creds.json
+**/creds.json
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.pfx
+**/*.p12

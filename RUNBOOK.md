@@ -207,11 +207,11 @@ denominator**, or the ratchet is trivially gamed.
 summary table, round down, commit. This line is the ratchet; without it the
 starting number of 0 is where coverage stays.
 
-☐ **Run `npm run test:integration` locally before merging 0c.** It downloads and
-launches a real VS Code and so cannot run in a headless agent sandbox — the tier
-is wired and type-checked but has never been executed. Do this once here so the
-first failure is found while the harness is the only thing that could have
-caused it.
+☑ **`npm run test:integration` run locally, 2026-08-12** — 3 passing, exit code 0,
+against a freshly downloaded VS Code 1.133.0 on win32-x64. This tier cannot run
+in a headless agent sandbox, so it was wired and type-checked blind; running it
+once here confirmed the two-halves runner, the discovery, the activation
+contract, and command registration all work against a real editor.
 
 ⚠️ **Run `npm ci` first if the agent has run `npm install` against this checkout.**
 The sandbox is Linux and your shell is Windows; they share the working tree, so
@@ -245,6 +245,15 @@ gh pr create --base main --head phase-0d-ii-security-scanning --fill
 ☐ Also check `AI-PR-REVIEWERS-RUNBOOK.md` into `docs/dev/` here, so a future
 maintainer can re-derive the reviewer setup without hunting through the viyapy
 project folder.
+
+☐ **Triage the three advisories `npm ci` reported on 2026-08-12** (1 low, 1
+moderate, 1 high) as part of designing the audit gate, rather than reflexively
+running `npm audit fix --force`. All three are in **dev**-only dependencies, so
+nothing reaches the VSIX — but they run on contributor machines and in CI, which
+is not nothing. The likely family is `@vscode/vsce`, which drags in the archived
+`keytar@7.9.0` and an old `glob@10.5.0`. Decide deliberately whether the gate
+fails on `--omit=dev` only, or on everything with documented exceptions; a gate
+that cries wolf about a packaging tool gets switched off within a month.
 
 ☐ Merge 0d-ii. Phase 0 is complete; start Phase 1.
 

@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "watch",
+      "type": "npm",
+      "script": "watch",
+      "isBackground": true,
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "never", "group": "watch" },
+      "problemMatcher": {
+        "owner": "esbuild",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "source": "esbuild",
+        "pattern": [
+          {
+            "regexp": "^✘ \\[ERROR\\] (.+)$",
+            "message": 1
+          },
+          {
+            "regexp": "^\\s+(.+):(\\d+):(\\d+):$",
+            "file": 1,
+            "line": 2,
+            "column": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\[build\\] started$",
+          "endsPattern": "^\\[build\\] finished with \\d+ error\\(s\\)$"
+        }
+      }
+    },
+    {
+      "label": "verify",
+      "type": "npm",
+      "script": "verify",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": ["$tsc", "$eslint-stylish"]
+    }
+  ]
+}

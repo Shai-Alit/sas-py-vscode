@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+
+    // Listed explicitly, not left to automatic @types discovery. TypeScript 6
+    // no longer pulls in every @types/* package it can find, and relying on
+    // that would have been fragile anyway: it lets a transitive devDependency
+    // leak globals (DOM, mocha, jest) into the extension's type space, so code
+    // type-checks locally against globals that do not exist at runtime.
+    "types": ["node", "vscode"],
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "rootDir": "src",
+    "outDir": "out",
+    "sourceMap": true,
+    "declaration": false,
+    "removeComments": false,
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "useUnknownInCatchVariables": true,
+
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "out"]
+}

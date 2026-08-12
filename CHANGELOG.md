@@ -17,6 +17,16 @@ called out under **Changed** with a migration note.
 - `PROBE-FINDINGS.md`, recording behaviour confirmed against a live SAS Viya 4
   deployment — the evidence base the implementation plan rests on.
 - ADR-0000 recording the repository licence decision.
+- Dual AI pull-request review (Claude and Codex), running on every pull request.
+- TypeScript toolchain: extension manifest, strict `tsconfig`, type-aware ESLint,
+  Prettier, esbuild bundling, and a single `npm run verify` gate that mirrors CI.
+- A minimal extension that activates and contributes **Python on Viya: Show Log**.
+- Copyright-header check enforcing the Apache-2.0 §4(b) modification notice on
+  files ported from `sassoftware/vscode-sas-extension`.
+- ADR-0001 (extension identity and configuration namespace), ADR-0002 (workspace
+  trust posture), and ADR-0003 (extension host target).
+- `docs/dev/building.md` — prerequisites, the inner loop, and the toolchain
+  constraints that fail silently rather than loudly.
 
 ### Changed
 

@@ -1,0 +1,102 @@
+{
+  "name": "python-on-viya",
+  "displayName": "Python on Viya",
+  "description": "Write Python locally and run it on SAS Viya, using the Python environment managed inside Viya.",
+  "version": "0.0.1",
+  "publisher": "shai-alit",
+  "license": "Apache-2.0",
+  "author": "Sean Ford",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Shai-Alit/sas-py-vscode.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Shai-Alit/sas-py-vscode/issues"
+  },
+  "homepage": "https://github.com/Shai-Alit/sas-py-vscode#readme",
+  "engines": {
+    "vscode": "^1.104.0",
+    "node": ">=20.19.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Data Science",
+    "Other"
+  ],
+  "keywords": [
+    "sas",
+    "viya",
+    "python",
+    "remote execution",
+    "compute"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Editing, syntax, and connection-profile management work in untrusted folders. Connecting to SAS Viya, reading stored credentials, and executing code require a trusted workspace, because they run code on a remote server under your identity.",
+      "restrictedConfigurations": [
+        "pythonOnViya.connectionProfiles",
+        "pythonOnViya.defaultProfile"
+      ]
+    }
+  },
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "pythonOnViya.showOutputChannel",
+        "title": "%command.showOutputChannel.title%",
+        "category": "%extension.category%"
+      }
+    ],
+    "configuration": {
+      "title": "Python on Viya",
+      "properties": {
+        "pythonOnViya.connectionProfiles": {
+          "type": "object",
+          "default": {},
+          "scope": "resource",
+          "markdownDescription": "%configuration.connectionProfiles.description%",
+          "additionalProperties": true
+        },
+        "pythonOnViya.defaultProfile": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "markdownDescription": "%configuration.defaultProfile.description%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run l10n:extract && npm run build -- --production",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check:copyright": "node scripts/check-copyright.mjs",
+    "l10n:extract": "vscode-l10n-dev export --outDir ./l10n ./src",
+    "package": "vsce package --out dist/python-on-viya.vsix",
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run check:copyright && npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.2.0",
+    "@types/vscode": "1.104.0",
+    "@vscode/l10n-dev": "0.0.35",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "eslint": "10.8.1",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.10.0",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.67.0"
+  }
+}

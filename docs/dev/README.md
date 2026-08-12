@@ -1,11 +1,14 @@
 # Developer guide
 
-Filled in as the tooling lands. Until then, `CONTRIBUTING.md` holds the rules and
-`RUNBOOK.md` holds the operational punch list.
+Filled in as the tooling lands. `CONTRIBUTING.md` holds the rules a change must
+satisfy; these pages explain how the machinery works and why.
+
+- [**Building and debugging**](building.md) — prerequisites, the `verify` gate,
+  the F5 inner loop, what each tool in the chain is for, and the toolchain
+  constraints that bite silently
 
 Planned pages:
 
-- **Building and debugging** — the extension host, watch mode, breakpoints (0b)
 - **Testing** — the three tiers, and how to capture and sanitise a fixture (0c)
 - **The live test tier** — environment variables, the mutation gate, cleanup (5b)
 - **AI reviewers** — the Foundry and Entra setup, and how to diagnose a silent

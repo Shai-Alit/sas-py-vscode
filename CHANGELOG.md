@@ -84,6 +84,26 @@ called out under **Changed** with a migration note.
   Docusaurus, why external links are swept on a schedule rather than gated, why
   self-links are resolved on disk instead, and why TypeDoc waits for an exported
   API.
+- A `supply-chain` CI job answering two questions about the dependency tree: what
+  may run code at install time, and which advisories somebody has actually read.
+- An install-script policy. All five install scripts in the tree
+  (`@vscode/vsce-sign`, `esbuild` at two versions, `keytar`, `msw`) are denied
+  through `allowScripts` in `package.json`, and `strict-allow-scripts` turns npm's
+  "scripts were blocked" warning into a failed build. Denying all five was proven
+  harmless against a clean install: the unit tests, the build, the docs build and
+  packaging all pass without them.
+- `npm run check:audit`, which fails on any advisory in the production tree at any
+  severity — that tree has no dependencies in it, so an advisory there is news —
+  and requires every dev-tree advisory to appear in
+  `scripts/advisory-allowlist.json` with a reason and an unexpired date. The
+  allow-list is keyed on the GHSA identifier rather than the package, because
+  `npm audit` counts packages: its "6 vulnerabilities" covered 7 advisories, and
+  the one it folded away was a high-severity Windows-specific `vite` issue.
+- ADR-0005 (supply chain policy), recording why the audit gate is asymmetric
+  between the production and development trees, why every allow-list entry
+  expires, why esbuild's `postinstall` turned out not to be load-bearing, and why
+  the whole thing runs in one pinned CI job — `allowScripts` needs npm 12, which
+  needs a Node newer than this project's supported floor.
 
 ### Fixed
 

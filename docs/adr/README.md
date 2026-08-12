@@ -35,3 +35,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0002](0002-workspace-trust-posture.md) | Workspace trust posture: limited | Accepted |
 | [0003](0003-extension-host-target.md) | Extension host target: Node-only for now | Accepted |
 | [0004](0004-documentation-toolchain.md) | Documentation toolchain: VitePress, external links swept not gated | Accepted |
+| [0005](0005-supply-chain-policy.md) | Supply chain: no install scripts, advisories reviewed by identifier with an expiry | Accepted |

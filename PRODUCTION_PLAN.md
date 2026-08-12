@@ -349,9 +349,30 @@ copy, check that internal and external links resolve, and type-check every
 > is the part that deserves undivided attention. Same reasoning that split 0a
 > and 0d.
 
-**0d-ii — Security scanning.** Dependency audit, secret scanning, CodeQL, and the
-adapted `AI-PR-REVIEWERS-RUNBOOK.md` checked into the repo for future
-maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small/medium.*
+**0d-ii-a — Supply chain.** The dependency audit gate — hard on the production
+tree at any severity, allow-listed with expiry dates on the dev tree — and the
+install-script policy: an `allowScripts` field in `package.json` denying all five
+packages that ask to run code at install time, enforced by a dedicated
+`supply-chain` CI job. *Medium.*
+
+**0d-ii-b — Scanning.** CodeQL, a repo-local scanner for credential-shaped
+strings, and the adapted `AI-PR-REVIEWERS-RUNBOOK.md` checked into the repo for
+future maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small.*
+
+> **Why 0d-ii split.** Same reasoning as 0d-i. 0d-ii-a is a policy decision that
+> had to be settled by experiment — whether each install script is load-bearing
+> is a question only a clean install can answer, and the answer reversed what the
+> runbook had assumed about esbuild. 0d-ii-b is mostly workflow wiring. Bundling
+> them would put a supply-chain argument and a pile of YAML in front of one
+> reviewer at the same time.
+
+> **The constraint that shaped 0d-ii-a.** `allowScripts` is understood only by
+> npm 12.0.0+, and npm 12 requires Node `^22.22.2 || ^24.15.0 || >=26.0.0` — so it
+> cannot run on the Node 20.19.0 floor §4 claims and the matrix tests. Rather
+> than move the support floor as a side effect of a security slice, the policy is
+> enforced in one job that can run it. The rest of CI still installs with those
+> scripts running, and `docs/dev/building.md` says so rather than implying a
+> guarantee that is not there.
 
 *Exit:* a green CI on an empty extension that installs and activates.
 

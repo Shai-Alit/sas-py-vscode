@@ -24,6 +24,7 @@ site/**
 
 .editorconfig
 .eslintcache
+.npmrc
 .gitattributes
 .gitignore
 .nvmrc

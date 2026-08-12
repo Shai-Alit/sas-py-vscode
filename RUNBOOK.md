@@ -27,17 +27,20 @@ gh repo view --json name,defaultBranchRef,visibility
 
 ☐ **A1.** Confirm `main` is the default branch.
 
-☐ **A2.** Enable branch protection on `main`: require a PR before merging, disallow
-direct pushes. **Defer "require status checks to pass" until after 0d-i-a merges** —
-GitHub can't offer a check as required until it has reported at least once. Leave
-the AI reviewers **out** of required checks; they are advisory and comment-only.
+☑ **A2. Done 2026-08-12.** Branch protection on `main`: required status checks
+(added after 0d-i-b — see the 0d-i section), linear history, no force pushes, no
+deletions, conversation resolution required. The AI reviewers are **out** of the
+required checks; they are advisory and comment-only.
 
-☐ **A3.** Set the repo to squash-merge only, with "delete branch on merge" on.
-This is what keeps history linear and matches viyapy.
+☑ **A3. Done 2026-08-12.** The repo is squash-merge only, with "delete branch on
+merge" on. This is what keeps history linear and matches viyapy. It did not take
+the first time — see the note in the 0d-i section — so verify rather than assume:
 
 ```bash
 gh repo edit --enable-squash-merge --enable-merge-commit=false \
              --enable-rebase-merge=false --delete-branch-on-merge
+
+gh repo view --json squashMergeAllowed,mergeCommitAllowed,rebaseMergeAllowed,deleteBranchOnMerge
 ```
 
 ☐ **A4.** Settle the Phase 0 open decisions from `PRODUCTION_PLAN.md` §6. These
@@ -237,11 +240,49 @@ git push -u origin phase-0d-i-a-core-ci
 gh pr create --base main --head phase-0d-i-a-core-ci --fill
 ```
 
-☐ After 0d-i-a merges, **now** add the required status checks to branch
-protection (deferred from A2 — they can only be selected once they've reported).
-Require `verify`, `package`, and every leg of `test` you intend to depend on;
-required checks are named per job, so adding an OS to the matrix later does not
-add it to the requirement automatically. Leave the two AI reviewers advisory.
+☑ **Done 2026-08-12, after 0d-i-b merged.** Required status checks added to
+branch protection (deferred from A2 — they can only be selected once they have
+reported). **Nine** of them, not four: `verify`, `docs`, `package`, and all six
+legs of `test`, because the matrix job is named
+`test (${{ matrix.os }}, node ${{ matrix.node }})` and required checks are named
+per reported check. Adding an OS or a Node version therefore creates a check that
+is **not** required until someone adds it here — re-run the `PUT` below after any
+matrix change.
+
+Set with the contexts derived from what actually reported, so a typo cannot
+create a required check that never runs:
+
+```bash
+CONTEXTS=$(gh api repos/Shai-Alit/sas-py-vscode/commits/main/check-runs \
+  --jq '[.check_runs[].name] | unique | tostring')
+
+gh api -X PUT repos/Shai-Alit/sas-py-vscode/branches/main/protection --input - <<JSON
+{
+  "required_status_checks": { "strict": true, "contexts": $CONTEXTS },
+  "enforce_admins": false,
+  "required_pull_request_reviews": null,
+  "restrictions": null,
+  "required_linear_history": true,
+  "allow_force_pushes": false,
+  "allow_deletions": false,
+  "required_conversation_resolution": true
+}
+JSON
+```
+
+Three judgement calls worth knowing before you change any of them:
+
+- `required_pull_request_reviews` is **null**. There is one human on this
+  repository and the AI reviewers cannot approve, so requiring an approval would
+  lock the only maintainer out. Revisit when there is a second contributor.
+- `enforce_admins` is **false**, deliberately: required checks otherwise block
+  direct pushes to `main` with no way round it. The guard is a seatbelt, not a
+  lock.
+- GitHub pinned every context to `app_id 15368` (GitHub Actions), so another app
+  or a token cannot satisfy `verify` by posting a green status of the same name.
+  That is stronger than the plain `contexts` list looks, and it is why the two
+  AI reviewers — which run only on `pull_request` and so never reported on
+  `main` — could not have been swept into the requirement by accident.
 
 ☑ **Squash-merge is not actually enforced yet.** PR #6 landed as a merge commit,
 so either A3's `gh repo edit` was not run or the setting was overridden at merge

@@ -54,12 +54,17 @@ exists, so those links stay gated on every pull request, offline, without a
 third category of tool.
 
 That is the *correct* check, not merely a convenient one. **GitHub answers 404,
-not 403, for a private repository**, so while this repository is private an
-anonymous fetch reports every self-link as broken — the first live run of the
-weekly sweep reported five broken links and all five were fine. A network check
-of a self-link is not weak here; it is wrong. GitHub *feature* URLs under the
-same repository (`/commits/main`, `/security/advisories/new`) have no file
-behind them and are skipped.
+not 403, for a private repository**, and this repository was private when the
+decision was taken, so an anonymous fetch reported every self-link as broken —
+the first live run of the weekly sweep reported five broken links and all five
+were fine. A network check of a self-link was not weak; it was wrong. GitHub
+*feature* URLs under the same repository (`/commits/main`,
+`/security/advisories/new`) have no file behind them and are skipped.
+
+The repository was made public later the same day, which retires that argument
+but not the decision — see Consequences. Resolving on disk was always the better
+of the two checks; the 404 is what made it urgent rather than what made it
+right.
 
 **TypeDoc is deferred** until a module exports an API worth documenting —
 realistically the `ExecutionBackend` seam in Phase 3. Until then, no document
@@ -100,9 +105,10 @@ gate over a vacuum — it would fail builds for churn in a document nobody reads
 **Leaving the outside-`docs/` links to the weekly sweep.** This is what the
 first draft did, and it was the reviewable-looking option: they are `https://`
 URLs, the sweep checks `https://` URLs. Rejected once the sweep ran, for two
-reasons that arrived together — it reports them as broken while the repository
-is private, and even against a public repository it would catch a rename days
-after the pull request that made it, rather than in it.
+reasons that arrived together — it reported them as broken while the repository
+was private, and even against a public repository it would catch a rename days
+after the pull request that made it, rather than in it. Only the first reason
+has since expired.
 
 **Symlinking those files into `docs/`, or adding them to `ignoreDeadLinks`.**
 Rejected respectively because a symlink makes two apparent copies of one
@@ -131,6 +137,14 @@ devDependencies and neither ships.
 
 **Revisit trigger.** Reconsider the site generator if versioned documentation or
 translation becomes a requirement, which is where Docusaurus earns its weight.
-If the repository is ever made public, the self-link check stays — the 404 was
-the trigger, but resolving on disk is the better check regardless. Add TypeDoc
-in the slice that first exports a public API.
+Add TypeDoc in the slice that first exports a public API.
+
+**Already triggered, and resolved without a change: the repository went public
+on 2026-08-12**, hours after this was accepted, so anonymous fetches of
+`github.com/Shai-Alit/sas-py-vscode/…` now succeed and the 404 argument no
+longer applies. The self-link check stays. It is exact where a fetch is
+probabilistic, it needs no network, and it gates the pull request that breaks a
+link rather than a sweep a week later — none of which depended on visibility.
+The 404 made the decision urgent; it was never the whole of the reason. Making
+correctness contingent on a repository setting would also mean a checker that
+silently becomes wrong the day somebody flips it back.

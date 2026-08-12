@@ -331,10 +331,23 @@ structure with per-generation subdirectories. Coverage instrumentation (c8) with
 a threshold that starts realistic and ratchets. A trivial passing test proves the
 whole harness. *Medium.*
 
-**0d-i — Core CI.** Lint/format, type-check, test (matrix: Node LTS ×
-ubuntu/windows/macOS, `xvfb-run` on Linux for test-electron), package `.vsix` and
-upload as an artifact. Also the **docs job** from §4.1 — build, link-check, and
-verify the generated settings/command reference matches `package.json`. *Medium.*
+**0d-i-a — Core CI and packaging.** Lint/format, type-check, copyright and
+coverage gates; the test matrix (Node floor and working version × ubuntu /
+windows / macOS, `xvfb-run` on Linux for test-electron); `.vsix` packaging with
+an assertion on what the package actually contains, uploaded as an artifact.
+*Medium.*
+
+**0d-i-b — Docs CI.** The **docs job** from §4.1 — generate the settings and
+command reference from `package.json`, fail on any diff against the committed
+copy, check that internal and external links resolve, and type-check every
+`docs/` sample that claims to run. *Medium.*
+
+> **Why 0d-i split.** 0d-i-b is not more CI wiring; it is choosing a static-site
+> generator and writing a reference generator, neither of which exists yet.
+> Bundling that with the test matrix would produce one PR where a reviewer has to
+> hold a tooling choice and CI mechanics in mind at once, and the tooling choice
+> is the part that deserves undivided attention. Same reasoning that split 0a
+> and 0d.
 
 **0d-ii — Security scanning.** Dependency audit, secret scanning, CodeQL, and the
 adapted `AI-PR-REVIEWERS-RUNBOOK.md` checked into the repo for future
@@ -642,6 +655,16 @@ TypeDoc. Hand-written copies of machine-readable facts go stale silently — the
 same failure mode as the test anti-goal in §4. CI regenerates and fails if the
 committed output differs.
 
+> **Settled 2026-08-12 (in 0d-i-a, executed in 0d-i-b): the generated reference
+> is committed.** `.gitignore` ignored `docs/reference/` from 0a, which left
+> nothing for the diff check above to compare against — the two rules could not
+> both be true. Committing it wins for one reason that outweighs the diff churn:
+> a pull request that changes a setting or renames a command then *shows* that
+> change to the reviewer, instead of hiding it behind a build step nobody runs
+> during review. It also makes the reference readable on GitHub without building
+> a site. The `.gitignore` entry is removed in 0d-i-b, when there is a generator
+> to produce the file.
+
 **ADRs carry the *why*.** Every open decision in §6 becomes a short ADR when it's
 settled — the licence choice, the trust posture, `PROC PYTHON` as the substrate,
 the dialect seam. Two years from now the code says what; only the ADR says why,
@@ -657,9 +680,9 @@ may not document a capability the runtime probe can't confirm, and must state
 plainly that no telemetry is collected. Anything aspirational belongs in the
 roadmap section, labelled as such.
 
-**CI enforcement** (0d-i): docs build without warnings, internal and external links
-resolve, generated reference matches source, and every `docs/` code sample that
-claims to run is type-checked. **Phase 5c** is then *publishing* — the site, the
+**CI enforcement** (0d-i-b): docs build without warnings, internal and external
+links resolve, generated reference matches source, and every `docs/` code sample
+that claims to run is type-checked. **Phase 5c** is then *publishing* — the site, the
 marketplace listing, the release checklist — not the first time docs get written.
 
 ---

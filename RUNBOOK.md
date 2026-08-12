@@ -28,7 +28,7 @@ gh repo view --json name,defaultBranchRef,visibility
 ☐ **A1.** Confirm `main` is the default branch.
 
 ☐ **A2.** Enable branch protection on `main`: require a PR before merging, disallow
-direct pushes. **Defer "require status checks to pass" until after 0d-i merges** —
+direct pushes. **Defer "require status checks to pass" until after 0d-i-a merges** —
 GitHub can't offer a check as required until it has reported at least once. Leave
 the AI reviewers **out** of required checks; they are advisory and comment-only.
 
@@ -108,7 +108,7 @@ gh pr merge --squash --delete-branch
 ### Conventions
 
 - **Branches**: `phase-<slice>-<slug>`, where `<slice>` is the slice label exactly as
-  the plan writes it — `phase-3a-proc-python-backend`, `phase-0d-i-core-ci`,
+  the plan writes it — `phase-3a-proc-python-backend`, `phase-0d-i-a-core-ci`,
   `phase-3d-ii-result-panel`, `phase-2-pre-submission-probe`.
   Non-phase work: `fix/<slug>`, `docs/<slug>`, `chore/<slug>`, `ci/<slug>`.
 - **Commits**: Conventional Commits — `feat|fix|docs|test|chore|refactor|ci`.
@@ -226,19 +226,45 @@ The sandbox is Linux and your shell is Windows; they share the working tree, so
 before any test runs. This is a stale install, not a broken build. The lockfile
 carries every platform, so `npm ci` is always enough.
 
-⛔ Merge 0c before 0d-i.
+⛔ Merge 0c before 0d-i-a.
 
 ```bash
-# 0d-i — core CI and packaging
-git checkout main && git pull --ff-only && git checkout -b phase-0d-i-core-ci
-#   … 🤖 implement 0d-i …
+# 0d-i-a — core CI and packaging
+git checkout main && git pull --ff-only && git checkout -b phase-0d-i-a-core-ci
+#   … 🤖 implement 0d-i-a …
 git add -A && git commit -m "ci: add lint, type-check, test matrix, and vsix packaging"
-git push -u origin phase-0d-i-core-ci
-gh pr create --base main --head phase-0d-i-core-ci --fill
+git push -u origin phase-0d-i-a-core-ci
+gh pr create --base main --head phase-0d-i-a-core-ci --fill
 ```
 
-☐ After 0d-i merges, **now** add the required status checks to branch protection
-(deferred from A2 — they can only be selected once they've reported).
+☐ After 0d-i-a merges, **now** add the required status checks to branch
+protection (deferred from A2 — they can only be selected once they've reported).
+Require `verify`, `package`, and every leg of `test` you intend to depend on;
+required checks are named per job, so adding an OS to the matrix later does not
+add it to the requirement automatically. Leave the two AI reviewers advisory.
+
+☑ **Squash-merge is not actually enforced yet.** PR #6 landed as a merge commit,
+so either A3's `gh repo edit` was not run or the setting was overridden at merge
+time. Re-run it before the history gets any longer:
+
+```bash
+gh repo edit --enable-squash-merge --enable-merge-commit=false \
+             --enable-rebase-merge=false --delete-branch-on-merge
+```
+
+```bash
+# 0d-i-b — docs CI
+git checkout main && git pull --ff-only && git checkout -b phase-0d-i-b-docs-ci
+#   … 🤖 implement 0d-i-b …
+git add -A && git commit -m "ci: generate the settings and command reference and gate docs"
+git push -u origin phase-0d-i-b-docs-ci
+gh pr create --base main --head phase-0d-i-b-docs-ci --fill
+```
+
+☐ **Settled 2026-08-12: the generated reference is committed**, so 0d-i-b must
+also drop `docs/reference/` from `.gitignore`. See PRODUCTION_PLAN.md §4.1 —
+the plan wanted CI to fail on a diff against a file `.gitignore` was keeping out
+of the repo, and only one of those could survive.
 
 ```bash
 # 0d-ii — security scanning

@@ -15,7 +15,7 @@ npm install
 npm run verify
 ```
 
-`verify` is the whole gate, and it is the same chain CI runs in slice 0d-i:
+`verify` is the whole gate, and CI runs this exact command — see `docs/dev/ci.md`:
 
 ```
 format:check  →  lint  →  typecheck  →  check:copyright  →  build  →  coverage
@@ -111,8 +111,16 @@ npm run package
 ```
 
 Produces `dist/python-on-viya.vsix`, installable with **Extensions: Install from
-VSIX…**. Inspect the file list it prints; anything unexpected in there is a
-`.vscodeignore` bug.
+VSIX…**, and then runs `npm run check:package` over the archive it just built.
+
+That second half is not optional and not decoration. `.vscodeignore` is
+allow-by-default — every file in your working tree ships unless a pattern
+excludes it — and this repository is one where contributors are told to keep a
+`creds.json` full of live Viya tokens. The checker opens the `.vsix`, refuses
+anything shaped like a source file, a source map, an internal document or a
+credential, and also insists the files that *should* be there are. Read
+[ci.md](ci.md) before changing its rules; several of them are less obvious than
+they look, starting with the fact that vsce renames three files on the way in.
 
 ## Things that will surprise you
 

@@ -41,6 +41,15 @@ called out under **Changed** with a migration note.
 - Copyright check now requires any file referencing the upstream SAS extension
   to declare the relationship as `Ported from:` or `Structure follows:`, closing
   a gap where a ported file that dropped the SAS header passed silently.
+- Continuous integration: `npm run verify` on every pull request, the unit and
+  integration tiers across ubuntu / windows / macOS × Node 20.19.0 and 22, and a
+  packaging job that uploads an installable `.vsix` as an artifact.
+- `npm run check:package`, which reads the built `.vsix` and fails if it contains
+  sources, source maps, internal documents or anything shaped like a credential —
+  or if it is missing something it should contain. `.vscodeignore` is
+  allow-by-default, so a packaging mistake ships rather than failing.
+- `docs/dev/ci.md` — what each CI job does, why the matrix is shaped the way it
+  is, and what is deliberately not gated yet.
 
 ### Fixed
 

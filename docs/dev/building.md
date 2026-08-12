@@ -139,6 +139,16 @@ checkout, `npm install --no-save @esbuild/<platform>` adds the second binary
 without touching `package.json` or the lockfile — esbuild picks the right one at
 runtime when both are present.
 
+**ESLint does not read `.gitignore`.** Flat config has one ignore list, in
+`eslint.config.mjs`, and it has to repeat every generated directory by hand.
+Prettier 3 reads `.gitignore` by default, which is why `.prettierignore` is much
+shorter — the two files disagreeing is expected. The failure mode is memorable:
+after the first `npm run test:integration`, `.vscode-test/` holds about a
+gigabyte of downloaded VS Code, and linting its minified bundles kills the
+process with *"FATAL ERROR: Reached heap limit"* on a tree whose source has not
+changed. `test/unit/eslint-ignores.test.ts` asserts the ignores through ESLint's
+own resolver so the two lists cannot drift apart again.
+
 **`activationEvents` is empty, on purpose.** Since VS Code 1.74, a command
 declared in `contributes.commands` activates its extension implicitly — the
 [activation events reference](https://code.visualstudio.com/api/references/activation-events)

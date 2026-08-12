@@ -7,12 +7,25 @@ import prettier from "eslint-config-prettier";
 import globals from "globals";
 
 export default tseslint.config(
+  // Every entry here is already in .gitignore, and that is not enough: flat
+  // config does not read .gitignore, so an ignored build artefact is still a
+  // lintable file as far as ESLint is concerned. (Prettier 3 *does* read
+  // .gitignore by default, which is why .prettierignore is shorter — the two
+  // files disagreeing is expected, not an oversight.)
+  //
+  // `.vscode-test/` is the one that bites. `npm run test:integration` downloads
+  // a full VS Code build into it — about a gigabyte, including multi-megabyte
+  // minified bundles — and linting those exhausts the V8 heap and kills the
+  // process. Symptom: `npm run lint` worked yesterday and today dies with
+  // "FATAL ERROR: Reached heap limit", on a tree with no source changes.
   {
     ignores: [
       "dist/**",
       "out/**",
       "coverage/**",
       "node_modules/**",
+      ".vscode-test/**",
+      ".vscode-test-web/**",
       "test/scratch/**",
     ],
   },
@@ -43,18 +56,6 @@ export default tseslint.config(
       // probing must contain an explanatory comment, which satisfies this rule.
       "no-empty": ["error", { allowEmptyCatch: false }],
 
-      // Upstream's PKCE verifier uses Math.random(). Ported security code is
-      // audited, not transcribed — so make the specific defect unmergeable.
-      "no-restricted-properties": [
-        "error",
-        {
-          object: "Math",
-          property: "random",
-          message:
-            "Math.random() is not cryptographically secure. Use crypto.randomBytes() or crypto.getRandomValues() for anything security-sensitive (this is the exact defect present in the upstream SAS extension's PKCE verifier).",
-        },
-      ],
-
       // Unhandled rejections silently swallow failures.
       "@typescript-eslint/no-floating-promises": "error",
       "@typescript-eslint/return-await": ["error", "always"],
@@ -68,6 +69,29 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": [
         "error",
         { prefer: "type-imports", fixStyle: "inline-type-imports" },
+      ],
+    },
+  },
+
+  // Spans src and test on purpose. Upstream's PKCE verifier uses Math.random(),
+  // and ported security code is audited rather than transcribed — so the
+  // specific defect is made unmergeable.
+  //
+  // Tests need this at least as much as `src/` does. The obvious way to give a
+  // mutating live test the per-run unique name CONTRIBUTING.md requires is
+  // `Math.random()`, and a collision there means two runs fighting over the same
+  // object on somebody's real deployment.
+  {
+    files: ["src/**/*.ts", "test/**/*.ts"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        {
+          object: "Math",
+          property: "random",
+          message:
+            "Math.random() is not cryptographically secure, and collides more often than people expect. Use crypto.randomUUID() for unique names, or crypto.randomBytes()/crypto.getRandomValues() for anything security-sensitive (this is the exact defect present in the upstream SAS extension's PKCE verifier).",
+        },
       ],
     },
   },
@@ -108,8 +132,19 @@ export default tseslint.config(
     },
   },
 
-  // Tests are linted as strictly as the source they exercise. A test that only
-  // compiles under looser rules is testing something the extension cannot do.
+  // Tests get the same type-aware rule sets as the source they exercise. A test
+  // that only compiles under looser rules is testing something the extension
+  // cannot do.
+  //
+  // Two rules deliberately differ, and both differences are listed here rather
+  // than left to be inferred from which block a rule happens to sit in:
+  // `no-console` is off (below), and the version-branching selectors do not
+  // apply. That second one is not an oversight — the dialect layer's own tests
+  // and `test/helpers/live-gate.ts` have to name a generation to choose a
+  // fixture or an environment variable, which is the one place branching on a
+  // version is the point rather than the bug.
+  //
+  // The Math.random ban applies here too; it lives in the shared block above.
   //
   // Type information comes from tsconfig.test.json rather than the project
   // service, because the nearest tsconfig.json to `test/` is the extension's,

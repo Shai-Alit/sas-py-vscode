@@ -42,6 +42,14 @@ called out under **Changed** with a migration note.
   to declare the relationship as `Ported from:` or `Structure follows:`, closing
   a gap where a ported file that dropped the SAS header passed silently.
 
+### Fixed
+
+- `npm run lint` no longer runs out of memory after the integration tier has been
+  run once. ESLint flat config does not read `.gitignore`, so the gigabyte of VS
+  Code that `@vscode/test-electron` downloads into `.vscode-test/` was being
+  linted; the ignore list now covers it, and a unit test asserts that through
+  ESLint's own resolver.
+
 ### Changed
 
 - **Relicensed from MIT to Apache-2.0** to match the upstream

@@ -41,6 +41,12 @@ The bulk of the suite. No network, no VS Code, no disk beyond reading a fixture.
 Mocha's timeout here is two seconds, because a unit test that takes longer than
 that is not slow, it is stuck, and a generous timeout only delays the diagnosis.
 
+One test raises its own timeout: `eslint-ignores.test.ts` constructs ESLint,
+which loads the flat config and with it the whole typescript-eslint module
+graph. If you find yourself reaching for `this.timeout()` a second time, check
+first that the test is not quietly doing I/O it should be mocking — the
+exemption is for loading a tool, not for waiting on one.
+
 Mock at the HTTP boundary, never by copying the logic under test into the test.
 This is the rule most likely to get a change rejected, and it comes from a real
 defect: the upstream SAS extension reimplements its REST logic inside its REST

@@ -213,6 +213,13 @@ in a headless agent sandbox, so it was wired and type-checked blind; running it
 once here confirmed the two-halves runner, the discovery, the activation
 contract, and command registration all work against a real editor.
 
+☑ **Running the integration tier breaks `npm run lint` — fixed 2026-08-12.**
+`.vscode-test/` is git-ignored, ESLint flat config does not read `.gitignore`,
+and linting a gigabyte of downloaded VS Code exhausts the V8 heap. Found by
+running the tiers in the order a contributor would. If `npm run lint` ever dies
+with *"FATAL ERROR: Reached heap limit"* rather than reporting a rule violation,
+suspect a newly generated directory missing from the ignores block, not a rule.
+
 ⚠️ **Run `npm ci` first if the agent has run `npm install` against this checkout.**
 The sandbox is Linux and your shell is Windows; they share the working tree, so
 `node_modules` ends up holding the wrong esbuild binary and `npm run build` fails

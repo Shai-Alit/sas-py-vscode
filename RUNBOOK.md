@@ -44,13 +44,17 @@ gh repo edit --enable-squash-merge --enable-merge-commit=false \
 bake into `LICENSE` and `package.json` and are painful to change later:
 
 - ☑ **#0 Repository licence** — **settled 2026-08-11: Apache-2.0.** Executed in 0a.
-- **#1 Extension identifier and display name** — must not imply official SAS provenance.
-- **#2 Configuration namespace** — `SASPY.*` is provisional; must not collide with
-  the SAS extension's `SAS.*`.
-- **#3 Workspace-trust posture** — *recommend `"limited"`.*
-- **#4 Web/browser target** — *recommend node-only, but decide explicitly.*
+- ☑ **#1 Extension identifier and display name** — **settled 2026-08-12:
+  "Python on Viya", id `python-on-viya`.** ADR-0001. Executed in 0b.
+- ☑ **#2 Configuration namespace** — **settled 2026-08-12: `pythonOnViya.*`.**
+  ADR-0001. The provisional `SASPY.*` was withdrawn: `saspy` is SAS's own official
+  Python-to-SAS package. Executed in 0b.
+- ☑ **#3 Workspace-trust posture** — **settled 2026-08-12: `"limited"`.** ADR-0002.
+  Executed in 0b.
+- ☑ **#4 Web/browser target** — **settled 2026-08-12: node-only**, revisitable at
+  Phase 6+. ADR-0003. Executed in 0b.
 - **#6 Coverage threshold** — the *starting* number only; you set the real value in
-  0c once the harness exists and can report an honest baseline.
+  0c once the harness exists and can report an honest baseline. **Still open.**
 
 ---
 

@@ -31,3 +31,6 @@ Editing history to look wiser than you were defeats the purpose.
 | ADR | Title | Status |
 |---|---|---|
 | [0000](0000-repository-licence.md) | Repository licence: Apache-2.0 | Accepted |
+| [0001](0001-extension-identity-and-configuration-namespace.md) | Extension identity and configuration namespace | Accepted |
+| [0002](0002-workspace-trust-posture.md) | Workspace trust posture: limited | Accepted |
+| [0003](0003-extension-host-target.md) | Extension host target: Node-only for now | Accepted |

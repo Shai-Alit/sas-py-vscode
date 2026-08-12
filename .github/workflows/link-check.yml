@@ -1,0 +1,103 @@
+name: Link check
+
+# Sweeps the *external* links in the documentation once a week and opens an
+# issue when one is broken. Internal links are checked by the `docs` job in
+# ci.yml, where VitePress fails its own build on them.
+#
+# This is a schedule and not a pull-request gate, and that is the entire design.
+# External links rot on somebody else's timetable: a contributor whose merge is
+# blocked because an unrelated vendor had a bad morning learns to re-run the job
+# without reading it, and then does not read it on the day it is right. An issue
+# is a thing a human triages; a red check is a thing a human clicks past.
+
+on:
+  schedule:
+    # 07:00 UTC on Mondays. Off the hour because scheduled workflows across
+    # GitHub bunch up at :00 and get delayed; the exact minute does not matter
+    # for a weekly sweep, but the queue does.
+    - cron: "17 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: link-check
+  cancel-in-progress: false
+
+jobs:
+  links:
+    name: external links
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # `continue-on-error` rather than a failing job: the report is the output
+      # of this workflow, and a job that stops here would never reach the step
+      # that files it.
+      - id: sweep
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run --silent docs:links 2>&1 | tee link-report.txt
+
+      - name: file or update an issue
+        if: steps.sweep.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "The weekly external-link sweep found at least one broken link."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "Reproduce locally with \`npm run docs:links\`."
+            echo
+            echo '```'
+            # Bounded: a report that has grown to thousands of lines is a
+            # symptom of something other than link rot, and pasting all of it
+            # into an issue helps nobody.
+            head -c 50000 link-report.txt
+            echo '```'
+          } > issue-body.md
+
+          # One issue, reopened in place. A weekly job that files a fresh issue
+          # every Monday produces a backlog nobody reads by March.
+          EXISTING=$(gh issue list --state open --label link-rot \
+            --json number --jq '.[0].number // empty')
+
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body-file issue-body.md
+          else
+            gh label create link-rot \
+              --description "Documentation links that no longer resolve" \
+              --color d4c5f9 || true
+            gh issue create \
+              --title "Broken documentation links (weekly sweep)" \
+              --label link-rot \
+              --body-file issue-body.md
+          fi
+
+      # Kept whatever the outcome. An "unverified" entry — a 403 or 429 from a
+      # server that dislikes datacentre IPs — does not open an issue, but it is
+      # the thing you want to read when someone reports a link that the sweep
+      # said was fine.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: link-report
+          path: link-report.txt
+          if-no-files-found: warn
+          retention-days: 30

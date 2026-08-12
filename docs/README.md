@@ -15,10 +15,17 @@ edited. See [adr/README.md](adr/README.md).
 capturing and sanitising fixtures, running the live test tier, the release
 process, and the AI reviewer setup.
 
-**`reference/`** — *generated*, and git-ignored. The settings and command tables
-come from `package.json`; the API reference comes from TSDoc via TypeDoc. Never
-hand-edit anything here — regenerate it. CI fails if the committed output differs
-from what the source produces.
+**`reference/`** — *generated, and committed*. The settings and command tables
+come from `package.json` via `npm run docs:reference`. Never hand-edit anything
+here — regenerate it, and commit the result. CI fails if the committed output
+differs from what the source produces.
+
+Committing generated output looks redundant until you watch a review go by: a
+pull request that renames a command then *shows* the reviewer that rename,
+instead of hiding it behind a build step nobody runs while reviewing. It also
+makes the reference readable on GitHub without building the site. There is no
+API reference yet — `src/` has no exported surface to document, so TypeDoc waits
+for one.
 
 User-facing documentation (install, connect, run, troubleshoot) lives at the top
 level of the published site and is authored alongside the slice that ships the
@@ -30,7 +37,7 @@ feature it describes.
 change with no documentation change is an incomplete pull request.
 
 **Do not document what you have not verified.** Claims about Viya behaviour must
-be supported by [`PROBE-FINDINGS.md`](../PROBE-FINDINGS.md). In particular, no
+be supported by [`PROBE-FINDINGS.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/PROBE-FINDINGS.md). In particular, no
 document may claim Viya 3.5 support while it remains unverified — say so plainly
 instead. Both AI reviewers are instructed to flag violations of this.
 

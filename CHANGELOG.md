@@ -50,6 +50,22 @@ called out under **Changed** with a migration note.
   allow-by-default, so a packaging mistake ships rather than failing.
 - `docs/dev/ci.md` — what each CI job does, why the matrix is shaped the way it
   is, and what is deliberately not gated yet.
+- A generated settings and command reference. `npm run docs:reference` builds
+  `docs/reference/` from `package.json` and `package.nls.json`; the output is
+  committed, and CI fails if it drifts from its source.
+- A documentation site built with [VitePress](https://vitepress.dev), chosen
+  because it fails its own build on a dead internal link — the link check rides
+  along with a build the project wants anyway. Building it is a CI job;
+  publishing it is a later slice.
+- `npm run docs:samples`, which compiles every TypeScript block embedded in
+  `docs/`. A sample that imports from the repository declares where it lives
+  (` ```ts path=test/unit/example.test.ts `) and is checked against the project
+  that owns that directory; a deliberate fragment marks itself ` ```ts no-check `
+  and is counted in the output.
+- `npm run docs:links` and a weekly `link-check` workflow that sweeps external
+  links and opens a `link-rot` issue instead of failing a pull request. A 403 or
+  429 is reported as unverified rather than broken, because that is what a
+  working link returns when the far end dislikes a datacentre IP.
 
 ### Fixed
 

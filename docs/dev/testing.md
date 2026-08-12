@@ -53,7 +53,7 @@ defect: the upstream SAS extension reimplements its REST logic inside its REST
 tests, with the result that the layer is effectively untested and the copy is
 free to drift from the thing it claims to describe.
 
-```ts
+```ts path=test/unit/compute-contexts.test.ts
 import { http } from "msw";
 import {
   fixtureResponse,
@@ -151,7 +151,7 @@ and nothing else; the response body carries a real user's identity.
 
 Everything the unit tier knows about Viya, it learned from a file under
 `test/fixtures/`. Capture, sanitise, and commit — the procedure is in
-[test/fixtures/README.md](../../test/fixtures/README.md), and it is worth reading
+[test/fixtures/README.md](https://github.com/Shai-Alit/sas-py-vscode/blob/main/test/fixtures/README.md), and it is worth reading
 before your first capture rather than after.
 
 Two things to know now. Fixtures are read from the source tree and never copied

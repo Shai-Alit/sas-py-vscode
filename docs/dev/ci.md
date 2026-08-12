@@ -1,7 +1,9 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-`main`. Three jobs: `verify`, `test`, and `package`.
+`main`. Four jobs: `verify`, `test`, `docs`, and `package`. A fifth check,
+`.github/workflows/link-check.yml`, runs weekly and is deliberately not part of
+the gate.
 
 The organising principle is that **CI runs commands you can run**. There is no
 step in this workflow that exists only in CI, no environment variable that
@@ -49,6 +51,65 @@ costs more than the runner minutes.
 On Linux the integration tier runs under `xvfb-run -a`, because VS Code needs a
 display and the Ubuntu runner has none. Windows and macOS runners have a real
 session and need no wrapper.
+
+## docs
+
+One step, `npm run check:docs`, which is three checks in a row:
+
+```
+docs:reference:check  →  docs:samples  →  docs:build
+```
+
+**`docs:reference:check`** regenerates the settings and command tables from
+`package.json` and fails if the committed files differ. The reference is
+generated *and committed* — see [docs/README.md](../README.md) — so this job is
+what keeps those two facts from quietly diverging.
+
+**`docs:samples`** extracts every ` ```ts ` block from `docs/` and compiles it.
+A sample that imports from the repository declares where it lives
+(` ```ts path=test/unit/compute-contexts.test.ts `) and is checked against the
+project that owns that directory, so `../helpers/…` resolves and `describe` is
+in scope. A block that is a fragment rather than a module says ` ```ts no-check `,
+and the run prints how many opted out.
+
+That `path=` mechanism exists because of what the first real sample turned out
+to be: a mocha test. Without it, the only sample a checker can verify is one
+that imports nothing, which is not a useful class of sample.
+
+**`docs:build`** builds the VitePress site. This is a link check wearing a
+build's clothes — VitePress fails on dead internal links by default and
+`ignoreDeadLinks` is deliberately not set, which is the main reason it was
+chosen over the alternatives. The built site uploads as an artifact, because
+reviewing a documentation change against the rendered page beats reading a diff
+of markdown.
+
+## Link check (weekly, not a gate)
+
+`link-check.yml` runs `npm run docs:links` every Monday and on demand. It checks
+only **external** links; internal ones are the `docs` job's business.
+
+It does not fail a pull request, and that asymmetry is the point. External links
+break on somebody else's timetable. A contributor whose merge is blocked because
+an unrelated vendor had a bad morning learns to re-run the job without reading
+it — and then does not read it on the day it is right. A check that cries wolf
+gets ignored exactly when it is correct. So the sweep opens (or comments on) a
+single `link-rot` issue instead, which is a thing a human triages.
+
+The classification is worth knowing before you read a report:
+
+- **broken** — a 4xx/5xx, or no response at all, that survived a retry. Only
+  this opens an issue.
+- **unverified** — 403 or 429. Reported and counted, never escalated. These are
+  the answers a *working* link gives when the far end dislikes a datacentre IP,
+  and a checker that calls a bot-protection page a dead link teaches you to
+  disbelieve the rest of the report.
+- **skipped** — loopback addresses, RFC 2606 placeholder domains, and URLs
+  containing `<id>`-style template markers, which would 404 by construction.
+
+Transport errors count as broken while 403 does not, which reads backwards until
+you ask which one a working link produces: a live site answers, a retired domain
+does not resolve. The first draft had this the other way round, and the effect
+was that a domain which had vanished entirely was filed under "probably fine".
 
 ## package
 
@@ -103,9 +164,10 @@ rules that failed their own examples).
 - **Dependency audit, secret scanning, and CodeQL** — slice 0d-ii. The three
   advisories `npm ci` currently reports are all dev-only; they get triaged when
   the gate is designed, not by reflex.
-- **Docs checks** — slice 0d-i-b: generating the settings and command reference
-  from `package.json`, failing on a diff, link-checking, and type-checking the
-  samples in `docs/`.
+- **An API reference** — `src/` has no exported surface worth documenting yet,
+  so TypeDoc waits for one rather than generating a page of nothing.
+- **Deploying the site** — slice 5c. The `docs` job builds it and uploads it;
+  nothing publishes it.
 - **The live tier** — it needs a real Viya deployment and credentials, and it
   never runs in default CI. See `docs/dev/testing.md`.
 - **Caching `.vscode-test`** — the VS Code download is the slowest step in the

@@ -98,6 +98,39 @@ jobs:
         if: runner.os != 'Linux'
         run: npm run test:integration
 
+  # The documentation, held to the same standard as the code: generated tables
+  # must match their source, embedded samples must compile, and internal links
+  # must resolve. `npm run check:docs` is the whole of it, and it is the command
+  # to run locally when this job is red.
+  #
+  # External links are deliberately absent. They are swept weekly by
+  # link-check.yml, which opens an issue instead of failing a merge — see
+  # docs/dev/ci.md for why that asymmetry is on purpose.
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run check:docs
+
+      # Reviewing a documentation change by reading a diff of markdown is worse
+      # than looking at the rendered page, and the build has already happened.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: docs-site
+          path: site/
+          if-no-files-found: error
+          retention-days: 7
+
   # Proves the extension can actually be packaged, and — via check:package,
   # which `npm run package` chains — that the package contains what it should
   # and nothing else. That second half is the point: .vscodeignore is

@@ -647,13 +647,21 @@ material splits into four audiences, each with a different home and lifecycle.
 | **User** — install, connect, run, troubleshoot | `docs/` (published site) + `README.md` | With the slice that ships the feature |
 | **Contributor** — build, test, debug, release | `CONTRIBUTING.md`, `docs/dev/` | 0a, then amended per slice |
 | **Architecture** — why it's built this way | `docs/architecture/` + ADRs in `docs/adr/` | At the decision, not after |
-| **Reference** — settings, commands, API surface | Generated from `package.json` + TSDoc | CI-generated, never hand-maintained |
+| **Reference** — settings and commands (API surface later) | Generated from `package.json`; TSDoc when there is an API | CI-generated, never hand-maintained |
 
 **Generated, not transcribed.** The settings and command tables are generated
-from `package.json` contribution points, and the API reference from TSDoc via
-TypeDoc. Hand-written copies of machine-readable facts go stale silently — the
-same failure mode as the test anti-goal in §4. CI regenerates and fails if the
-committed output differs.
+from `package.json` contribution points, and — once there is a public API worth
+documenting — the API reference from TSDoc via TypeDoc. Hand-written copies of
+machine-readable facts go stale silently — the same failure mode as the test
+anti-goal in §4. CI regenerates and fails if the committed output differs.
+
+> **Settled 2026-08-12 (in 0d-i-b): TypeDoc is deferred.** `src/` is one
+> activation file with no exported surface, so a generated API reference would be
+> an empty page sitting under a diff gate, churning on every early change and
+> documenting nothing. The settings and command reference ships now; TypeDoc
+> arrives with the first module that has an API — realistically the
+> `ExecutionBackend` seam in Phase 3. Until then no document may imply an API
+> reference exists.
 
 > **Settled 2026-08-12 (in 0d-i-a, executed in 0d-i-b): the generated reference
 > is committed.** `.gitignore` ignored `docs/reference/` from 0a, which left
@@ -680,10 +688,26 @@ may not document a capability the runtime probe can't confirm, and must state
 plainly that no telemetry is collected. Anything aspirational belongs in the
 roadmap section, labelled as such.
 
-**CI enforcement** (0d-i-b): docs build without warnings, internal and external
-links resolve, generated reference matches source, and every `docs/` code sample
-that claims to run is type-checked. **Phase 5c** is then *publishing* — the site, the
-marketplace listing, the release checklist — not the first time docs get written.
+**CI enforcement** (0d-i-b): the site builds without warnings, internal links
+resolve, the generated reference matches source, and every `docs/` code sample
+that claims to run is type-checked. **Phase 5c** is then *publishing* — deploying
+the site, the marketplace listing, the release checklist — not the first time docs
+get written.
+
+> **Settled 2026-08-12 (in 0d-i-b): VitePress, and external links are swept on a
+> schedule rather than gated on pull requests.**
+>
+> VitePress over Docusaurus — which is what upstream runs — because it is
+> markdown-first and needs almost no restructuring of `docs/`, and because its
+> build fails on dead *internal* links natively. That folds one of the four CI
+> checks above into a build we were running anyway, rather than bolting on a
+> second tool that has to be taught the same link conventions.
+>
+> External links are a different problem wearing the same clothes. They rot for
+> reasons unrelated to the pull request that happens to be open, so gating on
+> them produces red CI caused by somebody else's outage — and a check that cries
+> wolf gets ignored exactly when it is right. They are swept weekly instead, and
+> rot is filed as an issue.
 
 ---
 

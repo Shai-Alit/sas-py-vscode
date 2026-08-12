@@ -119,9 +119,10 @@ writes to a deployment. Mutating tests use per-run unique names and clean up in
 Docs ship with the slice, not at the end. A behaviour change with no documentation
 change is an incomplete pull request.
 
-The settings and command reference is **generated** from `package.json`, and the
-API reference from TSDoc. Never hand-edit the generated tables — regenerate and
-commit the result, or CI will fail the diff check.
+The settings and command reference is **generated** from `package.json` by
+`npm run docs:reference`. Never hand-edit the generated tables — regenerate and
+commit the result, or CI will fail the diff check. (There is no API reference
+yet; TypeDoc arrives with the first module that exports something.)
 
 When you settle a design decision, add an ADR under `docs/adr/`. The code records
 what; only the ADR records why.

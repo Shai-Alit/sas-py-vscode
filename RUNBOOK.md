@@ -261,10 +261,16 @@ git push -u origin phase-0d-i-b-docs-ci
 gh pr create --base main --head phase-0d-i-b-docs-ci --fill
 ```
 
-☐ **Settled 2026-08-12: the generated reference is committed**, so 0d-i-b must
+☑ **Settled 2026-08-12: the generated reference is committed**, so 0d-i-b must
 also drop `docs/reference/` from `.gitignore`. See PRODUCTION_PLAN.md §4.1 —
 the plan wanted CI to fail on a diff against a file `.gitignore` was keeping out
 of the repo, and only one of those could survive.
+
+☑ **Settled 2026-08-12, in 0d-i-b: VitePress; external links swept weekly, not
+gated on PRs; TypeDoc deferred until there is an exported API.** Rationale in
+PRODUCTION_PLAN.md §4.1. The short version: VitePress fails its own build on
+dead internal links, so the link gate rides along with a build we already run,
+and external rot is somebody else's outage rather than a reason to redden a PR.
 
 ```bash
 # 0d-ii — security scanning

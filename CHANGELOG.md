@@ -38,6 +38,9 @@ called out under **Changed** with a migration note.
   joins `npm run verify`.
 - `docs/dev/testing.md` — the three tiers, the fixture rules, and the reasoning
   behind what the stack deliberately leaves out.
+- Copyright check now requires any file referencing the upstream SAS extension
+  to declare the relationship as `Ported from:` or `Structure follows:`, closing
+  a gap where a ported file that dropped the SAS header passed silently.
 
 ### Changed
 

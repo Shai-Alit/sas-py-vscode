@@ -101,6 +101,11 @@ launches the editor; `test/integration/index.ts` runs inside it, where
 `require("vscode")` resolves. Keep this tier small — it is slow, it needs a
 display, and everything that can be proven one tier down should be.
 
+Discovery is recursive, so a suite may live in a subdirectory. That is asserted
+rather than assumed: `discoverTestFiles` is exported and tested from the unit
+tier against real nested directories, because a discovery bug does not announce
+itself — tests that are never found look exactly like tests that pass.
+
 Viya is still mocked here. A test that needs a real deployment belongs in tier
 three.
 

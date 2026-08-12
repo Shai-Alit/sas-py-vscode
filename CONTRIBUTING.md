@@ -58,9 +58,25 @@ catches you.
 
 **All user-facing strings go through `l10n.t()`.**
 
-**Ported files keep their SAS copyright header *and* gain a modified-file
-notice.** This is an Apache-2.0 §4(b) obligation, not a courtesy, and CI checks
-it. See [NOTICE](NOTICE) and [docs/adr/0000-repository-licence.md](docs/adr/0000-repository-licence.md).
+**Declare any relationship to upstream code in the file header, using one of two
+exact phrases.** CI checks this, and the distinction is a licensing one:
+
+- **`Ported from: <upstream path>`** — code was copied or adapted from
+  `sassoftware/vscode-sas-extension`. The file must also keep the original SAS
+  copyright header *and* carry a modified-file notice. Apache-2.0 §4(b) requires
+  the notice; preserving the header alone does not satisfy it.
+- **`Structure follows: <upstream path>`** — the code was written here, with an
+  upstream file consulted for its shape. No SAS copyright header is added,
+  because none was copied. Inventing one would misattribute authorship, which is
+  its own kind of licensing error.
+
+A handful of upstream files carry no copyright header at all — `client/test/`
+is the notable case — so for those there is nothing to retain even when code
+*is* ported. Say so in the header rather than leaving a reviewer to guess; two
+independent reviewers read an undeclared file as a §4(b) violation, which is
+what prompted this rule.
+
+See [NOTICE](NOTICE) and [docs/adr/0000-repository-licence.md](docs/adr/0000-repository-licence.md).
 
 ## Probing before implementing
 
@@ -89,7 +105,8 @@ happy paths run once per generation so a dialect regression fails loudly.
 
 Live tests are gated three ways: the opt-in script, per-generation environment
 variables, and a separate `PYTHON_ON_VIYA_ALLOW_MUTATION` flag for anything that
-writes to a deployment. Mutating tests use per-run unique names and clean up in `finally`.
+writes to a deployment. Mutating tests use per-run unique names and clean up in
+`finally`.
 
 ## Documentation
 

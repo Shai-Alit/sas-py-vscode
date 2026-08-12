@@ -1,10 +1,15 @@
 // Copyright © 2026, Sean Ford and the Python on Viya contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Modified from the original: the structure of this runner follows
-// `client/test/runTest.ts` in sassoftware/vscode-sas-extension (Apache-2.0),
-// with the launch arguments corrected and the error path changed to preserve
-// the exit code without truncating output.
+// Structure follows: client/test/runTest.ts in sassoftware/vscode-sas-extension
+// (Apache-2.0). No code was copied — the two-halves shape of the integration
+// tier is dictated by @vscode/test-electron, and this file was written against
+// its API, with the launch arguments corrected and the error path changed to
+// preserve the exit code without truncating output.
+//
+// No SAS copyright line is added here, and none was dropped: the upstream file
+// carries no copyright header at all. Adding one would misattribute authorship.
+// See CONTRIBUTING.md, "Declare any relationship to upstream code".
 
 import * as path from "node:path";
 

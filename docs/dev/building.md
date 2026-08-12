@@ -78,11 +78,23 @@ why — a reviewer will read that comment.
 last in the config to switch off anything stylistic, so the two never fight.
 
 **`scripts/check-copyright.mjs`** enforces the licence obligations. Every source
-file needs a copyright line and an SPDX identifier. Files ported from
-`sassoftware/vscode-sas-extension` must additionally carry a modification
-notice — Apache-2.0 §4(b) requires it, and preserving the SAS header alone does
-not satisfy it. The check reads only the leading comment block, so mentioning
-SAS Institute in the body of a file is fine.
+file needs a copyright line and an SPDX identifier. Any file that names
+`sassoftware/vscode-sas-extension` in its header must declare the relationship
+on a line beginning `Ported from:` or `Structure follows:`, and a `Ported from:`
+file must additionally carry a modification notice — Apache-2.0 §4(b) requires
+it, and preserving the SAS header alone does not satisfy it.
+
+That third rule exists because the first two could only catch the careful
+mistake. They key off the presence of the SAS copyright header, so a ported file
+that dropped the header entirely passed silently. Requiring the file to say what
+it is inverts that. The check cannot tell whether the declaration is *true* —
+nothing mechanical can — but a claim that is present and specific is reviewable,
+where an absent one gets inferred differently by every reader.
+
+The check reads only the leading comment block, so mentioning SAS Institute in
+the body of a file is fine, and the declaration markers must begin a line so
+that a file *discussing* the rule is not caught by it. This file's own checker
+was the first thing to trip that.
 
 ## Localisation
 

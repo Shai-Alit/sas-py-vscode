@@ -1,10 +1,14 @@
 // Copyright © 2026, Sean Ford and the Python on Viya contributors
 // SPDX-License-Identifier: Apache-2.0
 //
-// Modified from the original: the structure of this runner follows
-// `client/test/index.ts` in sassoftware/vscode-sas-extension (Apache-2.0). File
-// discovery uses Node's own recursive `readdir` rather than a `glob`
-// dependency, and an empty result is treated as a failure rather than a pass.
+// Structure follows: client/test/index.ts in sassoftware/vscode-sas-extension
+// (Apache-2.0). No code was copied — file discovery uses Node's own recursive
+// `readdir` rather than a `glob` dependency, and an empty result is treated as
+// a failure rather than a pass.
+//
+// No SAS copyright line is added here, and none was dropped: the upstream file
+// carries no copyright header at all. Adding one would misattribute authorship.
+// See CONTRIBUTING.md, "Declare any relationship to upstream code".
 
 import { readdirSync } from "node:fs";
 import * as path from "node:path";
@@ -18,12 +22,31 @@ import Mocha from "mocha";
  * Mocha is driven through its API rather than its CLI because there is no CLI
  * inside the extension host — the process was started by VS Code, not by us.
  */
+/**
+ * Finds every compiled integration test under `root`, at any depth, as paths
+ * relative to `root`.
+ *
+ * `readdirSync`'s `recursive` option really does walk the tree — it landed in
+ * Node 20.1, and `engines.node` here is `>=20.19.0`, so it cannot be reached by
+ * a runtime without it. This is worth stating because it is not universally
+ * known: the option has been reported twice as a no-op that silently skips
+ * nested suites. `test/unit/integration-discovery.test.ts` proves otherwise
+ * against real nested directories, which is the only form of that argument
+ * worth having.
+ *
+ * Exported for that test. It does not import `vscode`, so the unit tier can
+ * load it; the rest of this module cannot be tested outside a real editor.
+ */
+export function discoverTestFiles(root: string): string[] {
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((file) => file.endsWith(".test.js"))
+    .sort();
+}
+
 export async function run(): Promise<void> {
   const testsRoot = __dirname;
 
-  const files = readdirSync(testsRoot, { recursive: true, encoding: "utf8" })
-    .filter((file) => file.endsWith(".test.js"))
-    .sort();
+  const files = discoverTestFiles(testsRoot);
 
   // The unit tier gets this from Mocha's `--fail-zero`; the API has no such
   // flag, and a runner that finds nothing must not report success.

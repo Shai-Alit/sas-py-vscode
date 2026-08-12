@@ -1,7 +1,6 @@
 .github/**
 .vscode/**
 docs/**
-l10n/**.json.map
 node_modules/**
 out/**
 scripts/**

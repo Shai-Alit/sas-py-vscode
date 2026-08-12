@@ -82,8 +82,11 @@ export default tseslint.config(
       "no-restricted-syntax": [
         "error",
         {
+          // Side-agnostic on purpose: `"4" === profile.version` is the same
+          // mistake as `profile.version === "4"`, and a guard that only catches
+          // one of them is a guard you cannot rely on.
           selector:
-            "BinaryExpression[operator=/^[!=]==?$/][left.property.name=/^(version|viyaVersion|generation)$/]",
+            "BinaryExpression[operator=/^[!=]==?$/]:matches([left.property.name=/^(version|viyaVersion|generation)$/], [right.property.name=/^(version|viyaVersion|generation)$/], [left.name=/^(version|viyaVersion|generation)$/], [right.name=/^(version|viyaVersion|generation)$/])",
           message:
             "Viya version branching belongs in src/dialects/. Add a dialect method instead of comparing a version field here.",
         },
@@ -92,6 +95,14 @@ export default tseslint.config(
             "BinaryExpression[operator=/^[!=]==?$/] > Literal[value=/^3\\.5$/]",
           message:
             'Viya version branching belongs in src/dialects/. Add a dialect method instead of comparing against "3.5" here.',
+        },
+        {
+          // `switch (profile.version) { case "3.5": ... }` is version branching
+          // too, and is not a BinaryExpression, so the rules above miss it.
+          selector:
+            "SwitchStatement > :matches(MemberExpression[property.name=/^(version|viyaVersion|generation)$/], Identifier[name=/^(version|viyaVersion|generation)$/])",
+          message:
+            "Viya version branching belongs in src/dialects/. Switching on a version field is still branching — add a dialect method.",
         },
       ],
     },

@@ -108,8 +108,16 @@ that excludes it. Upgrading TypeScript past the range does not fail loudly; it
 silently disables every type-aware lint rule, which is most of the value in the
 config. Upgrade both together, and check `npm ls typescript-eslint` afterwards.
 
-**`activationEvents` is empty, on purpose.** VS Code activates the extension
-when one of its contributed commands runs. Adding `onLanguage:python` would
-activate it for every Python user on every Python file, the overwhelming
-majority of whom have no Viya deployment. Think hard before adding an activation
-event, and prefer the narrowest one that works.
+**`activationEvents` is empty, on purpose.** Since VS Code 1.74, a command
+declared in `contributes.commands` activates its extension implicitly — the
+[activation events reference](https://code.visualstudio.com/api/references/activation-events)
+states plainly that "commands contributed by your extension do not require a
+corresponding `onCommand` activation event declaration". We require `^1.104.0`,
+and the upstream SAS extension ships 52 commands and zero `onCommand` entries.
+This gets flagged as a bug by people (and review bots) working from
+pre-1.74 habits; it is not one.
+
+Adding `onLanguage:python` would be a genuine mistake for a different reason —
+it activates the extension for every Python user on every Python file, the
+overwhelming majority of whom have no Viya deployment. Think hard before adding
+any activation event, and prefer the narrowest one that works.

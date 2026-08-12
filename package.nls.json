@@ -1,0 +1,6 @@
+{
+  "extension.category": "Python on Viya",
+  "command.showOutputChannel.title": "Show Log",
+  "configuration.connectionProfiles.description": "SAS Viya connection profiles. Populated by the profile commands in Phase 1; edit by hand at your own risk. Workspace-scoped values are ignored in untrusted folders.",
+  "configuration.defaultProfile.description": "Name of the connection profile to use when none is explicitly selected. Workspace-scoped values are ignored in untrusted folders."
+}

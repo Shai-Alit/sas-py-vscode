@@ -1,0 +1,56 @@
+name: Bug report
+description: Something behaves differently than documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste tokens, hostnames, or anything from a production
+        deployment. Redact before posting — logs from this extension can contain
+        server URLs and user names.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you got instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: dropdown
+    id: viya-version
+    attributes:
+      label: Viya generation
+      options:
+        - Viya 4
+        - Viya 3.5
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: extension-version
+    attributes:
+      label: Extension version
+    validations:
+      required: true
+  - type: input
+    id: vscode-version
+    attributes:
+      label: VS Code version and operating system
+      placeholder: "1.9x.x, Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output channel contents
+      description: From the extension's output channel. **Redact hostnames, user names, and anything token-shaped.**
+      render: text

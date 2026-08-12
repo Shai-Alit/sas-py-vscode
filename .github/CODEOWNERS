@@ -1,0 +1,11 @@
+# Default owner for everything.
+*                       @Shai-Alit
+
+# Areas where a mistake is expensive and review must not be skipped.
+/LICENSE                @Shai-Alit
+/NOTICE                 @Shai-Alit
+/SECURITY.md            @Shai-Alit
+/.github/               @Shai-Alit
+/docs/adr/              @Shai-Alit
+/src/connection/        @Shai-Alit
+/src/dialects/          @Shai-Alit

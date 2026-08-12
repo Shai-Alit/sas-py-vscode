@@ -1,0 +1,26 @@
+# Normalise line endings. Dev is Windows, CI is Linux; without this every diff
+# eventually fills with phantom whole-file changes.
+* text=auto eol=lf
+
+# Windows-only files that must keep CRLF or they break.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# Binary — never munge, never diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.vsix  binary
+*.woff  binary
+*.woff2 binary
+
+# Generated/vendored: keep out of language stats and collapse in review.
+src/connection/rest/api/**  linguist-generated=true
+docs/reference/**           linguist-generated=true
+
+# Lockfiles: diffable but not worth reviewing line by line.
+package-lock.json  -diff

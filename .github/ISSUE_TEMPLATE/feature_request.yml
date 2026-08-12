@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest a capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [PRODUCTION_PLAN.md](https://github.com/Shai-Alit/sas-py-vscode/blob/main/PRODUCTION_PLAN.md)
+        first — §3.1 tracks feature parity with the SAS extension, and your idea
+        may already be scheduled. Saying it matters to you is still useful; the
+        phase order after v0.1.0 is driven by demand.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The underlying goal, not just the feature. It often changes the answer.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to see?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What are you doing instead today?

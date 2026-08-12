@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+out/
+dist/
+*.vsix
+*.tsbuildinfo
+
+# Test and coverage artefacts
+.nyc_output/
+coverage/
+.vscode-test/
+.vscode-test-web/
+test-results/
+
+# Localisation build output (l10n/bundle.l10n.json is generated, not authored)
+l10n/bundle.l10n.json
+
+# Generated documentation output
+docs/reference/
+site/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+.idea/
+
+# Python bytecode (the Codex reviewer script is stdlib Python)
+__pycache__/
+*.py[cod]
+
+# Secrets and local configuration — nothing in this group may ever be committed.
+# creds.json in particular holds live Viya bearer tokens used for probing.
+creds.json
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+.saspy-local/

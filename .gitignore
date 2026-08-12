@@ -24,7 +24,6 @@ test/scratch/
 l10n/bundle.l10n.json
 
 # Generated documentation output
-docs/reference/
 site/
 
 # Editor and OS noise
@@ -47,3 +46,9 @@ creds.json
 *.key
 *.pfx
 .saspy-local/
+
+# VitePress build cache
+docs/.vitepress/cache/
+
+# Transient files written by scripts/check-docs-samples.mjs
+__docs-sample-*.ts

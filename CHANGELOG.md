@@ -50,6 +50,38 @@ called out under **Changed** with a migration note.
   allow-by-default, so a packaging mistake ships rather than failing.
 - `docs/dev/ci.md` — what each CI job does, why the matrix is shaped the way it
   is, and what is deliberately not gated yet.
+- A generated settings and command reference. `npm run docs:reference` builds
+  `docs/reference/` from `package.json` and `package.nls.json`; the output is
+  committed, and CI fails if it drifts from its source.
+- A documentation site built with [VitePress](https://vitepress.dev), chosen
+  because it fails its own build on a dead internal link — the link check rides
+  along with a build the project wants anyway. Building it is a CI job;
+  publishing it is a later slice.
+- `npm run docs:samples`, which compiles every TypeScript block embedded in
+  `docs/`. A sample that imports from the repository declares where it lives
+  (` ```ts path=test/unit/example.test.ts `) and is checked against the project
+  that owns that directory; a deliberate fragment marks itself ` ```ts no-check `
+  and is counted in the output. That `path=` is the one place where a string in
+  a document chooses a filename to write to, so it is validated as untrusted
+  input — a location must be relative, free of `..`, not drive-qualified, and
+  the resolved target is asserted to be inside the repository before anything is
+  written.
+- `npm run docs:links` and a weekly `link-check` workflow that sweeps external
+  links and opens a `link-rot` issue instead of failing a pull request. A 403 or
+  429 is reported as unverified rather than broken, because that is what a
+  working link returns when the far end dislikes a datacentre IP.
+- `npm run docs:links:self`, part of `check:docs`, which resolves every link that
+  points back at this repository against the working tree and fails the build if
+  it names a file that is not there. Links out of `docs/` have to be written as
+  absolute GitHub URLs because VitePress cannot resolve a path above its
+  `srcDir`; checking them on disk keeps them gated per pull request, and is the
+  only correct check while the repository is private — GitHub answers 404, not
+  403, to an anonymous request for a private repo, so the first live run of the
+  weekly sweep reported five broken links and all five were fine.
+- ADR-0004 (documentation toolchain), recording why VitePress was chosen over
+  Docusaurus, why external links are swept on a schedule rather than gated, why
+  self-links are resolved on disk instead, and why TypeDoc waits for an exported
+  API.
 
 ### Fixed
 

@@ -51,10 +51,15 @@ describe("eslint ignore coverage", () => {
     "dist/extension.js",
     "coverage/lcov-report/block-navigation.js",
     "test/scratch/throwaway.ts",
+    "site/assets/app.BSbNVzT7.js",
+    "docs/.vitepress/cache/deps/vitepress.js",
   ];
 
+  // Named by the full path rather than the first segment. `docs/` is not
+  // ignored — only `docs/.vitepress/cache/` is — and a test reading "ignores
+  // docs" would describe a configuration that would be a bug.
   for (const file of ignored) {
-    it(`ignores ${file.split("/")[0] ?? file}`, async function () {
+    it(`ignores ${file}`, async function () {
       this.timeout(LOAD_BUDGET_MS);
       assert.equal(
         await eslint.isPathIgnored(file),
@@ -68,7 +73,13 @@ describe("eslint ignore coverage", () => {
   // above while linting nothing at all.
   it("still lints the extension source and its own config", async function () {
     this.timeout(LOAD_BUDGET_MS);
-    for (const file of ["src/extension.ts", "eslint.config.mjs"]) {
+    for (const file of [
+      "src/extension.ts",
+      "eslint.config.mjs",
+      // Ignoring the cache must not take the config with it. This is the one
+      // file under docs/ that is code, and an unlinted config quietly rots.
+      "docs/.vitepress/config.mjs",
+    ]) {
       assert.equal(
         await eslint.isPathIgnored(file),
         false,

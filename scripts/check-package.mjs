@@ -83,10 +83,15 @@ const DENY = [
   {
     name: "internal document",
     why: "planning and probe records are for maintainers; they date badly and say things about deployments that a published package should not, and the policy files describe a GitHub workflow a package consumer cannot use",
+    // `site/` is the built documentation. It exists only on a machine that has
+    // run `npm run docs:build` — which CI does, and which `vsce package` would
+    // then happily read out of the working tree.
     test: (p) =>
       /(^|\/)(PRODUCTION_PLAN|RUNBOOK|PROBE-FINDINGS|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)\.md$/.test(
         p,
-      ) || /^docs\//.test(p),
+      ) ||
+      /^docs\//.test(p) ||
+      /^site\//.test(p),
   },
   {
     name: "repository metadata",
@@ -156,6 +161,8 @@ const SELF_TEST = [
   ["RUNBOOK.md", "internal document"],
   ["SECURITY.md", "internal document"],
   ["docs/dev/ci.md", "internal document"],
+  ["site/index.html", "internal document"],
+  ["docs/reference/settings.md", "internal document"],
   // vsce's own defaultIgnore drops the lockfile, so this never reaches these
   // rules in practice. Pinned anyway: "something else already handles it" is
   // exactly the assumption that stops being true after a tooling upgrade.

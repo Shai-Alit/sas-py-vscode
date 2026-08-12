@@ -27,6 +27,8 @@ export default tseslint.config(
       ".vscode-test/**",
       ".vscode-test-web/**",
       "test/scratch/**",
+      "site/**",
+      "docs/.vitepress/cache/**",
     ],
   },
 

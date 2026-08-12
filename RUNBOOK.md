@@ -261,10 +261,18 @@ git push -u origin phase-0d-i-b-docs-ci
 gh pr create --base main --head phase-0d-i-b-docs-ci --fill
 ```
 
-☐ **Settled 2026-08-12: the generated reference is committed**, so 0d-i-b must
+☑ **Settled 2026-08-12: the generated reference is committed**, so 0d-i-b must
 also drop `docs/reference/` from `.gitignore`. See PRODUCTION_PLAN.md §4.1 —
 the plan wanted CI to fail on a diff against a file `.gitignore` was keeping out
 of the repo, and only one of those could survive.
+
+☑ **Settled 2026-08-12, in 0d-i-b: VitePress; external links swept weekly, not
+gated on PRs; links back into this repository resolved against the working tree
+and gated; TypeDoc deferred until there is an exported API.** Recorded as
+[ADR-0004](docs/adr/0004-documentation-toolchain.md); summarised in
+PRODUCTION_PLAN.md §4.1. The short version: VitePress fails its own build on
+dead internal links, so the link gate rides along with a build we already run,
+and external rot is somebody else's outage rather than a reason to redden a PR.
 
 ```bash
 # 0d-ii — security scanning
@@ -279,14 +287,32 @@ gh pr create --base main --head phase-0d-ii-security-scanning --fill
 maintainer can re-derive the reviewer setup without hunting through the viyapy
 project folder.
 
-☐ **Triage the three advisories `npm ci` reported on 2026-08-12** (1 low, 1
-moderate, 1 high) as part of designing the audit gate, rather than reflexively
-running `npm audit fix --force`. All three are in **dev**-only dependencies, so
-nothing reaches the VSIX — but they run on contributor machines and in CI, which
-is not nothing. The likely family is `@vscode/vsce`, which drags in the archived
-`keytar@7.9.0` and an old `glob@10.5.0`. Decide deliberately whether the gate
-fails on `--omit=dev` only, or on everything with documented exceptions; a gate
-that cries wolf about a packaging tool gets switched off within a month.
+☐ **Triage the six advisories `npm ci` reported on 2026-08-12** (1 low, 3
+moderate, 2 high) as part of designing the audit gate, rather than reflexively
+running `npm audit fix --force`. Named: `diff`/`mocha`, `serialize-javascript`,
+`esbuild`, `vite`/`vitepress`. All are **dev**-only, and structurally so —
+`npm ls --omit=dev` prints an empty tree, because the extension has no runtime
+dependencies at all — so nothing reaches the VSIX. They still run on contributor
+machines and in CI, which is not nothing; the `vite` path traversal and the
+`esbuild` dev-server advisory are both *local dev server* issues, which is
+exactly the surface `npm run docs:dev` opens.
+
+Note that the count went 3 → 6 in 0d-i-b, purely from adding VitePress. That is
+the shape of the problem: a gate on the raw total ratchets upward every time a
+dev tool lands and gets switched off within a month. Decide deliberately whether
+it fails on `--omit=dev` only (which here means never), or on everything with
+documented, expiring exceptions.
+
+☐ **Decide the install-script policy.** `npm ci` now warns that five packages
+have `install`/`postinstall` scripts not covered by `allowScripts`:
+`@vscode/vsce-sign`, `esbuild` (twice, two versions), `keytar@7.9.0`, and `msw`.
+Arbitrary code at install time is the supply-chain surface that actually gets
+exploited, and `esbuild`'s postinstall is load-bearing — it fetches the platform
+binary, and this project has already been bitten once by a `node_modules` tree
+with the wrong one. So the answer is an explicit allow-list, not
+`ignore-scripts=true`. Pin it in `.npmrc` in the same pull request as the audit
+gate, and say in `docs/dev/building.md` what a contributor should do when the
+warning names something new.
 
 ☐ Merge 0d-ii. Phase 0 is complete; start Phase 1.
 

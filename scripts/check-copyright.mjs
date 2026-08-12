@@ -39,6 +39,9 @@ const SCAN = [
   { dir: "src", extensions: [".ts"] },
   { dir: "scripts", extensions: [".mjs"] },
   { dir: "test", extensions: [".ts"], skip: ["scratch"] },
+  // The docs site config is a source file that happens to live under docs/.
+  // `cache` and `dist` are VitePress's own output and are not ours to licence.
+  { dir: "docs/.vitepress", extensions: [".mjs"], skip: ["cache", "dist"] },
 ];
 const ROOT_FILES = ["esbuild.mjs", "eslint.config.mjs"];
 

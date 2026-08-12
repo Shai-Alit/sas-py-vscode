@@ -17,6 +17,10 @@ scripts/**
 src/**
 test/**
 coverage/**
+# The built documentation site. Present only after `npm run docs:build`, which
+# the CI docs job does run — and `vsce package` reads the working tree, so on a
+# machine that has built both, several megabytes of static site would ship.
+site/**
 
 .editorconfig
 .eslintcache

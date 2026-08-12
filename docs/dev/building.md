@@ -1,7 +1,7 @@
 # Building and debugging
 
 What you need installed, how the build fits together, and why it is shaped this
-way. For the rules that get a change rejected, see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+way. For the rules that get a change rejected, see [CONTRIBUTING.md](https://github.com/Shai-Alit/sas-py-vscode/blob/main/CONTRIBUTING.md).
 
 ## Prerequisites
 

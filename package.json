@@ -87,6 +87,15 @@
     "format:check": "prettier --check .",
     "check:copyright": "node scripts/check-copyright.mjs",
     "check:package": "node scripts/check-package.mjs",
+    "check:docs": "npm run docs:reference:check && npm run docs:samples && npm run docs:links:self && npm run docs:build",
+    "docs:reference": "node scripts/generate-reference.mjs",
+    "docs:reference:check": "node scripts/generate-reference.mjs --check",
+    "docs:samples": "node scripts/check-docs-samples.mjs",
+    "docs:links": "node scripts/check-links.mjs",
+    "docs:links:self": "node scripts/check-links.mjs --self-only",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "l10n:extract": "vscode-l10n-dev export --outDir ./l10n ./src",
     "package": "vsce package --out dist/python-on-viya.vsix && npm run check:package",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run check:copyright && npm run build && npm run coverage"
@@ -110,6 +119,7 @@
     "prettier": "3.9.6",
     "sinon": "22.1.0",
     "typescript": "6.0.3",
-    "typescript-eslint": "8.67.0"
+    "typescript-eslint": "8.67.0",
+    "vitepress": "1.6.4"
   }
 }

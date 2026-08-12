@@ -105,12 +105,19 @@ instead. Left there, that would be a quiet downgrade: a link checked on every
 pull request by a build that fails becomes a link checked once a week by a
 sweep that files an issue.
 
-It is also, less obviously, a link that would be checked *wrongly*. **GitHub
-answers 404, not 403, for a private repository**, so while this repo is private
-every self-link reads as broken to an anonymous client. The first live run of
-the weekly sweep reported five broken links and all five were fine — a report
-that is mostly false on its first outing, which is precisely the cry-wolf
-failure the sweep is designed around.
+It was also, less obviously, a link that was being checked *wrongly*. **GitHub
+answers 404, not 403, for a private repository**, and this repository was
+private when the sweep was written, so every self-link read as broken to an
+anonymous client. The first live run reported five broken links and all five
+were fine — a report that is mostly false on its first outing, which is
+precisely the cry-wolf failure the sweep is designed around.
+
+The repository went public on 2026-08-12 and those fetches would now succeed, so
+that argument has expired. The check stays regardless, on the two grounds that
+never depended on visibility: it is exact rather than probabilistic, and it runs
+early enough to gate the pull request that breaks a link. Visibility is also not
+a property to build a checker's correctness on — it is one setting away from
+changing back.
 
 Resolving them on disk fixes both at once, and is better than either thing it
 replaces: exact rather than probabilistic, and early enough that a rename is

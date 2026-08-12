@@ -74,10 +74,12 @@ called out under **Changed** with a migration note.
   points back at this repository against the working tree and fails the build if
   it names a file that is not there. Links out of `docs/` have to be written as
   absolute GitHub URLs because VitePress cannot resolve a path above its
-  `srcDir`; checking them on disk keeps them gated per pull request, and is the
-  only correct check while the repository is private — GitHub answers 404, not
-  403, to an anonymous request for a private repo, so the first live run of the
-  weekly sweep reported five broken links and all five were fine.
+  `srcDir`; checking them on disk keeps them gated per pull request, and needs no
+  network. It was also the only *correct* check while the repository was private —
+  GitHub answers 404, not 403, to an anonymous request for a private repo, so the
+  first live run of the weekly sweep reported five broken links and all five were
+  fine. The repository is public now; the check stays, because being exact and
+  early never depended on that.
 - ADR-0004 (documentation toolchain), recording why VitePress was chosen over
   Docusaurus, why external links are swept on a schedule rather than gated, why
   self-links are resolved on disk instead, and why TypeDoc waits for an exported

@@ -191,9 +191,13 @@ rules that failed their own examples).
 
 ## What is deliberately not here yet
 
-- **Dependency audit, secret scanning, and CodeQL** — slice 0d-ii. The three
-  advisories `npm ci` currently reports are all dev-only; they get triaged when
-  the gate is designed, not by reflex.
+- **Dependency audit, secret scanning, and CodeQL** — slice 0d-ii. Every
+  advisory `npm ci` currently reports is dev-only, and that is structural rather
+  than lucky: the extension has no runtime dependencies at all, so
+  `npm ls --omit=dev` prints an empty tree and nothing in `npm audit` can reach a
+  user. Adding VitePress took the count from three to six (`vite` → `esbuild`),
+  which is what a `--production` audit gate would have to be built to ignore.
+  They get triaged when that gate is designed, not by reflex.
 - **An API reference** — `src/` has no exported surface worth documenting yet,
   so TypeDoc waits for one rather than generating a page of nothing.
 - **Deploying the site** — slice 5c. The `docs` job builds it and uploads it;

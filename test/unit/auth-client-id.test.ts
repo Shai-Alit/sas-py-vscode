@@ -31,7 +31,6 @@ const viya4 = (release: string): Deployment => ({ kind: "viya4", release });
  * A stand-in for a client secret. Not a credential — it never left this file and
  * no deployment has ever accepted it.
  */
-// credential-scan: allow — test placeholder, see above
 const SECRET = "secret-placeholder-not-real";
 
 describe("hasBuiltInClient", () => {

@@ -252,7 +252,7 @@ function readString(
  * because of a JSON type falls back to the 401 path silently.
  */
 function readExpiresIn(body: Record<string, unknown>): number | undefined {
-  const raw = body["expires_in"];
+  const raw = body.expires_in;
   const seconds =
     typeof raw === "number"
       ? raw
@@ -268,17 +268,13 @@ async function post(
   deps: TokenEndpointDeps,
   fallbackRefreshToken: string | undefined,
 ): Promise<TokenResult> {
-  const doFetch = deps.fetch ?? (globalThis.fetch as FetchLike | undefined);
-  if (!doFetch) {
-    return {
-      ok: false,
-      reason: "no fetch implementation is available in this runtime",
-      problem: {
-        code: "token-endpoint-unreachable",
-        detail: "global fetch is not available",
-      },
-    };
-  }
+  // Node's global `fetch` already satisfies this shape, so the annotation is the
+  // whole check: the engines floor is 20.19, where it is always present. There is
+  // deliberately no "is fetch available" guard — the type system will not admit
+  // one, and a runtime that somehow lacked it would throw from the call below,
+  // inside the try, and arrive at the same unreachable-endpoint problem as a
+  // refused connection.
+  const doFetch: FetchLike = deps.fetch ?? globalThis.fetch;
   const now = deps.now ?? Date.now;
   const url = `${root(endpoint)}${OAUTH_BASE}/token`;
 

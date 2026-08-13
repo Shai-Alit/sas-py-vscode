@@ -86,8 +86,12 @@ describe("createPkcePair", () => {
   it("emits a verifier inside the RFC 7636 length and character bounds", () => {
     const { verifier } = createPkcePair();
     assert.match(verifier, UNRESERVED);
-    assert.equal(verifier.length, TOKEN_LENGTH);
+    // The RFC bound goes first on purpose. `assert.equal` from node:assert/strict
+    // is typed `asserts actual is T`, so the line below narrows `verifier.length`
+    // to the literal 43 — after which a bounds check against 43 and 128 is
+    // statically true and no longer a test of anything.
     assert.ok(verifier.length >= 43 && verifier.length <= 128);
+    assert.equal(verifier.length, TOKEN_LENGTH);
   });
 
   it("does not repeat itself across many draws", () => {

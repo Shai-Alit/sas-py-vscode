@@ -643,11 +643,23 @@ Then: charset and length bounds, uniqueness across many calls, the OAuth error
 envelope, `expiresAt` arithmetic against a faked clock, and the decision-9 matrix
 across Viya 3.5 / 4 2022.10 / 4 2022.11+ with `clientId` present and absent.
 
-☐ **Raise the coverage ratchet in the same pull request** — 1b-i is pure,
-heavily-tested code, so the thresholds should move up noticeably rather than by a
-rounding margin. Current floor is 55 / 55 / 63 / 86.
+☑ **Coverage ratchet raised, 2026-08-13.** Measured 63.21 statements, 63.21
+lines, 72.04 functions, 90.08 branches; floor set to **62 / 62 / 71 / 89**, about
+a point under each. `src/auth` itself measures 98.78 statements with 100%
+functions — the global number is far lower because `extension.ts` and the four
+`src/profile` shell modules are only reachable from an extension host and score
+zero here.
 
-☐ **Comment the 3.5 path in the code**, not only in the plan: it is built from
+> **This ratchet is about to work against us.** 1b-ii is all shell code — the
+> URI handler, `SecretStorage`, the browser handoff — which lands in the
+> denominator and scores zero in the unit run, so the global percentage will
+> *fall* even though the slice is fully tested by the integration suite. Ratchets
+> that have to be lowered are not ratchets. Decide in 1b-ii scoping whether to
+> exclude the shell modules from the c8 denominator, run separate thresholds per
+> directory, or merge integration coverage in — but decide it before the number
+> forces the decision.
+
+☑ **Comment the 3.5 path in the code**, not only in the plan: it is built from
 SAS's documentation and has never been observed against a live 3.5 deployment,
 because there isn't one to observe. Decision 9 was amended on 2026-08-13 to stop
 calling that a pending pre-release check — nobody can clear it, and a blocker

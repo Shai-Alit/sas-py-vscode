@@ -32,9 +32,7 @@ import { MOCK_VIYA_BASE, mockViya } from "../helpers/mock-viya";
 const TOKEN_URL = `${MOCK_VIYA_BASE}/SASLogon/oauth/token`;
 
 /** Not a credential: a shape that looks like one, so the tests can prove it never escapes. */
-// credential-scan: allow — test placeholder, never a real token
 const FAKE_ACCESS = "access-token-placeholder";
-// credential-scan: allow — test placeholder, never a real token
 const FAKE_REFRESH = "refresh-token-placeholder";
 
 const baseRequest = {
@@ -454,6 +452,10 @@ describe("token endpoint failures", () => {
   });
 
   it("survives a rejection that is not an Error", async () => {
+    // The rule this suppresses is right about production code and wrong here:
+    // rejecting with a non-Error is the exact condition under test, because a
+    // transport can do it and `error.message` on a string is undefined.
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- deliberately malformed rejection
     const failing: FetchLike = () => Promise.reject("just a string");
 
     const result = await exchange({ fetch: failing });

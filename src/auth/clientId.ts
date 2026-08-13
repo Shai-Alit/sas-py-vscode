@@ -135,7 +135,16 @@ export function hasBuiltInClient(deployment: Deployment): boolean | undefined {
   }
 }
 
-/** Human-readable version, for the log line on a refusal. */
+/**
+ * Human-readable version, for the log line on a refusal.
+ *
+ * The `unknown` arm shows as uncovered and always will: the only caller reaches
+ * this after `hasBuiltInClient` returned an explicit `false`, which `unknown`
+ * never does. It stays because the switch is exhaustive by design — that is what
+ * turns a future `Deployment` member into a compile error rather than a silently
+ * missing sentence — and covering it would mean exporting a private helper to
+ * satisfy a metric.
+ */
 function describeDeployment(deployment: Deployment): string {
   switch (deployment.kind) {
     case "viya35":

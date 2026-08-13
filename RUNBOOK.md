@@ -658,6 +658,9 @@ zero here.
 > exclude the shell modules from the c8 denominator, run separate thresholds per
 > directory, or merge integration coverage in — but decide it before the number
 > forces the decision.
+>
+> **Settled 2026-08-13, before it forced anything:** the first option, in its own
+> slice below. ADR-0009.
 
 ☑ **Comment the 3.5 path in the code**, not only in the plan: it is built from
 SAS's documentation and has never been observed against a live 3.5 deployment,
@@ -667,10 +670,39 @@ nobody can clear is a line people learn to step over.
 
 ```bash
 # ⛔ BARRIER: merge 1b-i first.
+# Interlude — fix the denominator before the slice that would bend it
+git checkout -b chore/coverage-denominator
+git commit -m "chore(coverage): measure unit-reachable code and check the exclusion"
+```
+
+☐ **Coverage-denominator punch list.** Small on purpose, and its own slice on
+purpose: a threshold re-baseline has to be measured on a tree where nothing else
+moved, or the new number is unattributable.
+
+- `.c8rc.json` — the five `vscode`-importing modules join `exclude`.
+- `scripts/check-coverage-scope.mjs` — asserts the rule in **both** directions
+  (everything excluded imports `vscode`; everything importing `vscode` is
+  excluded), refuses globs, and uses TypeScript's parser so that a comment
+  mentioning `vscode` is not read as an import and an erased `import type` does
+  not cost a module its floor. Joins `npm run verify`.
+- Its unit test, including one case that runs the check against this repository —
+  so drift fails by file name in the tier that runs on three operating systems,
+  not only in the gate.
+- ADR-0009, `docs/dev/testing.md`, `docs/dev/ci.md`, `docs/dev/building.md`,
+  `CHANGELOG.md`.
+- Re-baseline the thresholds from a measured `npm run coverage` on this branch.
+
+```bash
+# ⛔ BARRIER: merge the denominator slice first.
 # 1b-ii — the VS Code shell
 git checkout -b phase-1b-ii-auth-shell
 git commit -m "feat(auth): add browser sign-in, dual code capture, and proxy support"
 ```
+
+☐ **An integration test per shell module — this one is now load-bearing.**
+ADR-0009 took the shell out of the coverage denominator, so no threshold will
+notice a missing test any more. The guarantee is this line and a reviewer's
+attention, which is weaker than a number and is why it is written down here.
 
 ☐ **1b-ii punch list.** `env.asExternalUri` / `env.openExternal`,
 `window.registerUriHandler`, `window.showInputBox`, and the race between the last

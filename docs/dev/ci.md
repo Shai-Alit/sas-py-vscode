@@ -63,7 +63,8 @@ will not catch it — see [What `check:secrets` is for](#what-check-secrets-is-f
 One step: `npm run verify`. That is the whole chain —
 
 ```
-format:check  →  lint  →  typecheck  →  check:copyright  →  check:secrets  →  build  →  coverage
+format:check  →  lint  →  typecheck  →  check:copyright  →  check:secrets  →
+check:coverage-scope  →  build  →  coverage
 ```
 
 — and it runs on Ubuntu with the Node version in `.nvmrc`.
@@ -77,6 +78,15 @@ mostly checking itself.
 
 The coverage report uploads as an artifact even when the job fails, because a
 failing coverage ratchet is precisely when you want to read it.
+
+`check:coverage-scope` runs a few steps earlier and guards the ratchet's
+denominator rather than its value. The coverage figure is measured over
+unit-reachable code — modules importing `vscode` are excluded, because the unit
+tier cannot load them — and that check asserts the exclude list in `.c8rc.json`
+matches the rule in both directions, so it can neither hide a testable module
+nor silently omit a new one. See
+[testing.md](testing.md#what-the-number-is-measured-over) and
+[ADR-0009](../adr/0009-coverage-scope.md).
 
 ## test
 

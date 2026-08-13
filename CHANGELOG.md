@@ -155,6 +155,15 @@ called out under **Changed** with a migration note.
   production dependency tree stays empty and the transport is an injected
   `fetch`-shaped port.
 
+- `npm run check:coverage-scope`, which asserts that a module is excluded from
+  the unit coverage denominator **if and only if** it imports `vscode`. It joins
+  `npm run verify`, and it exists so that the exclusion in the entry below is a
+  rule rather than a list of exceptions: a pure module parked in the list is
+  caught, and so is a new shell module missing from it. Globs are refused, and
+  the import test is TypeScript's parser rather than a text search, so comments
+  discussing `vscode` are not mistaken for imports and a type-only import — which
+  is erased before the code runs — keeps its coverage floor.
+
 ### Fixed
 
 - Profile validation messages shown under an input box are now localisable. The
@@ -171,6 +180,17 @@ called out under **Changed** with a migration note.
 
 ### Changed
 
+- The coverage ratchet is measured over **unit-reachable code**. Modules that
+  import `vscode` are excluded from the c8 denominator: they cannot be loaded
+  outside an extension host, so they score zero however well the integration
+  tier tests them, and leaving them in meant a slice that added shell code
+  pushed the aggregate down while increasing the amount of tested code — forcing
+  the ratchet to be lowered. Thresholds are re-baselined against the new
+  population, which is smaller and higher. The guarantee that shell code is
+  tested moves to a process gate: a slice that adds a shell module adds an
+  integration test for it, because no threshold will now notice if it doesn't.
+  [ADR-0009](docs/adr/0009-coverage-scope.md) records the alternatives, including
+  merging integration coverage in, and why they were rejected for now.
 - CI classifies each pull request before running it. A change that touches only
   `docs/` or a top-level markdown file now runs the `docs` job alone —
   `verify`, `test`, `package` and `supply-chain` are skipped — while any change

@@ -1,7 +1,15 @@
 {
   "src": ["out/src"],
   "all": true,
-  "exclude": ["out/test/**", "test/**"],
+  "exclude": [
+    "out/test/**",
+    "test/**",
+    "src/extension.ts",
+    "src/profile/commands.ts",
+    "src/profile/problems.ts",
+    "src/profile/statusBar.ts",
+    "src/profile/store.ts"
+  ],
   "excludeAfterRemap": true,
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",

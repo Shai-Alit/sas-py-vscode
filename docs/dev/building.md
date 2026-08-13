@@ -18,7 +18,8 @@ npm run verify
 `verify` is the whole gate, and CI runs this exact command — see `docs/dev/ci.md`:
 
 ```
-format:check → lint → typecheck → check:copyright → check:secrets → build → coverage
+format:check → lint → typecheck → check:copyright → check:secrets →
+check:coverage-scope → build → coverage
 ```
 
 Run it before you push. If it passes locally it passes in CI; if it does not,

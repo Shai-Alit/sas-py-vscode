@@ -38,3 +38,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0005](0005-supply-chain-policy.md) | Supply chain: no install scripts, advisories reviewed by identifier with an expiry | Accepted |
 | [0006](0006-scanning-posture.md) | Scanning: CodeQL as a committed workflow, and a repo-local scanner for credential shapes | Accepted |
 | [0007](0007-connection-profile-storage.md) | Connection profiles: separate storage, a versioned schema, and no secret in settings | Accepted |
+| [0008](0008-auth-core-transport-and-security-deltas.md) | Auth core: a `fetch`-shaped transport port, and the security deltas from upstream `auth.ts` | Accepted |

@@ -402,14 +402,58 @@ and 401-triggered refresh. An empty `clientId` falls back to the built-in
 must be told to supply an id and secret in those words, because the failure they
 would otherwise see is a generic OAuth rejection. Also add corporate
 **proxy support**, which the SAS extension lacks and which is a known failure
-class with axios behind an enterprise proxy. *Medium.*
+class behind an enterprise proxy. *Medium.* **Split into 1b-i and 1b-ii on
+2026-08-13**, along the same seam 1a used: the part that can be specified by
+unit tests, and the part that can only be exercised in an extension host.
 
-> **Audit ported security code; do not transcribe it.** The upstream `auth.ts`
-> generates its PKCE code verifier with `Math.random()`, which is not a CSPRNG and
-> does not satisfy RFC 7636. Replace with `crypto.randomBytes` /
-> `webcrypto.getRandomValues` and unit-test it. The same rule applies to every
-> security-relevant file we port — upstream `CAHelper.ts`, for instance, arrives
-> with a `console.log` inside a `catch`, violating two §5 gates on arrival.
+**1b-i — the auth core.** `src/auth/`, with no `vscode` import anywhere in it.
+Three modules. `pkce.ts` mints the code verifier, the S256 challenge, and — see
+the audit below — a random `state`. `tokenEndpoint.ts` builds the authorize URL
+and makes the two SASLogon calls, `authorization_code` and `refresh_token`,
+parsing the OAuth error envelope into a typed failure and converting `expires_in`
+into an absolute `expiresAt` at the moment the response is read. `clientId.ts`
+resolves decision 9, returning either the built-in `vscode` client or a typed
+problem code in the style `src/profile/problems.ts` already establishes — codes
+and parameters, never English prose, so the core stays free of `vscode.l10n` and
+the message is still localisable in the shell. HTTP arrives as an injected
+`fetch`-shaped port (ADR-0008), which means the whole slice is testable at the
+cheap tier with no editor and no network. *Small-to-medium.*
+
+**1b-ii — the VS Code shell.** `env.asExternalUri` and `env.openExternal`,
+`window.registerUriHandler`, `window.showInputBox`, and the race between the last
+two; validating the returned `state` on the URI-handler arm; the undici
+`ProxyAgent` dispatcher for corporate proxies; and persisting tokens through
+`SecretStorage` next to the profile they belong to. *Medium.*
+
+> **Audit ported security code; do not transcribe it.** A close read of upstream's
+> 145-line `auth.ts` on 2026-08-13 found five things worth changing, not one.
+>
+> 1. **The PKCE code verifier is built with `Math.random()`**, which is not a
+>    CSPRNG and does not satisfy RFC 7636. Worse, it is drawn character-by-character
+>    from a 66-character alphabet, which is also a modulo-bias shape. Use
+>    `randomBytes(32).toString("base64url")`: 43 characters, uniformly distributed,
+>    and every character is in the unreserved set by construction rather than by
+>    a lookup table that has to be audited.
+> 2. **The `state` parameter is never validated.** Upstream packs the callback URL
+>    into `state` and then ignores it on the way back — `handleUri` reads `code`
+>    out of any inbound URI and accepts it. A registered URI handler is not a
+>    private channel, so this is the authorization-code CSRF that RFC 6749 §10.12
+>    exists to prevent. Mint a random `state` and require it to match. This one is
+>    arguably more serious than the verifier and was not previously recorded here.
+> 3. **base64url is hand-rolled** as three chained `.replace()` calls on a base64
+>    digest. Node has done this correctly since v15: `.digest("base64url")`.
+> 4. **`expires_in` is discarded**, so the only way the extension can discover that
+>    a token died is to spend a request finding out — which is exactly what
+>    `refreshToken()` does, firing `headersForRoot()` on every call purely to see
+>    whether it 401s. Keep the expiry and refresh ahead of it; a 401 from a real
+>    request stays as the fallback, not the mechanism.
+> 5. **The token endpoint's error envelope is dropped.** OAuth returns `error` and
+>    `error_description`, and both are thrown away inside an axios rejection, which
+>    is a large part of why a misconfigured client id surfaces as noise. Parse them.
+>
+> The same rule applies to every security-relevant file we port — upstream
+> `CAHelper.ts`, for instance, arrives with a `console.log` inside a `catch`,
+> violating two §5 gates on arrival.
 
 **1c — AuthenticationProvider and secret storage.** VS Code `AuthenticationProvider`
 so Viya appears in the Accounts menu; per-profile token namespacing in
@@ -852,12 +896,26 @@ get written.
    lose an evaluation. The `vscode` client is public, registered by the
    deployment itself, and carries no secret; it is not SAS's to grant or
    withhold per-extension, and using it does not deprive the SAS extension of
-   anything. Executed in 1b. **The 3.5 branch is the one that must not degrade
+   anything. Executed in 1b-i. **The 3.5 branch is the one that must not degrade
    silently**: on a deployment that has no built-in client, an empty `clientId`
    has to produce a message naming what to ask an administrator for, not an
-   opaque OAuth failure. Note this is SAS's documented behaviour for their
-   extension rather than something probed here — the live check is blocked by
-   the sandbox proxy — so 1b owes it a live verification before release.
+   opaque OAuth failure.
+   **Amended 2026-08-13 — the 3.5 branch is unverified and will stay that way for
+   now.** An earlier version of this entry said the live check was blocked by the
+   sandbox proxy and that 1b owed it a verification before release. That was too
+   optimistic about a temporary obstacle: there is no Viya 3.5 deployment
+   available to this project at all, so the check is not pending, it is not
+   possible. What ships is built from SAS's documented behaviour for their own
+   extension, and the honest statement of its status is *unverified against a live
+   3.5 deployment*, recorded here, in `docs/adr/0008`, and in a comment on the
+   code path itself so it cannot be mistaken later for something that was
+   observed. This is not a release blocker — a release blocker that nobody can
+   clear is just a line everybody learns to step over. It is a standing invitation:
+   if a 3.5 deployment ever becomes reachable, this is the first thing to point at
+   it. The risk being carried is bounded and worth naming: if SAS's documentation
+   is wrong about 3.5 having no built-in `vscode` client, the cost is that we tell
+   a 3.5 user to go get a client id they did not actually need — a bad message,
+   not a broken or insecure flow.
 
 **Smaller items to settle in-phase, recorded so they aren't forgotten:** activation
 events and a lazy-load rule (an `onLanguage:python` activation would fire for every

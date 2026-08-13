@@ -574,13 +574,102 @@ than defaulted to `rest` (`components/profile.ts:206-225`), so a SAS 9 profile
 that predates the field is skipped with a reason instead of being imported as a
 Viya one.
 
+☑ **1b split in two, 2026-08-13, along the seam 1a established.** The crypto and
+the protocol can be specified by unit tests; the browser handoff and the code
+capture can only be exercised in an extension host. Keeping them in one slice
+would have put the PKCE audit in the same review as a URI-handler race, and the
+audit is the part that needs undivided attention.
+
+☑ **Upstream `auth.ts` audited before porting, 2026-08-13** — all 145 lines of
+`client/src/connection/rest/auth.ts`, recorded in
+[ADR-0008](docs/adr/0008-auth-core-transport-and-security-deltas.md) and in the
+block quote under 1b in the plan. Five deltas, where the plan had previously
+recorded one. The one it had not: **upstream never validates `state`**, so its
+URI handler accepts an authorization code from any inbound URI. That is the
+RFC 6749 §10.12 injection, and it is arguably worse than the `Math.random()`
+verifier the plan already knew about. Finding it is the argument for the rule —
+"audit, don't transcribe" has to mean reading the whole file, not confirming the
+defect you arrived looking for.
+
+☑ **Transport settled, 2026-08-13** (ADR-0008): no `axios`, no runtime
+dependency. Node's floor here is 20.19.0 so `globalThis.fetch` exists, msw
+already intercepts it, and `"dependencies": {}` is what makes 0d's supply-chain
+gates cheap. The core takes a `fetch`-shaped port so 1b-ii has a seam to attach a
+proxy dispatcher to.
+
+> **The cost is real and is not fully paid yet.** `fetch` ignores `HTTP_PROXY`,
+> and VS Code's proxy support patches `http`/`https` — which global `fetch` never
+> touches. Routing it through a proxy needs a custom dispatcher, and Node does
+> *not* expose `ProxyAgent` or `setGlobalDispatcher` publicly on the 20.19.0
+> floor; those need the `undici` package installed. 1b-ii picks between one
+> runtime dependency, a hand-rolled `CONNECT` tunnel, or a narrower supported
+> configuration. Recorded now so it arrives as a decision instead of a surprise.
+
 ```bash
 # ⛔ BARRIER: merge 1a first.
-# 1b — OAuth2 + PKCE
-git checkout -b phase-1b-oauth-pkce
-git commit -m "feat(auth): add OAuth2 authorization code flow with PKCE"
+# 1b-i — the auth core, no vscode import
+git checkout -b phase-1b-i-pkce-core
+git commit -m "feat(auth): add PKCE, token exchange, and client id resolution"
+```
 
-# ⛔ BARRIER: merge 1b first.
+☐ **1b-i punch list.** `src/auth/`, and nothing in it imports `vscode`.
+
+- `pkce.ts` — `randomBytes(32).toString("base64url")` for the verifier, 43 chars
+  in the unreserved set by construction; `createHash("sha256").digest("base64url")`
+  for the challenge; the same CSPRNG for a random `state`. No alphabet table, no
+  chained `.replace()`.
+- `tokenEndpoint.ts` — `buildAuthorizeUrl`, `exchangeAuthorizationCode`,
+  `refreshTokens`. Parse `error` / `error_description` into a typed failure.
+  Convert `expires_in` to an absolute `expiresAt` at the moment the response is
+  read, so refresh can happen ahead of expiry instead of costing a probe request.
+- `clientId.ts` — decision 9. Falls back to the built-in `vscode` client, or
+  returns a typed problem code in the `src/profile/problems.ts` style — codes and
+  parameters, never English prose, so the shell renders it through `vscode.l10n.t()`
+  and the core stays testable.
+- The `fetch` port is a structural type defaulting to `globalThis.fetch`.
+
+☐ **Tests that actually pin the thing.** Two matter more than the rest.
+
+- **RFC 7636 Appendix B's own test vector.** Verifier
+  `dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk` must produce challenge
+  `E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM`. A hand-rolled base64url passes a
+  round-trip test against itself; it does not pass this.
+- **Stub `Math.random()` to a constant with Sinon and assert two successive
+  verifiers still differ.** A charset-and-length test would pass on upstream's
+  broken implementation. This is the test that fails on it, and so it is the only
+  one that actually encodes the CSPRNG requirement.
+
+Then: charset and length bounds, uniqueness across many calls, the OAuth error
+envelope, `expiresAt` arithmetic against a faked clock, and the decision-9 matrix
+across Viya 3.5 / 4 2022.10 / 4 2022.11+ with `clientId` present and absent.
+
+☐ **Raise the coverage ratchet in the same pull request** — 1b-i is pure,
+heavily-tested code, so the thresholds should move up noticeably rather than by a
+rounding margin. Current floor is 55 / 55 / 63 / 86.
+
+☐ **Comment the 3.5 path in the code**, not only in the plan: it is built from
+SAS's documentation and has never been observed against a live 3.5 deployment,
+because there isn't one to observe. Decision 9 was amended on 2026-08-13 to stop
+calling that a pending pre-release check — nobody can clear it, and a blocker
+nobody can clear is a line people learn to step over.
+
+```bash
+# ⛔ BARRIER: merge 1b-i first.
+# 1b-ii — the VS Code shell
+git checkout -b phase-1b-ii-auth-shell
+git commit -m "feat(auth): add browser sign-in, dual code capture, and proxy support"
+```
+
+☐ **1b-ii punch list.** `env.asExternalUri` / `env.openExternal`,
+`window.registerUriHandler`, `window.showInputBox`, and the race between the last
+two. **Validate `state` on the URI-handler arm and drop any callback that does not
+match.** Note in the code that the paste-box arm carries no `state` and therefore
+cannot be protected the same way — that is an argument for narrowing the paste box
+later, not for skipping the check where it works. Plus the undici `ProxyAgent`
+dispatcher and token persistence through `SecretStorage`.
+
+```bash
+# ⛔ BARRIER: merge 1b-ii first.
 # 1c — AuthenticationProvider + secret storage
 git checkout -b phase-1c-auth-provider
 git commit -m "feat(auth): add AuthenticationProvider, secret storage, and CA helper"

@@ -77,7 +77,12 @@ export interface ViyaProfile {
 export interface ProfileProblem {
   /** The profile name, or `""` when the container itself is the problem. */
   name: string;
-  /** Why it was rejected, phrased for someone who has to fix it. */
+  /**
+   * Why it was rejected, phrased for someone who has to fix it.
+   *
+   * English, and only ever written to the output channel. Anything shown in the
+   * UI goes through {@link ValidationProblem} instead.
+   */
   reason: string;
 }
 
@@ -95,10 +100,101 @@ export interface ReadProfilesResult {
   rejected: ProfileProblem[];
 }
 
+/**
+ * Why a value the user typed was refused, as data rather than as prose.
+ *
+ * This module cannot import `vscode`, so it cannot call `l10n.t()` — but the
+ * strings it produces are shown under an input box, which makes them
+ * user-facing, and CONTRIBUTING.md requires those to be localisable. A code plus
+ * its parameters is the seam that satisfies both: the model still decides *what*
+ * is wrong, and `src/profile/problems.ts` decides how to say it in the user's
+ * language. Adding a member here is a compile error there until it is handled.
+ */
+export type ValidationProblem =
+  | { code: "endpoint-not-text" }
+  | { code: "endpoint-required" }
+  | { code: "endpoint-not-a-url"; value: string }
+  | { code: "endpoint-has-credentials" }
+  | { code: "endpoint-unsupported-scheme"; scheme: string }
+  | { code: "endpoint-cleartext" }
+  | { code: "endpoint-has-query-or-fragment" }
+  | { code: "name-not-text" }
+  | { code: "name-required" }
+  | { code: "name-too-long"; max: number }
+  | { code: "name-has-control-characters" }
+  | { code: "name-duplicate"; existing: string };
+
+/**
+ * The English rendering of a problem.
+ *
+ * Used for the output channel and for tests, never for the UI — the log is a
+ * thing people paste into issues, and a diagnostic that changes language with
+ * the editor's locale is harder to search, not easier to read. The UI path goes
+ * through `localiseProblem` instead.
+ */
+export function describeProblem(problem: ValidationProblem): string {
+  switch (problem.code) {
+    case "endpoint-not-text":
+      return "the endpoint must be text";
+    case "endpoint-required":
+      return "the endpoint is required";
+    case "endpoint-not-a-url":
+      return `"${problem.value}" is not a URL`;
+    case "endpoint-has-credentials":
+      return "the endpoint must not contain a username or password — credentials belong in the sign-in prompt, not in a setting";
+    case "endpoint-unsupported-scheme":
+      return `the endpoint must use https, not ${problem.scheme}`;
+    case "endpoint-cleartext":
+      return "the endpoint must use https — an access token sent over http can be read by anything between here and the server";
+    case "endpoint-has-query-or-fragment":
+      return "the endpoint must not contain a query string or fragment — use just the address of the deployment";
+    case "name-not-text":
+      return "the profile name must be text";
+    case "name-required":
+      return "the profile name is required";
+    case "name-too-long":
+      return `the profile name must be ${String(problem.max)} characters or fewer`;
+    case "name-has-control-characters":
+      return "the profile name must not contain control characters";
+    case "name-duplicate":
+      return `a profile named "${problem.existing}" already exists`;
+  }
+}
+
 /** A success/failure pair, so callers handle the failure rather than catching it. */
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: string };
 
-const ok = <T>(value: T): Result<T> => ({ ok: true, value });
+/**
+ * A {@link Result} whose failure also carries a {@link ValidationProblem}.
+ *
+ * Returned by the two functions whose rejections reach an input box. It is
+ * assignable to `Result<T>`, so the readers that only log can keep passing these
+ * results straight through.
+ */
+export type Validated<T> =
+  | { ok: true; value: T }
+  | { ok: false; reason: string; problem: ValidationProblem };
+
+/** Succeeds. The literal type is assignable to both {@link Result} and {@link Validated}. */
+const ok = <T>(value: T): { ok: true; value: T } => ({ ok: true, value });
+
+/**
+ * Fails with a structured problem. Use this wherever the reason can reach the
+ * user; `reason` is filled in from the same problem so log callers are unchanged.
+ */
+const invalid = <T>(problem: ValidationProblem): Validated<T> => ({
+  ok: false,
+  problem,
+  reason: describeProblem(problem),
+});
+
+/**
+ * Fails with prose and no code, for reasons that only ever reach the log.
+ *
+ * Deliberate, not an oversight: these describe a malformed settings file, are
+ * written for whoever has to edit that file, and are never rendered in the UI.
+ * If one of them ever becomes user-facing it needs a code first.
+ */
 const fail = <T>(reason: string): Result<T> => ({ ok: false, reason });
 
 /** Hosts for which cleartext HTTP is accepted, because there is no network to sniff. */
@@ -140,14 +236,14 @@ export function secretKey(profile: Pick<ViyaProfile, "id">): string {
  * `${endpoint}/compute` would otherwise produce a double slash that some
  * reverse proxies answer differently.
  */
-export function normaliseEndpoint(raw: unknown): Result<string> {
+export function normaliseEndpoint(raw: unknown): Validated<string> {
   if (typeof raw !== "string") {
-    return fail("the endpoint must be text");
+    return invalid({ code: "endpoint-not-text" });
   }
 
   const trimmed = raw.trim();
   if (trimmed === "") {
-    return fail("the endpoint is required");
+    return invalid({ code: "endpoint-required" });
   }
 
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
@@ -158,31 +254,26 @@ export function normaliseEndpoint(raw: unknown): Result<string> {
   try {
     url = new URL(withScheme);
   } catch {
-    return fail(`"${trimmed}" is not a URL`);
+    return invalid({ code: "endpoint-not-a-url", value: trimmed });
   }
 
   if (url.username !== "" || url.password !== "") {
-    return fail(
-      "the endpoint must not contain a username or password — credentials belong in the sign-in prompt, not in a setting",
-    );
+    return invalid({ code: "endpoint-has-credentials" });
   }
 
   if (url.protocol !== "https:" && url.protocol !== "http:") {
-    return fail(
-      `the endpoint must use https, not ${url.protocol.replace(":", "")}`,
-    );
+    return invalid({
+      code: "endpoint-unsupported-scheme",
+      scheme: url.protocol.replace(":", ""),
+    });
   }
 
   if (url.protocol === "http:" && !LOOPBACK_HOSTS.has(url.hostname)) {
-    return fail(
-      "the endpoint must use https — an access token sent over http can be read by anything between here and the server",
-    );
+    return invalid({ code: "endpoint-cleartext" });
   }
 
   if (url.search !== "" || url.hash !== "") {
-    return fail(
-      "the endpoint must not contain a query string or fragment — use just the address of the deployment",
-    );
+    return invalid({ code: "endpoint-has-query-or-fragment" });
   }
 
   const path = url.pathname.replace(/\/+$/, "");
@@ -201,30 +292,28 @@ export function validateProfileName(
   raw: unknown,
   existingNames: Iterable<string> = [],
   options: { allow?: string | undefined } = {},
-): Result<string> {
+): Validated<string> {
   if (typeof raw !== "string") {
-    return fail("the profile name must be text");
+    return invalid({ code: "name-not-text" });
   }
 
   const name = raw.trim();
   if (name === "") {
-    return fail("the profile name is required");
+    return invalid({ code: "name-required" });
   }
   if (name.length > MAX_PROFILE_NAME_LENGTH) {
-    return fail(
-      `the profile name must be ${String(MAX_PROFILE_NAME_LENGTH)} characters or fewer`,
-    );
+    return invalid({ code: "name-too-long", max: MAX_PROFILE_NAME_LENGTH });
   }
   // eslint-disable-next-line no-control-regex -- the point of the rule is to reject control characters, which cannot be matched without naming them.
   if (/[\u0000-\u001f\u007f]/.test(name)) {
-    return fail("the profile name must not contain control characters");
+    return invalid({ code: "name-has-control-characters" });
   }
 
   const allowed = options.allow?.toLowerCase();
   for (const existing of existingNames) {
     if (existing.toLowerCase() !== name.toLowerCase()) continue;
     if (allowed !== undefined && existing.toLowerCase() === allowed) continue;
-    return fail(`a profile named "${existing}" already exists`);
+    return invalid({ code: "name-duplicate", existing });
   }
 
   return ok(name);

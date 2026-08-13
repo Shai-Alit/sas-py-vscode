@@ -33,6 +33,7 @@ import {
   validateProfileName,
   type ViyaProfile,
 } from "./model";
+import { localiseProblem } from "./problems";
 import { type ProfileStore } from "./store";
 
 /** Context key backing the `enablement` clauses in `package.json`. */
@@ -116,7 +117,7 @@ async function askName(
     value: current,
     validate: (input) => {
       const result = validateProfileName(input, existing, { allow: current });
-      return result.ok ? undefined : result.reason;
+      return result.ok ? undefined : localiseProblem(result.problem);
     },
   });
   return name?.trim();
@@ -129,7 +130,7 @@ async function askEndpoint(current?: string): Promise<string | undefined> {
     value: current,
     validate: (input) => {
       const result = normaliseEndpoint(input);
-      return result.ok ? undefined : result.reason;
+      return result.ok ? undefined : localiseProblem(result.problem);
     },
   });
   if (raw === undefined) return undefined;

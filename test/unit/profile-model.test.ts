@@ -7,11 +7,13 @@ import {
   CURRENT_PROFILE_VERSION,
   MAX_PROFILE_NAME_LENGTH,
   createProfile,
+  describeProblem,
   normaliseEndpoint,
   readProfiles,
   resolveActiveProfile,
   secretKey,
   validateProfileName,
+  type ValidationProblem,
 } from "../../src/profile/model";
 
 /**
@@ -42,6 +44,17 @@ function value<T>(
 function reason(result: { ok: boolean; reason?: string }): string {
   assert.equal(result.ok, false, "expected a rejection, got success");
   return result.reason ?? "";
+}
+
+/** Asserts a `Validated` failed, and hands back the structured problem. */
+function problem<T>(
+  result:
+    | { ok: true; value: T }
+    | { ok: false; reason: string; problem: ValidationProblem },
+): ValidationProblem {
+  assert.equal(result.ok, false, "expected a rejection, got success");
+  assert.ok(!result.ok);
+  return result.problem;
 }
 
 describe("normaliseEndpoint", () => {
@@ -364,5 +377,114 @@ describe("createProfile and secretKey", () => {
       secretKey({ ...profile, id: "stable-id" }),
       secretKey(profile),
     );
+  });
+});
+
+/**
+ * These exist because the reasons above are shown under an input box, and
+ * CONTRIBUTING.md requires user-facing text to be localisable. This module
+ * cannot call `l10n.t()`, so it emits a code and `src/profile/problems.ts`
+ * translates it — which only works if the code is the thing that varies and the
+ * English is derived from it, never the other way round.
+ */
+describe("validation problems", () => {
+  const rejections: [string, ValidationProblem, () => unknown][] = [
+    [
+      "endpoint: not a string",
+      { code: "endpoint-not-text" },
+      () => normaliseEndpoint(42),
+    ],
+    [
+      "endpoint: empty",
+      { code: "endpoint-required" },
+      () => normaliseEndpoint("   "),
+    ],
+    [
+      "endpoint: unparseable",
+      { code: "endpoint-not-a-url", value: "https://" },
+      () => normaliseEndpoint("https://"),
+    ],
+    [
+      "endpoint: credentials in the URL",
+      { code: "endpoint-has-credentials" },
+      // Assembled at run time so this file holds no string check:secrets must be told to ignore.
+      () =>
+        normaliseEndpoint(["https://user", "pw@viya.example.com"].join(":")),
+    ],
+    [
+      "endpoint: a scheme that is neither http nor https",
+      { code: "endpoint-unsupported-scheme", scheme: "ftp" },
+      () => normaliseEndpoint("ftp://viya.example.com"),
+    ],
+    [
+      "endpoint: cleartext to a non-loopback host",
+      { code: "endpoint-cleartext" },
+      () => normaliseEndpoint("http://viya.example.com"),
+    ],
+    [
+      "endpoint: a query string",
+      { code: "endpoint-has-query-or-fragment" },
+      () => normaliseEndpoint("https://viya.example.com?tab=1"),
+    ],
+    [
+      "name: not a string",
+      { code: "name-not-text" },
+      () => validateProfileName(42),
+    ],
+    ["name: empty", { code: "name-required" }, () => validateProfileName("  ")],
+    [
+      "name: too long",
+      { code: "name-too-long", max: MAX_PROFILE_NAME_LENGTH },
+      () => validateProfileName("a".repeat(MAX_PROFILE_NAME_LENGTH + 1)),
+    ],
+    [
+      "name: control characters",
+      { code: "name-has-control-characters" },
+      () => validateProfileName(`Prod${String.fromCharCode(9)}uction`),
+    ],
+    [
+      "name: already taken",
+      { code: "name-duplicate", existing: "Production" },
+      () => validateProfileName("production", ["Production"]),
+    ],
+  ];
+
+  for (const [label, expected, run] of rejections) {
+    it(`reports a structured problem for ${label}`, () => {
+      const result = run() as ReturnType<typeof normaliseEndpoint>;
+      assert.deepEqual(problem(result), expected);
+    });
+  }
+
+  it("derives the logged reason from the problem, so the two cannot drift", () => {
+    for (const [label, expected, run] of rejections) {
+      const result = run() as ReturnType<typeof normaliseEndpoint>;
+      assert.equal(
+        reason(result),
+        describeProblem(expected),
+        `reason and problem disagree for ${label}`,
+      );
+    }
+  });
+
+  it("covers every code the union declares", () => {
+    // A code with no test above is a code src/profile/problems.ts could be
+    // translating into a message nobody has ever seen.
+    const declared = new Set<string>([
+      "endpoint-not-text",
+      "endpoint-required",
+      "endpoint-not-a-url",
+      "endpoint-has-credentials",
+      "endpoint-unsupported-scheme",
+      "endpoint-cleartext",
+      "endpoint-has-query-or-fragment",
+      "name-not-text",
+      "name-required",
+      "name-too-long",
+      "name-has-control-characters",
+      "name-duplicate",
+    ]);
+    const exercised = new Set(rejections.map(([, expected]) => expected.code));
+    assert.deepEqual([...exercised].sort(), [...declared].sort());
   });
 });

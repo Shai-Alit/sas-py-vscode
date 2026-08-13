@@ -422,7 +422,7 @@ its `npm install -g` step for reasons unrelated to the change that pinned it.
 same `PUT` as above, which re-derives the contexts from what actually ran.
 
 ```bash
-# 0d-ii-b — scanning (CodeQL + credential shapes + reviewer runbook)
+# 0d-ii-b — scanning (CodeQL + credential shapes)
 git checkout main && git pull --ff-only && git checkout -b phase-0d-ii-b-scanning
 #   … 🤖 implement 0d-ii-b …
 git add -A && git commit -m "ci: add CodeQL and a credential-shape scanner"
@@ -430,15 +430,44 @@ git push -u origin phase-0d-ii-b-scanning
 gh pr create --base main --head phase-0d-ii-b-scanning --fill
 ```
 
-☐ **GitHub's secret scanning does not cover this repository's actual risk.** It
+☑ **Implemented 2026-08-12.** `.github/workflows/codeql.yml`,
+`scripts/check-secrets.mjs`, `test/unit/secret-scan.test.ts` (31 tests),
+`check:secrets` in `npm run verify`, and
+[ADR-0006](docs/adr/0006-scanning-posture.md). Two defects found by running it
+rather than reasoning about it, both recorded in the ADR: an ALL_CAPS environment
+*variable name* read as a value, and a planted token printed to the terminal in
+full because redaction was opt-in rather than opt-out.
+
+☑ **GitHub's secret scanning does not cover this repository's actual risk.** It
 matches *partner patterns* — known token formats from specific vendors. A Viya
 bearer token is a generic JWT, and `creds.json` is expected to sit in the working
 tree by design. So 0d-ii-b adds a repo-local scanner for credential-shaped
 strings alongside the GitHub feature, rather than instead of it.
 
-☐ Also check `AI-PR-REVIEWERS-RUNBOOK.md` into `docs/dev/` here, so a future
-maintainer can re-derive the reviewer setup without hunting through the viyapy
-project folder.
+Four decisions settled 2026-08-12, before implementing:
+
+- **CodeQL as a committed workflow**, `.github/workflows/codeql.yml`, not
+  default setup. Default setup is configured in the web UI and is invisible in
+  the tree; a committed workflow is reviewable in a pull request and changes to
+  it go through the same gate as everything else.
+- **The scanner reads the tracked working tree at HEAD**, not history and not
+  untracked files. History is immutable — a hit there is a rotation task, not a
+  build failure — and untracked files are where `creds.json` is *supposed* to
+  live. Scanning what a commit would publish is the question that has an
+  actionable answer.
+- **It runs inside `npm run verify`**, next to `check:copyright` and
+  `check:package`, because it needs no network and no credentials. A check that
+  only exists in CI is a check contributors discover by having it fail.
+- **False positives are silenced by an inline marker carrying a reason**, not by
+  a separate allow-list file. The justification then sits next to the string,
+  travels with it if the file moves, and cannot drift out of sync.
+
+☑ **The AI reviewer runbook stays out of the repository.** It was going to be
+checked into `docs/dev/`; it is not, by decision on 2026-08-12. It documents the
+maintainer's own development setup rather than anything a contributor needs, and
+the working copy names an Azure Foundry resource, its endpoint, and deployment
+names — org-identifying detail that would now be public and that buys a reader
+nothing. It lives in the `viyapy` project folder.
 
 ☐ **Enable the repository-side settings** (all free on a public repo, and this
 repo went public 2026-08-12): Dependabot alerts, secret scanning, push
@@ -461,6 +490,11 @@ gh api -X PUT  repos/Shai-Alit/sas-py-vscode/private-vulnerability-reporting
 require approval for **all outside collaborators**. Deferred from the going-public
 audit; no workflow uses `pull_request_target`, so fork PRs cannot currently reach
 the Azure secrets, but this closes the door rather than relying on that holding.
+
+☐ Add `analyze` (CodeQL) to branch protection once it has reported — same `PUT`
+as the 0d-i one, re-derived from the contexts that actually ran. It is in a
+different workflow from the rest, which changes nothing: required checks are
+matched on job name.
 
 ☐ Merge 0d-ii-b. Phase 0 is complete; start Phase 1.
 

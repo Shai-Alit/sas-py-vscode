@@ -18,7 +18,7 @@ npm run verify
 `verify` is the whole gate, and CI runs this exact command — see `docs/dev/ci.md`:
 
 ```
-format:check  →  lint  →  typecheck  →  check:copyright  →  build  →  coverage
+format:check → lint → typecheck → check:copyright → check:secrets → build → coverage
 ```
 
 Run it before you push. If it passes locally it passes in CI; if it does not,
@@ -143,6 +143,18 @@ The check reads only the leading comment block, so mentioning SAS Institute in
 the body of a file is fine, and the declaration markers must begin a line so
 that a file *discussing* the rule is not caught by it. This file's own checker
 was the first thing to trip that.
+
+**`scripts/check-secrets.mjs`** looks for credential-shaped strings in the
+tracked working tree — a JWT, a literal `Authorization` header, a PEM private
+key, a credential-named field assigned a literal, a password in a URL. It is in
+`verify` rather than only in CI because it needs no network and no credentials,
+and a check that only exists in CI is a check contributors meet for the first
+time when it fails. If it flags something that is not a credential, put
+`credential-scan: allow` and a reason in a comment on that line or the line
+above; if it flags something that *is* one, rotate it before you delete it,
+because removing the line does not un-publish it. The reasoning is
+[ADR-0006](../adr/0006-scanning-posture.md) and the details are in
+[ci.md](ci.md).
 
 ## Localisation
 

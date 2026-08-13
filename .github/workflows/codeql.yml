@@ -1,0 +1,82 @@
+name: CodeQL
+
+# Static analysis for the extension's own TypeScript.
+#
+# This is the *advanced* setup — a committed workflow — rather than GitHub's
+# default setup, which is configured in the repository settings and appears
+# nowhere in the tree. The difference matters here for the same reason
+# everything else in this repository is a file: a change to the query suite, the
+# schedule, or the languages then arrives as a pull request that a reviewer can
+# read, and a future maintainer can tell what is being scanned without
+# administrator access to the settings page.
+#
+# It is deliberately separate from ci.yml. CodeQL is the one check that also
+# runs on a schedule, because a query pack updates on GitHub's timetable rather
+# than on a commit — so an unchanged tree can become newly interesting. Folding
+# that into the pull-request gate would mean either running the whole of CI on a
+# timer or running CodeQL only on changes, and neither is what is wanted.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, Monday morning UTC. Off the hour on purpose: GitHub queues
+    # scheduled workflows across every repository that asked for the same
+    # minute, and the popular minutes are the ones at the top of an hour.
+    - cron: "27 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      # The alerts this uploads are the whole output of the job.
+      security-events: write
+      # Read the workflow run's own metadata, which the action uses to attach
+      # results to the right ref.
+      actions: read
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          # One language, named the way CodeQL names it: `javascript-typescript`
+          # is a single extractor covering both, not two entries. Nothing here
+          # is written in another language, and adding one to this list before
+          # there is code in it produces a job that analyses nothing and reports
+          # success.
+          languages: javascript-typescript
+
+          # There is nothing to build for the extractor's purposes — it reads the
+          # TypeScript directly. Saying so explicitly stops the action from
+          # attempting autobuild, which on a Node project means running install
+          # scripts that ADR-0005 exists to prevent.
+          build-mode: none
+
+          # `security-extended` rather than the default suite, and rather than
+          # `security-and-quality`. The default is tuned for a low false-positive
+          # rate on any repository; extended adds the lower-precision security
+          # queries, which is the right trade for something that will handle
+          # OAuth tokens and shell out to nothing. `security-and-quality` was
+          # rejected: its maintainability queries overlap with what ESLint
+          # already enforces here, and a second opinion on style arriving as a
+          # security alert is how a security tab stops being read.
+          queries: security-extended
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"

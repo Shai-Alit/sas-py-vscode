@@ -46,10 +46,19 @@ function reason(result: { ok: boolean; reason?: string }): string {
   return result.reason ?? "";
 }
 
-/** Asserts a `Validated` failed, and hands back the structured problem. */
-function problem<T>(
+/**
+ * Asserts a `Validated` failed, and hands back the structured problem.
+ *
+ * The success arm is `unknown` rather than a type parameter on purpose. Only the
+ * failure arm is ever returned, so a parameter would appear once in the
+ * signature and constrain nothing — which is what
+ * `@typescript-eslint/no-unnecessary-type-parameters` objects to, and it is
+ * right to. Contrast {@link value} above, where `T` genuinely links the argument
+ * to the return type.
+ */
+function problem(
   result:
-    | { ok: true; value: T }
+    | { ok: true; value: unknown }
     | { ok: false; reason: string; problem: ValidationProblem },
 ): ValidationProblem {
   assert.equal(result.ok, false, "expected a rejection, got success");

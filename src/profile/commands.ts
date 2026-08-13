@@ -212,7 +212,12 @@ async function addProfile(
   if (computeContext === undefined) return;
 
   const clientId = await askOptional(
-    vscode.l10n.t("OAuth client ID (optional — leave empty for the default)"),
+    // Naming the version is the difference between a prompt someone can act on
+    // and one they have to guess at. "The default" means nothing to a 3.5 user,
+    // who is precisely the person who must not leave this empty.
+    vscode.l10n.t(
+      "OAuth client ID (optional — leave empty on Viya 4 2022.11 and later)",
+    ),
     vscode.l10n.t("client-id"),
   );
   if (clientId === undefined) return;
@@ -267,7 +272,9 @@ async function editProfile(
   if (computeContext === undefined) return;
 
   const clientId = await askOptional(
-    vscode.l10n.t("OAuth client ID (optional)"),
+    vscode.l10n.t(
+      "OAuth client ID (optional — leave empty on Viya 4 2022.11 and later)",
+    ),
     vscode.l10n.t("client-id"),
     existing.clientId,
   );

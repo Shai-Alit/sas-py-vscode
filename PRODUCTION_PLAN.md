@@ -397,8 +397,10 @@ settings (ADR-0007). *Medium.*
 **1b — OAuth2 + PKCE.** Port `auth.ts`: authorization-code flow with PKCE, the
 **dual code capture** (URI handler *and* paste box racing, whichever lands first)
 which is the pragmatic fallback for deployments without a registered redirect URI,
-and 401-triggered refresh. Default `clientId` handling must accommodate 3.5 and
-pre-2022.11 Viya 4, where the user supplies id and secret. Also add corporate
+and 401-triggered refresh. An empty `clientId` falls back to the built-in
+`vscode` client (decision 9); 3.5 and pre-2022.11 Viya 4 have no such client and
+must be told to supply an id and secret in those words, because the failure they
+would otherwise see is a generic OAuth rejection. Also add corporate
 **proxy support**, which the SAS extension lacks and which is a known failure
 class with axios behind an enterprise proxy. *Medium.*
 
@@ -841,6 +843,21 @@ get written.
    the Python ecosystem expects it — but defer until Phase 9.*
 8. **Package installation into Viya** (Phase 10). Governance question, not a
    technical one. Deferred deliberately.
+9. ~~**Default OAuth client id**~~ — **SETTLED 2026-08-13: fall back to the
+   built-in `vscode` client on Viya 4 2022.11 and later; require an explicit id
+   and secret on Viya 3.5 and Viya 4 2022.10 and earlier.** The alternative was
+   asking every administrator to register a `python-on-viya` client before the
+   extension could be used at all, which buys nothing a user can perceive and
+   puts an IT ticket between install and first connection — the surest way to
+   lose an evaluation. The `vscode` client is public, registered by the
+   deployment itself, and carries no secret; it is not SAS's to grant or
+   withhold per-extension, and using it does not deprive the SAS extension of
+   anything. Executed in 1b. **The 3.5 branch is the one that must not degrade
+   silently**: on a deployment that has no built-in client, an empty `clientId`
+   has to produce a message naming what to ask an administrator for, not an
+   opaque OAuth failure. Note this is SAS's documented behaviour for their
+   extension rather than something probed here — the live check is blocked by
+   the sandbox proxy — so 1b owes it a live verification before release.
 
 **Smaller items to settle in-phase, recorded so they aren't forgotten:** activation
 events and a lazy-load rule (an `onLanguage:python` activation would fire for every

@@ -34,19 +34,24 @@ Leave it empty for now if you do not know it.
 **OAuth client ID** (optional). If you enter one you are then asked for the
 client secret, and that prompt is masked.
 
-Nothing reads either value yet. Signing in arrives in a later release, and what
-an empty client ID falls back to is a decision that belongs to it — so this page
-will not tell you today that leaving it blank works. What is known is where the
-question comes from: the SAS extension leaves it blank on Viya 4 2022.11 and
-later and falls back to a built-in client ID, `vscode`, that the deployment
-registers for *that* extension, while Viya 3.5 and Viya 4 2022.10 and earlier
-need an explicit ID and secret. That is
+Nothing reads either value yet — signing in arrives in a later release — but
+what they will mean is already decided, so you can fill them in now.
+
+On **Viya 4 2022.11 and later**, leave both empty. Those deployments register a
+built-in public client called `vscode`, and that is what this extension will
+use. You do not need an administrator to set anything up.
+
+On **Viya 3.5, and Viya 4 2022.10 and earlier**, there is no such client, and
+you do need one: ask your Viya administrator to register a client with the
+`authorization_code` and `refresh_token` grant types, then put the ID here and
+the secret in the prompt that follows.
+
+Both of those are
 [SAS's documented behaviour](https://github.com/sassoftware/vscode-sas-extension/blob/main/website/docs/Configurations/Profiles/viya.md)
-for their extension, not behaviour this project has confirmed against a
-deployment, and whether this extension should reuse another product's client ID
-or ask your administrator to register one of its own is still open. If you
-already have an ID registered for this extension, put it here and it will be
-stored for when sign-in lands.
+for their own extension rather than something this project has yet confirmed
+against a deployment of each generation. If the empty-field path fails on a
+deployment you believe is 2022.11 or later, that is worth reporting — it means
+this page is wrong, not that you did something wrong.
 
 ## Where things are stored
 

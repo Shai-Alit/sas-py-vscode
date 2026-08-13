@@ -62,15 +62,13 @@ export interface ViyaProfile {
   /**
    * OAuth client id. Optional, and nothing reads it yet.
    *
-   * What an *empty* value means is decided in Phase 1b, not here — this slice
-   * stores the field and prompts for it, and no authentication code exists to
-   * consume it. Upstream leaves it blank on Viya 4 2022.11 and later and falls
-   * back to a built-in client id, `vscode`, registered in the deployment for
-   * *its* extension; on Viya 3.5 and Viya 4 2022.10 and earlier it requires an
-   * explicit id and secret. That is documented behaviour, not something this
-   * project has probed, and whether a fallback of ours should reuse another
-   * product's client id or ask deployments to register `python-on-viya` is an
-   * open question. See PRODUCTION_PLAN.md §1b.
+   * Sign-in is Phase 1b; this slice only stores the field. When 1b lands, an
+   * empty value falls back to the built-in `vscode` client that Viya 4 2022.11
+   * and later register (PRODUCTION_PLAN.md decision 9). Viya 3.5 and Viya 4
+   * 2022.10 and earlier have no such client and need an explicit id and secret
+   * — that branch must say so plainly rather than surfacing the generic OAuth
+   * rejection an absent client produces. Documented SAS behaviour, not yet
+   * probed here.
    */
   clientId?: string;
 }

@@ -23,12 +23,75 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which tiers this change actually needs.
+  #
+  # A pull request that only touches prose cannot break the compiler, the unit
+  # tier, the VSIX or the lockfile, and running those four jobs anyway costs
+  # roughly twenty minutes of wall clock to tell us something we already knew.
+  # This job classifies the diff once and the expensive jobs gate on it.
+  #
+  # Gating with `if:` rather than a top-level `paths-ignore` is deliberate. A
+  # path filter makes the whole workflow *not run*, which leaves any required
+  # status check pending forever; a job skipped by `if:` reports success under
+  # its own name, so branch protection stays satisfiable. See docs/dev/ci.md.
+  #
+  # The classification is deliberately conservative: anything that is not
+  # unambiguously documentation counts as code. `.github/**` counts as code even
+  # when it is markdown, because a change to this file must be exercised by the
+  # jobs it configures.
+  changes:
+    name: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Needs enough history to diff against the base branch. 0 is the
+          # blunt, always-correct answer for a repository this size.
+          fetch-depth: 0
+
+      - id: classify
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            # A push to main is the last line of defence — never narrow it.
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "not a pull request: running everything"
+            exit 0
+          fi
+
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          changed=$(git diff --name-only "origin/$BASE_REF...HEAD")
+
+          echo "changed files:"
+          echo "$changed"
+
+          # Documentation-only means: under docs/, or a markdown file outside
+          # .github/. Everything else — including package.json, source, tests,
+          # and workflows — is code.
+          other=$(echo "$changed" | grep -Ev '^docs/|^[^/]+\.md$' || true)
+
+          if [ -z "$other" ]; then
+            echo "code=false" >> "$GITHUB_OUTPUT"
+            echo "documentation only: skipping verify, test, package, supply-chain"
+          else
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            echo "code changed: running everything"
+          fi
+
   # Everything platform-independent, once. Splitting these into separate steps
   # would give prettier failure annotations and would also let CI and the local
   # command drift apart a step at a time; running the real `verify` is worth
   # reading one extra line of log to find out which stage failed.
   verify:
     name: verify
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -63,6 +126,8 @@ jobs:
   # floor in package.json has to move with it.
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 25
     strategy:
@@ -122,6 +187,16 @@ jobs:
 
       - run: npm run check:docs
 
+      # The one check that must run even when nothing but prose changed. It is
+      # here rather than in `verify` alone because `verify` is skipped on a
+      # documentation-only pull request, and a pasted token in a markdown file
+      # is exactly as leaked as one in a source file. It costs a second.
+      #
+      # GitHub's own push protection does not cover this: it matches partner
+      # patterns, and a Viya OAuth token is a self-minted JWT that will never
+      # match one. See ADR-0006.
+      - run: npm run check:secrets
+
       # Reviewing a documentation change by reading a diff of markdown is worse
       # than looking at the rendered page, and the build has already happened.
       - uses: actions/upload-artifact@v7
@@ -137,6 +212,8 @@ jobs:
   # allow-by-default, so a packaging mistake ships rather than failing.
   package:
     name: package
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -177,6 +254,8 @@ jobs:
   # any given machine installed it. docs/dev/ci.md says so out loud.
   supply-chain:
     name: supply-chain
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

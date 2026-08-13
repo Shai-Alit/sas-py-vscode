@@ -57,6 +57,34 @@
         "command": "pythonOnViya.showOutputChannel",
         "title": "%command.showOutputChannel.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.addProfile",
+        "title": "%command.addProfile.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.editProfile",
+        "title": "%command.editProfile.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.hasProfiles"
+      },
+      {
+        "command": "pythonOnViya.deleteProfile",
+        "title": "%command.deleteProfile.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.hasProfiles"
+      },
+      {
+        "command": "pythonOnViya.switchProfile",
+        "title": "%command.switchProfile.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.hasProfiles"
+      },
+      {
+        "command": "pythonOnViya.importProfiles",
+        "title": "%command.importProfiles.title%",
+        "category": "%extension.category%"
       }
     ],
     "configuration": {
@@ -65,14 +93,46 @@
         "pythonOnViya.connectionProfiles": {
           "type": "object",
           "default": {},
-          "scope": "resource",
+          "scope": "window",
           "markdownDescription": "%configuration.connectionProfiles.description%",
-          "additionalProperties": true
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "endpoint"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "version": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 1,
+                "markdownDescription": "%configuration.profile.version.description%"
+              },
+              "id": {
+                "type": "string",
+                "markdownDescription": "%configuration.profile.id.description%"
+              },
+              "endpoint": {
+                "type": "string",
+                "pattern": "^[^@]*$",
+                "patternErrorMessage": "%configuration.profile.endpoint.patternError%",
+                "markdownDescription": "%configuration.profile.endpoint.description%"
+              },
+              "context": {
+                "type": "string",
+                "markdownDescription": "%configuration.profile.context.description%"
+              },
+              "clientId": {
+                "type": "string",
+                "markdownDescription": "%configuration.profile.clientId.description%"
+              }
+            }
+          }
         },
         "pythonOnViya.defaultProfile": {
           "type": "string",
           "default": "",
-          "scope": "resource",
+          "scope": "window",
           "markdownDescription": "%configuration.defaultProfile.description%"
         }
       }

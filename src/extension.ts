@@ -3,6 +3,10 @@
 
 import * as vscode from "vscode";
 
+import { registerProfileCommands } from "./profile/commands";
+import { createProfileStatusBarItem } from "./profile/statusBar";
+import { ProfileStore } from "./profile/store";
+
 /**
  * Activation is deliberately cheap and deliberately rare.
  *
@@ -34,6 +38,13 @@ export function activate(context: vscode.ExtensionContext): void {
       output.show(true);
     }),
   );
+
+  // Profiles are read on demand rather than cached at activation, so nothing
+  // here touches the settings file or the secret store. Constructing the store
+  // only registers a configuration listener.
+  const profiles = new ProfileStore(context, output);
+  context.subscriptions.push(profiles, createProfileStatusBarItem(profiles));
+  registerProfileCommands(context, profiles, output);
 }
 
 export function deactivate(): void {

@@ -141,6 +141,12 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- Profile validation messages shown under an input box are now localisable. The
+  model returns a `ValidationProblem` code with its parameters instead of English
+  prose, and `src/profile/problems.ts` renders it through `vscode.l10n.t()`;
+  adding a code without handling it there is a compile error. Reasons written to
+  the output channel stay English by design, because a diagnostic that changes
+  language with the editor's locale is harder to search, not easier to read.
 - `npm run lint` no longer runs out of memory after the integration tier has been
   run once. ESLint flat config does not read `.gitignore`, so the gigabyte of VS
   Code that `@vscode/test-electron` downloads into `.vscode-test/` was being

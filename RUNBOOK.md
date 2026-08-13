@@ -496,20 +496,70 @@ as the 0d-i one, re-derived from the contexts that actually ran. It is in a
 different workflow from the rest, which changes nothing: required checks are
 matched on job name.
 
-☐ Merge 0d-ii-b. Phase 0 is complete; start Phase 1.
+☑ **Merged 2026-08-12 as #11.** Phase 0 is complete.
 
 ### Phase 1 — Authentication
 
-☐ **Before 1a**: settle open decision #5 — whether we share connection profiles
-with the SAS extension when both are installed, or keep them separate
-(*recommend separate for v1*). Also decide profile-schema versioning and setting
-scope for multi-root workspaces; both are cheap now and painful later.
+☑ **Settled 2026-08-12, before implementing 1a.** Four decisions, recorded in
+[ADR-0007](docs/adr/0007-connection-profile-storage.md) and grounded in a
+file-by-file audit of the upstream implementation rather than in preference.
+
+- **Separate storage, plus a one-time read-only import** (open decision #5). Our
+  own `pythonOnViya.connectionProfiles`; a command imports their
+  `connectionType: "rest"` profiles and copies the endpoint, context and client
+  id into ours. We never write their key.
+- **The active profile lives in `workspaceState`**, not in the setting. Profiles
+  are user-global; *which one is live* is per window, so one window can be on a
+  dev deployment and another on production. It also sits next to where 2a keeps
+  the compute session id, which is already `workspaceState`.
+- **Every profile carries an explicit `version` from day one.** Migrations key
+  off it, and a profile whose version is higher than this build understands is
+  refused with a message rather than half-read.
+- **The client secret goes to SecretStorage and never to settings**, and its
+  input box is masked.
+
+> **Why sharing their key was rejected.** Not taste — the other three answers are
+> incompatible with it. Their sign-in reads `clientSecret` straight off the
+> profile object (`connection/rest/auth.ts:23,64`), so a shared profile must
+> carry it in plaintext. Their `migrateLegacyProfiles()` rewrites unrecognised
+> profiles on every activation (`components/profile.ts:206-225`). Their
+> `activeProfile` is a single global string. And their configuration listener
+> runs `commands.executeCommand("SAS.close", true)` on *any* change to that key
+> (`node/extension.ts:189-194`), so every profile edit we made would terminate a
+> user's running SAS compute session — a bug we would be shipping into somebody
+> else's product. The payoff was small in any case: SecretStorage is
+> per-extension, so tokens can never be shared and the user signs in twice
+> regardless. Sharing would have saved retyping one URL.
 
 ```bash
 # 1a — connection profiles
 git checkout -b phase-1a-connection-profiles
 git commit -m "feat(auth): add Viya connection profiles and profile commands"
+```
 
+☑ **Implemented 2026-08-12.** `src/profile/` in two halves, because the unit tier
+runs outside an extension host and so cannot import `vscode`: `model.ts` and
+`import.ts` are pure and carry every rule (endpoint normalisation and refusals,
+name validation, per-profile tolerant reading, active-profile resolution, the
+secret key), while `store.ts`, `commands.ts` and `statusBar.ts` are a thin shell
+over the editor APIs and are covered by `test/integration/profile.test.ts`. That
+split is the testing seam the rest of the project inherits — put the decisions on
+the side the coverage number can see.
+
+☑ **Coverage ratchet raised for the first time, 2026-08-12** (open decision #6):
+55% lines and statements, 63% functions, 86% branches, each set a little under
+what the suite measures so a three-OS gate does not fail on rounding. 187 unit
+tests, up from 136.
+
+☑ **Two upstream behaviours deliberately not inherited**, both recorded in
+ADR-0007. Secrets are keyed on a stable generated `id` rather than on the profile
+name (`AuthProvider.ts:134-141`), so renaming a profile does not orphan its
+secret. And a missing `connectionType` is inferred from the fields present rather
+than defaulted to `rest` (`components/profile.ts:206-225`), so a SAS 9 profile
+that predates the field is skipped with a reason instead of being imported as a
+Viya one.
+
+```bash
 # ⛔ BARRIER: merge 1a first.
 # 1b — OAuth2 + PKCE
 git checkout -b phase-1b-oauth-pkce

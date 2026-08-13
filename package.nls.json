@@ -1,6 +1,17 @@
 {
   "extension.category": "Python on Viya",
   "command.showOutputChannel.title": "Show Log",
-  "configuration.connectionProfiles.description": "SAS Viya connection profiles. Populated by the profile commands in Phase 1; edit by hand at your own risk. Workspace-scoped values are ignored in untrusted folders.",
-  "configuration.defaultProfile.description": "Name of the connection profile to use when none is explicitly selected. Workspace-scoped values are ignored in untrusted folders."
+  "command.addProfile.title": "Add Connection Profile",
+  "command.editProfile.title": "Edit Connection Profile",
+  "command.deleteProfile.title": "Delete Connection Profile",
+  "command.switchProfile.title": "Switch Connection Profile",
+  "command.importProfiles.title": "Import Connection Profiles from the SAS Extension",
+  "configuration.connectionProfiles.description": "SAS Viya connection profiles, keyed by the name you want to see in the status bar. Normally managed by the profile commands, but hand-editing is supported and validated. No client secret is stored here: secrets go to the editor's secret storage, and a profile containing one would be a credential in a file you can commit.",
+  "configuration.defaultProfile.description": "Name of the connection profile a window starts on. Switching profile overrides this for the current workspace only, so this setting is the one a machine setup script or a checked-in workspace file can rely on. Ignored if it names a profile that does not exist.",
+  "configuration.profile.version.description": "Shape version of this profile. Leave it alone; it is filled in for you. A profile written by a newer version of the extension is refused rather than partly understood.",
+  "configuration.profile.id.description": "Stable identity used to key this profile's stored secret. Generated when the profile is created, and deliberately not the profile's name, so that renaming a profile does not lose its credential. If omitted, the profile name is used.",
+  "configuration.profile.endpoint.description": "Address of the SAS Viya deployment, for example `https://viya.example.com`. Must use HTTPS unless it is a loopback address: every request carries an access token, and over HTTP that token is readable in transit.",
+  "configuration.profile.endpoint.patternError": "The endpoint must not contain a username or password. Credentials belong in the sign-in prompt, not in a settings file.",
+  "configuration.profile.context.description": "Name of the SAS compute context to run in. Leave empty to be asked when you first connect.",
+  "configuration.profile.clientId.description": "OAuth client ID for signing in. Leave empty on Viya 4 2022.11 and later, which provide a built-in `vscode` client. Viya 3.5 and Viya 4 2022.10 and earlier have no built-in client and need an ID registered by your administrator with the `authorization_code` and `refresh_token` grant types. Not read until sign-in ships in a later release."
 }

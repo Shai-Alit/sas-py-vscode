@@ -194,17 +194,34 @@ is.
 the thresholds in `.c8rc.json`. It is part of `npm run verify`, so it is part of
 every push.
 
-**The thresholds are currently zero, and that is the honest number.** The only
-shipped module is the activation entry point, it imports `vscode`, and it
-therefore cannot be loaded outside an extension host — the integration tier
-covers it, and c8 cannot see inside that process. Nothing in `src/` is reachable
-from the unit tier yet.
-
 The rule that makes this work is the ratchet: **a slice that adds code to `src/`
 raises the thresholds in the same pull request, to just under whatever the suite
 then measures.** Run `npm run coverage`, read the summary table, round down,
 commit the new numbers. Thresholds go up and never down; lowering one is a
 decision that belongs in a pull-request description, argued for explicitly.
+
+They started at zero, which was the honest number while the only shipped module
+was the activation entry point: it imports `vscode`, so it cannot be loaded
+outside an extension host, and c8 cannot see inside the process the integration
+tier runs in. Slice 1a raised them for the first time, to 55% of lines and
+statements, 63% of functions and 86% of branches.
+
+**Round down further than feels necessary.** The gate runs on Linux, Windows and
+macOS, and a threshold set to the last decimal on one of them will eventually
+fail on another for a reason that has nothing to do with the change under review.
+A point or two of slack costs nothing; a red build nobody can reproduce costs an
+afternoon.
+
+Expect the whole-tree percentage to move in both directions as the shape of the
+code changes, because it is one number over two very different populations. The
+profile model is at 98% because it is pure and the unit tier can reach it; the
+store, the commands and the status bar sit at zero in that column because they
+import `vscode` and are exercised in the extension host instead. A slice that
+adds a large shell and a small model will push the aggregate down even though it
+is well tested, and the ratchet then has to be argued for in the pull request
+rather than mechanically raised. That is the intended conversation, and it is why
+the split in `src/profile/` puts as much as possible on the side the number can
+see.
 
 Excluding a file to make the number look better is the failure mode to avoid.
 Hard-to-test code is exactly the code the number is supposed to be telling you

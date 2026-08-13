@@ -252,7 +252,10 @@ Three things to know before you read a failure:
   the tool for that question, and rotation is the answer to it. Untracked files
   are where `creds.json` is *supposed* to live, so scanning them would fail on
   the setup `docs/dev` prescribes. What a commit would publish is the question
-  with an actionable answer.
+  with an actionable answer. The corollary bites while you are writing a slice:
+  a *new* file is invisible to the scanner until it is staged, so `check:secrets`
+  can pass locally and fail in CI on a file you added minutes earlier. Run
+  `git add -A` before believing a clean run.
 - **Findings are printed redacted** — first three characters and a length. This
   repository is public and its CI logs are public with it, so a scanner that
   quotes what it found has published it more widely than the commit did. That is

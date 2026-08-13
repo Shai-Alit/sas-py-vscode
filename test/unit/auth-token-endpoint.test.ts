@@ -204,9 +204,11 @@ describe("exchangeAuthorizationCode", () => {
     // A window rather than an equality: the clock moves during the request, and
     // NOW is a decade away from it, so this also proves the frozen clock is not
     // leaking in from somewhere.
+    const earliest = before + 3_600_000;
+    const latest = after + 3_600_000;
     assert.ok(
-      expiresAt >= before + 3_600_000 && expiresAt <= after + 3_600_000,
-      `expiresAt ${expiresAt} outside [${before + 3_600_000}, ${after + 3_600_000}]`,
+      expiresAt >= earliest && expiresAt <= latest,
+      `expiresAt ${String(expiresAt)} outside [${String(earliest)}, ${String(latest)}]`,
     );
   });
 

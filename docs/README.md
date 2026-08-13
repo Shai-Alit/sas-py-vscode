@@ -29,7 +29,11 @@ for one.
 
 User-facing documentation (install, connect, run, troubleshoot) lives at the top
 level of the published site and is authored alongside the slice that ships the
-feature it describes.
+feature it describes. So far that is
+[Connection profiles](connection-profiles.md). A new top-level page has to be
+added to `nav` and `sidebar` in `.vitepress/config.mjs` as well — an
+unregistered page builds without complaint and is reachable only by typing its
+URL.
 
 ## Rules
 

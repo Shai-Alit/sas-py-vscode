@@ -44,6 +44,7 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
+      { text: "Guide", link: "/connection-profiles" },
       { text: "Reference", link: "/reference/settings" },
       { text: "Contributing", link: "/dev/" },
       {
@@ -53,6 +54,14 @@ export default defineConfig({
     ],
 
     sidebar: [
+      {
+        // User-facing pages come first and stay first. A reader who arrives
+        // looking for "how do I connect" should not have to scroll past the
+        // contributor documentation to find out.
+        text: "Using the extension",
+        collapsed: false,
+        items: [{ text: "Connection profiles", link: "/connection-profiles" }],
+      },
       {
         text: "Reference",
         collapsed: false,

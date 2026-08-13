@@ -6,8 +6,8 @@
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 0,
-  "statements": 0,
-  "functions": 0,
-  "branches": 0
+  "lines": 55,
+  "statements": 55,
+  "functions": 63,
+  "branches": 86
 }

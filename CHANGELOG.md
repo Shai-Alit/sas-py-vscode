@@ -131,6 +131,27 @@ called out under **Changed** with a migration note.
   expires, why esbuild's `postinstall` turned out not to be load-bearing, and why
   the whole thing runs in one pinned CI job — `allowScripts` needs npm 12, which
   needs a Node newer than this project's supported floor.
+- Connection profiles. `pythonOnViya.connectionProfiles` holds a named set of
+  Viya deployments, and five commands manage it: **Add**, **Edit**, **Delete**,
+  **Switch** and **Import Connection Profiles from the SAS Extension**. A status
+  bar item shows which profile the window resolved to. Endpoints are normalised
+  and validated on the way in — plain HTTP to anything but loopback is refused,
+  because every request carries a bearer token, and so are credentials in the
+  URL, which would be a password in `settings.json` by another route. The client
+  secret goes to `SecretStorage`, keyed on a stable profile `id` so a rename
+  keeps it, and no code path can put it in a setting.
+- A one-time import from the SAS extension's `SAS.connectionProfiles`. It reads
+  their key and never writes it, imports only Viya connections, and infers a
+  missing `connectionType` from the fields present rather than defaulting it to
+  `rest` the way upstream's migration does — reading a file this project does
+  not own, a wrong guess should cost a skipped row rather than a mislabelled
+  SAS 9 profile. Secrets are not copied, because `SecretStorage` is
+  per-extension.
+- ADR-0007 (connection profile storage), recording why storage is separate from
+  the SAS extension's rather than shared, why the active profile lives in
+  `workspaceState` over a settable default, why every profile carries a `version`
+  from day one, and why sharing their key was incompatible with all three.
+- `docs/connection-profiles.md`, the first user-facing page on the site.
 
 ### Fixed
 

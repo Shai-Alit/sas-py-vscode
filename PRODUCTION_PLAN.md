@@ -378,10 +378,21 @@ future maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small
 
 ### Phase 1 — Authentication and connection profiles
 
-**1a — Connection profiles.** `pythonOnViya.connectionProfiles` setting with the
-JSON-Schema `if`/`then` shape, `ProfileConfig`, profile add/edit/delete/switch
-commands, status bar item. Collapsed to a single Viya profile type — no SSH/COM/IOM
-branches. *Medium.*
+**1a — Connection profiles.** `pythonOnViya.connectionProfiles` setting, profile
+add/edit/delete/switch commands, a one-time import from the SAS extension, and a
+status bar item. Collapsed to a single Viya profile type — no SSH/COM/IOM
+branches, so the upstream JSON-Schema `if`/`then` discriminator collapses with
+them and is not ported. Every profile carries a `version`; the active profile
+lives in `workspaceState`; the client secret lives in SecretStorage and never in
+settings (ADR-0007). *Medium.*
+
+> **The unit tier cannot import `vscode`,** so this slice establishes the seam
+> every later one inherits: the profile *model* — types, validation, migration,
+> the import filter — is a module with no `vscode` import and is specified by
+> unit tests, while the thin store that wraps `workspace.getConfiguration` and
+> `SecretStorage` is exercised in the extension host. Logic that drifts into the
+> shell becomes untestable at the cheap tier, which is how a suite quietly stops
+> being a specification.
 
 **1b — OAuth2 + PKCE.** Port `auth.ts`: authorization-code flow with PKCE, the
 **dual code capture** (URI handler *and* paste box racing, whichever lands first)
@@ -804,9 +815,18 @@ get written.
    host's ban on Node APIs constrain the OAuth loopback listener and secret
    handling before those are even built. Revisit as a Phase 6+ item, not never.
    Recorded as ADR-0003, executed in 0b.
-5. **Coexistence with the SAS extension** (Phase 1a). If both are installed, share
-   connection profiles or keep them separate? Sharing is friendlier but couples us
-   to their schema. *Recommend separate for v1.*
+5. ~~**Coexistence with the SAS extension**~~ — **SETTLED 2026-08-12: separate
+   storage, plus a one-time read-only import.** Our own
+   `pythonOnViya.connectionProfiles`, and a
+   `Python on Viya: Import Profiles from the SAS Extension` command that reads
+   their `connectionType: "rest"` profiles and copies the endpoint, context and
+   client id into ours. We never write their key. Sharing was rejected on
+   evidence rather than taste: their config listener runs `SAS.close` on *any*
+   change to that key, so our writes would terminate a user's running SAS
+   session; both sides do whole-object read-modify-write with no merge; their
+   `migrateLegacyProfiles()` rewrites profiles it does not recognise on every
+   activation; and SecretStorage is per-extension, so tokens could never be
+   shared anyway. Recorded as ADR-0007, executed in 1a.
 6. ~~**Coverage starting threshold**~~ — **SETTLED 2026-08-12: 0%, with a
    ratchet.** The only shipped module is the activation entry point; it imports
    `vscode`, so it is unloadable outside an extension host and invisible to c8.
@@ -824,10 +844,17 @@ get written.
 
 **Smaller items to settle in-phase, recorded so they aren't forgotten:** activation
 events and a lazy-load rule (an `onLanguage:python` activation would fire for every
-Python user on every file — 0b); profile-schema versioning and a migration path
-(1a); profile setting scope across multi-root workspaces, which also affects 2a's
-`workspaceState` reconnect (1a/2a); and localisation — whether we ship non-English
-bundles at all (0b; English-only is fine, but say so).
+Python user on every file — 0b); ~~profile-schema versioning and a migration
+path~~ (**settled 2026-08-12: an explicit `version` field on every profile from
+day one; migrations key off it, and a profile whose version is *higher* than this
+build understands is refused with a clear message rather than half-read** —
+ADR-0007); ~~profile setting scope across multi-root workspaces, which also
+affects 2a's `workspaceState` reconnect~~ (**settled 2026-08-12: profiles are
+`window`-scoped and stored in user settings; the pointer to the *active* profile
+lives in `workspaceState`, so two windows can target two deployments at once, and
+it sits next to where 2a already keeps the compute session id** — ADR-0007); and
+localisation — whether we ship non-English bundles at all (0b; English-only is
+fine, but say so).
 
 ---
 

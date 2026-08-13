@@ -15,3 +15,8 @@ under their category.
 | Command | Palette entry | ID |
 | --- | --- | --- |
 | Show Log | `Python on Viya: Show Log` | `pythonOnViya.showOutputChannel` |
+| Add Connection Profile | `Python on Viya: Add Connection Profile` | `pythonOnViya.addProfile` |
+| Edit Connection Profile | `Python on Viya: Edit Connection Profile` | `pythonOnViya.editProfile` |
+| Delete Connection Profile | `Python on Viya: Delete Connection Profile` | `pythonOnViya.deleteProfile` |
+| Switch Connection Profile | `Python on Viya: Switch Connection Profile` | `pythonOnViya.switchProfile` |
+| Import Connection Profiles from the SAS Extension | `Python on Viya: Import Connection Profiles from the SAS Extension` | `pythonOnViya.importProfiles` |

@@ -13,5 +13,5 @@
   "configuration.profile.endpoint.description": "Address of the SAS Viya deployment, for example `https://viya.example.com`. Must use HTTPS unless it is a loopback address: every request carries an access token, and over HTTP that token is readable in transit.",
   "configuration.profile.endpoint.patternError": "The endpoint must not contain a username or password. Credentials belong in the sign-in prompt, not in a settings file.",
   "configuration.profile.context.description": "Name of the SAS compute context to run in. Leave empty to be asked when you first connect.",
-  "configuration.profile.clientId.description": "OAuth client ID registered for this extension in your Viya deployment. Leave empty to use the deployment's default public client, which recent Viya 4 releases provide."
+  "configuration.profile.clientId.description": "OAuth client ID registered for this extension in your Viya deployment. Nothing reads it yet: signing in arrives in a later release, and what an empty value falls back to is decided there. Viya 3.5 is expected to need an explicit ID and secret."
 }

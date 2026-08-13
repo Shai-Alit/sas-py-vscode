@@ -59,7 +59,19 @@ export interface ViyaProfile {
   endpoint: string;
   /** Compute context name. Optional here; it acquires meaning in Phase 2. */
   context?: string;
-  /** OAuth client id. Optional — Viya 4 2022.11+ accepts a default public client. */
+  /**
+   * OAuth client id. Optional, and nothing reads it yet.
+   *
+   * What an *empty* value means is decided in Phase 1b, not here — this slice
+   * stores the field and prompts for it, and no authentication code exists to
+   * consume it. Upstream leaves it blank on Viya 4 2022.11 and later and falls
+   * back to a built-in client id, `vscode`, registered in the deployment for
+   * *its* extension; on Viya 3.5 and Viya 4 2022.10 and earlier it requires an
+   * explicit id and secret. That is documented behaviour, not something this
+   * project has probed, and whether a fallback of ours should reuse another
+   * product's client id or ask deployments to register `python-on-viya` is an
+   * open question. See PRODUCTION_PLAN.md §1b.
+   */
   clientId?: string;
 }
 

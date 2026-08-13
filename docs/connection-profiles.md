@@ -31,10 +31,22 @@ as HTTPS. A trailing slash is trimmed. Three things are refused outright:
 **Compute context** (optional). The name of the SAS compute context to run in.
 Leave it empty for now if you do not know it.
 
-**OAuth client ID** (optional). Leave it empty unless your Viya administrator has
-registered a client specifically for this extension. Viya 4 releases from 2022.11
-onward provide a default public client that works without one. If you do enter a
-client ID, you are then asked for the client secret, and the prompt is masked.
+**OAuth client ID** (optional). If you enter one you are then asked for the
+client secret, and that prompt is masked.
+
+Nothing reads either value yet. Signing in arrives in a later release, and what
+an empty client ID falls back to is a decision that belongs to it — so this page
+will not tell you today that leaving it blank works. What is known is where the
+question comes from: the SAS extension leaves it blank on Viya 4 2022.11 and
+later and falls back to a built-in client ID, `vscode`, that the deployment
+registers for *that* extension, while Viya 3.5 and Viya 4 2022.10 and earlier
+need an explicit ID and secret. That is
+[SAS's documented behaviour](https://github.com/sassoftware/vscode-sas-extension/blob/main/website/docs/Configurations/Profiles/viya.md)
+for their extension, not behaviour this project has confirmed against a
+deployment, and whether this extension should reuse another product's client ID
+or ask your administrator to register one of its own is still open. If you
+already have an ID registered for this extension, put it here and it will be
+stored for when sign-in lands.
 
 ## Where things are stored
 

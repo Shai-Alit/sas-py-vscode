@@ -34,3 +34,47 @@ export function extensionId(): string {
 
   return `${manifest.publisher}.${manifest.name}`;
 }
+
+/**
+ * The JSON-schema `pattern` the settings editor applies to a profile endpoint.
+ *
+ * Navigated rather than hard-coded, and loudly broken if the manifest is
+ * restructured: a test that silently stops finding the thing it guards is worse
+ * than no test, because it keeps reporting success.
+ */
+export function endpointSchemaPattern(): RegExp {
+  const manifestPath = path.resolve(__dirname, "../../../package.json");
+  const manifest: unknown = JSON.parse(
+    readFileSync(manifestPath, "utf8"),
+  ) as unknown;
+
+  const path_ = [
+    "contributes",
+    "configuration",
+    "properties",
+    "pythonOnViya.connectionProfiles",
+    "additionalProperties",
+    "properties",
+    "endpoint",
+    "pattern",
+  ];
+
+  let cursor: unknown = manifest;
+  for (const key of path_) {
+    if (typeof cursor !== "object" || cursor === null) {
+      cursor = undefined;
+      break;
+    }
+    cursor = (cursor as Record<string, unknown>)[key];
+  }
+  const pattern = cursor;
+
+  if (typeof pattern !== "string") {
+    throw new Error(
+      `${manifestPath} no longer has contributes.configuration.properties["pythonOnViya.connectionProfiles"].additionalProperties.properties.endpoint.pattern — ` +
+        `the schema moved, and this test can no longer prove it agrees with normaliseEndpoint.`,
+    );
+  }
+
+  return new RegExp(pattern);
+}

@@ -522,6 +522,74 @@ describe("token endpoint failures", () => {
   });
 });
 
+/**
+ * That the request can be given up on.
+ *
+ * `transport.ts` has its own tests for *honouring* a signal; these are about the
+ * other half, which nothing else pinned: that the token endpoint hands it one.
+ * A refactor that dropped the `signal` line would leave every test above green —
+ * mock Viya always answers — and ship a sign-in that hangs for as long as a
+ * corporate proxy is willing to hold the socket open, with a progress
+ * notification and no way out. It was mistaken for exactly that defect during
+ * review of this slice, so the absence is now a failing test rather than an
+ * argument.
+ */
+describe("token endpoint cancellation", () => {
+  /** Captures the request without answering it, so only the signal decides. */
+  const neverAnswers = (): {
+    transport: HttpTransport;
+    /** What the signal looked like *when the request was made*, not now. */
+    seen: () => { given: boolean; alreadyAborted: boolean };
+  } => {
+    let given = false;
+    let alreadyAborted = false;
+    return {
+      transport: (_url, init) => {
+        given = init.signal !== undefined;
+        alreadyAborted = init.signal?.aborted === true;
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new Error("aborted"));
+            },
+            { once: true },
+          );
+        });
+      },
+      seen: () => ({ given, alreadyAborted }),
+    };
+  };
+
+  it("gives the transport a signal, and one that is still live", async () => {
+    const { transport, seen } = neverAnswers();
+
+    const result = await exchangeAuthorizationCode(
+      { ...baseRequest, code: "c", codeVerifier: "v" },
+      { now, transport, timeoutMs: 20 },
+    );
+
+    // Recorded at call time: by now it has fired, which is the next test.
+    assert.deepEqual(seen(), { given: true, alreadyAborted: false });
+    assert.ok(!result.ok);
+  });
+
+  it("aborts the request once timeoutMs has passed, and says so", async () => {
+    const { transport } = neverAnswers();
+
+    const result = await refreshTokens(
+      { ...baseRequest, refreshToken: FAKE_REFRESH },
+      { now, transport, timeoutMs: 20 },
+    );
+
+    // Reaching this line at all is the assertion: without a timeout the promise
+    // above never settles and the test times out instead.
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "token-endpoint-unreachable");
+    assert.ok(!result.reason.includes(FAKE_REFRESH));
+  });
+});
+
 describe("needsRefresh", () => {
   const withExpiry = (expiresAt: number): Tokens => ({
     accessToken: FAKE_ACCESS,

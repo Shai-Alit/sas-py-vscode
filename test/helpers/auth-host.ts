@@ -63,6 +63,42 @@ export function memorySecrets(): MemorySecrets & vscode.Disposable {
   };
 }
 
+/**
+ * A `Memento` backed by a `Map`, for the state a test cannot otherwise reach.
+ *
+ * Same problem as `memorySecrets` and the same answer: `globalState` arrives on
+ * an `ExtensionContext`, and a test is not an extension. `setKeysForSync` is a
+ * no-op because nothing here syncs, but it has to exist — `globalState` on a
+ * context is a `Memento` plus that one method, and the store's parameter type
+ * asks for the real thing.
+ *
+ * `update(key, undefined)` deletes rather than storing `undefined`, which is what
+ * the real memento does and what `ProfileStore` relies on to leave no key behind
+ * once its list is empty.
+ */
+export function memoryMemento(): vscode.ExtensionContext["globalState"] {
+  const entries = new Map<string, unknown>();
+
+  return {
+    keys: () => [...entries.keys()],
+    get<T>(key: string, fallback?: T): T | undefined {
+      const stored = entries.get(key);
+      // The one assertion in this file, and it is the interface's, not ours:
+      // `Memento.get<T>` promises a `T` for a store that holds anything. Every
+      // implementation of it, VS Code's included, ends up here.
+      return stored === undefined ? fallback : (stored as T);
+    },
+    update(key: string, value: unknown): Thenable<void> {
+      if (value === undefined) entries.delete(key);
+      else entries.set(key, value);
+      return Promise.resolve();
+    },
+    setKeysForSync(): void {
+      // Nothing in a test run syncs anywhere.
+    },
+  };
+}
+
 const channels = new Map<string, vscode.LogOutputChannel>();
 
 /**

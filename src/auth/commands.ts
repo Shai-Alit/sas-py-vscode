@@ -89,7 +89,11 @@ async function signIn(
  * sign-in.
  *
  * An empty answer is a real answer — plenty of registered clients are public and
- * have no secret — so it is stored as nothing and not asked about again.
+ * have no secret — so it is recorded as "this client has none" and not asked
+ * about again. `ProfileStore.secret` returns three things for that reason: the
+ * secret, `""` for a client known to have none, and `undefined` only when nobody
+ * has answered yet. Collapsing the last two is what makes a public client prompt
+ * at every single sign-in.
  */
 async function resolveClientSecret(
   profile: ViyaProfile,
@@ -115,7 +119,10 @@ async function resolveClientSecret(
   });
   if (typed === undefined) return undefined;
 
-  if (typed !== "") await profiles.setSecret(profile, typed);
+  // Including the empty answer, which `setSecret` records as "this client has
+  // none" rather than discarding — otherwise the promise two paragraphs up is
+  // broken at the next sign-in.
+  await profiles.setSecret(profile, typed);
   return typed;
 }
 

@@ -821,6 +821,32 @@ exercise, so 36 tests that hold the shell's line are invisible to this number by
 construction. What raised it was 1b-ii's *core* — `clientId.ts`, `pkce.ts`,
 `signIn.ts` and `tokenEndpoint.ts` all at 100, `transport.ts` at 97.82.
 
+☑ **Review response, 2026-08-13.** Two findings, one of each verdict, and both
+were checked against the code rather than acted on.
+
+The 🔴 blocking one — "the `post()` call passes no `AbortSignal`, so the request
+can neither be cancelled nor time out" — is a false positive. `tokenEndpoint.ts`
+passes `AbortSignal.timeout(deps.timeoutMs ?? DEFAULT_TIMEOUT_MS)`, and
+`transport.ts` honours it, with tests for an already-aborted signal and for one
+that fires mid-request against a real loopback server. The reviewer was
+describing the `fetch` code this slice replaced. It did expose a real gap
+though: nothing pinned that the token endpoint *supplies* a signal, only that the
+transport respects one, so a refactor that dropped the line would have left every
+test green and shipped a sign-in that hangs for as long as a proxy will hold the
+socket. That is now two tests in `auth-token-endpoint.test.ts`.
+
+The 🟠 major one — a public client is re-prompted for a secret at every sign-in,
+because an empty answer is discarded — is correct, and the fix it suggested is
+not. "Store the empty string" fails on any machine without an OS keyring: VS Code
+guards its read on the *stored* value being falsy, and the in-memory fallback
+backend encrypts with the identity function, so `""` goes in and `undefined`
+comes out. Verified in the shipped `workbench.desktop.main.js` for 1.133.0, which
+`.vscode-test/` already had on disk. So the claim is configuration in
+`globalState`, the secret store keeps only secrets, and `secret()` is tri-state.
+`ProfileStore`'s constructor now asks for the three context members it uses
+rather than the whole `ExtensionContext`, which is what makes any of this
+testable without a cast — `test/integration/profile/secret-storage.test.ts`.
+
 ```bash
 # ⛔ BARRIER: merge 1b-ii first.
 # 1c — AuthenticationProvider + secret storage

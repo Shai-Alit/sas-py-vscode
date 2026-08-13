@@ -235,7 +235,10 @@ async function addProfile(
       vscode.l10n.t("Client secret (optional — leave empty if there is none)"),
     );
     if (secret === undefined) return;
-    if (secret !== "") await store.setSecret(profile, secret);
+    // Unconditional, empty included: the prompt says "leave empty if there is
+    // none", so an empty box is an answer to record, not one to drop. Compare
+    // the edit command below, where the same empty box means something else.
+    await store.setSecret(profile, secret);
   }
 
   await store.upsert(name, profile);
@@ -295,11 +298,24 @@ async function editProfile(
     // behind would keep a credential the user believes they have just removed.
     await store.clearSecret(updated);
   } else {
+    // A secret belongs to the client it was issued for, so changing the client
+    // id changes what the question means. Keep the same one and an empty box
+    // means "I did not retype it"; swap it for another client and the same empty
+    // box has to mean "this one has none", because there is nothing left worth
+    // keeping. Asking the wrong one of those two carries a secret across to a
+    // client it will not authenticate.
+    const sameClient = updated.clientId === existing.clientId;
     const secret = await askSecret(
-      vscode.l10n.t("Client secret (leave empty to keep the stored one)"),
+      sameClient
+        ? vscode.l10n.t("Client secret (leave empty to keep the stored one)")
+        : vscode.l10n.t(
+            "Client secret (optional — leave empty if there is none)",
+          ),
     );
     if (secret === undefined) return;
-    if (secret !== "") await store.setSecret(updated, secret);
+    // Nothing is written until there is an answer: clearing the old secret up
+    // front would destroy it for a user who then pressed Escape.
+    if (!sameClient || secret !== "") await store.setSecret(updated, secret);
   }
 
   if (name !== originalName) await store.rename(originalName, name);

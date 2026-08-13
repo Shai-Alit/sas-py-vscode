@@ -24,6 +24,7 @@ import {
   readProfiles,
   resolveActiveProfile,
   secretKey,
+  withSecretlessId,
   type ProfileProblem,
   type ReadProfilesResult,
   type ViyaProfile,
@@ -46,6 +47,29 @@ const DEFAULT_PROFILE_KEY = "defaultProfile";
  */
 const ACTIVE_PROFILE_STATE_KEY = "pythonOnViya.activeProfile";
 
+/**
+ * Profiles whose OAuth client is registered without a secret.
+ *
+ * `globalState`, not `workspaceState`: profiles are user-global, and so is this
+ * fact about them. Not `SecretStorage`, for the reason set out on `setSecret`.
+ */
+const SECRETLESS_IDS_KEY = "pythonOnViya.clientsWithoutSecret";
+
+/**
+ * The part of `ExtensionContext` this store actually uses.
+ *
+ * Narrower than `vscode.ExtensionContext` on purpose, and not for tidiness: a
+ * real context can only be obtained by being an extension, so a test that wants
+ * to prove what this class stores where would otherwise have to assert its way
+ * past a hundred members it does not implement — or cast, which this repository
+ * does not allow. Three named members can be supplied honestly. `activate` still
+ * passes the real context, which satisfies this by structure.
+ */
+export type ProfileStorageContext = Pick<
+  vscode.ExtensionContext,
+  "secrets" | "workspaceState" | "globalState"
+>;
+
 export class ProfileStore implements vscode.Disposable {
   private readonly changed = new vscode.EventEmitter<void>();
   private readonly disposables: vscode.Disposable[] = [];
@@ -60,7 +84,7 @@ export class ProfileStore implements vscode.Disposable {
   private reportedProblems = "";
 
   constructor(
-    private readonly context: vscode.ExtensionContext,
+    private readonly context: ProfileStorageContext,
     private readonly log: vscode.LogOutputChannel,
   ) {
     this.disposables.push(
@@ -190,16 +214,75 @@ export class ProfileStore implements vscode.Disposable {
     }
   }
 
-  secret(profile: ViyaProfile): Thenable<string | undefined> {
-    return this.context.secrets.get(secretKey(profile));
+  /**
+   * The profile's client secret: the stored one, `""` if the client is known to
+   * have none, or `undefined` if nobody has said yet.
+   *
+   * Three states rather than two, because "no secret" and "not asked" are
+   * different facts and only one of them is a reason to prompt.
+   */
+  async secret(profile: ViyaProfile): Promise<string | undefined> {
+    const stored = await this.context.secrets.get(secretKey(profile));
+    if (stored !== undefined) return stored;
+    return this.secretlessIds().includes(profile.id) ? "" : undefined;
   }
 
-  setSecret(profile: ViyaProfile, value: string): Thenable<void> {
-    return this.context.secrets.store(secretKey(profile), value);
+  /**
+   * Records what the user answered. **`""` means "this client has no secret"**
+   * and is remembered as such, so it is asked once rather than at every sign-in.
+   *
+   * The empty answer is deliberately *not* written to `SecretStorage`, which is
+   * the obvious shortcut and does not work. VS Code encrypts a secret before
+   * storing it and, on read, discards the entry when the **stored** value is
+   * falsy — with the OS keyring that is fine, because `""` encrypts to a
+   * non-empty blob, but when the keyring is unavailable the storage falls back
+   * to an in-memory backend where encryption is the identity function. There
+   * `""` is stored as `""` and read back as `undefined`. That is a Linux
+   * container, a remote-SSH host without a keyring, and CI — precisely the
+   * environments where the bug would be blamed on something else. Verified
+   * against the shipped `workbench.desktop.main.js` for 1.133.0.
+   *
+   * So a fact about configuration is stored as configuration, in `globalState`
+   * alongside the profiles it describes, and the secret store keeps only secrets.
+   */
+  async setSecret(profile: ViyaProfile, value: string): Promise<void> {
+    if (value === "") {
+      // Any previously stored secret is now contradicted, not merely unused.
+      await this.context.secrets.delete(secretKey(profile));
+      await this.rememberSecretless(profile.id, true);
+      return;
+    }
+    await this.rememberSecretless(profile.id, false);
+    await this.context.secrets.store(secretKey(profile), value);
   }
 
-  clearSecret(profile: ViyaProfile): Thenable<void> {
-    return this.context.secrets.delete(secretKey(profile));
+  /** Forgets both the stored secret and any claim that there is none. */
+  async clearSecret(profile: ViyaProfile): Promise<void> {
+    await this.rememberSecretless(profile.id, false);
+    await this.context.secrets.delete(secretKey(profile));
+  }
+
+  private secretlessIds(): readonly string[] {
+    return this.context.globalState.get<string[]>(SECRETLESS_IDS_KEY) ?? [];
+  }
+
+  private async rememberSecretless(
+    id: string,
+    secretless: boolean,
+  ): Promise<void> {
+    const current = this.secretlessIds();
+    const next = withSecretlessId(current, id, secretless);
+    // Every real secret written goes through here to retract a claim that is
+    // almost never there. Writing anyway would mean a `globalState` update, and
+    // a sync of it, on every sign-in that has nothing to record.
+    const unchanged =
+      next.length === current.length && next.every((v, i) => v === current[i]);
+    if (unchanged) return;
+
+    await this.context.globalState.update(
+      SECRETLESS_IDS_KEY,
+      next.length === 0 ? undefined : next,
+    );
   }
 
   dispose(): void {

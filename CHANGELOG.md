@@ -221,6 +221,17 @@ called out under **Changed** with a migration note.
   Code that `@vscode/test-electron` downloads into `.vscode-test/` was being
   linted; the ignore list now covers it, and a unit test asserts that through
   ESLint's own resolver.
+- A profile whose OAuth client is registered without a secret is no longer asked
+  for one at every sign-in. An empty answer is now recorded rather than dropped,
+  which needs three states — the secret, "this client has none", and "nobody has
+  said yet" — because only the last is a reason to prompt. The record is *not* an
+  empty string in `SecretStorage`, which is the obvious fix and does not work:
+  VS Code encrypts a secret on write and discards it on read when the **stored**
+  value is falsy, so with an OS keyring an empty secret survives as ciphertext,
+  and without one — a Linux container, a remote/SSH host, CI — the fallback
+  backend "encrypts" with the identity function and reads `""` back as
+  `undefined`. So the claim is kept in `globalState`, where a fact about
+  configuration belongs, and the secret store holds only secrets.
 
 ### Changed
 

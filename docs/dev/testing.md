@@ -107,6 +107,27 @@ launches the editor; `test/integration/index.ts` runs inside it, where
 `require("vscode")` resolves. Keep this tier small — it is slow, it needs a
 display, and everything that can be proven one tier down should be.
 
+**Reusing an editor you already have.** The download is cached in
+`.vscode-test/`, keyed by version *and platform*, and that location is not
+configurable. A checkout shared between two platforms — a Windows working tree
+opened from a Linux container, a warm CI cache, a metered connection — therefore
+pays 330 MB again for the second platform on every clean run. Setting
+`PYTHON_ON_VIYA_TEST_VSCODE` to an extracted VS Code directory, or to the
+executable inside it, skips the download:
+
+```bash
+PYTHON_ON_VIYA_TEST_VSCODE=/tmp/vscode-linux-x64-1.133.0 npm run test:integration
+```
+
+Unset it and nothing changes, which is the case in CI today. A path that does
+not exist is an error rather than a fallback: falling back would perform exactly
+the download the variable exists to avoid, silently, on a typo. The launched
+editor still gets the throwaway `--user-data-dir` and `--extensions-dir` that
+`runTests` derives, so pointing this at an editor you use daily cannot touch
+your real settings or extensions. Its version is not checked against what the
+harness would have downloaded — if a result here disagrees with CI, that is the
+first thing to suspect, and the path is printed on every run for that reason.
+
 Discovery is recursive, so a suite may live in a subdirectory. That is asserted
 rather than assumed: `discoverTestFiles` is exported and tested from the unit
 tier against real nested directories, because a discovery bug does not announce
@@ -219,3 +240,10 @@ are not authored here and are covered by the tests of the code that calls them.
   `test/unit/http-mocking.test.ts` it is the latter, and says so.
 - **A stack trace points at `.js`** — the source map did not load. Check that
   `node-option: ["enable-source-maps"]` survived in `.mocharc.json`.
+- **More tests ran than the branch has** — `out/` is not cleaned when you switch
+  branches, and Mocha runs `out/`. Tests from the branch you left are still
+  there, passing, and inflating the count. `rm -rf out && npm run test:unit`.
+- **`error while loading shared libraries` from the integration tier** — the
+  editor is a real GUI application and needs the X and GTK libraries even when
+  it is running headless under a virtual display. A minimal container will not
+  have them. This is a property of the environment, not of the suite.

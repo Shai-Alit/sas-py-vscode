@@ -1,9 +1,10 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-`main`. Five jobs: `verify`, `test`, `docs`, `package`, and `supply-chain`. A
-separate workflow, `.github/workflows/link-check.yml`, runs weekly and is
-deliberately not part of the gate.
+`main`. Five jobs: `verify`, `test`, `docs`, `package`, and `supply-chain`. Two
+separate workflows sit beside it: `.github/workflows/codeql.yml`, which gates a
+pull request *and* runs weekly, and `.github/workflows/link-check.yml`, which
+runs weekly and is deliberately not part of the gate.
 
 The organising principle is that **CI runs commands you can run**. There is no
 step in this workflow that exists only in CI, no environment variable that
@@ -11,17 +12,18 @@ changes behaviour there, and no "works locally, fails in CI" surface beyond the
 operating system itself. If a job is red, the command in its log is the command
 to run on your own machine.
 
-`supply-chain` is the one job that bends this, and it says so in its own section
-below: it needs a newer npm than the one your machine probably has, and it needs
-the network. The commands are still real commands, and the section tells you
-which two to run.
+Two jobs bend this, and each says so in its own section below. `supply-chain`
+needs a newer npm than the one your machine probably has, and needs the network;
+the commands are still real commands, and the section tells you which two to run.
+`analyze` — CodeQL — is not a command you can run at all, which is why it is the
+one check whose output lives in the Security tab rather than in a log.
 
 ## verify
 
 One step: `npm run verify`. That is the whole chain —
 
 ```
-format:check  →  lint  →  typecheck  →  check:copyright  →  build  →  coverage
+format:check  →  lint  →  typecheck  →  check:copyright  →  check:secrets  →  build  →  coverage
 ```
 
 — and it runs on Ubuntu with the Node version in `.nvmrc`.
@@ -219,6 +221,73 @@ Exit codes are split: **1** means the package is wrong (fix `.vscodeignore`),
 **2** means the script or its input is wrong (missing archive, not a zip, or
 rules that failed their own examples).
 
+## What `check:secrets` is for
+
+`check:package` guards the archive. `scripts/check-secrets.mjs` guards the thing
+that happens earlier and more often: a commit. It is a step in `npm run verify`,
+so it runs on your machine before it runs here — a credential-shape check that
+lives only in CI is one you meet for the first time when the token is already in
+a pushed branch.
+
+**GitHub's secret scanning is on and does not cover this.** It matches *partner
+patterns*: vendor-issued formats with a recognisable prefix, registered by a
+vendor who can also be told to revoke the credential. A Viya OAuth token is a
+plain JWT minted by the customer's own deployment — no prefix, nobody to notify —
+so nothing in the partner-pattern set will ever match one. The two run alongside
+each other. This script deliberately does not re-implement vendor patterns;
+GitHub does that better and can trigger a revocation, and a second copy would add
+noise and no coverage. The reasoning is
+[ADR-0006](../adr/0006-scanning-posture.md).
+
+Six rules, each statable in a sentence: a JWT, a literal `Authorization: Bearer`
+value, a base64 `Basic` credential, a PEM private key banner, a
+credential-named field assigned a literal, and a password embedded in a URL.
+
+Three things to know before you read a failure:
+
+- **It scans the tracked working tree, not history and not untracked files.**
+  Both exclusions are deliberate. A credential already in history is a rotation
+  task, not a build failure, and a gate that fails forever on a commit nobody can
+  rewrite is a gate that gets switched off — `git log -S '<fragment>' --all` is
+  the tool for that question, and rotation is the answer to it. Untracked files
+  are where `creds.json` is *supposed* to live, so scanning them would fail on
+  the setup `docs/dev` prescribes. What a commit would publish is the question
+  with an actionable answer.
+- **Findings are printed redacted** — first three characters and a length. This
+  repository is public and its CI logs are public with it, so a scanner that
+  quotes what it found has published it more widely than the commit did. That is
+  not a hypothetical: the first end-to-end run against a planted token printed
+  the whole thing, because redaction had been applied only to rules with a
+  capture group and the JWT rule has none. Redaction is now the default and one
+  rule — the PEM banner, which contains no secret — opts out.
+- **A false positive is silenced in place, with a reason.** Put
+  `credential-scan: allow <why>` in a comment on the offending line or the line
+  above. The reason is mandatory and a bare marker fails the run, because a
+  suppression with no reason records that somebody wanted the red to go away and
+  not what they decided. A marker that no longer covers anything is *reported*
+  and does not fail — a marker inside a fenced example in this documentation is
+  indistinguishable, to a line-based scanner, from one in code.
+
+Before reaching for a marker, check whether the value is a placeholder the script
+should have recognised. It already knows `${VAR}`, `$(cmd)`, `%VAR%`,
+`{{ template }}`, `process.env.…`, `<your-token-here>`, and an `ALL_CAPS_NAME`,
+which is the *name* of an environment variable rather than a value. That last
+rule exists because it was the first run's only false positive, in
+`test/helpers/live-gate.ts` — a file whose whole purpose is keeping real
+credentials out of the repository. Widening the placeholder list is usually the
+better fix: a check that is wrong on first contact teaches people to suppress it
+rather than read it.
+
+There is no entropy rule, and there should not be one without a new argument.
+`package-lock.json` is thousands of 88-character base64 integrity hashes, every
+one as random as a token.
+
+Exit codes match the other checkers: **1** the policy was violated, **2** the
+script or its input is wrong (`git` missing, tree unreadable). `git ls-files`
+runs under a thirty-second timeout, per `CONTRIBUTING.md` — it is a local call,
+but a repository on a network share that has stopped answering is still a call
+that can hang.
+
 ## supply-chain
 
 Two questions about the dependency tree, and nothing else: **what is allowed to
@@ -332,11 +401,58 @@ someone fixes something they do not control. An advisory fails once, and the
 response is a dated line in a file that the contributor can write in the same
 pull request.
 
+## CodeQL (a gate *and* a schedule)
+
+`.github/workflows/codeql.yml`, one job named `analyze`, on pull requests, on
+pushes to `main`, and weekly. It analyses `javascript-typescript` with the
+`security-extended` query suite and uploads its alerts to the repository's
+Security tab, which is the entire output — there is nothing to read in the job
+log when it passes.
+
+It is the **advanced** setup, meaning a committed workflow, rather than GitHub's
+default setup, which is configured on a settings page and appears nowhere in the
+tree. Same reason everything else here is a file: a change to the query suite or
+the schedule then arrives as a reviewable diff, and a maintainer without
+administrator access can still find out what is being scanned.
+
+It is a separate workflow from `ci.yml` because of the schedule. A query pack
+updates on GitHub's timetable rather than on a commit, so an unchanged tree can
+become newly interesting; folding that into `ci.yml` would mean either putting
+the whole of CI on a timer or giving up the timer. The cron is at `:27` rather
+than on the hour because GitHub queues scheduled runs across every repository
+that asked for the same minute.
+
+Three settings that are decisions rather than boilerplate:
+
+- **`build-mode: none`.** The extractor reads TypeScript directly and there is
+  nothing to build for its purposes. Saying so explicitly stops the action
+  attempting autobuild, which on a Node project means an install — and therefore
+  the install scripts that [ADR-0005](../adr/0005-supply-chain-policy.md) exists
+  to deny.
+- **`languages: javascript-typescript`.** One extractor covering both, not two
+  entries. Adding a language before there is code in it produces a job that
+  analyses nothing and reports success.
+- **`security-extended`, not `security-and-quality`.** Extended adds the
+  lower-precision security queries, which is the right trade for something that
+  will handle OAuth tokens. The quality half was rejected because its
+  maintainability queries overlap with what ESLint already enforces, and a style
+  opinion arriving as a security alert is how a security tab stops being read.
+
+Permissions are least-privilege in the shape GitHub's docs recommend:
+`contents: read` at the top of the file, with `security-events: write` granted
+only to this job.
+
+Unlike every other job here, this one is not a command you can run locally. The
+CodeQL CLI can be installed and pointed at the tree, but that is not the same
+build, and nothing in `npm run verify` reproduces it. If `analyze` is red, the
+alert in the Security tab is the artefact, not the log.
+
 ## What is deliberately not here yet
 
-- **Secret scanning and CodeQL** — slice 0d-ii-b. The dependency audit landed in
-  0d-ii-a and is the `supply-chain` job above; static analysis and a
-  credential-shape scanner are the other half.
+- **Scanning history for credentials.** `check:secrets` reads the tracked tree.
+  History is answered on demand with `git log -S` and, if anything turns up, with
+  a rotation — not with a build that fails forever on a commit nobody can
+  rewrite.
 - **An API reference** — `src/` has no exported surface worth documenting yet,
   so TypeDoc waits for one rather than generating a page of nothing.
 - **Deploying the site** — slice 5c. The `docs` job builds it and uploads it;
@@ -355,6 +471,7 @@ pull request.
 Branch protection cannot require a check until it has reported at least once, so
 required checks are added after this workflow first runs on `main` — see
 `RUNBOOK.md`. Note that they are required **per job name**: adding an OS to the
-matrix creates a new check that is not required until someone says so.
+matrix creates a new check that is not required until someone says so, and
+`analyze` lives in a different workflow but is a required check like any other.
 
 The two AI reviewers stay advisory. They comment; they do not block.

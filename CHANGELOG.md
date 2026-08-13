@@ -108,6 +108,24 @@ called out under **Changed** with a migration note.
   checked for shape before it is believed, and a broken run exits 2 rather than
   passing. Both audits have a two-minute timeout, so a hung registry fails the
   job instead of holding it open.
+- CodeQL static analysis, as a committed workflow rather than GitHub's default
+  setup, so the query suite and the schedule are reviewable in a pull request
+  instead of living on a settings page. `security-extended`, on pull requests and
+  weekly, because query packs update on GitHub's timetable rather than on a
+  commit.
+- `npm run check:secrets`, part of `npm run verify`, which looks for
+  credential-shaped strings in the tracked working tree: a JWT, a literal
+  `Authorization` header, a base64 `Basic` credential, a PEM private key, a
+  credential-named field assigned a literal, and a password in a URL. GitHub's
+  secret scanning matches vendor *partner patterns*, and a Viya OAuth token is a
+  plain JWT issued by the customer's own deployment — no prefix, no vendor to
+  notify — so the two run alongside each other rather than one replacing the
+  other. A false positive is silenced with a `credential-scan: allow` comment
+  carrying a reason, on the line or the line above; findings are reported
+  redacted, because on a public repository the CI log is public too.
+- ADR-0006 (scanning posture), recording why CodeQL is a file rather than a
+  setting, why the scanner reads the tracked tree and not history, why there is
+  no entropy detector, and why `gitleaks` was not used instead.
 - ADR-0005 (supply chain policy), recording why the audit gate is asymmetric
   between the production and development trees, why every allow-list entry
   expires, why esbuild's `postinstall` turned out not to be load-bearing, and why

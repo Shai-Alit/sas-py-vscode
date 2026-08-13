@@ -37,7 +37,18 @@ Two things this is *not*. It is not a top-level `paths-ignore`: a path filter
 makes the workflow not run at all, which leaves every required status check
 pending forever and makes the pull request unmergeable. A job skipped by an `if:`
 condition reports success under its own name, so branch protection stays
-satisfiable. And it is not a claim that prose cannot break the build — it can,
+satisfiable.
+
+That last property has a sharp edge, and `changes` is itself a **required status
+check** because of it. GitHub counts a skipped required check as passing and does
+not distinguish why it was skipped. So if the classify step ever fails, the eight
+required jobs that depend on it are skipped rather than failed, and the pull
+request goes green having run only `docs`. Requiring `changes` makes its own
+failure block the merge instead of cascading into silent skips. Not letting it
+fail at all — defaulting to `code=true` on error — was the rejected alternative:
+a job that cannot fail cannot tell you it is broken.
+
+And it is not a claim that prose cannot break the build — it can,
 which is why `docs` still runs on every change. VitePress renders markdown
 through Vue, so an unescaped angle-bracket placeholder in a sentence is a hard
 build failure.

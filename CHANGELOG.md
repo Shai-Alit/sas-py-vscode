@@ -139,6 +139,22 @@ called out under **Changed** with a migration note.
   the download the variable exists to avoid — silently, on a typo. Unset, which
   is the case in CI, nothing changes.
 
+- The authentication core: PKCE, the SASLogon token grants, and the OAuth client
+  id rule — `src/auth/`, with no `vscode` import, so it is specified by unit
+  tests rather than exercised through an editor. The browser sign-in that uses
+  it follows in the next slice. It is a port of the SAS extension's `auth.ts`
+  and it deliberately differs from it in five places, each recorded in
+  [ADR-0008](docs/adr/0008-auth-core-transport-and-security-deltas.md): the code
+  verifier comes from a CSPRNG rather than `Math.random()`; `state` is random
+  and is checked rather than being set to the callback URL and ignored, which is
+  the code injection RFC 6749 §10.12 describes; base64url comes from Node
+  instead of three chained `.replace()` calls; `expires_in` is kept as an
+  absolute instant so a refresh can happen ahead of expiry instead of costing a
+  request to discover it; and the OAuth `error` and `error_description` fields
+  are read instead of discarded. There is no HTTP client dependency — the
+  production dependency tree stays empty and the transport is an injected
+  `fetch`-shaped port.
+
 ### Fixed
 
 - Profile validation messages shown under an input box are now localisable. The

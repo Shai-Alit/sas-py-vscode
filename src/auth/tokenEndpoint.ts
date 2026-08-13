@@ -18,10 +18,16 @@
  * `package.json` has `"dependencies": {}` and slice 0d spent real effort keeping
  * it that way — every install script denied, an audit gate that fails on any
  * advisory in the production tree at any severity. Upstream uses `axios`; this
- * takes a {@link FetchLike} port defaulting to `globalThis.fetch`, which exists on
- * the Node 20.19.0 floor and which msw already intercepts. The port is not there
- * for tests — msw would have covered that anyway — it is the seam slice 1b-ii
- * attaches proxy support to, without reaching into anything above.
+ * takes an {@link HttpTransport} port, defaulting to the `node:https`
+ * implementation in `./transport`. The port is not there for tests — msw
+ * intercepts both `fetch` and `ClientRequest`, so it would have covered that
+ * either way — it is the seam the transport itself hangs from, without reaching
+ * into anything above.
+ *
+ * Slice 1b-ii replaced that default, which in 1b-i was `globalThis.fetch`.
+ * `./transport` explains why at length; the short version is that `fetch` cannot
+ * see the operating system certificate trust store, and internal certificate
+ * authorities are ordinary in enterprise Viya.
  *
  * ## Nothing here logs a credential
  *
@@ -34,6 +40,11 @@
  */
 
 import type { AuthProblem } from "./problems";
+import {
+  nodeHttpTransport,
+  type TransportResponse,
+  type HttpTransport,
+} from "./transport";
 
 /** SASLogon's OAuth base, relative to the deployment root. */
 const OAUTH_BASE = "/SASLogon/oauth";
@@ -57,34 +68,9 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
  */
 export const EXPIRY_SKEW_MS = 60_000;
 
-/** The subset of a `fetch` response this module reads. */
-export interface TokenHttpResponse {
-  readonly ok: boolean;
-  readonly status: number;
-  text(): Promise<string>;
-}
-
-/**
- * The transport port. `globalThis.fetch` satisfies it structurally.
- *
- * Declared as the narrow shape actually used rather than as the DOM `fetch` type,
- * because `tsconfig.json` deliberately does not include the DOM lib — the
- * extension host is Node, and pulling in DOM globals would let code type-check
- * against APIs that are not there at runtime.
- */
-export type FetchLike = (
-  url: string,
-  init: {
-    method: string;
-    headers: Record<string, string>;
-    body: string;
-    signal?: AbortSignal;
-  },
-) => Promise<TokenHttpResponse>;
-
 export interface TokenEndpointDeps {
-  /** Defaults to `globalThis.fetch`. */
-  fetch?: FetchLike | undefined;
+  /** Defaults to {@link nodeHttpTransport}. */
+  transport?: HttpTransport | undefined;
   /** Defaults to `Date.now`. Injected so expiry arithmetic is testable. */
   now?: (() => number) | undefined;
   /** Defaults to {@link DEFAULT_TIMEOUT_MS}. */
@@ -268,20 +254,14 @@ async function post(
   deps: TokenEndpointDeps,
   fallbackRefreshToken: string | undefined,
 ): Promise<TokenResult> {
-  // Node's global `fetch` already satisfies this shape, so the annotation is the
-  // whole check: the engines floor is 20.19, where it is always present. There is
-  // deliberately no "is fetch available" guard — the type system will not admit
-  // one, and a runtime that somehow lacked it would throw from the call below,
-  // inside the try, and arrive at the same unreachable-endpoint problem as a
-  // refused connection.
-  const doFetch: FetchLike = deps.fetch ?? globalThis.fetch;
+  const send: HttpTransport = deps.transport ?? nodeHttpTransport;
   const now = deps.now ?? Date.now;
   const url = `${root(endpoint)}${OAUTH_BASE}/token`;
 
-  let response: TokenHttpResponse;
+  let response: TransportResponse;
   let text: string;
   try {
-    response = await doFetch(url, {
+    response = await send(url, {
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -292,9 +272,10 @@ async function post(
     });
     text = await response.text();
   } catch (error) {
-    // The message, not the error object: an AggregateError from a failed
-    // connection can carry the request in its cause chain, and the request body
-    // is a client secret and an authorization code.
+    // The message, not the error object. `nodeHttpTransport` already builds a
+    // fresh Error for exactly this reason, but an injected transport is under no
+    // such obligation, and a rejection's cause chain can carry the request that
+    // produced it — whose body is a client secret and an authorization code.
     const detail = error instanceof Error ? error.message : "unknown error";
     return {
       ok: false,

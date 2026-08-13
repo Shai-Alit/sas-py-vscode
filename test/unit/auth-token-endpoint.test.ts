@@ -7,13 +7,14 @@ import { HttpResponse, http } from "msw";
 
 import {
   EXPIRY_SKEW_MS,
-  type FetchLike,
+  type TokenEndpointDeps,
   type Tokens,
   buildAuthorizeUrl,
   exchangeAuthorizationCode,
   needsRefresh,
   refreshTokens,
 } from "../../src/auth/tokenEndpoint";
+import type { HttpTransport } from "../../src/auth/transport";
 import { MOCK_VIYA_BASE, mockViya } from "../helpers/mock-viya";
 
 /**
@@ -349,7 +350,7 @@ describe("refreshTokens", () => {
 describe("token endpoint failures", () => {
   const viya = mockViya();
 
-  const exchange = (deps = {}) =>
+  const exchange = (deps: TokenEndpointDeps = {}) =>
     exchangeAuthorizationCode(
       { ...baseRequest, code: "c", codeVerifier: "v" },
       { now, ...deps },
@@ -474,10 +475,10 @@ describe("token endpoint failures", () => {
     // The request body holds the client secret and the authorization code. A
     // thrown network error can carry the request in its cause chain, which is
     // why only the message is kept.
-    const failing: FetchLike = () =>
+    const failing: HttpTransport = () =>
       Promise.reject(new Error("connect ECONNREFUSED 10.0.0.1:443"));
 
-    const result = await exchange({ fetch: failing });
+    const result = await exchange({ transport: failing });
 
     assert.ok(!result.ok);
     assert.deepEqual(result.problem, {
@@ -493,9 +494,9 @@ describe("token endpoint failures", () => {
     // rejecting with a non-Error is the exact condition under test, because a
     // transport can do it and `error.message` on a string is undefined.
     // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- deliberately malformed rejection
-    const failing: FetchLike = () => Promise.reject("just a string");
+    const failing: HttpTransport = () => Promise.reject("just a string");
 
-    const result = await exchange({ fetch: failing });
+    const result = await exchange({ transport: failing });
 
     assert.ok(!result.ok);
     assert.deepEqual(result.problem, {

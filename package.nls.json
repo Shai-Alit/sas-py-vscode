@@ -6,6 +6,8 @@
   "command.deleteProfile.title": "Delete Connection Profile",
   "command.switchProfile.title": "Switch Connection Profile",
   "command.importProfiles.title": "Import Connection Profiles from the SAS Extension",
+  "command.signIn.title": "Sign In",
+  "command.signOut.title": "Sign Out",
   "configuration.connectionProfiles.description": "SAS Viya connection profiles, keyed by the name you want to see in the status bar. Normally managed by the profile commands, but hand-editing is supported and validated. No client secret is stored here: secrets go to the editor's secret storage, and a profile containing one would be a credential in a file you can commit.",
   "configuration.defaultProfile.description": "Name of the connection profile a window starts on. Switching profile overrides this for the current workspace only, so this setting is the one a machine setup script or a checked-in workspace file can rely on. Ignored if it names a profile that does not exist.",
   "configuration.profile.version.description": "Shape version of this profile. Leave it alone; it is filled in for you. A profile written by a newer version of the extension is refused rather than partly understood.",

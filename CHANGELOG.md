@@ -152,8 +152,39 @@ called out under **Changed** with a migration note.
   absolute instant so a refresh can happen ahead of expiry instead of costing a
   request to discover it; and the OAuth `error` and `error_description` fields
   are read instead of discarded. There is no HTTP client dependency — the
-  production dependency tree stays empty and the transport is an injected
-  `fetch`-shaped port.
+  production dependency tree stays empty and the transport is an injected port.
+
+- The default HTTP transport, `src/auth/transport.ts`, over `node:https` rather
+  than `fetch`. Requests made through Node's `http`/`https` modules inherit the
+  proxy and certificate arrangements the editor makes for extensions; `fetch`
+  goes through undici and inherits neither. The certificate half is the reason it
+  matters — an internal certificate authority is ordinary in enterprise Viya, and
+  a transport that cannot see the operating system trust store fails such a
+  deployment at sign-in, before any authentication code runs. This closes the
+  proxy question [ADR-0008](docs/adr/0008-auth-core-transport-and-security-deltas.md)
+  left open, and closes it with no new dependency. Redirects are deliberately not
+  followed: the request body holds a client secret and an authorization code.
+
+- Browser sign-in: **Python on Viya: Sign In** and **Python on Viya: Sign Out**.
+  The browser opens on the deployment's own login page, and the authorization code
+  comes back either through a `vscode://` callback or through a paste box, both
+  racing so that whichever the deployment supports is the one that finishes. The
+  callback URI goes through `env.asExternalUri()` **before** it is put into the
+  authorize URL, which is what makes sign-in work in Codespaces and remote/SSH
+  windows rather than only on a laptop. A callback whose `state` is not the one
+  this window issued is discarded and — deliberately — does *not* end the attempt,
+  so a forged link cannot be used to break a sign-in that is legitimately in
+  progress. Only the refresh token is persisted, in `SecretStorage`, keyed on the
+  profile's generated `id` so that renaming a profile does not orphan it; the
+  access token is short-lived and can be re-derived, and a second long-lived copy
+  of a credential on disk buys nothing.
+
+- The sign-in decisions live in `src/auth/signIn.ts`, which imports no `vscode`
+  and is therefore specified by unit tests: which arm of the race won, whether a
+  callback belongs to this attempt, whether a rejected one should end the wait,
+  and what is worth persisting. The five modules around it hold only the calls
+  that need an extension host. Upstream's equivalent is a single function that
+  does all of it, reachable only by launching an editor.
 
 - `npm run check:coverage-scope`, which asserts that a module is excluded from
   the unit coverage denominator **if and only if** it imports `vscode`. It joins
@@ -163,6 +194,19 @@ called out under **Changed** with a migration note.
   the import test is TypeScript's parser rather than a text search, so comments
   discussing `vscode` are not mistaken for imports and a type-only import — which
   is erased before the code runs — keeps its coverage floor.
+
+- An integration suite per module of the sign-in shell, run in a real editor.
+  Because those modules are outside the coverage denominator by construction,
+  these tests are the only thing holding their line, and they are aimed at the
+  parts a double would have to invent: callbacks parsed by the host's own
+  `vscode.Uri`, the race settled by real cancellation tokens, and every sign-in
+  failure rendered through the real `vscode.l10n.t()` — where a placeholder left
+  without an argument reaches the user as `{0}` and no type-check would say so.
+  `SecretStorage` reaches an extension only through the context handed to
+  `activate`, so the store is specified against an in-memory double and the real
+  keychain is exercised the one way a test can reach it, by running
+  **Python on Viya: Sign Out** end to end; the trade-off is written up in
+  `test/helpers/auth-host.ts` rather than left for a reader to infer.
 
 ### Fixed
 

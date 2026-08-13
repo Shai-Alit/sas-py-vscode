@@ -138,14 +138,16 @@ export function hasBuiltInClient(deployment: Deployment): boolean | undefined {
 /**
  * Human-readable version, for the log line on a refusal.
  *
- * The `unknown` arm shows as uncovered and always will: the only caller reaches
- * this after `hasBuiltInClient` returned an explicit `false`, which `unknown`
- * never does. It stays because the switch is exhaustive by design — that is what
- * turns a future `Deployment` member into a compile error rather than a silently
- * missing sentence — and covering it would mean exporting a private helper to
- * satisfy a metric.
+ * Exported since slice 1b-ii, and the reason is worth recording because it
+ * reverses a note that used to sit here. That note said the `unknown` arm was
+ * unreachable — `resolveClient` only calls this after `hasBuiltInClient` returned
+ * an explicit `false`, which `unknown` never does — and would stay uncovered
+ * forever. That was true of the only caller at the time. It is not true now:
+ * `finishSignIn` calls this on precisely the opposite path, where the version was
+ * unknown, the built-in client was the optimistic guess, and the deployment
+ * rejected it. The arm exists for that case, and now something reaches it.
  */
-function describeDeployment(deployment: Deployment): string {
+export function describeDeployment(deployment: Deployment): string {
   switch (deployment.kind) {
     case "viya35":
       return "Viya 3.5";

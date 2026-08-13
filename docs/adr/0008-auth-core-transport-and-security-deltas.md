@@ -6,6 +6,13 @@
   `auth.ts` are ported as-is versus deliberately changed
 - **Executed in:** slice 1b-i (`src/auth/pkce.ts`, `src/auth/tokenEndpoint.ts`,
   `src/auth/clientId.ts`), with the shell following in 1b-ii
+- **Amended in slice 1b-ii, 2026-08-13:** the port survives; its *default
+  implementation* does not. It is no longer `globalThis.fetch` but
+  `nodeHttpTransport` in `src/auth/transport.ts`, over `node:https`. The
+  question this ADR left open — dependency, hand-rolled tunnel, or narrowed
+  support — is closed by a fourth answer it did not consider, and none of the
+  three is taken. See the amended entries under Alternatives and Consequences;
+  the type is now named `HttpTransport` rather than `FetchLike`.
 
 ## Context
 
@@ -44,6 +51,14 @@ override. Nothing else in the core touches the network. The point is not
 primarily testability — msw would have given us that anyway — it is that the
 seam is where 1b-ii attaches proxy support, and where any future retry or
 telemetry wrapper attaches too, without any of them reaching into the crypto.
+
+> **Amended in 1b-ii.** The reasoning above stands and the seam did its job — but
+> the default behind it is now `nodeHttpTransport` over `node:https`, and the type
+> is `HttpTransport`, named for the role rather than for the API that used to fill
+> it. Nothing above about the dependency posture changes: the production tree is
+> still empty. msw intercepts `ClientRequest` as well as `fetch`, so the mocking
+> layer was unaffected by the swap. The full reasoning is in the module
+> documentation of `src/auth/transport.ts` and in Consequences below.
 
 ### The five deltas from upstream
 
@@ -122,10 +137,14 @@ becoming the sole occupant of a production dependency tree that the supply-chain
 gates currently keep empty. The proxy convenience is real and is the honest cost
 of this decision — see Consequences.
 
-**Use `undici` directly as a dependency.** Not rejected — deferred to 1b-ii,
+**Use `undici` directly as a dependency.** ~~Not rejected — deferred to 1b-ii,
 where the proxy work lives and where it can be decided with the code in front of
-us. See Consequences: this is the one place the no-dependency posture may have to
-give, and pretending otherwise now would only move the discovery later.
+us.~~ **Rejected in 1b-ii.** `undici` would buy a `ProxyAgent` and nothing else,
+and `node:https` reaches the same outcome for free — better, in fact, because it
+also reaches the certificate store, which a dispatcher does not. Paying a runtime
+dependency for a subset of what the standard library already offers is not a
+trade worth making, and it would have been the first entry in a production tree
+the 0d gates are cheap to run precisely because it is empty.
 
 **Have the core call `globalThis.fetch` with no injection point.** Rejected. It
 would work for tests, since msw intercepts globally, but it leaves 1b-ii nowhere to
@@ -144,34 +163,51 @@ rather than confirming the finding you arrived with.
 The production dependency tree stays empty, so the audit gate keeps its
 any-severity posture and the install-script deny-list has nothing new to cover.
 
-**Proxy support gets harder, and this is the real cost — possibly a dependency
-after all.** `axios` honours `HTTP_PROXY` and `HTTPS_PROXY` out of the box; Node's
-`fetch` ignores them entirely. Nor does VS Code's own proxy support cover it: the
-editor patches the `http` and `https` modules, and global `fetch` goes through
-undici without touching either, which is why `fetch`-based extension code is a
-recurring proxy complaint.
+**~~Proxy support gets harder, and this is the real cost — possibly a dependency
+after all.~~ Closed in 1b-ii without a dependency.** What this ADR recorded as an
+open cost was accurate about `fetch` and wrong about the size of the choice.
+`axios` honours `HTTP_PROXY` and `HTTPS_PROXY` out of the box; Node's `fetch`
+ignores them entirely, and routing it through a proxy needs an undici
+`ProxyAgent` — not public API on this project's engine floor of `>=20.19.0`, so
+it means the `undici` package, installed. Node 24 grew built-in environment-proxy
+support, which does not help here either. All of that still holds. The error was
+framing the alternatives as dependency, hand-rolled `CONNECT`, or narrowed
+support, when a fourth option sat in the standard library.
 
-Routing `fetch` through a proxy needs a custom dispatcher, and here is the part
-worth being exact about, because getting it wrong is the sort of thing that
-surfaces halfway through 1b-ii. Node bundles undici and re-exports `fetch`,
-`Headers`, `Request` and `Response` as globals — but it does **not** expose
-`ProxyAgent` or `setGlobalDispatcher` as public API on this project's supported
-floor. Those come from the `undici` package, installed. Node 24 grew built-in
-environment-proxy support, which does not help a project whose engine floor is
-`>=20.19.0`.
+1b-ii takes it: `nodeHttpTransport` issues the request through `node:https`, and
+the port's default changes from `globalThis.fetch` to that. No dependency, no
+tunnel, no narrowing.
 
-So 1b-ii chooses between adding one runtime dependency, hand-rolling a
-`CONNECT` tunnel, or narrowing the supported configuration. That decision is
-deliberately not made here — it belongs with the code that has to live with it —
-but it is recorded now so that it is a decision rather than a surprise. If it
-lands on the dependency, that is a defensible outcome and not a reversal of this
-ADR: one package pulled in for proxy transport is a much smaller commitment than
-routing every request in the extension through a client library, and the supply
-chain gates from 0d exist precisely so that adding a dependency is a reviewable
-event rather than a forbidden one.
+**The evidence is a consequence, not a mechanism, and that distinction is
+load-bearing here.** Upstream `vscode-sas-extension` contains no proxy code and
+no TLS code of any kind — `axios.create({ baseURL })` and nothing else — and it
+works inside enterprises behind proxies and behind internal certificate
+authorities. `axios` issues its requests through `http`/`https`. Extensions that
+call `fetch` are a recurring proxy complaint; extensions that go through the
+`http` modules are not. That asymmetry is observable and reproducible. The
+*mechanism* by which the host arranges it — which settings patch what, and when —
+was not verified against documentation and is deliberately not asserted here.
 
-The `fetch` port is a structural type, not an interface anyone implements, so a
-future move to a different client is a change at one seam rather than throughout.
+**The certificate half matters more than the proxy half, and it is why this is
+not merely a cheaper way to reach the same place.** A corporate proxy is the case
+that started the question; an internal CA is the case that would have hurt more.
+Enterprise Viya routinely presents a certificate from one, and a transport that
+does not consult the operating system trust store fails such a deployment at
+sign-in with a TLS error, before any code in `src/auth/` runs — reported, in
+practice, as "the extension cannot connect to my Viya". No `ProxyAgent` would
+have fixed that.
+
+Two smaller consequences follow. Redirects are no longer followed, which is the
+safer default rather than a gap: the request body carries a client secret and
+either an authorization code or a refresh token, and a 3xx now reaches the caller
+as a diagnosable non-`ok` response instead of being replayed at a location the
+server named. And an `agent` option now exists on the request and is deliberately
+left unset — the seam for an explicitly configured proxy or CA bundle, should one
+ever be needed, which the `fetch` path could not have offered without the
+dependency this rejects.
+
+The port is a structural type, not an interface anyone implements, so this
+change — the one it was built for — touched one seam plus its test doubles.
 
 1b-i is fully unit-testable with no editor and no network: PKCE against RFC 7636's
 own Appendix B test vector, the token endpoint against msw, and the client-id

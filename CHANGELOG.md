@@ -131,6 +131,13 @@ called out under **Changed** with a migration note.
   expires, why esbuild's `postinstall` turned out not to be load-bearing, and why
   the whole thing runs in one pinned CI job — `allowScripts` needs npm 12, which
   needs a Node newer than this project's supported floor.
+- `PYTHON_ON_VIYA_TEST_VSCODE`, which points the integration tier at a VS Code
+  that is already on disk instead of downloading one. `@vscode/test-electron`
+  caches per platform in a location it does not let you configure, so a checkout
+  shared between two platforms pays the 330 MB twice. A path that does not exist
+  is an error rather than a fallback, because falling back would perform exactly
+  the download the variable exists to avoid — silently, on a typo. Unset, which
+  is the case in CI, nothing changes.
 
 ### Fixed
 

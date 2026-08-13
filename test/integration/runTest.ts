@@ -15,6 +15,11 @@ import * as path from "node:path";
 
 import { runTests } from "@vscode/test-electron";
 
+import {
+  PREPARED_VSCODE_ENV,
+  resolvePreparedVSCode,
+} from "../helpers/prepared-vscode";
+
 /**
  * Downloads a real VS Code, launches it with this extension loaded from source,
  * and runs `index.js` inside it.
@@ -29,7 +34,19 @@ async function main(): Promise<void> {
   const extensionDevelopmentPath = path.resolve(__dirname, "../../..");
   const extensionTestsPath = path.resolve(__dirname, "./index");
 
+  // Unset in CI and in a normal run, where the download and its cache are
+  // exactly what is wanted. Announced when it is set, because "these tests ran
+  // against some other build of the editor" is the first thing you want to know
+  // when a result here disagrees with a result somewhere else.
+  const preparedVSCode = resolvePreparedVSCode(process.env, process.platform);
+  if (preparedVSCode !== undefined) {
+    console.log(`${PREPARED_VSCODE_ENV} is set — using ${preparedVSCode}`);
+  }
+
   await runTests({
+    ...(preparedVSCode === undefined
+      ? {}
+      : { vscodeExecutablePath: preparedVSCode }),
     extensionDevelopmentPath,
     extensionTestsPath,
     launchArgs: [

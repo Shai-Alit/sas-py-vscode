@@ -249,6 +249,21 @@ per reported check. Adding an OS or a Node version therefore creates a check tha
 is **not** required until someone adds it here — re-run the `PUT` below after any
 matrix change.
 
+☐ **Amended 2026-08-13, after `changes` was added.** Make it **ten**: `changes`
+must be required too, and this one is load-bearing rather than tidy. `verify`,
+`package` and the six `test` legs now carry `needs: changes`, so if the classify
+step ever fails — a transient `git fetch`, a bad minute at GitHub — those eight
+jobs are *skipped* rather than failed, and GitHub counts a skipped required
+check as passing. That is the same property the docs-only path deliberately relies on,
+and it does not distinguish why a job was skipped. Without `changes` in this
+list there is a live path from an infrastructure blip to a pull request that
+merges green having run only `docs`.
+
+Making `changes` required closes it, because then its own failure blocks the
+merge directly instead of cascading into skips. The alternative — never letting
+the job fail, by defaulting to `code=true` on error — was rejected: a job that
+cannot fail cannot tell you it is broken.
+
 Set with the contexts derived from what actually reported, so a typo cannot
 create a required check that never runs:
 

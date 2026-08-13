@@ -155,6 +155,12 @@ called out under **Changed** with a migration note.
 
 ### Changed
 
+- CI classifies each pull request before running it. A change that touches only
+  `docs/` or a top-level markdown file now runs the `docs` job alone —
+  `verify`, `test`, `package` and `supply-chain` are skipped — while any change
+  outside those paths, and every push to `main`, still runs everything. The
+  secret scan now also runs as a step in `docs` — it remains part of the
+  `verify` chain — so it still covers documentation-only changes.
 - **Relicensed from MIT to Apache-2.0** to match the upstream
   `sassoftware/vscode-sas-extension` code this project derives from, and to give
   users an explicit patent grant. See `docs/adr/0000-repository-licence.md`.

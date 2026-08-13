@@ -1,10 +1,11 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-`main`. Five jobs: `verify`, `test`, `docs`, `package`, and `supply-chain`. Two
-separate workflows sit beside it: `.github/workflows/codeql.yml`, which gates a
-pull request *and* runs weekly, and `.github/workflows/link-check.yml`, which
-runs weekly and is deliberately not part of the gate.
+`main`. Six jobs: `changes`, `verify`, `test`, `docs`, `package`, and
+`supply-chain`. Two separate workflows sit beside it:
+`.github/workflows/codeql.yml`, which gates a pull request *and* runs weekly, and
+`.github/workflows/link-check.yml`, which runs weekly and is deliberately not
+part of the gate.
 
 The organising principle is that **CI runs commands you can run**. There is no
 step in this workflow that exists only in CI, no environment variable that
@@ -17,6 +18,45 @@ needs a newer npm than the one your machine probably has, and needs the network;
 the commands are still real commands, and the section tells you which two to run.
 `analyze` — CodeQL — is not a command you can run at all, which is why it is the
 one check whose output lives in the Security tab rather than in a log.
+
+## changes
+
+The first job classifies the diff, and the four expensive jobs — `verify`,
+`test`, `package`, `supply-chain` — gate on its `code` output. A pull request
+that touches only documentation runs `docs` and nothing else.
+
+The classification is one `git diff --name-only` against the base branch. A file
+counts as documentation if it is under `docs/` or is a top-level markdown file;
+**everything else is code**, including `package.json`, anything under `.github/`,
+and markdown that lives beside source. The bias is deliberate: misclassifying a
+code change as prose skips the gate, so the ambiguous cases all resolve to
+"code". A push to `main` skips the classification entirely and runs everything —
+it is the last line of defence and should never be narrowed.
+
+Two things this is *not*. It is not a top-level `paths-ignore`: a path filter
+makes the workflow not run at all, which leaves every required status check
+pending forever and makes the pull request unmergeable. A job skipped by an `if:`
+condition reports success under its own name, so branch protection stays
+satisfiable.
+
+That last property has a sharp edge, and `changes` is itself a **required status
+check** because of it. GitHub counts a skipped required check as passing and does
+not distinguish why it was skipped. So if the classify step ever fails, the eight
+required jobs that depend on it are skipped rather than failed, and the pull
+request goes green having run only `docs`. Requiring `changes` makes its own
+failure block the merge instead of cascading into silent skips. Not letting it
+fail at all — defaulting to `code=true` on error — was the rejected alternative:
+a job that cannot fail cannot tell you it is broken.
+
+And it is not a claim that prose cannot break the build — it can,
+which is why `docs` still runs on every change. VitePress renders markdown
+through Vue, so an unescaped angle-bracket placeholder in a sentence is a hard
+build failure.
+
+`docs` also runs `check:secrets`, because it is the one check that has to happen
+on a documentation-only pull request. A token pasted into a markdown file is
+exactly as leaked as one pasted into a source file, and GitHub's push protection
+will not catch it — see [What `check:secrets` is for](#what-check-secrets-is-for).
 
 ## verify
 

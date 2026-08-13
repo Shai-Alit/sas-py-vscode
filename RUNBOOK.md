@@ -60,8 +60,11 @@ bake into `LICENSE` and `package.json` and are painful to change later:
   honest baseline in 0c is **0%**: the only shipped module is the activation entry
   point, it imports `vscode`, and the unit tier cannot load it. Thresholds live in
   `.c8rc.json`, go up and never down, and **a slice that adds code to `src/` raises
-  them in the same pull request**. Vendored generated OpenAPI clients are excluded
-  from the denominator. See `docs/dev/testing.md`.
+  them in the same pull request**. See `docs/dev/testing.md`.
+  **Amended 2026-08-13 by ADR-0009:** the denominator is unit-reachable code — a
+  module is excluded **if and only if it imports `vscode`**, checked on every
+  `npm run verify`. The vendored-generated-client exemption recorded here on
+  2026-08-12 is superseded; see the Phase 2a warning below.
 
 ---
 
@@ -202,8 +205,10 @@ gh pr create --base main --head phase-0c-test-harness --fill
 ```
 ☑ **Coverage starting threshold set** (open decision #6, settled above): 0%,
 which is what the suite honestly measures, plus the ratchet rule that makes the
-number climb. **Exclude the vendored generated OpenAPI clients from the
-denominator**, or the ratchet is trivially gamed.
+number climb. The exclusion policy written here in 0c — vendored generated
+OpenAPI clients — was **superseded on 2026-08-13 by ADR-0009**, which excludes a
+module if and only if it imports `vscode`. Left in place as the record of what 0c
+actually did.
 
 ☐ **From here on, every slice that adds code to `src/` raises the thresholds in
 `.c8rc.json` in the same pull request** — run `npm run coverage`, read the
@@ -746,6 +751,18 @@ generated-OpenAPI-client boundary: `phase-2a-i-generated-client` vendors the
 generated client (a large but mechanical diff, reviewable by inspection), and
 `phase-2a-ii-session-layer` adds the hand-written session/link layer. Decide when
 you see the diff, not before.
+
+> **⚠ Vendoring a generated client will fail `check:coverage-scope`, by design.**
+> ADR-0009 excludes a module from the coverage denominator if and only if it
+> imports `vscode`. A generated client does not, so it stays in the denominator
+> and will drag the ratchet down hard — and adding it to the `exclude` list in
+> `.c8rc.json` makes `npm run verify` fail, naming the file. This is not a bug to
+> route around. Decision 6 in the plan once named vendored clients as a
+> sanctioned exclusion; ADR-0009 superseded that. Before 2a-i, decide which of
+> these you are doing and amend ADR-0009 to say so: keep the client in the
+> denominator and accept the number, put it outside `src/` so it is not a source
+> file at all, or add a second exclusion rule with its own written argument.
+> Do not add a quiet entry to the list.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.

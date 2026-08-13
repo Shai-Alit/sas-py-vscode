@@ -148,11 +148,23 @@ a message naming the file, which is the intended experience.
 there. The explanation lives here, in the failure message of
 `scripts/check-coverage-scope.mjs`, and in `docs/dev/testing.md`.
 
-One standing exemption is now contradicted and has to be revisited when it comes
-up. `docs/dev/testing.md` previously named vendored generated OpenAPI clients as
-the one sanctioned exclusion — code not authored here and covered by the tests of
-its callers. Under this rule the check would refuse to exclude such a client,
-because it does not import `vscode`. That is the correct default: an exclusion
-that is not "the tier physically cannot load this" needs its own argument. If a
-vendored client is ever committed under `src/`, amend this ADR with a second
-rule rather than adding a quiet exception to the list.
+One standing exemption is contradicted, and this ADR supersedes it rather than
+leaving the two to be reconciled later. `docs/dev/testing.md` and decision 6 of
+`PRODUCTION_PLAN.md` both named vendored generated OpenAPI clients as the one
+sanctioned exclusion — code not authored here and covered by the tests of its
+callers. Under this rule the check refuses to exclude such a client, because it
+does not import `vscode`. That is the correct default: "the tier physically
+cannot load this" is a fact about the world, whereas "this was generated, not
+written" is an argument, and arguments belong in an ADR rather than in a list of
+five paths.
+
+Both documents are amended in this pull request, and the Phase 2a task in
+`RUNBOOK.md` — the one that will actually vendor the client — now carries the
+warning, because the failure would otherwise surface as a `check:coverage-scope`
+error in the middle of the largest slice in the plan, to someone who had read a
+plan of record telling them the exclusion was settled. This ADR's own thesis is
+that a mechanism should be fixed before the pressure arrives; deferring this
+would have been the same mistake in miniature. When 2a-i comes, the choice is
+between keeping the client in the denominator and accepting the number, placing
+it outside `src/` so it is not a source file at all, or amending this ADR with a
+second rule that argues its case. Not a quiet entry in the list.

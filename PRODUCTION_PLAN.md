@@ -883,6 +883,15 @@ get written.
    the one sanctioned exclusion from the denominator — everything else stays in,
    because excluding hard-to-test code is how a ratchet gets gamed. Recorded in
    `.c8rc.json` and `docs/dev/testing.md`, executed in 0c.
+   **Amended 2026-08-13 by ADR-0009, which supersedes the exemption above.** The
+   denominator is now unit-reachable code: a module is excluded **if and only if
+   it imports `vscode`**, and `scripts/check-coverage-scope.mjs` enforces that in
+   both directions on every `npm run verify`. A vendored generated client does
+   not import `vscode`, so the check will **refuse** to exclude it — which is the
+   correct default, because "the tier physically cannot load this" is a fact and
+   "this was generated, not written" is an argument. If 2a-i vendors a client,
+   amend ADR-0009 with a second rule rather than adding a quiet exception to the
+   list. The ratchet itself is unchanged and still binding.
 7. **Notebook format** (Phase 9a). ipynb-compatible vs bespoke. *Recommend ipynb —
    the Python ecosystem expects it — but defer until Phase 9.*
 8. **Package installation into Viya** (Phase 10). Governance question, not a

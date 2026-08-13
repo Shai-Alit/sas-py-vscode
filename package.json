@@ -85,6 +85,18 @@
         "command": "pythonOnViya.importProfiles",
         "title": "%command.importProfiles.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.signIn",
+        "title": "%command.signIn.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.hasProfiles"
+      },
+      {
+        "command": "pythonOnViya.signOut",
+        "title": "%command.signOut.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.hasProfiles"
       }
     ],
     "configuration": {

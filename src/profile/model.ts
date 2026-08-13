@@ -215,6 +215,30 @@ export function secretKey(profile: Pick<ViyaProfile, "id">): string {
 }
 
 /**
+ * The profile ids recorded as having a client with no secret, after `id` is
+ * added to or removed from them.
+ *
+ * "This client has no secret" is a real answer to the sign-in prompt and has to
+ * be remembered, or the user is asked the same question before every sign-in and
+ * the prompt's own promise is broken. It is *not* a credential, so it does not go
+ * in `SecretStorage` — see the note on `ProfileStore.setSecret` for why storing
+ * an empty string there is not the shortcut it appears to be.
+ *
+ * Pure, and separate from the store, because the two rules worth pinning are
+ * rules rather than plumbing: the list is a set, so answering twice does not
+ * grow it, and supplying a real secret retracts the claim that there is none.
+ * Order is preserved so the stored value does not churn.
+ */
+export function withSecretlessId(
+  current: readonly string[],
+  id: string,
+  secretless: boolean,
+): string[] {
+  const without = current.filter((known) => known !== id);
+  return secretless ? [...without, id] : without;
+}
+
+/**
  * Turns whatever the user typed into an endpoint we are willing to store.
  *
  * Forgiving about form, strict about safety. A bare `viya.example.com` gains a

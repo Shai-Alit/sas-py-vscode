@@ -13,6 +13,7 @@ import {
   resolveActiveProfile,
   secretKey,
   validateProfileName,
+  withSecretlessId,
   type ValidationProblem,
 } from "../../src/profile/model";
 
@@ -386,6 +387,44 @@ describe("createProfile and secretKey", () => {
       secretKey({ ...profile, id: "stable-id" }),
       secretKey(profile),
     );
+  });
+});
+
+/**
+ * "This client is registered without a secret" is a fact the extension has to
+ * remember, because otherwise every sign-in with a public client re-asks a
+ * question the user has already answered — and an empty answer cannot be kept in
+ * `SecretStorage`, which reads a stored empty string back as `undefined` on any
+ * machine without an OS keyring. So it is kept as configuration instead, and the
+ * rule for maintaining that list is here, where it can be stated exactly.
+ */
+describe("withSecretlessId", () => {
+  it("records an id once, however many times it is claimed", () => {
+    const once = withSecretlessId([], "a", true);
+    assert.deepEqual(once, ["a"]);
+    assert.deepEqual(withSecretlessId(once, "a", true), ["a"]);
+  });
+
+  it("retracts the claim when a real secret arrives", () => {
+    assert.deepEqual(withSecretlessId(["a", "b"], "a", false), ["b"]);
+  });
+
+  it("is unbothered by retracting something never claimed", () => {
+    assert.deepEqual(withSecretlessId(["b"], "a", false), ["b"]);
+    assert.deepEqual(withSecretlessId([], "a", false), []);
+  });
+
+  it("leaves other profiles alone", () => {
+    assert.deepEqual(withSecretlessId(["a", "b"], "c", true), ["a", "b", "c"]);
+  });
+
+  it("does not mutate the list it was given", () => {
+    // The caller reads this list straight out of `globalState`, and the value a
+    // memento hands back is not ours to edit in place.
+    const current = ["a"];
+    withSecretlessId(current, "b", true);
+    withSecretlessId(current, "a", false);
+    assert.deepEqual(current, ["a"]);
   });
 });
 

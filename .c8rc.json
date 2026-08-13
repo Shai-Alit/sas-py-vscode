@@ -5,6 +5,11 @@
     "out/test/**",
     "test/**",
     "src/extension.ts",
+    "src/auth/browserFlow.ts",
+    "src/auth/commands.ts",
+    "src/auth/messages.ts",
+    "src/auth/sessionStore.ts",
+    "src/auth/uriHandler.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",
     "src/profile/statusBar.ts",
@@ -14,8 +19,8 @@
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 77,
-  "statements": 77,
-  "functions": 76,
-  "branches": 90
+  "lines": 79,
+  "statements": 79,
+  "functions": 78,
+  "branches": 91
 }

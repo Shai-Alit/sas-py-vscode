@@ -3,6 +3,9 @@
 
 import * as vscode from "vscode";
 
+import { registerAuthCommands } from "./auth/commands";
+import { SessionStore } from "./auth/sessionStore";
+import { registerAuthUriHandler } from "./auth/uriHandler";
 import { registerProfileCommands } from "./profile/commands";
 import { createProfileStatusBarItem } from "./profile/statusBar";
 import { ProfileStore } from "./profile/store";
@@ -45,6 +48,19 @@ export function activate(context: vscode.ExtensionContext): void {
   const profiles = new ProfileStore(context, output);
   context.subscriptions.push(profiles, createProfileStatusBarItem(profiles));
   registerProfileCommands(context, profiles, output);
+
+  // One URI handler for the whole extension, registered here rather than inside
+  // the sign-in flow: VS Code allows exactly one, and an attempt-scoped handler
+  // means the second sign-in of a session either fails to register or replaces
+  // the first. It dispatches to whichever attempts are outstanding.
+  const authCallbacks = registerAuthUriHandler(context, output);
+  registerAuthCommands(
+    context,
+    profiles,
+    new SessionStore(context.secrets, output),
+    authCallbacks,
+    output,
+  );
 }
 
 export function deactivate(): void {

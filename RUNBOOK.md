@@ -703,7 +703,7 @@ run added no tests and touched no source file — the sixteen points against 1b-
 denominator was carrying.
 
 > **The next argument about this number will be about `scripts/`.** It measures
-> 64.76% and is now the only drag, against `src/auth` at 99.87 and `src/profile`
+> 64.76% and is now the only drag, against `src/auth` at 99.65 and `src/profile`
 > at 98.30. Most of what is uncovered is each script's `main()`, behind the
 > `process.argv[1]` guard that lets the unit tier import a script without running
 > it — so what is untested is precisely the part that decides whether a gate
@@ -716,18 +716,136 @@ git checkout -b phase-1b-ii-auth-shell
 git commit -m "feat(auth): add browser sign-in, dual code capture, and proxy support"
 ```
 
-☐ **An integration test per shell module — this one is now load-bearing.**
+☑ **An integration test per shell module — this one is now load-bearing.**
 ADR-0009 took the shell out of the coverage denominator, so no threshold will
 notice a missing test any more. The guarantee is this line and a reviewer's
 attention, which is weaker than a number and is why it is written down here.
+Done 2026-08-13: five suites under `test/integration/auth/`, 36 tests, one per
+shell module. Two things the tier caught that no unit test could have. First, a
+`vscode.LogOutputChannel` is identified by its **name**: dispose one and create
+another by the same name and the host hands back the cached, already-disposed
+logger, after which every write throws `Channel has been closed` — a per-test
+create/dispose cycle in the helper killed seven browser-flow tests and reported
+the failures against `browserFlow.ts`. Channels are now created once per name and
+outlive the run, which is what an extension does anyway. Second, `SecretStorage`
+is unreachable from a test — it arrives only through `ExtensionContext`, which
+only `activate` is given — so the store suites run against an in-memory double and
+the real keychain is reached the one way a test can, by running
+`pythonOnViya.signOut` end to end. The trade-off is written up in
+`test/helpers/auth-host.ts` rather than left implicit.
 
-☐ **1b-ii punch list.** `env.asExternalUri` / `env.openExternal`,
-`window.registerUriHandler`, `window.showInputBox`, and the race between the last
-two. **Validate `state` on the URI-handler arm and drop any callback that does not
-match.** Note in the code that the paste-box arm carries no `state` and therefore
-cannot be protected the same way — that is an argument for narrowing the paste box
-later, not for skipping the check where it works. Plus the undici `ProxyAgent`
-dispatcher and token persistence through `SecretStorage`.
+☑ **1b-ii punch list.** Every item below done 2026-08-13.
+
+- ☑ **Two commands, not in the original list.** `pythonOnViya.signIn` and
+  `pythonOnViya.signOut`, on the active profile rather than behind a picker —
+  the active profile is already in the status bar, and a second place to choose
+  it invites the two to disagree. Sign-in prompts for the client secret when the
+  profile names a `clientId` and none is stored, which is the promise the import
+  command already makes ("you will be asked for the client secret the first time
+  you connect") coming due.
+- ☑ **`env.asExternalUri` on the callback URI _before_ it goes into the authorize
+  URL**, then `env.openExternal`. `asExternalUri` is what makes this work in
+  Codespaces and remote/SSH windows; skipping it is the classic "works locally,
+  fails remote" auth bug. Done 2026-08-13 in `browserFlow.ts`. A host that cannot
+  produce an external URI degrades to a paste-only sign-in rather than failing —
+  `beginSignIn` omits `redirect_uri` entirely and the deployment falls back to
+  whatever it has registered.
+- ☑ **Wire `stateMatches()`.** This is the whole reason 1b-i shipped a state
+  primitive with no caller. The URI handler compares the inbound `state` against
+  the one generated for _this_ attempt and drops any callback that does not
+  match. **1b-ii cannot merge without it** — the RFC 6749 §10.12 injection is
+  closed at this point and nowhere else. Done 2026-08-13, in `readCallback`
+  rather than in the handler itself: dispatch to the right attempt *is* the state
+  check, so the handler offers each callback to every outstanding attempt and the
+  one that issued the `state` recognises it. The check runs before anything else
+  is read out of the query, and on the `error` arm as well as the success arm.
+- ☑ **The paste-box arm carries no `state` and cannot be protected the same way.**
+  Say so in the code. That is an argument for narrowing the paste box later, not
+  for skipping the check on the arm where it works. Said, at length, in the
+  `browserFlow.ts` module doc. A pasted *URL* is routed through `readCallback` and
+  so is state-checked; only a bare code is not.
+- ☑ **`registerUriHandler`** on activation, disposed on deactivate. One handler for
+  the extension, dispatching to whichever attempt is outstanding. Done 2026-08-13:
+  `registerAuthUriHandler` in `extension.ts`, with the disposable on
+  `context.subscriptions`. Upstream registers inside its sign-in function, so a
+  second sign-in registers a second handler.
+- ☑ **The dual-capture race.** URI handler versus `showInputBox`. Whichever lands
+  first wins; the loser is cancelled rather than left dangling, and the input box
+  closes on a successful callback. Done 2026-08-13. The subtlety worth keeping in
+  mind: `showInputBox` resolves `undefined` both when the user dismisses it *and*
+  when its cancellation token fires, and the second is the case where sign-in
+  succeeded — so the paste arm asks `token.isCancellationRequested` before
+  interpreting `undefined` as a cancellation. That started as a shared `settled`
+  flag; type-aware lint was right to reject it, because the flag was a second copy
+  of something the cancellation token already knew. A paste that cannot be used
+  re-prompts, bounded at five attempts so a stubbed box cannot spin.
+- ☑ **`SecretStorage`** keyed on the profile's generated `id`, not its name
+  (ADR-0007's delta from upstream). Persist the refresh token; the access token
+  can be re-derived and need not outlive the session. Done 2026-08-13 in
+  `sessionStore.ts`, under `pythonOnViya.session.<id>` — distinct from the client
+  secret at `pythonOnViya.profile.<id>`, so signing out destroys the session
+  without destroying configuration the user typed. An entry that will not parse is
+  deleted rather than logged about forever.
+- ☑ **`vscode.l10n.t()` renderer for `AuthProblem`** — the codes-not-prose seam from
+  1b-i. Exhaustive switch, explicit `string` return, no `default`, so a new code
+  is a compile error rather than a silently untranslated message. Done 2026-08-13
+  as `messages.ts`. Named differently from its profile counterpart because
+  `problems.ts` in `src/auth/` was already the codes; renaming it would have
+  churned five importers to buy symmetry.
+- ☑ **Swap the default transport to `https.request`** and rename `FetchLike`.
+  Done 2026-08-13: `src/auth/transport.ts` exports `nodeHttpTransport`, and the
+  port is now `HttpTransport`. Superseded plan: this line previously read "the
+  undici `ProxyAgent` dispatcher". Research on 2026-08-13 found a fourth option
+  ADR-0008 had not considered, and it is better than all three it did — requests
+  through the `http`/`https` modules reach enterprise proxies **and internal
+  certificate authorities**, at zero dependency cost, while `fetch` reaches
+  neither. Stated as the observable consequence on purpose: upstream ships no
+  proxy or TLS code at all and works in those environments, which is the evidence;
+  *which* host setting arranges it was not verified and is not asserted anywhere.
+  The certificate half is the part that matters — internal CAs are routine in
+  enterprise Viya and fail at sign-in, a far more common configuration than a
+  corporate proxy. ADR-0008 amended on this branch; unit tests run against a real
+  loopback server rather than msw, which would otherwise stand in for the code
+  under test.
+
+**Test seam.** Everything except the transport swap needs an extension host, so
+it lands in `test/integration/`. Keep the pure decisions — which arm won, whether
+a state matched, what to persist — in functions the unit tier can still reach.
+Same split 1a established, and now the only thing holding the shell's line.
+
+☑ **Ratchet raised, 2026-08-13.** Measured 81.98 statements, 92.69 branches,
+80.86 functions, 81.98 lines; floor set to **79 / 91 / 78 / 79**. The measurement
+did not move during this slice's test work, and that is the expected result rather
+than a disappointment: ADR-0009 excludes every module the new integration suites
+exercise, so 36 tests that hold the shell's line are invisible to this number by
+construction. What raised it was 1b-ii's *core* — `clientId.ts`, `pkce.ts`,
+`signIn.ts` and `tokenEndpoint.ts` all at 100, `transport.ts` at 97.82.
+
+☑ **Review response, 2026-08-13.** Two findings, one of each verdict, and both
+were checked against the code rather than acted on.
+
+The 🔴 blocking one — "the `post()` call passes no `AbortSignal`, so the request
+can neither be cancelled nor time out" — is a false positive. `tokenEndpoint.ts`
+passes `AbortSignal.timeout(deps.timeoutMs ?? DEFAULT_TIMEOUT_MS)`, and
+`transport.ts` honours it, with tests for an already-aborted signal and for one
+that fires mid-request against a real loopback server. The reviewer was
+describing the `fetch` code this slice replaced. It did expose a real gap
+though: nothing pinned that the token endpoint *supplies* a signal, only that the
+transport respects one, so a refactor that dropped the line would have left every
+test green and shipped a sign-in that hangs for as long as a proxy will hold the
+socket. That is now two tests in `auth-token-endpoint.test.ts`.
+
+The 🟠 major one — a public client is re-prompted for a secret at every sign-in,
+because an empty answer is discarded — is correct, and the fix it suggested is
+not. "Store the empty string" fails on any machine without an OS keyring: VS Code
+guards its read on the *stored* value being falsy, and the in-memory fallback
+backend encrypts with the identity function, so `""` goes in and `undefined`
+comes out. Verified in the shipped `workbench.desktop.main.js` for 1.133.0, which
+`.vscode-test/` already had on disk. So the claim is configuration in
+`globalState`, the secret store keeps only secrets, and `secret()` is tri-state.
+`ProfileStore`'s constructor now asks for the three context members it uses
+rather than the whole `ExtensionContext`, which is what makes any of this
+testable without a cast — `test/integration/profile/secret-storage.test.ts`.
 
 ```bash
 # ⛔ BARRIER: merge 1b-ii first.

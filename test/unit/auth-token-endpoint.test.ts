@@ -7,13 +7,14 @@ import { HttpResponse, http } from "msw";
 
 import {
   EXPIRY_SKEW_MS,
-  type FetchLike,
+  type TokenEndpointDeps,
   type Tokens,
   buildAuthorizeUrl,
   exchangeAuthorizationCode,
   needsRefresh,
   refreshTokens,
 } from "../../src/auth/tokenEndpoint";
+import type { HttpTransport } from "../../src/auth/transport";
 import { MOCK_VIYA_BASE, mockViya } from "../helpers/mock-viya";
 
 /**
@@ -349,7 +350,7 @@ describe("refreshTokens", () => {
 describe("token endpoint failures", () => {
   const viya = mockViya();
 
-  const exchange = (deps = {}) =>
+  const exchange = (deps: TokenEndpointDeps = {}) =>
     exchangeAuthorizationCode(
       { ...baseRequest, code: "c", codeVerifier: "v" },
       { now, ...deps },
@@ -474,10 +475,10 @@ describe("token endpoint failures", () => {
     // The request body holds the client secret and the authorization code. A
     // thrown network error can carry the request in its cause chain, which is
     // why only the message is kept.
-    const failing: FetchLike = () =>
+    const failing: HttpTransport = () =>
       Promise.reject(new Error("connect ECONNREFUSED 10.0.0.1:443"));
 
-    const result = await exchange({ fetch: failing });
+    const result = await exchange({ transport: failing });
 
     assert.ok(!result.ok);
     assert.deepEqual(result.problem, {
@@ -493,9 +494,9 @@ describe("token endpoint failures", () => {
     // rejecting with a non-Error is the exact condition under test, because a
     // transport can do it and `error.message` on a string is undefined.
     // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- deliberately malformed rejection
-    const failing: FetchLike = () => Promise.reject("just a string");
+    const failing: HttpTransport = () => Promise.reject("just a string");
 
-    const result = await exchange({ fetch: failing });
+    const result = await exchange({ transport: failing });
 
     assert.ok(!result.ok);
     assert.deepEqual(result.problem, {
@@ -518,6 +519,74 @@ describe("token endpoint failures", () => {
       code: "token-response-malformed",
       detail: "HTTP 504 with no OAuth error field",
     });
+  });
+});
+
+/**
+ * That the request can be given up on.
+ *
+ * `transport.ts` has its own tests for *honouring* a signal; these are about the
+ * other half, which nothing else pinned: that the token endpoint hands it one.
+ * A refactor that dropped the `signal` line would leave every test above green —
+ * mock Viya always answers — and ship a sign-in that hangs for as long as a
+ * corporate proxy is willing to hold the socket open, with a progress
+ * notification and no way out. It was mistaken for exactly that defect during
+ * review of this slice, so the absence is now a failing test rather than an
+ * argument.
+ */
+describe("token endpoint cancellation", () => {
+  /** Captures the request without answering it, so only the signal decides. */
+  const neverAnswers = (): {
+    transport: HttpTransport;
+    /** What the signal looked like *when the request was made*, not now. */
+    seen: () => { given: boolean; alreadyAborted: boolean };
+  } => {
+    let given = false;
+    let alreadyAborted = false;
+    return {
+      transport: (_url, init) => {
+        given = init.signal !== undefined;
+        alreadyAborted = init.signal?.aborted === true;
+        return new Promise((_resolve, reject) => {
+          init.signal?.addEventListener(
+            "abort",
+            () => {
+              reject(new Error("aborted"));
+            },
+            { once: true },
+          );
+        });
+      },
+      seen: () => ({ given, alreadyAborted }),
+    };
+  };
+
+  it("gives the transport a signal, and one that is still live", async () => {
+    const { transport, seen } = neverAnswers();
+
+    const result = await exchangeAuthorizationCode(
+      { ...baseRequest, code: "c", codeVerifier: "v" },
+      { now, transport, timeoutMs: 20 },
+    );
+
+    // Recorded at call time: by now it has fired, which is the next test.
+    assert.deepEqual(seen(), { given: true, alreadyAborted: false });
+    assert.ok(!result.ok);
+  });
+
+  it("aborts the request once timeoutMs has passed, and says so", async () => {
+    const { transport } = neverAnswers();
+
+    const result = await refreshTokens(
+      { ...baseRequest, refreshToken: FAKE_REFRESH },
+      { now, transport, timeoutMs: 20 },
+    );
+
+    // Reaching this line at all is the assertion: without a timeout the promise
+    // above never settles and the test times out instead.
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "token-endpoint-unreachable");
+    assert.ok(!result.reason.includes(FAKE_REFRESH));
   });
 });
 

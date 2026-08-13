@@ -94,6 +94,16 @@ refuses it or not, because the fetch dies at DNS either way. It asserts nothing.
 A loopback server that genuinely answers `200` is the only way to tell "refused
 by the mock layer" from "could not reach the network".
 
+**The one place msw is the wrong tool.** `test/unit/auth-transport.test.ts` also
+runs against a real server on loopback, for the same reason inverted: its subject
+*is* the transport. msw intercepts `ClientRequest`, so mocking there would
+substitute for the code under test — the module selection between `node:http` and
+`node:https`, a socket destroyed part-way through an oversized body, an abort
+listener that has to be removed exactly once. A green suite would prove almost
+nothing. This is not a licence to reach for a server elsewhere: the test is
+still hermetic, still inside the two-second timeout, and the rule remains that
+anything above the transport mocks at the HTTP boundary.
+
 ## Tier two — integration
 
 `@vscode/test-electron` downloads a real VS Code, launches it with the extension
@@ -135,6 +145,19 @@ itself — tests that are never found look exactly like tests that pass.
 
 Viya is still mocked here. A test that needs a real deployment belongs in tier
 three.
+
+**Do not create and dispose host singletons per test.** The host caches some
+objects under the name you asked for, and a log channel is one of them: its name
+becomes a logger id and a log file, so disposing one and creating another by the
+same name hands you back the cached, already-disposed logger. From then on every
+write to it throws `Channel has been closed`, and the failures land on whichever
+test logs next rather than on the `afterEach` that caused them — with stack frames
+pointing into the code under test, which is a convincing wrong answer. Take
+host-owned things once, at suite or module scope, and let the host tear them down
+when the run ends; that is also what an extension does, since `activate` creates
+its channel once. `testLogChannel` in `test/helpers/auth-host.ts` does this for
+you. Dispose only what the test itself made — an `EventEmitter`, a
+`CancellationTokenSource`, your own registrations.
 
 ## Tier three — live
 
@@ -269,6 +292,11 @@ code out from under the number.
 - **More tests ran than the branch has** — `out/` is not cleaned when you switch
   branches, and Mocha runs `out/`. Tests from the branch you left are still
   there, passing, and inflating the count. `rm -rf out && npm run test:unit`.
+- **`Channel has been closed`, thrown from inside the code under test** — a log
+  channel was disposed and one by the same name created afterwards. The test that
+  fails is not the test that broke it; look for `Trying to add a disposable to a
+  DisposableStore that has already been disposed of` earlier in the output, which
+  is where it actually happened. See tier two above.
 - **`error while loading shared libraries` from the integration tier** — the
   editor is a real GUI application and needs the X and GTK libraries even when
   it is running headless under a virtual display. A minimal container will not

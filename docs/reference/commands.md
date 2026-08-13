@@ -20,3 +20,5 @@ under their category.
 | Delete Connection Profile | `Python on Viya: Delete Connection Profile` | `pythonOnViya.deleteProfile` |
 | Switch Connection Profile | `Python on Viya: Switch Connection Profile` | `pythonOnViya.switchProfile` |
 | Import Connection Profiles from the SAS Extension | `Python on Viya: Import Connection Profiles from the SAS Extension` | `pythonOnViya.importProfiles` |
+| Sign In | `Python on Viya: Sign In` | `pythonOnViya.signIn` |
+| Sign Out | `Python on Viya: Sign Out` | `pythonOnViya.signOut` |

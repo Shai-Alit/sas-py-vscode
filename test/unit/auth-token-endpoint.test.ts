@@ -175,6 +175,41 @@ describe("exchangeAuthorizationCode", () => {
     assert.equal(result.tokens.tokenType, "bearer");
   });
 
+  it("uses the real clock when no clock is injected", async () => {
+    // Every other test in this file hands in a frozen `now`, which means the
+    // wiring production actually runs — the `?? Date.now` default — is the one
+    // path nothing exercises. A default pointing at the wrong thing would pass
+    // the entire rest of the suite.
+    viya.use(
+      http.post(TOKEN_URL, () =>
+        HttpResponse.json({
+          access_token: FAKE_ACCESS,
+          token_type: "bearer",
+          expires_in: 3600,
+        }),
+      ),
+    );
+
+    const before = Date.now();
+    const result = await exchangeAuthorizationCode({
+      ...baseRequest,
+      code: "c",
+      codeVerifier: "v",
+    });
+    const after = Date.now();
+
+    assert.ok(result.ok);
+    const { expiresAt } = result.tokens;
+    assert.ok(expiresAt !== undefined, "expected an absolute expiry");
+    // A window rather than an equality: the clock moves during the request, and
+    // NOW is a decade away from it, so this also proves the frozen clock is not
+    // leaking in from somewhere.
+    assert.ok(
+      expiresAt >= before + 3_600_000 && expiresAt <= after + 3_600_000,
+      `expiresAt ${expiresAt} outside [${before + 3_600_000}, ${after + 3_600_000}]`,
+    );
+  });
+
   it("reads expires_in when it arrives as a string", async () => {
     viya.use(
       http.post(TOKEN_URL, () =>

@@ -200,33 +200,59 @@ then measures.** Run `npm run coverage`, read the summary table, round down,
 commit the new numbers. Thresholds go up and never down; lowering one is a
 decision that belongs in a pull-request description, argued for explicitly.
 
-They started at zero, which was the honest number while the only shipped module
-was the activation entry point: it imports `vscode`, so it cannot be loaded
-outside an extension host, and c8 cannot see inside the process the integration
-tier runs in. Slice 1a raised them for the first time, to 55% of lines and
-statements, 63% of functions and 86% of branches.
-
 **Round down further than feels necessary.** The gate runs on Linux, Windows and
 macOS, and a threshold set to the last decimal on one of them will eventually
 fail on another for a reason that has nothing to do with the change under review.
 A point or two of slack costs nothing; a red build nobody can reproduce costs an
 afternoon.
 
-Expect the whole-tree percentage to move in both directions as the shape of the
-code changes, because it is one number over two very different populations. The
-profile model is at 98% because it is pure and the unit tier can reach it; the
-store, the commands and the status bar sit at zero in that column because they
-import `vscode` and are exercised in the extension host instead. A slice that
-adds a large shell and a small model will push the aggregate down even though it
-is well tested, and the ratchet then has to be argued for in the pull request
-rather than mechanically raised. That is the intended conversation, and it is why
-the split in `src/profile/` puts as much as possible on the side the number can
-see.
+### What the number is measured over
 
-Excluding a file to make the number look better is the failure mode to avoid.
-Hard-to-test code is exactly the code the number is supposed to be telling you
-about. The one sanctioned exclusion is vendored generated OpenAPI clients, which
-are not authored here and are covered by the tests of the code that calls them.
+It is **unit-reachable coverage**, not whole-tree coverage. Modules that import
+`vscode` are excluded from the denominator, because a module that imports
+`vscode` cannot be loaded outside an extension host: it scores zero however well
+it is tested, and the integration tier that does test it runs in a process c8
+cannot see into. Leaving those modules in would make the aggregate one number
+over two incompatible populations, and a slice that added a large shell and a
+small model would push it down while increasing the amount of tested code.
+[ADR-0009](../adr/0009-coverage-scope.md) has the full argument and the options
+that were rejected.
+
+Excluding a file to make the number look better is still the failure mode to
+avoid — hard-to-test code is exactly the code the number is supposed to be
+telling you about. What separates the two cases is that this exclusion is a
+**rule, and the rule is checked**. `npm run check:coverage-scope` asserts, on
+every `npm run verify`:
+
+- every `src/` path in the c8 `exclude` list really does import `vscode`, so a
+  merely inconvenient module cannot be parked there; and
+- every module that imports `vscode` is in the list, so a new shell module
+  cannot quietly sink the aggregate.
+
+Globs are refused in the `src/` part of the list, since `src/**` would satisfy
+the first assertion only by leaving nothing to disagree with it. The import test
+is TypeScript's parser rather than a text search, which matters twice over:
+comments in `src/` discuss importing `vscode` and a regex reports the prose, and
+`import type { Uri } from "vscode"` is erased before the code runs — a module
+that imports only types is unit-testable and keeps its floor.
+
+So adding a shell module is a two-line change: the module, and its path in
+`.c8rc.json`. Forget the second line and `verify` fails with a message naming the
+file.
+
+### What the number does not cover
+
+Nothing now watches the shell. That guarantee is a process gate instead: **a
+slice that adds a shell module adds an integration test for it**, because after
+the exclusion no threshold will notice if it doesn't. That is the price of the
+decision, and it is worth naming plainly — a check a human has to remember is
+weaker than one a machine performs.
+
+The split in `src/profile/` is what keeps that price small. As much logic as
+possible lives on the side the unit tier can reach: `import.ts` and `model.ts`
+are pure and sit near 98%, while `store.ts`, `commands.ts` and `statusBar.ts`
+hold only the parts that genuinely need the host. Widen the shell and you move
+code out from under the number.
 
 ## When something fails and you cannot see why
 

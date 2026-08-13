@@ -60,8 +60,11 @@ bake into `LICENSE` and `package.json` and are painful to change later:
   honest baseline in 0c is **0%**: the only shipped module is the activation entry
   point, it imports `vscode`, and the unit tier cannot load it. Thresholds live in
   `.c8rc.json`, go up and never down, and **a slice that adds code to `src/` raises
-  them in the same pull request**. Vendored generated OpenAPI clients are excluded
-  from the denominator. See `docs/dev/testing.md`.
+  them in the same pull request**. See `docs/dev/testing.md`.
+  **Amended 2026-08-13 by ADR-0009:** the denominator is unit-reachable code — a
+  module is excluded **if and only if it imports `vscode`**, checked on every
+  `npm run verify`. The vendored-generated-client exemption recorded here on
+  2026-08-12 is superseded; see the Phase 2a warning below.
 
 ---
 
@@ -202,8 +205,10 @@ gh pr create --base main --head phase-0c-test-harness --fill
 ```
 ☑ **Coverage starting threshold set** (open decision #6, settled above): 0%,
 which is what the suite honestly measures, plus the ratchet rule that makes the
-number climb. **Exclude the vendored generated OpenAPI clients from the
-denominator**, or the ratchet is trivially gamed.
+number climb. The exclusion policy written here in 0c — vendored generated
+OpenAPI clients — was **superseded on 2026-08-13 by ADR-0009**, which excludes a
+module if and only if it imports `vscode`. Left in place as the record of what 0c
+actually did.
 
 ☐ **From here on, every slice that adds code to `src/` raises the thresholds in
 `.c8rc.json` in the same pull request** — run `npm run coverage`, read the
@@ -658,6 +663,9 @@ zero here.
 > exclude the shell modules from the c8 denominator, run separate thresholds per
 > directory, or merge integration coverage in — but decide it before the number
 > forces the decision.
+>
+> **Settled 2026-08-13, before it forced anything:** the first option, in its own
+> slice below. ADR-0009.
 
 ☑ **Comment the 3.5 path in the code**, not only in the plan: it is built from
 SAS's documentation and has never been observed against a live 3.5 deployment,
@@ -667,10 +675,51 @@ nobody can clear is a line people learn to step over.
 
 ```bash
 # ⛔ BARRIER: merge 1b-i first.
+# Interlude — fix the denominator before the slice that would bend it
+git checkout -b chore/coverage-denominator
+git commit -m "chore(coverage): measure unit-reachable code and check the exclusion"
+```
+
+☐ **Coverage-denominator punch list.** Small on purpose, and its own slice on
+purpose: a threshold re-baseline has to be measured on a tree where nothing else
+moved, or the new number is unattributable.
+
+- `.c8rc.json` — the five `vscode`-importing modules join `exclude`.
+- `scripts/check-coverage-scope.mjs` — asserts the rule in **both** directions
+  (everything excluded imports `vscode`; everything importing `vscode` is
+  excluded), refuses globs, and uses TypeScript's parser so that a comment
+  mentioning `vscode` is not read as an import and an erased `import type` does
+  not cost a module its floor. Joins `npm run verify`.
+- Its unit test, including one case that runs the check against this repository —
+  so drift fails by file name in the tier that runs on three operating systems,
+  not only in the gate.
+- ADR-0009, `docs/dev/testing.md`, `docs/dev/ci.md`, `docs/dev/building.md`,
+  `CHANGELOG.md`.
+
+☑ **Ratchet re-baselined, 2026-08-13.** Measured 79.30 statements, 91.87
+branches, 77.77 functions, 79.30 lines; floor set to **77 / 90 / 76 / 77**. The
+run added no tests and touched no source file — the sixteen points against 1b-i's
+63.21 are the measurement changing, which is the size of the distortion the old
+denominator was carrying.
+
+> **The next argument about this number will be about `scripts/`.** It measures
+> 64.76% and is now the only drag, against `src/auth` at 99.87 and `src/profile`
+> at 98.30. Most of what is uncovered is each script's `main()`, behind the
+> `process.argv[1]` guard that lets the unit tier import a script without running
+> it — so what is untested is precisely the part that decides whether a gate
+> exits non-zero. Worth its own slice; do not let it be bolted onto a feature.
+
+```bash
+# ⛔ BARRIER: merge the denominator slice first.
 # 1b-ii — the VS Code shell
 git checkout -b phase-1b-ii-auth-shell
 git commit -m "feat(auth): add browser sign-in, dual code capture, and proxy support"
 ```
+
+☐ **An integration test per shell module — this one is now load-bearing.**
+ADR-0009 took the shell out of the coverage denominator, so no threshold will
+notice a missing test any more. The guarantee is this line and a reviewer's
+attention, which is weaker than a number and is why it is written down here.
 
 ☐ **1b-ii punch list.** `env.asExternalUri` / `env.openExternal`,
 `window.registerUriHandler`, `window.showInputBox`, and the race between the last
@@ -702,6 +751,18 @@ generated-OpenAPI-client boundary: `phase-2a-i-generated-client` vendors the
 generated client (a large but mechanical diff, reviewable by inspection), and
 `phase-2a-ii-session-layer` adds the hand-written session/link layer. Decide when
 you see the diff, not before.
+
+> **⚠ Vendoring a generated client will fail `check:coverage-scope`, by design.**
+> ADR-0009 excludes a module from the coverage denominator if and only if it
+> imports `vscode`. A generated client does not, so it stays in the denominator
+> and will drag the ratchet down hard — and adding it to the `exclude` list in
+> `.c8rc.json` makes `npm run verify` fail, naming the file. This is not a bug to
+> route around. Decision 6 in the plan once named vendored clients as a
+> sanctioned exclusion; ADR-0009 superseded that. Before 2a-i, decide which of
+> these you are doing and amend ADR-0009 to say so: keep the client in the
+> denominator and accept the number, put it outside `src/` so it is not a source
+> file at all, or add a second exclusion rule with its own written argument.
+> Do not add a quiet entry to the list.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.

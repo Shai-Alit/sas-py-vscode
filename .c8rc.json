@@ -1,13 +1,21 @@
 {
   "src": ["out/src"],
   "all": true,
-  "exclude": ["out/test/**", "test/**"],
+  "exclude": [
+    "out/test/**",
+    "test/**",
+    "src/extension.ts",
+    "src/profile/commands.ts",
+    "src/profile/problems.ts",
+    "src/profile/statusBar.ts",
+    "src/profile/store.ts"
+  ],
   "excludeAfterRemap": true,
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 62,
-  "statements": 62,
-  "functions": 71,
-  "branches": 89
+  "lines": 77,
+  "statements": 77,
+  "functions": 76,
+  "branches": 90
 }

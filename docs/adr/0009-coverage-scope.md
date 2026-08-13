@@ -79,7 +79,18 @@ reasons that both matter. `src/` is full of comments that discuss importing
 perfectly loadable in the unit tier and must keep its floor.
 
 The thresholds are re-baselined from a measured run on this branch, against the
-new denominator.
+new denominator. Nothing else changed in that run — no test was added, no source
+file was touched — which is what makes the two numbers comparable:
+
+| | statements | branches | functions | lines |
+|---|---|---|---|---|
+| before | 63.21 | 90.08 | 72.04 | 63.21 |
+| after | 79.30 | 91.87 | 77.77 | 79.30 |
+| new floor | 77 | 90 | 76 | 77 |
+
+The sixteen points are the measurement changing, not the code. That is the size
+of the distortion the old denominator was carrying, and it is why the ratchet was
+about to break.
 
 ## Alternatives considered
 
@@ -121,9 +132,13 @@ This is the cost of the decision and it should be read as one — a check a huma
 has to remember is weaker than a check a machine performs, and the trade is
 accepted only because the alternative was a number that would be argued down.
 
-The remaining drag on the figure is `scripts/*.mjs`, at roughly 62%. That is
-ordinary Node code with no host dependency, and it is testable today — so it is
-now a legitimate target rather than noise in the aggregate.
+The remaining drag on the figure is `scripts/*.mjs`, measured at 64.76%, against
+`src/` at 99.87 and 98.30. That is ordinary Node code with no host dependency and
+it is testable today, so it is now a legitimate target rather than noise in the
+aggregate. Most of the uncovered region is each script's `main()` — the part
+guarded by `process.argv[1]`, which the unit tier imports past rather than runs.
+That is a real gap and worth a slice of its own eventually: `main` is where a
+gate decides whether to exit non-zero, which is the behaviour that matters most.
 
 Adding a module that imports `vscode` is now a two-line change: the module, and
 its path in `.c8rc.json`. Forgetting the second line fails `npm run verify` with

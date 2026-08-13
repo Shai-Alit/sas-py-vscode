@@ -690,7 +690,19 @@ moved, or the new number is unattributable.
   not only in the gate.
 - ADR-0009, `docs/dev/testing.md`, `docs/dev/ci.md`, `docs/dev/building.md`,
   `CHANGELOG.md`.
-- Re-baseline the thresholds from a measured `npm run coverage` on this branch.
+
+☑ **Ratchet re-baselined, 2026-08-13.** Measured 79.30 statements, 91.87
+branches, 77.77 functions, 79.30 lines; floor set to **77 / 90 / 76 / 77**. The
+run added no tests and touched no source file — the sixteen points against 1b-i's
+63.21 are the measurement changing, which is the size of the distortion the old
+denominator was carrying.
+
+> **The next argument about this number will be about `scripts/`.** It measures
+> 64.76% and is now the only drag, against `src/auth` at 99.87 and `src/profile`
+> at 98.30. Most of what is uncovered is each script's `main()`, behind the
+> `process.argv[1]` guard that lets the unit tier import a script without running
+> it — so what is untested is precisely the part that decides whether a gate
+> exits non-zero. Worth its own slice; do not let it be bolted onto a feature.
 
 ```bash
 # ⛔ BARRIER: merge the denominator slice first.

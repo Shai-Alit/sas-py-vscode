@@ -146,11 +146,16 @@ export function parseBearerChallenge(
  * service that sent them. The caller writes its own arm, which is the part that
  * legitimately differs; what it must not do is write its own version of the two
  * above.
+ *
+ * Takes the **parsed** challenge rather than the header, so that a caller
+ * writing that third arm still has the challenge in scope and does not parse the
+ * same string twice to reach the error token this function declined to read.
+ * Review of the 2a-i pull request; the cost was never the parse, it was that
+ * declining to answer also threw the evidence away.
  */
 export function challengeProblem(
-  header: string | undefined,
+  challenge: BearerChallenge | undefined,
 ): AuthProblem | undefined {
-  const challenge = parseBearerChallenge(header);
   const error = challenge?.params.error;
 
   if (error === undefined || error === "") {

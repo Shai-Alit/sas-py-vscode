@@ -346,8 +346,8 @@ async function send(
  * wording is this module's own.
  */
 function unauthorized(response: TransportResponse): IdentityResult {
-  const header = response.headers["www-authenticate"];
-  const problem = challengeProblem(header);
+  const challenge = parseBearerChallenge(response.headers["www-authenticate"]);
+  const problem = challengeProblem(challenge);
 
   if (problem?.code === "not-authenticated") {
     return {
@@ -367,11 +367,13 @@ function unauthorized(response: TransportResponse): IdentityResult {
   }
 
   // `insufficient_scope` and anything else RFC 6750 §3.1 allows — the cases
-  // `challengeProblem` deliberately declines to answer. The error token is a
+  // `challengeProblem` deliberately declines to answer, which is why it is
+  // handed the challenge above rather than the header: the token is still in
+  // scope here without parsing the same string a second time. The token is a
   // specified diagnostic and safe to quote; it is not a credential and it did
   // not come from the body. The `?? ""` is unreachable: a challenge with no
   // error token was answered above.
-  const error = parseBearerChallenge(header)?.params.error ?? "";
+  const error = challenge?.params.error ?? "";
   return {
     ok: false,
     reason: `the identities service refused the request: ${error}`,

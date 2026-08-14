@@ -43,7 +43,7 @@
  * picks up the next one without being rebuilt.
  */
 
-import { challengeProblem } from "../auth/challenge";
+import { challengeProblem, parseBearerChallenge } from "../auth/challenge";
 import {
   nodeHttpTransport,
   type HttpTransport,
@@ -283,7 +283,10 @@ async function sendRequest(
   }
 
   if (response.status === 401) {
-    const problem = challengeProblem(response.headers["www-authenticate"]);
+    const challenge = parseBearerChallenge(
+      response.headers["www-authenticate"],
+    );
+    const problem = challengeProblem(challenge);
     if (problem !== undefined) {
       return {
         ok: false,

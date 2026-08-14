@@ -124,7 +124,9 @@ describe("challengeProblem", () => {
   it("reads a dead token as a session to sign in again for", () => {
     assert.deepEqual(
       challengeProblem(
-        'Bearer error="invalid_token", error_description="Provided token isn\'t active"',
+        parseBearerChallenge(
+          'Bearer error="invalid_token", error_description="Provided token isn\'t active"',
+        ),
       ),
       { code: "session-expired", description: "Provided token isn't active" },
     );
@@ -133,11 +135,16 @@ describe("challengeProblem", () => {
   it("omits the description rather than carrying an empty one", () => {
     // `exactOptionalPropertyTypes` is on, and a present-but-empty description
     // renders as a dangling colon in the message the user reads.
-    assert.deepEqual(challengeProblem('Bearer error="invalid_token"'), {
-      code: "session-expired",
-    });
     assert.deepEqual(
-      challengeProblem('Bearer error="invalid_token", error_description=""'),
+      challengeProblem(parseBearerChallenge('Bearer error="invalid_token"')),
+      { code: "session-expired" },
+    );
+    assert.deepEqual(
+      challengeProblem(
+        parseBearerChallenge(
+          'Bearer error="invalid_token", error_description=""',
+        ),
+      ),
       { code: "session-expired" },
     );
   });
@@ -146,15 +153,25 @@ describe("challengeProblem", () => {
     // RFC 6750 §3: this is what a server sends when nothing was presented. It is
     // our bug, not the user's, and telling them to sign in again sends them
     // round a loop that cannot fix it.
-    assert.deepEqual(challengeProblem("Bearer"), { code: "not-authenticated" });
+    assert.deepEqual(challengeProblem(parseBearerChallenge("Bearer")), {
+      code: "not-authenticated",
+    });
   });
 
   it("says the same for a 401 with no challenge at all", () => {
-    assert.deepEqual(challengeProblem(undefined), {
+    assert.deepEqual(challengeProblem(parseBearerChallenge(undefined)), {
       code: "not-authenticated",
     });
-    assert.deepEqual(challengeProblem(""), { code: "not-authenticated" });
-    assert.deepEqual(challengeProblem('Basic realm="viya"'), {
+    assert.deepEqual(challengeProblem(parseBearerChallenge("")), {
+      code: "not-authenticated",
+    });
+    assert.deepEqual(
+      challengeProblem(parseBearerChallenge('Basic realm="viya"')),
+      { code: "not-authenticated" },
+    );
+    // Passing `undefined` straight through is the same answer by a different
+    // route, and it is the one a caller with no header at all takes.
+    assert.deepEqual(challengeProblem(undefined), {
       code: "not-authenticated",
     });
   });
@@ -165,9 +182,21 @@ describe("challengeProblem", () => {
     // Returning `undefined` is what keeps this function's two answers the only
     // two it is responsible for.
     assert.equal(
-      challengeProblem('Bearer error="insufficient_scope"'),
+      challengeProblem(
+        parseBearerChallenge('Bearer error="insufficient_scope"'),
+      ),
       undefined,
     );
-    assert.equal(challengeProblem('Bearer error="invalid_request"'), undefined);
+    assert.equal(
+      challengeProblem(parseBearerChallenge('Bearer error="invalid_request"')),
+      undefined,
+    );
+
+    // And the caller that has to answer for itself still has the token, which
+    // is the point of taking the parsed challenge: one parse, both readings.
+    assert.equal(
+      parseBearerChallenge('Bearer error="insufficient_scope"')?.params.error,
+      "insufficient_scope",
+    );
   });
 });

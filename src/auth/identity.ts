@@ -45,7 +45,7 @@
  * follows for credentials, for a different reason and with the same conclusion.
  */
 
-import { parseBearerChallenge } from "./challenge";
+import { challengeProblem, parseBearerChallenge } from "./challenge";
 import type { AuthProblem } from "./problems";
 import {
   nodeHttpTransport,
@@ -334,42 +334,46 @@ async function send(
 /**
  * Turns a 401 into the right one of two very different messages.
  *
- * Finding 9: the body is zero bytes, so this is the only place the answer can
- * come from. A challenge carrying `error="invalid_token"` means the token died
- * and the user should sign in again; a bare `Bearer` means nothing was sent,
- * which the user cannot fix by signing in again because they may already be
- * signed in.
+ * Finding 9: the body is zero bytes, so the challenge header is the only place
+ * the answer can come from. A challenge carrying `error="invalid_token"` means
+ * the token died and the user should sign in again; a bare `Bearer` means
+ * nothing was sent, which the user cannot fix by signing in again because they
+ * may already be signed in.
+ *
+ * Both of those readings now live in {@link challengeProblem}, because 2a-i
+ * needed the same two from Compute. Only the third arm — an error token this
+ * service has to interpret for itself — stays here, and only the `reason`
+ * wording is this module's own.
  */
 function unauthorized(response: TransportResponse): IdentityResult {
   const challenge = parseBearerChallenge(response.headers["www-authenticate"]);
-  const error = challenge?.params.error;
+  const problem = challengeProblem(challenge);
 
-  if (error === undefined || error === "") {
+  if (problem?.code === "not-authenticated") {
     return {
       ok: false,
       reason:
         "the identities service refused a request carrying no credentials",
-      problem: { code: "not-authenticated" },
+      problem,
     };
   }
 
-  if (error === "invalid_token") {
-    const description = challenge?.params.error_description;
+  if (problem?.code === "session-expired") {
     return {
       ok: false,
       reason: "the access token is no longer active",
-      problem: {
-        code: "session-expired",
-        ...(description === undefined || description === ""
-          ? {}
-          : { description }),
-      },
+      problem,
     };
   }
 
-  // `insufficient_scope` and anything else RFC 6750 §3.1 allows. The error token
-  // is a specified diagnostic and safe to quote; it is not a credential and it
-  // did not come from the body.
+  // `insufficient_scope` and anything else RFC 6750 §3.1 allows — the cases
+  // `challengeProblem` deliberately declines to answer, which is why it is
+  // handed the challenge above rather than the header: the token is still in
+  // scope here without parsing the same string a second time. The token is a
+  // specified diagnostic and safe to quote; it is not a credential and it did
+  // not come from the body. The `?? ""` is unreachable: a challenge with no
+  // error token was answered above.
+  const error = challenge?.params.error ?? "";
   return {
     ok: false,
     reason: `the identities service refused the request: ${error}`,

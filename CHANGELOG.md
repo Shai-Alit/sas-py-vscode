@@ -279,6 +279,48 @@ called out under **Changed** with a migration note.
   `curl`, because the authorize leg needs a human to type a password; the
   methodology note at the head of the section says so.
 
+- `src/compute/` — the Compute client, hand-written against the observed wire
+  shape rather than generated, and pure enough to unit test: `links.ts` for link
+  lookup and href resolution, `problems.ts` for the Viya error envelope as a
+  problem union, `client.ts` for one request driven by a link, `contexts.ts` for
+  resolving the context a profile names, and `session.ts` for the session
+  lifecycle. Every request follows a relation the deployment sent; the only URL
+  this project writes down is the endpoint from the profile, which is ADR-0010
+  and is also why a link pointing at another host is refused rather than
+  followed — every request built from one carries the user's bearer token.
+
+- Compute contexts resolve in a **single request**. The collection item already
+  carries a fully formed `createSession` link, so the follow-up
+  `GET /compute/contexts/{id}` is unnecessary. Two rules the live deployment
+  taught us are enforced by tests rather than by comment: a name containing an
+  apostrophe is escaped by **doubling** it before percent-encoding (finding 15 —
+  a backslash is a `400`, and encoding first leaves no quote to double, and
+  finding 22 measures the apostrophe as the *only* character needing it), and the
+  collection's `count` is `null` whenever the page does not already hold
+  everything (finding 16), so paging follows the `next` link and never the count.
+
+- Compute sessions can be created, watched, cancelled and torn down. The state
+  poll is a **server-side long poll** — `?wait=N` with `If-None-Match` returns a
+  `304` after exactly N seconds (finding 19) — so there is one round trip per
+  window and no client-side timer, and the request's own timeout is stretched past
+  the server's wait so the client is never the thing that gives up first. An
+  unchanged reading carries no state at all, which is what stops a caller
+  re-fetching the value it just declined to be sent. Teardown sends no `If-Match`,
+  because a stale validator turns a working teardown into a `412` and leaves a SAS
+  process running until the 900-second inactivity timeout reaps it, and a session
+  that is already gone counts as torn down. A `404` on a session becomes
+  `session-gone`, a recoverable event rather than an error; a `401` deliberately
+  does not, since creating a new session with a credential that just failed only
+  fails again.
+
+- `PROBE-FINDINGS.md` findings 13-21 and the first Compute fixture, captured from
+  a live Viya 4 deployment and scrubbed per `test/fixtures/README.md`. Per
+  ADR-0010 these stand in for the specification that does not exist, so the
+  fidelity is the point: field names, types and null-versus-absent patterns are
+  exactly as the server sent them. Finding 21 is the load-bearing one — a session
+  representation arrives carrying 22 link relations, which is the entire session
+  API, and it is why `session.ts` composes no URLs.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

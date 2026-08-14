@@ -64,7 +64,9 @@ bake into `LICENSE` and `package.json` and are painful to change later:
   **Amended 2026-08-13 by ADR-0009:** the denominator is unit-reachable code — a
   module is excluded **if and only if it imports `vscode`**, checked on every
   `npm run verify`. The vendored-generated-client exemption recorded here on
-  2026-08-12 is superseded; see the Phase 2a warning below.
+  2026-08-12 is superseded. **ADR-0010 (2026-08-14) then closed the question
+  outright:** the Compute client is hand-written, so there is no generated client
+  to exclude. See the Phase 2 section below.
 
 ---
 
@@ -1193,29 +1195,298 @@ decision 10, and it is the behaviour a single review pass is most likely to miss
 
 ### Phase 2 — Compute session and backend seam
 
-```bash
-# ⛔ BARRIER: merge 1c-ii first.
-# 2a — HATEOAS compute layer  ⚠ largest slice in the plan
-git checkout -b phase-2a-compute-layer
-git commit -m "feat(compute): add HATEOAS link layer, session creation, and reconnect"
-```
-☐ **Judgement call on 2a.** If the diff is too large to review well, split at the
-generated-OpenAPI-client boundary: `phase-2a-i-generated-client` vendors the
-generated client (a large but mechanical diff, reviewable by inspection), and
-`phase-2a-ii-session-layer` adds the hand-written session/link layer. Decide when
-you see the diff, not before.
+> **1c-ii is deferred, not done, and it does not block Phase 2.** Sign-in works
+> end to end against a real deployment today because Node already trusts that
+> chain. A deployment behind a private CA fails at TLS, which is a robustness gap
+> rather than a demo blocker. It stays on the list; Phase 2 starts without it.
 
-> **⚠ Vendoring a generated client will fail `check:coverage-scope`, by design.**
-> ADR-0009 excludes a module from the coverage denominator if and only if it
-> imports `vscode`. A generated client does not, so it stays in the denominator
-> and will drag the ratchet down hard — and adding it to the `exclude` list in
-> `.c8rc.json` makes `npm run verify` fail, naming the file. This is not a bug to
-> route around. Decision 6 in the plan once named vendored clients as a
-> sanctioned exclusion; ADR-0009 superseded that. Before 2a-i, decide which of
-> these you are doing and amend ADR-0009 to say so: keep the client in the
-> denominator and accept the number, put it outside `src/` so it is not a source
-> file at all, or add a second exclusion rule with its own written argument.
-> Do not add a quiet entry to the list.
+> **The client is hand-written — ADR-0010.** The pre-agreed "2a-i vendors the
+> generated client" split is gone, and so is the `check:coverage-scope` collision
+> ADR-0009 warned about, because there is no generated client to exclude. The
+> split below is the same pure-core / VS-Code-shell seam 1b and 1c used.
+>
+> Everything in 2a-i is grounded in **`PROBE-FINDINGS.md` findings 13–20**
+> (2026-08-14, live Viya 4), plus findings 6 and 9 from the identity probe. Read
+> those before starting; every item below cites one, and several contradict what
+> upstream's code would lead you to write.
+>
+> **Corrected 2026-08-14, mid-slice.** The items below originally cited findings
+> 11–16, which is what the probe notes were numbered as while 2a was being
+> scoped. Those numbers were never written into `PROBE-FINDINGS.md`, whose 11 and
+> 12 are the OAuth findings from the day before — so the citations already
+> shipped in `links.ts`, `client.ts` and `problems.ts` pointed at unrelated text.
+> The Compute findings are now written up as **13–20** and every citation in the
+> slice has been repointed. One of the old notes did not survive the write-up:
+> see the `+json` item.
+
+```bash
+# 2a-i — the Compute core, no vscode import
+git checkout -b phase-2a-i-compute-core
+git commit -m "feat(compute): add the link layer, context resolution, and session lifecycle"
+```
+
+☑ **2a-i punch list.** Complete 2026-08-14.
+
+- ☑ **Done 2026-08-14. `src/compute/links.ts` — link lookup, href resolution,
+  and the media-type rule.** Five small functions and the `Link` type. Store the
+  deployment **root** only; resolve each `href` against it. **Never build a base
+  path that contains `/compute`** — that is the entire cause of upstream's
+  `link.href.replace("/compute", "")` wart (finding 13), and keeping the root
+  separate means no href is ever rewritten, so the wart cannot exist to be fixed.
+  Hrefs may carry a query string with percent-encoding, so resolution must not
+  re-encode what the server sent.
+
+  Two corrections to the wording above, found while writing it. The base is the
+  **whole normalised endpoint, not a bare origin**: `normaliseEndpoint` in
+  `src\profile\model.ts` returns `` `${url.origin}${path}` ``, so a deployment
+  published under a path prefix is legal and `new URL(endpoint).origin` would
+  silently drop it. And `resolveHref` **concatenates rather than resolving**, and
+  rejects absolute and protocol-relative hrefs with an exported
+  `ForeignLinkError`. `new URL(href, base)` fails twice over: it would resolve an
+  absolute href to whatever host that href names — sending the user's bearer
+  token there, the disclosure `transport.ts` refuses redirects to avoid — and its
+  query percent-encode set includes `'`, so it rewrites exactly the hrefs finding
+  13 says must go back unchanged.
+- ☑ **Done 2026-08-14. The `+json` rule is a total function over
+  `string | null | undefined`**
+  (finding 14). Link types arrive bare — `application/vnd.sas.compute.job.request`
+  — and the service wants `+json` appended. `text/plain` links (`state`,
+  `getOption`) must be left alone, and a link with no media type — every `delete`
+  link — **omits the key**, so a signature of `string` throws on `DELETE`, during
+  teardown, which is where a second failure is worst. Table-driven unit test
+  covering all three shapes plus `text/plain`. **No `media-typer` dependency**;
+  the rule is three lines.
+
+  **The `null` half of that signature did not survive the write-up.** This item
+  originally also claimed the same delete link arrives as `"type": null` on a
+  context summary. Re-checked with `has("type")` while writing finding 14: that
+  was a `jq` artifact — projecting `{rel, type}` prints `null` for a key that is
+  merely absent — and **no explicitly-null `type` occurs** on this deployment.
+  `Link.type` still admits `null`, and the test still pins it, but as deliberate
+  breadth; both now say so rather than citing an observation that was not made.
+- ☑ **Done 2026-08-14. One `findLink`, not two.** Upstream has `getLink(links, rel)` in
+  `rest/common.ts` and a different `getLink(links, method, relationship)` in
+  `rest/util.ts`. Ours is one function with one signature.
+- ☑ **Done 2026-08-14. `src/compute/problems.ts` — the Viya error envelope as a
+  problem union.** Same shape as `src/auth/problems.ts` and
+  `src/profile/problems.ts`: no `vscode` import, English fragments for the log,
+  an exhaustive `switch` with **no `default`**, and the user-facing wording
+  deferred to 2a-ii. The envelope is
+  `{message, errorCode, httpStatusCode, details[]}` where `details` mixes a human
+  sentence with `path:` and `correlator:` entries (finding 17). **Surface the
+  correlator** — it is what a support ticket needs — and do not paste the whole
+  array into a dialog.
+
+  Three notes from writing it. `readViyaError` is **total** — status plus raw
+  body in, a `ViyaError` out, never a throw — because it runs on the failure path
+  and often on the failure path of a teardown, where a parser that throws
+  replaces a diagnosable problem with an opaque one. The `path:` entry is
+  **dropped rather than quoted**: it is the one field that reflects our own
+  request back at us, and not repeating request-derived text is the cheapest way
+  to keep the file free of anything that could become a credential. And there is
+  deliberately **no `redactSecrets` twin** — `auth/problems.ts` needs one only
+  because SASLogon echoes the PKCE verifier inside `error_description`, and the
+  Compute service reflects no request header. The module doc says so, so that its
+  absence reads as a decision rather than an omission.
+- ☑ **Done 2026-08-14. Do not re-implement 401 handling.** 1c already parses RFC
+  6750's `error`/`error_description` out of `WWW-Authenticate` and distinguishes
+  an expired token from a request that carried no credentials (finding 9). Reuse
+  it rather than writing a second, subtly different version — two answers to "is
+  this token dead" is how a refresh loop starts. Done by having the
+  `unauthorized` variant **carry an `AuthProblem`** rather than a status, so
+  `describeComputeProblem` delegates to `describeAuthProblem` and there is no
+  second copy that can drift.
+- ☑ **`src/compute/client.ts` — the request helper on 1b's transport.**
+  **Done 2026-08-14.** Derive `Content-Type` from the link's `type` and `Accept`
+  from its `responseType` (falling back to `type` on a GET), attach `If-Match`
+  where an ETag is held, and carry `If-None-Match` on conditional reads. ETags
+  may be **weak** (`W/"…"`) and must be echoed verbatim. Note that `DELETE`
+  returned **204 without `If-Match`** (finding 18), so the header upstream always
+  attaches is not required — send it only when it is held.
+
+  Four things settled while writing it. **`Accept` is omitted, not guessed**,
+  when the link declares neither media type: finding 6 says a type the
+  deployment does not serve is a `406`, which fails the request outright,
+  whereas no header at all yields the server's default representation — which is
+  the one the link intended. The `type` fallback is **GET-only**, because on a
+  `POST` that field describes the body being sent and asking for it back is how
+  a create call demands the `…request+json` it just uploaded.
+
+  **`304` is a success.** It carries `notModified: true` and an unset `body`, so
+  the state long poll (finding 19) reads "still what you had" rather than
+  reporting a problem every five seconds.
+
+  **The token arrives as a function**, not a string. A compute session outlives
+  the access token that created it, and a client holding a string keeps sending a
+  dead one after a refresh has already fixed it. That is also what replaces
+  upstream's process-global mutable `Configuration` singleton — everything the
+  client needs is on the config object it was built with, so two profiles in one
+  window cannot overwrite each other's base URL.
+
+  **A `404` is left unclassified**, as `compute-rejected`. Whether it means "this
+  session is gone" or "no context by that name" depends on what was asked for,
+  and only the caller knows; `session.ts` and `contexts.ts` convert it. The
+  client classifies only what it can read without that context: unreachable,
+  401, 403, and a JSON body that will not parse.
+
+  The 401 arm calls `challengeProblem`, which this item extracted from
+  `src/auth/identity.ts` into `src/auth/challenge.ts` — the second half of the
+  "do not re-implement 401 handling" item above. `identity.ts` now calls it too,
+  keeping only the arm that is genuinely its own (an error token neither
+  `invalid_token` nor absent). An `insufficient_scope` challenge falls through to
+  `compute-rejected` rather than this layer inventing a third reading of a
+  question 1c owns.
+- ☑ **Done 2026-08-14. Write the Compute probe up as findings 13–20, and repoint
+  every citation in the slice.** Not planned work — it came out of going to read
+  "finding 13" before writing `contexts.ts` and finding that
+  `PROBE-FINDINGS.md` stopped at 12. The Compute probe had been carried in
+  scoping notes and cited from three shipped modules, and its numbers collided
+  with the OAuth findings from the day before, so three correct modules were
+  citing unrelated text. Re-probed read-only to confirm each fact rather than
+  transcribing the notes, which is what caught the `jq` artifact above and
+  sharpened two more (see the next two items).
+- ☑ **`src/compute/contexts.ts` — resolve a context in one call, not two.** The
+  summary item returned by
+  `GET /compute/contexts?filter=eq(name,'…')` already carries a fully-formed
+  `createSession` link — `POST`, with both `type` and `responseType` — so
+  upstream's follow-up `GET /compute/contexts/{id}` is unnecessary (finding 15).
+  Two traps. The filter is **string-interpolated with no escaping** upstream, so
+  a context name containing an apostrophe breaks the query: the escape is
+  **doubling the apostrophe**, confirmed against the deployment, where a
+  backslash and the bare form are both a `400` with `errorCode` 1104. Escape,
+  then percent-encode, with a test.
+
+  And the collection reports **`"count": null`** — not always, but **exactly when
+  the page does not already hold everything** (finding 16), including on the last
+  page of a traversal. So a pager that trusts `count` fails precisely when paging
+  matters, and reads "there are no compute contexts" — the one answer that is
+  never true. Page on the presence of the `next` link and treat `items` as
+  authoritative; nothing may branch on `count`.
+
+  Done 2026-08-14. `quoteFilterValue` doubles, `contextFilter` composes, and the
+  two "on the wire" tests drive the *real* client so the assertion is the literal
+  URL — `?filter=eq(name%2C'Ford''s%20context')` — which pins the ordering, since
+  encoding first leaves no quote to double. Two mirror-image tests pin the `count`
+  rule: a `null`-count page with items that a count-trusting pager would report as
+  empty, and a `count: 1` first page of two that it would truncate.
+- ☑ **`src/compute/session.ts` — create, poll, delete.** Create by following the
+  context's `createSession` link; the response is `201` with a `Location` and an
+  `ETag`, and the session arrives in state `pending` with the links everything
+  else navigates by.
+
+  Done 2026-08-14, with `cancel` included — finding 21 put the link in front of
+  us and it is the direct replacement for the unbounded recursion listed below.
+  Three decisions worth keeping. **`Location` is ignored**: the `201` body already
+  carries all 22 links, so following it would buy a second round trip for a
+  representation we were handed. **Only one state name is written down.**
+  `waitWhilePending` waits for `pending` to end and hands the caller whatever came
+  next without judging it; a hand-maintained list of "done" states is how upstream
+  ended up with `ComputeJob.isDone()` returning `true` when the job is not done.
+  **A 401 is not a gone session.** `problems.ts` said to fold it into
+  `session-gone`; that comment is now corrected, because a caller acting on it
+  would create a new session with the credential that just failed and go round
+  again. `asSessionGone` rewrites a 404 and nothing else.
+- ☑ **Poll state with `wait` + `If-None-Match`, and no client-side timer**
+  (finding 19). `GET …/state?wait=N` with a matching `If-None-Match` returns
+  **`304` after exactly N seconds** — a real server-side long poll. Upstream
+  declares this option and never passes it, waiting on the *log* endpoint
+  instead, which conflates "has it finished" with "is there more log" and is why
+  `ComputeJob.getState()` recurses under its author's own comment *"This is bad.
+  We need to cache the last state value."* One round trip per window, no
+  `setTimeout`, and the poll takes an abort signal so 2a-ii has somewhere to put
+  a `CancellationToken`.
+
+  Done 2026-08-14. Two things the writing turned up. The request timeout has to
+  **outlive the server's wait** — the client's 30-second default would abort a
+  60-second poll a moment before it was answered, and the failure would read as an
+  unreachable deployment, so the poll sends its own `timeoutMs` of `wait + 15s`.
+  And a `304` is returned as `{ changed: false }` carrying **no state at all**, so
+  that a caller structurally cannot do what upstream does and re-fetch the value
+  it just declined to be sent. The bound on the loop is `MAX_WAIT_WINDOWS`, which
+  exists for the case the probe has not seen: a deployment that answers a bare
+  `?wait=N` immediately, with no validator to compare against, would otherwise
+  spin.
+- ☑ **Fixtures captured from the probe, scrubbed per `test/fixtures/README.md`.**
+  Hostname, session and context ids, the OAuth client id in `applicationName`,
+  and both `owner` and `modifiedBy` (real email addresses) all have to go. Keep
+  the envelope, field names, types and null/absent patterns exactly as the server
+  sent them — the fidelity is the whole point, and per ADR-0010 these fixtures
+  are what stands in for the specification we do not have.
+
+  Done 2026-08-14: `test/fixtures/viya4/compute-session-created.json`, the `201`
+  from the consented mutating probe, with the session id, the OAuth client id in
+  `applicationName` and the owner's address replaced. The create test reads it
+  rather than a hand-built object, so a deployment that changes shape fails a
+  test instead of surprising a user.
+- ☑ **Four things not to port**, all catalogued in the upstream survey. The
+  process-global mutable `Configuration` singleton in `rest/common.ts` — it is
+  why upstream cannot hold two connections at once, and multi-profile is a
+  feature we already ship. `rest/context.ts` — dead, imported by nothing, and its
+  line 93 passes a `RequestArgs` where an `AxiosRequestConfig` is wanted so the
+  body would never be sent. The unbounded recursion in `session.ts::cancel()`.
+  And `getLinkOptions`' message-less `new Error()`.
+
+  Two more found while writing this slice, so the item is really six. `ComputeJob`
+  `.isDone()` tests `doneStates.indexOf(state) === -1` and therefore answers
+  `true` for a job that is **not** done — it is dead code, which is the only
+  reason nobody has been bitten by it, and it is the argument for naming as few
+  states as possible rather than keeping a list. And `createSession` hardcodes
+  `name: "mysess"`, `description: "This is a session"`, which is what an
+  administrator sees in Environment Manager; ours says `python-on-viya`,
+  unlocalised on purpose so it stays searchable.
+- ☑ **Raise the coverage ratchet.** This is 800–1,000 lines of pure logic with no
+  `vscode` import, so it is measured, and ADR-0010 expects it to push the number
+  **up**. If it does not, the tests are thinner than the slice.
+
+  Done 2026-08-14: 82/82/82/91 → **88 lines, 88 statements, 87 functions, 93
+  branches**, from a measured run rather than a hopeful one. `src/compute` came
+  out at 99.72% of statements and 96.25% of branches, with `session.ts` at 100%
+  across the board; the overall figure is held down by `scripts/`, which is build
+  tooling and not shipped code. Closing the last of `session.ts`'s branches was
+  worth doing on its own merits — they were the "read, never assume" paths, and
+  the tests that cover them are the ones that say a deployment reporting no
+  usable `sessionInactiveTimeout` must leave us saying nothing rather than
+  guessing 900.
+
+```bash
+# ⛔ BARRIER: merge 2a-i first.
+# 2a-ii — the VS Code shell
+git checkout -b phase-2a-ii-session-shell
+git commit -m "feat(compute): bind compute sessions to profiles, with reconnect and death handling"
+```
+
+☐ **2a-ii punch list.**
+
+- ☐ **A session belongs to a profile and borrows the provider's token.** Take it
+  from `vscode.authentication.getSession`, never from storage directly, so
+  expiry and sign-out flow through one place. Two profiles must be able to hold
+  live sessions simultaneously — the thing upstream's global singleton forecloses.
+- ☐ **Settle where the session id is persisted, and write down why.** Upstream
+  uses `workspaceState`, which is per-window: two windows on the same folder
+  would reconnect to the same compute session and interleave their output, and a
+  window on a different folder loses a session that is still running and still
+  billing. `globalState` keyed by profile id is the other candidate and has the
+  opposite failure. Decide before writing the reconnect path, not during.
+- ☐ **Session death is one recoverable event with three shapes.**
+  `attributes.sessionInactiveTimeout` is **900 seconds** (finding 18), so this is
+  routine rather than exceptional. A reaped session may answer `404`, may answer
+  `401`, or may answer normally having lost its state — the probe did not observe
+  which, so treat all three alike: say plainly that the session ended and the
+  Python namespace is gone, and offer to start a new one. Do **not** copy
+  upstream's `.catch(() => this._computeSession = undefined)`, which swallows
+  every rejection including a network failure and reports it as a dead session.
+- ☐ **Progress and cancellation.** `withProgress` around connect, and a
+  `CancellationToken` wired to the abort signal 2a-i exposes. Upstream has no
+  cancellation here and nowhere to add it.
+- ☐ **The workspace-trust boundary applies.** 1c-i gates sign-in on trust;
+  opening a compute session against a deployment is at least as consequential.
+  Same gate, same message shape, and a test that asserts it.
+- ☐ **An integration test per shell module.** ADR-0009 removed the threshold that
+  would otherwise have noticed a missing one, and this punch list is the
+  replacement gate.
+- ☐ **Manual check against your Viya**: connect, confirm the session appears,
+  reload the window and confirm it reconnects, then leave it idle past fifteen
+  minutes and confirm the death path says something true.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.
@@ -1247,6 +1518,37 @@ git commit -m "feat(compute): add long-poll log streaming and ETag state polling
 ```
 
 ### Phase 3 — Run Python
+
+☐ **Before 3a — build the submission fidelity corpus, and let it choose the
+mechanism.** SAS tokenises the block before Python ever sees it, and its string
+rules are not Python's: a quote opens a literal that runs to the next matching
+quote *across newlines*, so an apostrophe in a comment or a `don't` in a docstring
+can leave the tokeniser inside an unterminated string that swallows the rest of
+the submission — the failure that the `*';*";*/;quit;run;` incantation exists to
+recover from. Macro triggers (`&name`, `%macro`) resolve inside double quotes and
+not inside single ones, so the *same* Python behaves differently depending on
+which quote style the user typed. SAS escapes a quote by doubling it, exactly as
+the Compute filter does; a backslash is not an escape. And Python has quoting
+forms SAS has never heard of — triple quotes, f-strings with nested quotes and
+braces, raw and byte strings.
+
+None of that is answerable by inspection, so write the corpus **first**: real
+Python programs chosen to be hostile — apostrophes in comments and docstrings, an
+odd quote count, triple-quoted strings holding both styles, f-strings with nested
+quotes, raw and byte strings, `&` and `%` in literals, the token `endsubmit;` in a
+comment *and* in a string, a `;`-heavy one-liner, CRLF endings, tabs, non-ASCII
+identifiers and content, an empty file, and no trailing newline. Assert **byte for
+byte** on what the interpreter received, not on what we sent, in the unit tier and
+again in the live tier — the unit tier can only prove we built what we meant to
+build, not that SAS agreed. Then pick the submission mechanism that passes it.
+`proc python file="…"` is favoured precisely because a file transfer has no
+tokeniser in the middle; if the inline form cannot pass the corpus, that is the
+answer rather than a reason to iterate on an escaper. See `PRODUCTION_PLAN.md`
+§1.5 item 1 and §4.
+
+> **Why this gets its own item.** Every other failure in this project announces
+> itself. This one does not: a mis-tokenised program runs and means something
+> else, and the user's evidence for that is a wrong number, not an error.
 
 ```bash
 # 3a — PROC PYTHON backend
@@ -1291,6 +1593,21 @@ git commit -m "feat(python): add result panel webview with rich output renderers
 git checkout -b phase-3e-runtime-capabilities
 git commit -m "feat(backend): probe interpreter version and installed packages"
 ```
+
+☐ **3e — ship the package list as a user-facing thing, not a capability record.**
+The person writing code in this editor is writing against an interpreter they
+cannot see, on a machine they cannot log into, whose package set someone else
+chose and can change without telling them. Worse, the local environment lies with
+conviction: Pylance resolves `import polars` against the laptop, so the editor is
+green and the run is a `ModuleNotFoundError`. The minimum is a **`Python on Viya:
+Show environment`** command listing the interpreter version, path, and installed
+distributions with versions — read from `importlib.metadata`, not by shelling out
+to `pip`, which need not exist in a compute context — plus a status bar affordance
+that opens it and a per-profile cache with an explicit refresh, because it is a
+slow answer that rarely changes. Phase 4's traceback work should special-case
+`ModuleNotFoundError` and point at this list; Phase 10 feeds the set back to
+Pylance so completions describe the remote environment. `PRODUCTION_PLAN.md` §2.3
+and Phase 3e.
 
 ☐ **After 3d-i — probe cancellation.** Run a deliberately long Python step and
 cancel it. Confirm whether the compute job cancel actually interrupts Python or
@@ -1458,6 +1775,10 @@ These apply to every slice. Most PR review comments trace back to one of them.
   boundary instead.
 - **Audit ported security code, don't transcribe it.** Upstream's PKCE verifier
   uses `Math.random()`. Assume there are others.
+- **Never change how Python reaches the interpreter without running the fidelity
+  corpus.** Once Phase 3a exists, that corpus is load-bearing: SAS tokenises the
+  block before Python sees it, and a quoting mistake does not raise — it produces a
+  program that runs and means something else.
 - **User-facing strings go through `l10n.t()`.**
 - **No secrets in fixtures.** Sanitise hostnames, tokens, user names, and paths
   when recording. Secret scanning runs in CI but should never be the thing that

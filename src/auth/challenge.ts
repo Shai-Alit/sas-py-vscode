@@ -41,6 +41,8 @@
  * authenticated, because the caller has already seen the status code.
  */
 
+import type { AuthProblem } from "./problems";
+
 /** The parsed `Bearer` challenge from a `WWW-Authenticate` header. */
 export interface BearerChallenge {
   /**
@@ -120,6 +122,61 @@ export function parseBearerChallenge(
   }
 
   return found ? { params } : undefined;
+}
+
+/**
+ * The verdict a 401's challenge warrants, for the two cases every service in
+ * this extension answers the same way.
+ *
+ * Extracted in 2a-i, when the Compute client needed the same reading. There must
+ * be exactly one answer in this codebase to "is this token dead": two copies of
+ * `error === "invalid_token"` is how one caller starts signing the user out
+ * while another retries, which is the shape of a refresh loop.
+ *
+ * - No `error` parameter — a bare `Bearer` — is `not-authenticated`. RFC 6750 §3
+ *   says that is what a server sends when the request carried no credentials, so
+ *   it is our bug rather than the user's, and telling them to sign in again
+ *   sends them round a loop that cannot fix it.
+ * - `error="invalid_token"` is `session-expired`: recoverable, and the only
+ *   correct response is to sign in again. `error_description` is carried
+ *   verbatim because RFC 6750 §3 specifies it as a human-readable diagnostic.
+ *
+ * Returns **`undefined` for any other error token** — `insufficient_scope` and
+ * whatever else RFC 6750 §3.1 permits — because what those mean depends on the
+ * service that sent them. The caller writes its own arm, which is the part that
+ * legitimately differs; what it must not do is write its own version of the two
+ * above.
+ *
+ * Takes the **parsed** challenge rather than the header, so that a caller
+ * writing that third arm still has the challenge in scope and does not parse the
+ * same string twice to reach the error token this function declined to read.
+ * Review of the 2a-i pull request; the cost was never the parse, it was that
+ * declining to answer also threw the evidence away.
+ */
+export function challengeProblem(
+  challenge: BearerChallenge | undefined,
+): AuthProblem | undefined {
+  const error = challenge?.params.error;
+
+  if (error === undefined || error === "") {
+    return { code: "not-authenticated" };
+  }
+
+  if (error === "invalid_token") {
+    // Still optional-chained. Narrowing an aliased const does not narrow the
+    // object it was read from — that only happens when the check is written
+    // against `challenge` itself — so this `?.` is load-bearing rather than the
+    // `no-unnecessary-condition` shape the repo usually has to rewrite.
+    const description = challenge?.params.error_description;
+    return {
+      code: "session-expired",
+      ...(description === undefined || description === ""
+        ? {}
+        : { description }),
+    };
+  }
+
+  return undefined;
 }
 
 function isBearer(scheme: string): boolean {

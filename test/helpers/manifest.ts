@@ -63,6 +63,36 @@ export function activationEvents(): readonly string[] {
 }
 
 /**
+ * The Node version range the manifest says this extension needs.
+ *
+ * Read rather than repeated, so a test comparing it against the runtime cannot
+ * quietly go on passing after the declared floor moves.
+ */
+export function declaredNodeEngine(): string {
+  const manifestPath = path.resolve(__dirname, "../../../package.json");
+  const manifest: unknown = JSON.parse(
+    readFileSync(manifestPath, "utf8"),
+  ) as unknown;
+
+  const engines =
+    typeof manifest === "object" && manifest !== null
+      ? (manifest as Record<string, unknown>).engines
+      : undefined;
+  const node =
+    typeof engines === "object" && engines !== null
+      ? (engines as Record<string, unknown>).node
+      : undefined;
+
+  if (typeof node !== "string") {
+    throw new Error(
+      `${manifestPath} has no "engines.node" string — nothing records which runtime the code in src/ is allowed to assume.`,
+    );
+  }
+
+  return node;
+}
+
+/**
  * The JSON-schema `pattern` the settings editor applies to a profile endpoint.
  *
  * Navigated rather than hard-coded, and loudly broken if the manifest is

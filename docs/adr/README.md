@@ -40,3 +40,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0007](0007-connection-profile-storage.md) | Connection profiles: separate storage, a versioned schema, and no secret in settings | Accepted |
 | [0008](0008-auth-core-transport-and-security-deltas.md) | Auth core: a `fetch`-shaped transport port, and the security deltas from upstream `auth.ts` | Accepted |
 | [0009](0009-coverage-scope.md) | Coverage measures what the unit tier can reach, and the exclusion is a checked rule | Accepted |
+| [0010](0010-compute-client-is-hand-written.md) | The Compute client is hand-written against the observed wire shape, not a vendored generated client | Accepted |

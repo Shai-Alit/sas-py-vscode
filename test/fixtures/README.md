@@ -45,6 +45,13 @@ and is worth much less, and there is no way to tell them apart six months later.
 If you need a shape to test against and cannot capture it, put it in `harness/`
 and say in the file what it is.
 
+**`viya4/` and `viya35/` are exempt from Prettier**, so that a captured payload
+can be committed exactly as it arrived rather than reflowed on the way in. It is
+a formatter, so it cannot change what a fixture means — but a fixture that no
+longer matches the output it was captured from is harder to re-verify against the
+deployment, and the whole point of these files is that they are evidence.
+`harness/` is hand-written and is formatted like the source it is.
+
 **Record where it came from.** A fixture that changes behaviour belongs with a
 `PROBE-FINDINGS.md` entry describing the endpoint, the date, and the deployment
 generation. Superseded findings are struck through, never deleted.

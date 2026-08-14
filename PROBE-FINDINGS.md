@@ -384,3 +384,317 @@ blindness.
   the scrub is written to assume it does either way.
 - **Viya 3.5, again.** No deployment is reachable, so neither the `oob`
   registration nor the `state` behaviour has been observed there.
+
+## 2026-08-14 — The Compute service (Viya 4)
+
+The wire shapes slice 2a is written against. Findings 13 to 17 were re-run
+read-only while writing `src/compute/`, and every payload below is copied from
+that run with the context ids replaced; findings 18 to 20 come from the session
+probe earlier the same day and are marked where a detail was not re-captured.
+
+Two deployment-level observations, neither of which needed a finding of its own.
+**TLS verified** — every request in this section ran without `curl -k`, against
+the deployment's own certificate. And a **CSRF token is issued but not required**:
+responses carry `x-csrf-header: X-CSRF-Token` and `x-csrf-token: …`, and no
+request here sent one back. Bearer callers are exempt, which is what lets the
+client stay stateless.
+
+### Finding 13 — Hrefs are root-relative, already carry `/compute`, and repeat in `uri`
+
+Every link in every representation observed:
+
+```json
+{
+  "method": "POST",
+  "rel": "createSession",
+  "href": "/compute/contexts/CONTEXT-ID/sessions",
+  "uri": "/compute/contexts/CONTEXT-ID/sessions",
+  "type": "application/vnd.sas.compute.session.request",
+  "responseType": "application/vnd.sas.compute.session"
+}
+```
+
+No absolute URL appeared anywhere, and `href` and `uri` were identical in every
+link seen. The service prefix is **already in the href**, which is the fact
+behind upstream's `link.href.replace("/compute", "")`: upstream stores a base
+that ends in `/compute`, so it has to cut the prefix back off every href it
+follows. Storing the deployment root and concatenating deletes the cause instead
+of patching the effect.
+
+**Consequence.** `resolveHref` joins the normalised endpoint to the href by
+concatenation and refuses anything that is not root-relative — a protocol-relative
+`//host/…` would send the bearer token to a host the deployment named.
+
+### Finding 14 — `links[].type` omits the `+json` suffix, and is absent rather than `null`
+
+The media type in a link is the **essence without the structured suffix**:
+`application/vnd.sas.compute.session.request`, where the header the service
+accepts is `application/vnd.sas.compute.session.request+json`. Sending the link's
+value verbatim as `Content-Type` is a 415.
+
+A link that has no media type **omits the key**. Across all 13 contexts and every
+link on each, the key sets were exactly three:
+
+```text
+href+method+rel+uri                            (delete)
+href+method+rel+type+uri                       (self, alternate)
+href+method+rel+responseType+type+uri          (createSession)
+```
+
+**Correction to an earlier reading.** An earlier note recorded `type` as
+arriving "as a string, `null`, or absent on the same logical link". That was a
+`jq` artifact: projecting `{rel, type}` prints `"type": null` for a key that is
+not there. Re-checked with `has("type")`, **no explicitly-null `type` was
+observed on this deployment**. `readLinks` still accepts `null` — JSON permits
+it, the cost is one union member, and a media type of `null` and one that is
+absent mean the same thing to us — but it is defensive breadth, not an
+observation.
+
+### Finding 15 — One filtered call resolves a context, and the escape for an apostrophe is doubling it
+
+`GET /compute/contexts?filter=eq(name,'SAS Job Execution compute context')`
+returns the summary item **already carrying a fully-formed `createSession`
+link** (finding 13's payload is that link). Upstream follows this with
+`GET /compute/contexts/{id}` before creating a session; that second call is
+unnecessary.
+
+The filter is a query parameter, so the whole expression is percent-encoded on
+the way out. The service echoes it back in its `self` link, encoded its own way:
+
+```json
+"href": "/compute/contexts?start=0&limit=10&filter=eq%28name%2C%27SAS+Job+Execution+compute+context%27%29"
+```
+
+Three spellings of a name containing an apostrophe were tried, since upstream
+interpolates the name into the filter with no escaping at all:
+
+| Filter | Result |
+|---|---|
+| `eq(name,'O''Brien')` | **`200`**, `count: 0` — a well-formed query for a context that does not exist |
+| `eq(name,'O\'Brien')` | `400`, `errorCode` 1104, *"The filter … is not valid."* |
+| `eq(name,'O'Brien')` | `400`, `errorCode` 1104, same message |
+
+**Consequence.** Doubling the quote is the escape. A backslash is not, and the
+unescaped form is a `400` — so a context whose name contains an apostrophe breaks
+upstream's query outright. `src/compute/contexts.ts` doubles it before encoding,
+and there is a test that says so.
+
+### Finding 16 — `count` is `null` exactly when the collection is truncated
+
+The deployment has 13 compute contexts. Varying only `limit`:
+
+| Request | `count` | `items` | `next` link |
+|---|---|---|---|
+| `?limit=2` | `null` | 2 | present |
+| `?limit=12` | `null` | 12 | present |
+| `?limit=13` | `13` | 13 | absent |
+| `?limit=14` | `13` | 13 | absent |
+| `?start=10&limit=10` | `null` | 3 | absent (`collection`, `first`, `prev`, `self`) |
+
+So `count` is a real number **only when the page already holds everything**, and
+`null` in every case where a pager would actually need it — including the last
+page of a traversal, which has no `next` and still reports `null`. A filtered
+collection that fits on one page does report a count (`count: 1` for the query in
+finding 15).
+
+**Consequence.** Page on the presence of the `next` link and treat `items` as
+authoritative. Nothing may branch on `count`: read as a number it is `0`, and
+"there are no compute contexts" is the one answer that is never true.
+
+### Finding 17 — The error envelope is `application/vnd.sas.error+json`
+
+A malformed filter, verbatim but for the correlator:
+
+```json
+{
+  "message": "Bad Request",
+  "errorCode": 1104,
+  "httpStatusCode": 400,
+  "version": 2,
+  "details": [
+    "The filter 'eq(name,'O'Brien')' is not valid.",
+    "path: /compute/contexts",
+    "correlator: 00000000-0000-4000-8000-000000000000"
+  ]
+}
+```
+
+Sent as `content-type: application/vnd.sas.error+json;charset=utf-8;version=2` —
+note the **`version` parameter on the media type**, which any content-type
+comparison has to tolerate.
+
+`details` mixes one human sentence with two machine entries under `path:` and
+`correlator:` prefixes. The correlator is what SAS support asks for. The `path:`
+entry is our own request reflected back, and `readViyaError` drops it rather than
+quoting it.
+
+### Finding 18 — A session is created with `201` + `Location` + `ETag`, and dies after 900 idle seconds
+
+From the session probe. `POST` to a context's `createSession` link answered
+**`201`** with a `Location` header — root-relative, like every other href — and an
+`ETag`. The session arrives in state `pending`, carrying the links everything
+else navigates by, and `attributes.sessionInactiveTimeout` is **`900`**.
+
+`DELETE` on the session's `delete` link answered **`204`, with no `If-Match`
+sent**. Upstream attaches that header unconditionally; it is not required, and an
+ETag we are not sure of turns a working teardown into a `412` that leaves a SAS
+process running until the fifteen minutes elapse.
+
+Fifteen idle minutes is short enough that session death is **routine rather than
+exceptional** — it is what happens over lunch, and 2a-ii treats it as a
+recoverable event rather than an error.
+
+### Finding 19 — The session state resource is a real server-side long poll
+
+`GET …/state?wait=5` with a matching `If-None-Match` held the connection and
+answered **`304` after exactly five seconds**. The wait is honoured server-side.
+
+Upstream declares this option and never passes it, polling the *log* endpoint
+instead — which conflates "has it finished" with "is there more log", and is why
+`ComputeJob.getState()` recurses under its author's own comment *"This is bad. We
+need to cache the last state value."*
+
+**Consequence.** One round trip per window, no `setTimeout`, and the poll takes
+an abort signal so 2a-ii has somewhere to attach a `CancellationToken`.
+
+### Finding 20 — The log is a paged collection of typed lines
+
+The job log is not a blob. It is a collection whose items carry a line's text and
+its **type**, which is what makes it possible to tell a `NOTE:` from an `ERROR:`
+without parsing prefixes out of a string. Finding 16's paging rule applies to it
+like any other collection.
+
+### Finding 21 — The session representation carries 22 links, and they are the whole API
+
+Probed 2026-08-14 while writing `src/compute/session.ts`, which needed to know
+whether a session is navigated by link relation or by composed path. One throwaway
+session was created in the SAS Studio compute context, dumped, and deleted in the
+same call. The scrubbed payload is
+`test/fixtures/viya4/compute-session-created.json`.
+
+`POST` returned `201` with
+`content-type: application/vnd.sas.compute.session+json; charset=utf-8; version=2`
+— note the **spaces after the semicolons**, where the error type in finding 17 has
+none, so a comparison that is not parameter-tolerant fails on one or the other —
+plus a root-relative `Location` and `etag: "kp81i3skc0"`.
+
+Top-level keys: `applicationName`, `attributes`, `creationTimeStamp`,
+`description`, `environment`, `id`, `links`, `name`, `owner`, `serverId`,
+`serviceAPIVersion`, `sessionConditionCode`, `state`, `stateElapsedTime`,
+`version`. `attributes` is `{homeDirectory, sessionInactiveTimeout: 900}`. The id
+is a UUID with a `-ses0000` suffix. `applicationName` is **the OAuth client id**
+and `owner` is the user's email address — both scrubbed in the fixture.
+
+The 22 relations, which is the entire session API and the reason nothing below
+2a-i needs a URL builder:
+
+| rel | method | href tail | type |
+|---|---|---|---|
+| `self` / `alternate` | GET | `` | `…compute.session` / `.summary` |
+| `state` | GET | `/state` | `text/plain` |
+| `cancel` | PUT | `/state?value=canceled` | *(no `type` key)* |
+| `delete` | DELETE | `` | *(no `type` key)* |
+| `execute` | POST | `/jobs` | `…job.request` → `…job` |
+| `jobs`, `log`, `listing`, `results`, `variables`, `engines`, `formats`, `informats`, `librefs` (`/data`), `files` (`/filerefs`) | GET | various | `…collection`, plus an `itemType` key |
+| `assign` | POST | `/filerefs` | `…fileref.request` → `…fileref` |
+| `getFiles` | GET | `/files` | `…file.properties` |
+| `getOption` / `updateOption` | GET / PUT | `/options/{optionName}` | `text/plain` |
+| `logAsText` / `listingAsText` | GET | `/log`, `/listing` | `text/plain` |
+
+Three consequences beyond "the links are there".
+
+**`cancel` is a link, and it already carries its query.** Upstream builds this
+call by hand — `setState(ComputeState.Canceled)` with an `If-Match`, retrying on
+`412` by recursing into itself without a bound. The deployment hands us
+`PUT …/state?value=canceled` ready to follow. It is also the one observed href
+with a query string, which is why appending `?wait=N` to a *different* href has to
+test for one rather than assume none.
+
+**`getOption`'s href is an un-expanded URI template**: `/options/{optionName}`,
+braces and all. It is the first href seen that cannot be followed verbatim, so
+ADR-0010's "follow what the service sends" needs the qualifier that a templated
+href is expanded first — and the brace-free ones are still never rewritten.
+
+**Collection links carry an `itemType` key** that `readLinks` ignores. Harmless,
+recorded so the next person does not think the fixture is truncated.
+
+The state resource answered `200`, `content-type: text/plain;charset=UTF-8`, body
+`pending` — **7 bytes, no trailing newline** — and `etag: "kp81i3skc0"`, byte for
+byte the ETag the create call returned. So the session ETag and the state
+validator are the same value at creation, which is what makes finding 19's
+`If-None-Match` poll work from a freshly created session. `DELETE` on the `delete`
+link answered `204` with no `If-Match`, confirming finding 18 a second time.
+
+### Open questions this probe did *not* settle
+
+- **What a reaped session answers.** Finding 18 gives the timeout but the probe
+  did not wait one out, so whether a dead session replies `404`, `401`, or
+  answers normally having lost its state is unobserved. 2a-ii treats all three
+  alike for that reason.
+- ~~**Whether `type` is ever explicitly `null`** on a representation other than a
+  context.~~ **Answered by finding 21 for sessions:** the `cancel` and `delete`
+  links **omit the key**, exactly as context links do. No explicitly-null `type`
+  has been seen anywhere on this deployment. Job representations are still
+  unchecked.
+- **Whether `count` behaves the same way on the session and log collections.**
+  Only `/compute/contexts` was varied. The rule "trust `next`, not `count`" is
+  written to be safe either way.
+- **Viya 3.5.** Still unreachable, so none of the above is confirmed there. The
+  link-driven navigation is what makes that survivable: a 3.5 deployment that
+  spells an href differently is followed, not fought.
+
+## 2026-08-14 — Filter literals, in answer to a review question (Viya 4)
+
+Review of the 2a-i pull request asked whether the apostrophe is really the *only*
+character `quoteFilterValue` has to escape, since a filter value also travels
+through the `(` `)` `,` that give `eq(name,…)` its structure. Finding 15 had only
+ever tried the apostrophe, so the question was fair and the answer was assumed.
+It is now measured. Read-only `GET /compute/contexts` throughout, TLS verified.
+
+### Finding 22 — Inside a quoted literal, the apostrophe is the only special character
+
+Every value below sits inside `eq(name,'…')` and is percent-encoded on the way
+out by `curl --data-urlencode`, exactly as `contextsLink` encodes it:
+
+| Value inside the quotes | Result |
+|---|---|
+| `zzz-no-such-context` (control) | `200`, 0 items |
+| `zzz)no-such` | `200`, 0 items |
+| `zzz(no-such` | `200`, 0 items |
+| `zzz,no-such` | `200`, 0 items |
+| `zzz"no-such` | `200`, 0 items |
+| `zzz no-such` | `200`, 0 items |
+| `zzz\no-such` | `200`, 0 items |
+| `a),b(` | `200`, 0 items |
+| `zzz'no-such` (bare apostrophe) | **`400`**, `errorCode` 1104 |
+
+A `200` on its own is weak evidence: a parser that mis-read the literal and
+matched nothing looks identical to one that read it correctly and matched
+nothing. So each punctuation literal was also composed with a term that *does*
+match, in both orders, so that a parser which ended the literal early or split on
+the comma could not still return the right answer:
+
+| Filter | Result |
+|---|---|
+| `eq(name,'SAS Studio compute context')` | `200`, **1 item**, that name |
+| `or(eq(name,'a),b('),eq(name,'SAS Studio compute context'))` | `200`, **1 item**, that name |
+| `or(eq(name,'x,y'),eq(name,'SAS Studio compute context'))` | `200`, **1 item**, that name |
+| `or(eq(name,'x''y'),eq(name,'SAS Studio compute context'))` | `200`, **1 item**, that name |
+| `or(eq(name,'SAS Studio compute context'),eq(name,'a),b('))` | `200`, **1 item**, that name |
+| `contains(name,'o), (c')` | `200`, 0 items |
+| `contains(name,'Studio')` | `200`, **1 item** |
+
+The structural characters are therefore consumed as ordinary text once the
+literal is open, and the closing apostrophe is what ends it — which is why a bare
+apostrophe is the one failure in the table. One further check, so that "doubling
+works" is not confused with "`''` is ignored":
+`eq(name,'SAS Studio'' compute context')` returns `200` with **0 items**. A
+doubled apostrophe decodes to exactly one character, and one that the real name
+does not contain.
+
+**Consequence.** `quoteFilterValue` escaping only `'` is correct rather than
+merely untested, and it is now recorded as measured. Note what this finding does
+**not** license: the value must still be percent-encoded afterwards, because `&`
+and `#` end a query parameter in the URL long before the filter parser sees them.
+The two escapes are separate, they compose in one order only, and finding 15
+already fixes that order.

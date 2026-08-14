@@ -3,7 +3,10 @@
 
 import assert from "node:assert/strict";
 
-import { parseBearerChallenge } from "../../src/auth/challenge";
+import {
+  challengeProblem,
+  parseBearerChallenge,
+} from "../../src/auth/challenge";
 
 /**
  * The `WWW-Authenticate` parser.
@@ -105,5 +108,95 @@ describe("parseBearerChallenge", () => {
 
     assert.ok(challenge, "a Bearer challenge with junk after it was dropped");
     assert.equal(challenge.params.error, undefined);
+  });
+});
+
+/**
+ * The verdict every service in this extension shares.
+ *
+ * Extracted in 2a-i so there is exactly one answer to "is this token dead". Two
+ * copies of `error === "invalid_token"` is how one caller starts signing the
+ * user out while another retries, which is the shape of a refresh loop — so what
+ * these tests really guard is that the identity module and the Compute client
+ * cannot drift apart.
+ */
+describe("challengeProblem", () => {
+  it("reads a dead token as a session to sign in again for", () => {
+    assert.deepEqual(
+      challengeProblem(
+        parseBearerChallenge(
+          'Bearer error="invalid_token", error_description="Provided token isn\'t active"',
+        ),
+      ),
+      { code: "session-expired", description: "Provided token isn't active" },
+    );
+  });
+
+  it("omits the description rather than carrying an empty one", () => {
+    // `exactOptionalPropertyTypes` is on, and a present-but-empty description
+    // renders as a dangling colon in the message the user reads.
+    assert.deepEqual(
+      challengeProblem(parseBearerChallenge('Bearer error="invalid_token"')),
+      { code: "session-expired" },
+    );
+    assert.deepEqual(
+      challengeProblem(
+        parseBearerChallenge(
+          'Bearer error="invalid_token", error_description=""',
+        ),
+      ),
+      { code: "session-expired" },
+    );
+  });
+
+  it("reads a bare challenge as a request that carried no credentials", () => {
+    // RFC 6750 §3: this is what a server sends when nothing was presented. It is
+    // our bug, not the user's, and telling them to sign in again sends them
+    // round a loop that cannot fix it.
+    assert.deepEqual(challengeProblem(parseBearerChallenge("Bearer")), {
+      code: "not-authenticated",
+    });
+  });
+
+  it("says the same for a 401 with no challenge at all", () => {
+    assert.deepEqual(challengeProblem(parseBearerChallenge(undefined)), {
+      code: "not-authenticated",
+    });
+    assert.deepEqual(challengeProblem(parseBearerChallenge("")), {
+      code: "not-authenticated",
+    });
+    assert.deepEqual(
+      challengeProblem(parseBearerChallenge('Basic realm="viya"')),
+      { code: "not-authenticated" },
+    );
+    // Passing `undefined` straight through is the same answer by a different
+    // route, and it is the one a caller with no header at all takes.
+    assert.deepEqual(challengeProblem(undefined), {
+      code: "not-authenticated",
+    });
+  });
+
+  it("declines to read anything else", () => {
+    // `insufficient_scope` and whatever else RFC 6750 §3.1 permits mean
+    // different things to different services, so the caller writes that arm.
+    // Returning `undefined` is what keeps this function's two answers the only
+    // two it is responsible for.
+    assert.equal(
+      challengeProblem(
+        parseBearerChallenge('Bearer error="insufficient_scope"'),
+      ),
+      undefined,
+    );
+    assert.equal(
+      challengeProblem(parseBearerChallenge('Bearer error="invalid_request"')),
+      undefined,
+    );
+
+    // And the caller that has to answer for itself still has the token, which
+    // is the point of taking the parsed challenge: one parse, both readings.
+    assert.equal(
+      parseBearerChallenge('Bearer error="insufficient_scope"')?.params.error,
+      "insufficient_scope",
+    );
   });
 });

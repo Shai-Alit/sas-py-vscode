@@ -4,131 +4,78 @@
 /**
  * The sign-in and sign-out commands.
  *
- * Thin on purpose, in the same way `src/profile/commands.ts` is thin: this file
- * answers "which profile" and "do we have the client secret", and hands the rest
- * to `browserFlow.ts`. It holds no OAuth logic at all.
+ * Thinner than they used to be, and deliberately so. As of slice 1c the
+ * `AuthenticationProvider` owns signing in and signing out; these two commands
+ * decide *which profile* the user means and how to word the outcome, then call
+ * straight through to it.
  *
- * Both commands act on the *active* profile rather than asking which one, because
- * the active profile is already visible in the status bar and a picker that
- * appears every time would be a second place to change something the user has
- * already chosen. Switching profile is its own command.
+ * That direction — command calls provider, never the reverse — is the point.
+ * Before 1c this file had its own sign-in, and the Accounts menu was about to
+ * get a second one. Two implementations of "sign in" is how the menu and the
+ * command palette end up disagreeing about who is signed in, and the
+ * disagreement never surfaces as itself; it surfaces as a run failing against a
+ * deployment the user believes they are signed in to.
+ *
+ * Both commands act on the *active* profile rather than asking which one,
+ * because the active profile is already visible in the status bar and a picker
+ * that appears every time would be a second place to change something the user
+ * has already chosen. Switching profile is its own command. The Accounts menu is
+ * the way to act on a profile that is not the active one.
  */
 
 import * as vscode from "vscode";
 
-import { type ViyaProfile } from "../profile/model";
 import { type ProfileStore } from "../profile/store";
-import { signInWithBrowser } from "./browserFlow";
-import { type SessionStore } from "./sessionStore";
-import { type AuthUriHandler } from "./uriHandler";
+import {
+  NoSuchSessionError,
+  type ViyaAuthenticationProvider,
+} from "./authProvider";
 
 export function registerAuthCommands(
   context: vscode.ExtensionContext,
+  provider: ViyaAuthenticationProvider,
   profiles: ProfileStore,
-  sessions: SessionStore,
-  handler: AuthUriHandler,
   log: vscode.LogOutputChannel,
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("pythonOnViya.signIn", () =>
-      signIn(context, profiles, sessions, handler, log),
+      signIn(provider, profiles, log),
     ),
     vscode.commands.registerCommand("pythonOnViya.signOut", () =>
-      signOut(profiles, sessions, log),
+      signOut(provider, profiles, log),
     ),
   );
 }
 
 async function signIn(
-  context: vscode.ExtensionContext,
+  provider: ViyaAuthenticationProvider,
   profiles: ProfileStore,
-  sessions: SessionStore,
-  handler: AuthUriHandler,
   log: vscode.LogOutputChannel,
 ): Promise<void> {
-  const active = profiles.active();
-  if (active === undefined) {
+  if (profiles.active() === undefined) {
     void vscode.window.showInformationMessage(
       vscode.l10n.t("Select a SAS Viya connection profile before signing in."),
     );
     return;
   }
 
-  const clientSecret = await resolveClientSecret(active.profile, profiles);
-  if (clientSecret === undefined) return;
-
-  await signInWithBrowser(
-    {
-      profileId: active.profile.id,
-      endpoint: active.profile.endpoint,
-      clientId: active.profile.clientId,
-      clientSecret,
-      // Version detection is Phase 2. Until it exists the deployment is
-      // genuinely unknown, and `clientId.ts` is built to behave sensibly on
-      // exactly that: it tries the built-in client and translates the
-      // deployment's own refusal into the advice a version check would have
-      // given up front.
-    },
-    {
-      handler,
-      sessions,
-      log,
-      extensionId: context.extension.id,
-    },
-  );
-}
-
-/**
- * The client secret to sign in with, `""` when there is none, or `undefined`
- * when the user cancelled.
- *
- * The prompt exists because of a promise made elsewhere: importing profiles from
- * the SAS extension deliberately does not copy secrets, and tells the user they
- * will be asked for it the first time they connect. This is that moment. A secret
- * the user supplies here is stored, so it is asked for once rather than at every
- * sign-in.
- *
- * An empty answer is a real answer — plenty of registered clients are public and
- * have no secret — so it is recorded as "this client has none" and not asked
- * about again. `ProfileStore.secret` returns three things for that reason: the
- * secret, `""` for a client known to have none, and `undefined` only when nobody
- * has answered yet. Collapsing the last two is what makes a public client prompt
- * at every single sign-in.
- */
-async function resolveClientSecret(
-  profile: ViyaProfile,
-  profiles: ProfileStore,
-): Promise<string | undefined> {
-  if (profile.clientId === undefined || profile.clientId === "") {
-    // The built-in client is public: there is no secret, and asking for one
-    // would invite the user to invent an answer.
-    return "";
+  try {
+    const session = await provider.createSession();
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t("Signed in to SAS Viya as {0}.", session.account.label),
+    );
+  } catch (error) {
+    // The provider rejects to satisfy its contract with VS Code, which shows the
+    // rejection to whoever asked for a session. Invoked from the palette there
+    // is no such caller, so the command shows it — but only as a message, never
+    // as an unhandled rejection in the log the user cannot read.
+    reportSignInFailure(log, error);
   }
-
-  const stored = await profiles.secret(profile);
-  if (stored !== undefined) return stored;
-
-  const typed = await vscode.window.showInputBox({
-    title: vscode.l10n.t("Sign in to SAS Viya"),
-    prompt: vscode.l10n.t(
-      'Client secret for "{0}" (leave empty if this client has none)',
-      profile.clientId,
-    ),
-    password: true,
-    ignoreFocusOut: true,
-  });
-  if (typed === undefined) return undefined;
-
-  // Including the empty answer, which `setSecret` records as "this client has
-  // none" rather than discarding — otherwise the promise two paragraphs up is
-  // broken at the next sign-in.
-  await profiles.setSecret(profile, typed);
-  return typed;
 }
 
 async function signOut(
+  provider: ViyaAuthenticationProvider,
   profiles: ProfileStore,
-  sessions: SessionStore,
   log: vscode.LogOutputChannel,
 ): Promise<void> {
   const active = profiles.active();
@@ -139,11 +86,78 @@ async function signOut(
     return;
   }
 
-  // Only the session. The client secret is configuration the user entered, not
-  // something signing out should destroy — deleting a profile does that.
-  await sessions.clear(active.profile.id);
-  log.info(vscode.l10n.t('Signed out of "{0}".', active.name));
-  void vscode.window.showInformationMessage(
-    vscode.l10n.t('Signed out of "{0}".', active.name),
-  );
+  try {
+    // Only the session. The client secret is configuration the user entered, not
+    // something signing out should destroy — deleting a profile does that.
+    await provider.removeSession(active.profile.id);
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t('Signed out of "{0}".', active.name),
+    );
+  } catch (error) {
+    if (!(error instanceof NoSuchSessionError)) {
+      // Everything else has to be visible. This arm catches the workspace-trust
+      // refusal, a secret store that would not delete, and a `setContext` that
+      // did not answer — none of which mean the user is signed out, and the
+      // first of which is a sentence naming the command that fixes it. Reporting
+      // any of them as "you are not signed in" states the opposite of what
+      // happened, in a reassuring voice, while the credential is still on disk.
+      reportSignOutFailure(log, error, active.name);
+      return;
+    }
+
+    // The narrow, ordinary case: the provider does not recognise the id. Reached
+    // when the profile stops existing between `profiles.active()` above and the
+    // provider's own lookup — a settings edit landing mid-command — and not
+    // worth an error dialog, because the user asked to be signed out of
+    // something that is no longer there.
+    log.info(
+      vscode.l10n.t(
+        'Nothing to sign out of for "{0}": {1}',
+        active.name,
+        describe(error),
+      ),
+    );
+    void vscode.window.showInformationMessage(
+      vscode.l10n.t('You are not signed in to "{0}".', active.name),
+    );
+  }
+}
+
+function reportSignInFailure(
+  log: vscode.LogOutputChannel,
+  error: unknown,
+): void {
+  const detail = describe(error);
+  log.error(vscode.l10n.t("Signing in to SAS Viya failed: {0}", detail));
+  void vscode.window.showErrorMessage(detail);
+}
+
+/**
+ * Shows a sign-out failure, and names the profile in the log line but not in the
+ * dialog.
+ *
+ * The dialog is the provider's own sentence verbatim. The one that matters most
+ * is the workspace-trust refusal, which already names the folder and the command
+ * that fixes it, and wrapping it in "signing out of Prod failed:" pushes that
+ * instruction into the second half of a longer sentence for no gain.
+ */
+function reportSignOutFailure(
+  log: vscode.LogOutputChannel,
+  error: unknown,
+  name: string,
+): void {
+  const detail = describe(error);
+  log.error(vscode.l10n.t('Signing out of "{0}" failed: {1}', name, detail));
+  void vscode.window.showErrorMessage(detail);
+}
+
+/**
+ * The message from a thrown value, and nothing else.
+ *
+ * Never the value itself. A rejected token exchange can carry a request object,
+ * and a request object carries the `Authorization` header — so an error handler
+ * that logs what it caught is a credential leak that looks like diligence.
+ */
+function describe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

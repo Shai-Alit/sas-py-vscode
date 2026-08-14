@@ -4,11 +4,13 @@
 import assert from "node:assert/strict";
 import {
   createServer,
+  type IncomingHttpHeaders,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from "node:http";
 import {
+  collectHeaders,
   MAX_BODY_BYTES,
   nodeHttpTransport,
   type TransportRequest,
@@ -147,6 +149,65 @@ describe("nodeHttpTransport", () => {
     assert.equal(seen.headers["content-length"], "10");
   });
 
+  it("omits content-length entirely when there is no body", async () => {
+    // A `GET` carrying `content-length: 0` is the kind of thing a strict
+    // gateway rejects and nobody thinks to look at. `body` is optional rather
+    // than `""` precisely so this header can be absent rather than zero.
+    await send("/identities/users/@currentUser", {
+      method: "GET",
+      headers: {},
+      body: undefined,
+    });
+
+    assert.ok(seen);
+    assert.equal(seen.method, "GET");
+    assert.equal(seen.body, "");
+    assert.equal(seen.headers["content-length"], undefined);
+  });
+
+  it("exposes response headers, lower-cased", async () => {
+    // Probe finding 9: a dead Viya token is a 401 with a zero-byte body, and the
+    // entire diagnosis is in `WWW-Authenticate`. A response type carrying only
+    // `ok`, `status` and `text()` cannot tell "sign in again" from "not
+    // permitted". Lower-casing is asserted because an injected transport is
+    // under no obligation to do it and the callers index by lower-case name.
+    handler = (_request, response) => {
+      response.writeHead(401, {
+        "WWW-Authenticate": 'Bearer error="invalid_token"',
+        "Content-Type": "application/json",
+      });
+      response.end("");
+    };
+
+    const response = await send("/identities/users/@currentUser", {
+      method: "GET",
+      body: undefined,
+    });
+
+    assert.equal(response.status, 401);
+    assert.equal(await response.text(), "");
+    assert.equal(
+      response.headers["www-authenticate"],
+      'Bearer error="invalid_token"',
+    );
+    assert.equal(response.headers["content-type"], "application/json");
+  });
+
+  it("joins a header the server sent more than once", async () => {
+    // Node hands these back as an array. A caller that does `.split(",")` on a
+    // joined value is no worse off than one that ignored the extras, and a
+    // `string | string[]` in the response type would push that decision into
+    // every call site.
+    handler = (_request, response) => {
+      response.writeHead(200, { Warning: ['199 - "one"', '199 - "two"'] });
+      response.end("ok");
+    };
+
+    const response = await send("/token");
+
+    assert.equal(response.headers.warning, '199 - "one", 199 - "two"');
+  });
+
   it("reassembles a body that arrives in several chunks", async () => {
     handler = (_request, response) => {
       response.writeHead(200);
@@ -278,6 +339,37 @@ describe("nodeHttpTransport", () => {
         headers: {},
         body: "",
       }),
+    );
+  });
+});
+
+describe("collectHeaders", () => {
+  it("keeps a __proto__ field as data instead of losing it to the prototype", () => {
+    // The header name comes from the server. Written as
+    // `headers[name.toLowerCase()] = value` this field is silently discarded —
+    // assigning a string to `__proto__` on a plain object is a no-op — and
+    // CodeQL reads the same line as remote property injection. Going through a
+    // `Map` and `Object.fromEntries` defines the property rather than assigning
+    // it, so the field survives as data and the prototype is untouched.
+    //
+    // The key is computed on purpose: a bare `__proto__:` in an object literal
+    // sets the prototype instead of creating a property, which is the hazard
+    // itself rather than a way to test for it.
+    const raw: IncomingHttpHeaders = {
+      ["__proto__"]: "polluted",
+      "WWW-Authenticate": 'Bearer error="invalid_token"',
+    };
+    const headers = collectHeaders(raw);
+
+    assert.deepEqual(
+      Object.entries(headers).find(([name]) => name === "__proto__"),
+      ["__proto__", "polluted"],
+    );
+    assert.equal(Object.getPrototypeOf(headers), Object.prototype);
+    assert.equal(
+      headers["www-authenticate"],
+      'Bearer error="invalid_token"',
+      "the ordinary field was lost alongside the hostile one",
     );
   });
 });

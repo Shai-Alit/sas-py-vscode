@@ -62,9 +62,10 @@ export interface SignInRequest {
    * The callback URI the shell will listen on, already passed through
    * `env.asExternalUri()`.
    *
-   * Absent for a deployment whose client has no registered redirect URI, where
-   * the only way back is the paste box. Sent as `redirect_uri` when present,
-   * because a redirect URI that is sent must match the one that is registered.
+   * Absent when the host cannot produce one at all. Present is an *offer*, not
+   * an instruction: {@link beginSignIn} sends it only when the profile named the
+   * client, because the built-in client registers `urn:ietf:wg:oauth:2.0:oob`
+   * and rejects any `redirect_uri` at all.
    */
   redirectUri?: string | undefined;
 }
@@ -74,6 +75,11 @@ export interface PendingSignIn {
   readonly endpoint: string;
   readonly client: ClientCredentials;
   readonly deployment: Deployment;
+  /**
+   * The `redirect_uri` actually sent, which both legs must agree on
+   * (RFC 6749 §4.1.3). `undefined` on the built-in client even when the shell
+   * offered one — see {@link beginSignIn}.
+   */
   readonly redirectUri: string | undefined;
   /**
    * The value a callback has to carry to be believed.
@@ -105,6 +111,37 @@ export interface SignInDeps {
  * Fails before opening a browser when the deployment has no built-in client and
  * the profile names none — sending the user to a login page that can only end in
  * `invalid_client` wastes their time and teaches them nothing.
+ *
+ * ## The built-in client gets no `redirect_uri`, and that is not a limitation
+ *
+ * Verified against a live Viya 4 deployment on 2026-08-13, by hand, in a
+ * browser. The built-in `vscode` client registers exactly one redirect value —
+ * `urn:ietf:wg:oauth:2.0:oob` — and no custom-scheme URI at all. Sending it any
+ * `redirect_uri` fails, and it fails *after* the user has typed their password,
+ * on a page reading "did not match one of the registered values". Our callback
+ * URI was rejected. So was upstream's own `vscode://sas.sas-lsp`, which is how
+ * we know this is not about who the extension is.
+ *
+ * With the parameter omitted, the deployment falls back to oob and displays the
+ * authorization code for the user to copy. **On the built-in client the paste
+ * box is therefore the only route, not the fallback** — the URI handler can only
+ * ever fire against a client an administrator registered with a real
+ * `vscode://` redirect, which is why a profile that names a `clientId` still
+ * sends one.
+ *
+ * Upstream reaches the same place by a different road: `getTokens` in
+ * `client/src/connection/rest/auth.ts` sends no `redirect_uri` either, and puts
+ * the callback URL in `state` instead. That does nothing — authorizing with
+ * `state` set to a `vscode://` URL, in both the single- and double-encoded
+ * spellings upstream produces, displayed a code and never offered to open the
+ * editor. Worth recording because it looks like a working redirect mechanism
+ * and is not one; and because it is the reason upstream cannot validate
+ * `state`, while we still can.
+ *
+ * The decision lives here rather than at the call site because this is where the
+ * client is resolved, and because `finishSignIn` reads `pending.redirectUri` for
+ * the token leg — RFC 6749 §4.1.3 requires the two legs to agree, and one
+ * assignment is how they are made unable to disagree.
  */
 export function beginSignIn(
   request: SignInRequest,
@@ -122,6 +159,9 @@ export function beginSignIn(
 
   const pkce = (deps.createPkce ?? createPkcePair)();
   const state = (deps.createState ?? createState)();
+  const redirectUri = resolution.client.builtIn
+    ? undefined
+    : request.redirectUri;
 
   return {
     ok: true,
@@ -129,7 +169,7 @@ export function beginSignIn(
       endpoint: request.endpoint,
       client: resolution.client,
       deployment,
-      redirectUri: request.redirectUri,
+      redirectUri,
       state,
       verifier: pkce.verifier,
       authorizeUrl: buildAuthorizeUrl({
@@ -137,7 +177,7 @@ export function beginSignIn(
         clientId: resolution.client.clientId,
         codeChallenge: pkce.challenge,
         state,
-        redirectUri: request.redirectUri,
+        redirectUri,
       }),
     },
   };
@@ -307,7 +347,17 @@ export async function finishSignIn(
     deps,
   );
 
-  if (!result.ok && explainsMissingClient(result.problem, pending.client)) {
+  if (result.ok) {
+    return result;
+  }
+
+  // The failure arrives already scrubbed. SASLogon echoes the `code_verifier` it
+  // received back inside `error_description`, so a mismatched exchange would
+  // otherwise hand us our own PKCE secret to log; `tokenEndpoint.ts` removes
+  // everything the request carried before returning, which is a better place for
+  // it than here because the refresh grant needs the same treatment and never
+  // comes through this function.
+  if (explainsMissingClient(result.problem, pending.client)) {
     const where = describeDeployment(pending.deployment);
     return {
       ok: false,

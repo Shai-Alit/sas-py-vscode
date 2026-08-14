@@ -37,9 +37,13 @@
  * from there in issue reports. Only the OAuth `error` and `error_description`
  * fields are quoted back, and only those, because they are specified to be
  * diagnostics rather than data.
+ *
+ * That leaves one hole, and {@link post} closes it: the deployment can quote our
+ * own request back at us inside `error_description`, and it does. See the scrub
+ * there.
  */
 
-import type { AuthProblem } from "./problems";
+import { redactSecrets, redactText, type AuthProblem } from "./problems";
 import {
   nodeHttpTransport,
   type TransportResponse,
@@ -248,7 +252,77 @@ function readExpiresIn(body: Record<string, unknown>): number | undefined {
   return Number.isFinite(seconds) && seconds > 0 ? seconds : undefined;
 }
 
+/**
+ * The fields of a token request that are not credentials.
+ *
+ * Everything else in either form is one: the client secret, the authorization
+ * code, the PKCE verifier, the refresh token. The list names the safe fields
+ * rather than the dangerous ones on purpose — a grant added later is scrubbed
+ * without anyone remembering to add it here, and the cost of this list being
+ * wrong is a redacted diagnostic instead of a leaked credential.
+ *
+ * `redirect_uri` is on it deliberately. It is public by construction — it was in
+ * the browser's address bar — and the deployment quotes it back when it does not
+ * match what the client registered. That message is the entire diagnosis for a
+ * misregistered client; it is what identified the built-in client's `oob`-only
+ * registration on 2026-08-13, and scrubbing it would have hidden that.
+ */
+const PUBLIC_FORM_FIELDS: ReadonlySet<string> = new Set([
+  "client_id",
+  "grant_type",
+  "redirect_uri",
+]);
+
+/** Every value in the form that must not come back out in a message. */
+function credentialsIn(form: URLSearchParams): string[] {
+  const secrets: string[] = [];
+  for (const [name, value] of form) {
+    if (!PUBLIC_FORM_FIELDS.has(name)) secrets.push(value);
+  }
+  return secrets;
+}
+
+/**
+ * {@link submit}, with everything the request carried scrubbed back out of what
+ * the deployment said about it.
+ *
+ * Written after a real failed exchange on 2026-08-13 logged this, verbatim:
+ *
+ * ```text
+ * the deployment rejected the sign-in: invalid_grant (Invalid code verifier: <the verifier>)
+ * ```
+ *
+ * SASLogon echoes the field it objected to back inside `error_description`. That
+ * is a helpful diagnostic and a credential at the same time, and the same
+ * behaviour on the refresh grant would quote a refresh token — which, unlike a
+ * spent verifier, is long-lived and is the whole session.
+ *
+ * The scrub lives here rather than at either call site because this is the one
+ * place both grants pass through *and* the one place the values are in scope
+ * without a caller having to list them from memory. `authProvider.resolve` logs
+ * the refresh failure directly, so a scrub applied only in `finishSignIn` would
+ * have covered the sign-in and left the renewal — the path that runs every hour,
+ * unattended — leaking. The alternative, dropping `error_description`, trades one
+ * bad case for permanent blindness in the most useful diagnostic in the flow.
+ */
 async function post(
+  endpoint: string,
+  form: URLSearchParams,
+  deps: TokenEndpointDeps,
+  fallbackRefreshToken: string | undefined,
+): Promise<TokenResult> {
+  const result = await submit(endpoint, form, deps, fallbackRefreshToken);
+  if (result.ok) return result;
+
+  const secrets = credentialsIn(form);
+  return {
+    ok: false,
+    reason: redactText(result.reason, secrets),
+    problem: redactSecrets(result.problem, secrets),
+  };
+}
+
+async function submit(
   endpoint: string,
   form: URLSearchParams,
   deps: TokenEndpointDeps,

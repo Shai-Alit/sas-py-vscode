@@ -36,6 +36,33 @@ export function extensionId(): string {
 }
 
 /**
+ * The manifest's declared activation events.
+ *
+ * Read rather than assumed, and thrown on if the key is missing entirely: an
+ * absent `activationEvents` is exactly the state this is here to catch, so
+ * defaulting it to `[]` would turn the failure into a pass.
+ */
+export function activationEvents(): readonly string[] {
+  const manifestPath = path.resolve(__dirname, "../../../package.json");
+  const manifest: unknown = JSON.parse(
+    readFileSync(manifestPath, "utf8"),
+  ) as unknown;
+
+  const events =
+    typeof manifest === "object" && manifest !== null
+      ? (manifest as Record<string, unknown>).activationEvents
+      : undefined;
+
+  if (!Array.isArray(events) || events.some((e) => typeof e !== "string")) {
+    throw new Error(
+      `${manifestPath} has no "activationEvents" array of strings — a reloaded window would never activate the extension, and no signed-in account would come back.`,
+    );
+  }
+
+  return events as readonly string[];
+}
+
+/**
  * The JSON-schema `pattern` the settings editor applies to a profile endpoint.
  *
  * Navigated rather than hard-coded, and loudly broken if the manifest is

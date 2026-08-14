@@ -60,7 +60,10 @@ export default defineConfig({
         // contributor documentation to find out.
         text: "Using the extension",
         collapsed: false,
-        items: [{ text: "Connection profiles", link: "/connection-profiles" }],
+        items: [
+          { text: "Connection profiles", link: "/connection-profiles" },
+          { text: "Signing in", link: "/signing-in" },
+        ],
       },
       {
         text: "Reference",

@@ -71,8 +71,14 @@ describe("sign-in and sign-out commands", () => {
       assert.ok(entry.title, `${id} has no title`);
       assert.ok(entry.category, `${id} has no category`);
       // Enablement keeps them out of the palette until there is a profile —
-      // the same condition the profile commands use.
-      assert.equal(entry.enablement, "pythonOnViya.hasProfiles");
+      // the same condition the profile commands use — and until the folder is
+      // trusted. The trust half is not decoration: the provider throws on both
+      // of these paths in an untrusted folder, and a palette entry that is
+      // guaranteed to fail is worse than one that is not offered.
+      assert.equal(
+        entry.enablement,
+        "pythonOnViya.hasProfiles && isWorkspaceTrusted",
+      );
     }
   });
 

@@ -272,3 +272,115 @@ optimisation to reach for; ask once per session and hold the answer.
   in anything user-facing.
 - Whether `title` and `state` are always populated. Both were here; neither is
   load-bearing, and only `id` and `name` are treated as required.
+
+## 2026-08-14 — The first real sign-in (Viya 4)
+
+**How this one was gathered, because it is not like the others.** Every section
+above is a read-only `GET` made with `curl` under the `viya-api-probe` rules.
+This one could not be: the subject is the authorization-code flow, and the
+`authorize` leg only answers after a human has typed a password into SASLogon's
+own page. So these findings come from driving the extension's sign-in against the
+live deployment in a real browser, then reading what SASLogon rendered and what
+the extension logged. Same deployment as the two probes above. Nothing was
+mutated: an authorization code that is never redeemed expires unused, and the two
+that were redeemed produced tokens for the signed-in user and nothing else.
+
+Scrubbed as usual — the deployment host is written `viya.example.com` throughout,
+and no code, verifier, or token appears here in any form.
+
+### Finding 10 — The built-in `vscode` client registers `oob` and nothing else
+
+The first sign-in failed *after* the password was accepted, which is the
+expensive place to fail:
+
+```text
+Invalid redirect vscode://<publisher>.<name>/auth-callback%3FwindowId=2
+did not match one of the registered values
+```
+
+Three browser probes, changing one thing each:
+
+| `redirect_uri` sent | Result |
+|---|---|
+| our own `vscode://<publisher>.<name>/auth-callback…` | rejected after login |
+| upstream's `vscode://sas.sas-lsp` | **rejected after login** |
+| *omitted entirely* | consent page renders, code shown on screen, `urn:ietf:wg:oauth:2.0:oob` |
+
+The second row is the one that settles it. If the built-in client had *a*
+custom-scheme redirect registered and we were merely spelling ours wrong, the
+extension SAS themselves ship would have worked. It does not, so the built-in
+`vscode` client has **no** custom-scheme redirect at all — only
+`urn:ietf:wg:oauth:2.0:oob`, the out-of-band value whose entire meaning is "show
+the code to the user and let them carry it".
+
+**Consequence.** `redirect_uri` is sent only when the profile names its own
+client; on the built-in client both OAuth legs omit it, which RFC 6749 §4.1.3
+requires them to agree on. The dual code capture stays, because which case
+applies cannot be known until after the user has authenticated — but the paste
+box is the **ordinary** route on a stock Viya 4, not the fallback, and the URI
+handler only ever wins against a client an administrator registered for this
+extension. Any documentation that describes pasting as a degraded mode is
+wrong on the deployments most people have.
+
+The `%3F` in that message was a second, separate defect and ours:
+`vscode.env.asExternalUri` appends a `windowId` query parameter, and rebuilding
+the URI through `toString(true)` percent-encoded the `?` while leaving the `=`
+beside it alone. `callbackUri()` now concatenates the parsed `Uri` components
+instead. It was not the cause of the rejection — the middle row of the table
+proves that — but it would have been the next one.
+
+### Finding 11 — `state` cannot smuggle the callback URL
+
+Upstream packs the callback URL into the `state` parameter, which is the trick
+that would make the `oob` restriction survivable without a paste box. It does not
+work here. Tested in both encodings — the URL placed in `state` raw, and again
+percent-encoded — SASLogon ignored it both times and rendered the code on the
+consent page exactly as it does with no `state` at all.
+
+**Consequence.** There is no route back into the editor on the built-in client,
+which is what makes finding 10's paste box load-bearing rather than a nicety. It
+also settles a question the 1c-i review raised: because `state` carries no
+routing information, it is free to be what RFC 6749 §10.12 wants it to be — a
+random nonce that is checked and discarded. The check costs nothing on the `oob`
+path, where no callback arrives at all, and is a real CSRF defence on a
+registered-redirect path.
+
+### Finding 12 — SASLogon echoes the PKCE verifier back in `error_description`
+
+A failed `authorization_code` exchange produced this, and the extension logged it
+verbatim:
+
+```text
+the deployment rejected the sign-in: invalid_grant (Invalid code verifier: <the verifier, in full>)
+```
+
+`error_description` is quoted into our log by design — RFC 6749 §5.2 specifies it
+as a human-readable diagnostic, and it is the most useful string in the whole
+flow. But the deployment is free to put our own request back inside it, and here
+it does. RFC 7636 §4.1 makes the `code_verifier` a secret; the log is a file
+people attach to bug reports.
+
+The exposure from this instance is small — a verifier is single-use and the
+attempt it belonged to had already failed — but the same behaviour on the
+`refresh_token` grant would quote a **refresh token**, which is long-lived and is
+the whole session.
+
+**Consequence.** The scrub is applied inside the token endpoint's `post`, so both
+grants get it without a caller remembering to ask: every value the request
+carried that is not `client_id`, `grant_type`, or `redirect_uri` is replaced with
+`[redacted]` in the failure before it is returned. `redirect_uri` is deliberately
+exempt — it is public by construction, and its echo is what produced finding 10.
+Dropping `error_description` instead would have traded one leak for permanent
+blindness.
+
+### Open questions this probe did *not* settle
+
+- **Whether any Viya 4 registers a custom-scheme redirect on the built-in
+  client.** One deployment was observed. A deployment whose administrators added
+  one would take the URI-handler arm, which is why the race is kept rather than
+  deleted, but nothing here proves such a deployment exists.
+- **Whether SASLogon echoes the refresh token** the way it echoes the verifier.
+  Not provoked: doing so means deliberately corrupting a live refresh token, and
+  the scrub is written to assume it does either way.
+- **Viya 3.5, again.** No deployment is reachable, so neither the `oob`
+  registration nor the `state` behaviour has been observed there.

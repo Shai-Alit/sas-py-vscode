@@ -208,8 +208,163 @@ called out under **Changed** with a migration note.
   **Python on Viya: Sign Out** end to end; the trade-off is written up in
   `test/helpers/auth-host.ts` rather than left for a reader to infer.
 
+- Sign-in is now an **account** in the editor's Accounts menu rather than only a
+  pair of commands. The extension registers `pythonOnViya` as an authentication
+  provider labelled **SAS Viya**, so the Accounts menu can sign in, show who is
+  signed in, and sign out; the commands call straight through to the provider,
+  because two implementations of signing in is how a menu and a command palette
+  end up disagreeing about who is signed in. Every connection profile is its own
+  account, so a test deployment and a production one can be signed in at the same
+  time in the same window and signing out of one leaves the other alone — an
+  account is keyed on the deployment plus the Viya user id, which is why renaming
+  a profile, or an administrator fixing a typo in a display name, does not sign
+  anybody out. It differs from upstream's provider in four places, each one a
+  defect the audit under slice 1c in `PRODUCTION_PLAN.md` records: upstream stores
+  a single session blob, so a second profile overwrites the first; `getSessions`
+  refreshes on every call, and the Accounts menu polls, so opening a menu is a
+  network round trip and a moment of bad Wi-Fi is a silent sign-out; an
+  unrecognised id in `removeSession` falls back to the active profile, which turns
+  a caller's bug into signing the user out of something they never named; and the
+  session write is not awaited, so a window closing straight after sign-in can
+  lose the session it just established. Here a held token is served from memory
+  and renewed only against the absolute `expiresAt` 1b-i already computes, an
+  unknown id is an error, and the write is awaited.
+
+- `src/auth/identity.ts`, which reads the signed-in user, and asks for
+  `application/vnd.sas.identity.user.summary+json` **explicitly**. That header is
+  the entire data-minimisation story: the full representation on the probed
+  deployment carried a street address with postal code, a work email and two
+  phone numbers for a real person, and upstream sends no `Accept` header at all,
+  so it pulls all of that into the extension host and keeps two fields. The
+  summary type is the same URL and the same `200` without them, and what never
+  arrives cannot reach a crash dump, a heap snapshot or a log attached to an
+  issue. A `406` — which finding 6 established is what a media type a deployment
+  does not serve looks like — retries with the full type and drops the personal
+  fields as it parses, which is what lets Viya 3.5 be *unverified* rather than
+  *unsupported*. Only `id`, the display name and the login are kept; the account
+  label falls back from one to the next, because only `id` was established as
+  always present, and `title` is deliberately not in that chain — it is a job
+  title, and nobody's idea of who is signed in.
+
+- `onDidChangeSessions` fires on real transitions only, and the comparison lives
+  in a pure `diffSessions(before, after)` so "did anything actually change" is a
+  unit test rather than an observation about event volume. The
+  `pythonOnViya.authorized` context key is set alongside it, for the `when`
+  clauses Phase 2 onward will gate on.
+
+- `TransportResponse` now exposes response headers, and `src/auth/challenge.ts`
+  parses RFC 6750's `WWW-Authenticate`. Probe finding 9: a dead Viya token is a
+  **401 with a zero-byte body**, so any error path that builds its message from
+  the body renders an empty string for the most common recoverable failure there
+  is. The parser separates three states that all arrive as that same 401 — a
+  token the deployment rejected (`error="invalid_token"`, sign in again), a
+  request that carried no credentials at all (a bare `Bearer` challenge, which is
+  our bug and not the user's), and no Bearer challenge whatsoever — and a comma
+  inside a quoted `error_description` survives, which is the difference between
+  showing the server's sentence and showing the first half of it.
+
+- `docs/signing-in.md` — signing in and out, what the Accounts menu shows, why
+  opening it makes no network request, what is written to disk (the refresh token,
+  and only that) versus held in memory (the access token), what the extension asks
+  Viya about you and why the answer is deliberately small, and what happens when
+  each of it fails.
+
+- `PROBE-FINDINGS.md` findings 10-12, from the first real sign-in against a live
+  Viya 4 deployment: that the built-in `vscode` OAuth client registers
+  `urn:ietf:wg:oauth:2.0:oob` and no custom-scheme address, that `state` cannot
+  be used to smuggle a callback URL past it, and that SASLogon quotes the
+  `code_verifier` it received back at you. Each is the evidence for a fix below,
+  written down where the next person will look for it rather than left in a
+  commit message. Unlike findings 1-9 this evidence could not be gathered with
+  `curl`, because the authorize leg needs a human to type a password; the
+  methodology note at the head of the section says so.
+
 ### Fixed
 
+- Sign-in against a default Viya 4 deployment now works at all. The built-in
+  `vscode` OAuth client registers exactly one redirect value —
+  `urn:ietf:wg:oauth:2.0:oob`, "show the user a code" — and no custom-scheme URI,
+  so sending it any `redirect_uri` failed *after* the user had typed their
+  password. Confirmed against a live deployment, which rejected this extension's
+  callback address and the SAS extension's own alike. The callback URI is now
+  sent only when the profile names a client, which is the only case where an
+  address could have been registered for it; RFC 6749 §4.1.3 requires the
+  authorize and token legs to agree, so the decision is made once, where both
+  read it. The paste box is consequently the ordinary route on a stock
+  deployment rather than the fallback, and `docs/signing-in.md` now says so.
+- The callback address no longer reaches the deployment double-encoded.
+  `asExternalUri` appends a `windowId` parameter, and the URI arrived at SASLogon
+  as `…/auth-callback%3FwindowId=2` — the `?` escaped while the `=` beside it was
+  not. It is now rebuilt from the parsed URI's components, so the encoding
+  happens exactly once, where the authorize URL is built.
+- Neither the PKCE code verifier nor a refresh token can reach the log. SASLogon
+  echoes the field it objected to back inside `error_description`, and that field
+  is quoted verbatim into the output channel — deliberately, because it is the
+  most useful diagnostic in the flow and people paste the log into issues. Rather
+  than drop the field and trade one leak for permanent blindness, the credentials
+  that were just sent are scrubbed out of the server's text. The scrub happens
+  where the form is posted, so it covers both grants from one place: the
+  authorization-code exchange, where the verifier leaked live, and the refresh
+  exchange, which matters more because it runs unattended and a refresh token
+  *is* the session. Everything a caller could have sent is scrubbed except
+  `client_id`, `grant_type` and `redirect_uri`, which are not secret and which
+  carry the diagnosis — "invalid redirect …" is the message that identified the
+  `oob` problem above, and a scrub that ate it would have hidden it. A value
+  under eight characters is left alone, because substitution can only hide
+  something distinctive: scrubbing a one-character secret replaces that letter
+  everywhere it occurs, wrecking the sentence while a reader recovers the
+  character from the words either side.
+- A deployment that cannot be reached while the extension asks who signed in is
+  no longer reported as a token problem. The identity call's transport failure
+  said `token-endpoint-unreachable`, which names the wrong host and sends the
+  reader to the wrong side of the deployment; it now returns an identity failure
+  carrying the path and the underlying reason.
+- Signing in again now asks Viya who signed in, instead of reusing the answer it
+  already had. The identity of a held session is cached so that renewing a token
+  costs no extra round trip, but a fresh sign-in is exactly the moment the user
+  could have chosen a different account — reusing the cache there would have
+  labelled the new session with the previous user's name. The cache is now
+  reached only on the renewal path.
+- Response headers are collected into a null-prototype map before they become an
+  object, so a header named `__proto__` or `constructor` cannot reach an object
+  literal's prototype (CodeQL: remote property injection).
+- Reloading the window no longer signs you out. The extension declared no
+  activation events, on the correct reasoning that a contributed command
+  activates its extension implicitly and an `onCommand` entry is redundant from
+  VS Code 1.74 on — but a reloaded window runs no command. Nothing woke the
+  extension, so the authentication provider was never registered, VS Code had
+  nobody to ask for sessions, and the Accounts menu came back empty while the
+  refresh token sat in the keychain untouched. `onStartupFinished` is now
+  declared: it fires after the window is up, and activation still reads no
+  secret and makes no request.
+- A background failure to read who is signed in no longer interrupts you with a
+  dialog. Renewing an expired token happens because a menu was opened or a token
+  aged out — nobody asked — and a modal there talks over whatever the user was
+  actually doing. Both paths now log and nothing more, at warning for a renewal
+  and at error for a sign-in; the sign-in path was showing the message twice
+  anyway, because a failed `createSession` already rejects with its own and VS
+  Code shows that to whoever asked.
+- Workspace trust is now enforced, not just declared. ADR-0002 has said since
+  slice 0b that connecting requires a trusted folder, and `docs/signing-in.md`
+  said so to users, but nothing checked: a folder cloned this morning could
+  supply the endpoint a token was requested from and sent to. All three
+  authentication entry points now check `vscode.workspace.isTrusted` —
+  `getSessions` serves nothing and publishes `pythonOnViya.authorized` as false,
+  `createSession` and `removeSession` reject with a message naming **Workspaces:
+  Manage Workspace Trust** — and the two sign-in commands carry
+  `isWorkspaceTrusted` in their enablement so the palette stops offering what the
+  provider will refuse. Nothing is signed out and nothing is deleted; trusting
+  the folder restores the session through `onDidGrantWorkspaceTrust`, without a
+  reload.
+- A sign-out that fails now says so. The command caught everything the provider
+  could throw and reported all of it as "You are not signed in" — which described
+  the one case it was written for and misdescribed every other, including the
+  workspace-trust refusal added above and a secret store that would not delete.
+  The user was told the credential was gone in the reassuring voice, while it was
+  still on disk. An id the provider does not recognise is now a distinct error
+  type rather than a sentence to match on, which a translated build would not
+  have matched at all; only that case is treated as ordinary, and everything else
+  reaches the log and a message.
 - Profile validation messages shown under an input box are now localisable. The
   model returns a `ValidationProblem` code with its parameters instead of English
   prose, and `src/profile/problems.ts` renders it through `vscode.l10n.t()`;
@@ -234,6 +389,15 @@ called out under **Changed** with a migration note.
   configuration belongs, and the secret store holds only secrets.
 
 ### Changed
+
+- The authentication provider's label goes through `vscode.l10n.t()` like every
+  other string the editor shows. It is a product name and will usually come back
+  unchanged, but the manifest already contributes it as `%authentication.label%`,
+  and a locale that transliterates it needs somewhere to say so — a bare literal
+  in the source is the one place a translator cannot reach. It is resolved when
+  the provider is registered rather than when the module loads, because a
+  module-level call would freeze the English string before the language bundle
+  is available.
 
 - The coverage ratchet is measured over **unit-reachable code**. Modules that
   import `vscode` are excluded from the c8 denominator: they cannot be loaded

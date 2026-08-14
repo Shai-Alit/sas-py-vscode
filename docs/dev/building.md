@@ -218,16 +218,29 @@ process with *"FATAL ERROR: Reached heap limit"* on a tree whose source has not
 changed. `test/unit/eslint-ignores.test.ts` asserts the ignores through ESLint's
 own resolver so the two lists cannot drift apart again.
 
-**`activationEvents` is empty, on purpose.** Since VS Code 1.74, a command
-declared in `contributes.commands` activates its extension implicitly — the
+**`activationEvents` holds exactly one entry, `onStartupFinished`.** There are
+no `onCommand:` entries, and that part is deliberate: since VS Code 1.74 a
+command declared in `contributes.commands` activates its extension implicitly —
+the
 [activation events reference](https://code.visualstudio.com/api/references/activation-events)
 states plainly that "commands contributed by your extension do not require a
 corresponding `onCommand` activation event declaration". We require `^1.104.0`,
 and the upstream SAS extension ships 52 commands and zero `onCommand` entries.
-This gets flagged as a bug by people (and review bots) working from
-pre-1.74 habits; it is not one.
+Adding them back gets proposed by people (and review bots) working from pre-1.74
+habits; don't.
+
+The startup event is a different matter, and the list was empty until a reload
+proved it could not be. Implicit command activation only helps once someone runs
+a command, and **a reloaded window runs no command**. With nothing declared, the
+authentication provider was never registered, VS Code had nobody to ask for
+sessions, and a user who had signed in perfectly well came back after
+**Developer: Reload Window** to an empty Accounts menu — the refresh token was
+sitting in the keychain the whole time. `onStartupFinished` fires after the
+window is up, so it costs no startup time, and `activate()` touches neither the
+network nor the secret store; the first read of either still waits for VS Code to
+call `getSessions`.
 
 Adding `onLanguage:python` would be a genuine mistake for a different reason —
 it activates the extension for every Python user on every Python file, the
 overwhelming majority of whom have no Viya deployment. Think hard before adding
-any activation event, and prefer the narrowest one that works.
+any further activation event, and prefer the narrowest one that works.

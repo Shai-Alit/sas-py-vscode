@@ -564,15 +564,78 @@ its **type**, which is what makes it possible to tell a `NOTE:` from an `ERROR:`
 without parsing prefixes out of a string. Finding 16's paging rule applies to it
 like any other collection.
 
+### Finding 21 — The session representation carries 22 links, and they are the whole API
+
+Probed 2026-08-14 while writing `src/compute/session.ts`, which needed to know
+whether a session is navigated by link relation or by composed path. One throwaway
+session was created in the SAS Studio compute context, dumped, and deleted in the
+same call. The scrubbed payload is
+`test/fixtures/viya4/compute-session-created.json`.
+
+`POST` returned `201` with
+`content-type: application/vnd.sas.compute.session+json; charset=utf-8; version=2`
+— note the **spaces after the semicolons**, where the error type in finding 17 has
+none, so a comparison that is not parameter-tolerant fails on one or the other —
+plus a root-relative `Location` and `etag: "kp81i3skc0"`.
+
+Top-level keys: `applicationName`, `attributes`, `creationTimeStamp`,
+`description`, `environment`, `id`, `links`, `name`, `owner`, `serverId`,
+`serviceAPIVersion`, `sessionConditionCode`, `state`, `stateElapsedTime`,
+`version`. `attributes` is `{homeDirectory, sessionInactiveTimeout: 900}`. The id
+is a UUID with a `-ses0000` suffix. `applicationName` is **the OAuth client id**
+and `owner` is the user's email address — both scrubbed in the fixture.
+
+The 22 relations, which is the entire session API and the reason nothing below
+2a-i needs a URL builder:
+
+| rel | method | href tail | type |
+|---|---|---|---|
+| `self` / `alternate` | GET | `` | `…compute.session` / `.summary` |
+| `state` | GET | `/state` | `text/plain` |
+| `cancel` | PUT | `/state?value=canceled` | *(no `type` key)* |
+| `delete` | DELETE | `` | *(no `type` key)* |
+| `execute` | POST | `/jobs` | `…job.request` → `…job` |
+| `jobs`, `log`, `listing`, `results`, `variables`, `engines`, `formats`, `informats`, `librefs` (`/data`), `files` (`/filerefs`) | GET | various | `…collection`, plus an `itemType` key |
+| `assign` | POST | `/filerefs` | `…fileref.request` → `…fileref` |
+| `getFiles` | GET | `/files` | `…file.properties` |
+| `getOption` / `updateOption` | GET / PUT | `/options/{optionName}` | `text/plain` |
+| `logAsText` / `listingAsText` | GET | `/log`, `/listing` | `text/plain` |
+
+Three consequences beyond "the links are there".
+
+**`cancel` is a link, and it already carries its query.** Upstream builds this
+call by hand — `setState(ComputeState.Canceled)` with an `If-Match`, retrying on
+`412` by recursing into itself without a bound. The deployment hands us
+`PUT …/state?value=canceled` ready to follow. It is also the one observed href
+with a query string, which is why appending `?wait=N` to a *different* href has to
+test for one rather than assume none.
+
+**`getOption`'s href is an un-expanded URI template**: `/options/{optionName}`,
+braces and all. It is the first href seen that cannot be followed verbatim, so
+ADR-0010's "follow what the service sends" needs the qualifier that a templated
+href is expanded first — and the brace-free ones are still never rewritten.
+
+**Collection links carry an `itemType` key** that `readLinks` ignores. Harmless,
+recorded so the next person does not think the fixture is truncated.
+
+The state resource answered `200`, `content-type: text/plain;charset=UTF-8`, body
+`pending` — **7 bytes, no trailing newline** — and `etag: "kp81i3skc0"`, byte for
+byte the ETag the create call returned. So the session ETag and the state
+validator are the same value at creation, which is what makes finding 19's
+`If-None-Match` poll work from a freshly created session. `DELETE` on the `delete`
+link answered `204` with no `If-Match`, confirming finding 18 a second time.
+
 ### Open questions this probe did *not* settle
 
 - **What a reaped session answers.** Finding 18 gives the timeout but the probe
   did not wait one out, so whether a dead session replies `404`, `401`, or
   answers normally having lost its state is unobserved. 2a-ii treats all three
   alike for that reason.
-- **Whether `type` is ever explicitly `null`** on a representation other than a
-  context. Only context links were re-checked with `has()`; session and job links
-  were not.
+- ~~**Whether `type` is ever explicitly `null`** on a representation other than a
+  context.~~ **Answered by finding 21 for sessions:** the `cancel` and `delete`
+  links **omit the key**, exactly as context links do. No explicitly-null `type`
+  has been seen anywhere on this deployment. Job representations are still
+  unchecked.
 - **Whether `count` behaves the same way on the session and log collections.**
   Only `/compute/contexts` was varied. The rule "trust `next`, not `count`" is
   written to be safe either way.

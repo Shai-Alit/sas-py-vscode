@@ -73,9 +73,23 @@ import {
  */
 export const DEFAULT_TIMEOUT_MS = 30_000;
 
-export type ComputeResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; reason: string; problem: ComputeProblem };
+/**
+ * A failed compute call, named on its own.
+ *
+ * Extracted from {@link ComputeResult} because a failure carries nothing of the
+ * value type, so a helper that only ever handles failures — `asSessionGone` in
+ * `./session` is the first — should not have to be generic to say so. Naming it
+ * also means such a helper's return value is assignable to a `ComputeResult` of
+ * *any* value type, which is what lets a failure be rewritten on its way out of a
+ * function whose success type is something else entirely.
+ */
+export interface ComputeFailure {
+  ok: false;
+  reason: string;
+  problem: ComputeProblem;
+}
+
+export type ComputeResult<T> = { ok: true; value: T } | ComputeFailure;
 
 export interface ComputeClientConfig {
   /**

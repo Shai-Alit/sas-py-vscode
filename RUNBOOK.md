@@ -1225,7 +1225,7 @@ git checkout -b phase-2a-i-compute-core
 git commit -m "feat(compute): add the link layer, context resolution, and session lifecycle"
 ```
 
-☐ **2a-i punch list.**
+☑ **2a-i punch list.** Complete 2026-08-14.
 
 - ☑ **Done 2026-08-14. `src/compute/links.ts` — link lookup, href resolution,
   and the media-type rule.** Five small functions and the `Link` type. Store the
@@ -1369,11 +1369,24 @@ git commit -m "feat(compute): add the link layer, context resolution, and sessio
   encoding first leaves no quote to double. Two mirror-image tests pin the `count`
   rule: a `null`-count page with items that a count-trusting pager would report as
   empty, and a `count: 1` first page of two that it would truncate.
-- ☐ **`src/compute/session.ts` — create, poll, delete.** Create by following the
+- ☑ **`src/compute/session.ts` — create, poll, delete.** Create by following the
   context's `createSession` link; the response is `201` with a `Location` and an
   `ETag`, and the session arrives in state `pending` with the links everything
   else navigates by.
-- ☐ **Poll state with `wait` + `If-None-Match`, and no client-side timer**
+
+  Done 2026-08-14, with `cancel` included — finding 21 put the link in front of
+  us and it is the direct replacement for the unbounded recursion listed below.
+  Three decisions worth keeping. **`Location` is ignored**: the `201` body already
+  carries all 22 links, so following it would buy a second round trip for a
+  representation we were handed. **Only one state name is written down.**
+  `waitWhilePending` waits for `pending` to end and hands the caller whatever came
+  next without judging it; a hand-maintained list of "done" states is how upstream
+  ended up with `ComputeJob.isDone()` returning `true` when the job is not done.
+  **A 401 is not a gone session.** `problems.ts` said to fold it into
+  `session-gone`; that comment is now corrected, because a caller acting on it
+  would create a new session with the credential that just failed and go round
+  again. `asSessionGone` rewrites a 404 and nothing else.
+- ☑ **Poll state with `wait` + `If-None-Match`, and no client-side timer**
   (finding 19). `GET …/state?wait=N` with a matching `If-None-Match` returns
   **`304` after exactly N seconds** — a real server-side long poll. Upstream
   declares this option and never passes it, waiting on the *log* endpoint
@@ -1382,22 +1395,58 @@ git commit -m "feat(compute): add the link layer, context resolution, and sessio
   We need to cache the last state value."* One round trip per window, no
   `setTimeout`, and the poll takes an abort signal so 2a-ii has somewhere to put
   a `CancellationToken`.
-- ☐ **Fixtures captured from the probe, scrubbed per `test/fixtures/README.md`.**
+
+  Done 2026-08-14. Two things the writing turned up. The request timeout has to
+  **outlive the server's wait** — the client's 30-second default would abort a
+  60-second poll a moment before it was answered, and the failure would read as an
+  unreachable deployment, so the poll sends its own `timeoutMs` of `wait + 15s`.
+  And a `304` is returned as `{ changed: false }` carrying **no state at all**, so
+  that a caller structurally cannot do what upstream does and re-fetch the value
+  it just declined to be sent. The bound on the loop is `MAX_WAIT_WINDOWS`, which
+  exists for the case the probe has not seen: a deployment that answers a bare
+  `?wait=N` immediately, with no validator to compare against, would otherwise
+  spin.
+- ☑ **Fixtures captured from the probe, scrubbed per `test/fixtures/README.md`.**
   Hostname, session and context ids, the OAuth client id in `applicationName`,
   and both `owner` and `modifiedBy` (real email addresses) all have to go. Keep
   the envelope, field names, types and null/absent patterns exactly as the server
   sent them — the fidelity is the whole point, and per ADR-0010 these fixtures
   are what stands in for the specification we do not have.
-- ☐ **Four things not to port**, all catalogued in the upstream survey. The
+
+  Done 2026-08-14: `test/fixtures/viya4/compute-session-created.json`, the `201`
+  from the consented mutating probe, with the session id, the OAuth client id in
+  `applicationName` and the owner's address replaced. The create test reads it
+  rather than a hand-built object, so a deployment that changes shape fails a
+  test instead of surprising a user.
+- ☑ **Four things not to port**, all catalogued in the upstream survey. The
   process-global mutable `Configuration` singleton in `rest/common.ts` — it is
   why upstream cannot hold two connections at once, and multi-profile is a
   feature we already ship. `rest/context.ts` — dead, imported by nothing, and its
   line 93 passes a `RequestArgs` where an `AxiosRequestConfig` is wanted so the
   body would never be sent. The unbounded recursion in `session.ts::cancel()`.
   And `getLinkOptions`' message-less `new Error()`.
-- ☐ **Raise the coverage ratchet.** This is 800–1,000 lines of pure logic with no
+
+  Two more found while writing this slice, so the item is really six. `ComputeJob`
+  `.isDone()` tests `doneStates.indexOf(state) === -1` and therefore answers
+  `true` for a job that is **not** done — it is dead code, which is the only
+  reason nobody has been bitten by it, and it is the argument for naming as few
+  states as possible rather than keeping a list. And `createSession` hardcodes
+  `name: "mysess"`, `description: "This is a session"`, which is what an
+  administrator sees in Environment Manager; ours says `python-on-viya`,
+  unlocalised on purpose so it stays searchable.
+- ☑ **Raise the coverage ratchet.** This is 800–1,000 lines of pure logic with no
   `vscode` import, so it is measured, and ADR-0010 expects it to push the number
   **up**. If it does not, the tests are thinner than the slice.
+
+  Done 2026-08-14: 82/82/82/91 → **88 lines, 88 statements, 87 functions, 93
+  branches**, from a measured run rather than a hopeful one. `src/compute` came
+  out at 99.72% of statements and 96.25% of branches, with `session.ts` at 100%
+  across the board; the overall figure is held down by `scripts/`, which is build
+  tooling and not shipped code. Closing the last of `session.ts`'s branches was
+  worth doing on its own merits — they were the "read, never assume" paths, and
+  the tests that cover them are the ones that say a deployment reporting no
+  usable `sessionInactiveTimeout` must leave us saying nothing rather than
+  guessing 900.
 
 ```bash
 # ⛔ BARRIER: merge 2a-i first.

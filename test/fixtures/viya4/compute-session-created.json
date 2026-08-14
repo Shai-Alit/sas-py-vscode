@@ -1,0 +1,191 @@
+{
+  "applicationName": "example-client-id-1000",
+  "attributes": {
+    "homeDirectory": "/opt/sas/viya/config/var/run/compsrv/default/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34",
+    "sessionInactiveTimeout": 900
+  },
+  "creationTimeStamp": "2026-08-14T20:04:25.971Z",
+  "description": "throwaway probe session",
+  "environment": {
+    "autoExecLines": [],
+    "options": [
+      "-jreoptions '(--add-opens=java.base/java.nio=ALL-UNNAMED)'"
+    ]
+  },
+  "id": "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000",
+  "links": [
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.compute.session",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000",
+      "method": "GET",
+      "rel": "alternate",
+      "type": "application/vnd.sas.compute.session.summary",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/state",
+      "method": "GET",
+      "rel": "state",
+      "type": "text/plain",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/state"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/state?value=canceled",
+      "method": "PUT",
+      "rel": "cancel",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/state?value=canceled"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000",
+      "method": "DELETE",
+      "rel": "delete",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs",
+      "method": "POST",
+      "rel": "execute",
+      "responseType": "application/vnd.sas.compute.job",
+      "type": "application/vnd.sas.compute.job.request",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs",
+      "itemType": "application/vnd.sas.compute.job",
+      "method": "GET",
+      "rel": "jobs",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/filerefs",
+      "itemType": "application/vnd.sas.compute.fileref.summary",
+      "method": "GET",
+      "rel": "files",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/filerefs"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/filerefs",
+      "method": "POST",
+      "rel": "assign",
+      "responseType": "application/vnd.sas.compute.fileref",
+      "type": "application/vnd.sas.compute.fileref.request",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/filerefs"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/data",
+      "itemType": "application/vnd.sas.compute.library.summary",
+      "method": "GET",
+      "rel": "librefs",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/data"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/log",
+      "itemType": "application/vnd.sas.compute.log.line",
+      "method": "GET",
+      "rel": "log",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/log"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/listing",
+      "itemType": "application/vnd.sas.compute.log.line",
+      "method": "GET",
+      "rel": "listing",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/listing"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/results",
+      "itemType": "application/vnd.sas.compute.result",
+      "method": "GET",
+      "rel": "results",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/results"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/variables",
+      "itemType": "application/vnd.sas.compute.session.variable",
+      "method": "GET",
+      "rel": "variables",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/variables"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/engines",
+      "itemType": "application/vnd.sas.data.engine",
+      "method": "GET",
+      "rel": "engines",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/engines"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/files",
+      "method": "GET",
+      "rel": "getFiles",
+      "type": "application/vnd.sas.compute.file.properties",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/files"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/options/{optionName}",
+      "method": "GET",
+      "rel": "getOption",
+      "type": "text/plain",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/options/{optionName}"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/options/{optionName}",
+      "method": "PUT",
+      "rel": "updateOption",
+      "responseType": "text/plain",
+      "type": "text/plain",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/options/{optionName}"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/formats",
+      "itemType": "application/vnd.sas.format.summary",
+      "method": "GET",
+      "rel": "formats",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/formats"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/informats",
+      "itemType": "application/vnd.sas.format.summary",
+      "method": "GET",
+      "rel": "informats",
+      "type": "application/vnd.sas.collection",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/informats"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/log",
+      "method": "GET",
+      "rel": "logAsText",
+      "type": "text/plain",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/log"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/listing",
+      "method": "GET",
+      "rel": "listingAsText",
+      "type": "text/plain",
+      "uri": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/listing"
+    }
+  ],
+  "name": "python-on-viya-probe",
+  "owner": "jane.doe@example.com",
+  "serverId": "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34",
+  "serviceAPIVersion": 6,
+  "sessionConditionCode": 0,
+  "state": "pending",
+  "stateElapsedTime": 0,
+  "version": 2
+}

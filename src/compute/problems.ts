@@ -118,13 +118,31 @@ export type ComputeProblem =
    * only correct response is to start another session and say so quietly.
    *
    * The probe never waited a session out, so the *shape* a reaped session
-   * produces is inferred: a 404 is what a deleted one gives, but a 401 or a
-   * session that answers while having lost its state are both possible and were
-   * not observed. `session.ts` maps all of them here on purpose — they are one
-   * recoverable event with three spellings, and a caller that told them apart
-   * would only be able to act on them identically.
+   * produces is inferred: a 404 is what a deleted one gives, and that is the one
+   * `session.ts` maps here.
+   *
+   * An earlier draft of this comment said a 401 should be folded in too, on the
+   * reasoning that a dead session and a dead token are one recoverable event.
+   * That is wrong, and `session.ts` deliberately does not do it. The remedy for a
+   * gone session is to create another one; the remedy for a dead token is to
+   * obtain another token. A caller handed `session-gone` for a 401 would create a
+   * session with the credential that just failed, fail again, and go round —
+   * quietly, since this variant's whole point is that it is not worth reporting.
+   * A 401 keeps its `unauthorized` reading, which slice 1c's challenge analysis
+   * has already made properly.
    */
   | { code: "session-gone"; error: ViyaError }
+  /**
+   * The session never left the state it was created in.
+   *
+   * Distinct from `compute-unreachable`: the deployment is answering, promptly
+   * and correctly, that nothing has happened. The usual cause is server-side and
+   * not the user's to fix — a compute context whose SAS process cannot start, or
+   * a launcher queue with nothing to hand it — so the message has to be honest
+   * that waiting longer is unlikely to help. `seconds` is how long we waited, and
+   * is included because "it is taking a while" is not actionable without it.
+   */
+  | { code: "session-not-ready"; state: string; seconds: number }
   /**
    * No compute context by that name is visible to this user.
    *
@@ -179,6 +197,8 @@ export function describeComputeProblem(problem: ComputeProblem): string {
       return `not permitted${describeViyaError(problem.error)}`;
     case "session-gone":
       return `the compute session is no longer available${describeViyaError(problem.error)}`;
+    case "session-not-ready":
+      return `the compute session was still "${problem.state}" after ${String(problem.seconds)} seconds`;
     case "no-such-context":
       return `no compute context named "${problem.name}" is visible to this user`;
     case "compute-rejected":

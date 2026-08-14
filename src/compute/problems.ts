@@ -325,7 +325,20 @@ function clip(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const flattened = value.replace(/\s+/g, " ").trim();
   if (flattened === "") return undefined;
-  return flattened.length <= MAX_DETAIL_LENGTH
+
+  // Measured and cut in **code points**, not UTF-16 code units. `String.slice`
+  // cuts between the halves of a surrogate pair, so a message ending in an emoji
+  // or a CJK extension character at exactly the boundary would be reported with
+  // a lone surrogate in front of the ellipsis — rendered as a replacement
+  // character, in a string whose entire job is to be read. Raised in review of
+  // 2a-i as cosmetic, which it is; it is also two lines to get right.
+  //
+  // This does not preserve grapheme clusters: a family emoji or a combining
+  // accent can still be split. `Intl.Segmenter` would, and is deliberately not
+  // used — the bound exists for legibility rather than correctness, and a log
+  // fragment does not warrant carrying a segmenter.
+  const points = Array.from(flattened);
+  return points.length <= MAX_DETAIL_LENGTH
     ? flattened
-    : `${flattened.slice(0, MAX_DETAIL_LENGTH)}…`;
+    : `${points.slice(0, MAX_DETAIL_LENGTH).join("")}…`;
 }

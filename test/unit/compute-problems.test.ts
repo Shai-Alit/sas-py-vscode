@@ -311,4 +311,36 @@ describe("readViyaError", () => {
     const error = readViyaError(500, JSON.stringify({ message: exact }));
     assert.deepEqual(error, { status: 500, message: exact });
   });
+
+  it("does not cut a character in half at the boundary", () => {
+    // Raised in review of 2a-i. The character that lands exactly on the bound is
+    // one code point but two UTF-16 code units, so a `String.slice` cut here
+    // keeps its leading surrogate and drops its trailing one. That is not a
+    // theoretical unit: the message is a *diagnostic*, and a diagnostic ending
+    // in a replacement character reads as though the extension corrupted it.
+    const straddling = `${"x".repeat(MAX_DETAIL_LENGTH - 1)}😀 and then some more`;
+    const { message } = readViyaError(
+      500,
+      JSON.stringify({ message: straddling }),
+    );
+
+    assert.ok(message !== undefined);
+    assert.ok(message.endsWith("😀…"), `clipped to ${JSON.stringify(message)}`);
+    assert.ok(
+      !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(message),
+      "a lone leading surrogate survived the clip",
+    );
+  });
+
+  it("measures the bound in code points, not code units", () => {
+    // The consequence of the fix above: a string of astral characters is twice
+    // as long in code units as it is in points, and the bound follows what a
+    // reader sees rather than how it happens to be stored.
+    const astral = "😀".repeat(MAX_DETAIL_LENGTH + 1);
+    const { message } = readViyaError(500, JSON.stringify({ message: astral }));
+
+    assert.ok(message !== undefined);
+    assert.equal(Array.from(message).length, MAX_DETAIL_LENGTH + 1);
+    assert.ok(message.endsWith("…"));
+  });
 });

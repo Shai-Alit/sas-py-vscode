@@ -239,6 +239,16 @@ async function sendRequest(
   // Combined, not chosen between. A caller's signal cancels a request the user
   // walked away from; the timeout stops one the deployment never answers. Either
   // alone leaves the other failure hanging.
+  //
+  // `AbortSignal.any` is available in every host this extension supports, and
+  // review of 2a-i raised the opposite as a blocking finding, so the chain is
+  // recorded here rather than re-derived. Node added it in **v20.3.0 and
+  // v18.17.0**; `package.json` declares `engines.node >= 20.19.0` and
+  // `engines.vscode ^1.104.0`; microsoft/vscode at tag `1.104.0` builds against
+  // Electron `37.3.1` (`.npmrc`), which pins Node **v22.18.0** (electron `DEPS`).
+  // `test/integration/runtime.test.ts` asserts it inside the real extension
+  // host, on all three operating systems, so a regression here fails CI rather
+  // than a user's first request.
   const signal =
     request.signal === undefined
       ? timeout

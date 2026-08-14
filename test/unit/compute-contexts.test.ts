@@ -203,6 +203,19 @@ describe("quoteFilterValue", () => {
     // ordinary character here and must survive as one, doubling still applied.
     assert.equal(quoteFilterValue("O\\'Brien"), "'O\\''Brien'");
   });
+
+  it("leaves the filter's own punctuation alone", () => {
+    // Raised in review of 2a-i: a value also travels through the `(`, `)` and
+    // `,` that give `eq(name,…)` its structure, so escaping only the apostrophe
+    // looked like an assumption. Probe finding 22 measured it — each of these
+    // was composed with a term that does match, in both orders, and the match
+    // still came back — and this test is what stops the answer being re-derived
+    // from first principles by the next reader, who would reason from C or from
+    // a shell and add an escape the parser then reads as data.
+    assert.equal(quoteFilterValue("a),b("), "'a),b('");
+    assert.equal(quoteFilterValue('say "hi"'), "'say \"hi\"'");
+    assert.equal(quoteFilterValue("two  spaces"), "'two  spaces'");
+  });
 });
 
 describe("contextFilter", () => {

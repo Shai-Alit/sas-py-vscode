@@ -642,3 +642,59 @@ link answered `204` with no `If-Match`, confirming finding 18 a second time.
 - **Viya 3.5.** Still unreachable, so none of the above is confirmed there. The
   link-driven navigation is what makes that survivable: a 3.5 deployment that
   spells an href differently is followed, not fought.
+
+## 2026-08-14 — Filter literals, in answer to a review question (Viya 4)
+
+Review of the 2a-i pull request asked whether the apostrophe is really the *only*
+character `quoteFilterValue` has to escape, since a filter value also travels
+through the `(` `)` `,` that give `eq(name,…)` its structure. Finding 15 had only
+ever tried the apostrophe, so the question was fair and the answer was assumed.
+It is now measured. Read-only `GET /compute/contexts` throughout, TLS verified.
+
+### Finding 22 — Inside a quoted literal, the apostrophe is the only special character
+
+Every value below sits inside `eq(name,'…')` and is percent-encoded on the way
+out by `curl --data-urlencode`, exactly as `contextsLink` encodes it:
+
+| Value inside the quotes | Result |
+|---|---|
+| `zzz-no-such-context` (control) | `200`, 0 items |
+| `zzz)no-such` | `200`, 0 items |
+| `zzz(no-such` | `200`, 0 items |
+| `zzz,no-such` | `200`, 0 items |
+| `zzz"no-such` | `200`, 0 items |
+| `zzz no-such` | `200`, 0 items |
+| `zzz\no-such` | `200`, 0 items |
+| `a),b(` | `200`, 0 items |
+| `zzz'no-such` (bare apostrophe) | **`400`**, `errorCode` 1104 |
+
+A `200` on its own is weak evidence: a parser that mis-read the literal and
+matched nothing looks identical to one that read it correctly and matched
+nothing. So each punctuation literal was also composed with a term that *does*
+match, in both orders, so that a parser which ended the literal early or split on
+the comma could not still return the right answer:
+
+| Filter | Result |
+|---|---|
+| `eq(name,'SAS Studio compute context')` | `200`, **1 item**, that name |
+| `or(eq(name,'a),b('),eq(name,'SAS Studio compute context'))` | `200`, **1 item**, that name |
+| `or(eq(name,'x,y'),eq(name,'SAS Studio compute context'))` | `200`, **1 item**, that name |
+| `or(eq(name,'x''y'),eq(name,'SAS Studio compute context'))` | `200`, **1 item**, that name |
+| `or(eq(name,'SAS Studio compute context'),eq(name,'a),b('))` | `200`, **1 item**, that name |
+| `contains(name,'o), (c')` | `200`, 0 items |
+| `contains(name,'Studio')` | `200`, **1 item** |
+
+The structural characters are therefore consumed as ordinary text once the
+literal is open, and the closing apostrophe is what ends it — which is why a bare
+apostrophe is the one failure in the table. One further check, so that "doubling
+works" is not confused with "`''` is ignored":
+`eq(name,'SAS Studio'' compute context')` returns `200` with **0 items**. A
+doubled apostrophe decodes to exactly one character, and one that the real name
+does not contain.
+
+**Consequence.** `quoteFilterValue` escaping only `'` is correct rather than
+merely untested, and it is now recorded as measured. Note what this finding does
+**not** license: the value must still be percent-encoded afterwards, because `&`
+and `#` end a query parameter in the URL long before the filter parser sees them.
+The two escapes are separate, they compose in one order only, and finding 15
+already fixes that order.

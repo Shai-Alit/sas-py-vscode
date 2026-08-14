@@ -294,7 +294,8 @@ called out under **Changed** with a migration note.
   `GET /compute/contexts/{id}` is unnecessary. Two rules the live deployment
   taught us are enforced by tests rather than by comment: a name containing an
   apostrophe is escaped by **doubling** it before percent-encoding (finding 15 —
-  a backslash is a `400`, and encoding first leaves no quote to double), and the
+  a backslash is a `400`, and encoding first leaves no quote to double, and
+  finding 22 measures the apostrophe as the *only* character needing it), and the
   collection's `count` is `null` whenever the page does not already hold
   everything (finding 16), so paging follows the `next` link and never the count.
 

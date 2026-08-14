@@ -115,6 +115,17 @@ export interface ContextOptions {
  * `400` from the filter parser, indistinguishable at the call site from a
  * deployment that is simply broken.
  *
+ * The apostrophe is the **only** character this has to escape, and that is
+ * measured rather than assumed — probe finding 22. `(`, `)`, `,`, `"`, `\` and
+ * whitespace are ordinary text once the literal is open, confirmed by composing
+ * each of them with a term that does match, in both orders, so that a parser
+ * ending the literal early could not have returned the right answer anyway.
+ *
+ * Percent-encoding is a separate escape and still required: `&` and `#` end a
+ * query parameter in the URL before the filter parser ever sees them.
+ * {@link contextsLink} does that, after this — see {@link contextFilter} for why
+ * the order is the only one that works.
+ *
  * Exported because it is the piece worth testing directly, and because
  * `session.ts` and anything later that filters by name must use this one rather
  * than growing its own interpolation.

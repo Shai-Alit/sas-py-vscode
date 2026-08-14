@@ -548,14 +548,35 @@ private CA reaches sign-in instead of failing at TLS; no secrets in logs.
 
 ### Phase 2 — Compute session and the backend seam
 
-**2a — HATEOAS Compute layer.** Port `common.ts` (link following, `getLinkOptions`,
-ETag handling), the generated Compute API client, session creation with context
-resolution, and session reconnect via `workspaceState`. Fix the acknowledged wart
-`link.href.replace("/compute", "")` (`rest/common.ts`). Include **session-death
-handling**: detect a reaped or expired session, tell the user plainly that state
-was lost, and offer recovery. *Large — the biggest slice in the plan.* **Pre-agreed
-split if the diff is unreviewable:** `2a-i` vendors the generated OpenAPI client
-(large but mechanical), `2a-ii` adds the hand-written session and link layer.
+**2a — HATEOAS Compute layer.** Link following, ETag handling, session creation
+with context resolution, session reconnect, and **session-death handling**:
+detect a reaped or expired session, tell the user plainly that state was lost,
+and offer recovery. Split along the same seam 1b and 1c used, for the same
+reason — the pure half is unit-testable and the shell half is not:
+
+> **2a-i — the Compute core, no `vscode` import.** The link layer (find a
+> relation, resolve its `href` against the deployment origin, derive
+> `Content-Type`/`Accept` from its `type`/`responseType`), the `+json` media-type
+> rule, the Viya error envelope as a problem union, a request helper on 1b's
+> `https.request` transport carrying `If-Match` and `If-None-Match`, context
+> resolution by name, and session create / poll / delete. Unit-tested against
+> fixtures scrubbed from live probes. *Medium.*
+>
+> **2a-ii — the VS Code shell.** Binding a session to a profile and the
+> authentication provider's token, reconnect across a window reload,
+> session-death detection and its recovery message, progress reporting and
+> cancellation, and the output channel. Integration-tested, one test per shell
+> module. *Medium.*
+
+**The generated OpenAPI client is not vendored — see ADR-0010.** This reverses
+what this plan pre-agreed. Upstream's client is 28,673 lines of which the session
+layer calls twelve operations out of 136; its only transport is axios, which
+ADR-0008 removed; and the wart this slice was going to fix,
+`link.href.replace("/compute", "")` in `rest/common.ts`, exists *because* of the
+vendoring — the service's own hrefs already carry the prefix that a generated
+client's `basePath` adds a second time. Keeping the origin as the only stored
+base deletes the wart's cause rather than patching its effect. Hand-writing the
+used surface is 350–450 lines against 20,348.
 
 **2-pre — Submission-mechanism probe.** *Not an implementation slice, and it must
 run **before** 2b* — all three findings shape the interface 2b freezes, so probing
@@ -971,9 +992,13 @@ get written.
    both directions on every `npm run verify`. A vendored generated client does
    not import `vscode`, so the check will **refuse** to exclude it — which is the
    correct default, because "the tier physically cannot load this" is a fact and
-   "this was generated, not written" is an argument. If 2a-i vendors a client,
-   amend ADR-0009 with a second rule rather than adding a quiet exception to the
-   list. The ratchet itself is unchanged and still binding.
+   "this was generated, not written" is an argument. The ratchet itself is
+   unchanged and still binding.
+   **Closed 2026-08-14 by ADR-0010:** no client is vendored, so the question of
+   how to exclude one does not arise. The Compute layer is hand-written against
+   the observed wire shape, imports no `vscode`, and stays in the denominator
+   like any other pure module. ADR-0009's three options remain the right three
+   should vendoring ever be proposed again.
 7. **Notebook format** (Phase 9a). ipynb-compatible vs bespoke. *Recommend ipynb —
    the Python ecosystem expects it — but defer until Phase 9.*
 8. **Package installation into Viya** (Phase 10). Governance question, not a

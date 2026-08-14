@@ -421,9 +421,17 @@ cheap tier with no editor and no network. *Small-to-medium.*
 
 **1b-ii — the VS Code shell.** `env.asExternalUri` and `env.openExternal`,
 `window.registerUriHandler`, `window.showInputBox`, and the race between the last
-two; validating the returned `state` on the URI-handler arm; the undici
-`ProxyAgent` dispatcher for corporate proxies; and persisting tokens through
-`SecretStorage` next to the profile they belong to. *Medium.*
+two; validating the returned `state` on the URI-handler arm; proxy support; and
+persisting tokens through `SecretStorage` next to the profile they belong to.
+*Medium.* **As built,** proxy support arrives by making the request through
+`https.request` and inheriting whatever the extension host has already arranged
+on Node's `https` module — not through the undici `ProxyAgent` this paragraph
+originally named. undici was evaluated in the slice and rejected: it buys a
+`ProxyAgent` and loses the operating-system certificate trust that
+`https.request` gets for free, and the internal-CA case is both more common than
+the proxy case and indistinguishable from it in a bug report. ADR-0008 records
+the reversal. The transport sets no `agent` deliberately, leaving that parameter
+free for 1c-ii to attach an explicit CA bundle to.
 
 > **Audit ported security code; do not transcribe it.** A close read of upstream's
 > 145-line `auth.ts` on 2026-08-13 found five things worth changing, not one.
@@ -459,10 +467,78 @@ two; validating the returned `state` on the URI-handler arm; the undici
 so Viya appears in the Accounts menu; per-profile token namespacing in
 SecretStorage; session change events; the `authorized` context key. Plus the
 self-signed-certificate helper — deployments with private CAs are common and this
-is 30 lines that prevents a class of unactionable failures. *Medium.*
+is 30 lines that prevents a class of unactionable failures. *Medium.* **Split into
+1c-i and 1c-ii on 2026-08-13.** The two halves share a slice number and nothing
+else: one is an editor integration whose risk is state management, the other is a
+TLS change whose risk is that it silently widens what the extension will trust.
+A single review would have to hold both, and the certificate half is exactly the
+kind of change that gets waved through when it is the small half of a big diff.
+
+**1c-i — the AuthenticationProvider.** Register a `pythonOnViya` provider so Viya
+appears in the Accounts menu, with `getSessions`, `createSession`, and
+`removeSession`; store one session per profile rather than one blob for all of
+them; fire `onDidChangeSessions` on real transitions; set the
+`pythonOnViya.authorized` context key that later `when` clauses gate on; and
+resolve the account's name from `GET /identities/users/@currentUser`. Follows the
+1a seam: the session model, the identity-response parse, and the decision of when
+a change event is warranted are pure modules under unit test; only the provider
+registration itself imports `vscode`. *Medium.*
+
+> **The account model, settled 2026-08-13.** `account.id` is the **endpoint plus
+> the Viya user id**, not the user id alone. One person with a dev deployment and
+> a production deployment is two accounts, and they must be two rows in the
+> Accounts menu — collapsing them means signing out of one signs out of the other,
+> and worse, it means a token minted against dev is a candidate for a request to
+> production. `session.id` is the profile's generated id, not its name, so
+> renaming a profile does not orphan its session. Probe findings 8 and 9 pin the
+> rest: key on `id` and never on `scimId` or the login name, request the
+> `…identity.user.summary+json` representation so the user's address and phone
+> numbers never enter the process, and read the sign-in failure out of
+> `WWW-Authenticate`, because the 401 body is empty.
+
+> **Audit, not transcription — upstream `AuthProvider.ts`.** Four things this
+> slice deliberately does differently, found by reading it on 2026-08-13.
+>
+> 1. **All sessions live in one `SecretStorage` blob** under a single `SASAuth`
+>    key, serialised together. Removing one session rewrites every other one, a
+>    partial write loses all of them, and the blob grows without bound as profiles
+>    come and go. One key per session, namespaced by profile id.
+> 2. **`writeSession` does not await the store.** `this.secretStorage.store(...)`
+>    is fired and dropped, so a window closing shortly after sign-in can lose the
+>    session that sign-in just produced, and nothing surfaces the failure. Await
+>    it, and let the caller see a rejection.
+> 3. **Every `getSessions` call refreshes the token.** The Accounts menu polls;
+>    this turns opening a menu into a network round trip and, when the refresh
+>    fails transiently, into a silent session removal. Refresh against the
+>    `expiresAt` that 1b-i already computes, and treat a 401 from a real request
+>    as the fallback rather than the mechanism.
+> 4. **`removeSession` falls back to the active profile when the id is unknown.**
+>    An unrecognised id is a bug in the caller, and guessing which session was
+>    meant makes it a bug that signs the user out of something they did not name.
+>    Reject the unknown id.
+>
+> A fifth, on storage rather than upstream: the refresh token is what persists,
+> the access token is held in memory for its lifetime. There is no value in
+> writing a credential to disk that will be dead in an hour.
+
+**1c-ii — private CAs and the TLS agent.** Read a user-supplied list of CA
+certificate paths, build a dedicated `https.Agent` from the system roots plus
+those certificates, and pass it as the `agent` 1b-ii's transport left open.
+*Small.*
+
+> **Do not port `CAHelper.ts` as written.** Upstream sets
+> `https.globalAgent.options.ca`, which is process-global state in a host shared
+> with every other installed extension: it changes what *they* trust, silently,
+> and nothing in the extension's own tests could ever catch it. A dedicated agent
+> is the same feature scoped to our own requests. And the `console.log` inside the
+> `catch` around `fs.readFileSync` — named above as the example of why ported
+> security code gets audited rather than transcribed — comes due here: an
+> unreadable or malformed certificate path is a configuration error the user has
+> to be told about, through the log channel, with the path named.
 
 *Exit:* user can sign in to Viya and see their identity; tokens survive a reload;
-no secrets in logs.
+signing out of one deployment leaves the other signed in; a deployment behind a
+private CA reaches sign-in instead of failing at TLS; no secrets in logs.
 
 ### Phase 2 — Compute session and the backend seam
 
@@ -830,7 +906,7 @@ get written.
 | Compute cancellation doesn't interrupt a running Python step | Medium — bad UX | Probe after 3d-i; fall back to session reset with a clear message |
 | Phase 2a exceeds a reviewable PR | Medium | Pre-agreed split at the generated-client boundary |
 | Large stdout volumes truncate or slow the log poll | Medium | High-volume fixtures in 3b |
-| Ported code arrives carrying upstream defects | Medium | Audit-don't-transcribe rule (Phase 1b); PKCE `Math.random()` is the known example |
+| Ported code arrives carrying upstream defects | **Medium, and repeatedly confirmed** | Audit-don't-transcribe rule (Phase 1b). No longer a hypothetical: reading `auth.ts` found five, `AuthProvider.ts` four, and `CAHelper.ts` two. Every ported file gets read before it is trusted, and the findings are recorded in the slice that ports it |
 | Upstream SAS extension diverges | Low | We fork conceptually, not continuously; port once and own it |
 | Scope creep into SAS-extension parity before the core is solid | **High** | The phase ordering exists precisely for this; resist reordering |
 
@@ -925,6 +1001,22 @@ get written.
    is wrong about 3.5 having no built-in `vscode` client, the cost is that we tell
    a 3.5 user to go get a client id they did not actually need — a bad message,
    not a broken or insecure flow.
+10. ~~**What identifies an account in the Accounts menu**~~ — **SETTLED
+    2026-08-13: the endpoint plus the Viya user `id`.** The alternative, the user
+    id alone, is what upstream effectively does, and it is wrong for the audience
+    this extension is built for: developers point at a development deployment and
+    a production one, usually as the same person. Under a user-id-only key those
+    collapse into a single account row, so signing out of dev signs you out of
+    prod, and a token minted for dev becomes a candidate for a request to prod —
+    a confused-deputy shape, not merely a display bug. Keying on the endpoint too
+    makes them two rows, which is what a user already believes they are. Within
+    that, the identifier is the `id` field and nothing else: probe finding 8
+    showed `scimId` is provider-dependent and absent outside SCIM-backed
+    deployments, and `name` and the login are the fields an administrator can
+    change. The `label` is the display `name`, falling back to the login and then
+    to `id`. The `session.id` is separately the profile's generated id rather
+    than its name, so renaming a profile does not orphan the session attached to
+    it. Executed in 1c-i.
 
 **Smaller items to settle in-phase, recorded so they aren't forgotten:** activation
 events and a lazy-load rule (an `onLanguage:python` activation would fire for every

@@ -984,6 +984,30 @@ which is the test for folding rather than filing.
    `finishSignIn` first and moved into `tokenEndpoint.post` under review (below),
    because one call site per grant is one call site too many.
 
+**Sign-in works end to end against a real Viya 4, 2026-08-14.** The authorize
+leg without a `redirect_uri`, the consent page, the pasted code, the token
+exchange, the identity read and the session write, in one pass; the output
+channel says `Signed in to <endpoint>` and names no user, which is deliberate —
+a display name in a log is a real person in an issue report. That closes the
+first line of the manual check at the end of 1c-ii. The second line — reload the
+window and confirm the account comes back — was run the same day and **failed**,
+which found the activation defect recorded below; **re-run after the fix, it
+passes**: the window comes up already signed in, and the tell is that the
+Accounts menu no longer offers "Sign in with SAS Viya" at all, because there is
+nothing left to sign in to. The third — a second profile appearing as a second,
+independent account — **also passes**, which is decision 10 confirmed against a
+live deployment rather than argued from the code: two rows, two display names,
+two refresh tokens under their own `SecretStorage` keys, and signing out of one
+leaving the other alone. That is the single-session model upstream carries,
+tested and not repeated.
+
+One thing the check surfaced, and it is a real defect rather than a surprise:
+**signing in always acts on the active profile**, whichever account row was
+clicked, because `createSession` reads `profiles.active()` and VS Code hands the
+provider no indication of which account the user meant. Switching profiles first
+is a workaround, not the behaviour. Tracked as the "Accounts menu acts on any
+profile" correction — the docs claim is wrong in the same place the code is.
+
 **Three source changes the punch list did not ask for, all found by writing the
 tests, 2026-08-13.** Recorded here because "the tests caught it" is worth more as
 a record than as a memory.
@@ -1046,6 +1070,47 @@ argument, which is worth noting on its own.
    commit message and a plan paragraph. Findings 10-12 record them properly, with
    a methodology note admitting this evidence came from driving a browser rather
    than from `curl`, because the authorize leg needs a password typed by a human.
+
+**Three more, from the second review round on 2026-08-14.** Two were bot
+findings on the same branch; the first came out of the manual check above and is
+the one worth reading twice.
+
+1. **Nothing brought the session back after a reload**, and the cause was not in
+   `auth/` at all. `activationEvents` was `[]` — correct as far as it went, since
+   a contributed command activates its extension implicitly from VS Code 1.74 —
+   but a reloaded window runs no command. The extension never woke, the provider
+   was never registered, VS Code had nobody to ask, and the Accounts menu came
+   back empty over a perfectly good refresh token. Sign-in had only ever worked
+   because running the command was itself the activation. `onStartupFinished`
+   now, which fires after the window is up; `onLanguage:python` remains out of
+   the question, for the reason `docs/dev/building.md` gives. The comment in
+   `extension.ts` and the paragraph in `building.md` both argued for the empty
+   list, confidently and at length, and both were wrong in the same place — a
+   reminder that a well-written justification is not evidence.
+2. **`establish` opened a dialog when the identity read failed.** The reviewer
+   asked for the modal to be dropped on the renewal path; it is dropped on both,
+   which is stronger and is what the code already implied. `createSession`
+   rejects when `establish` returns `undefined`, and VS Code shows that rejection
+   — so the dialog was a *duplicate* when the user asked and an *interruption*
+   when they did not. Log only now, `error` on `"new-sign-in"` and `warn` on
+   `"renewed-token"`, matching the refresh branch directly above it. The
+   integration test that pins this asserts the rejection, not the absence of the
+   dialog: the message the user gets is now the only one there is, so it is the
+   thing that must not regress.
+3. **Workspace trust was documented and unenforced.** ADR-0002 has claimed since
+   0b that connecting requires a trusted folder; nothing checked. Enforced now at
+   the token boundary — all three provider entry points — with the two commands
+   carrying `isWorkspaceTrusted` as a courtesy on top. Two details worth keeping:
+   `removeSession` is gated as well, though it only deletes, so the refusal names
+   the folder instead of blaming the profile id; and trust granted mid-window is
+   picked up through `onDidGrantWorkspaceTrust`, because this extension declares
+   `supported: "limited"` and therefore keeps running across that transition
+   rather than being restarted into a trusted host. The integration host cannot
+   be made untrusted — it opens an empty window, and empty windows are trusted —
+   so `AuthProviderDeps.isTrusted` exists purely so the closed branch is
+   executed by something. ADR-0002 itself warned that "integration tests must
+   cover the untrusted path, or the restriction will rot"; it rotted before the
+   ink dried.
 
 **The identity fixture is in `test/fixtures/harness/`, not `viya4/`.** Findings 7
 and 8 deliberately recorded field *shapes* rather than values, because the values

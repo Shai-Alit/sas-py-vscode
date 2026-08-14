@@ -15,15 +15,20 @@ import { createProfileStatusBarItem } from "./profile/statusBar";
 import { ProfileStore } from "./profile/store";
 
 /**
- * Activation is deliberately cheap and deliberately rare.
+ * Activation is deliberately cheap, and happens once per window.
  *
- * `activationEvents` is empty, and that is correct, not an oversight. Since
- * VS Code 1.74 a command listed in `contributes.commands` activates its
- * extension implicitly; a matching `onCommand:` entry is redundant boilerplate.
- * We require ^1.104.0, and the upstream SAS extension ships 52 commands with
- * zero `onCommand` events. See docs/dev/building.md before "fixing" this.
+ * The only declared event is `onStartupFinished`, and it is load-bearing rather
+ * than defensive. A command in `contributes.commands` activates its extension
+ * implicitly — since VS Code 1.74 an `onCommand:` entry is redundant, and there
+ * are none here for that reason — but a *reloaded window* runs no command, so
+ * with no startup event nothing registers the authentication provider, VS Code
+ * has nobody to ask for sessions, and a signed-in user comes back to an empty
+ * Accounts menu. That was the observed behaviour on 2026-08-14: sign-in worked,
+ * a reload lost it, and the token in the keychain was never the problem. The
+ * event fires after the window is up, so it costs no startup time, and this
+ * function touches neither the network nor the secret store.
  *
- * We also do NOT declare `onLanguage:python`, which would activate this
+ * We still do NOT declare `onLanguage:python`, which would activate this
  * extension for every Python user on every Python file — including the
  * overwhelming majority who have no SAS Viya deployment at all.
  */

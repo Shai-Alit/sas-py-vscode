@@ -328,6 +328,34 @@ called out under **Changed** with a migration note.
 - Response headers are collected into a null-prototype map before they become an
   object, so a header named `__proto__` or `constructor` cannot reach an object
   literal's prototype (CodeQL: remote property injection).
+- Reloading the window no longer signs you out. The extension declared no
+  activation events, on the correct reasoning that a contributed command
+  activates its extension implicitly and an `onCommand` entry is redundant from
+  VS Code 1.74 on — but a reloaded window runs no command. Nothing woke the
+  extension, so the authentication provider was never registered, VS Code had
+  nobody to ask for sessions, and the Accounts menu came back empty while the
+  refresh token sat in the keychain untouched. `onStartupFinished` is now
+  declared: it fires after the window is up, and activation still reads no
+  secret and makes no request.
+- A background failure to read who is signed in no longer interrupts you with a
+  dialog. Renewing an expired token happens because a menu was opened or a token
+  aged out — nobody asked — and a modal there talks over whatever the user was
+  actually doing. Both paths now log and nothing more, at warning for a renewal
+  and at error for a sign-in; the sign-in path was showing the message twice
+  anyway, because a failed `createSession` already rejects with its own and VS
+  Code shows that to whoever asked.
+- Workspace trust is now enforced, not just declared. ADR-0002 has said since
+  slice 0b that connecting requires a trusted folder, and `docs/signing-in.md`
+  said so to users, but nothing checked: a folder cloned this morning could
+  supply the endpoint a token was requested from and sent to. All three
+  authentication entry points now check `vscode.workspace.isTrusted` —
+  `getSessions` serves nothing and publishes `pythonOnViya.authorized` as false,
+  `createSession` and `removeSession` reject with a message naming **Workspaces:
+  Manage Workspace Trust** — and the two sign-in commands carry
+  `isWorkspaceTrusted` in their enablement so the palette stops offering what the
+  provider will refuse. Nothing is signed out and nothing is deleted; trusting
+  the folder restores the session through `onDidGrantWorkspaceTrust`, without a
+  reload.
 - Profile validation messages shown under an input box are now localisable. The
   model returns a `ValidationProblem` code with its parameters instead of English
   prose, and `src/profile/problems.ts` renders it through `vscode.l10n.t()`;

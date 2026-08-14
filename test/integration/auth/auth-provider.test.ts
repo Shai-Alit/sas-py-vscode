@@ -67,6 +67,12 @@ interface Harness {
    * again as somebody else is the case the cache has to notice.
    */
   whoami: { id: string; name: string };
+  /**
+   * Whether the folder is trusted, as the provider sees it. Mutable mid-test:
+   * trust is granted in a window that is already open, and this extension goes
+   * on running across that transition instead of being restarted.
+   */
+  trust: { granted: boolean };
   /** Answers for the sign-in paste box, consumed in order. */
   answers: string[];
   /** Every set of options the paste box was opened with. */
@@ -84,6 +90,8 @@ function harness(
     refreshOk?: boolean;
     /** Lifetime of the tokens the fake endpoint issues. Default one hour. */
     expiresIn?: number;
+    /** Whether the folder starts out trusted. Default true, as the host is. */
+    trusted?: boolean;
   } = {},
 ): Harness {
   const log = testLogChannel("auth provider");
@@ -93,6 +101,7 @@ function harness(
   const events: vscode.AuthenticationProviderAuthenticationSessionsChangeEvent[] =
     [];
   const whoami = { id: USER_ID, name: "Dana Whitfield" };
+  const trust = { granted: options.trusted ?? true };
   const answers: string[] = [];
   const prompts: vscode.InputBoxOptions[] = [];
 
@@ -167,6 +176,10 @@ function harness(
         contexts.push({ key, value });
         return Promise.resolve(undefined);
       },
+      // The host's own answer is `true` for the whole run — it opens an empty
+      // window, and empty windows are trusted — so the closed branch of the
+      // gate is unreachable without this.
+      isTrusted: () => trust.granted,
       // Enough of the browser flow to drive `createSession` unattended. No
       // callback is ever dispatched here, so every sign-in below finishes
       // through the paste box — which is the ordinary route on a deployment
@@ -199,6 +212,7 @@ function harness(
     sessions,
     requests,
     whoami,
+    trust,
     answers,
     prompts,
     contexts,
@@ -494,6 +508,104 @@ describe("Viya authentication provider", () => {
       } finally {
         anonymous.dispose();
       }
+    });
+
+    it("still tells whoever asked when the identity read fails during sign-in", async () => {
+      // The same failure as above, reached from the other direction, and the
+      // reason that one can be silent: nobody asked for a background renewal,
+      // but somebody is standing in front of a sign-in waiting for an answer.
+      // `establish` reports neither case in a dialog — it logs, at error here
+      // and at warning there — so this rejection is now the *only* thing that
+      // tells the user, and it has to survive.
+      const anonymous = harness({ identityStatus: 401 });
+      try {
+        anonymous.answers.push("a-code");
+        await assert.rejects(() => anonymous.provider.createSession(), {
+          message: /would not say who you are signed in as/,
+        });
+      } finally {
+        anonymous.dispose();
+      }
+    });
+  });
+
+  describe("in an untrusted folder", () => {
+    let h: Harness;
+
+    beforeEach(async () => {
+      h = harness({ trusted: false });
+      await configureProfile();
+      // A session that is genuinely there: the point is that the gate refuses to
+      // serve it, not that there was nothing to serve.
+      await h.sessions.write(PROFILE_ID, {
+        accessToken: FAKE_ACCESS,
+        refreshToken: FAKE_REFRESH,
+        tokenType: "bearer",
+      });
+    });
+
+    afterEach(async () => {
+      h.dispose();
+      await set("connectionProfiles", undefined);
+      await set("defaultProfile", undefined);
+    });
+
+    it("serves nothing, and reaches neither the store nor the network", async () => {
+      assert.deepEqual(await h.provider.getSessions(), []);
+      assert.equal(
+        h.requests.length,
+        0,
+        "an untrusted folder renewed a token anyway",
+      );
+    });
+
+    it("says so through the authorized context key", async () => {
+      // The `when` clause Phase 2 gates running code on. If this stayed true
+      // while `getSessions` refused to serve, a menu would offer to run code on
+      // a server using a session that cannot be produced.
+      await h.provider.getSessions();
+
+      assert.deepEqual(h.contexts.at(-1), {
+        key: AUTHORIZED_CONTEXT_KEY,
+        value: false,
+      });
+    });
+
+    it("refuses to sign in, and names the reason", async () => {
+      // Rejecting rather than returning empty: this one the user did ask for,
+      // and "nothing happened" is the least useful possible answer.
+      await assert.rejects(() => h.provider.createSession(), {
+        message: /trusted folder/,
+      });
+      assert.equal(h.prompts.length, 0, "the sign-in flow started anyway");
+    });
+
+    it("refuses to sign out for the same reason, not a different one", async () => {
+      // The id is real. Without the gate this would reach `profileById`, find
+      // it, and clear a credential; with a gate that only covered the other two
+      // it would report "no sign-in with that id", which says the profile is
+      // wrong when the folder is.
+      await assert.rejects(() => h.provider.removeSession(PROFILE_ID), {
+        message: /trusted folder/,
+      });
+      assert.notEqual(
+        await h.sessions.read(PROFILE_ID),
+        undefined,
+        "the refresh token was cleared from an untrusted folder",
+      );
+    });
+
+    it("picks the session up when trust is granted, without a reload", async () => {
+      assert.deepEqual(await h.provider.getSessions(), []);
+
+      h.trust.granted = true;
+      await h.provider.trustGranted();
+
+      assert.equal(h.events.at(-1)?.added?.length, 1);
+      assert.deepEqual(h.contexts.at(-1), {
+        key: AUTHORIZED_CONTEXT_KEY,
+        value: true,
+      });
     });
   });
 });

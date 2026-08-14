@@ -64,7 +64,6 @@ import {
   type IdentityDeps,
   type ViyaUser,
 } from "./identity";
-import { localiseAuthProblem } from "./messages";
 import { describeAuthProblem } from "./problems";
 import type { SessionStore } from "./sessionStore";
 import {
@@ -135,6 +134,17 @@ export interface AuthProviderDeps {
   browser?:
     | Pick<BrowserSignInDeps, "asExternalUri" | "openExternal" | "showInputBox">
     | undefined;
+  /**
+   * Whether this window's folder is trusted. Defaults to
+   * {@link vscode.workspace.isTrusted}.
+   *
+   * Injectable because the integration host cannot be made untrusted. It opens
+   * an empty window, and `security.workspace.trust.emptyWindow` defaults to
+   * true, so `vscode.workspace.isTrusted` is `true` for the whole run and the
+   * closed branch would never execute. A security gate whose closed state is
+   * never exercised is a comment.
+   */
+  isTrusted?: (() => boolean) | undefined;
 }
 
 /**
@@ -198,8 +208,21 @@ export class ViyaAuthenticationProvider
    * OAuth issues no scoped tokens, so there is no narrower session to hand back
    * and pretending otherwise would mean returning nothing for any non-empty
    * request.
+   *
+   * An untrusted folder has no sessions, by construction: this is the call that
+   * would otherwise read the secret store and renew a token, and it is reached
+   * by opening a menu rather than by asking for anything, so it says nothing.
    */
   async getSessions(): Promise<vscode.AuthenticationSession[]> {
+    if (!this.trusted()) {
+      // Published, not just returned. The list VS Code holds and the
+      // `pythonOnViya.authorized` context key both have to say "nothing here",
+      // or a `when` clause somewhere offers to run code on a server using a
+      // session this call has just refused to produce.
+      await this.publish([]);
+      return [];
+    }
+
     const sessions: vscode.AuthenticationSession[] = [];
 
     for (const name of this.profiles.names()) {
@@ -229,6 +252,8 @@ export class ViyaAuthenticationProvider
    * contract: VS Code shows the rejection to whoever asked for the session.
    */
   async createSession(): Promise<vscode.AuthenticationSession> {
+    this.requireTrust();
+
     const active = this.profiles.active();
     if (active === undefined) {
       throw new Error(
@@ -291,6 +316,13 @@ export class ViyaAuthenticationProvider
    * rather than a failure, nothing anywhere reports that it happened.
    */
   async removeSession(sessionId: string): Promise<void> {
+    // Gated too, though signing out only deletes. In an untrusted folder
+    // `getSessions` hands back nothing, so every id reaching here is one this
+    // window never issued, and the honest answer is the one the other two give
+    // rather than "there is no sign-in with that id" — which is true, but says
+    // the profile is wrong when the folder is.
+    this.requireTrust();
+
     const profile = this.profileById(sessionId);
     if (profile === undefined) {
       throw new Error(
@@ -303,6 +335,20 @@ export class ViyaAuthenticationProvider
     this.live.delete(profile.id);
     await this.sessions.clear(profile.id);
     this.log.info(vscode.l10n.t("Signed out of {0}.", profile.endpoint));
+    await this.refreshPublished();
+  }
+
+  /**
+   * Re-reads the session list after the user trusts the folder.
+   *
+   * Trust can be granted in a window that is already open, and this extension
+   * declares `untrustedWorkspaces.supported: "limited"`, so it keeps running
+   * across that transition rather than being restarted into a trusted host.
+   * Without this the gate above stays effectively closed until a reload: the
+   * stored refresh token is readable, nothing asks, and the Accounts menu goes
+   * on showing nothing while the user waits for the thing they just permitted.
+   */
+  async trustGranted(): Promise<void> {
     await this.refreshPublished();
   }
 
@@ -395,16 +441,28 @@ export class ViyaAuthenticationProvider
         this.deps.identity ?? {},
       );
       if (!result.ok) {
-        this.log.error(
-          vscode.l10n.t(
-            "Could not read the signed-in user for {0}: {1}",
-            profile.endpoint,
-            describeAuthProblem(result.problem),
-          ),
+        // Logged, never shown, on either path — for two different reasons.
+        //
+        // On `"new-sign-in"` the user is waiting on an answer, but they will get
+        // one: `createSession` throws when this returns `undefined`, and VS Code
+        // shows that rejection to whoever asked. A dialog here would be the same
+        // failure reported twice, in two different wordings.
+        //
+        // On `"renewed-token"` nobody asked at all — a menu was opened, or a
+        // token aged out — and a modal would interrupt whatever the user was
+        // actually doing to report a background failure they did not cause. Same
+        // reasoning as the refresh branch in `resolve`, and the severity follows
+        // the same rule: an error the user is waiting on, a warning otherwise.
+        const message = vscode.l10n.t(
+          "Could not read the signed-in user for {0}: {1}",
+          profile.endpoint,
+          describeAuthProblem(result.problem),
         );
-        void vscode.window.showErrorMessage(
-          localiseAuthProblem(result.problem),
-        );
+        if (identity === "new-sign-in") {
+          this.log.error(message);
+        } else {
+          this.log.warn(message);
+        }
         return undefined;
       }
       user = result.user;
@@ -461,6 +519,30 @@ export class ViyaAuthenticationProvider
       account: { id: summary.accountId, label: summary.accountLabel },
       scopes: NO_SCOPES,
     };
+  }
+
+  /**
+   * Whether this window may hold a SAS Viya session at all.
+   *
+   * Workspace trust is not a formality here. A folder carries settings, and
+   * `pythonOnViya.connectionProfiles` names the endpoint every token is
+   * requested from and sent to; the manifest already lists it as a restricted
+   * configuration for that reason. Signing in from an untrusted folder means a
+   * repository someone cloned this morning gets to choose which server the user
+   * authenticates to and, from Phase 2 on, runs code on under their identity.
+   */
+  private trusted(): boolean {
+    return (this.deps.isTrusted ?? (() => vscode.workspace.isTrusted))();
+  }
+
+  /** {@link trusted}, as a precondition for the two calls that act. */
+  private requireTrust(): void {
+    if (this.trusted()) return;
+    throw new Error(
+      vscode.l10n.t(
+        "Connecting to SAS Viya requires a trusted folder. Run Workspaces: Manage Workspace Trust and trust this folder, then try again.",
+      ),
+    );
   }
 
   private async setAuthorized(authorized: boolean): Promise<void> {
@@ -569,5 +651,11 @@ export function registerAuthProvider(
       provider,
       { supportsMultipleAccounts: true },
     ),
+    // Trust is granted while the window is open, and this extension keeps
+    // running across that transition rather than being restarted. See
+    // {@link ViyaAuthenticationProvider.trustGranted}.
+    vscode.workspace.onDidGrantWorkspaceTrust(() => {
+      void provider.trustGranted();
+    }),
   );
 }

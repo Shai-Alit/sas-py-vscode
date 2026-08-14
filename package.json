@@ -50,7 +50,9 @@
       ]
     }
   },
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "authentication": [
       {
@@ -96,13 +98,13 @@
         "command": "pythonOnViya.signIn",
         "title": "%command.signIn.title%",
         "category": "%extension.category%",
-        "enablement": "pythonOnViya.hasProfiles"
+        "enablement": "pythonOnViya.hasProfiles && isWorkspaceTrusted"
       },
       {
         "command": "pythonOnViya.signOut",
         "title": "%command.signOut.title%",
         "category": "%extension.category%",
-        "enablement": "pythonOnViya.hasProfiles"
+        "enablement": "pythonOnViya.hasProfiles && isWorkspaceTrusted"
       }
     ],
     "configuration": {

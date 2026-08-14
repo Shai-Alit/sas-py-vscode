@@ -154,7 +154,12 @@ the first is fixed by signing in again. The log says which one happened.
 
 **Nothing works in an untrusted workspace.** Signing in requires a trusted
 folder, because it reads a stored credential and runs code on a remote server
-under your identity. Profile management still works without trust. See
+under your identity — and because the folder is what names the endpoint the
+credential is sent to. In an untrusted folder the Accounts menu shows no SAS Viya
+session, the two sign-in commands are disabled, and asking for either through the
+API is refused with a message pointing at **Workspaces: Manage Workspace Trust**.
+Nothing is signed out and nothing is deleted; trust the folder and the session
+comes back without a reload. Profile management still works without trust. See
 [ADR-0002](adr/0002-workspace-trust-posture.md).
 
 ## What is not here yet

@@ -26,7 +26,10 @@
 import * as vscode from "vscode";
 
 import { type ProfileStore } from "../profile/store";
-import { type ViyaAuthenticationProvider } from "./authProvider";
+import {
+  NoSuchSessionError,
+  type ViyaAuthenticationProvider,
+} from "./authProvider";
 
 export function registerAuthCommands(
   context: vscode.ExtensionContext,
@@ -66,7 +69,7 @@ async function signIn(
     // rejection to whoever asked for a session. Invoked from the palette there
     // is no such caller, so the command shows it — but only as a message, never
     // as an unhandled rejection in the log the user cannot read.
-    reportFailure(log, error);
+    reportSignInFailure(log, error);
   }
 }
 
@@ -91,8 +94,22 @@ async function signOut(
       vscode.l10n.t('Signed out of "{0}".', active.name),
     );
   } catch (error) {
-    // Reached when the active profile has no session, which is not a failure
-    // worth an error dialog: the user asked to be signed out and they are.
+    if (!(error instanceof NoSuchSessionError)) {
+      // Everything else has to be visible. This arm catches the workspace-trust
+      // refusal, a secret store that would not delete, and a `setContext` that
+      // did not answer — none of which mean the user is signed out, and the
+      // first of which is a sentence naming the command that fixes it. Reporting
+      // any of them as "you are not signed in" states the opposite of what
+      // happened, in a reassuring voice, while the credential is still on disk.
+      reportSignOutFailure(log, error, active.name);
+      return;
+    }
+
+    // The narrow, ordinary case: the provider does not recognise the id. Reached
+    // when the profile stops existing between `profiles.active()` above and the
+    // provider's own lookup — a settings edit landing mid-command — and not
+    // worth an error dialog, because the user asked to be signed out of
+    // something that is no longer there.
     log.info(
       vscode.l10n.t(
         'Nothing to sign out of for "{0}": {1}',
@@ -106,9 +123,31 @@ async function signOut(
   }
 }
 
-function reportFailure(log: vscode.LogOutputChannel, error: unknown): void {
+function reportSignInFailure(
+  log: vscode.LogOutputChannel,
+  error: unknown,
+): void {
   const detail = describe(error);
   log.error(vscode.l10n.t("Signing in to SAS Viya failed: {0}", detail));
+  void vscode.window.showErrorMessage(detail);
+}
+
+/**
+ * Shows a sign-out failure, and names the profile in the log line but not in the
+ * dialog.
+ *
+ * The dialog is the provider's own sentence verbatim. The one that matters most
+ * is the workspace-trust refusal, which already names the folder and the command
+ * that fixes it, and wrapping it in "signing out of Prod failed:" pushes that
+ * instruction into the second half of a longer sentence for no gain.
+ */
+function reportSignOutFailure(
+  log: vscode.LogOutputChannel,
+  error: unknown,
+  name: string,
+): void {
+  const detail = describe(error);
+  log.error(vscode.l10n.t('Signing out of "{0}" failed: {1}', name, detail));
   void vscode.window.showErrorMessage(detail);
 }
 

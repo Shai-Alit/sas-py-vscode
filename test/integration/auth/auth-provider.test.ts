@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import {
   AUTHORIZED_CONTEXT_KEY,
   AUTH_PROVIDER_ID,
+  NoSuchSessionError,
   ViyaAuthenticationProvider,
 } from "../../../src/auth/authProvider";
 import { accountId } from "../../../src/auth/identity";
@@ -393,7 +394,15 @@ describe("Viya authentication provider", () => {
       // Upstream falls back to the active profile here, which turns a caller's
       // bug into signing the user out of a deployment they never named — and,
       // because it is a fallback rather than a failure, nothing reports it.
-      await assert.rejects(() => h.provider.removeSession("not-a-profile-id"));
+      //
+      // The *type* is asserted, not just the rejection. `signOut` in
+      // `commands.ts` reports this case as an ordinary outcome and everything
+      // else as a failure, so a plain `Error` here would quietly turn the
+      // workspace-trust refusal into "you are not signed in".
+      await assert.rejects(
+        () => h.provider.removeSession("not-a-profile-id"),
+        NoSuchSessionError,
+      );
     });
 
     it("does not persist the access token", async () => {
@@ -588,6 +597,14 @@ describe("Viya authentication provider", () => {
       await assert.rejects(() => h.provider.removeSession(PROFILE_ID), {
         message: /trusted folder/,
       });
+      // And it is not the error the sign-out command treats as benign. Without
+      // this, the gate could be reported to the user as "you are not signed in"
+      // — which would be the second time this refusal was described as
+      // something the profile did wrong.
+      await assert.rejects(
+        () => h.provider.removeSession(PROFILE_ID),
+        (error: unknown) => !(error instanceof NoSuchSessionError),
+      );
       assert.notEqual(
         await h.sessions.read(PROFILE_ID),
         undefined,

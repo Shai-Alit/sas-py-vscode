@@ -1112,6 +1112,36 @@ the one worth reading twice.
    cover the untrusted path, or the restriction will rot"; it rotted before the
    ink dried.
 
+**Two more, from the third review round on 2026-08-14**, both bot findings on the
+pushed branch, both accepted.
+
+1. **The sign-out command swallowed every failure**, reporting all of them as
+   "You are not signed in". Worse than the finding said: the case the `catch` was
+   written for — the provider not recognising the id — is nearly unreachable from
+   that command, because `profiles.active()` supplies the id and `profileById`
+   looks it up in the same store, so essentially everything that arm ever caught
+   was a real failure. Once trust enforcement landed the day before, the message
+   it was most likely to hide became the trust refusal: the one error whose whole
+   value is the command name it tells you to run. `removeSession` now throws a
+   `NoSuchSessionError`, and the command discriminates on the type rather than on
+   the message — the message is localised, so matching it would have worked in
+   English and swallowed the refusal in every other display language. The
+   integration tests assert the type on the unknown-id path *and* assert that the
+   trust refusal is not that type, because a discriminator only earns its keep if
+   both sides of it are pinned. The command's own reporting arm has no automated
+   cover: it lives in a `vscode`-importing module, and there is no way to read
+   back which dialog was shown.
+2. **`redactSecrets` was the one switch in `problems.ts` with a `default`.**
+   `describeAuthProblem` and `messages.ts` name every variant so that adding one
+   is a compile error, and this is the function where that guarantee actually
+   protects something: a missing case in a renderer ships an untranslated
+   sentence, and a missing case here ships a secret. A `default` returning the
+   problem untouched is exactly the shape that lets a future variant quoting a
+   server-supplied string compile cleanly and never be scrubbed, and nothing
+   reports it, because "not redacted" is indistinguishable from "nothing to
+   redact". All eight variants are named now. No behaviour changed; the existing
+   `every`-variant test already covered the arm.
+
 **The identity fixture is in `test/fixtures/harness/`, not `viya4/`.** Findings 7
 and 8 deliberately recorded field *shapes* rather than values, because the values
 were a real person's address and phone numbers, and `creds.json` is no longer

@@ -180,19 +180,24 @@ export function redactText(text: string, secrets: readonly string[]): string {
  *
  * Returns the same object when nothing changed, so a caller can tell — and so
  * the common path allocates nothing.
+ *
+ * **Every variant is named, and there is no `default`.** That is the same rule
+ * {@link describeAuthProblem} and `messages.ts` follow, and this is the function
+ * where breaking it is actually dangerous rather than merely untidy. A missing
+ * case in a renderer ships an untranslated sentence; a missing case here ships a
+ * secret. A `default` that returns the problem untouched is precisely the shape
+ * that would let a future variant quoting a server-supplied string compile
+ * cleanly, read sensibly, and never be scrubbed — and nothing would report it,
+ * because "not redacted" looks exactly like "nothing to redact".
  */
 export function redactSecrets(
   problem: AuthProblem,
   secrets: readonly string[],
 ): AuthProblem {
   switch (problem.code) {
-    case "oauth-rejected": {
-      if (problem.description === undefined) return problem;
-      const description = redactText(problem.description, secrets);
-      return description === problem.description
-        ? problem
-        : { ...problem, description };
-    }
+    // The two variants that quote the deployment verbatim, and so the two that
+    // can carry back a value we sent it.
+    case "oauth-rejected":
     case "session-expired": {
       if (problem.description === undefined) return problem;
       const description = redactText(problem.description, secrets);
@@ -200,8 +205,15 @@ export function redactSecrets(
         ? problem
         : { ...problem, description };
     }
-    default:
-      // Every other variant carries only values this process produced.
+    // The rest carry only values this process produced: a version string, a
+    // status code, a byte count, the name of a field that was missing. None of
+    // them is ever the response body — see the note on `identity-unavailable`.
+    case "client-id-required":
+    case "token-endpoint-unreachable":
+    case "token-response-malformed":
+    case "state-mismatch":
+    case "not-authenticated":
+    case "identity-unavailable":
       return problem;
   }
 }

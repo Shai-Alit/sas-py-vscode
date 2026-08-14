@@ -165,6 +165,21 @@ export interface AuthProviderDeps {
  */
 type IdentitySource = "renewed-token" | "new-sign-in";
 
+/**
+ * Thrown by {@link ViyaAuthenticationProvider.removeSession} for an id this
+ * provider did not issue.
+ *
+ * A type rather than a sentence a caller matches on. The sign-out command has to
+ * separate "there was nothing there to sign out of", which is an ordinary
+ * outcome, from the workspace-trust refusal and a secret store that would not
+ * delete, which are not — and the only other discriminator on offer is the
+ * localised message below. Matching that would work in English and silently
+ * swallow the trust refusal in every other display language, which is the worst
+ * way for a failure to become invisible: it passes review, and it passes the
+ * tests, in the one locale anybody runs them in.
+ */
+export class NoSuchSessionError extends Error {}
+
 /** What is held in memory for a profile that is signed in right now. */
 interface LiveSession {
   readonly tokens: Tokens;
@@ -314,6 +329,10 @@ export class ViyaAuthenticationProvider
    * active profile here, which means a caller with a stale id silently signs the
    * user out of a deployment they did not name — and, because it is a fallback
    * rather than a failure, nothing anywhere reports that it happened.
+   *
+   * That error is a {@link NoSuchSessionError} and the other two are not, which
+   * is what lets a caller treat "nothing to remove" as ordinary while still
+   * showing the trust refusal and a failing secret store.
    */
   async removeSession(sessionId: string): Promise<void> {
     // Gated too, though signing out only deletes. In an untrusted folder
@@ -325,7 +344,7 @@ export class ViyaAuthenticationProvider
 
     const profile = this.profileById(sessionId);
     if (profile === undefined) {
-      throw new Error(
+      throw new NoSuchSessionError(
         vscode.l10n.t(
           "There is no SAS Viya sign-in with that id to sign out of.",
         ),

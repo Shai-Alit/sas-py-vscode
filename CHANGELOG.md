@@ -356,6 +356,15 @@ called out under **Changed** with a migration note.
   provider will refuse. Nothing is signed out and nothing is deleted; trusting
   the folder restores the session through `onDidGrantWorkspaceTrust`, without a
   reload.
+- A sign-out that fails now says so. The command caught everything the provider
+  could throw and reported all of it as "You are not signed in" — which described
+  the one case it was written for and misdescribed every other, including the
+  workspace-trust refusal added above and a secret store that would not delete.
+  The user was told the credential was gone in the reassuring voice, while it was
+  still on disk. An id the provider does not recognise is now a distinct error
+  type rather than a sentence to match on, which a translated build would not
+  have matched at all; only that case is treated as ordinary, and everything else
+  reaches the log and a message.
 - Profile validation messages shown under an input box are now localisable. The
   model returns a `ValidationProblem` code with its parameters instead of English
   prose, and `src/profile/problems.ts` renders it through `vscode.l10n.t()`;

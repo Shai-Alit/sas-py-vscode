@@ -313,13 +313,23 @@ called out under **Changed** with a migration note.
   does not, since creating a new session with a credential that just failed only
   fails again.
 
-- `PROBE-FINDINGS.md` findings 13-21 and the first Compute fixture, captured from
+- `PROBE-FINDINGS.md` findings 13-22 and the first Compute fixture, captured from
   a live Viya 4 deployment and scrubbed per `test/fixtures/README.md`. Per
   ADR-0010 these stand in for the specification that does not exist, so the
   fidelity is the point: field names, types and null-versus-absent patterns are
   exactly as the server sent them. Finding 21 is the load-bearing one — a session
   representation arrives carrying 22 link relations, which is the entire session
   API, and it is why `session.ts` composes no URLs.
+
+- ADR-0011, recording how a user chooses to run a file on Viya rather than on the
+  local interpreter — the one question about this extension that the repository
+  had never answered in writing. Each window gets a **run target**, set from the
+  status bar, which decides whether the extension puts a run affordance in the
+  editor at all; with the target on Local it contributes nothing and starts no
+  interpreter. The record exists mostly for the alternatives it rejects, chiefly
+  claiming the editor's play button whenever a profile happens to be signed in.
+  Nothing ships yet — this is the design 3d-i executes, and the plan and runbook
+  now carry its punch list.
 
 ### Fixed
 

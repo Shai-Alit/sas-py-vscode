@@ -682,6 +682,21 @@ and status bar integration; the user-facing error surface (when to use a
 notification vs the output channel vs Problems). Text-only, and **already
 shippable**. *Medium.*
 
+This slice also answers *how the user chooses Viya over the local interpreter*,
+which is the question a first-time user asks before any of the above matters. The
+answer is [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): each window has
+a **run target** — a profile, or Local — set from the status bar, published as the
+`pythonOnViya.runTarget` context key, and used to decide whether this extension
+puts a run affordance in the editor at all. When the target is Local we contribute
+nothing and Microsoft's run button is the whole story; we never launch a local
+interpreter, so the "no local Python" constraint stays literally true. Commands
+mean what their titles say from anywhere, so the target governs *placement* and
+never routing. Upstream's answer does not transfer: the SAS extension claims a
+Python file only when `resourceScheme` says it was opened from Viya, which is
+precisely not the file this extension exists to run. No keybinding ships in this
+slice — every plausible default collides with something — so the beta gets to say
+which one people reach for.
+
 **3d-ii — Result panel webview.** The repo's first webview: build config, CSP,
 host↔webview messaging, and renderers for the `RichOutput` union. Accessibility is
 in scope, not deferred. *Medium.*
@@ -821,6 +836,7 @@ the working gap analysis, and it is the checklist to track parity against.
 | Connection profiles, profile management | Phase 1a | Collapsed to Viya-only |
 | OAuth2/PKCE auth, Accounts menu, token storage | Phase 1b–1c | Ported, with the PKCE defect fixed |
 | Run file / run selection / cancel | Phase 3d-i | |
+| Choosing where code runs | Phase 3d-i | **No upstream equivalent** — upstream claims a file only when it was opened *from* Viya. Ours is a per-window run target (ADR-0011), because the file in question is on local disk and already has a run button |
 | Streamed execution log | Phase 2c + 3b | Needs the Python log filter |
 | Result panel | Phase 3d-ii | Richer than upstream: `RichOutput[]`, not one HTML string |
 | Errors in the Problems panel | Phase 4 | Tracebacks instead of SAS log parsing |
@@ -1133,6 +1149,20 @@ get written.
     to `id`. The `session.id` is separately the profile's generated id rather
     than its name, so renaming a profile does not orphan the session attached to
     it. Executed in 1c-i.
+11. ~~**How a user chooses Viya rather than the local interpreter**~~ — **SETTLED
+    2026-08-14 by [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): a
+    per-window run target, set from the status bar, which decides whether this
+    extension appears in the editor at all.** This was never written down: the
+    repository has always been clear that editing intelligence is delegated to
+    `ms-python.python`, and silent about what a user presses. The collision is
+    real — on a local `.py` file the run button already exists and belongs to
+    Microsoft — and both directions of getting it wrong are expensive, since code
+    written for Viya can run locally and look fine, while a stray local run's
+    opposite sends code to a shared deployment. The rejected alternative worth
+    naming is the obvious one: make our action the play button whenever a profile
+    is signed in. That makes the button's meaning a function of authentication
+    state, so a habitual click ends up in production because a token happened to
+    be live. Executed in 3d-i.
 
 **Smaller items to settle in-phase, recorded so they aren't forgotten:** activation
 events and a lazy-load rule (an `onLanguage:python` activation would fire for every

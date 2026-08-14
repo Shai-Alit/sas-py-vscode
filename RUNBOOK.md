@@ -1205,9 +1205,19 @@ decision 10, and it is the behaviour a single review pass is most likely to miss
 > ADR-0009 warned about, because there is no generated client to exclude. The
 > split below is the same pure-core / VS-Code-shell seam 1b and 1c used.
 >
-> Everything in 2a-i is grounded in **`PROBE-FINDINGS.md` findings 10–17**
-> (2026-08-14, live Viya 4). Read those before starting; every item below cites
-> one, and several contradict what upstream's code would lead you to write.
+> Everything in 2a-i is grounded in **`PROBE-FINDINGS.md` findings 13–20**
+> (2026-08-14, live Viya 4), plus findings 6 and 9 from the identity probe. Read
+> those before starting; every item below cites one, and several contradict what
+> upstream's code would lead you to write.
+>
+> **Corrected 2026-08-14, mid-slice.** The items below originally cited findings
+> 11–16, which is what the probe notes were numbered as while 2a was being
+> scoped. Those numbers were never written into `PROBE-FINDINGS.md`, whose 11 and
+> 12 are the OAuth findings from the day before — so the citations already
+> shipped in `links.ts`, `client.ts` and `problems.ts` pointed at unrelated text.
+> The Compute findings are now written up as **13–20** and every citation in the
+> slice has been repointed. One of the old notes did not survive the write-up:
+> see the `+json` item.
 
 ```bash
 # 2a-i — the Compute core, no vscode import
@@ -1217,60 +1227,147 @@ git commit -m "feat(compute): add the link layer, context resolution, and sessio
 
 ☐ **2a-i punch list.**
 
-- ☐ **`src/compute/links.ts` — link lookup, href resolution, and the media-type
-  rule.** Three small functions and the `Link` type. Store the deployment
-  **origin** only; resolve each `href` against it. **Never build a base path that
-  contains `/compute`** — that is the entire cause of upstream's
-  `link.href.replace("/compute", "")` wart (finding 11), and keeping the origin
+- ☑ **Done 2026-08-14. `src/compute/links.ts` — link lookup, href resolution,
+  and the media-type rule.** Five small functions and the `Link` type. Store the
+  deployment **root** only; resolve each `href` against it. **Never build a base
+  path that contains `/compute`** — that is the entire cause of upstream's
+  `link.href.replace("/compute", "")` wart (finding 13), and keeping the root
   separate means no href is ever rewritten, so the wart cannot exist to be fixed.
   Hrefs may carry a query string with percent-encoding, so resolution must not
   re-encode what the server sent.
-- ☐ **The `+json` rule is a total function over `string | null | undefined`**
-  (finding 12). Link types arrive bare — `application/vnd.sas.compute.job.request`
+
+  Two corrections to the wording above, found while writing it. The base is the
+  **whole normalised endpoint, not a bare origin**: `normaliseEndpoint` in
+  `src\profile\model.ts` returns `` `${url.origin}${path}` ``, so a deployment
+  published under a path prefix is legal and `new URL(endpoint).origin` would
+  silently drop it. And `resolveHref` **concatenates rather than resolving**, and
+  rejects absolute and protocol-relative hrefs with an exported
+  `ForeignLinkError`. `new URL(href, base)` fails twice over: it would resolve an
+  absolute href to whatever host that href names — sending the user's bearer
+  token there, the disclosure `transport.ts` refuses redirects to avoid — and its
+  query percent-encode set includes `'`, so it rewrites exactly the hrefs finding
+  13 says must go back unchanged.
+- ☑ **Done 2026-08-14. The `+json` rule is a total function over
+  `string | null | undefined`**
+  (finding 14). Link types arrive bare — `application/vnd.sas.compute.job.request`
   — and the service wants `+json` appended. `text/plain` links (`state`,
-  `getOption`) must be left alone, and `type` is `null` on one representation of
-  the delete link and **absent** on another of the same link, so a signature of
-  `string` throws on `DELETE` — during teardown, which is where a second failure
-  is worst. Table-driven unit test covering all three shapes plus `text/plain`.
-  **No `media-typer` dependency**; the rule is three lines.
-- ☐ **One `findLink`, not two.** Upstream has `getLink(links, rel)` in
+  `getOption`) must be left alone, and a link with no media type — every `delete`
+  link — **omits the key**, so a signature of `string` throws on `DELETE`, during
+  teardown, which is where a second failure is worst. Table-driven unit test
+  covering all three shapes plus `text/plain`. **No `media-typer` dependency**;
+  the rule is three lines.
+
+  **The `null` half of that signature did not survive the write-up.** This item
+  originally also claimed the same delete link arrives as `"type": null` on a
+  context summary. Re-checked with `has("type")` while writing finding 14: that
+  was a `jq` artifact — projecting `{rel, type}` prints `null` for a key that is
+  merely absent — and **no explicitly-null `type` occurs** on this deployment.
+  `Link.type` still admits `null`, and the test still pins it, but as deliberate
+  breadth; both now say so rather than citing an observation that was not made.
+- ☑ **Done 2026-08-14. One `findLink`, not two.** Upstream has `getLink(links, rel)` in
   `rest/common.ts` and a different `getLink(links, method, relationship)` in
   `rest/util.ts`. Ours is one function with one signature.
-- ☐ **`src/compute/problems.ts` — the Viya error envelope as a problem union.**
-  Same shape as `src/auth/problems.ts` and `src/profile/problems.ts`: no `vscode`
-  import, English fragments for the log, an exhaustive `switch` with **no
-  `default`**, and the user-facing wording deferred to 2a-ii. The envelope is
+- ☑ **Done 2026-08-14. `src/compute/problems.ts` — the Viya error envelope as a
+  problem union.** Same shape as `src/auth/problems.ts` and
+  `src/profile/problems.ts`: no `vscode` import, English fragments for the log,
+  an exhaustive `switch` with **no `default`**, and the user-facing wording
+  deferred to 2a-ii. The envelope is
   `{message, errorCode, httpStatusCode, details[]}` where `details` mixes a human
-  sentence with `path:` and `correlator:` entries (finding 16). **Surface the
+  sentence with `path:` and `correlator:` entries (finding 17). **Surface the
   correlator** — it is what a support ticket needs — and do not paste the whole
   array into a dialog.
-- ☐ **Do not re-implement 401 handling.** 1c already parses RFC 6750's
-  `error`/`error_description` out of `WWW-Authenticate` and distinguishes an
-  expired token from a request that carried no credentials (finding 9). Reuse it
-  rather than writing a second, subtly different version — two answers to "is
-  this token dead" is how a refresh loop starts.
-- ☐ **`src/compute/client.ts` — the request helper on 1b's transport.** Derive
-  `Content-Type` from the link's `type` and `Accept` from its `responseType`
-  (falling back to `type` on a GET), attach `If-Match` where an ETag is held, and
-  carry `If-None-Match` on conditional reads. ETags may be **weak** (`W/"…"`) and
-  must be echoed verbatim. Note that `DELETE` returned **204 without `If-Match`**
-  (finding 16), so the header upstream always attaches is not required — send it
-  only when it is held.
+
+  Three notes from writing it. `readViyaError` is **total** — status plus raw
+  body in, a `ViyaError` out, never a throw — because it runs on the failure path
+  and often on the failure path of a teardown, where a parser that throws
+  replaces a diagnosable problem with an opaque one. The `path:` entry is
+  **dropped rather than quoted**: it is the one field that reflects our own
+  request back at us, and not repeating request-derived text is the cheapest way
+  to keep the file free of anything that could become a credential. And there is
+  deliberately **no `redactSecrets` twin** — `auth/problems.ts` needs one only
+  because SASLogon echoes the PKCE verifier inside `error_description`, and the
+  Compute service reflects no request header. The module doc says so, so that its
+  absence reads as a decision rather than an omission.
+- ☑ **Done 2026-08-14. Do not re-implement 401 handling.** 1c already parses RFC
+  6750's `error`/`error_description` out of `WWW-Authenticate` and distinguishes
+  an expired token from a request that carried no credentials (finding 9). Reuse
+  it rather than writing a second, subtly different version — two answers to "is
+  this token dead" is how a refresh loop starts. Done by having the
+  `unauthorized` variant **carry an `AuthProblem`** rather than a status, so
+  `describeComputeProblem` delegates to `describeAuthProblem` and there is no
+  second copy that can drift.
+- ☑ **`src/compute/client.ts` — the request helper on 1b's transport.**
+  **Done 2026-08-14.** Derive `Content-Type` from the link's `type` and `Accept`
+  from its `responseType` (falling back to `type` on a GET), attach `If-Match`
+  where an ETag is held, and carry `If-None-Match` on conditional reads. ETags
+  may be **weak** (`W/"…"`) and must be echoed verbatim. Note that `DELETE`
+  returned **204 without `If-Match`** (finding 18), so the header upstream always
+  attaches is not required — send it only when it is held.
+
+  Four things settled while writing it. **`Accept` is omitted, not guessed**,
+  when the link declares neither media type: finding 6 says a type the
+  deployment does not serve is a `406`, which fails the request outright,
+  whereas no header at all yields the server's default representation — which is
+  the one the link intended. The `type` fallback is **GET-only**, because on a
+  `POST` that field describes the body being sent and asking for it back is how
+  a create call demands the `…request+json` it just uploaded.
+
+  **`304` is a success.** It carries `notModified: true` and an unset `body`, so
+  the state long poll (finding 19) reads "still what you had" rather than
+  reporting a problem every five seconds.
+
+  **The token arrives as a function**, not a string. A compute session outlives
+  the access token that created it, and a client holding a string keeps sending a
+  dead one after a refresh has already fixed it. That is also what replaces
+  upstream's process-global mutable `Configuration` singleton — everything the
+  client needs is on the config object it was built with, so two profiles in one
+  window cannot overwrite each other's base URL.
+
+  **A `404` is left unclassified**, as `compute-rejected`. Whether it means "this
+  session is gone" or "no context by that name" depends on what was asked for,
+  and only the caller knows; `session.ts` and `contexts.ts` convert it. The
+  client classifies only what it can read without that context: unreachable,
+  401, 403, and a JSON body that will not parse.
+
+  The 401 arm calls `challengeProblem`, which this item extracted from
+  `src/auth/identity.ts` into `src/auth/challenge.ts` — the second half of the
+  "do not re-implement 401 handling" item above. `identity.ts` now calls it too,
+  keeping only the arm that is genuinely its own (an error token neither
+  `invalid_token` nor absent). An `insufficient_scope` challenge falls through to
+  `compute-rejected` rather than this layer inventing a third reading of a
+  question 1c owns.
+- ☑ **Done 2026-08-14. Write the Compute probe up as findings 13–20, and repoint
+  every citation in the slice.** Not planned work — it came out of going to read
+  "finding 13" before writing `contexts.ts` and finding that
+  `PROBE-FINDINGS.md` stopped at 12. The Compute probe had been carried in
+  scoping notes and cited from three shipped modules, and its numbers collided
+  with the OAuth findings from the day before, so three correct modules were
+  citing unrelated text. Re-probed read-only to confirm each fact rather than
+  transcribing the notes, which is what caught the `jq` artifact above and
+  sharpened two more (see the next two items).
 - ☐ **`src/compute/contexts.ts` — resolve a context in one call, not two.** The
   summary item returned by
   `GET /compute/contexts?filter=eq(name,'…')` already carries a fully-formed
-  `createSession` link, so upstream's follow-up `GET /compute/contexts/{id}` is
-  unnecessary (finding 13). Two traps: the filter is **string-interpolated with
-  no escaping** upstream, so a context name containing an apostrophe breaks the
-  query — escape or reject it, with a test; and the unfiltered collection returns
-  **`"count": null`**, so a pager that trusts `count` concludes there are no
-  contexts. Page on the `next` link.
+  `createSession` link — `POST`, with both `type` and `responseType` — so
+  upstream's follow-up `GET /compute/contexts/{id}` is unnecessary (finding 15).
+  Two traps. The filter is **string-interpolated with no escaping** upstream, so
+  a context name containing an apostrophe breaks the query: the escape is
+  **doubling the apostrophe**, confirmed against the deployment, where a
+  backslash and the bare form are both a `400` with `errorCode` 1104. Escape,
+  then percent-encode, with a test.
+
+  And the collection reports **`"count": null`** — not always, but **exactly when
+  the page does not already hold everything** (finding 16), including on the last
+  page of a traversal. So a pager that trusts `count` fails precisely when paging
+  matters, and reads "there are no compute contexts" — the one answer that is
+  never true. Page on the presence of the `next` link and treat `items` as
+  authoritative; nothing may branch on `count`.
 - ☐ **`src/compute/session.ts` — create, poll, delete.** Create by following the
   context's `createSession` link; the response is `201` with a `Location` and an
   `ETag`, and the session arrives in state `pending` with the links everything
   else navigates by.
 - ☐ **Poll state with `wait` + `If-None-Match`, and no client-side timer**
-  (finding 14). `GET …/state?wait=N` with a matching `If-None-Match` returns
+  (finding 19). `GET …/state?wait=N` with a matching `If-None-Match` returns
   **`304` after exactly N seconds** — a real server-side long poll. Upstream
   declares this option and never passes it, waiting on the *log* endpoint
   instead, which conflates "has it finished" with "is there more log" and is why
@@ -1315,7 +1412,7 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   billing. `globalState` keyed by profile id is the other candidate and has the
   opposite failure. Decide before writing the reconnect path, not during.
 - ☐ **Session death is one recoverable event with three shapes.**
-  `attributes.sessionInactiveTimeout` is **900 seconds** (finding 16), so this is
+  `attributes.sessionInactiveTimeout` is **900 seconds** (finding 18), so this is
   routine rather than exceptional. A reaped session may answer `404`, may answer
   `401`, or may answer normally having lost its state — the probe did not observe
   which, so treat all three alike: say plainly that the session ended and the

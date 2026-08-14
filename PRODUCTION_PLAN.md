@@ -116,6 +116,39 @@ prevents them being discovered as "small" tasks mid-phase.
    injection-free alternative is `proc python file="…"`, uploading the code to the
    session filesystem instead of inlining it; that is likely the right answer and
    must be probed before 3a is written.
+
+   **Quoting is the sharp edge of this, and it is sharper than it looks.** SAS
+   tokenises before it ever hands the block to Python, and its string rules are
+   not Python's:
+
+   - **A quote opens a string that runs to the next matching quote, across
+     newlines.** Python code with an odd number of `'` characters — an apostrophe
+     in a comment, `don't` inside a docstring, `s = "it's"` — can leave the SAS
+     tokeniser inside an unterminated literal, at which point it consumes the rest
+     of the submitted block *and the statements after it*. The classic symptom is
+     a session that stops responding to everything sent afterwards until it is fed
+     the `*';*";*/;quit;run;` recovery incantation, which is a thing that exists
+     precisely because this happens to people.
+   - **Single and double quotes are not interchangeable to SAS.** Macro triggers
+     (`&name`, `%macro`) resolve inside double quotes and are left alone inside
+     single quotes. Python is indifferent to the choice; SAS is not. So the same
+     Python program can behave differently depending on which quote style the user
+     happened to type, and that difference is invisible in the editor.
+   - **Python's quoting has forms SAS has never heard of**: triple-quoted strings,
+     f-strings with nested quotes and braces, raw strings, `\'` escapes (SAS
+     escapes a quote by *doubling* it, exactly as the Compute filter does — see
+     finding 15 — so a backslash escape is not one), and byte strings.
+   - **Doubling is not a general fix.** Doubling quotes to survive SAS tokenisation
+     changes the *Python* source unless it is undone at exactly the right layer,
+     and "undone at exactly the right layer" is where a hand-rolled escaper quietly
+     corrupts a program instead of failing it.
+
+   The conclusion this drives is not "write a careful escaper". It is that the
+   submission path needs a **fidelity corpus** (§4) — real Python programs, chosen
+   to be hostile to SAS tokenisation, asserted to arrive at the interpreter byte
+   for byte — and that any submission mechanism which cannot pass that corpus is
+   the wrong mechanism. `proc python file="…"` is favoured for exactly this reason:
+   a file transfer has no tokeniser in the middle of it.
 2. **Log hygiene.** The Compute log is a *SAS* log: numbered source echo, page-break
    headers, `>>>` REPL markers, procedure timing NOTEs. Turning it into clean
    Python stdout is real parsing work, not a pass-through.
@@ -266,6 +299,13 @@ dialect resolution. Requires no execution, so it can ship with the seam itself.
 **Stage 2 — runtime-derived (Phase 3e, after execution and log parsing exist).**
 Whether `PROC PYTHON` actually works, the interpreter version and path, and the
 installed package set. These require running code and reading the answer back.
+
+Stage 2 has a second job beyond gating features: **the user has to be able to see
+this**. The remote interpreter's package set is the thing that decides whether the
+code someone is writing can run at all, and it is invisible from the editor — the
+local environment even resolves imports that the deployment does not have. So the
+installed package set is surfaced as a first-class, user-readable view, not merely
+consulted internally (Phase 3e, extended in Phase 10).
 
 Results are cached per session and surfaced in the status bar. If Python is
 unavailable the extension says so plainly rather than failing obscurely on first
@@ -615,6 +655,10 @@ This is the phase that makes the extension real.
 
 **3a — `PROC PYTHON` backend.** Submission per the 2-pre findings, with **escaping
 as a named deliverable** and regression tests for the injection cases. The
+**submission fidelity corpus** (§4) ships in this slice, in both its unit and live
+forms, and the slice is not done until every case in it round-trips byte for byte
+— the quoting failures in §1.5 are silent, so the corpus is the only thing
+standing between a user and a program that runs and means something else. The
 **offset map** from submitted-block lines to editor lines, session options
 (`PAGESIZE=MAX` to suppress page-break headers), `freshNamespace` handling, the
 busy/serial contract, and success/failure detection. *Medium.*
@@ -642,10 +686,27 @@ shippable**. *Medium.*
 host↔webview messaging, and renderers for the `RichOutput` union. Accessibility is
 in scope, not deferred. *Medium.*
 
-**3e — Runtime capability probe.** Stage-2 capabilities (§2.3): interpreter version
-and path, installed package set, confirmation that `PROC PYTHON` works. Needs 3a
-and 3b, which is why it lives here and not in 2b. Surfaces in the status bar.
-*Small.*
+**3e — Runtime capability probe, and telling the user what they can import.**
+Stage-2 capabilities (§2.3): interpreter version and path, installed package set,
+confirmation that `PROC PYTHON` works. Needs 3a and 3b, which is why it lives here
+and not in 2b. Surfaces in the status bar.
+
+The **installed package set is a user-facing deliverable of this slice, not just a
+capability record.** A developer writing Python in this extension is writing
+against an interpreter they cannot see, on a machine they cannot log into, whose
+package set was chosen by someone else and can change under them without notice.
+Left invisible, every unavailable import is discovered as a traceback at run time
+— and worse, the local environment lies convincingly, because Pylance is happily
+resolving `import polars` against the packages on the *laptop*. The minimum this
+slice ships is a **`Python on Viya: Show environment` command** that lists the
+interpreter version, path, and installed distributions with their versions,
+sourced from `importlib.metadata` rather than by shelling out to `pip`; a status
+bar affordance that opens it; and a per-profile cache with an explicit refresh,
+because it is a slow answer that changes rarely. Phase 10 goes further and feeds
+that package set back to Pylance so completions match the remote environment;
+Phase 4's traceback work should special-case `ModuleNotFoundError` and point at
+this list. *Small/medium — the listing itself is small; deciding how to present a
+list that can run to hundreds of entries is most of it.*
 
 *Exit:* select Python in an editor, run it on Viya, see stdout streamed live and
 rich output rendered. **This is the first genuinely useful build.**
@@ -721,12 +782,16 @@ because the ecosystem expects it. *Slices: 9a format decision + serializer;
 
 ### Phase 10 — Viya environment awareness
 
-List packages installed in the Viya interpreter; surface the interpreter version
-and environment in the UI; optionally reflect the remote package set back to
-Pylance so completions match the remote environment rather than the local one.
+Phase 3e already ships the honest answer to "what can I import?" — a command that
+lists the interpreter version, path, and installed distributions. This phase makes
+that answer *ambient* rather than something you have to go and ask for: a proper
+environment view with search and filtering, a diff against the local environment
+so the mismatch that will bite is visible before it does, and reflecting the
+remote package set back to Pylance so completions and unresolved-import warnings
+describe the environment the code will actually run in rather than the laptop's.
 Package *installation* into the compute context is deliberately deferred — it
 raises governance questions that need a product decision first. *Slices:
-10a package listing and status UI; 10b Pylance environment reflection.*
+10a environment view and local/remote diff; 10b Pylance environment reflection.*
 
 ### Phase 11 — Remaining parity gaps
 
@@ -770,7 +835,7 @@ the working gap analysis, and it is the checklist to track parity against.
 | Snippets | Phase 11 | Viya-specific patterns; general Python is Pylance's job |
 | Localisation | 0b (infrastructure), Phase 11 (bundles) | Upstream ships 10 locales |
 | **CAS / SWAT access** | Phase 8 | **Upstream has none** — we exceed it here |
-| Viya Python environment awareness | Phase 10 | No upstream equivalent |
+| Viya Python environment awareness | Phase 3e, extended in Phase 10 | No upstream equivalent. The package list ships with the first useful build, because you cannot write code against an interpreter you cannot see |
 | Syntax highlighting, folding, completions, hover | — | Provided by `ms-python.python`/Pylance. Parity achieved by *not* building it. |
 | SAS language server | — | Not applicable |
 | SSH / COM / IOM connections | — | **Deliberate non-goal.** Viya-only by design. |
@@ -810,6 +875,26 @@ per-run unique names and cleanup in `finally`.
 upward per phase; the target is ≥85% on `connection/`, `dialects/`, and `python/`.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
+
+**The submission fidelity corpus** is a named test asset, introduced with Phase 3a
+and maintained forever after. It is a directory of real Python programs chosen to
+be hostile to SAS tokenisation — apostrophes in comments and docstrings, an odd
+number of quotes in a line, triple-quoted strings containing both quote styles,
+f-strings with nested quotes and braces, raw and byte strings, `&` and `%` in
+string literals, the literal token `endsubmit;` inside a comment and inside a
+string, a `;`-heavy one-liner, CRLF line endings, a tab-indented file, non-ASCII
+identifiers and string content, an empty file, and a file with no trailing
+newline. Each one is asserted **byte for byte** at the far end, and the assertion
+is on what the interpreter received, not on what we sent.
+
+That corpus runs in two tiers, and both are required. In the **unit** tier it runs
+against the submission builder with a recorded transport, which is fast enough to
+run on every commit and catches escaping regressions. In the **live** tier it runs
+against a real deployment and reads the value back out of the interpreter, because
+the unit tier can only prove we built what we intended to build — it cannot prove
+SAS agreed. §1.5's first known-hard problem explains why this is not
+proportionality gone wrong: the failure mode is not a syntax error, it is a
+program that runs and quietly means something else.
 
 **The specific anti-goal**: the SAS extension's `client/test/connection/rest/index.test.ts`
 copies the logic under test into the test file, so the real REST path is untested

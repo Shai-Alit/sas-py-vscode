@@ -1345,7 +1345,7 @@ git commit -m "feat(compute): add the link layer, context resolution, and sessio
   citing unrelated text. Re-probed read-only to confirm each fact rather than
   transcribing the notes, which is what caught the `jq` artifact above and
   sharpened two more (see the next two items).
-- ☐ **`src/compute/contexts.ts` — resolve a context in one call, not two.** The
+- ☑ **`src/compute/contexts.ts` — resolve a context in one call, not two.** The
   summary item returned by
   `GET /compute/contexts?filter=eq(name,'…')` already carries a fully-formed
   `createSession` link — `POST`, with both `type` and `responseType` — so
@@ -1362,6 +1362,13 @@ git commit -m "feat(compute): add the link layer, context resolution, and sessio
   matters, and reads "there are no compute contexts" — the one answer that is
   never true. Page on the presence of the `next` link and treat `items` as
   authoritative; nothing may branch on `count`.
+
+  Done 2026-08-14. `quoteFilterValue` doubles, `contextFilter` composes, and the
+  two "on the wire" tests drive the *real* client so the assertion is the literal
+  URL — `?filter=eq(name%2C'Ford''s%20context')` — which pins the ordering, since
+  encoding first leaves no quote to double. Two mirror-image tests pin the `count`
+  rule: a `null`-count page with items that a count-trusting pager would report as
+  empty, and a `count: 1` first page of two that it would truncate.
 - ☐ **`src/compute/session.ts` — create, poll, delete.** Create by following the
   context's `createSession` link; the response is `201` with a `Location` and an
   `ETag`, and the session arrives in state `pending` with the links everything
@@ -1463,6 +1470,37 @@ git commit -m "feat(compute): add long-poll log streaming and ETag state polling
 
 ### Phase 3 — Run Python
 
+☐ **Before 3a — build the submission fidelity corpus, and let it choose the
+mechanism.** SAS tokenises the block before Python ever sees it, and its string
+rules are not Python's: a quote opens a literal that runs to the next matching
+quote *across newlines*, so an apostrophe in a comment or a `don't` in a docstring
+can leave the tokeniser inside an unterminated string that swallows the rest of
+the submission — the failure that the `*';*";*/;quit;run;` incantation exists to
+recover from. Macro triggers (`&name`, `%macro`) resolve inside double quotes and
+not inside single ones, so the *same* Python behaves differently depending on
+which quote style the user typed. SAS escapes a quote by doubling it, exactly as
+the Compute filter does; a backslash is not an escape. And Python has quoting
+forms SAS has never heard of — triple quotes, f-strings with nested quotes and
+braces, raw and byte strings.
+
+None of that is answerable by inspection, so write the corpus **first**: real
+Python programs chosen to be hostile — apostrophes in comments and docstrings, an
+odd quote count, triple-quoted strings holding both styles, f-strings with nested
+quotes, raw and byte strings, `&` and `%` in literals, the token `endsubmit;` in a
+comment *and* in a string, a `;`-heavy one-liner, CRLF endings, tabs, non-ASCII
+identifiers and content, an empty file, and no trailing newline. Assert **byte for
+byte** on what the interpreter received, not on what we sent, in the unit tier and
+again in the live tier — the unit tier can only prove we built what we meant to
+build, not that SAS agreed. Then pick the submission mechanism that passes it.
+`proc python file="…"` is favoured precisely because a file transfer has no
+tokeniser in the middle; if the inline form cannot pass the corpus, that is the
+answer rather than a reason to iterate on an escaper. See `PRODUCTION_PLAN.md`
+§1.5 item 1 and §4.
+
+> **Why this gets its own item.** Every other failure in this project announces
+> itself. This one does not: a mis-tokenised program runs and means something
+> else, and the user's evidence for that is a wrong number, not an error.
+
 ```bash
 # 3a — PROC PYTHON backend
 git checkout -b phase-3a-proc-python-backend
@@ -1506,6 +1544,21 @@ git commit -m "feat(python): add result panel webview with rich output renderers
 git checkout -b phase-3e-runtime-capabilities
 git commit -m "feat(backend): probe interpreter version and installed packages"
 ```
+
+☐ **3e — ship the package list as a user-facing thing, not a capability record.**
+The person writing code in this editor is writing against an interpreter they
+cannot see, on a machine they cannot log into, whose package set someone else
+chose and can change without telling them. Worse, the local environment lies with
+conviction: Pylance resolves `import polars` against the laptop, so the editor is
+green and the run is a `ModuleNotFoundError`. The minimum is a **`Python on Viya:
+Show environment`** command listing the interpreter version, path, and installed
+distributions with versions — read from `importlib.metadata`, not by shelling out
+to `pip`, which need not exist in a compute context — plus a status bar affordance
+that opens it and a per-profile cache with an explicit refresh, because it is a
+slow answer that rarely changes. Phase 4's traceback work should special-case
+`ModuleNotFoundError` and point at this list; Phase 10 feeds the set back to
+Pylance so completions describe the remote environment. `PRODUCTION_PLAN.md` §2.3
+and Phase 3e.
 
 ☐ **After 3d-i — probe cancellation.** Run a deliberately long Python step and
 cancel it. Confirm whether the compute job cancel actually interrupts Python or
@@ -1673,6 +1726,10 @@ These apply to every slice. Most PR review comments trace back to one of them.
   boundary instead.
 - **Audit ported security code, don't transcribe it.** Upstream's PKCE verifier
   uses `Math.random()`. Assume there are others.
+- **Never change how Python reaches the interpreter without running the fidelity
+  corpus.** Once Phase 3a exists, that corpus is load-bearing: SAS tokenises the
+  block before Python sees it, and a quoting mistake does not raise — it produces a
+  program that runs and means something else.
 - **User-facing strings go through `l10n.t()`.**
 - **No secrets in fixtures.** Sanitise hostnames, tokens, user names, and paths
   when recording. Secret scanning runs in CI but should never be the thing that

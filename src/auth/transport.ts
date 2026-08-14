@@ -53,7 +53,7 @@
  * response carrying its status, which is a diagnosable outcome.
  */
 
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { request as httpsRequest } from "node:https";
 
 /**
@@ -72,13 +72,39 @@ export interface TransportResponse {
   /** True for 2xx. Redirects are not followed, so a 3xx is not `ok`. */
   readonly ok: boolean;
   readonly status: number;
+  /**
+   * Response headers, names lower-cased, repeated values joined with `", "`.
+   *
+   * Added in 1c-i, and not for completeness. Probe finding 9 in
+   * `PROBE-FINDINGS.md` recorded that a Viya deployment answers an expired token
+   * with **401 and a zero-byte body** — the entire diagnosis is in
+   * `WWW-Authenticate`. A response type carrying only `ok`, `status` and `text()`
+   * can tell the difference between "expired, sign in again" and "not permitted"
+   * only by guessing, so the most common recoverable failure in the extension
+   * would have reached the user as "request failed".
+   *
+   * Lower-casing is not a nicety either. Node already lower-cases what it parses,
+   * but an injected transport is under no such obligation, and HTTP field names
+   * are case-insensitive, so a reader that indexes this by a literal would
+   * otherwise work in the unit tier and fail against a real server.
+   */
+  readonly headers: Readonly<Record<string, string>>;
   text(): Promise<string>;
 }
 
 export interface TransportRequest {
   method: string;
   headers: Record<string, string>;
-  body: string;
+  /**
+   * Absent for a request that has no body, which since 1c-i includes every `GET`
+   * this project makes.
+   *
+   * Optional rather than `""`, because the two are not the same request on the
+   * wire: an empty string still produces `content-length: 0`, and a `GET`
+   * carrying a content-length is the kind of thing a strict gateway rejects and
+   * nobody thinks to look at.
+   */
+  body?: string | undefined;
   /** Cancels the request. The caller supplies the timeout. */
   signal?: AbortSignal;
 }
@@ -125,6 +151,30 @@ function transportError(error: unknown): Error {
 }
 
 /**
+ * Flattens Node's parsed headers into the plain record {@link TransportResponse}
+ * promises.
+ *
+ * Node hands back `string | string[] | undefined` per field, the array form being
+ * for the fields HTTP allows to repeat — `set-cookie` above all. Joining with
+ * `", "` is what RFC 9110 §5.3 says a repeated field means, so nothing is lost
+ * for the fields this project reads, and callers get one type to handle instead
+ * of three. `set-cookie` is the documented exception to that equivalence, and
+ * nothing here reads cookies.
+ */
+function collectHeaders(
+  raw: IncomingHttpHeaders,
+): Readonly<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw)) {
+    if (value === undefined) continue;
+    headers[name.toLowerCase()] = Array.isArray(value)
+      ? value.join(", ")
+      : value;
+  }
+  return headers;
+}
+
+/**
  * The default transport, over `node:https` (or `node:http` for a loopback
  * endpoint, which the profile validator permits and nothing else).
  *
@@ -152,10 +202,13 @@ export const nodeHttpTransport: HttpTransport = (url, init) =>
 
     const request = send(target, {
       method: init.method,
-      headers: {
-        ...init.headers,
-        "content-length": String(Buffer.byteLength(init.body)),
-      },
+      headers:
+        init.body === undefined
+          ? init.headers
+          : {
+              ...init.headers,
+              "content-length": String(Buffer.byteLength(init.body)),
+            },
     });
 
     /** Runs exactly once, however the request ends. */
@@ -184,6 +237,7 @@ export const nodeHttpTransport: HttpTransport = (url, init) =>
 
     request.on("response", (response) => {
       const status = response.statusCode ?? 0;
+      const headers = collectHeaders(response.headers);
       const chunks: Buffer[] = [];
       let length = 0;
       let overflowed = false;
@@ -220,11 +274,16 @@ export const nodeHttpTransport: HttpTransport = (url, init) =>
           resolve({
             ok: status >= 200 && status < 300,
             status,
+            headers,
             text: () => Promise.resolve(body),
           });
         });
       });
     });
 
-    request.end(init.body);
+    if (init.body === undefined) {
+      request.end();
+    } else {
+      request.end(init.body);
+    }
   });

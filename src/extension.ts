@@ -3,6 +3,10 @@
 
 import * as vscode from "vscode";
 
+import {
+  registerAuthProvider,
+  ViyaAuthenticationProvider,
+} from "./auth/authProvider";
 import { registerAuthCommands } from "./auth/commands";
 import { SessionStore } from "./auth/sessionStore";
 import { registerAuthUriHandler } from "./auth/uriHandler";
@@ -54,13 +58,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // means the second sign-in of a session either fails to register or replaces
   // the first. It dispatches to whichever attempts are outstanding.
   const authCallbacks = registerAuthUriHandler(context, output);
-  registerAuthCommands(
-    context,
+
+  // The provider owns signing in and out; the commands are wrappers over it, and
+  // the Accounts menu talks to it directly. Registering it does not read a
+  // secret or touch the network — VS Code calls `getSessions` when something
+  // asks, which on a fresh window is the first time the Accounts menu is opened.
+  const auth = new ViyaAuthenticationProvider(
+    context.extension.id,
     profiles,
     new SessionStore(context.secrets, output),
     authCallbacks,
     output,
   );
+  registerAuthProvider(context, auth);
+  registerAuthCommands(context, auth, profiles, output);
 }
 
 export function deactivate(): void {

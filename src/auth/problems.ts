@@ -50,7 +50,36 @@ export type AuthProblem =
    * lands in slice 1b-ii with the URI handler that receives the callback. This is
    * the defect the upstream audit turned up — see ADR-0008.
    */
-  | { code: "state-mismatch" };
+  | { code: "state-mismatch" }
+  /**
+   * The deployment says the token we sent is no longer good — a 401 whose
+   * `WWW-Authenticate` carries `error="invalid_token"`.
+   *
+   * Separate from `oauth-rejected` because it is the recoverable one and the
+   * only correct response is to sign in again. `description` is the server's own
+   * `error_description`, quoted verbatim on the same reasoning as the OAuth
+   * fields above: RFC 6750 §3 specifies it as a human-readable diagnostic.
+   */
+  | { code: "session-expired"; description?: string }
+  /**
+   * A 401 whose challenge carries no error parameters, which RFC 6750 §3 says
+   * means the request arrived with no credentials at all.
+   *
+   * Almost always our bug rather than the user's — a request that forgot its
+   * `Authorization` header — and worth distinguishing for exactly that reason.
+   * Telling this user to sign in again sends them round a loop that cannot fix
+   * it. See probe finding 9.
+   */
+  | { code: "not-authenticated" }
+  /**
+   * The current user could not be read, for a reason that is not about the token
+   * being dead.
+   *
+   * `detail` describes the failure — a status code, a missing field, a media
+   * type the deployment would not serve — and never the response body, which on
+   * this endpoint contains the user's address, email and phone numbers.
+   */
+  | { code: "identity-unavailable"; detail: string };
 
 /**
  * The English sentence for a log.
@@ -75,5 +104,13 @@ export function describeAuthProblem(problem: AuthProblem): string {
       return `the token endpoint answered with something that is not a token response: ${problem.detail}`;
     case "state-mismatch":
       return "the sign-in callback did not carry the state value this request issued, so it was discarded";
+    case "session-expired":
+      return problem.description === undefined
+        ? "the deployment reports the access token is no longer active"
+        : `the deployment reports the access token is no longer active: ${problem.description}`;
+    case "not-authenticated":
+      return "the request reached the deployment without credentials, so it was refused";
+    case "identity-unavailable":
+      return `could not read the signed-in user: ${problem.detail}`;
   }
 }

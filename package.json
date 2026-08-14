@@ -52,6 +52,12 @@
   },
   "activationEvents": [],
   "contributes": {
+    "authentication": [
+      {
+        "id": "pythonOnViya",
+        "label": "%authentication.label%"
+      }
+    ],
     "commands": [
       {
         "command": "pythonOnViya.showOutputChannel",

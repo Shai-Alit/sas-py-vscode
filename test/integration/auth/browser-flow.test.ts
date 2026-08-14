@@ -84,6 +84,7 @@ function harness(options: { openExternal?: boolean } = {}): Harness {
     return Promise.resolve({
       ok: true,
       status: 200,
+      headers: {},
       text: () =>
         Promise.resolve(
           JSON.stringify({

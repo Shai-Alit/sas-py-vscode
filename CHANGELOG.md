@@ -208,6 +208,67 @@ called out under **Changed** with a migration note.
   **Python on Viya: Sign Out** end to end; the trade-off is written up in
   `test/helpers/auth-host.ts` rather than left for a reader to infer.
 
+- Sign-in is now an **account** in the editor's Accounts menu rather than only a
+  pair of commands. The extension registers `pythonOnViya` as an authentication
+  provider labelled **SAS Viya**, so the Accounts menu can sign in, show who is
+  signed in, and sign out; the commands call straight through to the provider,
+  because two implementations of signing in is how a menu and a command palette
+  end up disagreeing about who is signed in. Every connection profile is its own
+  account, so a test deployment and a production one can be signed in at the same
+  time in the same window and signing out of one leaves the other alone — an
+  account is keyed on the deployment plus the Viya user id, which is why renaming
+  a profile, or an administrator fixing a typo in a display name, does not sign
+  anybody out. It differs from upstream's provider in four places, each one a
+  defect the audit under slice 1c in `PRODUCTION_PLAN.md` records: upstream stores
+  a single session blob, so a second profile overwrites the first; `getSessions`
+  refreshes on every call, and the Accounts menu polls, so opening a menu is a
+  network round trip and a moment of bad Wi-Fi is a silent sign-out; an
+  unrecognised id in `removeSession` falls back to the active profile, which turns
+  a caller's bug into signing the user out of something they never named; and the
+  session write is not awaited, so a window closing straight after sign-in can
+  lose the session it just established. Here a held token is served from memory
+  and renewed only against the absolute `expiresAt` 1b-i already computes, an
+  unknown id is an error, and the write is awaited.
+
+- `src/auth/identity.ts`, which reads the signed-in user, and asks for
+  `application/vnd.sas.identity.user.summary+json` **explicitly**. That header is
+  the entire data-minimisation story: the full representation on the probed
+  deployment carried a street address with postal code, a work email and two
+  phone numbers for a real person, and upstream sends no `Accept` header at all,
+  so it pulls all of that into the extension host and keeps two fields. The
+  summary type is the same URL and the same `200` without them, and what never
+  arrives cannot reach a crash dump, a heap snapshot or a log attached to an
+  issue. A `406` — which finding 6 established is what a media type a deployment
+  does not serve looks like — retries with the full type and drops the personal
+  fields as it parses, which is what lets Viya 3.5 be *unverified* rather than
+  *unsupported*. Only `id`, the display name and the login are kept; the account
+  label falls back from one to the next, because only `id` was established as
+  always present, and `title` is deliberately not in that chain — it is a job
+  title, and nobody's idea of who is signed in.
+
+- `onDidChangeSessions` fires on real transitions only, and the comparison lives
+  in a pure `diffSessions(before, after)` so "did anything actually change" is a
+  unit test rather than an observation about event volume. The
+  `pythonOnViya.authorized` context key is set alongside it, for the `when`
+  clauses Phase 2 onward will gate on.
+
+- `TransportResponse` now exposes response headers, and `src/auth/challenge.ts`
+  parses RFC 6750's `WWW-Authenticate`. Probe finding 9: a dead Viya token is a
+  **401 with a zero-byte body**, so any error path that builds its message from
+  the body renders an empty string for the most common recoverable failure there
+  is. The parser separates three states that all arrive as that same 401 — a
+  token the deployment rejected (`error="invalid_token"`, sign in again), a
+  request that carried no credentials at all (a bare `Bearer` challenge, which is
+  our bug and not the user's), and no Bearer challenge whatsoever — and a comma
+  inside a quoted `error_description` survives, which is the difference between
+  showing the server's sentence and showing the first half of it.
+
+- `docs/signing-in.md` — signing in and out, what the Accounts menu shows, why
+  opening it makes no network request, what is written to disk (the refresh token,
+  and only that) versus held in memory (the access token), what the extension asks
+  Viya about you and why the answer is deliberately small, and what happens when
+  each of it fails.
+
 ### Fixed
 
 - Profile validation messages shown under an input box are now localisable. The

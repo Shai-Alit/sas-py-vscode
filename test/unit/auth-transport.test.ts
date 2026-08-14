@@ -147,6 +147,65 @@ describe("nodeHttpTransport", () => {
     assert.equal(seen.headers["content-length"], "10");
   });
 
+  it("omits content-length entirely when there is no body", async () => {
+    // A `GET` carrying `content-length: 0` is the kind of thing a strict
+    // gateway rejects and nobody thinks to look at. `body` is optional rather
+    // than `""` precisely so this header can be absent rather than zero.
+    await send("/identities/users/@currentUser", {
+      method: "GET",
+      headers: {},
+      body: undefined,
+    });
+
+    assert.ok(seen);
+    assert.equal(seen.method, "GET");
+    assert.equal(seen.body, "");
+    assert.equal(seen.headers["content-length"], undefined);
+  });
+
+  it("exposes response headers, lower-cased", async () => {
+    // Probe finding 9: a dead Viya token is a 401 with a zero-byte body, and the
+    // entire diagnosis is in `WWW-Authenticate`. A response type carrying only
+    // `ok`, `status` and `text()` cannot tell "sign in again" from "not
+    // permitted". Lower-casing is asserted because an injected transport is
+    // under no obligation to do it and the callers index by lower-case name.
+    handler = (_request, response) => {
+      response.writeHead(401, {
+        "WWW-Authenticate": 'Bearer error="invalid_token"',
+        "Content-Type": "application/json",
+      });
+      response.end("");
+    };
+
+    const response = await send("/identities/users/@currentUser", {
+      method: "GET",
+      body: undefined,
+    });
+
+    assert.equal(response.status, 401);
+    assert.equal(await response.text(), "");
+    assert.equal(
+      response.headers["www-authenticate"],
+      'Bearer error="invalid_token"',
+    );
+    assert.equal(response.headers["content-type"], "application/json");
+  });
+
+  it("joins a header the server sent more than once", async () => {
+    // Node hands these back as an array. A caller that does `.split(",")` on a
+    // joined value is no worse off than one that ignored the extras, and a
+    // `string | string[]` in the response type would push that decision into
+    // every call site.
+    handler = (_request, response) => {
+      response.writeHead(200, { Warning: ['199 - "one"', '199 - "two"'] });
+      response.end("ok");
+    };
+
+    const response = await send("/token");
+
+    assert.equal(response.headers.warning, '199 - "one", 199 - "two"');
+  });
+
   it("reassembles a body that arrives in several chunks", async () => {
     handler = (_request, response) => {
       response.writeHead(200);

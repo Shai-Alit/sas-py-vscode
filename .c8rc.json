@@ -3,24 +3,25 @@
   "all": true,
   "exclude": [
     "out/test/**",
-    "test/**",
-    "src/extension.ts",
+    "src/auth/authProvider.ts",
     "src/auth/browserFlow.ts",
     "src/auth/commands.ts",
     "src/auth/messages.ts",
     "src/auth/sessionStore.ts",
     "src/auth/uriHandler.ts",
+    "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",
     "src/profile/statusBar.ts",
-    "src/profile/store.ts"
+    "src/profile/store.ts",
+    "test/**"
   ],
   "excludeAfterRemap": true,
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 79,
-  "statements": 79,
-  "functions": 78,
+  "lines": 82,
+  "statements": 82,
+  "functions": 82,
   "branches": 91
 }

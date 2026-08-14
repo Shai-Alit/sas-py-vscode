@@ -1,0 +1,22 @@
+{
+  "creationTimeStamp": "2024-03-11T14:22:07.918Z",
+  "modifiedTimeStamp": "2025-06-02T09:41:55.204Z",
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "https://viya.example.com/identities/users/a7f3c1d9e2b4f6a80",
+      "uri": "/identities/users/a7f3c1d9e2b4f6a80",
+      "type": "application/vnd.sas.identity.user"
+    }
+  ],
+  "version": 1,
+  "id": "a7f3c1d9e2b4f6a80",
+  "name": "Dana Whitfield",
+  "providerId": "scim",
+  "type": "user",
+  "scimId": "a7f3c1d9e2b4f6a80",
+  "externalLoginIds": ["dwhitfield"],
+  "state": "active",
+  "title": "Senior Analytics Engineer"
+}

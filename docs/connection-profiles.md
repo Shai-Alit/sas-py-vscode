@@ -34,12 +34,9 @@ Leave it empty for now if you do not know it.
 **OAuth client ID** (optional). If you enter one you are then asked for the
 client secret, and that prompt is masked.
 
-Nothing reads either value yet — signing in arrives in a later release — but
-what they will mean is already decided, so you can fill them in now.
-
 On **Viya 4 2022.11 and later**, leave both empty. Those deployments register a
-built-in public client called `vscode`, and that is what this extension will
-use. You do not need an administrator to set anything up.
+built-in public client called `vscode`, and that is what this extension uses.
+You do not need an administrator to set anything up.
 
 On **Viya 3.5, and Viya 4 2022.10 and earlier**, there is no such client, and
 you do need one: ask your Viya administrator to register a client with the
@@ -151,7 +148,7 @@ folder. See [ADR-0002](adr/0002-workspace-trust-posture.md).
 
 ## What is not here yet
 
-Signing in and running code are later slices. This one gives you somewhere to
-say *where*, and the reference tables for every setting and command are generated
-from the manifest in [Settings](reference/settings.md) and
-[Commands](reference/commands.md).
+Running code is a later slice. A profile says *where*; [Signing
+in](signing-in.md) covers getting a session against it. The reference tables for
+every setting and command are generated from the manifest in
+[Settings](reference/settings.md) and [Commands](reference/commands.md).

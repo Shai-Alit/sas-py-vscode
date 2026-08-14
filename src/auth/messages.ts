@@ -82,5 +82,26 @@ export function localiseAuthProblem(problem: AuthProblem): string {
       return vscode.l10n.t(
         "A sign-in response arrived that this window did not ask for, so it was ignored. If you were signing in, try again from this window.",
       );
+    case "session-expired":
+      // The description is not shown. It is server-authored and useful in a log,
+      // but the user has exactly one thing to do here and a second sentence
+      // quoting "Provided token isn't active" only obscures it.
+      return vscode.l10n.t(
+        "Your Viya sign-in has expired. Sign in again to continue.",
+      );
+    case "not-authenticated":
+      // This one is our bug, and the message says so rather than sending the
+      // user to sign in again — they may already be signed in, and doing it
+      // twice will not add the header that was missing.
+      return vscode.l10n.t(
+        "The request to Viya was sent without a sign-in and was refused. Please report this, with the Python on Viya log.",
+      );
+    case "identity-unavailable":
+      // `detail` stays out of the message for the same reason as
+      // `token-response-malformed`: it describes a response shape, which is a
+      // sentence for whoever debugs this rather than for whoever hit it.
+      return vscode.l10n.t(
+        "Signed in, but Viya would not say who you are signed in as. See the Python on Viya log for details.",
+      );
   }
 }

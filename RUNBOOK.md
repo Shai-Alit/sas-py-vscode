@@ -873,26 +873,34 @@ built, so probing after scoping would have meant scoping twice.
 
 ☐ **1c-i punch list.**
 
-- ☐ **`src/auth/identity.ts` — pure, and it stays in the coverage denominator.**
+- ☑ **`src/auth/identity.ts` — pure, and it stays in the coverage denominator.**
   The response parse, the label fallback chain, and `accountId(endpoint, userId)`.
   No `vscode` import, so ADR-0009 keeps it measured, and the account model gets
   specified by unit tests against a scrubbed fixture rather than by whatever the
-  provider happens to do. `id` is required and `name` is required; everything else
-  is optional, because finding 8 only established `title` and `state` on one
+  provider happens to do. ~~`id` is required and `name` is required~~; everything
+  else is optional, because finding 8 only established `title` and `state` on one
   deployment.
-- ☐ **Ask for `application/vnd.sas.identity.user.summary+json` explicitly, and
+  **Corrected while implementing, 2026-08-13: only `id` is required.** The two
+  rules cannot both hold. Decision 10 specifies a label fallback of `name` → login
+  → `id`, and a parser that rejects a user carrying no `name` makes both fallback
+  arms unreachable — the chain would be dead code and the tests covering it would
+  be testing nothing. The one deployment we could probe is SCIM-backed and
+  populated `name`; the ones we could not are LDAP-backed and Viya 3.5, which are
+  exactly where a missing display name shows up. Requiring a cosmetic field there
+  turns "no display name" into "cannot sign in". Recorded in the module doc.
+- ☑ **Ask for `application/vnd.sas.identity.user.summary+json` explicitly, and
   say why in the code.** Finding 7: the full representation returned a street
   address, a postal code, a work email and two phone numbers for a real person,
   and upstream sends no `Accept` header at all, so it pulls every one of those
   into the extension host and keeps two fields. The summary type is the same URL
   and the same 200. This is one header and it is the difference between that data
   being in our process and not.
-- ☐ **A 406 on the summary type falls back to the full representation, dropping
+- ☑ **A 406 on the summary type falls back to the full representation, dropping
   the PII fields as it parses.** Not defensive padding: finding 6 showed 406 is
   what a media type this service does not serve looks like, and no Viya 3.5
   deployment exists to check the summary type against. The fallback is what lets
   3.5 be unverified rather than unsupported.
-- ☐ **Widen `TransportResponse` to expose response headers.** Today it carries
+- ☑ **Widen `TransportResponse` to expose response headers.** Today it carries
   `ok`, `status` and `text()`, and finding 9 makes that insufficient: a dead
   token is a **401
   with a zero-byte body**, and the whole diagnosis lives in `WWW-Authenticate`.
@@ -902,29 +910,78 @@ built, so probing after scoping would have meant scoping twice.
   `error="invalid_token"` (sign in again) from a bare `WWW-Authenticate: Bearer`
   (nothing was sent). `TransportRequest.body` also needs to be optional or this
   slice sends `""` on a `GET`; decide which in the PR rather than by accident.
-- ☐ **`src/auth/authProvider.ts` — the shell.** Register the provider, contribute
-  `authentication` in `package.json` with `supportsMultipleAccounts`, and hold no
-  logic that `identity.ts` or `signIn.ts` could hold instead.
-- ☐ **`createSession` and `removeSession` call the same code the sign-in and
+  **Decided 2026-08-13: optional.** A `GET` now carries no body and no
+  `content-length`, rather than an empty string and a `content-length: 0` that
+  says the request had a body which happened to be empty.
+- ☑ **`src/auth/authProvider.ts` — the shell.** Register the provider, contribute
+  `authentication` in `package.json` ~~with `supportsMultipleAccounts`~~, and hold
+  no logic that `identity.ts` or `signIn.ts` could hold instead.
+  **Corrected while implementing, 2026-08-13: `supportsMultipleAccounts` is not a
+  manifest field.** The `authentication` contribution takes an `id` and a `label`
+  and nothing else — upstream's manifest carries exactly those two, and
+  `@types/vscode` puts `supportsMultipleAccounts` on the options argument of
+  `vscode.authentication.registerAuthenticationProvider`. It is passed there, in
+  `registerAuthProvider`. The distinction matters beyond pedantry: had it been
+  written into the manifest it would have been silently ignored, and VS Code would
+  have treated a second `createSession` as replacing the first — the exact
+  single-session behaviour this slice exists to avoid, failing only on the
+  two-deployment path a single review pass is least likely to walk.
+- ☑ **`createSession` and `removeSession` call the same code the sign-in and
   sign-out commands already do.** Two sign-in implementations is how the Accounts
   menu and the command palette drift into disagreeing about who is signed in.
-- ☐ **`getSessions` does not refresh.** Upstream refreshes on every call, and the
+- ☑ **`getSessions` does not refresh.** Upstream refreshes on every call, and the
   Accounts menu polls, so opening a menu becomes a network round trip and a
   transient failure becomes a silent sign-out. Refresh against the `expiresAt`
   1b-i already computes; a 401 from a real request stays the fallback.
-- ☐ **`removeSession` rejects an id it does not recognise.** Upstream falls back
+- ☑ **`removeSession` rejects an id it does not recognise.** Upstream falls back
   to the active profile, which turns a caller's bug into signing the user out of
   something they did not name.
-- ☐ **`onDidChangeSessions` fires on real transitions only.** Put the comparison
+- ☑ **`onDidChangeSessions` fires on real transitions only.** Put the comparison
   in a pure `diffSessions(before, after)` so "did anything actually change" is a
   unit test and not an observation about event volume.
-- ☐ **`pythonOnViya.authorized` context key**, set through `setContext`, for the
+- ☑ **`pythonOnViya.authorized` context key**, set through `setContext`, for the
   `when` clauses Phase 2 onward will gate on.
-- ☐ **The access token stays in memory.** `sessionStore.ts` persists the refresh
+- ☑ **The access token stays in memory.** `sessionStore.ts` persists the refresh
   token and only that; the provider must not widen it. Writing a credential to
   disk that will be dead within the hour buys nothing.
-- ☐ **Raise the ratchet** from a measured run. `identity.ts` is unit-reachable, so
+- ☑ **Raise the ratchet** from a measured run. `identity.ts` is unit-reachable, so
   unlike 1b-ii this slice should actually move the number.
+  **Measured 2026-08-14: 84.28 statements / 92.33 branches / 83.94 functions /
+  84.28 lines**, up from 82.07 / 92.75 / 81.03 at 1b-ii — it did move, and it
+  moved most on functions, which is what a slice of new pure modules should do.
+  Thresholds set to **82 / 82 / 82 / 91** (lines / statements / functions /
+  branches). Branches stays at 91: measured 92.33 leaves 1.33 points of slack,
+  and tightening to 92 would leave 0.33 on a three-OS gate.
+
+**Three source changes the punch list did not ask for, all found by writing the
+tests, 2026-08-13.** Recorded here because "the tests caught it" is worth more as
+a record than as a memory.
+
+1. `challenge.ts` refused to treat `Bearer <junk>` as a Bearer challenge — a
+   guard required the first token after the scheme to contain an `=`, so a
+   malformed challenge parsed as *no challenge at all*. That maps to
+   `not-authenticated`, which tells the user nothing was sent when something was
+   and the server garbled its reply. The guard is gone; a parameter without an
+   `=` is now a no-op rather than a verdict.
+2. `identity.ts` `root()` did not trim. Two spellings of one endpoint — a stray
+   space in a hand-edited setting, a pasted trailing slash — produced two account
+   ids, and the same deployment would have appeared twice in the Accounts menu.
+3. `authProvider.ts` refreshed with `clientId: profile.clientId ?? ""`, which
+   renews nothing on any deployment using the built-in `vscode` client — that is
+   every Viya 4 from 2022.11 on, so very nearly all of them. It now resolves the
+   same `BUILT_IN_CLIENT_ID` default the sign-in path does. This one would not
+   have shown up until a token expired, an hour into a working session.
+
+**The identity fixture is in `test/fixtures/harness/`, not `viya4/`.** Findings 7
+and 8 deliberately recorded field *shapes* rather than values, because the values
+were a real person's address and phone numbers, and `creds.json` is no longer
+staged in the project folder, so there is no raw body to scrub and no way to
+capture one right now. It is hand-written under the escape hatch
+`test/fixtures/README.md` provides and says so in the file. Worth replacing with
+a real capture when `creds.json` is next staged: one read-only `GET` with the
+summary `Accept` header, and — per finding 7 — a correctly captured *summary*
+response needs no scrubbing at all, which is the strongest argument for that
+header there is.
 
 **Test seam.** `identity.ts` and `diffSessions` are unit tier and are the
 specification. The provider registration, the context key, and the session change

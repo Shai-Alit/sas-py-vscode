@@ -847,19 +847,127 @@ comes out. Verified in the shipped `workbench.desktop.main.js` for 1.133.0, whic
 rather than the whole `ExtensionContext`, which is what makes any of this
 testable without a cast — `test/integration/profile/secret-storage.test.ts`.
 
+**Split into 1c-i and 1c-ii, 2026-08-13.** The two halves share a slice number
+and nothing else. One is an editor integration whose risk is state management;
+the other is a TLS change whose risk is that it quietly widens what the extension
+will trust. Reviewing them together means the certificate half arrives as the
+small half of a big diff, which is how that kind of change gets waved through.
+
+**Two of the four things the plan listed under 1c already shipped in 1b-ii.**
+Per-profile namespacing in `SecretStorage` is `sessionStore.ts`, keyed on the
+generated profile id under `pythonOnViya.session.<id>`, and the refresh-token-only
+persistence policy is `toStoredSession`. 1c-i builds the provider **on top of**
+those rather than re-deciding them; a punch list that re-lists finished work is
+how a slice grows a phantom third of its size.
+
 ```bash
 # ⛔ BARRIER: merge 1b-ii first.
-# 1c — AuthenticationProvider + secret storage
-git checkout -b phase-1c-auth-provider
-git commit -m "feat(auth): add AuthenticationProvider, secret storage, and CA helper"
+# 1c-i — the AuthenticationProvider
+git checkout -b phase-1c-i-auth-provider
+git commit -m "feat(auth): register an AuthenticationProvider and resolve the Viya identity"
 ```
 
+☐ **Probed first, 2026-08-13, before any of this was written.** Findings 6–9 in
+`PROBE-FINDINGS.md`, against the live Viya 4. Three of them change what gets
+built, so probing after scoping would have meant scoping twice.
+
+☐ **1c-i punch list.**
+
+- ☐ **`src/auth/identity.ts` — pure, and it stays in the coverage denominator.**
+  The response parse, the label fallback chain, and `accountId(endpoint, userId)`.
+  No `vscode` import, so ADR-0009 keeps it measured, and the account model gets
+  specified by unit tests against a scrubbed fixture rather than by whatever the
+  provider happens to do. `id` is required and `name` is required; everything else
+  is optional, because finding 8 only established `title` and `state` on one
+  deployment.
+- ☐ **Ask for `application/vnd.sas.identity.user.summary+json` explicitly, and
+  say why in the code.** Finding 7: the full representation returned a street
+  address, a postal code, a work email and two phone numbers for a real person,
+  and upstream sends no `Accept` header at all, so it pulls every one of those
+  into the extension host and keeps two fields. The summary type is the same URL
+  and the same 200. This is one header and it is the difference between that data
+  being in our process and not.
+- ☐ **A 406 on the summary type falls back to the full representation, dropping
+  the PII fields as it parses.** Not defensive padding: finding 6 showed 406 is
+  what a media type this service does not serve looks like, and no Viya 3.5
+  deployment exists to check the summary type against. The fallback is what lets
+  3.5 be unverified rather than unsupported.
+- ☐ **Widen `TransportResponse` to expose response headers.** Today it carries
+  `ok`, `status` and `text()`, and finding 9 makes that insufficient: a dead
+  token is a **401
+  with a zero-byte body**, and the whole diagnosis lives in `WWW-Authenticate`.
+  Any error path that builds its message from the body renders an empty string
+  for the most common recoverable failure there is. Parse RFC 6750's `error` and
+  `error_description` into a new `AuthProblem` code, and distinguish
+  `error="invalid_token"` (sign in again) from a bare `WWW-Authenticate: Bearer`
+  (nothing was sent). `TransportRequest.body` also needs to be optional or this
+  slice sends `""` on a `GET`; decide which in the PR rather than by accident.
+- ☐ **`src/auth/authProvider.ts` — the shell.** Register the provider, contribute
+  `authentication` in `package.json` with `supportsMultipleAccounts`, and hold no
+  logic that `identity.ts` or `signIn.ts` could hold instead.
+- ☐ **`createSession` and `removeSession` call the same code the sign-in and
+  sign-out commands already do.** Two sign-in implementations is how the Accounts
+  menu and the command palette drift into disagreeing about who is signed in.
+- ☐ **`getSessions` does not refresh.** Upstream refreshes on every call, and the
+  Accounts menu polls, so opening a menu becomes a network round trip and a
+  transient failure becomes a silent sign-out. Refresh against the `expiresAt`
+  1b-i already computes; a 401 from a real request stays the fallback.
+- ☐ **`removeSession` rejects an id it does not recognise.** Upstream falls back
+  to the active profile, which turns a caller's bug into signing the user out of
+  something they did not name.
+- ☐ **`onDidChangeSessions` fires on real transitions only.** Put the comparison
+  in a pure `diffSessions(before, after)` so "did anything actually change" is a
+  unit test and not an observation about event volume.
+- ☐ **`pythonOnViya.authorized` context key**, set through `setContext`, for the
+  `when` clauses Phase 2 onward will gate on.
+- ☐ **The access token stays in memory.** `sessionStore.ts` persists the refresh
+  token and only that; the provider must not widen it. Writing a credential to
+  disk that will be dead within the hour buys nothing.
+- ☐ **Raise the ratchet** from a measured run. `identity.ts` is unit-reachable, so
+  unlike 1b-ii this slice should actually move the number.
+
+**Test seam.** `identity.ts` and `diffSessions` are unit tier and are the
+specification. The provider registration, the context key, and the session change
+event need an extension host, so they land in `test/integration/auth/`. The
+identity fetch is tested against `test/helpers/mock-viya.ts` with a fixture
+scrubbed per `test/fixtures/README.md` — which requires the `PROBE-FINDINGS.md`
+entry that finding 6–9 now provides.
+
+```bash
+# ⛔ BARRIER: merge 1c-i first.
+# 1c-ii — private CAs and the TLS agent
+git checkout -b phase-1c-ii-private-ca
+git commit -m "feat(auth): trust user-supplied CA certificates on a dedicated agent"
+```
+
+☐ **1c-ii punch list.**
+
+- ☐ **A `pythonOnViya.userProvidedCertificates` setting**, a list of paths, with
+  the reference docs regenerated.
+- ☐ **A dedicated `https.Agent`**, built from `tls.rootCertificates` plus the
+  user's, passed as the `agent` option `transport.ts` deliberately left free.
+  **Do not touch `https.globalAgent`.** Upstream's `CAHelper.ts` sets
+  `https.globalAgent.options.ca`, which is process-global state in a host shared
+  with every other installed extension: it changes what *they* trust, silently,
+  and no test of ours could ever catch it.
+- ☐ **An unreadable or malformed certificate is reported, not swallowed.**
+  Upstream `console.log`s inside the `catch` around `fs.readFileSync`, which
+  fails two §5 gates on arrival. Name the path, through the log channel, and
+  carry on with the certificates that did load.
+- ☐ **A test that proves the agent is scoped.** Build the agent, then assert
+  `https.globalAgent.options.ca` is untouched. That assertion is the entire point
+  of the slice and is the one a future refactor would otherwise quietly break.
+
 ☐ **After 1c**, verify manually against your Viya: sign in, reload the window,
-confirm the session persists and the Accounts menu shows your identity.
+confirm the session persists and the Accounts menu shows your identity. Then add
+a second profile pointing at a different deployment and confirm they appear as
+**two** accounts and that signing out of one leaves the other signed in — that is
+decision 10, and it is the behaviour a single review pass is most likely to miss.
 
 ### Phase 2 — Compute session and backend seam
 
 ```bash
+# ⛔ BARRIER: merge 1c-ii first.
 # 2a — HATEOAS compute layer  ⚠ largest slice in the plan
 git checkout -b phase-2a-compute-layer
 git commit -m "feat(compute): add HATEOAS link layer, session creation, and reconnect"

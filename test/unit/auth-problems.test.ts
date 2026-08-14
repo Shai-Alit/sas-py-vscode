@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 
 import {
+  MIN_REDACTABLE_LENGTH,
   type AuthProblem,
   describeAuthProblem,
   redactSecrets,
@@ -89,11 +90,13 @@ describe("describeAuthProblem", () => {
 });
 
 const VERIFIER = "verifier-held-in-memory";
+/** Long enough to be scrubbed at all — see {@link MIN_REDACTABLE_LENGTH}. */
+const SECRET = "client-secret-placeholder";
 
 describe("redactText", () => {
   it("replaces every occurrence of every secret", () => {
     assert.equal(
-      redactText(`a ${VERIFIER} b ${VERIFIER} c secret`, [VERIFIER, "secret"]),
+      redactText(`a ${VERIFIER} b ${VERIFIER} c ${SECRET}`, [VERIFIER, SECRET]),
       "a [redacted] b [redacted] c [redacted]",
     );
   });
@@ -102,6 +105,25 @@ describe("redactText", () => {
     // A public client's secret is "". Splitting on it would put [redacted]
     // between every pair of characters in the message.
     assert.equal(redactText("nothing to hide", [""]), "nothing to hide");
+  });
+
+  it("skips a secret too short to be hidden by replacing it", () => {
+    // The message a real deployment sent, with the one-character code and
+    // verifier the tests around this one were using. Scrubbing them mangles the
+    // sentence — `In[redacted]alid redire[redacted]t …` — and hides nothing,
+    // because the missing character is obvious from the words either side.
+    const message =
+      "Invalid redirect vscode://sas.python-on-viya did not match one of the registered values";
+    assert.equal(redactText(message, ["c", "v"]), message);
+  });
+
+  it("scrubs at the floor, so the boundary is a decision and not a drift", () => {
+    const atFloor = "x".repeat(MIN_REDACTABLE_LENGTH);
+    assert.equal(redactText(`sent ${atFloor}`, [atFloor]), "sent [redacted]");
+    assert.equal(
+      redactText(`sent ${atFloor}`, [atFloor.slice(1)]),
+      `sent ${atFloor}`,
+    );
   });
 
   it("substitutes rather than deletes", () => {

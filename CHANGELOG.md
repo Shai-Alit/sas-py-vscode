@@ -269,6 +269,16 @@ called out under **Changed** with a migration note.
   Viya about you and why the answer is deliberately small, and what happens when
   each of it fails.
 
+- `PROBE-FINDINGS.md` findings 10-12, from the first real sign-in against a live
+  Viya 4 deployment: that the built-in `vscode` OAuth client registers
+  `urn:ietf:wg:oauth:2.0:oob` and no custom-scheme address, that `state` cannot
+  be used to smuggle a callback URL past it, and that SASLogon quotes the
+  `code_verifier` it received back at you. Each is the evidence for a fix below,
+  written down where the next person will look for it rather than left in a
+  commit message. Unlike findings 1-9 this evidence could not be gathered with
+  `curl`, because the authorize leg needs a human to type a password; the
+  methodology note at the head of the section says so.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in
@@ -287,13 +297,37 @@ called out under **Changed** with a migration note.
   as `…/auth-callback%3FwindowId=2` — the `?` escaped while the `=` beside it was
   not. It is now rebuilt from the parsed URI's components, so the encoding
   happens exactly once, where the authorize URL is built.
-- The PKCE code verifier can no longer reach the log. SASLogon echoes the
-  `code_verifier` it received back inside `error_description`, and that field is
-  quoted verbatim into the output channel — deliberately, because it is the most
-  useful diagnostic in the flow and people paste the log into issues. Rather than
-  drop the field and trade one leak for permanent blindness, known secrets are
-  scrubbed out of the server's text at the point the token exchange's failure
-  becomes the sign-in's.
+- Neither the PKCE code verifier nor a refresh token can reach the log. SASLogon
+  echoes the field it objected to back inside `error_description`, and that field
+  is quoted verbatim into the output channel — deliberately, because it is the
+  most useful diagnostic in the flow and people paste the log into issues. Rather
+  than drop the field and trade one leak for permanent blindness, the credentials
+  that were just sent are scrubbed out of the server's text. The scrub happens
+  where the form is posted, so it covers both grants from one place: the
+  authorization-code exchange, where the verifier leaked live, and the refresh
+  exchange, which matters more because it runs unattended and a refresh token
+  *is* the session. Everything a caller could have sent is scrubbed except
+  `client_id`, `grant_type` and `redirect_uri`, which are not secret and which
+  carry the diagnosis — "invalid redirect …" is the message that identified the
+  `oob` problem above, and a scrub that ate it would have hidden it. A value
+  under eight characters is left alone, because substitution can only hide
+  something distinctive: scrubbing a one-character secret replaces that letter
+  everywhere it occurs, wrecking the sentence while a reader recovers the
+  character from the words either side.
+- A deployment that cannot be reached while the extension asks who signed in is
+  no longer reported as a token problem. The identity call's transport failure
+  said `token-endpoint-unreachable`, which names the wrong host and sends the
+  reader to the wrong side of the deployment; it now returns an identity failure
+  carrying the path and the underlying reason.
+- Signing in again now asks Viya who signed in, instead of reusing the answer it
+  already had. The identity of a held session is cached so that renewing a token
+  costs no extra round trip, but a fresh sign-in is exactly the moment the user
+  could have chosen a different account — reusing the cache there would have
+  labelled the new session with the previous user's name. The cache is now
+  reached only on the renewal path.
+- Response headers are collected into a null-prototype map before they become an
+  object, so a header named `__proto__` or `constructor` cannot reach an object
+  literal's prototype (CodeQL: remote property injection).
 - Profile validation messages shown under an input box are now localisable. The
   model returns a `ValidationProblem` code with its parameters instead of English
   prose, and `src/profile/problems.ts` renders it through `vscode.l10n.t()`;
@@ -318,6 +352,15 @@ called out under **Changed** with a migration note.
   configuration belongs, and the secret store holds only secrets.
 
 ### Changed
+
+- The authentication provider's label goes through `vscode.l10n.t()` like every
+  other string the editor shows. It is a product name and will usually come back
+  unchanged, but the manifest already contributes it as `%authentication.label%`,
+  and a locale that transliterates it needs somewhere to say so — a bare literal
+  in the source is the one place a translator cannot reach. It is resolved when
+  the provider is registered rather than when the module loads, because a
+  module-level call would freeze the English string before the language bundle
+  is available.
 
 - The coverage ratchet is measured over **unit-reachable code**. Modules that
   import `vscode` are excluded from the c8 denominator: they cannot be loaded

@@ -40,7 +40,7 @@ import {
   type Deployment,
 } from "./clientId";
 import { createPkcePair, createState, stateMatches } from "./pkce";
-import { redactSecrets, type AuthProblem } from "./problems";
+import type { AuthProblem } from "./problems";
 import {
   buildAuthorizeUrl,
   exchangeAuthorizationCode,
@@ -351,16 +351,13 @@ export async function finishSignIn(
     return result;
   }
 
-  // SASLogon echoes the `code_verifier` it received back inside
-  // `error_description`, so a mismatched exchange hands us our own PKCE secret
-  // and we would log it. Scrubbed here, at the one place the exchange's problem
-  // becomes this module's, so no caller has to remember to.
-  const problem = redactSecrets(result.problem, [
-    pending.verifier,
-    pending.client.clientSecret,
-  ]);
-
-  if (explainsMissingClient(problem, pending.client)) {
+  // The failure arrives already scrubbed. SASLogon echoes the `code_verifier` it
+  // received back inside `error_description`, so a mismatched exchange would
+  // otherwise hand us our own PKCE secret to log; `tokenEndpoint.ts` removes
+  // everything the request carried before returning, which is a better place for
+  // it than here because the refresh grant needs the same treatment and never
+  // comes through this function.
+  if (explainsMissingClient(result.problem, pending.client)) {
     const where = describeDeployment(pending.deployment);
     return {
       ok: false,
@@ -369,7 +366,7 @@ export async function finishSignIn(
     };
   }
 
-  return { ok: false, reason: result.reason, problem };
+  return result;
 }
 
 /**

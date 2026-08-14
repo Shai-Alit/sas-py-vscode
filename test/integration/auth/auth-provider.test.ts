@@ -16,6 +16,7 @@ import type { HttpTransport } from "../../../src/auth/transport";
 import { AuthUriHandler } from "../../../src/auth/uriHandler";
 import { ProfileStore } from "../../../src/profile/store";
 import {
+  delay,
   memoryMemento,
   memorySecrets,
   testLogChannel,
@@ -52,6 +53,8 @@ const NEXT_ACCESS = "second-access-token-placeholder";
 const ENDPOINT = "https://viya.example.com";
 const PROFILE_ID = "auth-provider-integration";
 const USER_ID = "a7f3c1d9e2b4f6a80";
+/** A second person at the same deployment, for the switch-accounts test. */
+const OTHER_USER_ID = "b1c8d4e0f2a6b3c70";
 
 interface Harness {
   provider: ViyaAuthenticationProvider;
@@ -59,6 +62,15 @@ interface Harness {
   sessions: SessionStore;
   /** Every URL the transport was asked for, in order. */
   requests: string[];
+  /**
+   * Who the identity endpoint says is signed in. Mutable mid-test: signing in
+   * again as somebody else is the case the cache has to notice.
+   */
+  whoami: { id: string; name: string };
+  /** Answers for the sign-in paste box, consumed in order. */
+  answers: string[];
+  /** Every set of options the paste box was opened with. */
+  prompts: vscode.InputBoxOptions[];
   /** Keys and values passed to `setContext`. */
   contexts: { key: string; value: unknown }[];
   /** Sessions the change event reported, flattened. */
@@ -67,7 +79,12 @@ interface Harness {
 }
 
 function harness(
-  options: { identityStatus?: number; refreshOk?: boolean } = {},
+  options: {
+    identityStatus?: number;
+    refreshOk?: boolean;
+    /** Lifetime of the tokens the fake endpoint issues. Default one hour. */
+    expiresIn?: number;
+  } = {},
 ): Harness {
   const log = testLogChannel("auth provider");
   const secrets = memorySecrets();
@@ -75,6 +92,9 @@ function harness(
   const contexts: { key: string; value: unknown }[] = [];
   const events: vscode.AuthenticationProviderAuthenticationSessionsChangeEvent[] =
     [];
+  const whoami = { id: USER_ID, name: "Dana Whitfield" };
+  const answers: string[] = [];
+  const prompts: vscode.InputBoxOptions[] = [];
 
   // The init argument is deliberately not declared: nothing here reads it, and
   // a declared-but-unused parameter is a lint error rather than documentation.
@@ -94,8 +114,8 @@ function harness(
           Promise.resolve(
             status < 300
               ? JSON.stringify({
-                  id: USER_ID,
-                  name: "Dana Whitfield",
+                  id: whoami.id,
+                  name: whoami.name,
                   externalLoginIds: ["dwhitfield"],
                 })
               : "",
@@ -116,7 +136,7 @@ function harness(
                 access_token: NEXT_ACCESS,
                 refresh_token: FAKE_REFRESH,
                 token_type: "bearer",
-                expires_in: 3600,
+                expires_in: options.expiresIn ?? 3600,
               })
             : JSON.stringify({ error: "invalid_grant" }),
         ),
@@ -147,6 +167,25 @@ function harness(
         contexts.push({ key, value });
         return Promise.resolve(undefined);
       },
+      // Enough of the browser flow to drive `createSession` unattended. No
+      // callback is ever dispatched here, so every sign-in below finishes
+      // through the paste box — which is the ordinary route on a deployment
+      // whose client registers only `oob` anyway. `browser-flow.test.ts` owns
+      // the race between the two arms; this file only needs a way in.
+      browser: {
+        openExternal: () => Promise.resolve(true),
+        showInputBox: async (
+          boxOptions: vscode.InputBoxOptions,
+          cancel: vscode.CancellationToken,
+        ): Promise<string | undefined> => {
+          prompts.push(boxOptions);
+          while (answers.length === 0) {
+            if (cancel.isCancellationRequested) return undefined;
+            await delay(5);
+          }
+          return answers.shift();
+        },
+      },
     },
   );
 
@@ -159,6 +198,9 @@ function harness(
     profiles,
     sessions,
     requests,
+    whoami,
+    answers,
+    prompts,
     contexts,
     events,
     dispose(): void {
@@ -377,6 +419,63 @@ describe("Viya authentication provider", () => {
         });
       } finally {
         refused.dispose();
+      }
+    });
+
+    it("asks who signed in again when a second sign-in follows the first", async () => {
+      // Switching accounts on one deployment: sign in as somebody else while the
+      // first session is still held. The identity is cached in memory for the
+      // window, and reusing it here would hand back a session labelled with the
+      // previous user while carrying the new user's access token — a wrong name
+      // against a real credential. Nothing covered this before the review that
+      // found it, because until now `createSession` could not be driven without
+      // opening a browser.
+      h.answers.push("first-code");
+      const first = await h.provider.createSession();
+      assert.equal(first.account.label, "Dana Whitfield");
+
+      h.whoami.id = OTHER_USER_ID;
+      h.whoami.name = "Ravi Mehta";
+      h.answers.push("second-code");
+      const second = await h.provider.createSession();
+
+      assert.equal(second.account.label, "Ravi Mehta");
+      assert.equal(second.account.id, accountId(ENDPOINT, OTHER_USER_ID));
+      assert.equal(h.prompts.length, 2, "the second sign-in never ran");
+      assert.equal(
+        h.requests.filter((url) => url.includes("/identities/")).length,
+        2,
+        "the second sign-in served the first sign-in's identity from cache",
+      );
+    });
+
+    it("does not ask who we are again when only the token was renewed", async () => {
+      // The other half of the same decision, and the reason the cache is still
+      // there: a renewal is the same grant and the same user, and this resource
+      // sends `no-store` with no `ETag` (probe finding 9), so a second lookup
+      // would be a network round trip that cannot learn anything. Thirty seconds
+      // is inside the expiry skew, so every read renews.
+      const shortLived = harness({ expiresIn: 30 });
+      try {
+        await shortLived.sessions.write(PROFILE_ID, {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        });
+
+        await shortLived.provider.getSessions();
+        await shortLived.provider.getSessions();
+
+        const identities = shortLived.requests.filter((url) =>
+          url.includes("/identities/"),
+        );
+        const renewals = shortLived.requests.filter((url) =>
+          url.includes("/SASLogon/"),
+        );
+        assert.equal(renewals.length, 2, "the spent token was not renewed");
+        assert.equal(identities.length, 1, "a renewal re-read the identity");
+      } finally {
+        shortLived.dispose();
       }
     });
 

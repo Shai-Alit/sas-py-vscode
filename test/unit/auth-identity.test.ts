@@ -363,6 +363,26 @@ describe("fetchCurrentUser", () => {
     assert.ok(result.problem.detail.includes("500"));
   });
 
+  it("reports a request that never arrived as an identity failure too", async () => {
+    // Not `token-endpoint-unreachable`, which is what this branch said until a
+    // reviewer caught it. The codes choose what the user is told to do: that one
+    // says the sign-in could not reach the deployment and sends them to check
+    // the profile endpoint and their proxy, and this failure happens *after* a
+    // sign-in that worked — so it would send them to inspect the one thing
+    // already known to be fine.
+    const result = await fetchCurrentUser(request, {
+      transport: () => Promise.reject(new Error("socket hang up")),
+    });
+
+    assert.ok(!result.ok);
+    assert.ok(result.problem.code === "identity-unavailable");
+    assert.ok(result.problem.detail.includes("socket hang up"));
+    assert.ok(
+      result.problem.detail.includes(CURRENT_USER_PATH),
+      "the detail does not say which request failed",
+    );
+  });
+
   it("survives a body that is not JSON", async () => {
     // A gateway or a captive portal in front of Viya answers 200 with HTML. The
     // parse has to fail as a diagnosis, not as an exception out of the provider.

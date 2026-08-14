@@ -44,7 +44,10 @@
  *
  * The resolved identity is cached in memory too, for the length of the window.
  * Probe finding 9 records that this resource sends `no-store` and no `ETag`, so
- * there is nothing to revalidate against — ask once and hold the answer.
+ * there is nothing to revalidate against — ask once and hold the answer. The
+ * cache is reused only when a token is *renewed*; a fresh sign-in always asks
+ * again, because that is the moment the user could have chosen someone else.
+ * {@link IdentitySource} carries the distinction.
  */
 
 import * as vscode from "vscode";
@@ -52,7 +55,7 @@ import * as vscode from "vscode";
 import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { diffSessions, isEmptyDiff, type SessionSummary } from "./accounts";
-import { signInWithBrowser } from "./browserFlow";
+import { signInWithBrowser, type BrowserSignInDeps } from "./browserFlow";
 import { BUILT_IN_CLIENT_ID } from "./clientId";
 import {
   accountId as toAccountId,
@@ -81,8 +84,24 @@ import type { AuthUriHandler } from "./uriHandler";
  */
 export const AUTH_PROVIDER_ID = "pythonOnViya";
 
-/** The name shown in the Accounts menu. Localised at the contribution point. */
-export const AUTH_PROVIDER_LABEL = "SAS Viya";
+/**
+ * The name shown in the Accounts menu.
+ *
+ * A function rather than a constant, and called at registration time: a
+ * module-level `vscode.l10n.t()` runs while the module is still being loaded,
+ * which on some hosts is before the bundle for the active display language has
+ * been read, and would freeze the English string for the life of the window.
+ *
+ * "SAS Viya" is a product name, so most locales will pass it through unchanged.
+ * It goes through `l10n` anyway for two reasons: the manifest already contributes
+ * this label as `%authentication.label%`, so the source is translatable in one
+ * place and not the other, and a locale that writes the name in a non-Latin
+ * script — where a transliteration is what a reader expects — has nowhere to say
+ * so if the string never reaches the bundle.
+ */
+export function authProviderLabel(): string {
+  return vscode.l10n.t("SAS Viya");
+}
 
 /**
  * The `when` clause key Phase 2 onward gates on.
@@ -102,7 +121,39 @@ export interface AuthProviderDeps {
   identity?: IdentityDeps | undefined;
   /** Defaults to {@link vscode.commands.executeCommand} for `setContext`. */
   setContext?: ((key: string, value: unknown) => Thenable<unknown>) | undefined;
+  /**
+   * The browser-facing ports of {@link signInWithBrowser}, passed straight
+   * through.
+   *
+   * Only the three that would otherwise launch a browser or block on a modal;
+   * `handler`, `sessions`, `log` and `extensionId` are this provider's own and
+   * are not a caller's to substitute. Without this, `createSession` opens a real
+   * browser the moment it is called, so the one path that has to be exercised —
+   * signing in again while a session for the same profile is still held — could
+   * not be tested at all.
+   */
+  browser?:
+    | Pick<BrowserSignInDeps, "asExternalUri" | "openExternal" | "showInputBox">
+    | undefined;
 }
+
+/**
+ * Where the tokens being recorded came from, which decides whether the identity
+ * already in memory still describes them.
+ *
+ * `"renewed-token"` is a refresh of the session that is already held: same
+ * grant, same user, and the identity resource sends `no-store` with no `ETag`
+ * (probe finding 9), so there is nothing to revalidate against and asking again
+ * would put a network round trip behind opening the Accounts menu.
+ *
+ * `"new-sign-in"` went through the browser, where the user chose who to be. A
+ * second sign-in on the same profile while the first is still live is the
+ * ordinary way to switch accounts on one deployment, and reusing the cache there
+ * hands back a session labelled with the previous user while carrying the new
+ * user's token — a wrong name against a real credential, which is worse than no
+ * name at all.
+ */
+type IdentitySource = "renewed-token" | "new-sign-in";
 
 /** What is held in memory for a profile that is signed in right now. */
 interface LiveSession {
@@ -206,6 +257,7 @@ export class ViyaAuthenticationProvider
         sessions: this.sessions,
         log: this.log,
         extensionId: this.extensionId,
+        ...(this.deps.browser ?? {}),
         ...(this.deps.token === undefined ? {} : { token: this.deps.token }),
       },
     );
@@ -217,7 +269,7 @@ export class ViyaAuthenticationProvider
       );
     }
 
-    const session = await this.establish(active.profile, tokens);
+    const session = await this.establish(active.profile, tokens, "new-sign-in");
     if (session === undefined) {
       throw new Error(
         vscode.l10n.t(
@@ -315,20 +367,22 @@ export class ViyaAuthenticationProvider
       return undefined;
     }
 
-    return await this.establish(profile, result.tokens);
+    return await this.establish(profile, result.tokens, "renewed-token");
   }
 
   /**
    * Records a fresh token set against a profile and resolves who it belongs to.
    *
-   * The identity lookup is cached across refreshes: a renewed token is the same
-   * user, and this endpoint carries no `ETag` to revalidate against anyway.
+   * `identity` is not a tuning knob — it is which question the caller is
+   * answering. See {@link IdentitySource}.
    */
   private async establish(
     profile: ViyaProfile,
     tokens: Tokens,
+    identity: IdentitySource,
   ): Promise<vscode.AuthenticationSession | undefined> {
-    const cached = this.live.get(profile.id);
+    const cached =
+      identity === "renewed-token" ? this.live.get(profile.id) : undefined;
     let user = cached?.endpoint === profile.endpoint ? cached.user : undefined;
 
     if (user === undefined) {
@@ -511,7 +565,7 @@ export function registerAuthProvider(
     provider,
     vscode.authentication.registerAuthenticationProvider(
       AUTH_PROVIDER_ID,
-      AUTH_PROVIDER_LABEL,
+      authProviderLabel(),
       provider,
       { supportsMultipleAccounts: true },
     ),

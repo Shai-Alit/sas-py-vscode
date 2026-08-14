@@ -248,13 +248,27 @@ async function send(
   } catch (error) {
     // The message only. An injected transport's rejection can carry the request
     // that produced it, and this request's headers contain an access token.
-    const detail = error instanceof Error ? error.message : "unknown error";
+    const message = error instanceof Error ? error.message : "unknown error";
     return {
       kind: "result",
       result: {
         ok: false,
         reason: `could not reach ${url}`,
-        problem: { code: "token-endpoint-unreachable", detail },
+        // `identity-unavailable`, not `token-endpoint-unreachable`, even though
+        // the failure is a transport failure and the two read alike from here.
+        // The request that failed went to the identities service, and the codes
+        // are not descriptions — they choose what the user is told to do.
+        // `token-endpoint-unreachable` says the sign-in could not reach the
+        // deployment and sends them to check the profile endpoint and their
+        // proxy; this happens *after* a sign-in that worked, so that advice
+        // sends them to look at the one thing already known to be fine. Every
+        // other failure arm in this function already says `identity-unavailable`
+        // — this one differed because it was written from the token endpoint's
+        // version of the same `catch`.
+        problem: {
+          code: "identity-unavailable",
+          detail: `${CURRENT_USER_PATH} — ${message}`,
+        },
       },
     };
   }

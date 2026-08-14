@@ -4,11 +4,13 @@
 import assert from "node:assert/strict";
 import {
   createServer,
+  type IncomingHttpHeaders,
   type IncomingMessage,
   type Server,
   type ServerResponse,
 } from "node:http";
 import {
+  collectHeaders,
   MAX_BODY_BYTES,
   nodeHttpTransport,
   type TransportRequest,
@@ -337,6 +339,37 @@ describe("nodeHttpTransport", () => {
         headers: {},
         body: "",
       }),
+    );
+  });
+});
+
+describe("collectHeaders", () => {
+  it("keeps a __proto__ field as data instead of losing it to the prototype", () => {
+    // The header name comes from the server. Written as
+    // `headers[name.toLowerCase()] = value` this field is silently discarded —
+    // assigning a string to `__proto__` on a plain object is a no-op — and
+    // CodeQL reads the same line as remote property injection. Going through a
+    // `Map` and `Object.fromEntries` defines the property rather than assigning
+    // it, so the field survives as data and the prototype is untouched.
+    //
+    // The key is computed on purpose: a bare `__proto__:` in an object literal
+    // sets the prototype instead of creating a property, which is the hazard
+    // itself rather than a way to test for it.
+    const raw: IncomingHttpHeaders = {
+      ["__proto__"]: "polluted",
+      "WWW-Authenticate": 'Bearer error="invalid_token"',
+    };
+    const headers = collectHeaders(raw);
+
+    assert.deepEqual(
+      Object.entries(headers).find(([name]) => name === "__proto__"),
+      ["__proto__", "polluted"],
+    );
+    assert.equal(Object.getPrototypeOf(headers), Object.prototype);
+    assert.equal(
+      headers["www-authenticate"],
+      'Bearer error="invalid_token"',
+      "the ordinary field was lost alongside the hostile one",
     );
   });
 });

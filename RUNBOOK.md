@@ -979,9 +979,10 @@ which is the test for folding rather than filing.
    received back inside `error_description`, and `describeAuthProblem` passes
    that field through verbatim — by design, it is the most useful diagnostic in
    the flow. `redactSecrets` in `problems.ts` scrubs the values this process
-   knows are secret out of the server's text, applied once in `finishSignIn` so
-   no caller has to remember to. Dropping `error_description` instead would have
-   traded one leak for permanent blindness.
+   knows are secret out of the server's text. Dropping `error_description`
+   instead would have traded one leak for permanent blindness. It was applied in
+   `finishSignIn` first and moved into `tokenEndpoint.post` under review (below),
+   because one call site per grant is one call site too many.
 
 **Three source changes the punch list did not ask for, all found by writing the
 tests, 2026-08-13.** Recorded here because "the tests caught it" is worth more as
@@ -1001,6 +1002,50 @@ a record than as a memory.
    every Viya 4 from 2022.11 on, so very nearly all of them. It now resolves the
    same `BUILT_IN_CLIENT_ID` default the sign-in path does. This one would not
    have shown up until a token expired, an hour into a working session.
+
+**Six review findings answered on 2026-08-14**, from CodeQL and the two bot
+reviewers on `phase-1c-i-auth-provider`. All six were accepted; none needed an
+argument, which is worth noting on its own.
+
+1. **CodeQL, high: remote property injection** in `transport.ts`. Response
+   headers were accumulated into an object literal, so a header named
+   `__proto__` reached its prototype. They are collected into a `Map` and
+   handed to `Object.fromEntries` now, and the collection is an exported pure
+   function so it is unit-testable rather than reachable only through a socket.
+2. **A transport failure while reading the identity said
+   `token-endpoint-unreachable`.** It names the wrong host and points the reader
+   at the wrong half of the deployment; it is an `identity-unavailable` carrying
+   the path and the reason now.
+3. **`createSession` served the cached identity.** The cache exists so renewing a
+   token costs no round trip, but a fresh sign-in is precisely when the user may
+   have picked a different account, and the new session would have worn the old
+   user's name. `establish` now takes an `IdentitySource`, so the seam is in the
+   type rather than in a comment. The reviewer's other half was right too — no
+   test covered "sign in again while a live session is held", because
+   `createSession` would have opened a real browser. `AuthProviderDeps` gained
+   the three browser ports, and there are now two tests: one that the second
+   sign-in re-asks, one that a renewal still does not.
+4. **The refresh failure logged an unredacted problem.** Rather than add a second
+   `redactSecrets` call beside the first, the scrub moved into the token
+   endpoint's `post`, which is the one place both grants pass through. Four unit
+   tests pin the behaviour, including the two that matter most: a refresh token
+   echoed back is scrubbed, and `redirect_uri` is *not* — that message is what
+   diagnosed the `oob` problem, and an over-eager scrub would have hidden it.
+   Writing those tests turned up a real defect in the scrub itself:
+   `redactText` had no length floor, so the one-character `code` and
+   `codeVerifier` the existing failure tests used matched everywhere and
+   rendered the message as `In[redacted]alid redire[redacted]t …`. Values under
+   `MIN_REDACTABLE_LENGTH` (8) are skipped now — substitution can only hide a
+   distinctive value, and a single character is recoverable from context anyway
+   — and the placeholders in those tests are realistic lengths, so they exercise
+   the substitution rather than the skip.
+5. **`AUTH_PROVIDER_LABEL` was a bare literal.** Now `authProviderLabel()`,
+   resolved at registration through `vscode.l10n.t()`. `l10n/bundle.l10n.json` is
+   generated at `vscode:prepublish`, so nothing had to be hand-edited.
+6. **The live claims were not in `PROBE-FINDINGS.md`.** Fair: they were in a
+   commit message and a plan paragraph. Findings 10-12 record them properly, with
+   a methodology note admitting this evidence came from driving a browser rather
+   than from `curl`, because the authorize leg needs a password typed by a human.
 
 **The identity fixture is in `test/fixtures/harness/`, not `viya4/`.** Findings 7
 and 8 deliberately recorded field *shapes* rather than values, because the values

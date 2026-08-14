@@ -119,6 +119,28 @@ export function describeAuthProblem(problem: AuthProblem): string {
 const REDACTED = "[redacted]";
 
 /**
+ * The shortest value {@link redactText} will scrub.
+ *
+ * Substitution can only hide a value that is distinctive. A one-character secret
+ * matches at a large fraction of the positions in any English sentence, so
+ * scrubbing it destroys the message — while the tests for this were being
+ * written, a `code` of `"c"` and a verifier of `"v"` turned
+ * `Invalid redirect vscode://…` into `In[redacted]alid redire[redacted]t
+ * [redacted]s[redacted]ode://…`. Nor does it protect anything: a reader
+ * recovers the character from the surrounding words immediately. Below some
+ * length the scrub is pure loss, and this is where that line is drawn.
+ *
+ * Eight is a judgement rather than a standard. Nothing this module is asked to
+ * scrub comes close to it in practice — RFC 7636 §4.1 puts a code verifier at
+ * 43 to 128 characters, and authorization codes and refresh tokens are opaque
+ * and long — so the only value that could realistically fall under the floor is
+ * a hand-chosen client secret, which at that length has a larger problem than
+ * this log line. The empty secret a public client carries is the case that
+ * matters, and it is covered by the same test.
+ */
+export const MIN_REDACTABLE_LENGTH = 8;
+
+/**
  * Removes known secrets from a server-supplied diagnostic.
  *
  * Written after a real failed exchange logged this, verbatim:
@@ -140,13 +162,14 @@ const REDACTED = "[redacted]";
  * would trade a real leak for a permanent blindness. Scrubbing the values we
  * already know keeps both.
  *
- * Empty secrets are skipped: a public client's secret is `""`, and replacing
- * every empty string in a message would redact the whole message.
+ * Values shorter than {@link MIN_REDACTABLE_LENGTH} are skipped.
  */
 export function redactText(text: string, secrets: readonly string[]): string {
   return secrets.reduce(
     (scrubbed, secret) =>
-      secret === "" ? scrubbed : scrubbed.split(secret).join(REDACTED),
+      secret.length < MIN_REDACTABLE_LENGTH
+        ? scrubbed
+        : scrubbed.split(secret).join(REDACTED),
     text,
   );
 }

@@ -160,18 +160,39 @@ function transportError(error: unknown): Error {
  * for the fields this project reads, and callers get one type to handle instead
  * of three. `set-cookie` is the documented exception to that equivalence, and
  * nothing here reads cookies.
+ *
+ * ## Why this goes through a `Map`
+ *
+ * The field name comes from the server, and the obvious spelling —
+ * `headers[name.toLowerCase()] = value` — is an assignment to a property named by
+ * a remote party. CodeQL flags it as remote property injection, and although the
+ * concrete attack does not land here (the value is always a string, and
+ * `obj.__proto__ = "text"` is a silent no-op rather than pollution), "does not
+ * land" is a property of today's code that the next reader has to re-derive.
+ *
+ * A `Map` accepts any key as data, and `Object.fromEntries` *defines* properties
+ * rather than assigning them, so a `__proto__` field arrives as an own property
+ * instead of reaching `Object.prototype`'s setter and vanishing. That is the
+ * behaviour the test asserts, and it is strictly better than the version that
+ * silently dropped such a field.
+ *
+ * Exported only so that property can be asserted directly. Whether Node's own
+ * parser hands a `__proto__` field to this function at all has changed between
+ * Node versions, so a test that drives it through a loopback server would be
+ * asserting the runtime's behaviour rather than ours.
  */
-function collectHeaders(
+export function collectHeaders(
   raw: IncomingHttpHeaders,
 ): Readonly<Record<string, string>> {
-  const headers: Record<string, string> = {};
+  const collected = new Map<string, string>();
   for (const [name, value] of Object.entries(raw)) {
     if (value === undefined) continue;
-    headers[name.toLowerCase()] = Array.isArray(value)
-      ? value.join(", ")
-      : value;
+    collected.set(
+      name.toLowerCase(),
+      Array.isArray(value) ? value.join(", ") : value,
+    );
   }
-  return headers;
+  return Object.fromEntries(collected);
 }
 
 /**

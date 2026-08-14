@@ -350,9 +350,13 @@ describe("refreshTokens", () => {
 describe("token endpoint failures", () => {
   const viya = mockViya();
 
+  // Realistic lengths, not the one-character placeholders these once were: the
+  // failure paths scrub the request out of the response, and a single character
+  // is below the floor that scrub applies, so short values would exercise the
+  // skip rather than the substitution on every test in this suite.
   const exchange = (deps: TokenEndpointDeps = {}) =>
     exchangeAuthorizationCode(
-      { ...baseRequest, code: "c", codeVerifier: "v" },
+      { ...baseRequest, code: "the-code", codeVerifier: "the-verifier" },
       { now, ...deps },
     );
 
@@ -519,6 +523,117 @@ describe("token endpoint failures", () => {
       code: "token-response-malformed",
       detail: "HTTP 504 with no OAuth error field",
     });
+  });
+});
+
+/**
+ * What the deployment says about our request, minus our request.
+ *
+ * SASLogon quotes the field it objected to back inside `error_description`. That
+ * was observed live on 2026-08-13, on the sign-in grant, with the PKCE verifier
+ * in it. These pin both halves of the response: that a credential the request
+ * carried does not survive into anything a caller could log, and that the one
+ * echoed field which is *not* a credential still does — because it is the only
+ * evidence a misregistered client ever produces.
+ *
+ * Both grants are exercised. The refresh grant is the one that matters more and
+ * the one nothing covered: it runs unattended on a timer, `authProvider.resolve`
+ * logs its failure directly, and a refresh token is the whole session rather than
+ * a verifier that is already spent by the time it leaks.
+ */
+describe("token endpoint credential scrubbing", () => {
+  const viya = mockViya();
+
+  /** Answers every token request with an OAuth rejection quoting `description`. */
+  const rejectWith = (description: string): void => {
+    viya.use(
+      http.post(TOKEN_URL, () =>
+        HttpResponse.json(
+          { error: "invalid_grant", error_description: description },
+          { status: 400 },
+        ),
+      ),
+    );
+  };
+
+  it("keeps a refresh token out of a rejection that echoes it back", async () => {
+    rejectWith(`Invalid refresh token: ${FAKE_REFRESH}`);
+
+    const result = await refreshTokens(
+      { ...baseRequest, refreshToken: FAKE_REFRESH },
+      { now },
+    );
+
+    assert.ok(!result.ok);
+    // The whole result, not just the problem: `reason` is logged too, and the
+    // two are built from the same string on some paths.
+    assert.ok(
+      !JSON.stringify(result).includes(FAKE_REFRESH),
+      "the refresh token survived into the failure",
+    );
+    assert.ok(result.problem.code === "oauth-rejected");
+    assert.equal(result.problem.error, "invalid_grant");
+    // Redacted, not dropped. "invalid_grant" alone does not distinguish a
+    // revoked token from an expired one.
+    assert.match(String(result.problem.description), /Invalid refresh token: /);
+  });
+
+  it("keeps the PKCE verifier out of the rejection that leaked it live", async () => {
+    rejectWith("Invalid code verifier: the-verifier");
+
+    const result = await exchangeAuthorizationCode(
+      { ...baseRequest, code: "the-code", codeVerifier: "the-verifier" },
+      { now },
+    );
+
+    assert.ok(!result.ok);
+    assert.ok(!JSON.stringify(result).includes("the-verifier"));
+    assert.ok(!JSON.stringify(result).includes("the-code"));
+  });
+
+  it("leaves the redirect URI in, because that message is the diagnosis", async () => {
+    // The real one, near enough: this is the response that identified the
+    // built-in `vscode` client as registered for `oob` and nothing else. A scrub
+    // that took `redirect_uri` with it would have replaced the answer with
+    // "invalid_grant ([redacted] did not match)".
+    rejectWith(
+      "Invalid redirect vscode://sas.python-on-viya did not match one of the registered values",
+    );
+
+    const result = await exchangeAuthorizationCode(
+      {
+        ...baseRequest,
+        code: "the-code",
+        codeVerifier: "the-verifier",
+        redirectUri: "vscode://sas.python-on-viya",
+      },
+      { now },
+    );
+
+    assert.ok(!result.ok);
+    assert.ok(result.problem.code === "oauth-rejected");
+    assert.match(
+      String(result.problem.description),
+      /vscode:\/\/sas\.python-on-viya/,
+    );
+  });
+
+  it("does not redact on the empty client secret", async () => {
+    // `clientSecret` is "" for a public client, which is every deployment this
+    // has been run against. A scrub that treated it as a secret would match at
+    // every position in the string and replace the entire message. The code and
+    // the verifier are given realistic values so that the empty secret is the
+    // only degenerate input, and this test cannot pass for the wrong reason.
+    rejectWith("Authorization code expired");
+
+    const result = await exchangeAuthorizationCode(
+      { ...baseRequest, code: "the-code", codeVerifier: "the-verifier" },
+      { now },
+    );
+
+    assert.ok(!result.ok);
+    assert.ok(result.problem.code === "oauth-rejected");
+    assert.equal(result.problem.description, "Authorization code expired");
   });
 });
 

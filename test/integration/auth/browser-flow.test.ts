@@ -304,6 +304,29 @@ describe("browser sign-in", () => {
     await signedIn;
   });
 
+  it("asks the host anyway on the built-in client, and sends nothing", async () => {
+    // The real deployment's shape, and the one this whole arrangement failed
+    // against on 2026-08-14: with no `clientId` on the profile the flow uses the
+    // built-in `vscode` client, which registers `urn:ietf:wg:oauth:2.0:oob` and
+    // no `vscode://` address, so sending one is rejected after the password.
+    // `asExternalUri` is still called — the shell's job is to say what the editor
+    // can listen on, not to decide whether the deployment will use it — and the
+    // paste box is the only arm that can win.
+    const builtIn: BrowserSignInRequest = {
+      profileId: PROFILE_ID,
+      endpoint: "https://viya.example.com",
+    };
+    h.answers.push("pasted-code");
+
+    const tokens = await signInWithBrowser(builtIn, h.deps);
+    const authorize = await h.authorizeUrl();
+
+    assert.ok(tokens, "the built-in client could not finish through the box");
+    assert.equal(authorize.searchParams.get("redirect_uri"), null);
+    assert.equal(authorize.searchParams.get("client_id"), "vscode");
+    assert.equal(h.exchanges[0]?.get("redirect_uri"), null);
+  });
+
   it("still offers the paste box when no browser could be opened", async () => {
     // A machine with no browser handler is not a machine where sign-in has to
     // fail: the user can open the URL themselves and paste what comes back.

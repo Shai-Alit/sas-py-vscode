@@ -185,6 +185,11 @@ export async function signInWithBrowser(
  * registered, leaving the paste box as the way back. Worth degrading to rather
  * than failing, because the alternative is an environment where sign-in is
  * impossible instead of manual.
+ *
+ * A URI that *is* produced is an offer rather than an instruction — `beginSignIn`
+ * drops it again for the built-in client, which registers only
+ * `urn:ietf:wg:oauth:2.0:oob`. This function's job is to say what the editor can
+ * listen on, not whether the deployment will use it.
  */
 async function callbackUri(
   deps: BrowserSignInDeps,
@@ -196,9 +201,22 @@ async function callbackUri(
       `${vscode.env.uriScheme}://${deps.extensionId}${CALLBACK_PATH}`,
     );
     const external = await asExternalUri(local);
-    // `true` skips re-encoding: the value goes through `URLSearchParams` on its
-    // way into the authorize URL, which encodes it exactly once.
-    return external.toString(true);
+    // Rebuilt from components rather than returned as `toString(true)`.
+    //
+    // `asExternalUri` appends a `windowId` query parameter so a callback reaches
+    // the window that started the sign-in. Against a real deployment on
+    // 2026-08-13 the value arrived at SASLogon as
+    // `…/auth-callback%3FwindowId=2` — the `?` percent-encoded while the `=`
+    // beside it was not, which is what a string already carrying a literal
+    // `%3F` looks like after `URLSearchParams` escapes the `%`. So
+    // `toString(true)` is not returning what its name promises here.
+    //
+    // Concatenating the parsed parts sidesteps the question entirely: whether
+    // the editor put `windowId` in the query or spelled it into the path, this
+    // produces the one URL with a single unescaped `?`, and the encoding then
+    // happens exactly once, in `buildAuthorizeUrl`.
+    const query = external.query === "" ? "" : `?${external.query}`;
+    return `${external.scheme}://${external.authority}${external.path}${query}`;
   } catch (error) {
     deps.log.warn(
       vscode.l10n.t(
@@ -212,6 +230,14 @@ async function callbackUri(
 
 /**
  * Runs both arms and resolves with whichever settles first.
+ *
+ * Both, even though only one can win on a given deployment: on the built-in
+ * client the browser never comes back (see {@link callbackUri}) and the paste
+ * box is the only route, while on a client an administrator registered with our
+ * redirect URI the callback arrives on its own and racing it against an input
+ * box the user never has to touch costs nothing. Deciding between them up front
+ * would mean predicting the deployment's client registration, which cannot be
+ * pre-flighted — the answer only arrives after the user has typed a password.
  *
  * `Promise.race` is the whole mechanism, and the loser is torn down in a
  * `finally` rather than left dangling: the URI handler subscription is disposed
@@ -336,7 +362,7 @@ function pasteBoxOptions(retry: boolean): vscode.InputBoxOptions {
           "That did not contain a sign-in code for this window. Paste the address the browser finished on, or the code it showed.",
         )
       : vscode.l10n.t(
-          "Finish signing in through the browser. If it cannot return you here automatically, paste the address it finished on — or the code it showed — below.",
+          "Finish signing in through the browser, then paste the code it shows — or the address it finished on — below. Some deployments return you here automatically instead, and then this box closes on its own.",
         ),
     // Deliberately not masked, unlike the client-secret prompt next door. What
     // goes here is an authorization code: single-use, valid for about a minute,

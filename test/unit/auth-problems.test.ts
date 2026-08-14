@@ -3,7 +3,12 @@
 
 import assert from "node:assert/strict";
 
-import { type AuthProblem, describeAuthProblem } from "../../src/auth/problems";
+import {
+  type AuthProblem,
+  describeAuthProblem,
+  redactSecrets,
+  redactText,
+} from "../../src/auth/problems";
 
 /**
  * These sentences go to the output channel, and from there into issue reports
@@ -20,6 +25,10 @@ const every: AuthProblem[] = [
   { code: "token-endpoint-unreachable", detail: "ECONNREFUSED" },
   { code: "token-response-malformed", detail: "no access_token field" },
   { code: "state-mismatch" },
+  { code: "session-expired" },
+  { code: "session-expired", description: "Access token expired" },
+  { code: "not-authenticated" },
+  { code: "identity-unavailable", detail: "406 for the summary media type" },
 ];
 
 describe("describeAuthProblem", () => {
@@ -76,5 +85,86 @@ describe("describeAuthProblem", () => {
     // evidence anywhere that a callback arrived and was rejected on purpose.
     assert.match(describeAuthProblem({ code: "state-mismatch" }), /state/);
     assert.match(describeAuthProblem({ code: "state-mismatch" }), /discarded/);
+  });
+});
+
+const VERIFIER = "verifier-held-in-memory";
+
+describe("redactText", () => {
+  it("replaces every occurrence of every secret", () => {
+    assert.equal(
+      redactText(`a ${VERIFIER} b ${VERIFIER} c secret`, [VERIFIER, "secret"]),
+      "a [redacted] b [redacted] c [redacted]",
+    );
+  });
+
+  it("skips the empty secret", () => {
+    // A public client's secret is "". Splitting on it would put [redacted]
+    // between every pair of characters in the message.
+    assert.equal(redactText("nothing to hide", [""]), "nothing to hide");
+  });
+
+  it("substitutes rather than deletes", () => {
+    // An emptied field reads as "the server said nothing", which is a different
+    // and misleading diagnosis. The marker says a value was removed on purpose.
+    assert.match(redactText(VERIFIER, [VERIFIER]), /\[redacted\]/);
+  });
+});
+
+describe("redactSecrets", () => {
+  it("scrubs the OAuth description SASLogon echoes the verifier into", () => {
+    assert.deepEqual(
+      redactSecrets(
+        {
+          code: "oauth-rejected",
+          error: "invalid_grant",
+          description: `Invalid code verifier: ${VERIFIER}`,
+        },
+        [VERIFIER],
+      ),
+      {
+        code: "oauth-rejected",
+        error: "invalid_grant",
+        description: "Invalid code verifier: [redacted]",
+      },
+    );
+  });
+
+  it("scrubs an expiry description too", () => {
+    assert.deepEqual(
+      redactSecrets({ code: "session-expired", description: VERIFIER }, [
+        VERIFIER,
+      ]),
+      { code: "session-expired", description: "[redacted]" },
+    );
+  });
+
+  it("returns the same object when there is nothing to scrub", () => {
+    // Identity, not equality: the common path allocates nothing, and a caller
+    // can tell whether anything was removed.
+    const clean: AuthProblem = {
+      code: "oauth-rejected",
+      error: "invalid_grant",
+      description: "Authorization code expired",
+    };
+    assert.equal(redactSecrets(clean, [VERIFIER]), clean);
+
+    const bare: AuthProblem = {
+      code: "oauth-rejected",
+      error: "invalid_grant",
+    };
+    assert.equal(redactSecrets(bare, [VERIFIER]), bare);
+
+    const ours: AuthProblem = { code: "state-mismatch" };
+    assert.equal(redactSecrets(ours, [VERIFIER]), ours);
+  });
+
+  it("never scrubs text this process wrote", () => {
+    // `deployment` and `detail` are ours, not the server's. Redacting them
+    // would delete the diagnosis to protect a value that was never a secret —
+    // so a secret list that happens to match them changes nothing.
+    for (const problem of every) {
+      assert.equal(redactSecrets(problem, ["Viya", "ECONNREFUSED"]), problem);
+    }
   });
 });

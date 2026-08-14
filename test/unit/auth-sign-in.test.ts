@@ -42,6 +42,9 @@ const FAKE_REFRESH = "refresh-token-placeholder";
 const STATE = "state-issued-by-this-process";
 const VERIFIER = "verifier-held-in-memory";
 
+/** What `callbackUri()` would hand back in a real extension host. */
+const CALLBACK = "vscode://x.python-on-viya/auth-callback";
+
 const fixedPkce = () => ({
   verifier: VERIFIER,
   challenge: deriveChallenge(VERIFIER),
@@ -72,19 +75,34 @@ describe("beginSignIn", () => {
     assert.equal(pending.verifier, VERIFIER);
   });
 
-  it("sends a redirect URI only when the shell registered one", () => {
-    const withCallback = start({ redirectUri: "vscode://x.python-on-viya" });
+  it("sends a redirect URI only for a client the profile named", () => {
+    const named = start({
+      configuredClientId: "site-registered",
+      configuredClientSecret: "secret",
+      redirectUri: CALLBACK,
+    });
     assert.equal(
-      new URL(withCallback.authorizeUrl).searchParams.get("redirect_uri"),
-      "vscode://x.python-on-viya",
+      new URL(named.authorizeUrl).searchParams.get("redirect_uri"),
+      CALLBACK,
     );
-    assert.equal(withCallback.redirectUri, "vscode://x.python-on-viya");
+    assert.equal(named.redirectUri, CALLBACK);
 
-    // A redirect URI that is sent has to match a registered one, so a deployment
-    // that registered none must be sent nothing rather than something plausible.
-    const pasteOnly = start();
+    // The built-in `vscode` client registers `urn:ietf:wg:oauth:2.0:oob` and no
+    // custom-scheme URI at all — verified in a browser against a live Viya 4,
+    // which rejected our callback URI and upstream's own `vscode://sas.sas-lsp`
+    // alike. Offering it one fails after the user has typed their password, so
+    // the shell's callback URI is dropped here even though it exists.
+    const builtIn = start({ redirectUri: CALLBACK });
     assert.equal(
-      new URL(pasteOnly.authorizeUrl).searchParams.get("redirect_uri"),
+      new URL(builtIn.authorizeUrl).searchParams.get("redirect_uri"),
+      null,
+    );
+    assert.equal(builtIn.redirectUri, undefined);
+
+    // Nothing to register in the first place — a host that cannot produce an
+    // external URI. Same wire shape, different reason.
+    assert.equal(
+      new URL(start().authorizeUrl).searchParams.get("redirect_uri"),
       null,
     );
   });
@@ -333,7 +351,10 @@ describe("finishSignIn", () => {
       }),
     );
 
-    const pending = start({ redirectUri: "vscode://x.python-on-viya" });
+    const pending = start({
+      configuredClientId: "site-registered",
+      redirectUri: CALLBACK,
+    });
     const result = await finishSignIn(pending, "abc123");
 
     assert.ok(result.ok);
@@ -343,7 +364,56 @@ describe("finishSignIn", () => {
     assert.equal(form.get("grant_type"), "authorization_code");
     assert.equal(form.get("code"), "abc123");
     assert.equal(form.get("code_verifier"), VERIFIER);
-    assert.equal(form.get("redirect_uri"), "vscode://x.python-on-viya");
+    assert.equal(form.get("redirect_uri"), CALLBACK);
+  });
+
+  it("omits the redirect URI on the token leg too, for the built-in client", async () => {
+    // RFC 6749 §4.1.3 requires the two legs to agree. The authorize leg dropped
+    // it, so this one has to as well — sending it here against an oob-registered
+    // client is an `invalid_grant` after the user has already done their part.
+    let body = "";
+    viya.use(
+      http.post(TOKEN_URL, async ({ request }) => {
+        body = await request.text();
+        return HttpResponse.json({
+          access_token: FAKE_ACCESS,
+          token_type: "bearer",
+        });
+      }),
+    );
+
+    const pending = start({ redirectUri: CALLBACK });
+    assert.ok((await finishSignIn(pending, "abc123")).ok);
+    assert.equal(new URLSearchParams(body).get("redirect_uri"), null);
+  });
+
+  it("scrubs the verifier out of a rejection that echoes it back", async () => {
+    // Observed against a live deployment: SASLogon quotes the `code_verifier`
+    // it received inside `error_description`, and we log that field verbatim.
+    viya.use(
+      http.post(TOKEN_URL, () =>
+        HttpResponse.json(
+          {
+            error: "invalid_grant",
+            error_description: `Invalid code verifier: ${VERIFIER}`,
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    const result = await finishSignIn(
+      start({ configuredClientId: "site-registered" }),
+      "abc123",
+    );
+
+    assert.ok(!result.ok);
+    assert.deepEqual(result.problem, {
+      code: "oauth-rejected",
+      error: "invalid_grant",
+      description: "Invalid code verifier: [redacted]",
+    });
+    assert.ok(!JSON.stringify(result).includes(VERIFIER));
   });
 
   it("rewrites invalid_client into advice when the built-in client was a guess", async () => {

@@ -114,3 +114,71 @@ export function describeAuthProblem(problem: AuthProblem): string {
       return `could not read the signed-in user: ${problem.detail}`;
   }
 }
+
+/** What a scrubbed secret is replaced with. Deliberately not the empty string. */
+const REDACTED = "[redacted]";
+
+/**
+ * Removes known secrets from a server-supplied diagnostic.
+ *
+ * Written after a real failed exchange logged this, verbatim:
+ *
+ * ```text
+ * the deployment rejected the sign-in: invalid_grant (Invalid code verifier: <the verifier>)
+ * ```
+ *
+ * SASLogon echoes the `code_verifier` it received back inside
+ * `error_description`. RFC 7636 §4.1 makes that value a secret whose entire
+ * purpose is to stay in this process until the token exchange, and the log is a
+ * file people attach to bug reports. The exposure is small — a verifier is
+ * single-use and the attempt it belonged to has already failed — but it is a
+ * secret leaving through our own log line, which is the kind of leak that gets
+ * discovered by someone else.
+ *
+ * The fix is not to stop logging `error_description`. That field is the most
+ * useful diagnostic in the whole flow, and dropping it to avoid one bad case
+ * would trade a real leak for a permanent blindness. Scrubbing the values we
+ * already know keeps both.
+ *
+ * Empty secrets are skipped: a public client's secret is `""`, and replacing
+ * every empty string in a message would redact the whole message.
+ */
+export function redactText(text: string, secrets: readonly string[]): string {
+  return secrets.reduce(
+    (scrubbed, secret) =>
+      secret === "" ? scrubbed : scrubbed.split(secret).join(REDACTED),
+    text,
+  );
+}
+
+/**
+ * {@link redactText} applied to the one field of a problem that quotes the
+ * deployment verbatim.
+ *
+ * Returns the same object when nothing changed, so a caller can tell — and so
+ * the common path allocates nothing.
+ */
+export function redactSecrets(
+  problem: AuthProblem,
+  secrets: readonly string[],
+): AuthProblem {
+  switch (problem.code) {
+    case "oauth-rejected": {
+      if (problem.description === undefined) return problem;
+      const description = redactText(problem.description, secrets);
+      return description === problem.description
+        ? problem
+        : { ...problem, description };
+    }
+    case "session-expired": {
+      if (problem.description === undefined) return problem;
+      const description = redactText(problem.description, secrets);
+      return description === problem.description
+        ? problem
+        : { ...problem, description };
+    }
+    default:
+      // Every other variant carries only values this process produced.
+      return problem;
+  }
+}

@@ -953,6 +953,36 @@ built, so probing after scoping would have meant scoping twice.
   branches). Branches stays at 91: measured 92.33 leaves 1.33 points of slack,
   and tightening to 92 would leave 0.33 on a three-OS gate.
 
+**Two more folded in on 2026-08-14, after the first sign-in against a real
+deployment.** Neither is 1c-i's subject and both block anyone using the branch,
+which is the test for folding rather than filing.
+
+1. **The built-in `vscode` client gets no `redirect_uri`.** The sign-in failed
+   after authentication with *"Invalid redirect
+   `vscode://…/auth-callback%3FwindowId=2` did not match one of the registered
+   values"*. Three browser probes settled why, and it is not the extension id:
+   sending upstream's own `vscode://sas.sas-lsp` was rejected too, and omitting
+   `redirect_uri` produced a consent page announcing
+   `urn:ietf:wg:oauth:2.0:oob`. The built-in client has **no** custom-scheme
+   redirect registered. So `beginSignIn` now sends the shell's callback URI only
+   when the profile named the client, and the decision lives there because both
+   OAuth legs read `pending.redirectUri` and RFC 6749 §4.1.3 requires them to
+   agree. Two consequences worth keeping: the paste box is the **only** route on
+   the built-in client rather than the fallback, and upstream's trick of
+   smuggling the callback URL through `state` buys nothing — tested in both
+   encodings, SASLogon displayed the code both times. The `state` nonce check
+   1c-i wired is therefore safe: on the oob path there is no callback to check,
+   and on a registered-redirect path the callback carries the nonce normally.
+   The `%3F` was real too and separately fixed: `callbackUri()` now concatenates
+   the parsed `Uri` components instead of trusting `toString(true)`.
+2. **The PKCE verifier reached the log.** SASLogon echoes the `code_verifier` it
+   received back inside `error_description`, and `describeAuthProblem` passes
+   that field through verbatim — by design, it is the most useful diagnostic in
+   the flow. `redactSecrets` in `problems.ts` scrubs the values this process
+   knows are secret out of the server's text, applied once in `finishSignIn` so
+   no caller has to remember to. Dropping `error_description` instead would have
+   traded one leak for permanent blindness.
+
 **Three source changes the punch list did not ask for, all found by writing the
 tests, 2026-08-13.** Recorded here because "the tests caught it" is worth more as
 a record than as a memory.

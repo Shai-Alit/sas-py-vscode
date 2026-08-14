@@ -397,7 +397,13 @@ settings (ADR-0007). *Medium.*
 **1b — OAuth2 + PKCE.** Port `auth.ts`: authorization-code flow with PKCE, the
 **dual code capture** (URI handler *and* paste box racing, whichever lands first)
 which is the pragmatic fallback for deployments without a registered redirect URI,
-and 401-triggered refresh. An empty `clientId` falls back to the built-in
+and 401-triggered refresh. **Corrected 2026-08-14 against a live deployment:** the
+built-in `vscode` client registers `urn:ietf:wg:oauth:2.0:oob` and no
+custom-scheme URI, so on a stock Viya 4 the paste box is not the fallback — it is
+the only arm that can win, and the URI handler only ever fires against a client an
+administrator registered with this extension's redirect URI. The race stays,
+because which of the two applies cannot be known until after the user has
+authenticated. An empty `clientId` falls back to the built-in
 `vscode` client (decision 9); 3.5 and pre-2022.11 Viya 4 have no such client and
 must be told to supply an id and secret in those words, because the failure they
 would otherwise see is a generic OAuth rejection. Also add corporate

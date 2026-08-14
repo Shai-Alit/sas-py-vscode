@@ -16,6 +16,24 @@
  * See `PRODUCTION_PLAN.md` §6 decision 9 and
  * docs/adr/0008-auth-core-transport-and-security-deltas.md.
  *
+ * ## Confirmed on Viya 4, 2026-08-13, with one thing attached
+ *
+ * The built-in client is now observed rather than documented. An unauthenticated
+ * `GET /SASLogon/oauth/authorize` with `client_id=vscode` redirects to the login
+ * page; the same request with an invented client id answers **500**. So the
+ * client exists — and note the shape of that failure, because it is the reason
+ * {@link explainsMissingClient} parses the *token* leg: the authorize leg
+ * produces a server error, not a readable OAuth envelope, and nothing should be
+ * written that expects one from it.
+ *
+ * What came with it: this client registers `urn:ietf:wg:oauth:2.0:oob` and **no
+ * custom-scheme redirect at all**, so a sign-in that uses it can only come back
+ * through the paste box. `builtIn` on {@link ClientCredentials} is what carries
+ * that; `beginSignIn` reads it to decide whether a `redirect_uri` is sent. The
+ * flag was already here to explain an `invalid_client`, and it now answers a
+ * second question — which is why it is a fact about the client rather than a
+ * detail of one error path.
+ *
  * ## The Viya 3.5 path here has never been run against Viya 3.5
  *
  * Read that literally. That 3.5 lacks a built-in `vscode` client is SAS's
@@ -65,7 +83,13 @@ export interface ClientCredentials {
    * authorization code in that case.
    */
   clientSecret: string;
-  /** True when this came from {@link BUILT_IN_CLIENT_ID} rather than the profile. */
+  /**
+   * True when this came from {@link BUILT_IN_CLIENT_ID} rather than the profile.
+   *
+   * Two callers read it: `explainsMissingClient` here, and `beginSignIn`, which
+   * sends no `redirect_uri` when it is set because the built-in client is
+   * registered for out-of-band code display only.
+   */
   builtIn: boolean;
 }
 

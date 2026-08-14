@@ -2,13 +2,22 @@
 
 Once you have a [connection profile](connection-profiles.md), run **Python on
 Viya: Sign In** from the Command Palette. Your browser opens on your
-deployment's own login page — the extension never asks for your Viya password —
-and once you have authenticated there, the browser hands the result back to the
+deployment's own login page — the extension never asks for your Viya password.
+Meanwhile an input box titled **Sign in to SAS Viya** appears at the top of the
 editor.
 
-If the hand-back does not happen automatically, a paste box is waiting for you
-in the editor. Both routes are live at the same time, so whichever one your
-deployment supports is the one that finishes.
+On most deployments, what you do next is copy. After you authenticate, Viya
+shows a consent page naming the access the extension is asking for; approve it,
+and the page displays a short code. Paste that code into the **Sign in to SAS
+Viya** box and the sign-in completes. This is the ordinary route rather than a
+degraded one, for the reason explained under [OAuth clients](#oauth-clients-and-the-secret-prompt)
+below: the client most deployments sign you in with is registered to display the
+code, not to hand back to the editor.
+
+If your administrator registered a client with the extension's own redirect
+address, the browser returns you to the editor by itself and the box closes
+without you touching it. Both routes are live at the same time, so whichever one
+your deployment supports is the one that finishes.
 
 ## The Accounts menu
 
@@ -98,6 +107,19 @@ On **Viya 4 2022.11 and later**, leave the client ID empty on the profile. Those
 deployments register a built-in public client called `vscode` and that is what
 the extension signs in with. Nothing has to be set up for you.
 
+That client is registered for out-of-band delivery — `urn:ietf:wg:oauth:2.0:oob`
+in the specification's wording, "show the user a code" in practice — and it has
+no `vscode://` address registered at all. This was confirmed against a live Viya
+4 deployment on 2026-08-13, which rejected the extension's redirect address and
+the SAS extension's own alike. So when no client ID is set, the extension sends
+no redirect address, Viya displays a code, and the paste box is the way back. An
+extension cannot change this; the registration belongs to the deployment.
+
+To get the automatic hand-back instead, an administrator registers a client
+whose redirect URI is `vscode://shai-alit.python-on-viya/auth-callback` and you
+put that client's ID on the profile. This is worth doing for a team that signs
+in often and is not worth doing to try one deployment once.
+
 If your profile does name a client ID, you are asked once for that client's
 secret, in a masked prompt, and the answer goes to secret storage. Leaving the
 prompt empty is a real answer — plenty of registered clients are public — and it
@@ -109,9 +131,18 @@ asked again at every sign-in.
 **"Select a SAS Viya connection profile before signing in."** No profile is
 active in this window. Run **Python on Viya: Switch Connection Profile** first.
 
-**The browser opens and nothing comes back.** Some deployments will not redirect
-to a `vscode://` URL. Copy the code from the browser into the paste box the
-editor is showing; that is what it is for.
+**The browser opens and nothing comes back.** Expected on the built-in client:
+copy the code the page is showing into the **Sign in to SAS Viya** box in the
+editor. That box is the route, not a consolation prize.
+
+**"Invalid redirect … did not match one of the registered values."** The
+deployment's error page, after you authenticated. It means the client on your
+profile is registered with a different redirect address than
+`vscode://shai-alit.python-on-viya/auth-callback`. Either correct the
+registration or clear the client ID from the profile to fall back to the
+built-in client and the paste route. Note that this can only ever come from a
+profile that names a client ID — the extension sends no redirect address at all
+when it uses the built-in one.
 
 **"Signed in, but Viya would not say who you are signed in as."** Authentication
 worked and the identities service did not answer. The log has the status code.

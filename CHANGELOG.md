@@ -271,6 +271,29 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- Sign-in against a default Viya 4 deployment now works at all. The built-in
+  `vscode` OAuth client registers exactly one redirect value —
+  `urn:ietf:wg:oauth:2.0:oob`, "show the user a code" — and no custom-scheme URI,
+  so sending it any `redirect_uri` failed *after* the user had typed their
+  password. Confirmed against a live deployment, which rejected this extension's
+  callback address and the SAS extension's own alike. The callback URI is now
+  sent only when the profile names a client, which is the only case where an
+  address could have been registered for it; RFC 6749 §4.1.3 requires the
+  authorize and token legs to agree, so the decision is made once, where both
+  read it. The paste box is consequently the ordinary route on a stock
+  deployment rather than the fallback, and `docs/signing-in.md` now says so.
+- The callback address no longer reaches the deployment double-encoded.
+  `asExternalUri` appends a `windowId` parameter, and the URI arrived at SASLogon
+  as `…/auth-callback%3FwindowId=2` — the `?` escaped while the `=` beside it was
+  not. It is now rebuilt from the parsed URI's components, so the encoding
+  happens exactly once, where the authorize URL is built.
+- The PKCE code verifier can no longer reach the log. SASLogon echoes the
+  `code_verifier` it received back inside `error_description`, and that field is
+  quoted verbatim into the output channel — deliberately, because it is the most
+  useful diagnostic in the flow and people paste the log into issues. Rather than
+  drop the field and trade one leak for permanent blindness, known secrets are
+  scrubbed out of the server's text at the point the token exchange's failure
+  becomes the sign-in's.
 - Profile validation messages shown under an input box are now localisable. The
   model returns a `ValidationProblem` code with its parameters instead of English
   prose, and `src/profile/problems.ts` renders it through `vscode.l10n.t()`;

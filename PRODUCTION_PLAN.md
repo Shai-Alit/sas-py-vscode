@@ -605,8 +605,12 @@ reason — the pure half is unit-testable and the shell half is not:
 > **2a-ii — the VS Code shell.** Binding a session to a profile and the
 > authentication provider's token, reconnect across a window reload,
 > session-death detection and its recovery message, progress reporting and
-> cancellation, and the output channel. Integration-tested, one test per shell
-> module. *Medium.*
+> cancellation, and the output channel. The session id is persisted in
+> `workspaceState` keyed by profile id, one session per workspace and profile,
+> and the stored id is treated as a hint validated by use rather than a fact —
+> **ADR-0012**, which also records why reclaim-by-listing was rejected after the
+> probes made it possible. Integration-tested, one test per shell module.
+> *Medium.*
 
 **The generated OpenAPI client is not vendored — see ADR-0010.** This reverses
 what this plan pre-agreed. Upstream's client is 28,673 lines of which the session
@@ -1176,8 +1180,10 @@ build understands is refused with a clear message rather than half-read** —
 ADR-0007); ~~profile setting scope across multi-root workspaces, which also
 affects 2a's `workspaceState` reconnect~~ (**settled 2026-08-12: profiles are
 `window`-scoped and stored in user settings; the pointer to the *active* profile
-lives in `workspaceState`, so two windows can target two deployments at once, and
-it sits next to where 2a already keeps the compute session id** — ADR-0007); and
+lives in `workspaceState`, so two *workspaces* can target two deployments at once
+— two windows on the same folder share one pointer — and it sits next to where 2a
+keeps the compute session id, which ADR-0012 puts at the same grain for the same
+reason** — ADR-0007); and
 localisation — whether we ship non-English bundles at all (0b; English-only is
 fine, but say so).
 

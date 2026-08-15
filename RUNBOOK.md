@@ -1461,20 +1461,49 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   from `vscode.authentication.getSession`, never from storage directly, so
   expiry and sign-out flow through one place. Two profiles must be able to hold
   live sessions simultaneously — the thing upstream's global singleton forecloses.
-- ☐ **Settle where the session id is persisted, and write down why.** Upstream
-  uses `workspaceState`, which is keyed per *workspace*: two windows on the same
-  folder would reconnect to the same compute session and interleave their output, and a
-  window on a different folder loses a session that is still running and still
-  billing. `globalState` keyed by profile id is the other candidate and has the
-  opposite failure. Decide before writing the reconnect path, not during.
-- ☐ **Session death is one recoverable event with three shapes.**
+- ☑ **Settled 2026-08-14: the session id lives in `workspaceState`, keyed by
+  profile id — one session per (workspace, profile).** Recorded as **ADR-0012**;
+  the reasoning is there and is not repeated here. What the implementation has to
+  honour:
+  - The stored id is a **hint, not a fact**. Validate it by using it and catching
+    the failure; never probe first. Finding 29 makes that cheap and unambiguous.
+  - **Two windows on the same folder deliberately share one session.** That is the
+    store's grain and this decision accepts it rather than pretending otherwise.
+    It is why the busy check below exists, and it must be said in the docs.
+  - **`globalState` is rejected**, because a session that follows the user across
+    unrelated folders lets a scratch window inherit a production namespace — the
+    same shape ADR-0002 and ADR-0011 restrict for the target.
+  - **Do not delete the session on `deactivate`.** Persisting the id and reaping
+    on exit are contradictory; a reload is the case this exists for. The 900-second
+    timeout is the reaper, and an explicit *Disconnect* command is the manual one.
+  - **Do not build reclaim-by-listing.** It looked attractive and the probes talked
+    us out of it — see ADR-0012's alternatives and findings 25 and 26.
+- ☐ **Refuse to submit into a busy session, and say so.** Finding 27: the session
+  state reads `running` while a job executes and returns to `idle` after. Check it
+  before submitting; if it is `running`, say the session is busy rather than
+  submitting concurrently, because finding 29's "what did not settle" list has
+  concurrent submission on it as unobserved. This is also the only defence the
+  shared-session case has, so it is not optional.
+- ☐ **Poll the *job* for completion, never the session.** Finding 27 measured the
+  job reaching `completed` two to three seconds before the session returned to
+  `idle`. Use the job's `state` link, and send `wait` **and** `If-None-Match`
+  together — finding 28 measured `wait` alone returning immediately, which would
+  turn the poll into a hot spin that still looks correct.
+- ☐ **Session death is one recoverable event with one observed shape.**
   `attributes.sessionInactiveTimeout` is **900 seconds** (finding 18), so this is
-  routine rather than exceptional. A reaped session may answer `404`, may answer
-  `401`, or may answer normally having lost its state — the probe did not observe
-  which, so treat all three alike: say plainly that the session ended and the
-  Python namespace is gone, and offer to start a new one. Do **not** copy
+  routine rather than exceptional. Finding 29 measured a dead session answering
+  **`404`** identically on the session, its state, and a job submission — so key
+  on the **status**, not on `errorCode` 5837. Say plainly that the session ended
+  and the Python namespace is gone, and offer to start a new one; do **not** state
+  a cause, because a `404` cannot distinguish expiry from deletion from an id that
+  never existed. Keep handling a `401` as *auth*, not as death. Do **not** copy
   upstream's `.catch(() => this._computeSession = undefined)`, which swallows
   every rejection including a network failure and reports it as a dead session.
+- ☐ **The session `name` carries a constant marker and nothing else.** Finding 25:
+  the identity `id` is an email address on at least one deployment, and a session
+  name is readable by other callers listing the collection. `python-on-viya` is
+  the marker; the user narrowing comes from `owner`, which the server already
+  knows and did not learn from us.
 - ☐ **Progress and cancellation.** `withProgress` around connect, and a
   `CancellationToken` wired to the abort signal 2a-i exposes. Upstream has no
   cancellation here and nowhere to add it.

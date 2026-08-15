@@ -79,7 +79,6 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
   );
   registerAuthProvider(context, auth);
-  registerAuthCommands(context, auth, profiles, output);
 
   // The compute session, and the workspace's memory of it. Constructing either
   // reads nothing: the binding is read when a connect asks for it, and the token
@@ -91,7 +90,13 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
   );
   context.subscriptions.push(sessions);
-  registerComputeCommands(context, sessions, profiles, output);
+  const connect = registerComputeCommands(context, sessions, profiles, output);
+
+  // Registered last, and only because signing in connects: the command needs a
+  // way to open a session, and handing it one keeps the dependency pointing from
+  // auth to compute in one place rather than giving the provider — which VS
+  // Code's Accounts menu also calls — the ability to start a SAS process.
+  registerAuthCommands(context, auth, profiles, output, connect);
 }
 
 export function deactivate(): void {

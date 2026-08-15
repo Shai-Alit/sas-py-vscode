@@ -31,7 +31,10 @@
 import * as vscode from "vscode";
 
 import type { ProfileStore } from "../profile/store";
-import type { ComputeSessionManager } from "./sessionManager";
+import type {
+  ComputeConnection,
+  ComputeSessionManager,
+} from "./sessionManager";
 
 /** Set true while the active profile holds a session in this window. */
 export const CONNECTED_CONTEXT_KEY = "pythonOnViya.connected";
@@ -42,20 +45,35 @@ export type ComputeCommandProfiles = Pick<
   "active" | "onDidChange"
 >;
 
+/**
+ * Connect the active profile, and leave the enablement key telling the truth.
+ *
+ * Handed to the sign-in command so that signing in reaches a session (#134)
+ * without `src/auth` learning what a compute session is. It deliberately shows
+ * no message: the caller has just done something of its own and gets to say how
+ * the two outcomes read as one sentence.
+ */
+export type ConnectActiveProfile = () => Promise<ComputeConnection | undefined>;
+
 export function registerComputeCommands(
   context: vscode.ExtensionContext,
   sessions: ComputeSessionManager,
   profiles: ComputeCommandProfiles,
   log: vscode.LogOutputChannel,
-): void {
+): ConnectActiveProfile {
   const sync = () => {
     void syncConnectedContext(sessions, profiles);
   };
 
+  const connect: ConnectActiveProfile = async () => {
+    const connection = await sessions.connect();
+    sync();
+    return connection;
+  };
+
   context.subscriptions.push(
     vscode.commands.registerCommand("pythonOnViya.connect", async () => {
-      const connection = await sessions.connect();
-      sync();
+      const connection = await connect();
       if (connection === undefined) return;
       void vscode.window.showInformationMessage(
         vscode.l10n.t(
@@ -77,6 +95,8 @@ export function registerComputeCommands(
 
   log.debug("registered the compute session commands");
   sync();
+
+  return connect;
 }
 
 async function syncConnectedContext(

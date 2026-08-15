@@ -6,8 +6,10 @@ interpreter, started for you and kept alive between commands.
 
 Run **Python on Viya: Connect to SAS Viya** from the Command Palette. If you are
 not signed in yet you will be, so this is the only command you need from a cold
-start. A progress notification appears while the session opens, and an
-information message names the profile you are connected to when it is ready.
+start — and it works the other way round too, because
+[**Sign In**](signing-in.md) connects once it has signed you in. A progress
+notification appears while the session opens, and an information message names
+the profile you are connected to when it is ready.
 
 Nothing runs Python yet. This slice ships the connection the run command will
 use, and the reason it ships on its own is that almost everything that can go
@@ -20,10 +22,12 @@ four minutes building. That state lives in the session, so it survives from one
 run to the next in the same way a notebook kernel does, and it dies with the
 session.
 
-That is the whole reason connecting is a separate step with its own command
-rather than something the run command does silently: a session you cannot see is
-a session you cannot deliberately keep, and the state in it is the expensive
-part.
+That is why Connect survives as a command of its own even though signing in now
+does it for you: a session you cannot see is a session you cannot deliberately
+keep, and the state in it is the expensive part. What changes is when you reach
+for it. Connect is for *re*connecting — after a session has timed out, after
+switching profile, after ending one deliberately — rather than for getting
+started.
 
 ## One session per folder, per profile
 

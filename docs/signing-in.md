@@ -19,9 +19,18 @@ address, the browser returns you to the editor by itself and the box closes
 without you touching it. Both routes are live at the same time, so whichever one
 your deployment supports is the one that finishes.
 
-Signing in establishes who you are and nothing else. To get somewhere to run,
-see [Connecting to Viya](connecting.md) — and note that the connect command signs
-you in on its own if you are not already, so you rarely need this one directly.
+Signing in also connects. There is little point proving who you are and then
+stopping, so once the sign-in completes the extension opens a compute session on
+the active profile and the message names both — see
+[Connecting to Viya](connecting.md) for what that session is and how long it
+lasts. If the session cannot be opened, the sign-in still stands and the message
+says so, because the one thing worth knowing at that point is that you do not
+have to sign in a second time to try again.
+
+The two commands meet in the middle. **Connect** signs you in first if you are
+not signed in, and **Sign In** connects afterwards, so from a cold start either
+one gets you the whole way and which you reach for is a matter of what you were
+thinking about.
 
 ## The Accounts menu
 
@@ -30,6 +39,13 @@ same mechanism GitHub and Microsoft accounts use. That means your sign-in shows
 up in the Accounts menu at the bottom of the Activity Bar, next to the gear, and
 you can sign in and out from there instead of from the Command Palette if you
 prefer.
+
+Signing in from that menu does **not** connect, which is the one place the two
+routes differ. The editor polls that menu, you open it to read rather than to
+start something, and it can act on a deployment other than the one your active
+profile names — so a SAS process started from it would be one you did not ask
+for, on a deployment you were not looking at. Run **Python on Viya: Connect to
+SAS Viya** when you want the session.
 
 The name shown next to the account is your display name as Viya reports it. If
 your identity provider does not publish one, your login name is shown instead,

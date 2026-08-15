@@ -1906,7 +1906,7 @@ first and have to be rewritten around it.
   session as removed and flip `pythonOnViya.authorized` off. `createSession`
   signs in to the profile the named account belongs to rather than the active
   one, and refuses — before opening a browser — an account no profile uses.
-- ☐ **#134 — Sign In connects.** Sean's design call, 2026-08-15: "I want the
+- ☑ **#134 — Sign In connects.** Sean's design call, 2026-08-15: "I want the
   design to be that it should automatically connect once you sign in. It's
   pointless and a waste of time to make the user do two things. What other point
   is there of signing in if not to connect to a session?"
@@ -1919,6 +1919,44 @@ first and have to be rewritten around it.
 
   `docs/signing-in.md` and `docs/connecting.md` both currently describe two steps.
   Connect stays a command; what changes is that you rarely need it.
+
+  **Done 2026-08-15.** `registerComputeCommands` now *returns* a connect closure —
+  `sessions.connect()` followed by the `pythonOnViya.connected` sync, showing no
+  message — and `src/extension.ts` builds compute first so it can hand that
+  closure to `registerAuthCommands`. The dependency points auth → compute in
+  exactly one place, and it is a structural `ConnectAfterSignIn` declared inside
+  `src/auth/commands.ts` (`() => Promise<{ profileName } | undefined>`) rather
+  than an import, so the two modules do not become mutually dependent to describe
+  one string.
+
+  The connect lives in the **command**, not in `createSession`, and that is the
+  whole mechanism by which the Accounts menu does not connect: both routes share
+  the provider, so anything put there would fire on a polled menu. Nothing has to
+  tell the two callers apart after the fact, and the test that would prove it is
+  the absence of a dependency — `AuthProvider` has no import, port or stub that
+  reaches a compute session.
+
+  One notification per command, either `Signed in as {0}, and connected using
+  profile "{1}".` or, when the connect did not happen, `Signed in to SAS Viya as
+  {0}.` — the manager has already reported its own failure and stays silent on a
+  cancellation, so the only fact left to carry is that the sign-in itself worked
+  and a second attempt is not what is needed. A failed sign-in does not connect
+  at all: there would be no token, so it would open a browser for a second
+  sign-in nobody asked for, on top of an error about the first.
+
+  `signIn` and `signOut` are now exported and take a deps object with `inform` /
+  `report` ports defaulting to the real `vscode.window` calls. That was forced:
+  the palette ids belong to the activated extension, so a test cannot register a
+  second copy of the handler to drive it, and a handler whose only observable
+  effect is a notification is untestable until the notification is a port. It
+  also sets up #131. Four tests in `test/integration/auth/commands.test.ts` cover
+  both messages, the no-profile arm and the failed-sign-in arm.
+
+  Docs updated as anticipated, though the emphasis landed the other way round:
+  the two commands now *meet in the middle* rather than one becoming rare, and
+  `docs/signing-in.md` gained a paragraph on why the Accounts menu is the one
+  place they differ. `docs/connecting.md` reframes Connect as the command for
+  *re*connecting.
 - ☐ **#133 — one unreachable profile must not stall the Accounts menu.**
   `getSessions()` loops every profile **serially**, calling `resolve()` on each.
   Sean's first deployment shuts down at weekends, so one dead endpoint costs a

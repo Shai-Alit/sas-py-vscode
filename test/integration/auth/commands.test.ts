@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import { signIn, type SignInDeps } from "../../../src/auth/commands";
+import { testLogChannel } from "../../helpers/auth-host";
 import { extensionId } from "../../helpers/manifest";
 
 /**
@@ -25,6 +27,17 @@ import { extensionId } from "../../helpers/manifest";
  * behind it is driven end to end in `browser-flow.test.ts`, where the browser and
  * the box are ports. What is left to test here is the arm that refuses before any
  * of that: no active profile, nothing to sign in to.
+ *
+ * The suite below the palette tests calls the `signIn` handler directly, with the
+ * provider, the profile store, the connect and the notifications as ports. It has
+ * to: the palette ids belong to the activated extension, so registering a second
+ * copy of the handler is not possible, and running the real one would open a
+ * browser. Nothing here reaches a deployment.
+ *
+ * **Not testable from here, and true by construction: the Accounts menu does not
+ * connect.** The connect lives in this command, and `AuthProvider` has no way to
+ * reach a compute session — no import, no port, nothing to stub. The test that
+ * would prove it is the absence of a dependency.
  */
 
 const SECTION = "pythonOnViya";
@@ -106,6 +119,135 @@ describe("sign-in and sign-out commands", () => {
     // No session was ever stored for this id, which is the case worth running:
     // signing out has to be safe when there is nothing to delete.
     await vscode.commands.executeCommand("pythonOnViya.signOut");
+  });
+});
+
+const PROFILE_ID = "auth-commands-sign-in";
+const PROFILE_NAME = "Prod";
+
+/**
+ * What a connect gives this command back.
+ *
+ * The profile name and nothing else, because that is all `ConnectAfterSignIn`
+ * asks for — building a whole `ComputeConnection` here would mean a fake compute
+ * client and a fake session for a message that names neither.
+ */
+function connection(): { readonly profileName: string } {
+  return { profileName: PROFILE_NAME };
+}
+
+function session(): vscode.AuthenticationSession {
+  return {
+    id: PROFILE_ID,
+    accessToken: "access-token-placeholder",
+    account: { id: "account-id-placeholder", label: "user@example.com" },
+    scopes: [],
+  };
+}
+
+interface SignInHarness {
+  readonly deps: SignInDeps;
+  /** One entry per connect attempt, so "did not connect" is countable. */
+  readonly connects: number[];
+  readonly informed: string[];
+  readonly reported: string[];
+}
+
+function signInHarness(init?: {
+  active?: boolean;
+  connected?: { readonly profileName: string } | undefined;
+  createSession?: () => Promise<vscode.AuthenticationSession>;
+}): SignInHarness {
+  const connects: number[] = [];
+  const informed: string[] = [];
+  const reported: string[] = [];
+  const active =
+    init?.active === false
+      ? undefined
+      : {
+          name: PROFILE_NAME,
+          profile: {
+            version: 1 as const,
+            id: PROFILE_ID,
+            endpoint: "https://viya.example.com",
+          },
+        };
+
+  return {
+    connects,
+    informed,
+    reported,
+    deps: {
+      provider: {
+        createSession:
+          init?.createSession ?? (() => Promise.resolve(session())),
+      },
+      profiles: { active: () => active },
+      log: testLogChannel("auth commands"),
+      connect: () => {
+        connects.push(connects.length);
+        return Promise.resolve(init?.connected);
+      },
+      inform: (message) => informed.push(message),
+      report: (message) => reported.push(message),
+    },
+  };
+}
+
+describe("signing in connects", () => {
+  it("opens a session, and says both things in one message", async () => {
+    const h = signInHarness({ connected: connection() });
+
+    await signIn(h.deps);
+
+    assert.equal(h.connects.length, 1, "signing in did not connect");
+    // One notification, not two. The user ran one command and the outcome is one
+    // sentence; a second toast for the half they did not ask about separately is
+    // noise, and the profile name is the part that says *where* they landed.
+    assert.equal(h.informed.length, 1);
+    assert.match(h.informed[0] ?? "", /user@example\.com/);
+    assert.match(h.informed[0] ?? "", /Prod/);
+    assert.deepEqual(h.reported, []);
+  });
+
+  it("still says the sign-in worked when the connect does not happen", async () => {
+    // The manager returns undefined for a cancelled connect and for a failed one,
+    // and has already spoken in both cases. What it cannot say is that the
+    // sign-in itself succeeded — so this is the one fact left to report, and
+    // reporting it is what stops the user signing in a second time.
+    const h = signInHarness({ connected: undefined });
+
+    await signIn(h.deps);
+
+    assert.equal(h.connects.length, 1);
+    assert.equal(h.informed.length, 1);
+    assert.match(h.informed[0] ?? "", /Signed in to SAS Viya/);
+    assert.doesNotMatch(h.informed[0] ?? "", /connected/i);
+  });
+
+  it("does not connect when there is no profile to sign in to", async () => {
+    const h = signInHarness({ active: false, connected: connection() });
+
+    await signIn(h.deps);
+
+    assert.deepEqual(h.connects, [], "connected without a profile");
+    assert.match(h.informed[0] ?? "", /connection profile/);
+  });
+
+  it("does not connect when the sign-in failed", async () => {
+    // The ordering that matters: a failed sign-in has no token, so a connect
+    // after it would open a browser for a second sign-in the user did not ask
+    // for, on top of an error message about the first.
+    const h = signInHarness({
+      connected: connection(),
+      createSession: () => Promise.reject(new Error("the deployment refused")),
+    });
+
+    await signIn(h.deps);
+
+    assert.deepEqual(h.connects, [], "connected without a session");
+    assert.deepEqual(h.informed, []);
+    assert.match(h.reported[0] ?? "", /the deployment refused/);
   });
 });
 

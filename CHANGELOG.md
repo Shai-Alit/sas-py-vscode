@@ -382,6 +382,23 @@ called out under **Changed** with a migration note.
   and says nothing further, because a cancelled request is indistinguishable on
   the wire from a deployment that is down.
 
+- Signing in connects. **Python on Viya: Sign In** now opens a compute session
+  once it has signed you in, because there is no other reason to sign in to a
+  compute server and asking for two commands to reach one outcome is friction
+  with nobody paying for it. The two commands meet in the middle: *Connect*
+  already signed you in if you were not, so from a cold start either one now
+  gets the whole way. A sign-in whose connect does not happen still says the
+  sign-in worked — the connect has already reported its own failure, and what
+  would otherwise be lost is the one fact that stops you signing in twice.
+
+  The **Accounts menu** deliberately does not connect. That menu is polled by the
+  editor, it is opened to read rather than to start something, and it can act on
+  a profile other than the active one — so a SAS process started from it would be
+  one nobody asked for, on a deployment the user was not looking at. The connect
+  therefore lives in the command rather than in the authentication provider,
+  which is what both routes share. *Connect* survives for reconnecting: after a
+  session times out, after switching profile, after ending one deliberately.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

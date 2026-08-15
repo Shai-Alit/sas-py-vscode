@@ -44,6 +44,14 @@ Two *profiles*, on the other hand, are always separate: a test deployment and a
 production one can hold a session each at the same time, and connecting to one
 does not disturb the other.
 
+::: warning A second profile is not usable yet
+That is how the extension is built, but it is not yet how it behaves. Connecting
+after **Switch Connection Profile** currently fails with *"The account chosen is
+not the one … uses"*, because the extension does not tell VS Code which account
+it wants and VS Code reuses the last one it handed out. Until that is fixed, use
+one profile at a time. See the troubleshooting entry below.
+:::
+
 The remembered session id is treated as a hint rather than a fact. The extension
 tries it, and if the session has ended in the meantime it opens a new one and
 carries on without asking you anything — after a reload the answer would always
@@ -77,10 +85,12 @@ options, what is on the path. Set `context` on the profile if you know which one
 you want.
 
 If you have not set one, the first connect lists the contexts your deployment
-offers and asks. Your answer is written back to the profile, so the question is
-asked once rather than at every connect — check `settings.json` afterwards if you
-want to see what it chose. Dismissing the picker cancels the connect and changes
-nothing.
+offers and asks. Your answer is written back to the profile **once a session has
+actually started on it**, so the question is asked once rather than at every
+connect — check `settings.json` afterwards if you want to see what it chose.
+Dismissing the picker cancels the connect and changes nothing, and so does
+picking a context that turns out not to work: you are asked again next time
+rather than being pinned to it.
 
 Not every context can run Python. The Python interpreter has to be configured on
 the SAS server behind it, and a context whose server has none will connect
@@ -101,6 +111,13 @@ account when more than one is signed in, and the one you chose belongs to a
 different profile than the one that is active. Switch profile, or connect again
 and pick the matching account. The extension refuses rather than opening a
 session on a deployment you did not select.
+
+**"The compute context … does not offer a `createSession` link."** The context
+exists and you can see it, but the deployment did not offer a way to start a
+session with it — either it is a kind of context you may list but not launch, or
+your account does not have permission to launch it. Connect again and pick a
+different one; nothing was written to your profile. This has been observed
+inconsistently on the same context minutes apart, which is not yet explained.
 
 **"This deployment offers no compute contexts you can see."** The deployment
 answered, and it listed nothing you are allowed to use. This one is for your

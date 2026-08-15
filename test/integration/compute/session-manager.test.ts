@@ -425,6 +425,37 @@ describe("compute session manager", () => {
     assert.equal(written.name, PROFILE_NAME);
   });
 
+  it("does not write the picked context back when the connect fails", async () => {
+    // The failure that provoked this, observed against a live deployment on
+    // 2026-08-15: a context the picker offered turned out to carry no
+    // `createSession` link. The pick used to be written back before the attempt,
+    // which pinned the profile to a context that cannot start a session — and
+    // since a profile *with* a context never reaches the picker again, the only
+    // way out was to hand-edit `settings.json`.
+    const scripted = deployment({
+      contexts: ok({
+        count: 1,
+        items: [{ id: CONTEXT_ID, name: CONTEXT, links: [] }],
+        links: [],
+      }),
+    });
+    const profiles = profileSource(profile());
+    const { manager, shown } = harness({
+      profiles,
+      client: scripted.client,
+      deps: { pick: () => Promise.resolve(CONTEXT) },
+    });
+
+    assert.equal(await manager.connect(), undefined);
+
+    assert.deepEqual(
+      profiles.written,
+      [],
+      "a failed connect pinned the profile to the context that failed",
+    );
+    assert.equal(shown.errors.length, 1);
+  });
+
   it("does nothing when the context picker is dismissed", async () => {
     const scripted = deployment({ contexts: ok(contextsBody()) });
     const { manager, shown } = harness({

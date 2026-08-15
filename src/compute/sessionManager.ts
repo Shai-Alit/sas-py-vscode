@@ -228,6 +228,18 @@ export class ComputeSessionManager implements vscode.Disposable {
 
   dispose(): void {
     // Nothing is torn down on the server. See `disconnect`.
+    //
+    // A connect in flight is deliberately **not** joined here, which is the one
+    // place in this file that does not apply the discipline `connect` and
+    // `disconnect` apply to each other. Raised in review and accepted rather
+    // than fixed: this runs while the window is closing, so a connect that
+    // completes afterwards repopulates a `Map` nothing will read again and
+    // rewrites a `workspaceState` key with the id of a session that really was
+    // started. Awaiting it would be worse — it delays the window closing on a
+    // round trip whose only purpose is to update state that is about to be
+    // discarded, and `dispose` is synchronous, so there is nowhere to await it
+    // that VS Code would honour. The session itself is not orphaned by this:
+    // it is reachable through the binding and reclaimed on the next connect.
     this.live.clear();
   }
 
@@ -279,7 +291,7 @@ export class ComputeSessionManager implements vscode.Disposable {
     const context = await this.contextFor(active.profile, client);
     if (context === undefined) return undefined;
 
-    return await this.withProgress(
+    const connection = await this.withProgress(
       vscode.l10n.t("Connecting to SAS Viya…"),
       async (token) => {
         const bridge = abortOn(token);
@@ -290,6 +302,36 @@ export class ComputeSessionManager implements vscode.Disposable {
         }
       },
     );
+
+    // Only once a session has actually started on it. Writing the pick before
+    // the attempt — which is what this did until 2026-08-15 — pins the profile
+    // to a context that does not work, and because a profile *with* a context
+    // never reaches the picker, the user cannot choose again from inside the
+    // editor. Observed against a live deployment: a context offering no
+    // `createSession` link was picked, failed, and every later connect failed
+    // the same way while the picker stayed out of reach.
+    if (connection !== undefined && active.profile.context === undefined) {
+      await this.rememberContext(active.profile, context);
+    }
+    return connection;
+  }
+
+  /**
+   * Records the picked context on the profile, so it is asked once.
+   *
+   * Written through the profile store, so it lands wherever the user's own
+   * profile setting lives rather than in a target they cannot see. The active
+   * name is re-read rather than carried: this runs after a round trip to the
+   * deployment, and a settings edit landing in between should write to the
+   * profile that exists now or to nothing at all.
+   */
+  private async rememberContext(
+    profile: ViyaProfile,
+    context: string,
+  ): Promise<void> {
+    const name = this.profiles.activeName();
+    if (name === undefined) return;
+    await this.profiles.upsert(name, { ...profile, context });
   }
 
   /**
@@ -408,7 +450,8 @@ export class ComputeSessionManager implements vscode.Disposable {
    * prompt says so — and the alternative to asking is guessing a name that varies
    * by deployment. The choice is written back to the profile so it is asked once
    * and is afterwards visible in settings, where the user can change it, rather
-   * than living in a second hidden store.
+   * than living in a second hidden store — but by {@link rememberContext},
+   * after the connect succeeds, and not here.
    */
   private async contextFor(
     profile: ViyaProfile,
@@ -450,19 +493,12 @@ export class ComputeSessionManager implements vscode.Disposable {
       return undefined;
     }
 
-    const chosen = await this.pick(
+    // Returned, not recorded. `runConnect` writes it back only if a session
+    // starts on it; see {@link rememberContext}.
+    return await this.pick(
       names,
       vscode.l10n.t("Select a compute context for this connection profile"),
     );
-    if (chosen === undefined) return undefined;
-
-    // Written through the profile store, so it lands wherever the user's own
-    // profile setting lives rather than in a target they cannot see.
-    const name = this.profiles.activeName();
-    if (name !== undefined) {
-      await this.profiles.upsert(name, { ...profile, context: chosen });
-    }
-    return chosen;
   }
 
   /**

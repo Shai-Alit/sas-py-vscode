@@ -1750,6 +1750,30 @@ review rounds.
   once: a session holds a launcher slot for fifteen idle minutes, so signing in
   to check you are signed in now costs one.
 
+**A second run, 2026-08-15 afternoon, with the profiles cut back to one.** Step B
+passed outright — `Reconnected to the SAS Viya session for this folder.` after a
+*Developer: Reload Window* — which retrospectively explains the morning's
+"reload made me sign in again": that was #84 wearing a disguise, not a broken
+reattach. ADR-0012's central claim is confirmed against a live deployment.
+
+Step A found the one defect in this slice's own code that was worth fixing here
+rather than deferring, and it is fixed on this branch. The picked context was
+written back to the profile **before** the connect was attempted. A context
+offering no `createSession` link was picked, the connect failed — and because
+`contextFor` returns early for any profile that already has a context, the
+picker was then unreachable and every later connect failed the same way. The
+only escape was hand-editing `settings.json`. `runConnect` now writes the pick
+only once `open` has returned a connection, pinned by an integration test that
+scripts a context with no links and asserts nothing was written. The
+generalisable form: **a value learned by asking the user is not a fact until the
+thing it was needed for succeeded.**
+
+Not fixed, because it is not understood: the *same* context started a session
+two minutes later without complaint. Filed as probe task #135 — if a context's
+link set depends on the token presented, `contexts.ts` is wrong to read an
+absent `createSession` as a permanent property of the deployment, and the
+message it writes is misleading. `docs/connecting.md` says so plainly for now.
+
 Step 3 is **unconfirmed rather than failed**: `settings.json` showed no
 `context` after what looked like a successful connect, but the run never
 established whether the picker appeared, and #84 means the connect may not have

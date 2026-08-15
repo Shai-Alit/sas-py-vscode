@@ -13,6 +13,7 @@ import type { ComputeContext } from "../../src/compute/contexts";
 import type { Link } from "../../src/compute/links";
 import {
   asSessionGone,
+  attachSession,
   cancelSession,
   type ComputeSession,
   createSession,
@@ -21,6 +22,7 @@ import {
   MAX_WAIT_WINDOWS,
   readSessionState,
   SESSION_NAME,
+  SESSIONS_PATH,
   waitWhilePending,
   WAIT_MARGIN_SECONDS,
 } from "../../src/compute/session";
@@ -471,6 +473,99 @@ describe("createSession", () => {
     const scripted = fake([ok(sessionBody(), { status: 201 })]);
 
     await createSession(scripted.client, context(), {
+      signal: controller.signal,
+    });
+
+    assert.equal(only(scripted.requests).signal, controller.signal);
+  });
+});
+
+/**
+ * The reconnect ADR-0012 exists for, and the second composed URL in the project.
+ *
+ * The `404` case is the whole protocol rather than an edge: finding 29 measured a
+ * dead session and a never-existed id answering identically, so "use it and catch
+ * the 404" is the only test that can be written, and a caller that probed first
+ * would be asking a question with no distinct answer.
+ */
+describe("attachSession", () => {
+  it("composes the session URL and reads the representation back", async () => {
+    const scripted = fake([ok(sessionBody(), { etag: ETAG })]);
+
+    const result = await attachSession(scripted.client, SESSION_ID);
+
+    assert.ok(result.ok, "a session representation was not read");
+    assert.equal(result.value.id, SESSION_ID);
+    assert.equal(result.value.etag, ETAG);
+    const request = only(scripted.requests);
+    assert.equal(request.link.href, `${SESSIONS_PATH}/${SESSION_ID}`);
+    assert.equal(request.link.method, "GET");
+    // The session media type, not the collection's: a `self` link is the
+    // resource, and asking for the wrong one is how a body arrives with the
+    // right fields in the wrong envelope.
+    assert.equal(
+      request.link.responseType,
+      "application/vnd.sas.compute.session",
+    );
+  });
+
+  it("encodes an id that would otherwise change the path", async () => {
+    const scripted = fake([ok(sessionBody())]);
+
+    // `workspaceState` is a file on disk, so the stored id is attacker-adjacent
+    // input rather than something the deployment handed us this window.
+    await attachSession(scripted.client, "../contexts?x=1");
+
+    assert.equal(
+      only(scripted.requests).link.href,
+      `${SESSIONS_PATH}/..%2Fcontexts%3Fx%3D1`,
+    );
+  });
+
+  it("refuses an empty id rather than requesting the collection", async () => {
+    const scripted = fake([]);
+
+    await assert.rejects(
+      () => attachSession(scripted.client, ""),
+      (error: unknown) => error instanceof TypeError,
+    );
+    assert.equal(scripted.requests.length, 0);
+  });
+
+  it("reads a 404 as a session that is gone", async () => {
+    const scripted = fake([rejected(404)]);
+
+    const result = await attachSession(scripted.client, SESSION_ID);
+
+    assert.ok(!result.ok, "a 404 was reported as a live session");
+    assert.equal(result.problem.code, "session-gone");
+  });
+
+  it("leaves a 401 as an authentication failure", async () => {
+    const scripted = fake([unauthorized()]);
+
+    const result = await attachSession(scripted.client, SESSION_ID);
+
+    assert.ok(!result.ok, "a 401 was reported as success");
+    // The split that matters: a caller told "session-gone" would answer a dead
+    // token by creating a session with it, forever.
+    assert.equal(result.problem.code, "unauthorized");
+  });
+
+  it("reports a body that is not a session", async () => {
+    const scripted = fake([ok({ id: SESSION_ID })]);
+
+    const result = await attachSession(scripted.client, SESSION_ID);
+
+    assert.ok(!result.ok, "a body with no state was read as a session");
+    assert.equal(result.problem.code, "response-malformed");
+  });
+
+  it("passes the caller's signal to the request", async () => {
+    const controller = new AbortController();
+    const scripted = fake([ok(sessionBody())]);
+
+    await attachSession(scripted.client, SESSION_ID, {
       signal: controller.signal,
     });
 

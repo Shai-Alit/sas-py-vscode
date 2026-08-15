@@ -29,7 +29,9 @@ as HTTPS. A trailing slash is trimmed. Three things are refused outright:
   and almost always mean a whole browser URL was pasted in.
 
 **Compute context** (optional). The name of the SAS compute context to run in.
-Leave it empty for now if you do not know it.
+Leave it empty if you do not know it: the first time you connect, the extension
+lists the contexts your deployment offers, asks which one you want, and writes
+your answer back here. See [Connecting to Viya](connecting.md).
 
 **OAuth client ID** (optional). If you enter one you are then asked for the
 client secret, and that prompt is masked.

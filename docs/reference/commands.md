@@ -22,3 +22,5 @@ under their category.
 | Import Connection Profiles from the SAS Extension | `Python on Viya: Import Connection Profiles from the SAS Extension` | `pythonOnViya.importProfiles` |
 | Sign In | `Python on Viya: Sign In` | `pythonOnViya.signIn` |
 | Sign Out | `Python on Viya: Sign Out` | `pythonOnViya.signOut` |
+| Connect to SAS Viya | `Python on Viya: Connect to SAS Viya` | `pythonOnViya.connect` |
+| Disconnect from SAS Viya | `Python on Viya: Disconnect from SAS Viya` | `pythonOnViya.disconnect` |

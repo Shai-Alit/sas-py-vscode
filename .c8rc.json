@@ -9,6 +9,9 @@
     "src/auth/messages.ts",
     "src/auth/sessionStore.ts",
     "src/auth/uriHandler.ts",
+    "src/compute/commands.ts",
+    "src/compute/messages.ts",
+    "src/compute/sessionManager.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",
@@ -20,8 +23,8 @@
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 88,
-  "statements": 88,
-  "functions": 87,
-  "branches": 93
+  "lines": 89,
+  "statements": 89,
+  "functions": 88,
+  "branches": 94
 }

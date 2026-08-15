@@ -10,6 +10,9 @@ import {
 import { registerAuthCommands } from "./auth/commands";
 import { SessionStore } from "./auth/sessionStore";
 import { registerAuthUriHandler } from "./auth/uriHandler";
+import { SessionBindingStore } from "./compute/bindingStore";
+import { registerComputeCommands } from "./compute/commands";
+import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerProfileCommands } from "./profile/commands";
 import { createProfileStatusBarItem } from "./profile/statusBar";
 import { ProfileStore } from "./profile/store";
@@ -77,6 +80,18 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   registerAuthProvider(context, auth);
   registerAuthCommands(context, auth, profiles, output);
+
+  // The compute session, and the workspace's memory of it. Constructing either
+  // reads nothing: the binding is read when a connect asks for it, and the token
+  // comes from the authentication provider at request time. Nothing here starts
+  // a session, and a window that never runs Python never opens one.
+  const sessions = new ComputeSessionManager(
+    profiles,
+    new SessionBindingStore(context.workspaceState, output),
+    output,
+  );
+  context.subscriptions.push(sessions);
+  registerComputeCommands(context, sessions, profiles, output);
 }
 
 export function deactivate(): void {

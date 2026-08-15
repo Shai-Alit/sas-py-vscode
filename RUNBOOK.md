@@ -1457,10 +1457,24 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
 
 ☐ **2a-ii punch list.**
 
-- ☐ **A session belongs to a profile and borrows the provider's token.** Take it
+- ☑ **A session belongs to a profile and borrows the provider's token.** Take it
   from `vscode.authentication.getSession`, never from storage directly, so
   expiry and sign-out flow through one place. Two profiles must be able to hold
   live sessions simultaneously — the thing upstream's global singleton forecloses.
+
+  Done 2026-08-14. `ComputeSessionManager` holds a `Map` keyed by profile id, so
+  two profiles hold two sessions and neither can overwrite the other. The token
+  is **borrowed per request, never stored**: `ComputeClientConfig.token` is a
+  function, and it calls `getSession(…, { silent: true })` each time, because a
+  900-second session outlives the access token that opened it and the provider's
+  own refresh path is the only thing entitled to renew it. Nothing here reads
+  `SecretStorage`.
+
+  One guard that was not on this list. `vscode.authentication.getSession` lets
+  the **user** pick the account when several profiles are signed in, and the
+  provider's session id *is* the profile id — so the manager compares them and
+  refuses when they differ, rather than opening a session on a deployment the
+  user did not select. Cheap, and it closes the hole behind task #84.
 - ☑ **Settled 2026-08-14: the session id lives in `workspaceState`, keyed by
   profile id — one session per (workspace, profile).** Recorded as **ADR-0012**;
   the reasoning is there and is not repeated here. What the implementation has to
@@ -1484,12 +1498,24 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   submitting concurrently, because finding 29's "what did not settle" list has
   concurrent submission on it as unobserved. This is also the only defence the
   shared-session case has, so it is not optional.
+
+  **Moved to 3a on 2026-08-14, unstarted.** It was mis-scoped onto this slice:
+  the check has no caller until there is a submission path to refuse, and a
+  state read written now would be dead code with a test that only proves it
+  parses. It stays not optional — it moves with its reasoning intact, and the
+  header of `src/compute/sessionManager.ts` says under "what is deliberately not
+  here yet" why the manager has no busy check.
 - ☐ **Poll the *job* for completion, never the session.** Finding 27 measured the
   job reaching `completed` two to three seconds before the session returned to
   `idle`. Use the job's `state` link, and send `wait` **and** `If-None-Match`
   together — finding 28 measured `wait` alone returning immediately, which would
   turn the poll into a hot spin that still looks correct.
-- ☐ **Session death is one recoverable event with one observed shape.**
+
+  **Moved to 3a on 2026-08-14, unstarted**, for the same reason as the item
+  above: there is no job to poll until something submits one. The *session*
+  long poll it is contrasted with did land in 2a-i (`waitWhilePending`), so the
+  mechanism is built and tested; what moves is only the choice of resource.
+- ☑ **Session death is one recoverable event with one observed shape.**
   `attributes.sessionInactiveTimeout` is **900 seconds** (finding 18), so this is
   routine rather than exceptional. Finding 29 measured a dead session answering
   **`404`** identically on the session, its state, and a job submission — so key
@@ -1499,23 +1525,106 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   never existed. Keep handling a `401` as *auth*, not as death. Do **not** copy
   upstream's `.catch(() => this._computeSession = undefined)`, which swallows
   every rejection including a network failure and reports it as a dead session.
-- ☐ **The session `name` carries a constant marker and nothing else.** Finding 25:
+
+  Done 2026-08-14, and it turned out to be quieter than the item implies. A
+  stored id is tried with `attachSession`; `session-gone` — which 2a-i already
+  narrows to a `404` and nothing else — is written to the **log**, saying that
+  anything defined in the old session is gone, and the binding is cleared. The
+  connect then carries straight on and creates a new session.
+  The user is told what happened by the notification they get at the end, which
+  says they are connected. There is no "your session ended, start another?"
+  prompt, because after a reload the answer is always yes and the prompt is
+  purely a click. Every *other* failure of the reattach is reported and the
+  connect stops — the discrimination upstream's blanket `.catch` throws away.
+
+  The one place death is announced is a reattach the user asked for and that
+  failed for a reason other than a `404`; the wording comes from
+  `localiseComputeProblem`, so it names the deployment's own reading of the
+  failure rather than assuming a cause.
+- ☑ **The session `name` carries a constant marker and nothing else.** Finding 25:
   the identity `id` is an email address on at least one deployment, and a session
   name is readable by other callers listing the collection. `python-on-viya` is
   the marker; the user narrowing comes from `owner`, which the server already
   knows and did not learn from us.
-- ☐ **Progress and cancellation.** `withProgress` around connect, and a
+
+  Landed in 2a-i's `createSession` and unchanged here; the shell passes no name
+  of its own, so there is nowhere for a user string to leak into one.
+- ☑ **Progress and cancellation.** `withProgress` around connect, and a
   `CancellationToken` wired to the abort signal 2a-i exposes. Upstream has no
   cancellation here and nowhere to add it.
-- ☐ **The workspace-trust boundary applies.** 1c-i gates sign-in on trust;
+
+  Done 2026-08-14 through `abortOn(token)`, disposed in a `finally` so a
+  completed connect does not leave a listener on a token source that outlives
+  it. One thing the writing turned up: a cancelled request comes back as
+  `compute-unreachable`, indistinguishable from a deployment that is genuinely
+  down, so `reportFailure` checks `token.isCancellationRequested` first and
+  shows **nothing**. A user who pressed Cancel does not need to be told the
+  deployment is unreachable.
+
+  Connect is also **re-entrant**: a second invocation joins the promise in
+  flight rather than starting a second connect, because the two would each
+  create a session and one of them would be orphaned for 900 seconds.
+- ☑ **The workspace-trust boundary applies.** 1c-i gates sign-in on trust;
   opening a compute session against a deployment is at least as consequential.
   Same gate, same message shape, and a test that asserts it.
-- ☐ **An integration test per shell module.** ADR-0009 removed the threshold that
+
+  Done 2026-08-14, twice over: the manager refuses before it reads a profile,
+  and `contributes.commands` carries `isWorkspaceTrusted` in *Connect*'s
+  `enablement` so the palette does not offer a command guaranteed to fail. The
+  integration test asserts zero requests were made, not just that a message
+  appeared — the gate has to be in front of the network, not beside it.
+- ☑ **An integration test per shell module.** ADR-0009 removed the threshold that
   would otherwise have noticed a missing one, and this punch list is the
   replacement gate.
+
+  Done 2026-08-14: `test/integration/compute/` gained `messages`,
+  `session-manager` and `commands`, one per `vscode`-importing module added by
+  this slice, and the three new entries in `.c8rc.json` are the same three
+  names. The session-manager suite keys its fake deployment **by link relation**
+  rather than by call order, so a change in how many requests connect makes does
+  not silently re-point a reply at the wrong endpoint.
+
+  `bindingStore.ts` started here as a fourth and is not one. Lint asked for
+  `import type * as vscode` — it uses two interfaces and no value — and ADR-0009
+  reads a type-only import as no import at all, so the module belongs in the
+  denominator and its suite belongs in the unit tier. It moved to
+  `test/unit/compute-binding-store.test.ts`, its `.c8rc.json` entry came out,
+  and the constructor now takes `Pick<Memento, "get" | "update">` and
+  `Pick<LogOutputChannel, "debug">` in the house style. The lint rule found a
+  tier mistake, which is the second time a mechanical check has been better at
+  this than the judgement that put the file there.
+- ☑ **Not on the original list: a profile with no `context` gets a picker, and
+  the answer is written back.** `contextFor` lists the deployment's compute
+  contexts, asks, and then `profiles.upsert`s the chosen name into the profile,
+  so the question is asked once rather than on every connect. Dismissing the
+  picker cancels the connect and shows nothing. A deployment that returns no
+  contexts at all is refused with an administrator-facing message, because
+  there is no answer the user could give.
+
+  Worth confirming rather than assuming: it edits the user's settings as a side
+  effect of connecting. The alternative — hold the choice in memory for the
+  session — asks again after every reload, which is the worse of the two.
+- ☑ **Re-baseline the ratchet from the measured run.** Most of this slice is
+  shell and therefore outside the denominator, but `binding.ts`,
+  `cancellation.ts` and now `bindingStore.ts` are all measured and heavily
+  tested, so the number should not fall.
+  Set it from `npm run coverage`, not from a guess; if it drops, something in
+  `src/compute` lost a test rather than the slice being untestable.
+
+  Done 2026-08-14: measured 89.49 statements, 94.25 branches, 88.54 functions,
+  89.49 lines across 593 unit tests; floor set to **89 / 89 / 88 / 94**, each
+  rounded down so a three-OS gate cannot fail on a rounding difference. It rose,
+  which was the prediction: `src/compute` now measures 99.78 with `binding.ts`,
+  `bindingStore.ts`, `cancellation.ts`, `links.ts` and `session.ts` all at 100.
+  The drag is still `scripts/` at 64.76, unchanged and unmoved by this slice —
+  the argument flagged after the 1b-i re-baseline is still waiting for its own
+  slice, and this number will keep pointing at it until it gets one.
 - ☐ **Manual check against your Viya**: connect, confirm the session appears,
   reload the window and confirm it reconnects, then leave it idle past fifteen
-  minutes and confirm the death path says something true.
+  minutes and confirm the death path says something true. Add two now that the
+  shell exists: connect from a profile with no `context` and confirm the picker's
+  answer lands in `settings.json`, and sign in on a second profile, switch to it
+  and confirm *Connect* opens a second session rather than replacing the first.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.

@@ -20,12 +20,21 @@
  * happy path rather than an error, which is why {@link asSessionGone} exists and
  * why {@link deleteSession} treats "already gone" as success.
  *
+ * ## The one composed URL, and why it is now here
+ *
+ * {@link attachSession} composes `/compute/sessions/{id}`, the second and last
+ * composed URL in the project. It was deliberately absent until a slice had a
+ * reason to want it, and 2a-ii is that slice: **ADR-0012** persists a session id
+ * so a reloaded window can get its Python namespace back, and there is no link to
+ * follow because the representation that carried the links died with the previous
+ * window. A stored id is all that survives, so an id is what this takes.
+ *
  * ## What is deliberately not here
  *
- * No reconnect-by-id. Re-attaching to a session from a previous window needs a
- * composed `/compute/sessions/{id}` — the second composed URL in the project —
- * and it belongs to the slice that has a reason to want it, with the decision
- * recorded there rather than a helper sitting here unused.
+ * No reclaim-by-listing. `GET /compute/sessions` filtered by `owner` and
+ * `applicationName` does find every session this extension started for this user
+ * (finding 25), and ADR-0012 rejects building on it: session names are not unique
+ * (finding 26), so the filter returns candidates rather than an answer.
  *
  * No retry. Every function here makes one request and reports what happened; a
  * caller that wants to retry knows things this layer does not, such as whether
@@ -50,6 +59,21 @@ export const CANCEL_REL = "cancel";
 
 /** The relation that shuts the SAS process down. `DELETE`, `204`. */
 export const DELETE_REL = "delete";
+
+/**
+ * The sessions collection, under which {@link attachSession} composes one id.
+ *
+ * The second and last composed path in the project, after `CONTEXTS_PATH`, and
+ * root-relative for the same reason: it goes through `resolveHref` on exactly the
+ * terms a server-sent href does.
+ */
+export const SESSIONS_PATH = "/compute/sessions";
+
+/**
+ * The media type of a single session, before {@link computeMediaType} adds
+ * `+json`. The type the create call answered with (finding 21).
+ */
+const SESSION_TYPE = "application/vnd.sas.compute.session";
 
 /**
  * The state a session is in when it is created (finding 18), and the only state
@@ -231,12 +255,40 @@ export async function createSession(
   if (!result.ok) return result;
 
   const session = readSession(result.value);
-  if (session === undefined) {
-    return malformed(
-      result.value,
-      "and it was not a session representation with an id and a state",
-    );
-  }
+  if (session === undefined) return malformed(result.value, NOT_A_SESSION);
+  return { ok: true, value: session };
+}
+
+/**
+ * Re-reads a session by id, for a window that has one stored.
+ *
+ * This is the reconnect path ADR-0012 describes, and the stored id is a **hint**:
+ * the only way to find out whether a session is still there is to ask for it, so
+ * this is the ask. A `404` means it is not — the session expired, was deleted,
+ * lost its node, or the id was never real — and finding 29 measured all four as
+ * the same response, which is why {@link asSessionGone} states no cause. A caller
+ * that gets `session-gone` here creates a new session; that is the whole protocol.
+ *
+ * There is no cheaper check to do first. A `HEAD`, a state read, or a listing all
+ * cost the same round trip and answer a narrower question, so probing before use
+ * would only add a way for the answer to change in between.
+ *
+ * A success carries the full representation, links included, so a reattached
+ * session is indistinguishable from a freshly created one everywhere else.
+ */
+export async function attachSession(
+  client: ComputeClient,
+  id: string,
+  options?: { signal?: AbortSignal | undefined },
+): Promise<ComputeResult<ComputeSession>> {
+  const result = await client.send({
+    link: sessionLink(id),
+    signal: options?.signal,
+  });
+  if (!result.ok) return asSessionGone(result);
+
+  const session = readSession(result.value);
+  if (session === undefined) return malformed(result.value, NOT_A_SESSION);
   return { ok: true, value: session };
 }
 
@@ -417,6 +469,38 @@ export function asSessionGone(failure: ComputeFailure): ComputeFailure {
     ok: false,
     reason: "the compute session is no longer available",
     problem: { code: "session-gone", error: problem.error },
+  };
+}
+
+/** What {@link malformed} says when a 2xx body was not a session at all. */
+const NOT_A_SESSION =
+  "and it was not a session representation with an id and a state";
+
+/**
+ * A link for one session by id, so {@link attachSession} enters the client the
+ * same way a followed relation does.
+ *
+ * The id is percent-encoded rather than trusted. It has come back out of
+ * `workspaceState`, which is a file on disk that anything on the machine can
+ * write, and an id containing `../` or a `?` would otherwise compose a request to
+ * a path nobody chose. Every id observed is `[0-9a-f-]` and is unaffected by
+ * encoding, so this costs nothing in the real case.
+ *
+ * `responseType` rather than `type`, matching `contextsLink`: there is no request
+ * body to describe, and on a `GET` the client prefers `responseType` for `Accept`.
+ *
+ * Throws on an empty id, which is a caller defect rather than a runtime
+ * condition — the store's parser rejects an empty id, so reaching here with one
+ * means something composed a key by hand. `GET /compute/sessions` is the whole
+ * collection, and a listing is not what anyone calling this asked for.
+ */
+function sessionLink(id: string): Link {
+  if (id === "") throw new TypeError("a compute session id cannot be empty");
+  return {
+    rel: "self",
+    method: "GET",
+    href: `${SESSIONS_PATH}/${encodeURIComponent(id)}`,
+    responseType: SESSION_TYPE,
   };
 }
 

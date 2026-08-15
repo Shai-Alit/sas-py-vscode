@@ -485,6 +485,39 @@ describe("compute session manager", () => {
     assert.deepEqual(shown.errors, []);
   });
 
+  it("says nothing when the user cancels the context list", async () => {
+    const source = new vscode.CancellationTokenSource();
+    const scripted = deployment({
+      contexts: {
+        ok: false,
+        reason: "could not reach the compute service",
+        problem: {
+          code: "compute-unreachable",
+          detail: "GET /compute/contexts — This operation was aborted",
+        },
+      },
+    });
+    // No `context` on the profile, so the picker path runs and lists contexts
+    // under a progress of its own. That token used to be unreachable from the
+    // failure branch, which is how this arm came to report a cancellation as an
+    // unreachable deployment while every other arm handled it correctly.
+    const { manager, shown } = harness({
+      profiles: profileSource(profile()),
+      client: scripted.client,
+      deps: {
+        withProgress: (_title, run) => {
+          source.cancel();
+          return run(source.token);
+        },
+      },
+    });
+
+    assert.equal(await manager.connect(), undefined);
+
+    assert.deepEqual(shown.errors, []);
+    assert.deepEqual(shown.infos, []);
+  });
+
   it("ends the session and forgets it on disconnect", async () => {
     const state = memoryMemento();
     const scripted = deployment({
@@ -521,6 +554,52 @@ describe("compute session manager", () => {
 
     assert.equal(scripted.requests.length, 0);
     assert.equal(shown.infos.length, 1);
+  });
+
+  it("waits for a connect in flight before deciding there is nothing to end", async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const replies: Partial<Record<string, ComputeResult<ComputeResponse>>> = {
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+      delete: {
+        ok: true,
+        value: { status: 204, notModified: false, text: "", body: undefined },
+      },
+    };
+    const hrefs: string[] = [];
+    const client: ComputeClient = {
+      send: async (request) => {
+        hrefs.push(request.link.href);
+        // Only the connect's own calls are held; the delete that disconnect
+        // makes afterwards must not deadlock on a promise already resolved.
+        if (request.link.rel !== "delete") await held;
+        const reply = replies[request.link.rel];
+        assert.ok(reply !== undefined);
+        return reply;
+      },
+    };
+    const state = memoryMemento();
+    const { manager, bindings, shown } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client,
+      state,
+    });
+
+    const connecting = manager.connect();
+    const disconnecting = manager.disconnect();
+    release();
+    await Promise.all([connecting, disconnecting]);
+
+    // Without the join, disconnect finds an empty map, says "there is no
+    // session", and the connect it raced then leaves one running — the user
+    // having been told the opposite of what happened.
+    assert.deepEqual(shown.infos, []);
+    assert.ok(hrefs.includes(SESSION_PATH), "the session was never deleted");
+    assert.equal(manager.current(PROFILE_ID), undefined);
+    assert.equal(bindings.read(PROFILE_ID), undefined);
   });
 
   it("leaves the session running when the window goes away", async () => {

@@ -1626,6 +1626,37 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   answer lands in `settings.json`, and sign in on a second profile, switch to it
   and confirm *Connect* opens a second session rather than replacing the first.
 
+**Three findings from the 2a-ii review, 2026-08-14**, all in `sessionManager.ts`.
+The first was raised independently by both reviewers, which is the signal worth
+recording — one of them can be wrong about intent, two agreeing about the same
+five lines usually are not.
+
+1. **Cancelling the context list reported an unreachable deployment.** The rule
+   `cancellation.ts` states — on a failure, ask the token first, and if it was
+   cancelled say nothing — was obeyed everywhere except `contextFor`, which runs
+   its own progress and handles the result *after* `withProgress` returns, where
+   the token no longer exists. So that one arm called `report` unconditionally.
+   The fix narrows `reportFailure` to take the boolean it actually needs rather
+   than a token, and `contextFor` returns the cancellation flag alongside the
+   result. Worth generalising: **a rule that depends on a value being in scope
+   will be broken by the first caller whose scope differs.** The four call sites
+   inside `open` never noticed because they all share one token by construction.
+   Pinned by a test; the existing cancel test sets `context` on the profile and
+   so never entered the branch, which is how it stayed green over a real bug.
+2. **An orphaned doc comment.** Two comment blocks stacked above one
+   declaration: TSDoc binds to the *next* declaration, so `ComputeConnection`'s
+   documentation attached to nothing and the exported interface had none. Moved.
+   Nothing catches this — not the compiler, not the linter, not `check:docs`.
+3. **`disconnect` did not join an in-flight `connect`.** `connect` de-dupes
+   itself, `disconnect` did not consult it, so a disconnect arriving mid-connect
+   found an empty map, told the user there was no session, cleared a binding
+   about to be rewritten, and left the session the connect then created. Both
+   reviewers called it narrow because the palette `enablement` conditions are
+   mutually exclusive — but `executeCommand` from a keybinding, another
+   extension, or a second window ignores `enablement` entirely. Fixed by
+   awaiting `this.connecting` (with the rejection swallowed, since a failed
+   connect has already reported itself and is not disconnect's to re-raise).
+
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.
 

@@ -64,14 +64,6 @@ import {
 } from "./session";
 
 /**
- * A live compute session, and everything needed to keep talking to it.
- *
- * The client travels with the session rather than being rebuilt per call,
- * because it carries the deployment root and the token function — both of which
- * belong to the profile this session was opened for, and neither of which a later
- * slice should have to reassemble correctly.
- */
-/**
  * The three things this needs from the profile store.
  *
  * Narrowed for the same reason `ProfileStorageContext` is: a test can satisfy
@@ -84,6 +76,14 @@ export type ComputeProfileSource = Pick<
   "active" | "activeName" | "upsert"
 >;
 
+/**
+ * A live compute session, and everything needed to keep talking to it.
+ *
+ * The client travels with the session rather than being rebuilt per call,
+ * because it carries the deployment root and the token function — both of which
+ * belong to the profile this session was opened for, and neither of which a later
+ * slice should have to reassemble correctly.
+ */
 export interface ComputeConnection {
   readonly profileId: string;
   readonly profileName: string;
@@ -179,8 +179,22 @@ export class ComputeSessionManager implements vscode.Disposable {
    * on exit are contradictory, and a reload is the case the persistence exists
    * for. Fifteen idle minutes is the automatic reaper; this is the one a user
    * asks for by name.
+   *
+   * It waits for a connect in flight before deciding there is nothing to end.
+   * Without that, a disconnect arriving mid-connect finds an empty `live`, says
+   * "there is no session", clears a binding that is about to be rewritten, and
+   * the connect then finishes and leaves the session running — the user having
+   * been told the opposite. The command `enablement` conditions make this hard
+   * to reach from the palette, but a keybinding, another extension and a second
+   * window all call the command directly, and `connect` already guards the
+   * mirror image of this race.
    */
   async disconnect(): Promise<void> {
+    // Swallowed rather than propagated: a connect that threw has already told
+    // the user, and rethrowing it out of *disconnect* would report the wrong
+    // command's failure.
+    await this.connecting?.catch(() => undefined);
+
     const active = this.profiles.active();
     if (active === undefined) return;
 
@@ -305,7 +319,7 @@ export class ComputeSessionManager implements vscode.Disposable {
         return this.hold(active, context, client, attached.value);
       }
       if (attached.problem.code !== "session-gone") {
-        this.reportFailure(attached, token);
+        this.reportFailure(attached, token.isCancellationRequested);
         return undefined;
       }
       // Ordinary: fifteen idle minutes is lunch. Said at `info` because the
@@ -327,13 +341,13 @@ export class ComputeSessionManager implements vscode.Disposable {
 
     const resolved = await resolveContext(client, context, { signal });
     if (!resolved.ok) {
-      this.reportFailure(resolved, token);
+      this.reportFailure(resolved, token.isCancellationRequested);
       return undefined;
     }
 
     const created = await createSession(client, resolved.value, { signal });
     if (!created.ok) {
-      this.reportFailure(created, token);
+      this.reportFailure(created, token.isCancellationRequested);
       return undefined;
     }
 
@@ -343,7 +357,7 @@ export class ComputeSessionManager implements vscode.Disposable {
       // left to occupy a launcher slot for fifteen minutes. Its own failure is
       // not reported: the user is about to be told the real one.
       void deleteSession(client, created.value);
-      this.reportFailure(settled, token);
+      this.reportFailure(settled, token.isCancellationRequested);
       return undefined;
     }
 
@@ -390,20 +404,27 @@ export class ComputeSessionManager implements vscode.Disposable {
   ): Promise<string | undefined> {
     if (profile.context !== undefined) return profile.context;
 
-    const listed = await this.withProgress(
+    // The cancellation flag comes back out with the result. This progress has
+    // its own token, the failure is handled after `withProgress` returns, and a
+    // token that only exists inside the callback cannot be asked the one
+    // question every failure path here has to ask.
+    const attempt = await this.withProgress(
       vscode.l10n.t("Reading compute contexts…"),
       async (token) => {
         const bridge = abortOn(token);
         try {
-          return await listContexts(client, { signal: bridge.signal });
+          return {
+            listed: await listContexts(client, { signal: bridge.signal }),
+            cancelled: token.isCancellationRequested,
+          };
         } finally {
           bridge.dispose();
         }
       },
     );
+    const { listed } = attempt;
     if (!listed.ok) {
-      this.report(localiseComputeProblem(listed.problem));
-      this.log.error(describeComputeProblem(listed.problem));
+      this.reportFailure(listed, attempt.cancelled);
       return undefined;
     }
 
@@ -468,12 +489,15 @@ export class ComputeSessionManager implements vscode.Disposable {
    * rule and it is a fair one here: `return this.reportFailure(…)` reads as
    * though the failure were the connect's result, when the result is that there
    * is no connection.
+   *
+   * `cancelled` is a boolean rather than the token it is read from, because a
+   * token is not always in scope where a failure is handled: `contextFor` runs
+   * its progress and handles the result on either side of the callback boundary,
+   * and taking a token here is what let that path skip the check entirely. One
+   * fact is easier to carry across a boundary than the object it came from.
    */
-  private reportFailure(
-    failure: ComputeFailure,
-    token: CancellationLike,
-  ): void {
-    if (token.isCancellationRequested) {
+  private reportFailure(failure: ComputeFailure, cancelled: boolean): void {
+    if (cancelled) {
       this.log.info(vscode.l10n.t("Connecting to SAS Viya was cancelled."));
       return;
     }

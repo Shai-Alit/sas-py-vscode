@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import { SignInCancelledError } from "../../../src/auth/cancellation";
 import { signIn, type SignInDeps } from "../../../src/auth/commands";
 import { testLogChannel } from "../../helpers/auth-host";
 import { extensionId } from "../../helpers/manifest";
@@ -248,6 +249,54 @@ describe("signing in connects", () => {
     assert.deepEqual(h.connects, [], "connected without a session");
     assert.deepEqual(h.informed, []);
     assert.match(h.reported[0] ?? "", /the deployment refused/);
+  });
+});
+
+describe("cancelling a sign-in", () => {
+  it("shows nothing at all", async () => {
+    // Closing the browser is an answer. An error dialog for it tells the user
+    // that the thing they just chose to do has gone wrong, and there is nothing
+    // to fix — so no dialog, and no information message either, because a toast
+    // confirming that nothing happened is still a toast.
+    const h = signInHarness({
+      connected: connection(),
+      createSession: () => Promise.reject(new SignInCancelledError()),
+    });
+
+    await signIn(h.deps);
+
+    assert.deepEqual(h.reported, [], "a cancellation reached an error dialog");
+    assert.deepEqual(h.informed, []);
+    assert.deepEqual(h.connects, [], "connected after a cancelled sign-in");
+  });
+
+  it("is still recognised after the editor has rebuilt the error", async () => {
+    // The shape that arrives when the rejection has crossed an RPC hop: a plain
+    // `Error` carrying the name, with the prototype gone. Not the path this
+    // command takes — it holds the provider directly — but it is the path the
+    // compute connect takes, and both use this one predicate. A check that only
+    // worked here would keep passing while the other one rotted.
+    const revived = new Error("Signing in to SAS Viya was cancelled.");
+    revived.name = "SignInCancelledError";
+
+    const h = signInHarness({ createSession: () => Promise.reject(revived) });
+
+    await signIn(h.deps);
+
+    assert.deepEqual(h.reported, []);
+    assert.deepEqual(h.informed, []);
+  });
+
+  it("still reports a failure that is not a cancellation", async () => {
+    // The direction that would be silent if the predicate were too generous.
+    const h = signInHarness({
+      createSession: () =>
+        Promise.reject(new Error("the deployment could not be reached")),
+    });
+
+    await signIn(h.deps);
+
+    assert.match(h.reported[0] ?? "", /could not be reached/);
   });
 });
 

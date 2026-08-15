@@ -41,6 +41,7 @@
 import * as vscode from "vscode";
 
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
+import { isSignInCancelled } from "../auth/cancellation";
 import { accountForEndpoint } from "../auth/identity";
 import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
@@ -660,12 +661,47 @@ export class ComputeSessionManager implements vscode.Disposable {
   }
 
   /**
+   * A token, or `undefined` if the user decided not to sign in after all.
+   *
+   * Cancelling is the one rejection this turns back into a value. It arrives
+   * here as a rejection because `getSession` has no other way to say it — but
+   * connecting already has a word for "no session", and it is `undefined`, so
+   * translating here means every frame above stays as it was.
+   *
+   * This is also the one place in the extension where the error being caught has
+   * crossed an RPC hop: `vscode.authentication.getSession` reaches our own
+   * provider through the editor, which rebuilds anything thrown as a plain
+   * `Error`. See `src/auth/cancellation.ts` for why the check is on `name`.
+   */
+  private async authSession(
+    request: AuthRequest,
+  ): Promise<vscode.AuthenticationSession | undefined> {
+    try {
+      return await this.askForSession(request);
+    } catch (error) {
+      if (!isSignInCancelled(error)) {
+        // Everything else is still thrown, and still lands on the user as
+        // "Running the contributed command … failed". That is #130's to fix and
+        // not this one's: a deployment that cannot be reached is a real failure
+        // and deserves a real message, it just deserves a better one than that.
+        throw error;
+      }
+
+      // The user closed the browser. `undefined` is what every other "no session
+      // for you" answer looks like to `runConnect`, so connecting stops here and
+      // says nothing — and the provider has already logged it, on this side of
+      // the hop as well as the other, because both ends are this extension.
+      return undefined;
+    }
+  }
+
+  /**
    * The three ways this asks for a token. See {@link AuthRequest} for why three.
    *
    * Exhaustive `switch`, no `default`: a fourth arm should stop compiling here
    * rather than silently fall through to whichever of these looked closest.
    */
-  private async authSession(
+  private async askForSession(
     request: AuthRequest,
   ): Promise<vscode.AuthenticationSession | undefined> {
     const get = this.deps.authSession;

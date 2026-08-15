@@ -10,6 +10,7 @@ import type {
   ComputeResponse,
   ComputeResult,
 } from "../../../src/compute/client";
+import { SignInCancelledError } from "../../../src/auth/cancellation";
 import { accountId } from "../../../src/auth/identity";
 import { SessionBindingStore } from "../../../src/compute/bindingStore";
 import {
@@ -775,6 +776,45 @@ describe("compute session manager", () => {
     // command that fixes it.
     assert.equal(scripted.requests.length, 0);
     assert.match(shown.errors[0] ?? "", /Switch Connection Profile/);
+  });
+
+  it("stops quietly when the user cancels the sign-in it asked for", async () => {
+    // Connecting while signed out opens the browser, and closing the browser is
+    // an answer. `getSession` has no way to say "cancelled" other than by
+    // rejecting, so this arrives as a rejection and is turned back into the
+    // `undefined` that every other "no session" answer already uses — which is
+    // what stops it surfacing as *Running the contributed command … failed*.
+    const scripted = deployment({});
+    const { manager, shown } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      deps: {
+        authSession: () => Promise.reject(new SignInCancelledError()),
+      },
+    });
+
+    assert.equal(await manager.connect(), undefined);
+    assert.equal(scripted.requests.length, 0, "a cancelled connect asked Viya");
+    assert.deepEqual(shown.errors, []);
+    assert.deepEqual(shown.infos, []);
+  });
+
+  it("still raises a sign-in failure that is not a cancellation", async () => {
+    // The direction that would be silent if the check were too generous. This
+    // rejection is deliberately still a rejection: reporting a deployment that
+    // could not be reached is #130's to improve, and swallowing it here would
+    // close that defect by hiding it.
+    const scripted = deployment({});
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      deps: {
+        authSession: () =>
+          Promise.reject(new Error("the deployment could not be reached")),
+      },
+    });
+
+    await assert.rejects(manager.connect(), /could not be reached/);
   });
 
   it("says nothing when the user cancels", async () => {

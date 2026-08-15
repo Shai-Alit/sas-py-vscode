@@ -56,6 +56,7 @@ import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { diffSessions, isEmptyDiff, type SessionSummary } from "./accounts";
 import { signInWithBrowser, type BrowserSignInDeps } from "./browserFlow";
+import { SignInCancelledError } from "./cancellation";
 import { BUILT_IN_CLIENT_ID } from "./clientId";
 import {
   accountForEndpoint,
@@ -467,6 +468,11 @@ export class ViyaAuthenticationProvider
    *
    * Rejects rather than returning `undefined` on failure, because that is the
    * contract: VS Code shows the rejection to whoever asked for the session.
+   * A **cancellation** rejects too — there is no other way out of this signature
+   * — but with a {@link SignInCancelledError}, so that a caller can tell "the
+   * user changed their mind" from "this did not work" and show nothing for the
+   * first. Both cancellations that exist reach this the same way: the browser
+   * flow throws one, the secret prompt below throws the other.
    *
    * `options.account` names which deployment to sign in to, and it wins over the
    * active profile. The Accounts menu's *sign in again* passes the account row
@@ -500,7 +506,11 @@ export class ViyaAuthenticationProvider
 
     const clientSecret = await this.clientSecret(active.profile);
     if (clientSecret === undefined) {
-      throw new Error(vscode.l10n.t("Sign-in was cancelled."));
+      // The masked prompt was dismissed. The second place a sign-in is
+      // cancelled, and the only one `signInWithBrowser` cannot see, because it
+      // happens before the browser opens.
+      this.log.info(vscode.l10n.t("Sign-in was cancelled."));
+      throw new SignInCancelledError();
     }
 
     const tokens = await signInWithBrowser(

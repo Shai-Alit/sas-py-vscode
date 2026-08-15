@@ -46,6 +46,7 @@
 
 import * as vscode from "vscode";
 
+import { SignInCancelledError } from "./cancellation";
 import type { Deployment } from "./clientId";
 import { localiseAuthProblem } from "./messages";
 import { describeAuthProblem, type AuthProblem } from "./problems";
@@ -116,10 +117,19 @@ export interface BrowserSignInDeps {
 /**
  * Signs in through the browser and stores the session.
  *
- * Returns the tokens on success and `undefined` on anything else — including
- * cancellation, which is not a failure and produces no error message. Every
- * genuine failure is reported twice: the English fragment to the log, the
- * localised sentence to the user.
+ * Returns the tokens on success, and `undefined` when the sign-in failed — every
+ * genuine failure is reported twice before that, the English fragment to the log
+ * and the localised sentence to the user, so `undefined` means "it did not work
+ * and the user has already been told why".
+ *
+ * Throws {@link SignInCancelledError} when the user cancelled. Two channels for
+ * two facts, and the alternative was considered and rejected: a result union
+ * (`{ok:false, reason:"cancelled"|"reported"}`) reads better in isolation, but
+ * the fact has to reach `createSession`, which must *reject* to satisfy its
+ * contract with the editor. A returned reason gets converted to an exception one
+ * frame later — and a returned reason is a value an intermediate frame can drop
+ * by writing `if (tokens === undefined) return`, which is exactly how this defect
+ * happened the first time. A thrown one cannot be dropped by inattention.
  */
 export async function signInWithBrowser(
   request: BrowserSignInRequest,
@@ -157,12 +167,15 @@ export async function signInWithBrowser(
   if (capture.kind !== "code") {
     if (capture.kind === "problem") {
       report(capture.problem, deps.log);
-    } else {
-      // `cancelled`, or an `ignored` that reached here only because the paste
-      // arm ran out of attempts. Neither is an error and neither gets a dialog.
-      deps.log.info(vscode.l10n.t("Sign-in was cancelled."));
+      return undefined;
     }
-    return undefined;
+    // `cancelled`, or an `ignored` that reached here only because the paste arm
+    // ran out of attempts. Neither is an error and neither gets a dialog — which
+    // is why this is thrown rather than returned as another `undefined`. The
+    // caller has to reject either way, and it can only reject with the right
+    // thing if the difference reaches it.
+    deps.log.info(vscode.l10n.t("Sign-in was cancelled."));
+    throw new SignInCancelledError();
   }
 
   const result = await finishSignIn(pending, capture.code, deps.token ?? {});

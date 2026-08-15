@@ -19,6 +19,11 @@ address, the browser returns you to the editor by itself and the box closes
 without you touching it. Both routes are live at the same time, so whichever one
 your deployment supports is the one that finishes.
 
+You can change your mind. Press `Escape` on the box, or close the browser tab and
+leave it, and the sign-in simply stops — no error message, nothing to dismiss.
+Only the log records it, under **Python on Viya** in the Output panel. Run the
+command again whenever you are ready; nothing was left behind.
+
 Signing in also connects. There is little point proving who you are and then
 stopping, so once the sign-in completes the extension opens a compute session on
 the active profile and the message names both — see

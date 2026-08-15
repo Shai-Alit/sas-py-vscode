@@ -2023,7 +2023,7 @@ first and have to be rewritten around it.
   renewal is two requests — the token then the identity — and the second is only
   issued once the first answers, so a non-sticky release would re-hold the
   identity call and hang the test.
-- ☐ **#131 — report a cancelled sign-in as a cancellation, not a failure.**
+- ☑ **#131 — report a cancelled sign-in as a cancellation, not a failure.**
   `browserFlow.ts:163` already knows: it logs "Sign-in was cancelled." at `info`
   and the comment says "Neither is an error and neither gets a dialog." Then
   `createSession` collapses the `undefined` into
@@ -2039,6 +2039,66 @@ first and have to be rewritten around it.
   exported-error-types rule has no purchase across that boundary. The compute
   path needs its own answer — most likely the command layer deciding before it
   ever throws, rather than the caller classifying afterwards.
+
+  **Done 2026-08-15.** The guess above was wrong in a useful way: the command
+  layer *cannot* decide before it throws, because on the compute path the command
+  layer is on the far side of the hop and never sees the flow at all. So both
+  callers classify afterwards, and the work went into making the classification
+  survive the crossing.
+
+  **The marker is the `name`, not the class.** `vscode.authentication.getSession`
+  serialises a rejection and rebuilds it as a plain `Error` carrying `name`,
+  `message` and `stack`. `instanceof` is therefore false on the far side even
+  though the near side threw the real class. `name` is one of the three fields
+  that do survive, so `isSignInCancelled` reads that and nothing else. One
+  predicate for both callers, so the near side cannot silently keep working while
+  the far side rots.
+
+  **`Error` subclasses do not set `name`.** It inherits as `"Error"` after
+  compilation, so the constructor assigns it explicitly. Without that line the
+  marker is wrong *everywhere*, including where nothing was serialised — which is
+  the sort of thing that looks like an RPC problem for an afternoon.
+
+  **A thrown error, not a `{ok:false, reason}` union.** The tempting shape is for
+  `signInWithBrowser` to return its reason, since it already returns `undefined`
+  for a failure. Rejected: the fact has to reach `createSession`, which must
+  reject either way, and a returned reason is a value an intermediate frame can
+  drop by writing `if (tokens === undefined) return` — which is exactly how this
+  defect happened the first time. A throw cannot be dropped by accident.
+
+  **Its own module, `src/auth/cancellation.ts`.** Forced, not chosen:
+  `browserFlow.ts` throws it and `authProvider.ts` catches it, and authProvider
+  already imports browserFlow, so putting the class in either one makes a cycle.
+  The module imports nothing, which puts it *inside* the c8 denominator (ADR-0009)
+  — the one place in this slice where a unit test can reach the logic directly.
+
+  **Two cancellation sources, not one.** The browser and paste-box arm is in
+  `browserFlow.ts`; the masked client-secret prompt is in `authProvider.ts` and
+  the flow cannot see it, because dismissing it happens before the browser opens.
+  Both now throw the same error.
+
+  **What each caller does with it.** `commands.ts` returns without a dialog and
+  without an information message — a toast confirming that nothing happened is
+  still a toast, and the log line was already written where the cancellation
+  happened. `sessionManager.ts` turns it back into the `undefined` that every
+  other "no session" answer already uses, which is what stops it surfacing as
+  *Running the contributed command … failed*. Everything that is **not** a
+  cancellation still propagates there; reporting an unreachable deployment as an
+  ended sign-in is #130's, and swallowing it here would close #130 by hiding it.
+
+  Seven unit tests in `test/unit/auth-cancellation.test.ts` — including the
+  failure direction, which is the quieter defect: a deployment that refused would
+  show nothing at all. Integration tests cover the dismissed box in
+  `browser-flow.test.ts` (plus a new "does not read a refused exchange as a
+  cancellation"), the command in `commands.test.ts` (including a hand-built
+  post-hop error), and the connect in `session-manager.test.ts`.
+
+  **Recorded risk.** The RPC hop is not exercised for real anywhere. Driving it
+  needs the *activated* provider, whose browser ports no test can reach, so it
+  would open a real browser and block. `afterAnRpcHop` in the unit test states the
+  shape instead. If the editor ever changes what it copies, that test keeps
+  passing while the behaviour breaks — and the failure would be the loud
+  direction, a dialog for a cancellation, which is what we started with.
 - ☐ **#132 — say why a stored session was not used, at debug.** `resolve()` has
   three branches that return `undefined` and one of them says nothing at all,
   which is right for an Accounts-menu poll and wrong for the first reload after a

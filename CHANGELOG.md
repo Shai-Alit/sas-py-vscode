@@ -529,6 +529,14 @@ called out under **Changed** with a migration note.
   renewal took the whole list down with it, so a single corrupt stored secret
   hid every other signed-in account; each profile's failure is now confined to
   that profile and written to the log at warning level.
+- Closing the browser without signing in is now treated as an answer rather than
+  a fault. It used to end in an error dialog saying the sign-in did not complete,
+  which told the user that the thing they had just chosen to do had gone wrong;
+  now it shows nothing, on the command and on the connect alike, and only the log
+  records it. Dismissing the client-secret prompt counts the same way, which it
+  did not before — that prompt appears before the browser opens, so the sign-in
+  flow could not see it. Everything that is not a cancellation is still reported
+  exactly as loudly as it was.
 
 ### Changed
 

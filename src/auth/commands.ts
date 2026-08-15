@@ -45,6 +45,7 @@ import {
   NoSuchSessionError,
   type ViyaAuthenticationProvider,
 } from "./authProvider";
+import { isSignInCancelled } from "./cancellation";
 
 /**
  * Open a session for the active profile, and say which profile that was.
@@ -137,6 +138,14 @@ export async function signIn(deps: SignInDeps): Promise<void> {
           ),
     );
   } catch (error) {
+    if (isSignInCancelled(error)) {
+      // Closing the browser is an answer, and the answer is no. Showing an error
+      // for it tells the user that the thing they just chose to do went wrong —
+      // and the log line was already written where the cancellation happened, so
+      // there is nothing left to say here.
+      return;
+    }
+
     // The provider rejects to satisfy its contract with VS Code, which shows the
     // rejection to whoever asked for a session. Invoked from the palette there
     // is no such caller, so the command shows it — but only as a message, never

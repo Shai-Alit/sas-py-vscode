@@ -591,7 +591,10 @@ private CA reaches sign-in instead of failing at TLS; no secrets in logs.
 **2a — HATEOAS Compute layer.** Link following, ETag handling, session creation
 with context resolution, session reconnect, and **session-death handling**:
 detect a reaped or expired session, tell the user plainly that state was lost,
-and offer recovery. Split along the same seam 1b and 1c used, for the same
+and recover. *Amended 2026-08-14 during 2a-ii: "offer recovery" became "recover".
+A dead session is found while the user is connecting, so the offer would be a
+prompt whose answer is always yes; the loss is stated in the log and a new
+session is started.* Split along the same seam 1b and 1c used, for the same
 reason — the pure half is unit-testable and the shell half is not:
 
 > **2a-i — the Compute core, no `vscode` import.** The link layer (find a

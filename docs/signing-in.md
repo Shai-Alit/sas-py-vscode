@@ -19,6 +19,10 @@ address, the browser returns you to the editor by itself and the box closes
 without you touching it. Both routes are live at the same time, so whichever one
 your deployment supports is the one that finishes.
 
+Signing in establishes who you are and nothing else. To get somewhere to run,
+see [Connecting to Viya](connecting.md) — and note that the connect command signs
+you in on its own if you are not already, so you rarely need this one directly.
+
 ## The Accounts menu
 
 The extension registers **SAS Viya** as an authentication provider, which is the

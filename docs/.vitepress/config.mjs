@@ -63,6 +63,7 @@ export default defineConfig({
         items: [
           { text: "Connection profiles", link: "/connection-profiles" },
           { text: "Signing in", link: "/signing-in" },
+          { text: "Connecting to Viya", link: "/connecting" },
         ],
       },
       {

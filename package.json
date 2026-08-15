@@ -105,6 +105,18 @@
         "title": "%command.signOut.title%",
         "category": "%extension.category%",
         "enablement": "pythonOnViya.hasProfiles && isWorkspaceTrusted"
+      },
+      {
+        "command": "pythonOnViya.connect",
+        "title": "%command.connect.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.hasProfiles && isWorkspaceTrusted && !pythonOnViya.connected"
+      },
+      {
+        "command": "pythonOnViya.disconnect",
+        "title": "%command.disconnect.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.connected"
       }
     ],
     "configuration": {

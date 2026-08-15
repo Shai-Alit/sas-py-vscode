@@ -349,6 +349,37 @@ called out under **Changed** with a migration note.
   probes talked us out of it — session names are not unique, so the filter returns
   candidates rather than an answer. Executed in 2a-ii.
 
+- **Python on Viya: Connect to SAS Viya** and **Disconnect from SAS Viya**. Connect
+  signs in if needed, resolves the profile's compute context, opens a compute
+  session and remembers it; disconnect deletes the session and forgets it. Nothing
+  runs Python yet — this is the connection the run command will use.
+
+  The session is remembered per workspace and per profile, so reloading the window
+  reattaches to the same SAS process and the Python namespace survives it. A
+  remembered id is treated as a hint: it is tried, and a session that has since
+  ended is replaced without a prompt rather than reported as a failure. Two
+  profiles can hold sessions at once, which the SAS extension's process-global
+  session cannot. The access token is borrowed from the authentication provider on
+  every request rather than captured once, because a session lives fifteen minutes
+  and a token may not.
+
+  Connect refuses in an untrusted workspace, before it reads a profile or makes a
+  request, and *Connect* is not offered in the palette there. It also refuses when
+  the account VS Code hands back belongs to a different profile than the one
+  selected, rather than opening a session on a deployment the user did not choose.
+  A profile with no compute context configured is asked once, and the answer is
+  written back into the profile once a session has actually started on it — a
+  context that turns out not to work leaves the profile alone, so the picker is
+  still there next time. Cancelling the progress notification stops the connect
+  and says nothing further, because a cancelled request is indistinguishable on
+  the wire from a deployment that is down.
+
+  **Known limitation:** connecting after *Switch Connection Profile* fails with
+  "The account chosen is not the one … uses". The extension does not yet tell
+  VS Code which account it wants, so VS Code reuses the last one it issued and
+  the guard against connecting to an unselected deployment fires on every
+  switch. Use one profile at a time until this is fixed.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

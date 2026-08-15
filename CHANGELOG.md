@@ -331,6 +331,24 @@ called out under **Changed** with a migration note.
   Nothing ships yet — this is the design 3d-i executes, and the plan and runbook
   now carry its punch list.
 
+- `PROBE-FINDINGS.md` findings 23-29, from the first **mutating** probe in the
+  file: three throwaway compute sessions, each deleted in the same shell call.
+  They settle what a stale session id costs (a `404`, identically on every verb,
+  and indistinguishable from an id that never existed), that a session settles to
+  `idle` rather than `running`, that completion belongs to the job and the session
+  lags it, and that the state long poll does nothing at all unless `If-None-Match`
+  travels with `wait`. Finding 8's claim that the identity `id` is opaque is
+  corrected in place: on the probed deployment it is an email address, which makes
+  it personal data subject to the same minimisation rule as the rest of the
+  identity payload.
+
+- ADR-0012, recording where a compute session id is persisted and what happens
+  when it is stale: `workspaceState` keyed by profile id, one session per
+  workspace and profile, and the stored id treated as a hint validated by use
+  rather than a fact. Reclaim-by-listing was the leading alternative and the
+  probes talked us out of it — session names are not unique, so the filter returns
+  candidates rather than an answer. Executed in 2a-ii.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

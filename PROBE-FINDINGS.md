@@ -7,7 +7,11 @@ facts, so if one of them turns out to be deployment-specific rather than general
 the slice that depends on it needs revisiting. What a probe did *not* settle is
 recorded as explicitly as what it did; an unasked question is not a "no".
 
-Probes are read-only `GET`s run under the `viya-api-probe` rules. Captured
+Probes are run under the `viya-api-probe` rules and are read-only `GET`s wherever
+a `GET` can answer the question. Where it cannot — session lifecycle is the case,
+because nothing about how a session dies is observable without creating one — the
+probe is agreed with the maintainer first, acts only on a throwaway object it
+created, and deletes that object in the same shell call under a `trap`. Captured
 payloads are scrubbed before they land here: no tokens, no internal hostnames, no
 real user names or org-identifying ids. Field names, types, and null/absent
 patterns are reproduced exactly, because that fidelity is the whole point.
@@ -207,13 +211,20 @@ mobile number never enter our process, never reach a log line, and cannot appear
 in a crash dump or a bug report attachment. This is the first concrete
 data-minimisation improvement over upstream and it costs one header.
 
-### Finding 8 — `id` is opaque, and only `id` is safe to key on
+### Finding 8 — only `id` is safe to key on, and `id` is not opaque
+
+> **Corrected 2026-08-14.** This finding was originally titled "`id` is opaque",
+> on the strength of the id not being a UUID and not being the login name. That
+> was an inference from two negatives, and it was wrong. Finding 25 observed the
+> value directly: on this deployment the `id` **is an email address**. The
+> consequence below is unaffected — `id` is still the only safe key — but
+> "opaque" licensed treating it as a meaningless token, and it is not one.
 
 Observed for the probed user, values withheld:
 
 | Field | Shape |
 |---|---|
-| `id` | 17 characters, **not** a UUID, **not** the login name |
+| `id` | 17 characters, **not** a UUID, **not** the login name — an email address on this deployment |
 | `scimId` | identical to `id` on this deployment |
 | `externalLoginIds` | one entry, the login name |
 | `name` | display name, `Given Family` |
@@ -232,6 +243,14 @@ be assumed present at all.
 are the fields an administrator can change. `account.label` is `name`, falling
 back to `externalLoginIds[0]` and then `id`. `title` is a **job title**, not a
 display name, and does not belong in a label.
+
+**Second consequence, from the correction.** Because the `id` can be personal
+data, it is subject to finding 7's data-minimisation rule rather than exempt from
+it: it must not be interpolated into a log line, an error message, a telemetry
+field we do not have, or any value written to a server-side resource other
+callers can list. Its legitimate uses are the account key VS Code holds in
+memory, and the right-hand side of an `eq(owner,…)` filter, where the value goes
+back to the service that issued it.
 
 ### Finding 9 — A dead token is a 401 with an empty body
 
@@ -698,3 +717,187 @@ merely untested, and it is now recorded as measured. Note what this finding does
 and `#` end a query parameter in the URL long before the filter parser sees them.
 The two escapes are separate, they compose in one order only, and finding 15
 already fixes that order.
+
+## 2026-08-14 — Session lifecycle, before wiring the reconnect path (Viya 4)
+
+Slice 2a-ii has to decide where a session id is persisted, and that decision
+turns entirely on what a *stale* id costs: whether a dead session can be told
+from a live one, whether an abandoned session can be found again without one, and
+whether anything about a session is worth keeping across a window reload. None of
+that is observable from a `GET`, so this is the first **mutating** probe in this
+file. Three throwaway sessions were created in the SAS Studio compute context,
+each named `python-on-viya/probe`, each deleted in the same shell call under a
+`trap`, and the deletes were confirmed `204`. TLS verification was disabled for
+the probe only.
+
+Values below are scrubbed: the deployment's identity ids are email addresses, so
+one is written `user@example.com`, and the OAuth client id is written
+`<oauth-client-id>`.
+
+### Finding 23 — A session settles to `idle`, not to `running`
+
+`POST` to the context's `createSession` link answered **`201` in 6.4 s** in state
+`pending`, and reached its settled state at roughly **7 s**. That settled state is
+**`idle`**. A session is `running` only while a job is executing in it (finding
+25), so "the session came up" and "the session is busy" are different words, and
+the plausible guess — wait for `running` — would wait forever.
+
+This is the finding `src/compute/session.ts` was written blind against, and it
+survives it. `waitWhilePending` names only `PENDING_STATE` and waits for that to
+*end*, handing the caller whatever came next rather than testing for a state name
+we had never seen. The comment in that module — *"A list of state names we have
+never seen would look like knowledge"* — is now the reason the code is right
+instead of the reason it is cautious. **Do not** add `idle` as an awaited value;
+add it, if anywhere, as a documented observation.
+
+### Finding 24 — `name` and `description` are accepted at create, and `name` is filterable
+
+The session request body took `name` and `description`, and both came back on the
+created resource. The response also carried an `applicationName`, which this probe
+did not send: it is the **OAuth client id of the token**, not anything the caller
+chose. Filtering the collection then behaved:
+
+| Filter over `/compute/sessions` | Result |
+|---|---|
+| `eq(name,'python-on-viya/probe')` | matched, count 1, our id |
+| `eq(name,'python-on-viya/no')` | `200`, 0 items |
+| `contains(name,'python-on-viya')` | matched, our id |
+| `and(eq(name,…),eq(state,'running'))` | `200`, 0 items (the session was `idle`) |
+
+Per finding 22's standard, each positive row was checked against a session known
+to exist, not merely for a `200`. Summary items in that collection carry
+`["id","links","name","owner","version"]` — no `state`, so the state a filter can
+match on is not a field the summary hands back.
+
+**Consequence.** A session this extension created is *self-identifying* on the
+server. That is what makes reclaim-by-listing possible at all, and it costs one
+string at create time.
+
+### Finding 25 — `owner` is the identity `id`, and here that id is an email address
+
+The created session's `owner` compared **equal** to the `id` from
+`GET /identities/users/@currentUser`, and
+`and(eq(owner,'user@example.com'),eq(applicationName,'<oauth-client-id>'))`
+returned exactly our session. So the reclaim filter needs no extra lookup beyond
+the identity call slice 1c already makes, and it can be narrowed to sessions this
+extension started rather than every session the user owns — including the ones
+SAS Studio left behind.
+
+Two cautions, both load-bearing:
+
+**The listing is not caller-scoped.** `GET /compute/sessions` under this token
+returned other people's sessions. The token is an administrator's, so this may be
+a privilege artefact rather than the general case, but the client must not treat
+the collection as "mine" — the `owner` term is doing real work, not decoration.
+
+**The `id` is personal data on this deployment.** It is an email address. That
+contradicts the framing of finding 8, corrected there. It also means a session
+`name` built from the identity id would publish a user's email into a
+server-side resource that other callers can list — so the marker in `name` must
+be a constant, and the *user* narrowing must come from `owner`, which the server
+already knows and did not learn from us.
+
+### Finding 26 — Session names are not unique, and nothing pretends otherwise
+
+Creating a second session with the identical `name` returned **`200`** with a
+distinct id, and `eq(name,…)` then matched **2**. There is no uniqueness
+constraint and no conflict status to catch.
+
+**Consequence.** Reclaim-by-listing must be written for *n* matches, not one: a
+crashed window, a second window, and a reload all leave candidates behind. Taking
+"the first item" would be a coin flip between a live session someone is using and
+an abandoned one. Whatever 2a-ii does here has to be a stated rule.
+
+### Finding 27 — The session state moves while a job runs, and lags the job at the end
+
+Sampled through an 8-second `PROC PYTHON` step:
+
+| t | session state | job state |
+|---|---|---|
+| +1 s | `running` | `running` |
+| +4 s | `running` | `running` |
+| +8 s | `running` | `running` |
+| +12 s | `running` | **`completed`** |
+| +15 s | `idle` | `completed` |
+
+The job reached `completed` while the session was still `running`, and the
+session returned to `idle` a few seconds later. Submitting the job answered
+**`201`** with the job in state `pending`, carrying link relations
+`self, state, cancel, delete, log, logAsText, listing, listingAsText, results, up`.
+The log came back as 23 typed lines (`normal`, `note`, `source`), with the
+`print` output present as `normal` lines separate from the `source` echo — finding
+20, re-confirmed on a Python step.
+
+**Consequence.** Completion is a property of the **job**, and the run path must
+poll the job's state resource. Watching the session for `idle` would report a run
+finished two to three seconds late and would be actively wrong the moment a
+second job is submitted. The session state is still the right signal for a
+different question — *is this session alive and free* — which is exactly the
+question reconnect asks.
+
+### Finding 28 — The long poll needs `If-None-Match`; `wait` alone does nothing
+
+Finding 19 measured the session state holding for `wait=5` and answering `304`.
+Two extensions, both measured on a job that slept 12 seconds:
+
+| Request | Result |
+|---|---|
+| job state, plain `GET` | `200` in 0.3 s, `running` |
+| job state, `?wait=6`, **no** `If-None-Match` | `200` in **0.3 s**, `running` |
+| job state, `?wait=20` **with** `If-None-Match` | `200` in **12.96 s**, `completed` |
+| session state, `?wait=8` with `If-None-Match`, session idle | `304` after 8.3 s |
+
+So `wait` is not a sleep. Without a validator the server has nothing to compare
+against and answers immediately; with one it holds until the value changes and
+**releases at the moment of change**, not at the end of the window — 12.96 s for
+a 12-second step. The `wait` is a ceiling, and a `304` on expiry is the signal to
+poll again with the same ETag.
+
+**Consequence.** A run costs about one request per `wait` window plus one at
+completion, and the completion latency is a network round trip rather than a
+polling interval. Sending `wait` without `If-None-Match` would silently degrade
+into a hot spin — the request looks correct and returns `200` every time — so the
+two belong together in one call site, not as independent options a caller can
+mix. The session-state variant answers `304` where the job-state variant answered
+`200` with a changed body, so both arms have to be handled.
+
+### Finding 29 — A dead session answers `404` to everything, and a stale id cannot be diagnosed
+
+After `DELETE` returned `204`, three requests against the same session:
+
+| Request | Result |
+|---|---|
+| `GET` the session's `self` href | **`404`**, `errorCode` **5837** |
+| `GET` its `state` | **`404`**, `errorCode` **5837** |
+| `POST` a job to its `jobs` href | **`404`**, `errorCode` **5837** |
+
+The body is the standard error envelope, with `details[]` naming the session id
+and the path. A well-formed but **invented** session id — never created, never
+deleted — returns the same `404` and the same `5837`.
+
+**Consequence, and it is the one 2a-ii turns on.** *Gone* is a single, uniform,
+cheap answer on every verb, so a stale id costs exactly one failed round trip and
+needs no probing before use: attempt, catch the `404`, create a new session. That
+is the whole recovery path. But the server cannot tell us *why* it is gone —
+expired at 900 s, deleted by an administrator, lost with the compute node, or
+never ours to begin with are one status code. So no message we write may claim a
+reason, and the code must key on the **status**, not on `errorCode` 5837, which is
+an undocumented internal number that costs nothing to stop matching on now and
+would cost a debugging session to discover had changed.
+
+### What this probe did not settle
+
+- **A reaped session.** Every `404` here followed an explicit `DELETE`. A session
+  that died on its own at 900 idle seconds is *assumed* to answer identically and
+  was not waited out. The assumption is cheap to hold — the recovery path is the
+  same either way — but it is an assumption.
+- **Whether the non-caller-scoped listing survives a non-admin token.** See
+  finding 25. This is the one result most likely to be a privilege artefact, and
+  a reclaim feature that only works for administrators would be worse than none.
+- **Whether `attributes.sessionInactiveTimeout` can be *set* at create.** The
+  request accepted an `attributes` object; nothing was put in it. Finding 18 read
+  the 900 back, it did not write it.
+- **Concurrency.** Two jobs submitted to one session at once were not tried, so
+  what the session state reports mid-overlap, and whether the second queues or
+  fails, is unknown. 2a-ii should serialise per session regardless.
+- **Viya 3.5**, as everywhere else in this file.

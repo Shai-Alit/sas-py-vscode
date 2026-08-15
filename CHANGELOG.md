@@ -507,6 +507,28 @@ called out under **Changed** with a migration note.
   backend "encrypts" with the identity function and reads `""` back as
   `undefined`. So the claim is kept in `globalState`, where a fact about
   configuration belongs, and the secret store holds only secrets.
+- One unreachable deployment no longer stalls the Accounts menu, or anything
+  else that asks who is signed in. Profiles were renewed one after another, so a
+  test Viya that was switched off held every account behind it for up to
+  forty-five seconds — the token request's thirty plus the identity request's
+  fifteen — and the editor polls that menu, so the stall repeated. Profiles are
+  now renewed concurrently, in the order they were given so the menu does not
+  reorder itself by network weather, and each answer is bounded at ten seconds.
+  The bound is on the *answer*, not on the work: the slow renewal keeps running,
+  and when it lands it is kept, so the next caller is served from memory rather
+  than starting again. That, in turn, is why a renewal already in flight is now
+  shared instead of restarted — without it, polling a dead host would open a
+  fresh socket every few seconds and never close one.
+- A caller that names an account is no longer bounded. Connecting asks for one
+  particular account, and it would rather wait than be told there is no session
+  when there is; a menu poll names nothing and takes the ten seconds. The
+  distinction falls out of the `getSessions` signature, so it needed no new
+  plumbing. Not yet solved: a connect that has no account to name — two profiles
+  pointing at one deployment — is still bounded like a poll.
+- One unreadable keychain entry no longer empties the Accounts menu. A rejected
+  renewal took the whole list down with it, so a single corrupt stored secret
+  hid every other signed-in account; each profile's failure is now confined to
+  that profile and written to the log at warning level.
 
 ### Changed
 

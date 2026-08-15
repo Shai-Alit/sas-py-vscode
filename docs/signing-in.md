@@ -82,6 +82,17 @@ because you did not ask for anything: opening a menu is not a request to be
 interrupted. Run **Python on Viya: Show Log** to see what happened, then sign in
 again.
 
+A deployment that is switched off does not hold up the others. Profiles are
+renewed side by side, and the menu is drawn with whatever has arrived within ten
+seconds — so a test Viya that is down for the weekend cannot keep a production
+account you are signed in to out of the list. The slow renewal is not abandoned:
+when it lands it is kept, and that account appears the next time anything asks.
+
+Connecting is the exception, on purpose. When something asks for one *particular*
+account — which connecting does, because it knows which deployment it wants — it
+waits for that account however long it takes. A deliberate request would rather
+be slow than be told there is no session when there is.
+
 ## What is stored, and what is not
 
 Only the refresh token is written to the editor's secret storage, which is

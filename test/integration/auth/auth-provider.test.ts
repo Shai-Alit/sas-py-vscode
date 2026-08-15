@@ -85,7 +85,24 @@ interface Harness {
   contexts: { key: string; value: unknown }[];
   /** Sessions the change event reported, flattened. */
   events: vscode.AuthenticationProviderAuthenticationSessionsChangeEvent[];
+  /** Requests held by a stalled endpoint, and the way to let them answer. */
+  stalled: Stalled;
   dispose(): void;
+}
+
+/**
+ * A deployment that does not answer, and a way to make it answer later.
+ *
+ * The shape #133 is about. A `Promise` that is simply never resolved would prove
+ * the budget and nothing else; being able to release it is what lets the tests
+ * assert the second half — that the renewal was still running, landed, and was
+ * served from memory afterwards rather than started again.
+ */
+interface Stalled {
+  /** How many requests are being held right now. */
+  readonly count: () => number;
+  /** Answers every held request as the endpoint normally would. */
+  readonly release: () => void;
 }
 
 function harness(
@@ -96,6 +113,15 @@ function harness(
     expiresIn?: number;
     /** Whether the folder starts out trusted. Default true, as the host is. */
     trusted?: boolean;
+    /**
+     * A deployment whose every request hangs until {@link Stalled.release}.
+     *
+     * Matched on the URL rather than on the profile, because that is what an
+     * unreachable deployment is: the profile is fine and the host is not.
+     */
+    stall?: string;
+    /** How long the provider waits for a profile it has to renew. */
+    resolveBudgetMs?: number;
   } = {},
 ): Harness {
   const log = testLogChannel("auth provider");
@@ -109,10 +135,32 @@ function harness(
   const answers: string[] = [];
   const prompts: vscode.InputBoxOptions[] = [];
 
+  const held: (() => void)[] = [];
+  // Sticky, rather than draining once. A renewal is two requests — the token
+  // then the identity — and the second is only issued once the first answers, so
+  // a release that only emptied the queue would hold the renewal at the second
+  // leg and prove nothing. This is a deployment coming back, not one reply.
+  let released = false;
+  const stalled: Stalled = {
+    count: () => held.length,
+    release: () => {
+      released = true;
+      for (const answer of held.splice(0)) answer();
+    },
+  };
+
   // The init argument is deliberately not declared: nothing here reads it, and
   // a declared-but-unused parameter is a lint error rather than documentation.
-  const transport: HttpTransport = (url) => {
+  const transport: HttpTransport = async (url) => {
     requests.push(url);
+
+    if (
+      !released &&
+      options.stall !== undefined &&
+      url.startsWith(options.stall)
+    ) {
+      await new Promise<void>((resolve) => held.push(resolve));
+    }
 
     if (url.includes("/identities/")) {
       const status = options.identityStatus ?? 200;
@@ -184,6 +232,9 @@ function harness(
       // window, and empty windows are trusted — so the closed branch of the
       // gate is unreachable without this.
       isTrusted: () => trust.granted,
+      ...(options.resolveBudgetMs === undefined
+        ? {}
+        : { resolveBudgetMs: options.resolveBudgetMs }),
       // Enough of the browser flow to drive `createSession` unattended. No
       // callback is ever dispatched here, so every sign-in below finishes
       // through the paste box — which is the ordinary route on a deployment
@@ -221,6 +272,7 @@ function harness(
     prompts,
     contexts,
     events,
+    stalled,
     dispose(): void {
       // The log channel is deliberately not disposed; see `testLogChannel`.
       provider.dispose();
@@ -623,6 +675,126 @@ describe("Viya authentication provider", () => {
       } finally {
         anonymous.dispose();
       }
+    });
+  });
+
+  /**
+   * #133. Two profiles, one deployment that does not answer.
+   *
+   * The shape is Sean's: a test Viya that is switched off at weekends alongside
+   * a production one that is not. Before this, `getSessions` resolved profiles
+   * in turn, so the working deployment's session was held behind the full
+   * thirty-second token timeout of the one that was down — and `getSessions` is
+   * what the Accounts menu is drawn from.
+   *
+   * The budget is fifty milliseconds here rather than ten seconds. What is being
+   * tested is the arrangement, not the number, and a suite that waited out the
+   * real budget four times would be a minute long.
+   */
+  describe("when one deployment does not answer", () => {
+    const BUDGET_MS = 50;
+    let h: Harness;
+
+    beforeEach(async () => {
+      h = harness({ stall: OTHER_ENDPOINT, resolveBudgetMs: BUDGET_MS });
+      await configureBothProfiles();
+      // Both are signed in, so both have a renewal to do on the first read.
+      // Without the second write the stalled profile would return before it
+      // reached the network and prove nothing.
+      for (const id of [PROFILE_ID, OTHER_PROFILE_ID]) {
+        await h.sessions.write(id, {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        });
+      }
+    });
+
+    afterEach(async () => {
+      h.dispose();
+      await set("connectionProfiles", undefined);
+      await set("defaultProfile", undefined);
+    });
+
+    it("answers with the profiles that did answer", async () => {
+      const sessions = await h.provider.getSessions();
+
+      assert.deepEqual(
+        sessions.map((session) => session.id),
+        [PROFILE_ID],
+        "a deployment that is down decided what the menu shows",
+      );
+      // Still running, not abandoned: the budget bounds the answer, not the
+      // work, which is what makes the next assertion below possible.
+      assert.equal(h.stalled.count(), 1, "the renewal was not still in flight");
+      // One working session is still an authorized window. A `when` clause that
+      // turned off because an unrelated deployment was unreachable would
+      // withdraw commands from a profile that is signed in and fine.
+      assert.deepEqual(h.contexts.at(-1), {
+        key: AUTHORIZED_CONTEXT_KEY,
+        value: true,
+      });
+    });
+
+    it("does not start a second renewal while the first is still running", async () => {
+      // The reason the in-flight map exists. The menu polls, and a poll that
+      // opened another socket to the deployment that is already not answering
+      // would make the unreachable one the one accumulating connections.
+      await h.provider.getSessions();
+      await h.provider.getSessions();
+      await h.provider.getSessions();
+
+      const attempts = h.requests.filter((url) =>
+        url.startsWith(OTHER_ENDPOINT),
+      );
+      assert.equal(attempts.length, 1, "polling piled up renewals on it");
+    });
+
+    it("serves the late arrival from memory, without asking again", async () => {
+      await h.provider.getSessions();
+
+      h.stalled.release();
+      // The renewal is two hops — token then identity — and both resolve
+      // immediately once released, so this is scheduling slack rather than a
+      // wait on anything.
+      await delay(25);
+
+      const sessions = await h.provider.getSessions();
+
+      assert.deepEqual(
+        sessions.map((session) => session.id).sort(),
+        [OTHER_PROFILE_ID, PROFILE_ID].sort(),
+        "the session that landed late never appeared",
+      );
+      const renewals = h.requests.filter(
+        (url) => url.startsWith(OTHER_ENDPOINT) && url.includes("/SASLogon/"),
+      );
+      assert.equal(renewals.length, 1, "the landed session was renewed again");
+    });
+
+    it("waits without a budget for the account the caller named", async () => {
+      // A caller that names an account is not a menu poll: it knows which
+      // deployment it wants and is asking deliberately, so a slow answer is
+      // better than a wrong one. The compute connect is that caller.
+      let settled = false;
+      const asking = h.provider
+        .getSessions([], {
+          account: { id: accountId(OTHER_ENDPOINT, USER_ID), label: "Dana" },
+        })
+        .then((sessions) => {
+          settled = true;
+          return sessions;
+        });
+
+      await delay(BUDGET_MS * 4);
+      assert.equal(settled, false, "the named account was given up on");
+
+      h.stalled.release();
+
+      assert.deepEqual(
+        (await asking).map((session) => session.id),
+        [OTHER_PROFILE_ID],
+      );
     });
   });
 

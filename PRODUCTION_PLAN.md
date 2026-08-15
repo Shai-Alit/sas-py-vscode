@@ -625,8 +625,9 @@ reason — the pure half is unit-testable and the shell half is not:
 > deployment share an account. On top of it: *Sign In* connects, so one command
 > reaches a session — from the command, never from the provider, so that the
 > polled Accounts menu cannot start a SAS process; the Accounts menu resolves
-> profiles concurrently, so
-> one unreachable deployment does not stall it; a cancelled sign-in is reported as
+> profiles concurrently and bounds each answer, so one unreachable deployment
+> does not stall it, while a caller that names an account — connecting does —
+> still waits for that one; a cancelled sign-in is reported as
 > a cancellation; and an unused stored session says why at debug. *Small.*
 
 **The generated OpenAPI client is not vendored — see ADR-0010.** This reverses

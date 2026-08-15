@@ -1957,7 +1957,7 @@ first and have to be rewritten around it.
   `docs/signing-in.md` gained a paragraph on why the Accounts menu is the one
   place they differ. `docs/connecting.md` reframes Connect as the command for
   *re*connecting.
-- ☐ **#133 — one unreachable profile must not stall the Accounts menu.**
+- ☑ **#133 — one unreachable profile must not stall the Accounts menu.**
   `getSessions()` loops every profile **serially**, calling `resolve()` on each.
   Sean's first deployment shuts down at weekends, so one dead endpoint costs a
   full connect timeout before any later profile resolves — and that call is what
@@ -1965,6 +1965,64 @@ first and have to be rewritten around it.
   so a hung deployment degrades to "no session for that profile" rather than to a
   spinner. A timeout here is not a policy about the deployment; it is a policy
   about a UI poll.
+
+  **Done 2026-08-15.** Five decisions, in the order they had to be made.
+
+  **Concurrent, in the caller's order.** `Promise.all` over the profiles, with
+  the input order preserved, because `Promise.all` resolves in input order and
+  the alternative — appending each session as it lands — would reorder the
+  Accounts menu by whichever deployment answered fastest. A menu that shuffles
+  between polls is worse than a slow one.
+
+  **`RESOLVE_BUDGET_MS = 10_000`, and it is not a setting.** The two real
+  timeouts underneath are `tokenEndpoint.DEFAULT_TIMEOUT_MS = 30_000` and
+  `identity.DEFAULT_TIMEOUT_MS = 15_000`, so the serial worst case per dead
+  profile was forty-five seconds. Ten is a third of the first one and roughly the
+  point at which a menu reads as broken. Exposing it would invite someone to
+  raise it, which is the wrong direction: the fix for a slow deployment is not a
+  longer stall in a menu the editor polls.
+
+  **The budget bounds the answer, not the work.** The renewal is not cancelled
+  when the budget expires; it keeps running and warms `this.live`, so the next
+  poll — seconds later — serves it from memory. Nothing is wasted and the account
+  appears on its own. Deliberately rejected: re-publishing when the late renewal
+  lands. It would fire a change event from a call that has already returned, race
+  the `published` set, and on a deployment that is merely slow rather than dead
+  it would publish on **every** poll.
+
+  **An in-flight `resolving` map, keyed by profile id.** This is not an
+  optimisation, it is forced by the line above: once a caller can walk away from
+  a renewal, a poll every few seconds against a dead host opens a socket every
+  few seconds and closes none. Sharing the in-flight promise means the second
+  caller waits on the first request. A `.finally` clears the entry.
+
+  **`BUDGET_SPENT` as a `Symbol`, not `undefined`.** `undefined` is already a
+  real answer from `resolve()` — "there is nothing stored for this profile" — so
+  collapsing the two would log a slow-deployment debug line for every profile
+  that has simply never been signed in to, on every poll.
+
+  **The account named is the one worth waiting for.** `getSessions(scopes,
+  options)` already receives `options.account` since #84, and it separates the
+  two caller kinds exactly: a polled menu names nothing and is bounded; the
+  compute connect names an account and is waited for without limit, because it
+  would rather be slow than be told there is no session when there is. No new
+  plumbing — `getSessions` resolves the account to a profile id and hands it to
+  `allSessions` as the one exempt profile. Honest residual: a connect with no
+  hint to offer, which is a window with two profiles pointing at one deployment,
+  is bounded like a poll.
+
+  One pre-existing defect fell out on the way. `resolveOnce` now `catch`es, so a
+  rejected renewal — one unreadable keychain entry — no longer fails the whole
+  `Promise.all` and empties the menu of every other account. It logs
+  `Could not read the sign-in for {0}: {1}` at warn.
+
+  Four integration tests in `test/integration/auth/auth-provider.test.ts` under
+  "when one deployment does not answer", driven by a transport that holds a
+  matching URL open until released, with `resolveBudgetMs` injected at 50ms. The
+  harness needed one non-obvious thing: a **sticky** `released` flag, because a
+  renewal is two requests — the token then the identity — and the second is only
+  issued once the first answers, so a non-sticky release would re-hold the
+  identity call and hang the test.
 - ☐ **#131 — report a cancelled sign-in as a cancellation, not a failure.**
   `browserFlow.ts:163` already knows: it logs "Sign-in was cancelled." at `info`
   and the comment says "Neither is an error and neither gets a dialog." Then

@@ -1462,8 +1462,8 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   expiry and sign-out flow through one place. Two profiles must be able to hold
   live sessions simultaneously — the thing upstream's global singleton forecloses.
 - ☐ **Settle where the session id is persisted, and write down why.** Upstream
-  uses `workspaceState`, which is per-window: two windows on the same folder
-  would reconnect to the same compute session and interleave their output, and a
+  uses `workspaceState`, which is keyed per *workspace*: two windows on the same
+  folder would reconnect to the same compute session and interleave their output, and a
   window on a different folder loses a session that is still running and still
   billing. `globalState` keyed by profile id is the other candidate and has the
   opposite failure. Decide before writing the reconnect path, not during.
@@ -1613,7 +1613,10 @@ is the punch list for executing it.
   interpreter — Local is the absence of us, not a feature.
 - Store the target in `workspaceState`, never in settings. A committed target is a
   repository deciding where a stranger's code runs, which is the shape ADR-0002
-  already restricts the profile settings for.
+  already restricts the profile settings for. Carry ADR-0007's qualifier when you
+  write the user-facing strings: `workspaceState` is keyed to the *workspace*, so
+  two windows on the same folder share one target. Do not let a tooltip or a doc
+  page promise per-window independence the store cannot deliver.
 - Never move the target for the user. A run against Viya with no profile, no
   session or a dead token fails with *Sign in* / *Switch to Local*, and does not
   quietly run somewhere else. Every run names its target as the output channel's
@@ -1630,11 +1633,13 @@ is the punch list for executing it.
 - Docs owe one line on the cost: a user who sets Local loses our editor entries and
   may not know why. The status bar names the target, the tooltip says what it
   implies, and the palette command never disappears.
-- **No keybinding** (task #112). `F8` is "next problem in files", `F5` is debug,
-  `ctrl+enter` is Jupyter's for `.py` cells, and upstream's `F8`/`F3` would
-  override "next problem" for every Python file in the window — including for
-  someone not using Viya that day. Document how to bind one by hand; let the beta
-  say which one people reach for.
+- **No keybinding, and none chosen until the beta reports.** `F8` is "next problem
+  in files", `F5` is debug, `ctrl+enter` is Jupyter's for `.py` cells, and
+  upstream's `F8`/`F3` would override "next problem" for every Python file the
+  user opens — including on days they are not using Viya at all. Document how to
+  bind one by hand, and leave this bullet standing after 3d-i ships: it is the
+  open item, and it closes when a default is picked or the decision is recorded
+  as "none by default, deliberately".
 
 ☐ **3e — ship the package list as a user-facing thing, not a capability record.**
 The person writing code in this editor is writing against an interpreter they

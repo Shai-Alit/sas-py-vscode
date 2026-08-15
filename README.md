@@ -50,8 +50,8 @@ from `ms-python.python` and Pylance. This extension owns execution, not language
 services.
 
 **Where your code runs is something you set, and something you can see.** Each
-window has a run target — a Viya profile, or Local — chosen from the status bar,
-which always names it. On Local this extension contributes nothing to the editor:
+workspace has a run target — a Viya profile, or Local — chosen from the status
+bar, which always names it. On Local this extension contributes nothing to the editor:
 the run button you already had is Microsoft's, and we neither wrap it nor start an
 interpreter of our own. The target decides where our commands appear, never what
 they do, so nothing changes meaning under your hands. See

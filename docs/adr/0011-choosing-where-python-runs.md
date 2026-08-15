@@ -1,4 +1,4 @@
-# ADR-0011 — Where Python runs is a visible per-window target, not a reinterpretation of the run button
+# ADR-0011 — Where Python runs is a visible per-workspace target, not a reinterpretation of the run button
 
 - **Status:** Accepted
 - **Date:** 2026-08-14
@@ -34,15 +34,18 @@ belongs to `ms-python.python`. Ours would appear next to it, in the same
 silently uses the laptop's interpreter, is the whole problem in one toolbar.
 
 **Upstream's answer does not transfer.** The SAS extension does claim Python
-files — `editorLangId =~ /^(python|r|sql)$/` appears in its keybindings, its
-`editor/title/run` entry and its `editor/context` entries — but every one of
-those clauses is qualified with `resourceScheme =~ /^sas(Content|Server).*/`.
-It claims a Python file only when that file was opened *from* Viya. A `.py` on
-local disk is left entirely alone, which is exactly the file this extension
-exists to run. (Its `SAS.hideRunMenuItem` context key is not a user setting
-either: `client/src/browser/extension.ts` sets it true in the web build and
-nowhere else.) So the precedent tells us what SAS does about remote files, and
-says nothing about ours.
+files — `editorLangId =~ /^(python|r|sql)$/` appears nine times in its
+`package.json`, in its keybindings (885, 890), its one `editor/title/run` entry
+(1116), its `editor/context` entries (1122, 1127, 1132) and its `commandPalette`
+entries (1151, 1155, 1159) — but every one of those nine clauses is qualified
+with `resourceScheme =~ /^sas(Content|Server).*/`. It claims a Python file only
+when that file was opened *from* Viya. A `.py` on local disk is left entirely
+alone, which is exactly the file this extension exists to run. (Its
+`SAS.hideRunMenuItem` context key is not a user setting either: the only place
+anything sets it is `client/src/browser/extension.ts:11`, which sets it true in
+the web build.) So the precedent tells us what SAS does about remote files, and
+says nothing about ours. Line numbers are from the upstream clone at commit
+`009bc9a`, 2026-08-10.
 
 ### Why getting this wrong is expensive
 
@@ -66,9 +69,9 @@ invention.
 
 ## Decision
 
-**Each window has a run target — a specific Viya profile, or Local — which the
-user sets from the status bar, and which decides whether this extension puts a
-run affordance in the editor at all.**
+**Each workspace has a run target — a specific Viya profile, or Local — which the
+user sets from the status bar of a window open on it, and which decides whether
+this extension puts a run affordance in the editor at all.**
 
 Concretely:
 
@@ -99,9 +102,14 @@ what it does under the user's hands; the palette route is always available and
 always explicit.
 
 **The target is stored in `workspaceState`,** beside the active-profile pointer
-ADR-0007 put there, and for the same reasons: two windows can point at two
-different places at once, and a target committed into `.vscode/settings.json`
-would let a repository decide where a reader's code runs — precisely the shape
+ADR-0007 put there, and it inherits that decision's imprecision rather than
+glossing it. `workspaceState` is keyed to the *workspace*, not to the window, so
+two windows open on the same folder share one target; the API offers nothing
+narrower, and this ADR claims nothing narrower. What the store does buy is that
+two *different* workspaces are independent — a folder of production ETL and a
+scratch folder can sit at different targets — which is the case that costs money
+to get wrong. The alternative, a target committed into `.vscode/settings.json`,
+would let a repository decide where a reader's code runs, precisely the shape
 ADR-0002 restricts for the profile settings already.
 
 **The extension never changes the target.** Not on sign-out, not on a failed
@@ -121,11 +129,13 @@ is the onboarding we want.
 Phase 6 introduces a non-`file` scheme. This is the one place upstream's
 `resourceScheme` qualifier applies to us directly.
 
-**No keybinding in 3d-i** (task #112). Every plausible default collides: `F8` is
-"go to next problem in files", `F5` is debug, `ctrl+enter` is Jupyter's for `.py`
-cells, and mirroring the SAS extension's `F8`/`F3` would override "next problem"
-for every Python file in the window, including for people not using Viya that
-day. Document how to bind it by hand; let the beta say what people reach for.
+**No keybinding in 3d-i,** and none chosen before the beta reports. Every
+plausible default collides: `F8` is "go to next problem in files", `F5` is debug,
+`ctrl+enter` is Jupyter's for `.py` cells, and mirroring the SAS extension's
+`F8`/`F3` would override "next problem" for every Python file the user opens,
+including on days they are not using Viya at all. Document how to bind one by
+hand; let the beta say what people reach for. The open item is carried in
+`RUNBOOK.md` under 3d-i.
 
 **Notebooks are out of scope here.** Phase 9 gets its target from VS Code's
 kernel picker, which is the platform's own mechanism for the same question; this

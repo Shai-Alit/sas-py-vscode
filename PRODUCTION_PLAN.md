@@ -684,10 +684,13 @@ shippable**. *Medium.*
 
 This slice also answers *how the user chooses Viya over the local interpreter*,
 which is the question a first-time user asks before any of the above matters. The
-answer is [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): each window has
-a **run target** — a profile, or Local — set from the status bar, published as the
-`pythonOnViya.runTarget` context key, and used to decide whether this extension
-puts a run affordance in the editor at all. When the target is Local we contribute
+answer is [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): each workspace
+has a **run target** — a profile, or Local — set from the status bar, published
+as the `pythonOnViya.runTarget` context key, and used to decide whether this
+extension puts a run affordance in the editor at all. It lives in
+`workspaceState`, so two *different* workspaces are independent while two windows
+on the same folder share one target — the same qualifier ADR-0007 states for the
+active profile. When the target is Local we contribute
 nothing and Microsoft's run button is the whole story; we never launch a local
 interpreter, so the "no local Python" constraint stays literally true. Commands
 mean what their titles say from anywhere, so the target governs *placement* and
@@ -836,7 +839,7 @@ the working gap analysis, and it is the checklist to track parity against.
 | Connection profiles, profile management | Phase 1a | Collapsed to Viya-only |
 | OAuth2/PKCE auth, Accounts menu, token storage | Phase 1b–1c | Ported, with the PKCE defect fixed |
 | Run file / run selection / cancel | Phase 3d-i | |
-| Choosing where code runs | Phase 3d-i | **No upstream equivalent** — upstream claims a file only when it was opened *from* Viya. Ours is a per-window run target (ADR-0011), because the file in question is on local disk and already has a run button |
+| Choosing where code runs | Phase 3d-i | **No upstream equivalent** — upstream claims a file only when it was opened *from* Viya. Ours is a per-workspace run target (ADR-0011), because the file in question is on local disk and already has a run button |
 | Streamed execution log | Phase 2c + 3b | Needs the Python log filter |
 | Result panel | Phase 3d-ii | Richer than upstream: `RichOutput[]`, not one HTML string |
 | Errors in the Problems panel | Phase 4 | Tracebacks instead of SAS log parsing |
@@ -1151,7 +1154,7 @@ get written.
     it. Executed in 1c-i.
 11. ~~**How a user chooses Viya rather than the local interpreter**~~ — **SETTLED
     2026-08-14 by [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): a
-    per-window run target, set from the status bar, which decides whether this
+    per-workspace run target, set from the status bar, which decides whether this
     extension appears in the editor at all.** This was never written down: the
     repository has always been clear that editing intelligence is delegated to
     `ms-python.python`, and silent about what a user presses. The collision is

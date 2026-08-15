@@ -323,8 +323,8 @@ called out under **Changed** with a migration note.
 
 - ADR-0011, recording how a user chooses to run a file on Viya rather than on the
   local interpreter — the one question about this extension that the repository
-  had never answered in writing. Each window gets a **run target**, set from the
-  status bar, which decides whether the extension puts a run affordance in the
+  had never answered in writing. Each workspace gets a **run target**, set from
+  the status bar, which decides whether the extension puts a run affordance in the
   editor at all; with the target on Local it contributes nothing and starts no
   interpreter. The record exists mostly for the alternatives it rejects, chiefly
   claiming the editor's play button whenever a profile happens to be signed in.

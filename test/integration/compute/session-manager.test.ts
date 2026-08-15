@@ -36,6 +36,8 @@ import { memoryMemento, testLogChannel } from "../../helpers/auth-host";
 
 const PROFILE_ID = "session-manager-integration";
 const PROFILE_NAME = "verde";
+/** A second profile, for the tests about what a connect must not touch. */
+const OTHER_NAME = "production";
 const CONTEXT = "SAS Job Execution compute context";
 const CONTEXT_ID = "00000000-0000-4000-8000-0000000000c1";
 const SESSION_ID = "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000";
@@ -53,19 +55,39 @@ function profile(init?: Partial<ViyaProfile>): ViyaProfile {
 interface Profiles extends ComputeProfileSource {
   /** Every `upsert` the manager made, so the context write-back is assertable. */
   readonly written: { name: string; profile: ViyaProfile }[];
+  /**
+   * Rewrites the store from underneath a connect in flight.
+   *
+   * The manager re-reads by name before writing the picked context back, so the
+   * only way to exercise that check is to change what that name resolves to
+   * while a connect is running — which is what switching profile, renaming one
+   * or editing `settings.json` mid-connect does.
+   */
+  replace(name: string, next: ViyaProfile | undefined): void;
 }
 
 function profileSource(current?: ViyaProfile): Profiles {
   const written: { name: string; profile: ViyaProfile }[] = [];
-  let held = current;
+  const held = new Map<string, ViyaProfile>();
+  if (current !== undefined) held.set(PROFILE_NAME, current);
+  let activeName: string | undefined =
+    current === undefined ? undefined : PROFILE_NAME;
   return {
     written,
-    active: () =>
-      held === undefined ? undefined : { name: PROFILE_NAME, profile: held },
-    activeName: () => (held === undefined ? undefined : PROFILE_NAME),
+    replace: (name, next) => {
+      if (next === undefined) held.delete(name);
+      else held.set(name, next);
+      activeName = next === undefined ? undefined : name;
+    },
+    active: () => {
+      if (activeName === undefined) return undefined;
+      const profile = held.get(activeName);
+      return profile === undefined ? undefined : { name: activeName, profile };
+    },
+    get: (name: string) => held.get(name),
     upsert: (name: string, next: ViyaProfile) => {
       written.push({ name, profile: next });
-      held = next;
+      held.set(name, next);
       return Promise.resolve();
     },
   };
@@ -161,6 +183,26 @@ function deployment(
         );
         return Promise.resolve(reply);
       },
+    },
+  };
+}
+
+/**
+ * Runs `interfere` at the moment the session is created, then answers as scripted.
+ *
+ * The write-back the manager does *after* a connect is the thing under test in
+ * several tests below, and all of them need the world to have moved on between
+ * the connect starting and the write happening. This is the latest hook there
+ * is that still precedes the write.
+ */
+function duringCreateSession(
+  scripted: Deployment,
+  interfere: () => void,
+): ComputeClient {
+  return {
+    send: (request) => {
+      if (request.link.rel === "createSession") interfere();
+      return scripted.client.send(request);
     },
   };
 }
@@ -454,6 +496,119 @@ describe("compute session manager", () => {
       "a failed connect pinned the profile to the context that failed",
     );
     assert.equal(shown.errors.length, 1);
+  });
+
+  it("writes the picked context to the profile it connected with, not the one now active", async () => {
+    // Raised in review on 2026-08-15. The write-back used to carry the profile
+    // it connected with but ask the store which name was active *now*, so
+    // switching profile during a connect wrote the old profile's endpoint and id
+    // under the new profile's name — destroying the profile just switched to,
+    // silently, and leaving the connected one without its context.
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const profiles = profileSource(profile());
+    const other: ViyaProfile = {
+      version: 1,
+      id: "a-different-profile",
+      endpoint: "https://other.example.com",
+    };
+    const { manager } = harness({
+      profiles,
+      client: duringCreateSession(scripted, () => {
+        profiles.replace(OTHER_NAME, other);
+      }),
+      deps: { pick: () => Promise.resolve(CONTEXT) },
+    });
+
+    assert.ok(await manager.connect(), "picking a context produced no session");
+
+    const written = profiles.written[0];
+    assert.ok(written, "nothing was written back to the profile");
+    assert.equal(written.name, PROFILE_NAME);
+    assert.equal(written.profile.id, PROFILE_ID);
+    assert.deepEqual(
+      profiles.get(OTHER_NAME),
+      other,
+      "the connect overwrote the profile the user switched to",
+    );
+  });
+
+  it("keeps an edit made during the connect instead of reverting it", async () => {
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const profiles = profileSource(profile());
+    const { manager } = harness({
+      profiles,
+      client: duringCreateSession(scripted, () => {
+        profiles.replace(PROFILE_NAME, {
+          ...profile(),
+          clientId: "edited-mid-connect",
+        });
+      }),
+      deps: { pick: () => Promise.resolve(CONTEXT) },
+    });
+
+    assert.ok(await manager.connect(), "picking a context produced no session");
+
+    // Re-read rather than carried, so the write is the current profile plus one
+    // field rather than a copy taken before the round trip started.
+    const written = profiles.written[0];
+    assert.ok(written, "nothing was written back to the profile");
+    assert.equal(written.profile.context, CONTEXT);
+    assert.equal(written.profile.clientId, "edited-mid-connect");
+  });
+
+  it("does not record the context when the profile now names a different deployment", async () => {
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const profiles = profileSource(profile());
+    const { manager } = harness({
+      profiles,
+      client: duringCreateSession(scripted, () => {
+        profiles.replace(PROFILE_NAME, {
+          ...profile(),
+          endpoint: "https://moved.example.com",
+        });
+      }),
+      deps: { pick: () => Promise.resolve(CONTEXT) },
+    });
+
+    assert.ok(await manager.connect(), "picking a context produced no session");
+
+    assert.deepEqual(
+      profiles.written,
+      [],
+      "a context listed from one deployment was pinned to another",
+    );
+  });
+
+  it("leaves a context set by hand during the connect alone", async () => {
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const profiles = profileSource(profile());
+    const { manager } = harness({
+      profiles,
+      client: duringCreateSession(scripted, () => {
+        profiles.replace(PROFILE_NAME, profile({ context: "chosen by hand" }));
+      }),
+      deps: { pick: () => Promise.resolve(CONTEXT) },
+    });
+
+    assert.ok(await manager.connect(), "picking a context produced no session");
+
+    assert.deepEqual(
+      profiles.written,
+      [],
+      "the write-back overwrote a context the user set themselves",
+    );
   });
 
   it("does nothing when the context picker is dismissed", async () => {

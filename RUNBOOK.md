@@ -1768,6 +1768,20 @@ scripts a context with no links and asserts nothing was written. The
 generalisable form: **a value learned by asking the user is not a fact until the
 thing it was needed for succeeded.**
 
+That fix was itself wrong on its first attempt, which review caught before it
+merged and which is worth recording because the mistake is a repeat. Moving the
+write to after the connect meant it now ran *after a round trip*, and the code
+carried the profile it had connected with while asking the store which name was
+active **now**. Switch Connection Profile mid-connect and those name two
+different profiles, so the write would have put the connected profile's
+endpoint and id under the newly active profile's name — destroying a profile the
+user had done nothing to, silently. It now re-reads the profile under the
+captured name and writes only if it is still the same deployment. This is the
+third instance of one lesson (#127 was the first, the write-before-success the
+second): **a value that was true when the work started is not a fact about the
+world when the work finishes** — and moving code later in a sequence is exactly
+what turns the first into the second.
+
 Not fixed, because it is not understood: the *same* context started a session
 two minutes later without complaint. Filed as probe task #135 — if a context's
 link set depends on the token presented, `contexts.ts` is wrong to read an

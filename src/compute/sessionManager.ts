@@ -70,10 +70,14 @@ import {
  * three members, and it cannot satisfy a `ProfileStore` without a settings file
  * and a configuration listener. It also says, in the type, that connecting reads
  * the active profile and writes back exactly one field.
+ *
+ * `get` rather than `activeName`: the write-back happens after a round trip, and
+ * by then "the active profile" is a different question from "the profile this
+ * connect was for". See {@link ComputeSessionManager.rememberContext}.
  */
 export type ComputeProfileSource = Pick<
   ProfileStore,
-  "active" | "activeName" | "upsert"
+  "active" | "get" | "upsert"
 >;
 
 /**
@@ -311,7 +315,7 @@ export class ComputeSessionManager implements vscode.Disposable {
     // `createSession` link was picked, failed, and every later connect failed
     // the same way while the picker stayed out of reach.
     if (connection !== undefined && active.profile.context === undefined) {
-      await this.rememberContext(active.profile, context);
+      await this.rememberContext(active.name, active.profile, context);
     }
     return connection;
   }
@@ -320,18 +324,40 @@ export class ComputeSessionManager implements vscode.Disposable {
    * Records the picked context on the profile, so it is asked once.
    *
    * Written through the profile store, so it lands wherever the user's own
-   * profile setting lives rather than in a target they cannot see. The active
-   * name is re-read rather than carried: this runs after a round trip to the
-   * deployment, and a settings edit landing in between should write to the
-   * profile that exists now or to nothing at all.
+   * profile setting lives rather than in a target they cannot see.
+   *
+   * The name is the one captured when the connect started, and the profile under
+   * it is re-read and checked before anything is written. Both halves matter, and
+   * an earlier version of this got the pairing wrong in a way review caught: it
+   * carried the profile it connected with but asked the store which name was
+   * active *now*. Switch Connection Profile during a connect and those two
+   * describe different profiles, so the write lands the old profile's endpoint
+   * and id under the new profile's name — silently, and destroying the profile
+   * the user just switched to.
+   *
+   * Re-reading is not only a safety check. Whatever else changed under that name
+   * while the round trip was in flight is spread through, so an edit made during
+   * the connect survives instead of being reverted to the copy this started with.
+   * If the profile has since been renamed, removed, pointed at a different
+   * deployment, or given a context by hand, nothing is written at all: a context
+   * is only meaningful against the deployment it was listed from, and none of
+   * those profiles is the one that was connected to.
+   *
+   * The lesson, third time of asking (see {@link contextFor} and the
+   * cancellation check before it): a value that was true when the work started
+   * is not a fact about the world when the work finishes.
    */
   private async rememberContext(
+    name: string,
     profile: ViyaProfile,
     context: string,
   ): Promise<void> {
-    const name = this.profiles.activeName();
-    if (name === undefined) return;
-    await this.profiles.upsert(name, { ...profile, context });
+    const current = this.profiles.get(name);
+    if (current === undefined) return;
+    if (current.id !== profile.id) return;
+    if (current.endpoint !== profile.endpoint) return;
+    if (current.context !== undefined) return;
+    await this.profiles.upsert(name, { ...current, context });
   }
 
   /**

@@ -1462,8 +1462,8 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   expiry and sign-out flow through one place. Two profiles must be able to hold
   live sessions simultaneously — the thing upstream's global singleton forecloses.
 - ☐ **Settle where the session id is persisted, and write down why.** Upstream
-  uses `workspaceState`, which is per-window: two windows on the same folder
-  would reconnect to the same compute session and interleave their output, and a
+  uses `workspaceState`, which is keyed per *workspace*: two windows on the same
+  folder would reconnect to the same compute session and interleave their output, and a
   window on a different folder loses a session that is still running and still
   billing. `globalState` keyed by profile id is the other candidate and has the
   opposite failure. Decide before writing the reconnect path, not during.
@@ -1593,6 +1593,53 @@ git commit -m "feat(python): add result panel webview with rich output renderers
 git checkout -b phase-3e-runtime-capabilities
 git commit -m "feat(backend): probe interpreter version and installed packages"
 ```
+
+☐ **3d-i — contribute the run target, and let it decide whether we appear.**
+[ADR-0011](docs/adr/0011-choosing-where-python-runs.md) settles the mechanism; this
+is the punch list for executing it.
+
+- The pure part first: parsing, validating and labelling a target, and the "what
+  does this target imply" rules, in a module with **no `vscode` import**, so
+  ADR-0009's denominator keeps it. Only the `workspaceState` read/write and the
+  status bar render belong in the shell.
+- `pythonOnViya.selectRunTarget` — one picker listing **Local Python** and every
+  configured profile, because choosing a profile *is* choosing Viya. The existing
+  `pythonOnViya.activeProfile` status bar item takes this as its command;
+  `pythonOnViya.switchProfile` stays in the palette and keeps working.
+- Publish `pythonOnViya.runTarget` as a context key and gate our `editor/title/run`
+  and `editor/context` entries on
+  `editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted`.
+  With the target on Local we contribute **nothing** to the editor and launch no
+  interpreter — Local is the absence of us, not a feature.
+- Store the target in `workspaceState`, never in settings. A committed target is a
+  repository deciding where a stranger's code runs, which is the shape ADR-0002
+  already restricts the profile settings for. Carry ADR-0007's qualifier when you
+  write the user-facing strings: `workspaceState` is keyed to the *workspace*, so
+  two windows on the same folder share one target. Do not let a tooltip or a doc
+  page promise per-window independence the store cannot deliver.
+- Never move the target for the user. A run against Viya with no profile, no
+  session or a dead token fails with *Sign in* / *Switch to Local*, and does not
+  quietly run somewhere else. Every run names its target as the output channel's
+  first line, so the record outlives the status bar's current state.
+- **Confirm by hand, in the editor:** how VS Code presents two `editor/title/run`
+  contributions — which becomes the primary button, and whether the last used is
+  remembered. ADR-0011 asserts this from the contribution point's documented
+  shape, not from observation. If our entry can become the primary click by
+  accident, that is the rejected "claim the play button" design arriving through
+  the back door, and the ADR needs revisiting rather than working around.
+- Changelog, not just a diff: the status bar item's command **changes** from
+  `pythonOnViya.switchProfile` to `pythonOnViya.selectRunTarget`. That is a visible
+  change to a shipped affordance.
+- Docs owe one line on the cost: a user who sets Local loses our editor entries and
+  may not know why. The status bar names the target, the tooltip says what it
+  implies, and the palette command never disappears.
+- **No keybinding, and none chosen until the beta reports.** `F8` is "next problem
+  in files", `F5` is debug, `ctrl+enter` is Jupyter's for `.py` cells, and
+  upstream's `F8`/`F3` would override "next problem" for every Python file the
+  user opens — including on days they are not using Viya at all. Document how to
+  bind one by hand, and leave this bullet standing after 3d-i ships: it is the
+  open item, and it closes when a default is picked or the decision is recorded
+  as "none by default, deliberately".
 
 ☐ **3e — ship the package list as a user-facing thing, not a capability record.**
 The person writing code in this editor is writing against an interpreter they

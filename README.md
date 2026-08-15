@@ -49,6 +49,14 @@ authors SAS; this one authors Python. Neither needs the other.
 from `ms-python.python` and Pylance. This extension owns execution, not language
 services.
 
+**Where your code runs is something you set, and something you can see.** Each
+workspace has a run target — a Viya profile, or Local — chosen from the status
+bar, which always names it. On Local this extension contributes nothing to the editor:
+the run button you already had is Microsoft's, and we neither wrap it nor start an
+interpreter of our own. The target decides where our commands appear, never what
+they do, so nothing changes meaning under your hands. See
+[ADR-0011](docs/adr/0011-choosing-where-python-runs.md).
+
 **Tested, and honestly so.** Unit tests mock at the HTTP boundary with no network;
 fixtures exist per Viya generation; a live tier runs against a real deployment and
 is opt-in. Behaviour we haven't verified against a real Viya is documented as

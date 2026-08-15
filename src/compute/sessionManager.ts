@@ -354,9 +354,21 @@ export class ComputeSessionManager implements vscode.Disposable {
     const settled = await waitWhilePending(client, created.value, { signal });
     if (!settled.ok) {
       // The session exists and is not usable, so it is taken down rather than
-      // left to occupy a launcher slot for fifteen minutes. Its own failure is
-      // not reported: the user is about to be told the real one.
-      void deleteSession(client, created.value);
+      // left to occupy a launcher slot for fifteen minutes. Not awaited: the
+      // user is waiting on the real failure and should not also wait on the
+      // tidying. Not reported either, for the same reason.
+      //
+      // Caught, though. `deleteSession` resolves a `ComputeResult` for every
+      // failure it anticipates, but `client.send` rethrows whatever
+      // `resolveHref` throws that is not a `ForeignLinkError`, and a rejection
+      // with no handler lands in the extension host as an unhandled rejection
+      // rather than anywhere a reader would look. `debug` because an orphaned
+      // session costs a launcher slot for fifteen minutes and nothing else.
+      void deleteSession(client, created.value).catch((error: unknown) => {
+        this.log.debug(
+          `could not take down the unusable compute session: ${String(error)}`,
+        );
+      });
       this.reportFailure(settled, token.isCancellationRequested);
       return undefined;
     }

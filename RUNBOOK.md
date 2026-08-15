@@ -1825,6 +1825,136 @@ five lines usually are not.
    awaiting `this.connecting` (with the rejection swallowed, since a failed
    connect has already reported itself and is not disconnect's to re-raise).
 
+**A second review round, 2026-08-15**, on the fixes above. One non-blocking nit —
+`dispose` does not join an in-flight connect, unlike `disconnect` — was
+**accepted rather than fixed**, and the file says why: it runs while the window
+is closing, so the connect it would wait for only repopulates state about to be
+discarded, and `dispose` is synchronous so there is nowhere VS Code would honour
+the await. One blocking finding, the write-back naming the wrong profile, is
+recorded with the manual-test findings above because it is the second half of one
+story.
+
+```bash
+# ⛔ BARRIER: merge 2a-ii first.
+# 2a-iii — one account, one command
+git checkout -b phase-2a-iii-account-hint
+git commit -m "fix(auth): connect as the active profile's account"
+```
+
+☐ **2a-iii punch list.** Five defects, every one of them found by using the
+extension or by review, and **not one of them by the test suite** — which is the
+argument for the manual procedure above, not an argument against the tests. They
+are one slice because they are one file's worth of surface: #84 changes both
+`AuthProvider` method signatures, and the other four edit the same call paths.
+
+**Do #84 first.** The rest are cheap once it lands and expensive if they land
+first and have to be rewritten around it.
+
+- ☑ **#84 — ask VS Code for the active profile's account, instead of refusing the
+  wrong one.** `runConnect` calls `authSession(true)` with no hint, VS Code hands
+  back whichever account it last used, and the manager then *refuses* because the
+  session id (which **is** the profile id) does not match the active profile.
+  Sean hit this the first time he had two profiles: "it tells me in the drop down
+  that the other profile is the one selected, but when I try to connect it tells
+  me I'm using the profile that is NOT selected."
+
+  `AuthenticationGetSessionOptions.account` exists at our `^1.104.0` floor
+  (`@types/vscode` `index.d.ts` ~17815) and is documented as being passed down to
+  the provider "to be used for creating the correct session". Our `getSessions()`
+  and `createSession()` take **no arguments at all**, so today there is nothing
+  for VS Code to pass it *to* — both signatures have to widen before the caller
+  can ask for anything.
+
+  Honour it on **both** paths, and say so in a test each: the interactive
+  `createIfNone` connect, and the silent per-request refresh
+  (`getSession(…, { silent: true })`) that `ComputeClientConfig.token` calls on
+  every single request. Missing the silent one would leave the borrowed token
+  drifting back to the wrong account under a long-lived session, which is worse
+  than the bug being fixed because nothing would report it.
+
+  The refusal in `sessionManager.ts` **stays**. It becomes unreachable in normal
+  use rather than dead: it is the assertion that the hint was honoured, and an
+  extension host that ignores an option is exactly the kind of thing a guard is
+  for. What comes out is the *documentation* of it as a limitation — the
+  `::: warning A second profile is not usable yet` block in `docs/connecting.md`,
+  the **Known limitation** paragraph in `CHANGELOG.md`, and the troubleshooting
+  entry that tells the user to switch profile as a workaround. Removing those is
+  part of this item, not a follow-up.
+
+  **Done 2026-08-15.** The hint is derived rather than stored: `runConnect` reads
+  `vscode.authentication.getAccounts()` once and matches the active profile's
+  deployment against it with `accountForEndpoint()` in `src/auth/identity.ts`,
+  which lives beside the rule that *builds* an account id so both halves of the
+  format stay in one module. A unique match becomes `{ kind: "known", account }`;
+  **ambiguity degrades to no hint**, because two people signed in to one
+  deployment is exactly the case where guessing skips past the only UI that would
+  have told the user. No account at all is `{ kind: "new" }` —
+  `forceNewSession`, not `createIfNone`, because it covers both "nothing is
+  signed in" (the API documents them as identical there) and "accounts exist for
+  *other* deployments that a picker would otherwise offer". The three arms are a
+  union rather than two booleans because `createIfNone` and `silent` together are
+  rejected at runtime.
+
+  The silent path carries `auth.account` — **not** the hint — into `clientFor()`,
+  so the per-request refresh names whoever was actually signed in, including
+  after an interactive flow where there was no hint to begin with, and does it
+  without a second `getAccounts` round trip.
+
+  On the provider side the order is **resolve everything, publish everything,
+  return the subset**: `getSessions` filters only what it returns, because
+  publishing a filtered list would fire a change event announcing every other
+  session as removed and flip `pythonOnViya.authorized` off. `createSession`
+  signs in to the profile the named account belongs to rather than the active
+  one, and refuses — before opening a browser — an account no profile uses.
+- ☐ **#134 — Sign In connects.** Sean's design call, 2026-08-15: "I want the
+  design to be that it should automatically connect once you sign in. It's
+  pointless and a waste of time to make the user do two things. What other point
+  is there of signing in if not to connect to a session?"
+
+  Applies to **our** *Python on Viya: Sign In* command only. The Accounts-menu
+  entry must **not** connect: it is VS Code's own UI, it is polled, it has no
+  profile in hand, and starting a SAS process from a menu the user opened to read
+  is the opposite of the ADR-0002 posture. Depends on #84 for the same reason the
+  connect does — signing in has to know which account it just became.
+
+  `docs/signing-in.md` and `docs/connecting.md` both currently describe two steps.
+  Connect stays a command; what changes is that you rarely need it.
+- ☐ **#133 — one unreachable profile must not stall the Accounts menu.**
+  `getSessions()` loops every profile **serially**, calling `resolve()` on each.
+  Sean's first deployment shuts down at weekends, so one dead endpoint costs a
+  full connect timeout before any later profile resolves — and that call is what
+  VS Code polls to draw the menu. Resolve them concurrently, and bound the wait
+  so a hung deployment degrades to "no session for that profile" rather than to a
+  spinner. A timeout here is not a policy about the deployment; it is a policy
+  about a UI poll.
+- ☐ **#131 — report a cancelled sign-in as a cancellation, not a failure.**
+  `browserFlow.ts:163` already knows: it logs "Sign-in was cancelled." at `info`
+  and the comment says "Neither is an error and neither gets a dialog." Then
+  `createSession` collapses the `undefined` into
+  `throw new Error("Signing in to SAS Viya did not complete.")` and
+  `reportSignInFailure` (`auth/commands.ts:131`) turns that into `[error]` plus an
+  error dialog. **Same family as #127**: the fact is known at the bottom of the
+  stack and dropped at the boundary.
+
+  The constraint that makes this awkward, and the reason it is on a list rather
+  than already done: an error thrown from `createSession` reaches a caller that
+  went through `vscode.authentication.getSession`, which is an **RPC hop**. The
+  error is serialised, so `instanceof` does **not** survive it and our
+  exported-error-types rule has no purchase across that boundary. The compute
+  path needs its own answer — most likely the command layer deciding before it
+  ever throws, rather than the caller classifying afterwards.
+- ☐ **#132 — say why a stored session was not used, at debug.** `resolve()` has
+  three branches that return `undefined` and one of them says nothing at all,
+  which is right for an Accounts-menu poll and wrong for the first reload after a
+  sign-in: it is why step 4 of the manual procedure could not be read off the log.
+  Debug level, no dialog, and it must not name a token, a refresh token or a
+  correlation id.
+
+**Testing shape.** `authProvider.ts` and `commands.ts` are host-only and outside
+the c8 denominator (ADR-0009), so these land as **integration** tests — which
+`npm run verify` does not run. Hand over `npm run test:integration` as well, every
+time. The ratchet will not move; do not raise it hopefully.
+
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.
 

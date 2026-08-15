@@ -58,6 +58,7 @@ import { diffSessions, isEmptyDiff, type SessionSummary } from "./accounts";
 import { signInWithBrowser, type BrowserSignInDeps } from "./browserFlow";
 import { BUILT_IN_CLIENT_ID } from "./clientId";
 import {
+  accountForEndpoint,
   accountId as toAccountId,
   accountLabel,
   fetchCurrentUser,
@@ -217,18 +218,43 @@ export class ViyaAuthenticationProvider
   ) {}
 
   /**
-   * Every session this window can serve without asking the user anything.
+   * Every session this window can serve without asking the user anything,
+   * narrowed to one account when the caller named one.
    *
    * `scopes` is accepted and ignored, which is honest rather than lazy: Viya's
    * OAuth issues no scoped tokens, so there is no narrower session to hand back
    * and pretending otherwise would mean returning nothing for any non-empty
-   * request.
+   * request. `options.account` is the opposite — it is honoured, and it is what
+   * lets a window with two profiles get the session for the one it is asking
+   * about instead of whichever the host picked.
+   *
+   * **Resolve everything, publish everything, return the subset.** The filter is
+   * the last thing that happens and it never reaches {@link publish}. Publishing
+   * a filtered list would fire a change event announcing that every session the
+   * caller did not ask about had been removed, and flip
+   * {@link AUTHORIZED_CONTEXT_KEY} to false whenever the account named happened
+   * to have no session — a `when` clause turning off because somebody else's
+   * account was queried. The narrowing is the caller's view, not the world.
    *
    * An untrusted folder has no sessions, by construction: this is the call that
    * would otherwise read the secret store and renew a token, and it is reached
    * by opening a menu rather than by asking for anything, so it says nothing.
    */
-  async getSessions(): Promise<vscode.AuthenticationSession[]> {
+  async getSessions(
+    _scopes?: readonly string[],
+    options?: vscode.AuthenticationProviderSessionOptions,
+  ): Promise<vscode.AuthenticationSession[]> {
+    const sessions = await this.allSessions();
+
+    const account = options?.account;
+    if (account === undefined) {
+      return sessions;
+    }
+    return sessions.filter((session) => session.account.id === account.id);
+  }
+
+  /** Every resolvable session, published as the complete picture. */
+  private async allSessions(): Promise<vscode.AuthenticationSession[]> {
     if (!this.trusted()) {
       // Published, not just returned. The list VS Code holds and the
       // `pythonOnViya.authorized` context key both have to say "nothing here",
@@ -265,16 +291,34 @@ export class ViyaAuthenticationProvider
    *
    * Rejects rather than returning `undefined` on failure, because that is the
    * contract: VS Code shows the rejection to whoever asked for the session.
+   *
+   * `options.account` names which deployment to sign in to, and it wins over the
+   * active profile. The Accounts menu's *sign in again* passes the account row
+   * it was clicked on; without this, that row would sign the user in to whatever
+   * profile happened to be active and then quietly replace a different account's
+   * session with it.
    */
-  async createSession(): Promise<vscode.AuthenticationSession> {
+  async createSession(
+    _scopes?: readonly string[],
+    options?: vscode.AuthenticationProviderSessionOptions,
+  ): Promise<vscode.AuthenticationSession> {
     this.requireTrust();
 
-    const active = this.profiles.active();
+    const requested = options?.account;
+    const active =
+      requested === undefined
+        ? this.profiles.active()
+        : this.profileForAccount(requested);
     if (active === undefined) {
       throw new Error(
-        vscode.l10n.t(
-          "Select a SAS Viya connection profile before signing in.",
-        ),
+        requested === undefined
+          ? vscode.l10n.t(
+              "Select a SAS Viya connection profile before signing in.",
+            )
+          : vscode.l10n.t(
+              'No connection profile uses the SAS Viya deployment that "{0}" is signed in to.',
+              requested.label,
+            ),
       );
     }
 
@@ -496,12 +540,38 @@ export class ViyaAuthenticationProvider
   /**
    * Re-reads the session list and fires the event if it actually moved.
    *
-   * Going through {@link getSessions} rather than constructing the new list here
+   * Going through {@link allSessions} rather than constructing the new list here
    * is deliberate: the event has to describe what a listener would see if it
-   * asked, and the only way to guarantee that is to ask.
+   * asked, and the only way to guarantee that is to ask. It asks the unfiltered
+   * one — a refresh has no caller and therefore no account to narrow to.
    */
   private async refreshPublished(): Promise<void> {
-    await this.getSessions();
+    await this.allSessions();
+  }
+
+  /**
+   * The profile an account belongs to, preferring the active one.
+   *
+   * An account names a deployment and a user; a profile names a deployment. Two
+   * profiles can therefore share one account, and when one of them is active
+   * that is the one meant — the alternative is signing in to a profile the user
+   * is not looking at because it sorts first.
+   */
+  private profileForAccount(
+    account: vscode.AuthenticationSessionAccountInformation,
+  ): { name: string; profile: ViyaProfile } | undefined {
+    const active = this.profiles.active();
+    if (active !== undefined && ownsAccount(active.profile, account)) {
+      return active;
+    }
+
+    for (const name of this.profiles.names()) {
+      const profile = this.profiles.get(name);
+      if (profile !== undefined && ownsAccount(profile, account)) {
+        return { name, profile };
+      }
+    }
+    return undefined;
   }
 
   /** Publishes a new list, firing the change event only on a real transition. */
@@ -634,6 +704,21 @@ function toSession(
     },
     scopes: NO_SCOPES,
   };
+}
+
+/**
+ * Whether an account was issued for this profile's deployment.
+ *
+ * Asked as "is this the sole account for that endpoint", with a list of one, so
+ * the rule that builds an account id and the rule that reads one back stay in
+ * the same function in `identity.ts`. A second, inlined prefix comparison here
+ * is how the two drift apart the next time the id gains a component.
+ */
+function ownsAccount(
+  profile: ViyaProfile,
+  account: vscode.AuthenticationSessionAccountInformation,
+): boolean {
+  return accountForEndpoint(profile.endpoint, [account]) !== undefined;
 }
 
 function summarise(session: vscode.AuthenticationSession): SessionSummary {

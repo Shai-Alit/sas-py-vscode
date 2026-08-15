@@ -10,9 +10,11 @@ import type {
   ComputeResponse,
   ComputeResult,
 } from "../../../src/compute/client";
+import { accountId } from "../../../src/auth/identity";
 import { SessionBindingStore } from "../../../src/compute/bindingStore";
 import {
   ComputeSessionManager,
+  type AuthRequest,
   type ComputeProfileSource,
   type ComputeSessionDeps,
 } from "../../../src/compute/sessionManager";
@@ -38,6 +40,7 @@ const PROFILE_ID = "session-manager-integration";
 const PROFILE_NAME = "verde";
 /** A second profile, for the tests about what a connect must not touch. */
 const OTHER_NAME = "production";
+const ENDPOINT = "https://viya.example.com";
 const CONTEXT = "SAS Job Execution compute context";
 const CONTEXT_ID = "00000000-0000-4000-8000-0000000000c1";
 const SESSION_ID = "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000";
@@ -47,7 +50,7 @@ function profile(init?: Partial<ViyaProfile>): ViyaProfile {
   return {
     version: 1,
     id: init?.id ?? PROFILE_ID,
-    endpoint: init?.endpoint ?? "https://viya.example.com",
+    endpoint: init?.endpoint ?? ENDPOINT,
     ...(init?.context === undefined ? {} : { context: init.context }),
   };
 }
@@ -207,12 +210,20 @@ function duringCreateSession(
   };
 }
 
+/** An account keyed the way the provider keys one: deployment, then Viya user id. */
+function account(
+  endpoint = ENDPOINT,
+  userId = "a7f3c1d9e2b4f6a80",
+): vscode.AuthenticationSessionAccountInformation {
+  return { id: accountId(endpoint, userId), label: "user@example.com" };
+}
+
 /** An authentication session whose id is the profile's, as the provider issues it. */
 function authSession(id = PROFILE_ID): vscode.AuthenticationSession {
   return {
     id,
     accessToken: "access-token-placeholder",
-    account: { id: "user@example.com", label: "user@example.com" },
+    account: account(),
     scopes: [],
   };
 }
@@ -239,6 +250,10 @@ function harness(init: {
 
   const manager = new ComputeSessionManager(init.profiles, bindings, log, {
     isTrusted: () => true,
+    // Stubbed even where a test says nothing about accounts: the fallback is a
+    // real `vscode.authentication.getAccounts`, and a suite that reaches the
+    // host's account list is one whose answers depend on what else has run.
+    accounts: () => Promise.resolve([]),
     authSession: () => Promise.resolve(authSession()),
     createClient: () => init.client,
     // Run the work with a token nobody cancels, so no progress UI appears in a
@@ -621,6 +636,127 @@ describe("compute session manager", () => {
     assert.equal(await manager.connect(), undefined);
     // Dismissing a picker is not a failure and gets no error notification.
     assert.deepEqual(shown.errors, []);
+  });
+
+  it("asks for the account this deployment is already signed in to", async () => {
+    // Scripted through to a session even though only the auth request is
+    // asserted: a profile naming a context still resolves that name to an id
+    // against the deployment, so a connect that stops early stops for a reason
+    // that has nothing to do with accounts.
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const asked: AuthRequest[] = [];
+    const signedIn = account();
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      deps: {
+        accounts: () =>
+          Promise.resolve([account("https://other.example.com"), signedIn]),
+        authSession: (request) => {
+          asked.push(request);
+          return Promise.resolve(authSession());
+        },
+      },
+    });
+
+    assert.ok(await manager.connect(), "the connect produced no session");
+
+    // The point of the whole exercise: with two deployments signed in, name the
+    // one this profile uses rather than letting the host offer a list on which
+    // only one entry can work.
+    assert.deepEqual(asked, [{ kind: "known", account: signedIn }]);
+  });
+
+  it("signs in afresh when this deployment has no account yet", async () => {
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const asked: AuthRequest[] = [];
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      deps: {
+        accounts: () => Promise.resolve([account("https://other.example.com")]),
+        authSession: (request) => {
+          asked.push(request);
+          return Promise.resolve(authSession());
+        },
+      },
+    });
+
+    assert.ok(await manager.connect(), "the connect produced no session");
+
+    // `forceNewSession`, not `createIfNone`. With another deployment's account
+    // present, `createIfNone` would offer it, and accepting it is the mistake
+    // this change exists to prevent.
+    assert.deepEqual(asked, [{ kind: "new" }]);
+  });
+
+  it("does not guess between two people signed in to one deployment", async () => {
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const asked: AuthRequest[] = [];
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      deps: {
+        accounts: () =>
+          Promise.resolve([account(ENDPOINT, "one"), account(ENDPOINT, "two")]),
+        authSession: (request) => {
+          asked.push(request);
+          return Promise.resolve(authSession());
+        },
+      },
+    });
+
+    assert.ok(await manager.connect(), "the connect produced no session");
+
+    // An account id names a user the profile does not, so this is unanswerable.
+    // Asking is the safe half of the ambiguity; borrowing one of the two would
+    // spend somebody else's token under this connect.
+    assert.deepEqual(asked, [{ kind: "new" }]);
+  });
+
+  it("renews the token silently as the account it connected as", async () => {
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const asked: AuthRequest[] = [];
+    const signedIn = account();
+    let issued: (() => string | Promise<string>) | undefined;
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      deps: {
+        accounts: () => Promise.resolve([signedIn]),
+        authSession: (request) => {
+          asked.push(request);
+          return Promise.resolve(authSession());
+        },
+        createClient: (config) => {
+          issued = config.token;
+          return scripted.client;
+        },
+      },
+    });
+
+    assert.notEqual(await manager.connect(), undefined);
+    await issued?.();
+
+    // The path with no user in front of it, and therefore the one that would go
+    // unreported: a session outlives its access token, and a refresh that did
+    // not name the account could come back holding another deployment's.
+    assert.deepEqual(asked, [
+      { kind: "known", account: signedIn },
+      { kind: "silent", account: signedIn },
+    ]);
   });
 
   it("refuses when the signed-in account is not the active profile's", async () => {

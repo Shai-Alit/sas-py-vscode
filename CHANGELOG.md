@@ -228,7 +228,11 @@ called out under **Changed** with a migration note.
   session write is not awaited, so a window closing straight after sign-in can
   lose the session it just established. Here a held token is served from memory
   and renewed only against the absolute `expiresAt` 1b-i already computes, an
-  unknown id is an error, and the write is awaited.
+  unknown id is an error, and the write is awaited. Both provider calls honour the
+  account a caller names — `getSessions` answers for that one, and `createSession`
+  signs in to the profile it belongs to rather than whichever is active — while
+  still publishing the whole session list, because narrowing what is published
+  would announce every other session as removed.
 
 - `src/auth/identity.ts`, which reads the signed-in user, and asks for
   `application/vnd.sas.identity.user.summary+json` **explicitly**. That header is
@@ -364,21 +368,19 @@ called out under **Changed** with a migration note.
   and a token may not.
 
   Connect refuses in an untrusted workspace, before it reads a profile or makes a
-  request, and *Connect* is not offered in the palette there. It also refuses when
-  the account VS Code hands back belongs to a different profile than the one
-  selected, rather than opening a session on a deployment the user did not choose.
-  A profile with no compute context configured is asked once, and the answer is
+  request, and *Connect* is not offered in the palette there. It names the account
+  belonging to the active profile's deployment, so a window signed in to two Viyas
+  resumes the right session rather than offering a list on which only one entry can
+  work, and a deployment nobody has signed in to yet goes straight to its own
+  sign-in. Where an account cannot identify a profile — two profiles pointing at
+  the same deployment, or two people signed in to one — it asks rather than
+  guesses, and still refuses outright if what comes back belongs to another
+  profile. A profile with no compute context configured is asked once, and the answer is
   written back into the profile once a session has actually started on it — a
   context that turns out not to work leaves the profile alone, so the picker is
   still there next time. Cancelling the progress notification stops the connect
   and says nothing further, because a cancelled request is indistinguishable on
   the wire from a deployment that is down.
-
-  **Known limitation:** connecting after *Switch Connection Profile* fails with
-  "The account chosen is not the one … uses". The extension does not yet tell
-  VS Code which account it wants, so VS Code reuses the last one it issued and
-  the guard against connecting to an unselected deployment fires on every
-  switch. Use one profile at a time until this is fixed.
 
 ### Fixed
 

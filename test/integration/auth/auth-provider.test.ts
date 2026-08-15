@@ -52,7 +52,10 @@ const FAKE_REFRESH = "refresh-token-placeholder";
 const NEXT_ACCESS = "second-access-token-placeholder";
 
 const ENDPOINT = "https://viya.example.com";
+/** A second deployment, for the tests about which account a call is about. */
+const OTHER_ENDPOINT = "https://viya-test.example.com";
 const PROFILE_ID = "auth-provider-integration";
+const OTHER_PROFILE_ID = "auth-provider-integration-second";
 const USER_ID = "a7f3c1d9e2b4f6a80";
 /** A second person at the same deployment, for the switch-accounts test. */
 const OTHER_USER_ID = "b1c8d4e0f2a6b3c70";
@@ -239,6 +242,19 @@ async function set(key: string, value: unknown): Promise<void> {
 async function configureProfile(): Promise<void> {
   await set("connectionProfiles", {
     Prod: { version: 1, id: PROFILE_ID, endpoint: ENDPOINT },
+  });
+  await set("defaultProfile", "Prod");
+}
+
+/**
+ * Two deployments in one window, with `Prod` active — the shape every account
+ * hint exists for, and the one no test could express until `getSessions` and
+ * `createSession` took an account.
+ */
+async function configureBothProfiles(): Promise<void> {
+  await set("connectionProfiles", {
+    Prod: { version: 1, id: PROFILE_ID, endpoint: ENDPOINT },
+    Test: { version: 1, id: OTHER_PROFILE_ID, endpoint: OTHER_ENDPOINT },
   });
   await set("defaultProfile", "Prod");
 }
@@ -470,6 +486,78 @@ describe("Viya authentication provider", () => {
         2,
         "the second sign-in served the first sign-in's identity from cache",
       );
+    });
+
+    it("answers for the account asked for without unpublishing the others", async () => {
+      await configureBothProfiles();
+      for (const id of [PROFILE_ID, OTHER_PROFILE_ID]) {
+        await h.sessions.write(id, {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        });
+      }
+      await h.provider.getSessions();
+      assert.equal(
+        h.events.length,
+        1,
+        "two sessions did not arrive as one add",
+      );
+
+      const filtered = await h.provider.getSessions([], {
+        account: { id: accountId(OTHER_ENDPOINT, USER_ID), label: "Dana" },
+      });
+
+      assert.deepEqual(
+        filtered.map((session) => session.id),
+        [OTHER_PROFILE_ID],
+      );
+      // The filter is the caller's view, never the published one. Publishing it
+      // would announce the other session as removed and — when the account
+      // named has no session at all — turn the authorized context key off
+      // because somebody else's account was the one queried.
+      assert.equal(
+        h.events.length,
+        1,
+        "narrowing the answer reported the other session as removed",
+      );
+      assert.deepEqual(h.contexts.at(-1), {
+        key: AUTHORIZED_CONTEXT_KEY,
+        value: true,
+      });
+    });
+
+    it("signs in to the profile the account names, not the active one", async () => {
+      // The Accounts menu's *sign in again* passes the row it was clicked on.
+      // Without this it would sign in to whichever profile happened to be
+      // active — here `Prod` — and replace a different account's session.
+      await configureBothProfiles();
+      h.answers.push("a-code");
+
+      const session = await h.provider.createSession([], {
+        account: { id: accountId(OTHER_ENDPOINT, USER_ID), label: "Dana" },
+      });
+
+      assert.equal(session.id, OTHER_PROFILE_ID);
+    });
+
+    it("refuses an account no profile uses", async () => {
+      await configureBothProfiles();
+
+      await assert.rejects(
+        () =>
+          h.provider.createSession([], {
+            account: {
+              id: accountId("https://elsewhere.example.com", USER_ID),
+              label: "Dana",
+            },
+          }),
+        { message: /No connection profile uses/ },
+      );
+      // Refused before the browser flow, not after it: the paste box never
+      // opened, so nothing asked the user to authorise a sign-in with nowhere
+      // to put the result.
+      assert.deepEqual(h.prompts, []);
     });
 
     it("does not ask who we are again when only the token was renewed", async () => {

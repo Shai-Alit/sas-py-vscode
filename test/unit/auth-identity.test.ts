@@ -9,6 +9,7 @@ import {
   CURRENT_USER_PATH,
   IDENTITY_FULL_TYPE,
   IDENTITY_SUMMARY_TYPE,
+  accountForEndpoint,
   accountId,
   accountLabel,
   fetchCurrentUser,
@@ -93,6 +94,79 @@ describe("accountId", () => {
     // that deployment, which is worse than failing.
     assert.throws(() => accountId("https://viya.example.com", ""));
     assert.throws(() => accountId("https://viya.example.com", "   "));
+  });
+});
+
+describe("accountForEndpoint", () => {
+  const account = (id: string) => ({ id, label: "Someone" });
+
+  it("finds the account signed in to that deployment", () => {
+    const wanted = account(accountId("https://viya.example.com", "abc"));
+
+    assert.equal(
+      accountForEndpoint("https://viya.example.com", [
+        account(accountId("https://other.example.com", "abc")),
+        wanted,
+      ]),
+      wanted,
+    );
+  });
+
+  it("matches however the endpoint was typed", () => {
+    // The same pairing as accountId's own normalisation test: a profile edited
+    // by hand carries a trailing slash and the account it should match does not.
+    const wanted = account(accountId("https://viya.example.com", "abc"));
+
+    assert.equal(
+      accountForEndpoint("  https://viya.example.com/  ", [wanted]),
+      wanted,
+    );
+  });
+
+  it("has no answer when two people are signed in to one deployment", () => {
+    // The id carries a user the profile does not name, so this is unanswerable
+    // rather than a tie to break. Guessing spends one user's token under the
+    // other's connect; the caller asks instead.
+    assert.equal(
+      accountForEndpoint("https://viya.example.com", [
+        account(accountId("https://viya.example.com", "abc")),
+        account(accountId("https://viya.example.com", "def")),
+      ]),
+      undefined,
+    );
+  });
+
+  it("has no answer when nothing is signed in", () => {
+    // Annotated rather than a bare `[]`: with no element to infer from, the
+    // type parameter collapses to `never` and the result stops being an
+    // account at all, which the type-aware lint reads as a call worth nothing.
+    const nobody: ReturnType<typeof account>[] = [];
+
+    assert.equal(
+      accountForEndpoint("https://viya.example.com", nobody),
+      undefined,
+    );
+  });
+
+  it("does not match a deployment that merely starts the same way", () => {
+    // `https://viya.example.com` is a prefix of `https://viya.example.com.evil.test`,
+    // and a hint is a shortcut past the one screen that would have shown the
+    // user which deployment they were signing in to.
+    assert.equal(
+      accountForEndpoint("https://viya.example.com", [
+        account(accountId("https://viya.example.com.evil.test", "abc")),
+      ]),
+      undefined,
+    );
+  });
+
+  it("does not match an id with nothing after the separator", () => {
+    assert.equal(
+      accountForEndpoint("https://viya.example.com", [
+        account("https://viya.example.com::"),
+      ]),
+      undefined,
+    );
   });
 });
 

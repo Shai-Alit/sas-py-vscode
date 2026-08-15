@@ -42,15 +42,11 @@ in the other. If you want two independent namespaces, open two different folders
 
 Two *profiles*, on the other hand, are always separate: a test deployment and a
 production one can hold a session each at the same time, and connecting to one
-does not disturb the other.
-
-::: warning A second profile is not usable yet
-That is how the extension is built, but it is not yet how it behaves. Connecting
-after **Switch Connection Profile** currently fails with *"The account chosen is
-not the one … uses"*, because the extension does not tell VS Code which account
-it wants and VS Code reuses the last one it handed out. Until that is fixed, use
-one profile at a time. See the troubleshooting entry below.
-:::
+does not disturb the other. Connecting names the account for the deployment the
+active profile points at, so switching profile and connecting again signs you in
+to the right place — or, if you have never signed in to that deployment, takes
+you straight to its sign-in rather than offering you the account you already have
+for a different one.
 
 The remembered session id is treated as a hint rather than a fact. The extension
 tries it, and if the session has ended in the meantime it opens a new one and
@@ -106,10 +102,11 @@ not trusted, or you are already connected.
 **"Select a SAS Viya connection profile before connecting."** Profiles exist but
 none is active in this window. Run **Python on Viya: Switch Connection Profile**.
 
-**"The account chosen is not the one … uses."** VS Code lets you choose an
-account when more than one is signed in, and the one you chose belongs to a
-different profile than the one that is active. Switch profile, or connect again
-and pick the matching account. The extension refuses rather than opening a
+**"The account chosen is not the one … uses."** Rare, and it means one thing:
+two profiles point at the *same* deployment, so an account cannot tell them
+apart and VS Code answered with the other one's session. Run **Python on Viya:
+Switch Connection Profile** to the profile that account belongs to, or give the
+two profiles different deployments. The extension refuses rather than opening a
 session on a deployment you did not select.
 
 **"The compute context … does not offer a `createSession` link."** The context

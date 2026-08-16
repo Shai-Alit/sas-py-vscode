@@ -43,3 +43,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0010](0010-compute-client-is-hand-written.md) | The Compute client is hand-written against the observed wire shape, not a vendored generated client | Accepted |
 | [0011](0011-choosing-where-python-runs.md) | Where Python runs is a visible per-workspace target, not a reinterpretation of the run button | Accepted |
 | [0012](0012-compute-session-lifetime-and-storage.md) | A compute session belongs to a workspace and a profile, and its id is a hint | Accepted |
+| [0013](0013-signing-in-opens-a-session.md) | Signing in opens a compute session, and only from the command | Accepted |

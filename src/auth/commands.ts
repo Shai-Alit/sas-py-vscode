@@ -24,7 +24,8 @@
  *
  * ## Signing in connects
  *
- * Sean's design call, 2026-08-15: "what other point is there of signing in if
+ * ADR-0013, which carries the reasoning and the rejected alternatives; the short
+ * version is Sean's design call, 2026-08-15: "what other point is there of signing in if
  * not to connect to a session?" So the sign-in command opens one, and Connect
  * becomes the command you run to reconnect rather than the second half of
  * getting started.

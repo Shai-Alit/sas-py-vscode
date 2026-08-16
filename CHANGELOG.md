@@ -398,6 +398,7 @@ called out under **Changed** with a migration note.
   therefore lives in the command rather than in the authentication provider,
   which is what both routes share. *Connect* survives for reconnecting: after a
   session times out, after switching profile, after ending one deliberately.
+  Recorded as ADR-0013, with the alternatives that lost.
 
 ### Fixed
 

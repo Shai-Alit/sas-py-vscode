@@ -41,7 +41,7 @@ satisfiable.
 
 That last property has a sharp edge, and `changes` is itself a **required status
 check** because of it. GitHub counts a skipped required check as passing and does
-not distinguish why it was skipped. So if the classify step ever fails, the eight
+not distinguish why it was skipped. So if the classify step ever fails, the nine
 required jobs that depend on it are skipped rather than failed, and the pull
 request goes green having run only `docs`. Requiring `changes` makes its own
 failure block the merge instead of cascading into silent skips. Not letting it

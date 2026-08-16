@@ -25,7 +25,8 @@ git status                      # confirm clean, on main
 gh repo view --json name,defaultBranchRef,visibility
 ```
 
-☐ **A1.** Confirm `main` is the default branch.
+☑ **A1. Done; confirmed 2026-08-16.** `main` is the default branch —
+`origin/HEAD` resolves to `origin/main`.
 
 ☑ **A2. Done 2026-08-12.** Branch protection on `main`: required status checks
 (added after 0d-i-b — see the 0d-i section), linear history, no force pushes, no
@@ -181,9 +182,14 @@ gh pr create --base main --head phase-0a-ii-ai-reviewers --fill
 > defect that would recur on 0b and every slice after. Read the error rather than
 > waving it through; see the AADSTS700213 note in Section E.
 
-☐ Merge 0a-ii, then run the **Section E smoke test**. Do not start 0b until both
-bots have demonstrably posted on the smoke-test PR — if they're broken, you want
-to know now, not after four more slices have merged unreviewed.
+☑ **Superseded 2026-08-16.** 0a-ii merged; the Section E smoke test was never run
+as written, because the reviewers were proved in production instead. They have
+posted inline comments and summaries on slice PRs since, and several of their
+findings were filed and fixed as tasks — #113, #115, #127, #128, #129. That is
+the same evidence E3 and E4 were designed to produce, obtained the expensive way.
+Original intent, kept for the record: do not start 0b until both bots have
+demonstrably posted on the smoke-test PR — if they're broken, you want to know
+now, not after four more slices have merged unreviewed.
 
 ⛔ Merge 0a-ii and pass the smoke test before 0b.
 
@@ -256,7 +262,7 @@ per reported check. Adding an OS or a Node version therefore creates a check tha
 is **not** required until someone adds it here — re-run the `PUT` below after any
 matrix change.
 
-☐ **Amended 2026-08-13, after `changes` was added.** Make it **ten**: `changes`
+☑ **Done 2026-08-13, after `changes` was added.** Make it **ten**: `changes`
 must be required too, and this one is load-bearing rather than tidy. `verify`,
 `package` and the six `test` legs now carry `needs: changes`, so if the classify
 step ever fails — a transient `git fetch`, a bad minute at GitHub — those eight
@@ -270,6 +276,15 @@ Making `changes` required closes it, because then its own failure blocks the
 merge directly instead of cascading into skips. The alternative — never letting
 the job fail, by defaulting to `code=true` on error — was rejected: a job that
 cannot fail cannot tell you it is broken.
+
+**Re-read off the live rule 2026-08-16: the required set is now twelve.** The ten
+above, plus `supply-chain` and `analyze` — the two boxes further down this file,
+both of which were done at the time and left unticked. The twelve are `changes`,
+`verify`, `docs`, `package`, `supply-chain`, `analyze`, and the six
+`test (os, node)` legs. Before re-deriving any of this from `ci.yml`, read the
+"sharp edge" paragraph in [docs/dev/ci.md](docs/dev/ci.md) — that is the
+authoritative statement of why `changes` is required, and `ci.yml` alone does not
+say so.
 
 Set with the contexts derived from what actually reported, so a typo cannot
 create a required check that never runs:
@@ -440,8 +455,9 @@ worth knowing: `.nvmrc` says `22` unpinned, which is the only reason CI clears
 npm 12's `^22.22.2` floor — pinning it to an exact lower 22.x breaks the job on
 its `npm install -g` step for reasons unrelated to the change that pinned it.
 
-☐ Add the new `supply-chain` check to branch protection after it first reports —
-same `PUT` as above, which re-derives the contexts from what actually ran.
+☑ **Done; confirmed on the live rule 2026-08-16.** The new `supply-chain` check
+was added to branch protection after it first reported — same `PUT` as above,
+which re-derives the contexts from what actually ran.
 
 ```bash
 # 0d-ii-b — scanning (CodeQL + credential shapes)
@@ -491,9 +507,12 @@ the working copy names an Azure Foundry resource, its endpoint, and deployment
 names — org-identifying detail that would now be public and that buys a reader
 nothing. It lives in the `viyapy` project folder.
 
-☐ **Enable the repository-side settings** (all free on a public repo, and this
-repo went public 2026-08-12): Dependabot alerts, secret scanning, push
-protection, and private vulnerability reporting.
+☑ **Done; confirmed 2026-08-16.** The repository-side settings are on (all free
+on a public repo, and this repo went public 2026-08-12): Dependabot alerts,
+secret scanning, push protection, and private vulnerability reporting. Secret
+scanning and push protection were the last two, enabled 2026-08-16 — the other
+two had been on since the repo went public and, as with branch protection, the
+box was simply never ticked.
 
 ```bash
 gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input - <<'JSON'
@@ -508,15 +527,69 @@ gh api -X PUT  repos/Shai-Alit/sas-py-vscode/vulnerability-alerts
 gh api -X PUT  repos/Shai-Alit/sas-py-vscode/private-vulnerability-reporting
 ```
 
-☐ Tighten **Settings → Actions → General → Fork pull request workflows** to
-require approval for **all outside collaborators**. Deferred from the going-public
-audit; no workflow uses `pull_request_target`, so fork PRs cannot currently reach
-the Azure secrets, but this closes the door rather than relying on that holding.
+☑ **Closed 2026-08-16 — not available on this repository.** The reasoning for
+wanting it stands: provider patterns match known vendor formats, an AWS key or a
+GitHub token, and **a SAS Viya bearer token is a plain JWT that no vendor pattern
+claims**, so provider-only scanning does not cover the one credential this project
+actually handles. Generic-pattern detection is the arm that would.
 
-☐ Add `analyze` (CodeQL) to branch protection once it has reported — same `PUT`
-as the 0d-i one, re-derived from the contexts that actually ran. It is in a
-different workflow from the rest, which changes nothing: required checks are
-matched on job name.
+It cannot be turned on here. The `PATCH` below was run and returned **200 with the
+field still `disabled`** — the repository-update endpoint silently drops
+`security_and_analysis` sub-fields it will not accept, so a no-op is
+indistinguishable from success on the wire. The UI settles it: under **Settings →
+Advanced Security** there is no *Scan for non-provider patterns* control at all,
+and no upsell either. Absent, not merely off. The likely gate is paid GitHub
+Secret Protection, but that was not confirmed and the distinction does not change
+the outcome.
+
+**Closed rather than left open, because the compensating control is already the
+stronger one.** `scripts/check-secrets.mjs` carries a `jwt` rule —
+`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}` — plus a
+`bearer-header` rule, and that file's own doc comment says it exists precisely
+because GitHub's partner patterns will never match a Viya token. It runs in CI on
+every run. Buying GitHub Advanced Security to obtain a second, weaker net under a
+risk already covered by a tested first-party check would be the wrong call on a
+side project, so this is a decision, not a deferral. Revisit only if this repo
+moves under a SAS organisation that already licenses Secret Protection, where it
+would cost nothing.
+
+The one thing generic-pattern scanning would add that `check:secrets` does not:
+it scans **history**, while ours scans the working tree. That gap is accepted, and
+push protection — which *is* enabled — covers the direction that matters, a
+credential arriving in a new push.
+
+```bash
+# Ran, returned 200, changed nothing. Kept as the record of what was attempted.
+echo '{"security_and_analysis":{"secret_scanning_non_provider_patterns":{"status":"enabled"}}}' | gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input -
+```
+
+☑ **Done; confirmed on the live setting 2026-08-16.** A3 above says the repo is
+squash-merge only. The 2026-08-16 API response said `allow_squash_merge: true`,
+`allow_rebase_merge: false`, and `allow_merge_commit:` **`true`** — so the claim
+was not backed by the configuration. Nothing had gone wrong, because branch
+protection's linear-history rule blocks a merge commit on `main` regardless; but a
+record that says one thing while the config says another is the defect this
+section has already been bitten by twice. `allow_merge_commit` is now `false`, and
+unlike the box above this one applied cleanly — a plain repository setting with no
+licensing behind it, so the `PATCH` did what it said.
+
+```bash
+gh api -X PATCH repos/Shai-Alit/sas-py-vscode -F allow_merge_commit=false
+```
+
+☑ **Done 2026-08-16.** **Settings → Actions → General → Fork pull request
+workflows** now requires approval for **all outside collaborators**. It had been
+on the public-repo default, *Require approval for first-time contributors*, which
+auto-runs a returning outside contributor's pull requests. Deferred from the
+going-public audit; no workflow uses `pull_request_target`, so fork PRs could not
+reach the Azure secrets even before this, but it closes the door rather than
+relying on that holding — and it keeps working if a later workflow does have
+access, without anyone having to remember this reasoning at that moment.
+
+☑ **Done; confirmed on the live rule 2026-08-16.** `analyze` (CodeQL) was added
+to branch protection once it had reported — same `PUT` as the 0d-i one,
+re-derived from the contexts that actually ran. It is in a different workflow
+from the rest, which changes nothing: required checks are matched on job name.
 
 ☑ **Merged 2026-08-12 as #11.** Phase 0 is complete.
 
@@ -1187,11 +1260,33 @@ git commit -m "feat(auth): trust user-supplied CA certificates on a dedicated ag
   `https.globalAgent.options.ca` is untouched. That assertion is the entire point
   of the slice and is the one a future refactor would otherwise quietly break.
 
-☐ **After 1c**, verify manually against your Viya: sign in, reload the window,
-confirm the session persists and the Accounts menu shows your identity. Then add
-a second profile pointing at a different deployment and confirm they appear as
-**two** accounts and that signing out of one leaves the other signed in — that is
-decision 10, and it is the behaviour a single review pass is most likely to miss.
+☑ **Done; confirmed 2026-08-16.** Verified by hand against the live deployment
+after 1c: sign in, reload the window, the session persisted and the Accounts menu
+showed the identity; a second profile pointing at a different deployment appeared
+as a **second** account, and signing out of one left the other signed in. That is
+decision 10, and it was the behaviour a single review pass was most likely to
+miss. Original text kept above in spirit; the box was left unticked at the time
+and the confirmation is recorded here late.
+
+The second profile pointed at a genuinely different Viya deployment, not a second
+name for the same one, which is the only version of this test worth running.
+
+**Why this passed and #84 still failed later.** The Connect command did not exist
+yet. `runConnect` first appears in `b356f6b` (2a-ii, PR #23); this box belongs to
+1c-i (`4d87bb8`, PR #19). So what was proved here is the **sign-in and identity**
+path — `getSessions()`, which is what the Accounts menu polls and which walks
+every profile — and that proof still stands. #84 was not a regression in it. It
+was a **new caller**: `runConnect` asked for a session with no `account` hint, and
+the host substituted the account it happened to remember, opening the browser on
+the first profile's deployment. Nothing in the 1c surface ever gave the host that
+opportunity.
+
+That is the part worth carrying forward. A host behaviour can sit dormant through
+an entire slice's hands-on verification and surface the moment a second caller
+reaches the same API by a different route — so "the two-profile case is proved"
+is a claim about the callers that existed when it was proved, and it expires
+quietly every time a new one is added. See #137 for the fix
+(`clearSessionPreference`, first appearing in `da6ccb0`).
 
 ### Phase 2 — Compute session and backend seam
 
@@ -2228,10 +2323,13 @@ of this size moves an aggregate by a tenth of a point, and testing.md's *round
 down further than feels necessary* exists precisely so a tenth of a point on one
 platform is not a red build on another.
 
-☐ **Manual check against your Viya, 2a-iii.** The five defects above were all
-found by hand and four of them are only observable by hand, so this is the gate
-on the slice rather than a nicety. It replaces the 2a-ii procedure rather than
-extending it: run this one from the top.
+☑ **Done; passed 2026-08-16.** The five defects above were all found by hand and
+four of them are only observable by hand, so this was the gate on the slice
+rather than a nicety. It replaced the 2a-ii procedure rather than extending it.
+Closed across two runs — 2026-08-15 for steps 1–5 and the reload, 2026-08-16 for
+step 6 in full plus a re-proof of the cold start and the context write-back on
+the post-#137 build. Three findings came out of the second run and none of them
+block the slice: #145, #146, #147, all recorded below.
 
 **Run 2026-08-15, steps 1–5 passed and step 6 failed.** Recorded here rather than
 in a commit message because the next reader needs the outcome next to the steps
@@ -2246,6 +2344,65 @@ refusal guard would have caught it, since it only stayed quiet because the
 sign-in was cancelled before completing, and **Sign In** is unaffected, because
 that command calls the provider directly and never gives the host the chance to
 substitute anything.
+
+**Run 2026-08-16: step 6 passes in full, including the back half.** Run against
+`da6ccb0` with two **working** deployments — stronger than the "second endpoint
+that does not have to work" this section asks for, because the second sign-in
+actually completed. Connect on profile 1 reused stored credentials and started a
+session; switching to profile 2 and connecting opened the browser on **profile
+2's** deployment and signed in there. Both expected dialogs appeared and neither
+was the finding: the host's *wants you to sign in again* modal, then the browser
+consent. No **Incorrect account detected**, so #137 has not regressed.
+
+The back half — the one the 2026-08-15 run never reached — passed as written.
+Switching back to profile 1 left **Connect** absent from the Command Palette and
+**Disconnect** present, which is this file's own statement of "the session is
+still held". Profile 1's session survived the entire excursion to profile 2. That
+answers **#141**, which is now closed on this evidence rather than on a fresh
+test.
+
+Two findings came out of it, neither in step 6:
+
+- **#146 — the Accounts menu listed one row, not two**, for two signed-in
+  deployments. `accountId(endpoint, userId)` keys on the deployment, so the ids
+  differ and the obvious cause is ruled out. Either VS Code groups the menu by
+  `account.label` — which `accountLabel()` derives from the person, identical on
+  both deployments — or the resolve budget dropped one. The first would mean
+  signing out of that row signs you out of both, so settle it before #138.
+- **#147 — the row reads "Sean Ford (SAS Viya)"**, which does not say which
+  extension owns it. The provider *id* was deliberately not `sas`; the label was
+  left as the thing connected to rather than the thing connecting.
+
+And one non-finding worth writing down so it is not re-reported: **Connect being
+absent is correct** when the active profile already holds a session, but an
+absent command is the only signal the user gets, and it reads as breakage even to
+the person who wrote this procedure. That is **#145**, a discoverability defect,
+not an enablement one.
+
+**Steps 1–5, re-checked 2026-08-16 against the post-#137 build.** They had passed
+on 2026-08-15 against the *pre-fix* build, and #137 changed how `runConnect` asks
+for a session — the path all five take — so passing once did not carry over.
+Re-confirmed by hand: profiles deleted and re-added **from scratch**, then signed
+in and connected repeatedly, with `settings.json` populated each time with the
+endpoint, the compute context id and its name. That is the cold start and the
+context write-back, both proved on the build being shipped rather than the one
+before it.
+
+**The reload is confirmed too**, on both runs: **Developer: Reload Window**
+followed by `Reconnected to the SAS Viya session for this folder.` in the log.
+That is **ADR-0012** working — the session id held in `workspaceState`, and a
+reloaded window reclaiming the *same* Viya session rather than starting a second
+one. Worth naming separately because it is the only check in this slice whose
+failure is invisible without reading the log: a fresh session looks identical to
+a reclaimed one from the outside, except that everything the user defined in it
+is gone.
+
+Unlike the cold start, this one did **not** need re-proving after #137. #137
+changed how `runConnect` asks for a session — the account hint and
+`clearSessionPreference`. The reload path does not go through that: it reads the
+id out of `workspaceState` and re-attaches. Recorded because the reflex of
+"#137 landed, so re-run everything" is right about the connect path and wrong
+here, and the distinction is what stops a future re-check being busywork.
 
 Every expected line below is quoted **exactly** as the code writes it, and each
 is marked either **notification** (a toast in the bottom right) or **log** (a
@@ -2802,6 +2959,14 @@ working.
 ## Section E — AI reviewer bootstrap and smoke test
 
 Do this immediately after 0a-ii merges. Full detail in `AI-PR-REVIEWERS-RUNBOOK.md`.
+
+> **Superseded 2026-08-16. E1–E5 below were never run and will not be.** Both
+> reviewers were proved on real slice pull requests instead, which is strictly
+> stronger evidence than a seeded smoke test: their findings became tasks #113,
+> #115 and #127–#129. The steps are kept because the bootstrap detail underneath
+> them — the Entra federated credential, the Claude GitHub App install, the
+> AADSTS700213 note — is what you would need if the reviewers ever stop posting.
+> Read this section as reference, not as outstanding work.
 
 > **Steps 0–5 of that runbook are already done (2026-08-11).** The federated
 > credential `sas-py-vscode-pr-review` exists on Entra app

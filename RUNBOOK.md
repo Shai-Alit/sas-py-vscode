@@ -2351,12 +2351,25 @@ absent command is the only signal the user gets, and it reads as breakage even t
 the person who wrote this procedure. That is **#145**, a discoverability defect,
 not an enablement one.
 
-**What this box is still waiting on: steps 1–5 have not been re-run since #137
-landed.** They passed on 2026-08-15 against the pre-fix build, and #137 changed
-how `runConnect` asks for a session — which is the path every one of those steps
-takes. Today's run exercised connect-from-stored-credentials but not the cold
-start, the `settings.json` context write-back, or the reload-and-reconnect. Five
-steps, and then this gate is genuinely closed.
+**Steps 1–5, re-checked 2026-08-16 against the post-#137 build.** They had passed
+on 2026-08-15 against the *pre-fix* build, and #137 changed how `runConnect` asks
+for a session — the path all five take — so passing once did not carry over.
+Re-confirmed by hand: profiles deleted and re-added **from scratch**, then signed
+in and connected repeatedly, with `settings.json` populated each time with the
+endpoint, the compute context id and its name. That is the cold start and the
+context write-back, both proved on the build being shipped rather than the one
+before it.
+
+**What this box is still waiting on: the reload.** One step —
+**Developer: Reload Window**, then read the log for
+`Reconnected to the SAS Viya session for this folder.` It is singled out because
+it is the only check that exercises **ADR-0012**: the session id is held in
+`workspaceState`, and a reloaded window is supposed to reclaim the *same* Viya
+session rather than start a second one. Everything else in this slice can pass
+with that mechanism broken, and the failure is invisible without reading the log
+— a fresh session looks identical to a reclaimed one from the outside, except
+that whatever the user defined in it is gone. Confirmed on 2026-08-15
+pre-#137; unconfirmed since.
 
 Every expected line below is quoted **exactly** as the code writes it, and each
 is marked either **notification** (a toast in the bottom right) or **log** (a

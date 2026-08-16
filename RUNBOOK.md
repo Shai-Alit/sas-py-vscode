@@ -25,7 +25,8 @@ git status                      # confirm clean, on main
 gh repo view --json name,defaultBranchRef,visibility
 ```
 
-☐ **A1.** Confirm `main` is the default branch.
+☑ **A1. Done; confirmed 2026-08-16.** `main` is the default branch —
+`origin/HEAD` resolves to `origin/main`.
 
 ☑ **A2. Done 2026-08-12.** Branch protection on `main`: required status checks
 (added after 0d-i-b — see the 0d-i section), linear history, no force pushes, no
@@ -181,9 +182,14 @@ gh pr create --base main --head phase-0a-ii-ai-reviewers --fill
 > defect that would recur on 0b and every slice after. Read the error rather than
 > waving it through; see the AADSTS700213 note in Section E.
 
-☐ Merge 0a-ii, then run the **Section E smoke test**. Do not start 0b until both
-bots have demonstrably posted on the smoke-test PR — if they're broken, you want
-to know now, not after four more slices have merged unreviewed.
+☑ **Superseded 2026-08-16.** 0a-ii merged; the Section E smoke test was never run
+as written, because the reviewers were proved in production instead. They have
+posted inline comments and summaries on slice PRs since, and several of their
+findings were filed and fixed as tasks — #113, #115, #127, #128, #129. That is
+the same evidence E3 and E4 were designed to produce, obtained the expensive way.
+Original intent, kept for the record: do not start 0b until both bots have
+demonstrably posted on the smoke-test PR — if they're broken, you want to know
+now, not after four more slices have merged unreviewed.
 
 ⛔ Merge 0a-ii and pass the smoke test before 0b.
 
@@ -2812,6 +2818,14 @@ working.
 ## Section E — AI reviewer bootstrap and smoke test
 
 Do this immediately after 0a-ii merges. Full detail in `AI-PR-REVIEWERS-RUNBOOK.md`.
+
+> **Superseded 2026-08-16. E1–E5 below were never run and will not be.** Both
+> reviewers were proved on real slice pull requests instead, which is strictly
+> stronger evidence than a seeded smoke test: their findings became tasks #113,
+> #115 and #127–#129. The steps are kept because the bootstrap detail underneath
+> them — the Entra federated credential, the Claude GitHub App install, the
+> AADSTS700213 note — is what you would need if the reviewers ever stop posting.
+> Read this section as reference, not as outstanding work.
 
 > **Steps 0–5 of that runbook are already done (2026-08-11).** The federated
 > credential `sas-py-vscode-pr-review` exists on Entra app

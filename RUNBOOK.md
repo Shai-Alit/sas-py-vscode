@@ -1243,14 +1243,25 @@ decision 10, and it was the behaviour a single review pass was most likely to
 miss. Original text kept above in spirit; the box was left unticked at the time
 and the confirmation is recorded here late.
 
-Note what this did **not** cover, so the tick is not read as contradicting later
-findings. It exercised the **identity** path — `getSessions()`, which is what the
-Accounts menu polls, and which walks every profile. It did not exercise
-**connect** on a second profile, and that is where #84 and then #137 were found on
-2026-08-15: `createSession` was being handed a remembered account by the host and
-opened the browser on the *first* profile's deployment. Two accounts listing
-correctly and a second profile connecting correctly are separate claims, and only
-the first was proved here.
+The second profile pointed at a genuinely different Viya deployment, not a second
+name for the same one, which is the only version of this test worth running.
+
+**Why this passed and #84 still failed later.** The Connect command did not exist
+yet. `runConnect` first appears in `b356f6b` (2a-ii, PR #23); this box belongs to
+1c-i (`4d87bb8`, PR #19). So what was proved here is the **sign-in and identity**
+path — `getSessions()`, which is what the Accounts menu polls and which walks
+every profile — and that proof still stands. #84 was not a regression in it. It
+was a **new caller**: `runConnect` asked for a session with no `account` hint, and
+the host substituted the account it happened to remember, opening the browser on
+the first profile's deployment. Nothing in the 1c surface ever gave the host that
+opportunity.
+
+That is the part worth carrying forward. A host behaviour can sit dormant through
+an entire slice's hands-on verification and surface the moment a second caller
+reaches the same API by a different route — so "the two-profile case is proved"
+is a claim about the callers that existed when it was proved, and it expires
+quietly every time a new one is added. See #137 for the fix
+(`clearSessionPreference`, first appearing in `da6ccb0`).
 
 ### Phase 2 — Compute session and backend seam
 
@@ -2305,6 +2316,47 @@ refusal guard would have caught it, since it only stayed quiet because the
 sign-in was cancelled before completing, and **Sign In** is unaffected, because
 that command calls the provider directly and never gives the host the chance to
 substitute anything.
+
+**Run 2026-08-16: step 6 passes in full, including the back half.** Run against
+`da6ccb0` with two **working** deployments — stronger than the "second endpoint
+that does not have to work" this section asks for, because the second sign-in
+actually completed. Connect on profile 1 reused stored credentials and started a
+session; switching to profile 2 and connecting opened the browser on **profile
+2's** deployment and signed in there. Both expected dialogs appeared and neither
+was the finding: the host's *wants you to sign in again* modal, then the browser
+consent. No **Incorrect account detected**, so #137 has not regressed.
+
+The back half — the one the 2026-08-15 run never reached — passed as written.
+Switching back to profile 1 left **Connect** absent from the Command Palette and
+**Disconnect** present, which is this file's own statement of "the session is
+still held". Profile 1's session survived the entire excursion to profile 2. That
+answers **#141**, which is now closed on this evidence rather than on a fresh
+test.
+
+Two findings came out of it, neither in step 6:
+
+- **#146 — the Accounts menu listed one row, not two**, for two signed-in
+  deployments. `accountId(endpoint, userId)` keys on the deployment, so the ids
+  differ and the obvious cause is ruled out. Either VS Code groups the menu by
+  `account.label` — which `accountLabel()` derives from the person, identical on
+  both deployments — or the resolve budget dropped one. The first would mean
+  signing out of that row signs you out of both, so settle it before #138.
+- **#147 — the row reads "Sean Ford (SAS Viya)"**, which does not say which
+  extension owns it. The provider *id* was deliberately not `sas`; the label was
+  left as the thing connected to rather than the thing connecting.
+
+And one non-finding worth writing down so it is not re-reported: **Connect being
+absent is correct** when the active profile already holds a session, but an
+absent command is the only signal the user gets, and it reads as breakage even to
+the person who wrote this procedure. That is **#145**, a discoverability defect,
+not an enablement one.
+
+**What this box is still waiting on: steps 1–5 have not been re-run since #137
+landed.** They passed on 2026-08-15 against the pre-fix build, and #137 changed
+how `runConnect` asks for a session — which is the path every one of those steps
+takes. Today's run exercised connect-from-stored-credentials but not the cold
+start, the `settings.json` context write-back, or the reload-and-reconnect. Five
+steps, and then this gate is genuinely closed.
 
 Every expected line below is quoted **exactly** as the code writes it, and each
 is marked either **notification** (a toast in the bottom right) or **log** (a

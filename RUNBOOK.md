@@ -256,7 +256,7 @@ per reported check. Adding an OS or a Node version therefore creates a check tha
 is **not** required until someone adds it here — re-run the `PUT` below after any
 matrix change.
 
-☐ **Amended 2026-08-13, after `changes` was added.** Make it **ten**: `changes`
+☑ **Done 2026-08-13, after `changes` was added.** Make it **ten**: `changes`
 must be required too, and this one is load-bearing rather than tidy. `verify`,
 `package` and the six `test` legs now carry `needs: changes`, so if the classify
 step ever fails — a transient `git fetch`, a bad minute at GitHub — those eight
@@ -270,6 +270,15 @@ Making `changes` required closes it, because then its own failure blocks the
 merge directly instead of cascading into skips. The alternative — never letting
 the job fail, by defaulting to `code=true` on error — was rejected: a job that
 cannot fail cannot tell you it is broken.
+
+**Re-read off the live rule 2026-08-16: the required set is now twelve.** The ten
+above, plus `supply-chain` and `analyze` — the two boxes further down this file,
+both of which were done at the time and left unticked. The twelve are `changes`,
+`verify`, `docs`, `package`, `supply-chain`, `analyze`, and the six
+`test (os, node)` legs. Before re-deriving any of this from `ci.yml`, read the
+"sharp edge" paragraph in [docs/dev/ci.md](docs/dev/ci.md) — that is the
+authoritative statement of why `changes` is required, and `ci.yml` alone does not
+say so.
 
 Set with the contexts derived from what actually reported, so a typo cannot
 create a required check that never runs:
@@ -440,8 +449,9 @@ worth knowing: `.nvmrc` says `22` unpinned, which is the only reason CI clears
 npm 12's `^22.22.2` floor — pinning it to an exact lower 22.x breaks the job on
 its `npm install -g` step for reasons unrelated to the change that pinned it.
 
-☐ Add the new `supply-chain` check to branch protection after it first reports —
-same `PUT` as above, which re-derives the contexts from what actually ran.
+☑ **Done; confirmed on the live rule 2026-08-16.** The new `supply-chain` check
+was added to branch protection after it first reported — same `PUT` as above,
+which re-derives the contexts from what actually ran.
 
 ```bash
 # 0d-ii-b — scanning (CodeQL + credential shapes)
@@ -513,10 +523,10 @@ require approval for **all outside collaborators**. Deferred from the going-publ
 audit; no workflow uses `pull_request_target`, so fork PRs cannot currently reach
 the Azure secrets, but this closes the door rather than relying on that holding.
 
-☐ Add `analyze` (CodeQL) to branch protection once it has reported — same `PUT`
-as the 0d-i one, re-derived from the contexts that actually ran. It is in a
-different workflow from the rest, which changes nothing: required checks are
-matched on job name.
+☑ **Done; confirmed on the live rule 2026-08-16.** `analyze` (CodeQL) was added
+to branch protection once it had reported — same `PUT` as the 0d-i one,
+re-derived from the contexts that actually ran. It is in a different workflow
+from the rest, which changes nothing: required checks are matched on job name.
 
 ☑ **Merged 2026-08-12 as #11.** Phase 0 is complete.
 

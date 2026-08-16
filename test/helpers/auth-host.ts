@@ -137,6 +137,63 @@ export function testLogChannel(name: string): vscode.LogOutputChannel {
   return created;
 }
 
+/** One line as it was written, with the level it was written at. */
+export interface LoggedLine {
+  readonly level: "trace" | "debug" | "info" | "warn" | "error";
+  readonly message: string;
+}
+
+export interface RecordingLog {
+  /** Hand this to the code under test. */
+  readonly channel: vscode.LogOutputChannel;
+  /** Everything logged through it so far, in order. */
+  readonly lines: LoggedLine[];
+}
+
+/**
+ * A log channel that keeps what was written, so a test can assert on it.
+ *
+ * Almost nothing in this suite needs it: a log line is usually a side effect of
+ * behaviour that can be observed directly, and asserting on wording turns every
+ * reworded sentence into a failing test. It exists for the cases where the log
+ * line **is** the deliverable — a fact reported at a level, and at no other
+ * level, because nobody is waiting on it.
+ *
+ * It delegates to a real channel rather than replacing one. That keeps what
+ * {@link testLogChannel} buys: the shell logs through `vscode.l10n.t()`, and a
+ * `t()` call with the wrong number of arguments only shows up when something
+ * renders it. `Object.create` rather than a copy, so the members not overridden
+ * here — `name`, `logLevel`, `onDidChangeLogLevel`, `dispose` — stay the real
+ * channel's and stay correct as that interface grows.
+ *
+ * Recording per call is safe where disposing is not: the wrapper is new each
+ * time and the channel underneath is the cached one.
+ */
+export function recordingLog(name: string): RecordingLog {
+  const real = testLogChannel(name);
+  const lines: LoggedLine[] = [];
+
+  const record =
+    (level: LoggedLine["level"]) =>
+    (message: string, ...args: unknown[]): void => {
+      lines.push({ level, message });
+      real[level](message, ...args);
+    };
+
+  const channel: vscode.LogOutputChannel = Object.assign(
+    Object.create(real) as vscode.LogOutputChannel,
+    {
+      trace: record("trace"),
+      debug: record("debug"),
+      info: record("info"),
+      warn: record("warn"),
+      error: record("error"),
+    },
+  );
+
+  return { channel, lines };
+}
+
 /** Resolves after `ms`, for the few assertions that are about nothing happening. */
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

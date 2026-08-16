@@ -537,6 +537,14 @@ called out under **Changed** with a migration note.
   did not before — that prompt appears before the browser opens, so the sign-in
   flow could not see it. Everything that is not a cancellation is still reported
   exactly as loudly as it was.
+- A session that is not restored now says why. Finding nothing stored for a
+  profile used to be completely silent, which is right when nobody has signed in
+  — the Accounts menu asks constantly, and that answer goes to the log at debug —
+  but wrong when a session that was working has just ended. A deployment
+  configured to issue no refresh token can only keep you signed in for as long as
+  the access token lasts, and the account leaving the menu on its own looked
+  exactly like a fault; it is now stated once, at information level, naming the
+  deployment. Neither line quotes a token or a correlation id.
 
 ### Changed
 

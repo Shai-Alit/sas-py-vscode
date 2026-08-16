@@ -20,7 +20,8 @@ import {
   delay,
   memoryMemento,
   memorySecrets,
-  testLogChannel,
+  recordingLog,
+  type LoggedLine,
 } from "../../helpers/auth-host";
 import { extensionId } from "../../helpers/manifest";
 
@@ -87,6 +88,8 @@ interface Harness {
   events: vscode.AuthenticationProviderAuthenticationSessionsChangeEvent[];
   /** Requests held by a stalled endpoint, and the way to let them answer. */
   stalled: Stalled;
+  /** Every line the provider logged, with its level. See {@link recordingLog}. */
+  logged: LoggedLine[];
   dispose(): void;
 }
 
@@ -111,6 +114,12 @@ function harness(
     refreshOk?: boolean;
     /** Lifetime of the tokens the fake endpoint issues. Default one hour. */
     expiresIn?: number;
+    /**
+     * A deployment configured not to issue refresh tokens. Not a failure and
+     * not rare: the grant works, and the session simply cannot outlive its
+     * access token because there is nothing to renew it from.
+     */
+    refreshToken?: boolean;
     /** Whether the folder starts out trusted. Default true, as the host is. */
     trusted?: boolean;
     /**
@@ -124,7 +133,8 @@ function harness(
     resolveBudgetMs?: number;
   } = {},
 ): Harness {
-  const log = testLogChannel("auth provider");
+  const recorder = recordingLog("auth provider");
+  const log = recorder.channel;
   const secrets = memorySecrets();
   const requests: string[] = [];
   const contexts: { key: string; value: unknown }[] = [];
@@ -195,7 +205,9 @@ function harness(
           ok
             ? JSON.stringify({
                 access_token: NEXT_ACCESS,
-                refresh_token: FAKE_REFRESH,
+                ...(options.refreshToken === false
+                  ? {}
+                  : { refresh_token: FAKE_REFRESH }),
                 token_type: "bearer",
                 expires_in: options.expiresIn ?? 3600,
               })
@@ -273,6 +285,7 @@ function harness(
     contexts,
     events,
     stalled,
+    logged: recorder.lines,
     dispose(): void {
       // The log channel is deliberately not disposed; see `testLogChannel`.
       provider.dispose();
@@ -281,6 +294,11 @@ function harness(
       secrets.dispose();
     },
   };
+}
+
+/** The lines whose text matches, at whatever level each was written. */
+function linesMatching(logged: LoggedLine[], pattern: RegExp): LoggedLine[] {
+  return logged.filter((line) => pattern.test(line.message));
 }
 
 const SECTION = "pythonOnViya";
@@ -674,6 +692,85 @@ describe("Viya authentication provider", () => {
         });
       } finally {
         anonymous.dispose();
+      }
+    });
+
+    /**
+     * #132. Both ways `resolve` can find nothing, told apart.
+     *
+     * These assert on log *wording*, which almost nothing else here does and
+     * which is normally a bad trade. It is the right one exactly when the log
+     * line is the whole deliverable: what is being tested is that the two
+     * silences were separated at all, and at which level each landed. Nothing
+     * else observable differs between them — both return no session.
+     */
+    it("says at debug that a profile has no stored sign-in", async () => {
+      await h.provider.getSessions();
+
+      // Mapped to levels rather than indexed, which says "once, at debug" in
+      // one assertion. Indexing would need `said[0]?.level`, and the first
+      // `assert.equal` on it narrows the element to non-nullish — so every
+      // later `?.` on it is a lint error, and the test would only pass in the
+      // order its assertions happen to be written in.
+      const said = linesMatching(h.logged, /no stored sign-in for/);
+      assert.deepEqual(
+        said.map((line) => line.level),
+        ["debug"],
+        "the empty case did not say so exactly once, at debug",
+      );
+      assert.ok(
+        said.every((line) => line.message.includes(ENDPOINT)),
+        "the line did not name the deployment",
+      );
+      // At info this fires on every poll of the Accounts menu, for every
+      // profile nobody has signed in to, for as long as the window is open.
+      assert.deepEqual(
+        h.logged.filter((line) => line.level === "info"),
+        [],
+      );
+    });
+
+    it("says at info when a session expires with nothing to renew it from", async () => {
+      // A deployment that issues no refresh token. The grant works and then the
+      // account leaves the Accounts menu on its own, which from the outside is
+      // indistinguishable from a defect — so this one is worth saying out loud,
+      // at a level the log shows without being asked. Thirty seconds is inside
+      // the expiry skew, so the token is spent by the time anything reads it.
+      const noRenewal = harness({ refreshToken: false, expiresIn: 30 });
+      try {
+        noRenewal.answers.push("a-code");
+        await noRenewal.provider.createSession();
+
+        const said = linesMatching(
+          noRenewal.logged,
+          /no stored sign-in was kept/,
+        );
+        assert.deepEqual(
+          said.map((line) => line.level),
+          ["info"],
+          "an expiry with nothing stored was silent, or was not at info",
+        );
+        assert.ok(
+          said.every((line) => line.message.includes(ENDPOINT)),
+          "the line did not name the deployment",
+        );
+
+        // And exactly once. The expired session is dropped as it is reported,
+        // so the profile falls back to the ordinary empty case rather than
+        // repeating this on every poll for the rest of the window.
+        await noRenewal.provider.getSessions();
+        assert.equal(
+          linesMatching(noRenewal.logged, /no stored sign-in was kept/).length,
+          1,
+          "the expiry was reported again on a later read",
+        );
+        assert.equal(
+          linesMatching(noRenewal.logged, /no stored sign-in for/).length,
+          1,
+          "the later read did not fall back to the quiet case",
+        );
+      } finally {
+        noRenewal.dispose();
       }
     });
   });

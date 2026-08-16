@@ -2099,12 +2099,55 @@ first and have to be rewritten around it.
   shape instead. If the editor ever changes what it copies, that test keeps
   passing while the behaviour breaks — and the failure would be the loud
   direction, a dialog for a cancellation, which is what we started with.
-- ☐ **#132 — say why a stored session was not used, at debug.** `resolve()` has
+- ☑ **#132 — say why a stored session was not used, at debug.** `resolve()` has
   three branches that return `undefined` and one of them says nothing at all,
   which is right for an Accounts-menu poll and wrong for the first reload after a
   sign-in: it is why step 4 of the manual procedure could not be read off the log.
   Debug level, no dialog, and it must not name a token, a refresh token or a
   correlation id.
+
+  **Done 2026-08-15.** The silent branch turned out to be two facts wearing one
+  coat, and separating them is most of the value.
+
+  **Nothing stored and nothing in memory** is the ordinary state — a fresh
+  window, a sign-out, a profile nobody has used — and it goes to **debug**,
+  unlocalised, like every other debug line in this codebase. The Accounts menu
+  polls `getSessions` for every profile it can see, so at info a window with one
+  unused profile writes this line for as long as it stays open.
+
+  **Nothing stored but something in memory** is the interesting one, and it goes
+  to **info**, which is a deliberate deviation from the "debug level" written
+  above. It means the deployment issued no refresh token, so the session could
+  only ever last as long as its access token and the account has just left the
+  Accounts menu on its own — which from the outside is indistinguishable from a
+  defect. Two things earn the level: it fires **once**, because the same branch
+  drops the expired session and every later poll takes the quiet one, and a
+  `LogOutputChannel` shows info by default, so a line the user has to raise the
+  log level to find is a line that is not there when they go looking. `info` on a
+  log channel is not a notification; nothing pops up.
+
+  **The malformed case was already covered** one layer down: `SessionStore.read`
+  discards an entry it cannot parse and says so at warn, so what reaches this
+  branch is genuine absence. Worth knowing before adding a third message here.
+
+  Neither line names a token, a refresh token or a correlation id — both name the
+  endpoint, which the renewal-failure line beside them already does.
+
+  **Testing needed a new helper, and the wording is now under test.**
+  `recordingLog` in `test/helpers/auth-host.ts` delegates to the real cached
+  channel and keeps what was written, so a test can assert on level and text.
+  Almost nothing else in the suite should use it — asserting on wording turns
+  every rewording into a failing test — but here the log line *is* the whole
+  deliverable, and both branches return no session, so nothing else observable
+  tells them apart. It uses `Object.create` over the real channel rather than a
+  copy, which keeps `name`, `logLevel` and `dispose` real and dodges the
+  disposal trap in `testLogChannel`'s doc comment: the wrapper is new per
+  harness, the channel underneath is the cached one.
+
+  Two integration tests in `test/integration/auth/auth-provider.test.ts`, on a
+  new `refreshToken: false` harness option — a grant that succeeds and issues no
+  refresh token. The second asserts the info line fires exactly once and that the
+  next read falls back to the debug one, which is the claim the level rests on.
 
 **Testing shape.** `authProvider.ts` and `commands.ts` are host-only and outside
 the c8 denominator (ADR-0009), so these land as **integration** tests — which

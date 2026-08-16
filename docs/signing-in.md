@@ -87,6 +87,13 @@ because you did not ask for anything: opening a menu is not a request to be
 interrupted. Run **Python on Viya: Show Log** to see what happened, then sign in
 again.
 
+Some deployments are configured not to issue refresh tokens at all. There is
+nothing wrong when that happens — the sign-in works — but the session can only
+last as long as its access token, usually about an hour, and then the account
+leaves the Accounts menu on its own. The log says so when it does, so that a
+sign-in which seems to have undone itself has an explanation you can find. Sign
+in again to continue; there is no setting on this side that changes it.
+
 A deployment that is switched off does not hold up the others. Profiles are
 renewed side by side, and the menu is drawn with whatever has arrived within ten
 seconds — so a test Viya that is down for the weekend cannot keep a production

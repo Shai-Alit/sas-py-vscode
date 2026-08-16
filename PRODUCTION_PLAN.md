@@ -628,7 +628,9 @@ reason — the pure half is unit-testable and the shell half is not:
 > profiles concurrently and bounds each answer, so one unreachable deployment
 > does not stall it, while a caller that names an account — connecting does —
 > still waits for that one; a cancelled sign-in is reported as
-> a cancellation; and an unused stored session says why at debug. *Small.*
+> a cancellation; and a session that is not restored says why — at debug when
+> nobody was signed in, at information when one that was working has expired
+> with nothing stored to renew it from. *Small.*
 
 **The generated OpenAPI client is not vendored — see ADR-0010.** This reverses
 what this plan pre-agreed. Upstream's client is 28,673 lines of which the session

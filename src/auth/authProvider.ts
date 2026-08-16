@@ -619,6 +619,11 @@ export class ViyaAuthenticationProvider
    * this is the path the Accounts menu takes every time it polls, and it must
    * not touch the network. Only a token that is spent, or absent because this
    * window has just opened, reaches the refresh.
+   *
+   * Every route out of here that is not a session says why, in the log and
+   * nowhere else. Nobody is waiting on this call — it happens because a menu was
+   * drawn — so none of it is worth a dialog, and all of it is worth having when
+   * someone asks why they are not signed in any more.
    */
   private async resolve(
     profile: ViyaProfile,
@@ -630,8 +635,34 @@ export class ViyaAuthenticationProvider
 
     const stored = await this.sessions.read(profile.id);
     if (stored === undefined) {
-      // Not signed in, or signed in to a deployment that issues no refresh
-      // token. Either way there is nothing to serve and nothing to report.
+      // Two different facts, and only one of them is ordinary.
+      //
+      // A stored entry that exists but cannot be parsed is not either of them:
+      // `SessionStore.read` has already discarded it and said so at warning
+      // level, so what is left here is genuine absence.
+      if (held === undefined) {
+        // Nobody is signed in to this profile — a fresh window, a sign-out, or
+        // a profile never used. Debug, and unlocalised like every other debug
+        // line, because the Accounts menu polls this for every profile it can
+        // see: at info a window with one unused profile would write this line
+        // for as long as it stayed open.
+        this.log.debug(`no stored sign-in for ${profile.endpoint}`);
+      } else {
+        // The one that looks like a defect from the outside: the user was
+        // signed in a moment ago and the account has just left the menu. It
+        // means the deployment issued no refresh token, so there was never
+        // anything to renew from and the session could only last as long as its
+        // access token. Info, not debug, because it happens exactly once — the
+        // line below drops the expired session, so every later poll takes the
+        // branch above — and because it is the answer to a question the user is
+        // about to ask.
+        this.log.info(
+          vscode.l10n.t(
+            "The sign-in for {0} has expired, and no stored sign-in was kept to renew it from. Sign in again to continue.",
+            profile.endpoint,
+          ),
+        );
+      }
       this.live.delete(profile.id);
       return undefined;
     }

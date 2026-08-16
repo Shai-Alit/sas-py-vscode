@@ -2424,9 +2424,14 @@ level — including the one step 4 exists to read.
    `renewing the sign-in for <endpoint> is taking longer than 10000ms; answering
    without it` if you ever do see it in the wild.
 
-8. **Cancelling says nothing (#131).** Get back to a cold state first, and in
-   this order: **Python on Viya: Disconnect from SAS Viya**, then **Python on
-   Viya: Sign Out**. Both are needed, and the order is not cosmetic. Signing out
+8. **Cancelling says nothing (#131).** Get back to a **cold state** first, which
+   means this window has nothing left to reuse for the active profile: **no
+   compute session held** for it, and **no stored token** for its deployment.
+   Only then does **Sign In** actually have to go and fetch a token, and only
+   then is there a sign-in to cancel. Make sure the working profile — the one
+   with the real endpoint, which step 6 left active — is the active one, then run
+   both of: **Python on Viya: Disconnect from SAS Viya**, then **Python on Viya:
+   Sign Out**. Both are needed, and the order is not cosmetic. Signing out
    does not end the compute session, and a connect that finds one still held in
    this window returns it without asking for a token — so with the session still
    live there would be no sign-in to cancel and the step would pass by doing
@@ -2435,6 +2440,13 @@ level — including the one step 4 exists to read.
    session did not complete: …` at `warn` with no `Ended the SAS Viya session.`
    line, leaving a session alive on the server. That is correct behaviour being
    asked an impossible question, not a defect — but it looks exactly like one.
+
+   Read the cold state off the UI rather than assuming it. Open the Command
+   Palette: **Connect to SAS Viya** must be available and **Disconnect from SAS
+   Viya** greyed out, which is `pythonOnViya.connected` saying no session is
+   held. Then open the **Accounts** menu and confirm your Viya account is no
+   longer listed, which is the token half. If Disconnect is still available you
+   are not cold, and everything below will pass without testing anything.
 
    Now run **Python on Viya: Sign In**, and when the **Sign in to SAS Viya** box
    appears, press `Escape`.
@@ -2511,6 +2523,12 @@ logged on purpose, so find it by listing instead: with the `viya-api-probe`
 skill and `creds.json`, `GET /compute/sessions` and look for the one whose `name`
 is `python-on-viya`. Doing that either side of step 9 is the only way to see,
 from outside the editor, that Disconnect really took the session down.
+
+**Run 2026-08-16: one session for six creates.** Done immediately after step 9 and
+written up as **finding 30**. Every `DELETE` landed, and the same listing turned
+up a correction worth having — `applicationName` is `vscode` for our sessions,
+which is the built-in client id and therefore SAS's extension's too, so finding
+25's reclaim filter must not be copied as written.
 
 **Two things to expect that are already filed.** #130 is open: a request whose
 silent token refresh comes back empty is reported as `The SAS Viya sign-in for

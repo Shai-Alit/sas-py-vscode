@@ -901,3 +901,79 @@ would cost a debugging session to discover had changed.
   what the session state reports mid-overlap, and whether the second queues or
   fails, is unknown. 2a-ii should serialise per session regardless.
 - **Viya 3.5**, as everywhere else in this file.
+
+## 2026-08-16 — Cross-check after the 2a-iii manual run (Viya 4)
+
+Every finding above was produced by a probe talking to the server directly. This
+one is different in kind: it looks at what the **shipped extension** left on the
+server after a human ran the 2a-iii procedure in `RUNBOOK.md` through step 9, and
+it is here because the compute session id is deliberately never logged, so from
+inside the editor there is no way to see whether a `DELETE` landed. Read-only
+throughout — one collection `GET`, one session `GET`, one state `GET`. TLS
+verification was disabled for the probe only. The endpoint is scrubbed as
+elsewhere.
+
+### Finding 30 — Sessions are cleaned up, and `applicationName` cannot tell our client from SAS's
+
+Step 9 alone creates and destroys a session five or six times: disconnect,
+connect, disconnect, connect-and-cancel, connect-and-cancel-at-the-picker,
+connect properly. Immediately afterwards, `GET /compute/sessions?limit=50`
+returned `count: 1` and one item:
+
+| Field (from the single-resource `GET`) | Value |
+| --- | --- |
+| `name` | `python-on-viya` |
+| `state` | `idle` |
+| `creationTimeStamp` | the last connect, to the second |
+| `applicationName` | `vscode` |
+| `attributes.sessionInactiveTimeout` | `900` |
+| `attributes.homeDirectory` | `…/compsrv/default/<session-id>` |
+
+**What that says about our code, which is the point.** Six creates, one survivor:
+every `DELETE` the session manager issued reached the server and took its session
+down. Had `disconnect` merely dropped our local reference — the failure mode step
+9's *`Reconnected` must not appear here* check exists to catch — this listing
+would show the pile.
+
+**What it says about the API, and it is a correction of emphasis.** Finding 24
+established that `applicationName` is the OAuth client id of the *token*, not
+anything the caller sends. This is the first sighting of that field for the client
+the extension actually uses, and the value is `vscode` — the built-in client id
+(see the OAuth findings above). That id is not ours. SAS's own VS Code extension
+authenticates with the same built-in client, as would any other tool that reused
+it, so **`applicationName` cannot narrow a listing to sessions this extension
+started**. Finding 25 offered `and(eq(owner,…),eq(applicationName,…))` as the
+reclaim filter; that pairing is right about `owner` and wrong to lean on
+`applicationName`, which here would sweep in every session the SAS extension left
+behind for the same user. The only marker that is ours is the constant in `name`,
+which is exactly why finding 25 insisted the name be a constant. This does not
+revive reclaim-by-listing — ADR-0012 rejected it on the strength of finding 26,
+that names are not unique — but if it is ever reconsidered, the filter in finding
+25 must not be copied as written.
+
+**Corroborations, offered as corroborations rather than news.** The 900-second
+timeout read back again (finding 18). A settled session was `idle`, not `running`
+(finding 23). The collection item carried exactly `id`, `links`, `name`, `owner`,
+`version` — no `state`, no timestamps — so a list still cannot tell a live session
+from a dead one without a `GET` per item (finding 24). And `count` was populated
+on a collection that was not truncated (finding 16), which is the other half of
+that finding stated positively for the first time.
+
+**One reading to avoid.** A single item is *not* evidence that the listing has
+become caller-scoped. Finding 25 saw this same token return other people's
+sessions; the honest reading of `count: 1` is that at that moment the deployment
+held one compute session in total, which is what a quiet personal test system
+looks like at half past nine at night. `homeDirectory` is likewise not new
+information — it is the session id under a fixed prefix — and nothing should be
+built on its shape.
+
+### What this cross-check did not settle
+
+- **Whether a reaped session disappears from the listing or lingers as a `404`
+  href.** The session was still inside its 900 seconds when it was read, and the
+  reaper was not waited out. Finding 29's gap, unchanged.
+- **The second deployment.** Only the working profile's endpoint was queried, so
+  nothing here says what the cancelled step-6 sign-in left behind on the other
+  one. It should be nothing — the connect never reached a session — but that is
+  reasoning, not an observation.
+- **Viya 3.5**, as everywhere else in this file.

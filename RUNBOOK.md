@@ -552,10 +552,14 @@ section has already been bitten by twice. Turning it off costs nothing.
 gh api -X PATCH repos/Shai-Alit/sas-py-vscode -F allow_merge_commit=false
 ```
 
-☐ Tighten **Settings → Actions → General → Fork pull request workflows** to
-require approval for **all outside collaborators**. Deferred from the going-public
-audit; no workflow uses `pull_request_target`, so fork PRs cannot currently reach
-the Azure secrets, but this closes the door rather than relying on that holding.
+☑ **Done 2026-08-16.** **Settings → Actions → General → Fork pull request
+workflows** now requires approval for **all outside collaborators**. It had been
+on the public-repo default, *Require approval for first-time contributors*, which
+auto-runs a returning outside contributor's pull requests. Deferred from the
+going-public audit; no workflow uses `pull_request_target`, so fork PRs could not
+reach the Azure secrets even before this, but it closes the door rather than
+relying on that holding — and it keeps working if a later workflow does have
+access, without anyone having to remember this reasoning at that moment.
 
 ☑ **Done; confirmed on the live rule 2026-08-16.** `analyze` (CodeQL) was added
 to branch protection once it had reported — same `PUT` as the 0d-i one,
@@ -1231,11 +1235,22 @@ git commit -m "feat(auth): trust user-supplied CA certificates on a dedicated ag
   `https.globalAgent.options.ca` is untouched. That assertion is the entire point
   of the slice and is the one a future refactor would otherwise quietly break.
 
-☐ **After 1c**, verify manually against your Viya: sign in, reload the window,
-confirm the session persists and the Accounts menu shows your identity. Then add
-a second profile pointing at a different deployment and confirm they appear as
-**two** accounts and that signing out of one leaves the other signed in — that is
-decision 10, and it is the behaviour a single review pass is most likely to miss.
+☑ **Done; confirmed 2026-08-16.** Verified by hand against the live deployment
+after 1c: sign in, reload the window, the session persisted and the Accounts menu
+showed the identity; a second profile pointing at a different deployment appeared
+as a **second** account, and signing out of one left the other signed in. That is
+decision 10, and it was the behaviour a single review pass was most likely to
+miss. Original text kept above in spirit; the box was left unticked at the time
+and the confirmation is recorded here late.
+
+Note what this did **not** cover, so the tick is not read as contradicting later
+findings. It exercised the **identity** path — `getSessions()`, which is what the
+Accounts menu polls, and which walks every profile. It did not exercise
+**connect** on a second profile, and that is where #84 and then #137 were found on
+2026-08-15: `createSession` was being handed a remembered account by the host and
+opened the browser on the *first* profile's deployment. Two accounts listing
+correctly and a second profile connecting correctly are separate claims, and only
+the first was proved here.
 
 ### Phase 2 — Compute session and backend seam
 

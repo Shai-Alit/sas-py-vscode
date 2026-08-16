@@ -61,6 +61,21 @@ const USER_ID = "a7f3c1d9e2b4f6a80";
 /** A second person at the same deployment, for the switch-accounts test. */
 const OTHER_USER_ID = "b1c8d4e0f2a6b3c70";
 
+/**
+ * The origin of a URL, for assertions that mean "this deployment and no other".
+ *
+ * `url.startsWith(OTHER_ENDPOINT)` reads the same and is what these tests used
+ * to say, but it is a host check only by accident: it is equally true of
+ * `https://viya-test.example.com.example.net/`, and CodeQL says so
+ * (`js/incomplete-url-substring-sanitization`, four alerts on this file). A
+ * parsed-origin comparison is the check that was always meant. Silencing the
+ * alert is a side effect of making it exact — the constant no longer reaches a
+ * substring test at all — and it is worth doing in a test rather than dismissing
+ * because the same shape in `src/` would be a real defect, and an accepted
+ * alert here teaches the next reader that the shape is fine.
+ */
+const originOf = (url: string): string => new URL(url).origin;
+
 interface Harness {
   provider: ViyaAuthenticationProvider;
   profiles: ProfileStore;
@@ -719,7 +734,7 @@ describe("Viya authentication provider", () => {
         "the empty case did not say so exactly once, at debug",
       );
       assert.ok(
-        said.every((line) => line.message.includes(ENDPOINT)),
+        said.every((line) => line.message.includes(originOf(ENDPOINT))),
         "the line did not name the deployment",
       );
       // At info this fires on every poll of the Accounts menu, for every
@@ -751,7 +766,7 @@ describe("Viya authentication provider", () => {
           "an expiry with nothing stored was silent, or was not at info",
         );
         assert.ok(
-          said.every((line) => line.message.includes(ENDPOINT)),
+          said.every((line) => line.message.includes(originOf(ENDPOINT))),
           "the line did not name the deployment",
         );
 
@@ -841,8 +856,8 @@ describe("Viya authentication provider", () => {
       await h.provider.getSessions();
       await h.provider.getSessions();
 
-      const attempts = h.requests.filter((url) =>
-        url.startsWith(OTHER_ENDPOINT),
+      const attempts = h.requests.filter(
+        (url) => originOf(url) === originOf(OTHER_ENDPOINT),
       );
       assert.equal(attempts.length, 1, "polling piled up renewals on it");
     });
@@ -864,7 +879,9 @@ describe("Viya authentication provider", () => {
         "the session that landed late never appeared",
       );
       const renewals = h.requests.filter(
-        (url) => url.startsWith(OTHER_ENDPOINT) && url.includes("/SASLogon/"),
+        (url) =>
+          originOf(url) === originOf(OTHER_ENDPOINT) &&
+          url.includes("/SASLogon/"),
       );
       assert.equal(renewals.length, 1, "the landed session was renewed again");
     });

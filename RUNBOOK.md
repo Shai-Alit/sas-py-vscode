@@ -507,9 +507,12 @@ the working copy names an Azure Foundry resource, its endpoint, and deployment
 names — org-identifying detail that would now be public and that buys a reader
 nothing. It lives in the `viyapy` project folder.
 
-☐ **Enable the repository-side settings** (all free on a public repo, and this
-repo went public 2026-08-12): Dependabot alerts, secret scanning, push
-protection, and private vulnerability reporting.
+☑ **Done; confirmed 2026-08-16.** The repository-side settings are on (all free
+on a public repo, and this repo went public 2026-08-12): Dependabot alerts,
+secret scanning, push protection, and private vulnerability reporting. Secret
+scanning and push protection were the last two, enabled 2026-08-16 — the other
+two had been on since the repo went public and, as with branch protection, the
+box was simply never ticked.
 
 ```bash
 gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input - <<'JSON'
@@ -522,6 +525,31 @@ gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input - <<'JSON'
 JSON
 gh api -X PUT  repos/Shai-Alit/sas-py-vscode/vulnerability-alerts
 gh api -X PUT  repos/Shai-Alit/sas-py-vscode/private-vulnerability-reporting
+```
+
+☐ **Enable `secret_scanning_non_provider_patterns`.** The 2026-08-16 API response
+shows it `disabled`, and it matters here more than the default suggests. Provider
+patterns match known vendor formats — an AWS key, a GitHub token. **A SAS Viya
+bearer token is a plain JWT that no vendor pattern claims**, so provider-only
+scanning does not cover the one credential this project actually handles.
+Generic-pattern detection is the arm that would. It is noisier, which on a repo
+this size is a fair trade. Whether push protection blocks on generic patterns as
+reliably as on provider ones is unconfirmed, so `check:secrets` stays either way.
+
+```bash
+echo '{"security_and_analysis":{"secret_scanning_non_provider_patterns":{"status":"enabled"}}}' | gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input -
+```
+
+☐ **Reconcile `allow_merge_commit` with A3.** A3 above says the repo is
+squash-merge only. The 2026-08-16 API response says `allow_squash_merge: true`,
+`allow_rebase_merge: false`, and `allow_merge_commit:` **`true`** — so the claim
+is not backed by the configuration. Nothing has gone wrong, because branch
+protection's linear-history rule blocks a merge commit on `main` regardless; but
+a record that says one thing while the config says another is the defect this
+section has already been bitten by twice. Turning it off costs nothing.
+
+```bash
+gh api -X PATCH repos/Shai-Alit/sas-py-vscode -F allow_merge_commit=false
 ```
 
 ☐ Tighten **Settings → Actions → General → Fork pull request workflows** to

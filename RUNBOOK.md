@@ -2218,6 +2218,15 @@ every time. The first five will not move the ratchet; do not raise it hopefully.
 to the denominator and the measured numbers may rise. Floor the thresholds to
 what the run reports rather than to what looks tidy.
 
+**Measured 2026-08-15, and the ratchet does not move.** `sessionRequest.ts` scores
+100 on all four counters, and the aggregate went 89.65 → **89.79** statements,
+88.77 → **88.83** functions, 94.31 → **94.34** branches. Every one of those rounds
+down to the threshold already in `.c8rc.json` (89/89/88/94), so it stays as it is.
+That is the ratchet working, not the ratchet being skipped: a fully covered module
+of this size moves an aggregate by a tenth of a point, and testing.md's *round
+down further than feels necessary* exists precisely so a tenth of a point on one
+platform is not a red build on another.
+
 ☐ **Manual check against your Viya, 2a-iii.** The five defects above were all
 found by hand and four of them are only observable by hand, so this is the gate
 on the slice rather than a nicety. It replaces the 2a-ii procedure rather than

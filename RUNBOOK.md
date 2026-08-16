@@ -1901,6 +1901,13 @@ first and have to be rewritten around it.
   union rather than two booleans because `createIfNone` and `silent` together are
   rejected at runtime.
 
+  **Corrected 2026-08-15 by the manual run below.** `forceNewSession` skips the
+  *picker* and nothing else. It does not stop VS Code substituting an account of
+  its own choosing, which it does whenever we name none — see #137. The paragraph
+  above is left as written because the reasoning it records is still why this arm
+  uses `forceNewSession`; it was simply incomplete, and being incomplete cost a
+  live sign-in to the wrong deployment.
+
   The silent path carries `auth.account` — **not** the hint — into `clientFor()`,
   so the per-request refresh names whoever was actually signed in, including
   after an interactive flow where there was no hint to begin with, and does it
@@ -2155,15 +2162,80 @@ first and have to be rewritten around it.
   refresh token. The second asserts the info line fires exactly once and that the
   next read falls back to the debug one, which is the claim the level rests on.
 
+- ☑ **#137 — stop VS Code's remembered account overriding the active profile.**
+  A sixth defect, found by the manual run below on 2026-08-15, and a defect *in*
+  #84 rather than one it left behind: with two profiles on two deployments,
+  switching to the second and running **Connect** opened the browser on the
+  first deployment's SASLogon.
+
+  `getSession` does not pass our options to our own provider unchanged.
+  VS Code's `doGetSession`
+  (`vs/workbench/api/browser/mainThreadAuthentication.ts`, read at
+  `release/1.104`) computes
+  `accountToCreate = options.account ?? matchingAccountPreferenceSession?.account`
+  and hands that to `createSession`. Naming no account does not leave the choice
+  open — it delegates it to the *account preference*, which the host stored
+  under `updateAccountPreference` at the end of the last interactive
+  `getSession` that succeeded. In the run below that was the reload-and-Connect
+  on the first profile. `createSession` then honours `options.account` above the
+  active profile, which it does on purpose so the Accounts menu's *sign in
+  again* row acts on the row it was clicked on, and it has no way to tell a
+  preference the host recalled from an account the user chose.
+
+  Fixed by adding `clearSessionPreference: true` to the `new` arm.
+  `doGetSession` calls `removeAccountPreference` *before* it reads the
+  preference, so `accountToCreate` falls back to `undefined` and the provider
+  decides from the active profile. Not added to `known`, which already names an
+  account and never consults the preference, and deliberately not to `silent`,
+  which the Accounts menu polls — clearing is a write, and a read that mutates
+  on every poll is not a read.
+
+  **Why no test caught it, which is the more useful half.** The manager's
+  `deps.authSession` port is injected one frame *above* the mapping from request
+  to options, so every existing test could assert which `AuthRequest` was chosen
+  and none could assert what it became. The mapping now lives in
+  `src/auth/sessionRequest.ts` — pure, `import type * as vscode`, therefore
+  inside the coverage denominator by ADR-0009's mechanical rule — with
+  `test/unit/auth-session-request.test.ts` stating each arm as a whole-object
+  literal. `AuthRequest` moved there with it. **The lesson generalises: an
+  injected seam decides what is testable, and a seam above the decision makes
+  the decision invisible.**
+
+  Two related host behaviours worth knowing before touching this again, both
+  read out of the same function. `isAccessAllowed`, `updateAllowedExtensions`
+  and `_getAccountPreference` all key on **`account.label`**, never on
+  `account.id` — our label is the user's display name, so one person signed in
+  to two deployments is one account as far as the host's bookkeeping goes. And
+  after `createSession` returns, a `do…while` compares the requested and
+  returned labels and shows a modal **Incorrect account detected** if they
+  differ, so a provider that ignores the hint gets a dialog rather than silence.
+
 **Testing shape.** `authProvider.ts` and `commands.ts` are host-only and outside
-the c8 denominator (ADR-0009), so these land as **integration** tests — which
-`npm run verify` does not run. Hand over `npm run test:integration` as well, every
-time. The ratchet will not move; do not raise it hopefully.
+the c8 denominator (ADR-0009), so the first five land as **integration** tests —
+which `npm run verify` does not run. Hand over `npm run test:integration` as well,
+every time. The first five will not move the ratchet; do not raise it hopefully.
+**#137 is the exception**: it adds a pure module and a unit suite, so it does add
+to the denominator and the measured numbers may rise. Floor the thresholds to
+what the run reports rather than to what looks tidy.
 
 ☐ **Manual check against your Viya, 2a-iii.** The five defects above were all
 found by hand and four of them are only observable by hand, so this is the gate
 on the slice rather than a nicety. It replaces the 2a-ii procedure rather than
 extending it: run this one from the top.
+
+**Run 2026-08-15, steps 1–5 passed and step 6 failed.** Recorded here rather than
+in a commit message because the next reader needs the outcome next to the steps
+that produced it. Steps 1 through 5 behaved exactly as written, including #134's
+single command from cold, the context write-back into `settings.json` — which
+this run **confirms**, closing the item 2a-ii left as *unconfirmed rather than
+failed* — and #132's `Reconnected to the SAS Viya session for this folder.` after
+a reload. Step 6 opened the browser on the **first** profile's deployment after
+switching to the second, which is #137 above; the run stopped there and resumes
+from step 6 once the fix is in. Two things the failure incidentally proved: the
+refusal guard would have caught it, since it only stayed quiet because the
+sign-in was cancelled before completing, and **Sign In** is unaffected, because
+that command calls the provider directly and never gives the host the chance to
+substitute anything.
 
 Every expected line below is quoted **exactly** as the code writes it, and each
 is marked either **notification** (a toast in the bottom right) or **log** (a
@@ -2278,11 +2350,27 @@ level — including the one step 4 exists to read.
 
    Now run **Python on Viya: Connect to SAS Viya**. The correct behaviour is
    that **your browser opens on the second deployment**, asking you to sign in
-   to it. What must **not** happen is the notification
+   to it. Read the **host in the address bar**, not the page — which deployment
+   was asked for is the entire assertion of this step, and a login page from the
+   wrong deployment looks exactly like a login page from the right one. What
+   must **not** happen is the notification
    `The account chosen is not the one "<name>" uses. Run Python on Viya: Switch
    Connection Profile to change which deployment this folder uses.` — that is
    the old defect verbatim, advice to run the command you have just run, and
    seeing it means the account hint was not honoured.
+
+   Two dialogs to expect, of which only one is a finding. **Before** the browser
+   opens, VS Code — not this extension — puts up a modal reading roughly *The
+   extension 'Python on Viya' wants you to sign in again using SAS Viya*, with a
+   **Sign In** button. Press it. That is the host confirming an extension may
+   start a fresh sign-in while a session is already live; it appears on this path
+   whatever deployment is about to be asked for, and the wording is VS Code's and
+   shifts between releases, so it is not evidence either way. A dialog headed
+   **Incorrect account detected**, on the other hand, offering to continue with
+   an account you did not pick, *is* a finding: it can only be reached when the
+   host has filled in a remembered account behind our back, which the request
+   this slice sends now explicitly clears (#137). Seeing it means the fix has
+   regressed.
 
    With a made-up endpoint the browser opens on a page that does not load, and
    the **Sign in to SAS Viya** box opens beside it and waits — indefinitely, and

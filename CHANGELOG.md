@@ -545,6 +545,25 @@ called out under **Changed** with a migration note.
   the access token lasts, and the account leaving the menu on its own looked
   exactly like a fault; it is now stated once, at information level, naming the
   deployment. Neither line quotes a token or a correlation id.
+- Connecting after switching profile no longer signs you in to the deployment you
+  switched *away* from. Found by hand against two live deployments. Asking the
+  editor for a session without naming an account does not leave the choice open:
+  VS Code fills in the account it remembered from the last interactive sign-in
+  and passes that to the provider, which honours a named account above the active
+  profile — deliberately, because that is how the Accounts menu's *sign in again*
+  row has to behave. The two rules are each correct and together they sent the
+  browser to the wrong SASLogon. The request now clears that remembered account,
+  so a deployment nobody has signed in to yet is decided by the active profile and
+  nothing else. Only the interactive request clears it: a request that already
+  names an account never consulted the preference, and the Accounts menu's poll
+  must not write anything at all.
+
+  The mapping from "which kind of session do we want" to the options the editor
+  actually receives now lives in a module of its own, `src/auth/sessionRequest.ts`,
+  and is unit-tested. It was previously inline, one frame *below* the seam the
+  tests inject at, which is why a green suite had nothing to say about a wrong
+  deployment: every test could see which request was chosen and none could see
+  what it turned into.
 
 ### Changed
 

@@ -43,6 +43,7 @@ import * as vscode from "vscode";
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import { isSignInCancelled } from "../auth/cancellation";
 import { accountForEndpoint } from "../auth/identity";
+import { getSessionOptions, type AuthRequest } from "../auth/sessionRequest";
 import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { bindingMatches, type SessionBinding } from "./binding";
@@ -98,39 +99,6 @@ export interface ComputeConnection {
   /** As last read. A state is a fact about a moment; re-read before acting on it. */
   readonly session: ComputeSession;
 }
-
-/**
- * Which of the three ways to ask VS Code for a session is wanted.
- *
- * A union rather than the two booleans `getSession` actually takes, because only
- * three of their four combinations mean anything and one of them is rejected at
- * runtime: `createIfNone` and `silent` together throw. Naming the three cases
- * puts that constraint in the type instead of in a comment nobody reads twice.
- *
- * - `known` — the deployment is already signed in to and we know as whom.
- *   `createIfNone` plus the account, so an unexpired session comes straight
- *   back and an expired one is renewed without a picker.
- * - `new` — nothing is signed in to *this* deployment. `forceNewSession`, not
- *   `createIfNone`: with another deployment's account already present,
- *   `createIfNone` offers a picker listing accounts that cannot serve this
- *   profile, and picking one is the mistake this whole change exists to stop.
- *   Where nothing at all is signed in the two are equivalent — the API contract
- *   says `forceNewSession` "will behave identically to createIfNone" when there
- *   are no existing sessions — so this one arm covers both.
- * - `silent` — behind a request already in flight. Answers from what is held or
- *   not at all, and shows nothing either way.
- */
-export type AuthRequest =
-  | {
-      readonly kind: "known";
-      readonly account: vscode.AuthenticationSessionAccountInformation;
-    }
-  | { readonly kind: "new" }
-  | {
-      readonly kind: "silent";
-      readonly account?:
-        vscode.AuthenticationSessionAccountInformation | undefined;
-    };
 
 /**
  * The ports this class would otherwise reach for on the `vscode` namespace.
@@ -696,10 +664,14 @@ export class ComputeSessionManager implements vscode.Disposable {
   }
 
   /**
-   * The three ways this asks for a token. See {@link AuthRequest} for why three.
+   * The one call to `getSession` this extension makes. See {@link AuthRequest}
+   * for the three shapes a request comes in, and {@link getSessionOptions} for
+   * what each one turns into — including why the `new` arm has to clear the
+   * host's remembered account.
    *
-   * Exhaustive `switch`, no `default`: a fourth arm should stop compiling here
-   * rather than silently fall through to whichever of these looked closest.
+   * That mapping is next door and pure on purpose. It used to be a `switch`
+   * here, which meant the injected port below sat *above* the only code that
+   * knew what we actually asked for, and no test could reach it.
    */
   private async askForSession(
     request: AuthRequest,
@@ -707,24 +679,11 @@ export class ComputeSessionManager implements vscode.Disposable {
     const get = this.deps.authSession;
     if (get !== undefined) return await get(request);
 
-    switch (request.kind) {
-      case "known":
-        return await vscode.authentication.getSession(AUTH_PROVIDER_ID, [], {
-          createIfNone: true,
-          account: request.account,
-        });
-      case "new":
-        return await vscode.authentication.getSession(AUTH_PROVIDER_ID, [], {
-          forceNewSession: true,
-        });
-      case "silent":
-        return await vscode.authentication.getSession(AUTH_PROVIDER_ID, [], {
-          silent: true,
-          ...(request.account === undefined
-            ? {}
-            : { account: request.account }),
-        });
-    }
+    return await vscode.authentication.getSession(
+      AUTH_PROVIDER_ID,
+      [],
+      getSessionOptions(request),
+    );
   }
 
   /**

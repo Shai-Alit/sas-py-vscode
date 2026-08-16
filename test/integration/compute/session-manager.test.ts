@@ -12,10 +12,10 @@ import type {
 } from "../../../src/compute/client";
 import { SignInCancelledError } from "../../../src/auth/cancellation";
 import { accountId } from "../../../src/auth/identity";
+import type { AuthRequest } from "../../../src/auth/sessionRequest";
 import { SessionBindingStore } from "../../../src/compute/bindingStore";
 import {
   ComputeSessionManager,
-  type AuthRequest,
   type ComputeProfileSource,
   type ComputeSessionDeps,
 } from "../../../src/compute/sessionManager";
@@ -691,9 +691,10 @@ describe("compute session manager", () => {
 
     assert.ok(await manager.connect(), "the connect produced no session");
 
-    // `forceNewSession`, not `createIfNone`. With another deployment's account
-    // present, `createIfNone` would offer it, and accepting it is the mistake
-    // this change exists to prevent.
+    // Which is as far as this tier can see. What `new` *becomes* — and in
+    // particular that it clears the account the host would otherwise substitute
+    // — is asserted in `test/unit/auth-session-request.test.ts`, because the
+    // port injected above is what stands in for `getSession` here.
     assert.deepEqual(asked, [{ kind: "new" }]);
   });
 

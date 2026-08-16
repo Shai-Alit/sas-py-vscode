@@ -99,9 +99,11 @@ administers the deployment which context is the right one.
 
 ## When it does not work
 
-**Connect is greyed out in the Command Palette.** Either no connection profile
-exists yet — run **Python on Viya: Add Connection Profile** — or the folder is
-not trusted, or you are already connected.
+**Connect does not appear in the Command Palette.** A command that is currently
+unavailable is left out of the palette rather than shown greyed, so a missing
+entry is the normal way this looks. Either no connection profile exists yet — run
+**Python on Viya: Add Connection Profile** — or the folder is not trusted, or you
+are already connected.
 
 **"Select a SAS Viya connection profile before connecting."** Profiles exist but
 none is active in this window. Run **Python on Viya: Switch Connection Profile**.

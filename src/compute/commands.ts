@@ -23,9 +23,11 @@
  *
  * A context key, set here rather than inside the manager, because it is a fact
  * about the *window's UI* rather than about the session: it drives command
- * enablement in `package.json` so that Disconnect is greyed out when there is
- * nothing to disconnect. It follows the active profile, so switching to a
- * profile with no session clears it while the first session stays alive.
+ * enablement in `package.json` so that Disconnect is not offered when there is
+ * nothing to disconnect — VS Code answers a false `enablement` by leaving the
+ * command out of the Command Palette entirely, so the entry disappears rather
+ * than dimming. It follows the active profile, so switching to a profile with
+ * no session clears it while the first session stays alive.
  */
 
 import * as vscode from "vscode";

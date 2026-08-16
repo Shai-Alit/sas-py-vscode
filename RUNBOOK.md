@@ -1691,10 +1691,11 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
      the profile's `context` in `settings.json`, *Connect*, and Cancel the
      *Reading compute contexts…* progress instead. Before the fix that showed
      "could not reach the compute service"; it should now show nothing.
-  9. **Trust.** *Workspaces: Manage Workspace Trust* → Restricted Mode. Both
-     *Connect* and *Sign In* should be **greyed out** in the Command Palette.
-     The manager's own refusal behind that gate is covered by an integration
-     test; what only a human can confirm is that the palette entry is disabled
+  9. **Trust.** *Workspaces: Manage Workspace Trust* → Restricted Mode. Neither
+     *Connect* nor *Sign In* should appear in the Command Palette at all —
+     VS Code removes a command whose `enablement` is false rather than dimming
+     it. The manager's own refusal behind that gate is covered by an integration
+     test; what only a human can confirm is that the palette entry is gone
      rather than merely failing when run.
 
   **Optional cross-check from the Viya side.** The session id is deliberately
@@ -2275,6 +2276,16 @@ title exactly as it is written in bold, and press Enter. They all sit under a
 This paragraph is here because its absence is what made the first run of the
 2a-ii procedure fail.
 
+**A command that is not available is *missing*, not greyed.** Several steps below
+check the Command Palette, and this is how to read them. Every command in
+`package.json` controls its availability through `enablement` alone — there are
+no `menus.commandPalette` entries — and VS Code answers a false `enablement` by
+**leaving the command out of the palette entirely**. So "must not be available"
+means you type the title and *nothing matches*. Confirmed by the 2026-08-15 run,
+where Restricted Mode removed **Sign In** and **Sign Out** from the list rather
+than dimming them. Earlier versions of this procedure said "greyed out", which
+made a correct result look like a broken build.
+
 **Turn the log up before anything else.** Run **Python on Viya: Show Log** to
 open the Output panel on our channel. Then run **Developer: Set Log Level…**,
 choose **Python on Viya** from the first list, and **Debug** from the second.
@@ -2393,8 +2404,8 @@ level — including the one step 4 exists to read.
 
    Now **Switch Connection Profile** back to the first one, and look at the
    Command Palette rather than running anything: **Python on Viya: Connect to
-   SAS Viya** must be **greyed out**, and **Disconnect from SAS Viya** must be
-   available. That is the same fact as "the session is still held", read off the
+   SAS Viya** must be **absent from the list**, and **Disconnect from SAS Viya**
+   must be there. That is the same fact as "the session is still held", read off the
    `pythonOnViya.connected` enablement instead of off the log — profile 1's
    session survived the whole excursion to profile 2, which is what one live
    session per profile means and what upstream's process-global singleton cannot
@@ -2442,10 +2453,10 @@ level — including the one step 4 exists to read.
    asked an impossible question, not a defect — but it looks exactly like one.
 
    Read the cold state off the UI rather than assuming it. Open the Command
-   Palette: **Connect to SAS Viya** must be available and **Disconnect from SAS
-   Viya** greyed out, which is `pythonOnViya.connected` saying no session is
-   held. Then open the **Accounts** menu and confirm your Viya account is no
-   longer listed, which is the token half. If Disconnect is still available you
+   Palette: **Connect to SAS Viya** must be listed and **Disconnect from SAS
+   Viya** must not appear at all, which is `pythonOnViya.connected` saying no
+   session is held. Then open the **Accounts** menu and confirm your Viya account
+   is no longer listed, which is the token half. If Disconnect is still there you
    are not cold, and everything below will pass without testing anything.
 
    Now run **Python on Viya: Sign In**, and when the **Sign in to SAS Viya** box
@@ -2467,14 +2478,14 @@ level — including the one step 4 exists to read.
 9. **Disconnect, and prove the binding was cleared.** Run **Python on Viya:
    Disconnect from SAS Viya**. There is deliberately **no** notification for
    this; the log says `Ended the SAS Viya session.` and that is all. Then check
-   the palette: **Disconnect** is now **greyed out** and **Connect** is
-   available again, which is `pythonOnViya.connected` following the truth.
+   the palette: **Disconnect** has **gone from the list** and **Connect** is
+   back, which is `pythonOnViya.connected` following the truth.
 
    Do **not** look for `There is no SAS Viya session to disconnect.` here. That
    message exists for callers the enablement cannot reach — a keybinding, a
-   second window, another extension — and from the palette the command is
-   disabled before it can produce it. `sessionManager.ts` says as much where the
-   race is handled.
+   second window, another extension — and from the palette the command is not
+   offered at all, so it never gets the chance. `sessionManager.ts` says as much
+   where the race is handled.
 
    Then **Connect** once more. It must log `Started a SAS Viya session on compute
    context "…"` and **not** `Reconnected` — a *Reconnected* here would mean
@@ -2496,15 +2507,15 @@ level — including the one step 4 exists to read.
 
 10. **Trust.** Run **Workspaces: Manage Workspace Trust** and put the folder back
     into Restricted Mode. In the Command Palette, **Python on Viya: Sign In**
-    and **Python on Viya: Sign Out** must be **greyed out** — the refusal behind
-    that gate is covered by an integration test, and what only a human can
-    confirm is that the palette entry is disabled rather than merely failing
-    when run. The Accounts menu should show no **SAS Viya** account. Trust the
-    folder again and the account comes back without a reload.
+    and **Python on Viya: Sign Out** must **not be listed at all** — the refusal
+    behind that gate is covered by an integration test, and what only a human can
+    confirm is that the palette entry is gone rather than merely failing when
+    run. The Accounts menu should show no **SAS Viya** account. Trust the folder
+    again and the account comes back without a reload.
 
     Those two commands are the clean test and **Connect is not**: its enablement
     is `!pythonOnViya.connected` as well as `isWorkspaceTrusted`, and step 9
-    deliberately left a session, so it would be greyed out either way and tells
+    deliberately left a session, so it would be missing either way and tells
     you nothing about trust. Profile management is meant to keep working without
     trust, so **Add Connection Profile** and **Switch Connection Profile** should
     both stay available — see ADR-0002.

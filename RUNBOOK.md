@@ -1619,7 +1619,13 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   The drag is still `scripts/` at 64.76, unchanged and unmoved by this slice —
   the argument flagged after the 1b-i re-baseline is still waiting for its own
   slice, and this number will keep pointing at it until it gets one.
-- ☐ **Manual check against your Viya.** Nothing below is reachable from an
+- ☑ **Manual check against your Viya.** Run 2026-08-15; what it found is
+  recorded below it. **Superseded by the 2a-iii procedure** at the end of that
+  slice, which starts from the same cold state and covers these steps as well —
+  run that one rather than this one. Kept here because the findings underneath
+  it only make sense against the steps that produced them.
+
+  Nothing below is reachable from an
   automated test: the integration host cannot sign in to a real deployment,
   cannot be made untrusted, and cannot wait fifteen minutes. Written out in full
   because "connect and see if it works" is how a manual check becomes a manual
@@ -2153,6 +2159,272 @@ first and have to be rewritten around it.
 the c8 denominator (ADR-0009), so these land as **integration** tests — which
 `npm run verify` does not run. Hand over `npm run test:integration` as well, every
 time. The ratchet will not move; do not raise it hopefully.
+
+☐ **Manual check against your Viya, 2a-iii.** The five defects above were all
+found by hand and four of them are only observable by hand, so this is the gate
+on the slice rather than a nicety. It replaces the 2a-ii procedure rather than
+extending it: run this one from the top.
+
+Every expected line below is quoted **exactly** as the code writes it, and each
+is marked either **notification** (a toast in the bottom right) or **log** (a
+line in the Output panel). If what you see differs from what is quoted, that is
+a finding even when it looks like the same thing said differently — a message
+that has drifted from the source is how the next reader is misled.
+
+**What you need.** One working deployment, and a *second endpoint that does not
+have to work*. Step 6 is the one this slice exists for and it needs two
+profiles pointing at two **different** addresses; whether the second one answers
+is beside the point, because what is being checked is which account the editor
+is asked for. A made-up host such as `https://viya2.example.com` is enough.
+
+**Setting up.** Open `sas-py-vscode` in VS Code and press `F5`. That runs the
+*Run Extension* launch configuration, which builds first and then opens a second
+window titled **[Extension Development Host]**. **Do not use *Run Extension
+(untrusted workspace)*** — its `--disable-workspace-trust` flag turns the trust
+feature off, which trusts everything, so it does the opposite of its name. It is
+on the unfiled list.
+
+In the dev host, `File ▸ Open Folder` and open a scratch folder — any folder,
+but it must be one, because the session binding lives in `workspaceState` and
+there is none without a folder. Click **Yes, I trust the authors** when asked.
+
+**Every command below is run the same way**: press `Ctrl+Shift+P`, type the
+title exactly as it is written in bold, and press Enter. They all sit under a
+**Python on Viya** category, so typing `Python on Viya` lists every one of them.
+This paragraph is here because its absence is what made the first run of the
+2a-ii procedure fail.
+
+**Turn the log up before anything else.** Run **Python on Viya: Show Log** to
+open the Output panel on our channel. Then run **Developer: Set Log Level…**,
+choose **Python on Viya** from the first list, and **Debug** from the second.
+Several lines below are written at `debug` and are invisible at the default
+level — including the one step 4 exists to read.
+
+1. **Start from nothing.** If any profile already exists from an earlier run,
+   run **Python on Viya: Sign Out**, then **Python on Viya: Delete Connection
+   Profile** for each, confirming with **Delete**. The point is that step 2
+   begins signed out, because "signed in already" quietly skips the half of
+   this procedure that matters. The status bar at the bottom should show a
+   server icon and the words **No profile**.
+
+2. **Add a profile, and leave the context empty.** **Python on Viya: Add
+   Connection Profile**. Give it a name at *Profile name*; your endpoint at *SAS
+   Viya endpoint*; then press Enter on *Compute context (optional — you can
+   choose one later)* **without typing anything**, which is what puts the
+   context picker on the path in step 3; press Enter on *OAuth client ID
+   (optional — leave empty on Viya 4 2022.11 and later)* as well, so the
+   built-in `vscode` client is used and no client-secret prompt appears.
+
+   Log: `Added connection profile "<name>".` The status bar now shows the
+   profile name.
+
+3. **One command from cold reaches a session (#134).** Run **Python on Viya:
+   Sign In** — *not* Connect. In order, expect: your browser opening on the
+   deployment's login page; a **Sign in to SAS Viya** input box at the top of
+   the editor; a short code displayed by Viya after you approve the consent
+   page, which you paste into that box; then a *Reading compute contexts…*
+   progress, a quick pick titled *Select a compute context for this connection
+   profile*, and a *Connecting to SAS Viya…* progress.
+
+   Notification: `Signed in as <your name>, and connected using profile
+   "<name>".` — **one** notification naming both halves. Two separate messages,
+   or a sign-in that stops without connecting, is a finding.
+
+   Log, in order: `Signed in to <endpoint>.` then `Started a SAS Viya session on
+   compute context "<what you picked>".`
+
+4. **The context write-back landed.** This is the step recorded as *unconfirmed
+   rather than failed* after the 2a-ii run, so confirm it properly. Open the dev
+   host's `settings.json` (**Preferences: Open User Settings (JSON)**) and find
+   `pythonOnViya.connectionProfiles` → your profile → `context`. It must now
+   hold exactly what you picked in step 3. User settings is the right file for a
+   fresh folder because the store writes to `Global` unless the setting already
+   exists at workspace scope; if you have put profiles in a workspace file
+   before, look there instead.
+
+   Two things make this worth its own step. It edits the user's settings as a
+   side effect of connecting, which is the kind of thing that should never be
+   assumed to have worked; and the write happens **after** the session starts,
+   so a context that fails to start a session must *not* be written. If you want
+   the negative half, `Ctrl+Z` is not enough — clear the field by hand in
+   `settings.json` and see step 9.
+
+5. **Reload, and read the reattach off the log (#132).** Run **Developer: Reload
+   Window**. Wait for the window to come back, run **Python on Viya: Show Log**
+   again, then **Python on Viya: Connect to SAS Viya**.
+
+   Log: `Reconnected to the SAS Viya session for this folder.` It must **not**
+   say `Started a SAS Viya session` — a second *Started* means the stored id was
+   not used and a SAS process has been orphaned. No context picker this time
+   either, because step 4 wrote the answer down.
+
+   Notification: `Connected to SAS Viya using profile "<name>".`
+
+   Now read what is around it, which is what #132 changed. At `debug` you should
+   see `no stored sign-in for <endpoint>` **only** for profiles you have never
+   signed in to — not for this one. And the line
+   `The sign-in for <endpoint> has expired, and no stored sign-in was kept to
+   renew it from. Sign in again to continue.` should **not** appear at all: it
+   means the deployment issued no refresh token, and this deployment demonstrably
+   does, because the reload above restored the session. If you do see it, that is
+   a finding worth the whole trip.
+
+6. **Two profiles, two deployments — the defect this slice is named for (#84).**
+   Add a second profile with **Python on Viya: Add Connection Profile**, giving
+   it a different name and the second endpoint. Leave context and client ID
+   empty as before. Then **Python on Viya: Switch Connection Profile** and pick
+   the second one; the quick pick marks the current one *Currently in use*, and
+   the status bar should change to the new name.
+
+   Now run **Python on Viya: Connect to SAS Viya**. The correct behaviour is
+   that **your browser opens on the second deployment**, asking you to sign in
+   to it. What must **not** happen is the notification
+   `The account chosen is not the one "<name>" uses. Run Python on Viya: Switch
+   Connection Profile to change which deployment this folder uses.` — that is
+   the old defect verbatim, advice to run the command you have just run, and
+   seeing it means the account hint was not honoured.
+
+   With a made-up endpoint the browser opens on a page that does not load, and
+   the **Sign in to SAS Viya** box opens beside it and waits — indefinitely, and
+   on purpose, because it has `ignoreFocusOut` set. **Press `Escape` on it.**
+   The connect then ends silently with `Sign-in was cancelled.` at `info`. Do
+   not paste anything into the box: a code sent to a deployment that is not
+   there produces a real failure and an error toast, which tells you nothing
+   this step is asking about. The check has already passed by the time the
+   browser opens, because what is being checked is which deployment it asked
+   about.
+
+   Now **Switch Connection Profile** back to the first one, and look at the
+   Command Palette rather than running anything: **Python on Viya: Connect to
+   SAS Viya** must be **greyed out**, and **Disconnect from SAS Viya** must be
+   available. That is the same fact as "the session is still held", read off the
+   `pythonOnViya.connected` enablement instead of off the log — profile 1's
+   session survived the whole excursion to profile 2, which is what one live
+   session per profile means and what upstream's process-global singleton cannot
+   do. (There is no way to make the manager *say* it returned a held connection:
+   it returns before it logs anything, which is the point.)
+
+   Note the honest gap while you are here: two profiles pointing at the **same**
+   deployment share one account id, so the hint cannot separate them and the
+   guard above may still fire. That is the known narrow case, written up under
+   #84 — not a new finding.
+
+7. **A profile that is down must not stall the menu (#133).** With both profiles
+   present, open the **Accounts** menu — the person icon at the bottom of the
+   Activity Bar, next to the gear. The account for the working deployment must
+   be listed, promptly, and it must be listed *whatever* the second profile is
+   doing.
+
+   The ten-second budget itself is **not** testable here, and it is worth
+   knowing why rather than trying and recording a false pass. A profile with no
+   stored sign-in never reaches the network at all — `resolve` takes the
+   `no stored sign-in for …` branch and returns — so a second profile you have
+   never signed in to costs nothing no matter what its endpoint does. To spend
+   the budget you would need a *stored* sign-in for a deployment that hangs,
+   which means signing in to it first, which means it working. That arm is
+   covered by an integration test on an injected `resolveBudgetMs`, and the debug
+   line it writes is
+   `renewing the sign-in for <endpoint> is taking longer than 10000ms; answering
+   without it` if you ever do see it in the wild.
+
+8. **Cancelling says nothing (#131).** Get back to a cold state first, and in
+   this order: **Python on Viya: Disconnect from SAS Viya**, then **Python on
+   Viya: Sign Out**. Both are needed, and the order is not cosmetic. Signing out
+   does not end the compute session, and a connect that finds one still held in
+   this window returns it without asking for a token — so with the session still
+   live there would be no sign-in to cancel and the step would pass by doing
+   nothing. Sign out *first* and it is Disconnect that breaks instead: the
+   `DELETE` needs a token, cannot get one, and the log says `Ending the SAS Viya
+   session did not complete: …` at `warn` with no `Ended the SAS Viya session.`
+   line, leaving a session alive on the server. That is correct behaviour being
+   asked an impossible question, not a defect — but it looks exactly like one.
+
+   Now run **Python on Viya: Sign In**, and when the **Sign in to SAS Viya** box
+   appears, press `Escape`.
+
+   Expected: **no dialog of any kind**, and in the log `Sign-in was cancelled.`
+   at `info`. What this replaces is `Signing in to SAS Viya failed` at `error`
+   plus a red toast, which is what the first manual run saw.
+
+   Repeat for the other entry point: run **Python on Viya: Connect to SAS Viya**
+   while signed out and press `Escape` on the same box. Again nothing should
+   appear — no error, and no *Running the contributed command … failed*.
+
+   Then sign in properly with **Python on Viya: Sign In** and let it finish. You
+   need a live session for step 9, and the third cancellation check lives there
+   rather than here because a connect that returns the session already held in
+   this window never draws a progress notification to cancel.
+
+9. **Disconnect, and prove the binding was cleared.** Run **Python on Viya:
+   Disconnect from SAS Viya**. There is deliberately **no** notification for
+   this; the log says `Ended the SAS Viya session.` and that is all. Then check
+   the palette: **Disconnect** is now **greyed out** and **Connect** is
+   available again, which is `pythonOnViya.connected` following the truth.
+
+   Do **not** look for `There is no SAS Viya session to disconnect.` here. That
+   message exists for callers the enablement cannot reach — a keybinding, a
+   second window, another extension — and from the palette the command is
+   disabled before it can produce it. `sessionManager.ts` says as much where the
+   race is handled.
+
+   Then **Connect** once more. It must log `Started a SAS Viya session on compute
+   context "…"` and **not** `Reconnected` — a *Reconnected* here would mean
+   Disconnect dropped our reference and left the session running on the server.
+
+   Now the remaining two cancellations, both of which must be silent. First:
+   **Disconnect** again, then **Connect**, and press **Cancel** on the
+   *Connecting to SAS Viya…* notification while it is up. Log: `Connecting to
+   SAS Viya was cancelled.` at `info`, and **no** error dialog.
+
+   Second, the arm review caught in 2a-ii (#127): delete the profile's
+   `context` value in `settings.json` so the picker comes back, **Connect**, and
+   press **Cancel** on the *Reading compute contexts…* progress instead. Same
+   line, same silence. What must **not** appear is `Could not reach the SAS Viya
+   compute service…` — that is what an aborted request looks like underneath,
+   and reporting it to someone who pressed Cancel is the defect. Then
+   **Connect** once more, pick a context, and let it finish, so the folder is
+   left with a session for step 10.
+
+10. **Trust.** Run **Workspaces: Manage Workspace Trust** and put the folder back
+    into Restricted Mode. In the Command Palette, **Python on Viya: Sign In**
+    and **Python on Viya: Sign Out** must be **greyed out** — the refusal behind
+    that gate is covered by an integration test, and what only a human can
+    confirm is that the palette entry is disabled rather than merely failing
+    when run. The Accounts menu should show no **SAS Viya** account. Trust the
+    folder again and the account comes back without a reload.
+
+    Those two commands are the clean test and **Connect is not**: its enablement
+    is `!pythonOnViya.connected` as well as `isWorkspaceTrusted`, and step 9
+    deliberately left a session, so it would be greyed out either way and tells
+    you nothing about trust. Profile management is meant to keep working without
+    trust, so **Add Connection Profile** and **Switch Connection Profile** should
+    both stay available — see ADR-0002.
+
+**The death path, if you have the time.** Unchanged by this slice, and the one
+step that cannot be hurried, so it is optional here rather than numbered above.
+Note the time of a connect, reload the window, wait until **sixteen minutes**
+past it — the idle reaper is 900 seconds from the session's last activity and
+nothing touches it in between — then **Connect**. Expect, at `info`, `The
+previous SAS Viya session has ended, so a new one will be started. Anything
+defined in it is gone.` followed by a new `Started` line, and **no** error
+dialog, because a session ending on its own schedule is ordinary.
+
+**Optional cross-check from the Viya side.** The compute session id is never
+logged on purpose, so find it by listing instead: with the `viya-api-probe`
+skill and `creds.json`, `GET /compute/sessions` and look for the one whose `name`
+is `python-on-viya`. Doing that either side of step 9 is the only way to see,
+from outside the editor, that Disconnect really took the session down.
+
+**Two things to expect that are already filed.** #130 is open: a request whose
+silent token refresh comes back empty is reported as `The SAS Viya sign-in for
+this profile has ended.` rather than as the network failure it usually is. It
+comes from the per-request token function, so it needs a connect that got past
+authentication — a Disconnect/Connect cycle against a deployment that has since
+become unreachable, not step 6, where `runConnect` returns before a client is
+ever built. And #135 is open on a compute context whose `createSession` link
+comes and goes; if a context you pick in step 3 fails to start a session, that
+is the one, and the picker is now reachable again because the write-back happens
+after success rather than before.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.

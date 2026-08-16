@@ -1619,7 +1619,13 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   The drag is still `scripts/` at 64.76, unchanged and unmoved by this slice —
   the argument flagged after the 1b-i re-baseline is still waiting for its own
   slice, and this number will keep pointing at it until it gets one.
-- ☐ **Manual check against your Viya.** Nothing below is reachable from an
+- ☑ **Manual check against your Viya.** Run 2026-08-15; what it found is
+  recorded below it. **Superseded by the 2a-iii procedure** at the end of that
+  slice, which starts from the same cold state and covers these steps as well —
+  run that one rather than this one. Kept here because the findings underneath
+  it only make sense against the steps that produced them.
+
+  Nothing below is reachable from an
   automated test: the integration host cannot sign in to a real deployment,
   cannot be made untrusted, and cannot wait fifteen minutes. Written out in full
   because "connect and see if it works" is how a manual check becomes a manual
@@ -1685,10 +1691,11 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
      the profile's `context` in `settings.json`, *Connect*, and Cancel the
      *Reading compute contexts…* progress instead. Before the fix that showed
      "could not reach the compute service"; it should now show nothing.
-  9. **Trust.** *Workspaces: Manage Workspace Trust* → Restricted Mode. Both
-     *Connect* and *Sign In* should be **greyed out** in the Command Palette.
-     The manager's own refusal behind that gate is covered by an integration
-     test; what only a human can confirm is that the palette entry is disabled
+  9. **Trust.** *Workspaces: Manage Workspace Trust* → Restricted Mode. Neither
+     *Connect* nor *Sign In* should appear in the Command Palette at all —
+     VS Code removes a command whose `enablement` is false rather than dimming
+     it. The manager's own refusal behind that gate is covered by an integration
+     test; what only a human can confirm is that the palette entry is gone
      rather than merely failing when run.
 
   **Optional cross-check from the Viya side.** The session id is deliberately
@@ -1824,6 +1831,726 @@ five lines usually are not.
    extension, or a second window ignores `enablement` entirely. Fixed by
    awaiting `this.connecting` (with the rejection swallowed, since a failed
    connect has already reported itself and is not disconnect's to re-raise).
+
+**A second review round, 2026-08-15**, on the fixes above. One non-blocking nit —
+`dispose` does not join an in-flight connect, unlike `disconnect` — was
+**accepted rather than fixed**, and the file says why: it runs while the window
+is closing, so the connect it would wait for only repopulates state about to be
+discarded, and `dispose` is synchronous so there is nowhere VS Code would honour
+the await. One blocking finding, the write-back naming the wrong profile, is
+recorded with the manual-test findings above because it is the second half of one
+story.
+
+```bash
+# ⛔ BARRIER: merge 2a-ii first.
+# 2a-iii — one account, one command
+git checkout -b phase-2a-iii-account-hint
+git commit -m "fix(auth): connect as the active profile's account"
+```
+
+☐ **2a-iii punch list.** Five defects, every one of them found by using the
+extension or by review, and **not one of them by the test suite** — which is the
+argument for the manual procedure above, not an argument against the tests. They
+are one slice because they are one file's worth of surface: #84 changes both
+`AuthProvider` method signatures, and the other four edit the same call paths.
+
+**Do #84 first.** The rest are cheap once it lands and expensive if they land
+first and have to be rewritten around it.
+
+- ☑ **#84 — ask VS Code for the active profile's account, instead of refusing the
+  wrong one.** `runConnect` calls `authSession(true)` with no hint, VS Code hands
+  back whichever account it last used, and the manager then *refuses* because the
+  session id (which **is** the profile id) does not match the active profile.
+  Sean hit this the first time he had two profiles: "it tells me in the drop down
+  that the other profile is the one selected, but when I try to connect it tells
+  me I'm using the profile that is NOT selected."
+
+  `AuthenticationGetSessionOptions.account` exists at our `^1.104.0` floor
+  (`@types/vscode` `index.d.ts` ~17815) and is documented as being passed down to
+  the provider "to be used for creating the correct session". Our `getSessions()`
+  and `createSession()` take **no arguments at all**, so today there is nothing
+  for VS Code to pass it *to* — both signatures have to widen before the caller
+  can ask for anything.
+
+  Honour it on **both** paths, and say so in a test each: the interactive
+  `createIfNone` connect, and the silent per-request refresh
+  (`getSession(…, { silent: true })`) that `ComputeClientConfig.token` calls on
+  every single request. Missing the silent one would leave the borrowed token
+  drifting back to the wrong account under a long-lived session, which is worse
+  than the bug being fixed because nothing would report it.
+
+  The refusal in `sessionManager.ts` **stays**. It becomes unreachable in normal
+  use rather than dead: it is the assertion that the hint was honoured, and an
+  extension host that ignores an option is exactly the kind of thing a guard is
+  for. What comes out is the *documentation* of it as a limitation — the
+  `::: warning A second profile is not usable yet` block in `docs/connecting.md`,
+  the **Known limitation** paragraph in `CHANGELOG.md`, and the troubleshooting
+  entry that tells the user to switch profile as a workaround. Removing those is
+  part of this item, not a follow-up.
+
+  **Done 2026-08-15.** The hint is derived rather than stored: `runConnect` reads
+  `vscode.authentication.getAccounts()` once and matches the active profile's
+  deployment against it with `accountForEndpoint()` in `src/auth/identity.ts`,
+  which lives beside the rule that *builds* an account id so both halves of the
+  format stay in one module. A unique match becomes `{ kind: "known", account }`;
+  **ambiguity degrades to no hint**, because two people signed in to one
+  deployment is exactly the case where guessing skips past the only UI that would
+  have told the user. No account at all is `{ kind: "new" }` —
+  `forceNewSession`, not `createIfNone`, because it covers both "nothing is
+  signed in" (the API documents them as identical there) and "accounts exist for
+  *other* deployments that a picker would otherwise offer". The three arms are a
+  union rather than two booleans because `createIfNone` and `silent` together are
+  rejected at runtime.
+
+  **Corrected 2026-08-15 by the manual run below.** `forceNewSession` skips the
+  *picker* and nothing else. It does not stop VS Code substituting an account of
+  its own choosing, which it does whenever we name none — see #137. The paragraph
+  above is left as written because the reasoning it records is still why this arm
+  uses `forceNewSession`; it was simply incomplete, and being incomplete cost a
+  live sign-in to the wrong deployment.
+
+  The silent path carries `auth.account` — **not** the hint — into `clientFor()`,
+  so the per-request refresh names whoever was actually signed in, including
+  after an interactive flow where there was no hint to begin with, and does it
+  without a second `getAccounts` round trip.
+
+  On the provider side the order is **resolve everything, publish everything,
+  return the subset**: `getSessions` filters only what it returns, because
+  publishing a filtered list would fire a change event announcing every other
+  session as removed and flip `pythonOnViya.authorized` off. `createSession`
+  signs in to the profile the named account belongs to rather than the active
+  one, and refuses — before opening a browser — an account no profile uses.
+- ☑ **#134 — Sign In connects.** Sean's design call, 2026-08-15: "I want the
+  design to be that it should automatically connect once you sign in. It's
+  pointless and a waste of time to make the user do two things. What other point
+  is there of signing in if not to connect to a session?"
+
+  Applies to **our** *Python on Viya: Sign In* command only. The Accounts-menu
+  entry must **not** connect: it is VS Code's own UI, it is polled, it has no
+  profile in hand, and starting a SAS process from a menu the user opened to read
+  is the opposite of the ADR-0002 posture. Depends on #84 for the same reason the
+  connect does — signing in has to know which account it just became.
+
+  `docs/signing-in.md` and `docs/connecting.md` both currently describe two steps.
+  Connect stays a command; what changes is that you rarely need it.
+
+  **Done 2026-08-15.** `registerComputeCommands` now *returns* a connect closure —
+  `sessions.connect()` followed by the `pythonOnViya.connected` sync, showing no
+  message — and `src/extension.ts` builds compute first so it can hand that
+  closure to `registerAuthCommands`. The dependency points auth → compute in
+  exactly one place, and it is a structural `ConnectAfterSignIn` declared inside
+  `src/auth/commands.ts` (`() => Promise<{ profileName } | undefined>`) rather
+  than an import, so the two modules do not become mutually dependent to describe
+  one string.
+
+  The connect lives in the **command**, not in `createSession`, and that is the
+  whole mechanism by which the Accounts menu does not connect: both routes share
+  the provider, so anything put there would fire on a polled menu. Nothing has to
+  tell the two callers apart after the fact, and the test that would prove it is
+  the absence of a dependency — `AuthProvider` has no import, port or stub that
+  reaches a compute session.
+
+  One notification per command, either `Signed in as {0}, and connected using
+  profile "{1}".` or, when the connect did not happen, `Signed in to SAS Viya as
+  {0}.` — the manager has already reported its own failure and stays silent on a
+  cancellation, so the only fact left to carry is that the sign-in itself worked
+  and a second attempt is not what is needed. A failed sign-in does not connect
+  at all: there would be no token, so it would open a browser for a second
+  sign-in nobody asked for, on top of an error about the first.
+
+  `signIn` and `signOut` are now exported and take a deps object with `inform` /
+  `report` ports defaulting to the real `vscode.window` calls. That was forced:
+  the palette ids belong to the activated extension, so a test cannot register a
+  second copy of the handler to drive it, and a handler whose only observable
+  effect is a notification is untestable until the notification is a port. It
+  also sets up #131. Four tests in `test/integration/auth/commands.test.ts` cover
+  both messages, the no-profile arm and the failed-sign-in arm.
+
+  Docs updated as anticipated, though the emphasis landed the other way round:
+  the two commands now *meet in the middle* rather than one becoming rare, and
+  `docs/signing-in.md` gained a paragraph on why the Accounts menu is the one
+  place they differ. `docs/connecting.md` reframes Connect as the command for
+  *re*connecting.
+- ☑ **#133 — one unreachable profile must not stall the Accounts menu.**
+  `getSessions()` loops every profile **serially**, calling `resolve()` on each.
+  Sean's first deployment shuts down at weekends, so one dead endpoint costs a
+  full connect timeout before any later profile resolves — and that call is what
+  VS Code polls to draw the menu. Resolve them concurrently, and bound the wait
+  so a hung deployment degrades to "no session for that profile" rather than to a
+  spinner. A timeout here is not a policy about the deployment; it is a policy
+  about a UI poll.
+
+  **Done 2026-08-15.** Five decisions, in the order they had to be made.
+
+  **Concurrent, in the caller's order.** `Promise.all` over the profiles, with
+  the input order preserved, because `Promise.all` resolves in input order and
+  the alternative — appending each session as it lands — would reorder the
+  Accounts menu by whichever deployment answered fastest. A menu that shuffles
+  between polls is worse than a slow one.
+
+  **`RESOLVE_BUDGET_MS = 10_000`, and it is not a setting.** The two real
+  timeouts underneath are `tokenEndpoint.DEFAULT_TIMEOUT_MS = 30_000` and
+  `identity.DEFAULT_TIMEOUT_MS = 15_000`, so the serial worst case per dead
+  profile was forty-five seconds. Ten is a third of the first one and roughly the
+  point at which a menu reads as broken. Exposing it would invite someone to
+  raise it, which is the wrong direction: the fix for a slow deployment is not a
+  longer stall in a menu the editor polls.
+
+  **The budget bounds the answer, not the work.** The renewal is not cancelled
+  when the budget expires; it keeps running and warms `this.live`, so the next
+  poll — seconds later — serves it from memory. Nothing is wasted and the account
+  appears on its own. Deliberately rejected: re-publishing when the late renewal
+  lands. It would fire a change event from a call that has already returned, race
+  the `published` set, and on a deployment that is merely slow rather than dead
+  it would publish on **every** poll.
+
+  **An in-flight `resolving` map, keyed by profile id.** This is not an
+  optimisation, it is forced by the line above: once a caller can walk away from
+  a renewal, a poll every few seconds against a dead host opens a socket every
+  few seconds and closes none. Sharing the in-flight promise means the second
+  caller waits on the first request. A `.finally` clears the entry.
+
+  **`BUDGET_SPENT` as a `Symbol`, not `undefined`.** `undefined` is already a
+  real answer from `resolve()` — "there is nothing stored for this profile" — so
+  collapsing the two would log a slow-deployment debug line for every profile
+  that has simply never been signed in to, on every poll.
+
+  **The account named is the one worth waiting for.** `getSessions(scopes,
+  options)` already receives `options.account` since #84, and it separates the
+  two caller kinds exactly: a polled menu names nothing and is bounded; the
+  compute connect names an account and is waited for without limit, because it
+  would rather be slow than be told there is no session when there is. No new
+  plumbing — `getSessions` resolves the account to a profile id and hands it to
+  `allSessions` as the one exempt profile. Honest residual: a connect with no
+  hint to offer, which is a window with two profiles pointing at one deployment,
+  is bounded like a poll.
+
+  One pre-existing defect fell out on the way. `resolveOnce` now `catch`es, so a
+  rejected renewal — one unreadable keychain entry — no longer fails the whole
+  `Promise.all` and empties the menu of every other account. It logs
+  `Could not read the sign-in for {0}: {1}` at warn.
+
+  Four integration tests in `test/integration/auth/auth-provider.test.ts` under
+  "when one deployment does not answer", driven by a transport that holds a
+  matching URL open until released, with `resolveBudgetMs` injected at 50ms. The
+  harness needed one non-obvious thing: a **sticky** `released` flag, because a
+  renewal is two requests — the token then the identity — and the second is only
+  issued once the first answers, so a non-sticky release would re-hold the
+  identity call and hang the test.
+- ☑ **#131 — report a cancelled sign-in as a cancellation, not a failure.**
+  `browserFlow.ts:163` already knows: it logs "Sign-in was cancelled." at `info`
+  and the comment says "Neither is an error and neither gets a dialog." Then
+  `createSession` collapses the `undefined` into
+  `throw new Error("Signing in to SAS Viya did not complete.")` and
+  `reportSignInFailure` (`auth/commands.ts:131`) turns that into `[error]` plus an
+  error dialog. **Same family as #127**: the fact is known at the bottom of the
+  stack and dropped at the boundary.
+
+  The constraint that makes this awkward, and the reason it is on a list rather
+  than already done: an error thrown from `createSession` reaches a caller that
+  went through `vscode.authentication.getSession`, which is an **RPC hop**. The
+  error is serialised, so `instanceof` does **not** survive it and our
+  exported-error-types rule has no purchase across that boundary. The compute
+  path needs its own answer — most likely the command layer deciding before it
+  ever throws, rather than the caller classifying afterwards.
+
+  **Done 2026-08-15.** The guess above was wrong in a useful way: the command
+  layer *cannot* decide before it throws, because on the compute path the command
+  layer is on the far side of the hop and never sees the flow at all. So both
+  callers classify afterwards, and the work went into making the classification
+  survive the crossing.
+
+  **The marker is the `name`, not the class.** `vscode.authentication.getSession`
+  serialises a rejection and rebuilds it as a plain `Error` carrying `name`,
+  `message` and `stack`. `instanceof` is therefore false on the far side even
+  though the near side threw the real class. `name` is one of the three fields
+  that do survive, so `isSignInCancelled` reads that and nothing else. One
+  predicate for both callers, so the near side cannot silently keep working while
+  the far side rots.
+
+  **`Error` subclasses do not set `name`.** It inherits as `"Error"` after
+  compilation, so the constructor assigns it explicitly. Without that line the
+  marker is wrong *everywhere*, including where nothing was serialised — which is
+  the sort of thing that looks like an RPC problem for an afternoon.
+
+  **A thrown error, not a `{ok:false, reason}` union.** The tempting shape is for
+  `signInWithBrowser` to return its reason, since it already returns `undefined`
+  for a failure. Rejected: the fact has to reach `createSession`, which must
+  reject either way, and a returned reason is a value an intermediate frame can
+  drop by writing `if (tokens === undefined) return` — which is exactly how this
+  defect happened the first time. A throw cannot be dropped by accident.
+
+  **Its own module, `src/auth/cancellation.ts`.** Forced, not chosen:
+  `browserFlow.ts` throws it and `authProvider.ts` catches it, and authProvider
+  already imports browserFlow, so putting the class in either one makes a cycle.
+  The module imports nothing, which puts it *inside* the c8 denominator (ADR-0009)
+  — the one place in this slice where a unit test can reach the logic directly.
+
+  **Two cancellation sources, not one.** The browser and paste-box arm is in
+  `browserFlow.ts`; the masked client-secret prompt is in `authProvider.ts` and
+  the flow cannot see it, because dismissing it happens before the browser opens.
+  Both now throw the same error.
+
+  **What each caller does with it.** `commands.ts` returns without a dialog and
+  without an information message — a toast confirming that nothing happened is
+  still a toast, and the log line was already written where the cancellation
+  happened. `sessionManager.ts` turns it back into the `undefined` that every
+  other "no session" answer already uses, which is what stops it surfacing as
+  *Running the contributed command … failed*. Everything that is **not** a
+  cancellation still propagates there; reporting an unreachable deployment as an
+  ended sign-in is #130's, and swallowing it here would close #130 by hiding it.
+
+  Seven unit tests in `test/unit/auth-cancellation.test.ts` — including the
+  failure direction, which is the quieter defect: a deployment that refused would
+  show nothing at all. Integration tests cover the dismissed box in
+  `browser-flow.test.ts` (plus a new "does not read a refused exchange as a
+  cancellation"), the command in `commands.test.ts` (including a hand-built
+  post-hop error), and the connect in `session-manager.test.ts`.
+
+  **Recorded risk.** The RPC hop is not exercised for real anywhere. Driving it
+  needs the *activated* provider, whose browser ports no test can reach, so it
+  would open a real browser and block. `afterAnRpcHop` in the unit test states the
+  shape instead. If the editor ever changes what it copies, that test keeps
+  passing while the behaviour breaks — and the failure would be the loud
+  direction, a dialog for a cancellation, which is what we started with.
+- ☑ **#132 — say why a stored session was not used, at debug.** `resolve()` has
+  three branches that return `undefined` and one of them says nothing at all,
+  which is right for an Accounts-menu poll and wrong for the first reload after a
+  sign-in: it is why step 4 of the manual procedure could not be read off the log.
+  Debug level, no dialog, and it must not name a token, a refresh token or a
+  correlation id.
+
+  **Done 2026-08-15.** The silent branch turned out to be two facts wearing one
+  coat, and separating them is most of the value.
+
+  **Nothing stored and nothing in memory** is the ordinary state — a fresh
+  window, a sign-out, a profile nobody has used — and it goes to **debug**,
+  unlocalised, like every other debug line in this codebase. The Accounts menu
+  polls `getSessions` for every profile it can see, so at info a window with one
+  unused profile writes this line for as long as it stays open.
+
+  **Nothing stored but something in memory** is the interesting one, and it goes
+  to **info**, which is a deliberate deviation from the "debug level" written
+  above. It means the deployment issued no refresh token, so the session could
+  only ever last as long as its access token and the account has just left the
+  Accounts menu on its own — which from the outside is indistinguishable from a
+  defect. Two things earn the level: it fires **once**, because the same branch
+  drops the expired session and every later poll takes the quiet one, and a
+  `LogOutputChannel` shows info by default, so a line the user has to raise the
+  log level to find is a line that is not there when they go looking. `info` on a
+  log channel is not a notification; nothing pops up.
+
+  **The malformed case was already covered** one layer down: `SessionStore.read`
+  discards an entry it cannot parse and says so at warn, so what reaches this
+  branch is genuine absence. Worth knowing before adding a third message here.
+
+  Neither line names a token, a refresh token or a correlation id — both name the
+  endpoint, which the renewal-failure line beside them already does.
+
+  **Testing needed a new helper, and the wording is now under test.**
+  `recordingLog` in `test/helpers/auth-host.ts` delegates to the real cached
+  channel and keeps what was written, so a test can assert on level and text.
+  Almost nothing else in the suite should use it — asserting on wording turns
+  every rewording into a failing test — but here the log line *is* the whole
+  deliverable, and both branches return no session, so nothing else observable
+  tells them apart. It uses `Object.create` over the real channel rather than a
+  copy, which keeps `name`, `logLevel` and `dispose` real and dodges the
+  disposal trap in `testLogChannel`'s doc comment: the wrapper is new per
+  harness, the channel underneath is the cached one.
+
+  Two integration tests in `test/integration/auth/auth-provider.test.ts`, on a
+  new `refreshToken: false` harness option — a grant that succeeds and issues no
+  refresh token. The second asserts the info line fires exactly once and that the
+  next read falls back to the debug one, which is the claim the level rests on.
+
+- ☑ **#137 — stop VS Code's remembered account overriding the active profile.**
+  A sixth defect, found by the manual run below on 2026-08-15, and a defect *in*
+  #84 rather than one it left behind: with two profiles on two deployments,
+  switching to the second and running **Connect** opened the browser on the
+  first deployment's SASLogon.
+
+  `getSession` does not pass our options to our own provider unchanged.
+  VS Code's `doGetSession`
+  (`vs/workbench/api/browser/mainThreadAuthentication.ts`, read at
+  `release/1.104`) computes
+  `accountToCreate = options.account ?? matchingAccountPreferenceSession?.account`
+  and hands that to `createSession`. Naming no account does not leave the choice
+  open — it delegates it to the *account preference*, which the host stored
+  under `updateAccountPreference` at the end of the last interactive
+  `getSession` that succeeded. In the run below that was the reload-and-Connect
+  on the first profile. `createSession` then honours `options.account` above the
+  active profile, which it does on purpose so the Accounts menu's *sign in
+  again* row acts on the row it was clicked on, and it has no way to tell a
+  preference the host recalled from an account the user chose.
+
+  Fixed by adding `clearSessionPreference: true` to the `new` arm.
+  `doGetSession` calls `removeAccountPreference` *before* it reads the
+  preference, so `accountToCreate` falls back to `undefined` and the provider
+  decides from the active profile. Not added to `known`, which already names an
+  account and never consults the preference, and deliberately not to `silent`,
+  which the Accounts menu polls — clearing is a write, and a read that mutates
+  on every poll is not a read.
+
+  **Why no test caught it, which is the more useful half.** The manager's
+  `deps.authSession` port is injected one frame *above* the mapping from request
+  to options, so every existing test could assert which `AuthRequest` was chosen
+  and none could assert what it became. The mapping now lives in
+  `src/auth/sessionRequest.ts` — pure, `import type * as vscode`, therefore
+  inside the coverage denominator by ADR-0009's mechanical rule — with
+  `test/unit/auth-session-request.test.ts` stating each arm as a whole-object
+  literal. `AuthRequest` moved there with it. **The lesson generalises: an
+  injected seam decides what is testable, and a seam above the decision makes
+  the decision invisible.**
+
+  Two related host behaviours worth knowing before touching this again, both
+  read out of the same function. `isAccessAllowed`, `updateAllowedExtensions`
+  and `_getAccountPreference` all key on **`account.label`**, never on
+  `account.id` — our label is the user's display name, so one person signed in
+  to two deployments is one account as far as the host's bookkeeping goes. And
+  after `createSession` returns, a `do…while` compares the requested and
+  returned labels and shows a modal **Incorrect account detected** if they
+  differ, so a provider that ignores the hint gets a dialog rather than silence.
+
+**Testing shape.** `authProvider.ts` and `commands.ts` are host-only and outside
+the c8 denominator (ADR-0009), so the first five land as **integration** tests —
+which `npm run verify` does not run. Hand over `npm run test:integration` as well,
+every time. The first five will not move the ratchet; do not raise it hopefully.
+**#137 is the exception**: it adds a pure module and a unit suite, so it does add
+to the denominator and the measured numbers may rise. Floor the thresholds to
+what the run reports rather than to what looks tidy.
+
+**Measured 2026-08-15, and the ratchet does not move.** `sessionRequest.ts` scores
+100 on all four counters, and the aggregate went 89.65 → **89.79** statements,
+88.77 → **88.83** functions, 94.31 → **94.34** branches. Every one of those rounds
+down to the threshold already in `.c8rc.json` (89/89/88/94), so it stays as it is.
+That is the ratchet working, not the ratchet being skipped: a fully covered module
+of this size moves an aggregate by a tenth of a point, and testing.md's *round
+down further than feels necessary* exists precisely so a tenth of a point on one
+platform is not a red build on another.
+
+☐ **Manual check against your Viya, 2a-iii.** The five defects above were all
+found by hand and four of them are only observable by hand, so this is the gate
+on the slice rather than a nicety. It replaces the 2a-ii procedure rather than
+extending it: run this one from the top.
+
+**Run 2026-08-15, steps 1–5 passed and step 6 failed.** Recorded here rather than
+in a commit message because the next reader needs the outcome next to the steps
+that produced it. Steps 1 through 5 behaved exactly as written, including #134's
+single command from cold, the context write-back into `settings.json` — which
+this run **confirms**, closing the item 2a-ii left as *unconfirmed rather than
+failed* — and #132's `Reconnected to the SAS Viya session for this folder.` after
+a reload. Step 6 opened the browser on the **first** profile's deployment after
+switching to the second, which is #137 above; the run stopped there and resumes
+from step 6 once the fix is in. Two things the failure incidentally proved: the
+refusal guard would have caught it, since it only stayed quiet because the
+sign-in was cancelled before completing, and **Sign In** is unaffected, because
+that command calls the provider directly and never gives the host the chance to
+substitute anything.
+
+Every expected line below is quoted **exactly** as the code writes it, and each
+is marked either **notification** (a toast in the bottom right) or **log** (a
+line in the Output panel). If what you see differs from what is quoted, that is
+a finding even when it looks like the same thing said differently — a message
+that has drifted from the source is how the next reader is misled.
+
+**What you need.** One working deployment, and a *second endpoint that does not
+have to work*. Step 6 is the one this slice exists for and it needs two
+profiles pointing at two **different** addresses; whether the second one answers
+is beside the point, because what is being checked is which account the editor
+is asked for. A made-up host such as `https://viya2.example.com` is enough.
+
+**Setting up.** Open `sas-py-vscode` in VS Code and press `F5`. That runs the
+*Run Extension* launch configuration, which builds first and then opens a second
+window titled **[Extension Development Host]**. **Do not use *Run Extension
+(untrusted workspace)*** — its `--disable-workspace-trust` flag turns the trust
+feature off, which trusts everything, so it does the opposite of its name. It is
+on the unfiled list.
+
+In the dev host, `File ▸ Open Folder` and open a scratch folder — any folder,
+but it must be one, because the session binding lives in `workspaceState` and
+there is none without a folder. Click **Yes, I trust the authors** when asked.
+
+**Every command below is run the same way**: press `Ctrl+Shift+P`, type the
+title exactly as it is written in bold, and press Enter. They all sit under a
+**Python on Viya** category, so typing `Python on Viya` lists every one of them.
+This paragraph is here because its absence is what made the first run of the
+2a-ii procedure fail.
+
+**A command that is not available is *missing*, not greyed.** Several steps below
+check the Command Palette, and this is how to read them. Every command in
+`package.json` controls its availability through `enablement` alone — there are
+no `menus.commandPalette` entries — and VS Code answers a false `enablement` by
+**leaving the command out of the palette entirely**. So "must not be available"
+means you type the title and *nothing matches*. Confirmed by the 2026-08-15 run,
+where Restricted Mode removed **Sign In** and **Sign Out** from the list rather
+than dimming them. Earlier versions of this procedure said "greyed out", which
+made a correct result look like a broken build.
+
+**Turn the log up before anything else.** Run **Python on Viya: Show Log** to
+open the Output panel on our channel. Then run **Developer: Set Log Level…**,
+choose **Python on Viya** from the first list, and **Debug** from the second.
+Several lines below are written at `debug` and are invisible at the default
+level — including the one step 4 exists to read.
+
+1. **Start from nothing.** If any profile already exists from an earlier run,
+   run **Python on Viya: Sign Out**, then **Python on Viya: Delete Connection
+   Profile** for each, confirming with **Delete**. The point is that step 2
+   begins signed out, because "signed in already" quietly skips the half of
+   this procedure that matters. The status bar at the bottom should show a
+   server icon and the words **No profile**.
+
+2. **Add a profile, and leave the context empty.** **Python on Viya: Add
+   Connection Profile**. Give it a name at *Profile name*; your endpoint at *SAS
+   Viya endpoint*; then press Enter on *Compute context (optional — you can
+   choose one later)* **without typing anything**, which is what puts the
+   context picker on the path in step 3; press Enter on *OAuth client ID
+   (optional — leave empty on Viya 4 2022.11 and later)* as well, so the
+   built-in `vscode` client is used and no client-secret prompt appears.
+
+   Log: `Added connection profile "<name>".` The status bar now shows the
+   profile name.
+
+3. **One command from cold reaches a session (#134).** Run **Python on Viya:
+   Sign In** — *not* Connect. In order, expect: your browser opening on the
+   deployment's login page; a **Sign in to SAS Viya** input box at the top of
+   the editor; a short code displayed by Viya after you approve the consent
+   page, which you paste into that box; then a *Reading compute contexts…*
+   progress, a quick pick titled *Select a compute context for this connection
+   profile*, and a *Connecting to SAS Viya…* progress.
+
+   Notification: `Signed in as <your name>, and connected using profile
+   "<name>".` — **one** notification naming both halves. Two separate messages,
+   or a sign-in that stops without connecting, is a finding.
+
+   Log, in order: `Signed in to <endpoint>.` then `Started a SAS Viya session on
+   compute context "<what you picked>".`
+
+4. **The context write-back landed.** This is the step recorded as *unconfirmed
+   rather than failed* after the 2a-ii run, so confirm it properly. Open the dev
+   host's `settings.json` (**Preferences: Open User Settings (JSON)**) and find
+   `pythonOnViya.connectionProfiles` → your profile → `context`. It must now
+   hold exactly what you picked in step 3. User settings is the right file for a
+   fresh folder because the store writes to `Global` unless the setting already
+   exists at workspace scope; if you have put profiles in a workspace file
+   before, look there instead.
+
+   Two things make this worth its own step. It edits the user's settings as a
+   side effect of connecting, which is the kind of thing that should never be
+   assumed to have worked; and the write happens **after** the session starts,
+   so a context that fails to start a session must *not* be written. If you want
+   the negative half, `Ctrl+Z` is not enough — clear the field by hand in
+   `settings.json` and see step 9.
+
+5. **Reload, and read the reattach off the log (#132).** Run **Developer: Reload
+   Window**. Wait for the window to come back, run **Python on Viya: Show Log**
+   again, then **Python on Viya: Connect to SAS Viya**.
+
+   Log: `Reconnected to the SAS Viya session for this folder.` It must **not**
+   say `Started a SAS Viya session` — a second *Started* means the stored id was
+   not used and a SAS process has been orphaned. No context picker this time
+   either, because step 4 wrote the answer down.
+
+   Notification: `Connected to SAS Viya using profile "<name>".`
+
+   Now read what is around it, which is what #132 changed. At `debug` you should
+   see `no stored sign-in for <endpoint>` **only** for profiles you have never
+   signed in to — not for this one. And the line
+   `The sign-in for <endpoint> has expired, and no stored sign-in was kept to
+   renew it from. Sign in again to continue.` should **not** appear at all: it
+   means the deployment issued no refresh token, and this deployment demonstrably
+   does, because the reload above restored the session. If you do see it, that is
+   a finding worth the whole trip.
+
+6. **Two profiles, two deployments — the defect this slice is named for (#84).**
+   Add a second profile with **Python on Viya: Add Connection Profile**, giving
+   it a different name and the second endpoint. Leave context and client ID
+   empty as before. Then **Python on Viya: Switch Connection Profile** and pick
+   the second one; the quick pick marks the current one *Currently in use*, and
+   the status bar should change to the new name.
+
+   Now run **Python on Viya: Connect to SAS Viya**. The correct behaviour is
+   that **your browser opens on the second deployment**, asking you to sign in
+   to it. Read the **host in the address bar**, not the page — which deployment
+   was asked for is the entire assertion of this step, and a login page from the
+   wrong deployment looks exactly like a login page from the right one. What
+   must **not** happen is the notification
+   `The account chosen is not the one "<name>" uses. Run Python on Viya: Switch
+   Connection Profile to change which deployment this folder uses.` — that is
+   the old defect verbatim, advice to run the command you have just run, and
+   seeing it means the account hint was not honoured.
+
+   Two dialogs to expect, of which only one is a finding. **Before** the browser
+   opens, VS Code — not this extension — puts up a modal reading roughly *The
+   extension 'Python on Viya' wants you to sign in again using SAS Viya*, with a
+   **Sign In** button. Press it. That is the host confirming an extension may
+   start a fresh sign-in while a session is already live; it appears on this path
+   whatever deployment is about to be asked for, and the wording is VS Code's and
+   shifts between releases, so it is not evidence either way. A dialog headed
+   **Incorrect account detected**, on the other hand, offering to continue with
+   an account you did not pick, *is* a finding: it can only be reached when the
+   host has filled in a remembered account behind our back, which the request
+   this slice sends now explicitly clears (#137). Seeing it means the fix has
+   regressed.
+
+   With a made-up endpoint the browser opens on a page that does not load, and
+   the **Sign in to SAS Viya** box opens beside it and waits — indefinitely, and
+   on purpose, because it has `ignoreFocusOut` set. **Press `Escape` on it.**
+   The connect then ends silently with `Sign-in was cancelled.` at `info`. Do
+   not paste anything into the box: a code sent to a deployment that is not
+   there produces a real failure and an error toast, which tells you nothing
+   this step is asking about. The check has already passed by the time the
+   browser opens, because what is being checked is which deployment it asked
+   about.
+
+   Now **Switch Connection Profile** back to the first one, and look at the
+   Command Palette rather than running anything: **Python on Viya: Connect to
+   SAS Viya** must be **absent from the list**, and **Disconnect from SAS Viya**
+   must be there. That is the same fact as "the session is still held", read off the
+   `pythonOnViya.connected` enablement instead of off the log — profile 1's
+   session survived the whole excursion to profile 2, which is what one live
+   session per profile means and what upstream's process-global singleton cannot
+   do. (There is no way to make the manager *say* it returned a held connection:
+   it returns before it logs anything, which is the point.)
+
+   Note the honest gap while you are here: two profiles pointing at the **same**
+   deployment share one account id, so the hint cannot separate them and the
+   guard above may still fire. That is the known narrow case, written up under
+   #84 — not a new finding.
+
+7. **A profile that is down must not stall the menu (#133).** With both profiles
+   present, open the **Accounts** menu — the person icon at the bottom of the
+   Activity Bar, next to the gear. The account for the working deployment must
+   be listed, promptly, and it must be listed *whatever* the second profile is
+   doing.
+
+   The ten-second budget itself is **not** testable here, and it is worth
+   knowing why rather than trying and recording a false pass. A profile with no
+   stored sign-in never reaches the network at all — `resolve` takes the
+   `no stored sign-in for …` branch and returns — so a second profile you have
+   never signed in to costs nothing no matter what its endpoint does. To spend
+   the budget you would need a *stored* sign-in for a deployment that hangs,
+   which means signing in to it first, which means it working. That arm is
+   covered by an integration test on an injected `resolveBudgetMs`, and the debug
+   line it writes is
+   `renewing the sign-in for <endpoint> is taking longer than 10000ms; answering
+   without it` if you ever do see it in the wild.
+
+8. **Cancelling says nothing (#131).** Get back to a **cold state** first, which
+   means this window has nothing left to reuse for the active profile: **no
+   compute session held** for it, and **no stored token** for its deployment.
+   Only then does **Sign In** actually have to go and fetch a token, and only
+   then is there a sign-in to cancel. Make sure the working profile — the one
+   with the real endpoint, which step 6 left active — is the active one, then run
+   both of: **Python on Viya: Disconnect from SAS Viya**, then **Python on Viya:
+   Sign Out**. Both are needed, and the order is not cosmetic. Signing out
+   does not end the compute session, and a connect that finds one still held in
+   this window returns it without asking for a token — so with the session still
+   live there would be no sign-in to cancel and the step would pass by doing
+   nothing. Sign out *first* and it is Disconnect that breaks instead: the
+   `DELETE` needs a token, cannot get one, and the log says `Ending the SAS Viya
+   session did not complete: …` at `warn` with no `Ended the SAS Viya session.`
+   line, leaving a session alive on the server. That is correct behaviour being
+   asked an impossible question, not a defect — but it looks exactly like one.
+
+   Read the cold state off the UI rather than assuming it. Open the Command
+   Palette: **Connect to SAS Viya** must be listed and **Disconnect from SAS
+   Viya** must not appear at all, which is `pythonOnViya.connected` saying no
+   session is held. Then open the **Accounts** menu and confirm your Viya account
+   is no longer listed, which is the token half. If Disconnect is still there you
+   are not cold, and everything below will pass without testing anything.
+
+   Now run **Python on Viya: Sign In**, and when the **Sign in to SAS Viya** box
+   appears, press `Escape`.
+
+   Expected: **no dialog of any kind**, and in the log `Sign-in was cancelled.`
+   at `info`. What this replaces is `Signing in to SAS Viya failed` at `error`
+   plus a red toast, which is what the first manual run saw.
+
+   Repeat for the other entry point: run **Python on Viya: Connect to SAS Viya**
+   while signed out and press `Escape` on the same box. Again nothing should
+   appear — no error, and no *Running the contributed command … failed*.
+
+   Then sign in properly with **Python on Viya: Sign In** and let it finish. You
+   need a live session for step 9, and the third cancellation check lives there
+   rather than here because a connect that returns the session already held in
+   this window never draws a progress notification to cancel.
+
+9. **Disconnect, and prove the binding was cleared.** Run **Python on Viya:
+   Disconnect from SAS Viya**. There is deliberately **no** notification for
+   this; the log says `Ended the SAS Viya session.` and that is all. Then check
+   the palette: **Disconnect** has **gone from the list** and **Connect** is
+   back, which is `pythonOnViya.connected` following the truth.
+
+   Do **not** look for `There is no SAS Viya session to disconnect.` here. That
+   message exists for callers the enablement cannot reach — a keybinding, a
+   second window, another extension — and from the palette the command is not
+   offered at all, so it never gets the chance. `sessionManager.ts` says as much
+   where the race is handled.
+
+   Then **Connect** once more. It must log `Started a SAS Viya session on compute
+   context "…"` and **not** `Reconnected` — a *Reconnected* here would mean
+   Disconnect dropped our reference and left the session running on the server.
+
+   Now the remaining two cancellations, both of which must be silent. First:
+   **Disconnect** again, then **Connect**, and press **Cancel** on the
+   *Connecting to SAS Viya…* notification while it is up. Log: `Connecting to
+   SAS Viya was cancelled.` at `info`, and **no** error dialog.
+
+   Second, the arm review caught in 2a-ii (#127): delete the profile's
+   `context` value in `settings.json` so the picker comes back, **Connect**, and
+   press **Cancel** on the *Reading compute contexts…* progress instead. Same
+   line, same silence. What must **not** appear is `Could not reach the SAS Viya
+   compute service…` — that is what an aborted request looks like underneath,
+   and reporting it to someone who pressed Cancel is the defect. Then
+   **Connect** once more, pick a context, and let it finish, so the folder is
+   left with a session for step 10.
+
+10. **Trust.** Run **Workspaces: Manage Workspace Trust** and put the folder back
+    into Restricted Mode. In the Command Palette, **Python on Viya: Sign In**
+    and **Python on Viya: Sign Out** must **not be listed at all** — the refusal
+    behind that gate is covered by an integration test, and what only a human can
+    confirm is that the palette entry is gone rather than merely failing when
+    run. The Accounts menu should show no **SAS Viya** account. Trust the folder
+    again and the account comes back without a reload.
+
+    Those two commands are the clean test and **Connect is not**: its enablement
+    is `!pythonOnViya.connected` as well as `isWorkspaceTrusted`, and step 9
+    deliberately left a session, so it would be missing either way and tells
+    you nothing about trust. Profile management is meant to keep working without
+    trust, so **Add Connection Profile** and **Switch Connection Profile** should
+    both stay available — see ADR-0002.
+
+**The death path, if you have the time.** Unchanged by this slice, and the one
+step that cannot be hurried, so it is optional here rather than numbered above.
+Note the time of a connect, reload the window, wait until **sixteen minutes**
+past it — the idle reaper is 900 seconds from the session's last activity and
+nothing touches it in between — then **Connect**. Expect, at `info`, `The
+previous SAS Viya session has ended, so a new one will be started. Anything
+defined in it is gone.` followed by a new `Started` line, and **no** error
+dialog, because a session ending on its own schedule is ordinary.
+
+**Optional cross-check from the Viya side.** The compute session id is never
+logged on purpose, so find it by listing instead: with the `viya-api-probe`
+skill and `creds.json`, `GET /compute/sessions` and look for the one whose `name`
+is `python-on-viya`. Doing that either side of step 9 is the only way to see,
+from outside the editor, that Disconnect really took the session down.
+
+**Run 2026-08-16: one session for six creates.** Done immediately after step 9 and
+written up as **finding 30**. Every `DELETE` landed, and the same listing turned
+up a correction worth having — `applicationName` is `vscode` for our sessions,
+which is the built-in client id and therefore SAS's extension's too, so finding
+25's reclaim filter must not be copied as written.
+
+**Two things to expect that are already filed.** #130 is open: a request whose
+silent token refresh comes back empty is reported as `The SAS Viya sign-in for
+this profile has ended.` rather than as the network failure it usually is. It
+comes from the per-request token function, so it needs a connect that got past
+authentication — a Disconnect/Connect cycle against a deployment that has since
+become unreachable, not step 6, where `runConnect` returns before a client is
+ever built. And #135 is open on a compute context whose `createSession` link
+comes and goes; if a context you pick in step 3 fails to start a session, that
+is the one, and the picker is now reachable again because the write-back happens
+after success rather than before.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.

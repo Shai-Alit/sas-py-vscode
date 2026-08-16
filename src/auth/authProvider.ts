@@ -56,8 +56,10 @@ import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { diffSessions, isEmptyDiff, type SessionSummary } from "./accounts";
 import { signInWithBrowser, type BrowserSignInDeps } from "./browserFlow";
+import { SignInCancelledError } from "./cancellation";
 import { BUILT_IN_CLIENT_ID } from "./clientId";
 import {
+  accountForEndpoint,
   accountId as toAccountId,
   accountLabel,
   fetchCurrentUser,
@@ -114,6 +116,38 @@ export const AUTHORIZED_CONTEXT_KEY = "pythonOnViya.authorized";
 /** Viya's OAuth does not use scopes; every session declares the same empty set. */
 const NO_SCOPES: readonly string[] = [];
 
+/**
+ * How long {@link ViyaAuthenticationProvider.getSessions} waits for a profile it
+ * has to renew over the network before answering without that profile.
+ *
+ * This is a policy about a **UI poll**, not about the deployment. The Accounts
+ * menu is drawn from this call, and a deployment that is switched off — Sean's
+ * first one shuts down at weekends — costs the full 30-second token timeout
+ * (`tokenEndpoint.DEFAULT_TIMEOUT_MS`) before it fails. Every other profile's
+ * session would be held behind it, so opening a menu to look at an account that
+ * is signed in and working is half a minute of spinner.
+ *
+ * Ten seconds sits between the two things it has to separate: far above any
+ * healthy round trip, and a third of the timeout that bounds the request itself,
+ * so the answer arrives well before the network gives up. Exceeding it is not a
+ * failure and nothing is abandoned — see
+ * {@link ViyaAuthenticationProvider.resolveOnce} for what happens to the renewal
+ * that was still running.
+ *
+ * Not a setting. A user cannot know a number whose only observable effect is how
+ * long a menu waits before it redraws itself a moment later.
+ */
+export const RESOLVE_BUDGET_MS = 10_000;
+
+/**
+ * The other outcome of the race in {@link ViyaAuthenticationProvider.within}.
+ *
+ * A symbol rather than `undefined`, because `undefined` is already a real answer
+ * there — "this profile is not signed in" — and collapsing the two would log a
+ * profile with no stored token as a slow deployment on every single poll.
+ */
+const BUDGET_SPENT = Symbol("the resolve budget is spent");
+
 /** Ports with real defaults, so an integration test need not reach the network. */
 export interface AuthProviderDeps {
   token?: TokenEndpointDeps | undefined;
@@ -145,6 +179,13 @@ export interface AuthProviderDeps {
    * never exercised is a comment.
    */
   isTrusted?: (() => boolean) | undefined;
+  /**
+   * Defaults to {@link RESOLVE_BUDGET_MS}.
+   *
+   * Injectable so the tests for it need not take ten seconds each. Nothing in
+   * production sets it.
+   */
+  resolveBudgetMs?: number | undefined;
 }
 
 /**
@@ -198,6 +239,21 @@ export class ViyaAuthenticationProvider
   /** Keyed on profile id. Holds the access token, which never reaches disk. */
   private readonly live = new Map<string, LiveSession>();
 
+  /**
+   * Renewals that are still running, keyed on profile id.
+   *
+   * The map exists because {@link RESOLVE_BUDGET_MS} exists. A poll that gives
+   * up on a profile does not stop the renewal, and the menu polls: without this,
+   * every poll against an unreachable deployment would open another socket to it
+   * and leave the previous attempt running, so the one deployment that is down
+   * is also the one accumulating connections. One renewal per profile at a time,
+   * and every caller waiting on that profile waits on the same promise.
+   */
+  private readonly resolving = new Map<
+    string,
+    Promise<vscode.AuthenticationSession | undefined>
+  >();
+
   /** The last list handed out, so {@link diffSessions} has a `before`. */
   private published: readonly SessionSummary[] = [];
 
@@ -217,18 +273,69 @@ export class ViyaAuthenticationProvider
   ) {}
 
   /**
-   * Every session this window can serve without asking the user anything.
+   * Every session this window can serve without asking the user anything,
+   * narrowed to one account when the caller named one.
    *
    * `scopes` is accepted and ignored, which is honest rather than lazy: Viya's
    * OAuth issues no scoped tokens, so there is no narrower session to hand back
    * and pretending otherwise would mean returning nothing for any non-empty
-   * request.
+   * request. `options.account` is the opposite — it is honoured, and it is what
+   * lets a window with two profiles get the session for the one it is asking
+   * about instead of whichever the host picked.
+   *
+   * **Resolve everything, publish everything, return the subset.** The filter is
+   * the last thing that happens and it never reaches {@link publish}. Publishing
+   * a filtered list would fire a change event announcing that every session the
+   * caller did not ask about had been removed, and flip
+   * {@link AUTHORIZED_CONTEXT_KEY} to false whenever the account named happened
+   * to have no session — a `when` clause turning off because somebody else's
+   * account was queried. The narrowing is the caller's view, not the world.
    *
    * An untrusted folder has no sessions, by construction: this is the call that
    * would otherwise read the secret store and renew a token, and it is reached
    * by opening a menu rather than by asking for anything, so it says nothing.
+   *
+   * **The account named is the one worth waiting for.** Naming one is what
+   * separates the two kinds of caller this method has: a poll drawing the
+   * Accounts menu names nothing, while a caller that already knows which account
+   * it wants — the compute connect, since #84 — is a deliberate request whose
+   * answer is worth a slow deployment. So the named profile is waited for and
+   * the rest are bounded by {@link RESOLVE_BUDGET_MS}. The remaining gap is
+   * honest and small: a connect with no hint to offer, which is a window with
+   * two profiles on one deployment, is bounded like a poll.
    */
-  async getSessions(): Promise<vscode.AuthenticationSession[]> {
+  async getSessions(
+    _scopes?: readonly string[],
+    options?: vscode.AuthenticationProviderSessionOptions,
+  ): Promise<vscode.AuthenticationSession[]> {
+    const account = options?.account;
+    const sessions = await this.allSessions(
+      account === undefined
+        ? undefined
+        : this.profileForAccount(account)?.profile.id,
+    );
+
+    if (account === undefined) {
+      return sessions;
+    }
+    return sessions.filter((session) => session.account.id === account.id);
+  }
+
+  /**
+   * Every resolvable session, published as the complete picture.
+   *
+   * Concurrent rather than serial, which is the half of #133 that is pure gain:
+   * the profiles have nothing to do with each other, and resolving them in turn
+   * made the wait the *sum* of every deployment's latency. `Promise.all`
+   * preserves input order, so the published list still follows the profile order
+   * rather than whichever deployment answered first — a menu that reorders
+   * itself according to network weather is its own defect.
+   *
+   * `unbounded` is the one profile, if any, the caller is entitled to wait for.
+   */
+  private async allSessions(
+    unbounded?: string,
+  ): Promise<vscode.AuthenticationSession[]> {
     if (!this.trusted()) {
       // Published, not just returned. The list VS Code holds and the
       // `pythonOnViya.authorized` context key both have to say "nothing here",
@@ -238,20 +345,116 @@ export class ViyaAuthenticationProvider
       return [];
     }
 
-    const sessions: vscode.AuthenticationSession[] = [];
-
+    const budget = this.deps.resolveBudgetMs ?? RESOLVE_BUDGET_MS;
+    const profiles: ViyaProfile[] = [];
     for (const name of this.profiles.names()) {
       const profile = this.profiles.get(name);
-      if (profile === undefined) continue;
-
-      const session = await this.resolve(profile);
-      if (session !== undefined) {
-        sessions.push(session);
-      }
+      if (profile !== undefined) profiles.push(profile);
     }
+
+    const resolved = await Promise.all(
+      profiles.map(async (profile) => {
+        const renewal = this.resolveOnce(profile);
+        return profile.id === unbounded
+          ? await renewal
+          : await this.within(budget, renewal, profile);
+      }),
+    );
+
+    const sessions = resolved.filter(
+      (session): session is vscode.AuthenticationSession =>
+        session !== undefined,
+    );
 
     await this.publish(sessions);
     return sessions;
+  }
+
+  /**
+   * {@link resolve}, but at most one at a time per profile, and never throwing.
+   *
+   * Both properties are here for the same reason — that a caller may now walk
+   * away from this promise. See {@link resolving} for the one-at-a-time half.
+   *
+   * The other half is that a rejection nobody is waiting for is an unhandled
+   * rejection, which in the extension host is a stack trace in a log the user
+   * did not open and cannot act on. `resolve` reaches a keychain and a settings
+   * read, both of which can throw, so this is not hypothetical. Catching it here
+   * also fixes something that predates the budget: under `Promise.all` — and
+   * under the serial loop before it — one profile whose keychain entry could not
+   * be read failed the *whole* list, which is the same defect as #133 wearing
+   * different clothes. Logged as a warning, never shown: nobody asked, a menu
+   * was opened.
+   */
+  private resolveOnce(
+    profile: ViyaProfile,
+  ): Promise<vscode.AuthenticationSession | undefined> {
+    const running = this.resolving.get(profile.id);
+    if (running !== undefined) return running;
+
+    const started = this.resolve(profile)
+      .catch((error: unknown) => {
+        this.log.warn(
+          vscode.l10n.t(
+            "Could not read the sign-in for {0}: {1}",
+            profile.endpoint,
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
+        return undefined;
+      })
+      .finally(() => {
+        this.resolving.delete(profile.id);
+      });
+
+    this.resolving.set(profile.id, started);
+    return started;
+  }
+
+  /**
+   * A renewal's answer, or nothing once the budget is spent.
+   *
+   * What it deliberately does not do is cancel. The renewal keeps running, and
+   * when it lands it writes the session into {@link live} exactly as it would
+   * have — so the next call, which for the Accounts menu is the next poll and
+   * for anything else is the next request, serves that profile from memory with
+   * no network at all. Giving up on the wait is not giving up on the sign-in.
+   *
+   * Nothing is re-published when a late renewal lands, though the account will
+   * be missing from the menu until something asks again. Publishing from here
+   * would fire a change event from a call that has already returned, racing the
+   * next `getSessions` for `published` — and a renewal that lands late every
+   * time would then drive a publish every time. The staleness lasts until the
+   * next poll; the alternative is a feedback loop.
+   */
+  private async within(
+    budgetMs: number,
+    renewal: Promise<vscode.AuthenticationSession | undefined>,
+    profile: ViyaProfile,
+  ): Promise<vscode.AuthenticationSession | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const spent = new Promise<typeof BUDGET_SPENT>((resolve) => {
+      timer = setTimeout(() => {
+        resolve(BUDGET_SPENT);
+      }, budgetMs);
+    });
+
+    try {
+      const answer = await Promise.race([renewal, spent]);
+      if (answer !== BUDGET_SPENT) return answer;
+
+      // Debug, not warning. Nothing has failed — the renewal is still running
+      // and the profile is expected back — so this is a note for reading the
+      // log after the fact, not an event.
+      this.log.debug(
+        `renewing the sign-in for ${profile.endpoint} is taking longer than ${String(budgetMs)}ms; answering without it`,
+      );
+      return undefined;
+    } finally {
+      // The timer outlives the race it lost. Left uncleared, every poll leaves
+      // a ten-second timer behind holding a closure over this provider.
+      clearTimeout(timer);
+    }
   }
 
   /**
@@ -265,22 +468,49 @@ export class ViyaAuthenticationProvider
    *
    * Rejects rather than returning `undefined` on failure, because that is the
    * contract: VS Code shows the rejection to whoever asked for the session.
+   * A **cancellation** rejects too — there is no other way out of this signature
+   * — but with a {@link SignInCancelledError}, so that a caller can tell "the
+   * user changed their mind" from "this did not work" and show nothing for the
+   * first. Both cancellations that exist reach this the same way: the browser
+   * flow throws one, the secret prompt below throws the other.
+   *
+   * `options.account` names which deployment to sign in to, and it wins over the
+   * active profile. The Accounts menu's *sign in again* passes the account row
+   * it was clicked on; without this, that row would sign the user in to whatever
+   * profile happened to be active and then quietly replace a different account's
+   * session with it.
    */
-  async createSession(): Promise<vscode.AuthenticationSession> {
+  async createSession(
+    _scopes?: readonly string[],
+    options?: vscode.AuthenticationProviderSessionOptions,
+  ): Promise<vscode.AuthenticationSession> {
     this.requireTrust();
 
-    const active = this.profiles.active();
+    const requested = options?.account;
+    const active =
+      requested === undefined
+        ? this.profiles.active()
+        : this.profileForAccount(requested);
     if (active === undefined) {
       throw new Error(
-        vscode.l10n.t(
-          "Select a SAS Viya connection profile before signing in.",
-        ),
+        requested === undefined
+          ? vscode.l10n.t(
+              "Select a SAS Viya connection profile before signing in.",
+            )
+          : vscode.l10n.t(
+              'No connection profile uses the SAS Viya deployment that "{0}" is signed in to.',
+              requested.label,
+            ),
       );
     }
 
     const clientSecret = await this.clientSecret(active.profile);
     if (clientSecret === undefined) {
-      throw new Error(vscode.l10n.t("Sign-in was cancelled."));
+      // The masked prompt was dismissed. The second place a sign-in is
+      // cancelled, and the only one `signInWithBrowser` cannot see, because it
+      // happens before the browser opens.
+      this.log.info(vscode.l10n.t("Sign-in was cancelled."));
+      throw new SignInCancelledError();
     }
 
     const tokens = await signInWithBrowser(
@@ -373,6 +603,12 @@ export class ViyaAuthenticationProvider
 
   dispose(): void {
     this.live.clear();
+    // Dropped, not awaited and not cancelled. A renewal already in flight is a
+    // request this provider no longer has anywhere to put the answer; the
+    // transport's own timeout ends it, and holding the map would keep this
+    // provider reachable from a pending promise after the window is done with
+    // it.
+    this.resolving.clear();
     this.changed.dispose();
   }
 
@@ -383,6 +619,11 @@ export class ViyaAuthenticationProvider
    * this is the path the Accounts menu takes every time it polls, and it must
    * not touch the network. Only a token that is spent, or absent because this
    * window has just opened, reaches the refresh.
+   *
+   * Every route out of here that is not a session says why, in the log and
+   * nowhere else. Nobody is waiting on this call — it happens because a menu was
+   * drawn — so none of it is worth a dialog, and all of it is worth having when
+   * someone asks why they are not signed in any more.
    */
   private async resolve(
     profile: ViyaProfile,
@@ -394,8 +635,34 @@ export class ViyaAuthenticationProvider
 
     const stored = await this.sessions.read(profile.id);
     if (stored === undefined) {
-      // Not signed in, or signed in to a deployment that issues no refresh
-      // token. Either way there is nothing to serve and nothing to report.
+      // Two different facts, and only one of them is ordinary.
+      //
+      // A stored entry that exists but cannot be parsed is not either of them:
+      // `SessionStore.read` has already discarded it and said so at warning
+      // level, so what is left here is genuine absence.
+      if (held === undefined) {
+        // Nobody is signed in to this profile — a fresh window, a sign-out, or
+        // a profile never used. Debug, and unlocalised like every other debug
+        // line, because the Accounts menu polls this for every profile it can
+        // see: at info a window with one unused profile would write this line
+        // for as long as it stayed open.
+        this.log.debug(`no stored sign-in for ${profile.endpoint}`);
+      } else {
+        // The one that looks like a defect from the outside: the user was
+        // signed in a moment ago and the account has just left the menu. It
+        // means the deployment issued no refresh token, so there was never
+        // anything to renew from and the session could only last as long as its
+        // access token. Info, not debug, because it happens exactly once — the
+        // line below drops the expired session, so every later poll takes the
+        // branch above — and because it is the answer to a question the user is
+        // about to ask.
+        this.log.info(
+          vscode.l10n.t(
+            "The sign-in for {0} has expired, and no stored sign-in was kept to renew it from. Sign in again to continue.",
+            profile.endpoint,
+          ),
+        );
+      }
       this.live.delete(profile.id);
       return undefined;
     }
@@ -496,12 +763,38 @@ export class ViyaAuthenticationProvider
   /**
    * Re-reads the session list and fires the event if it actually moved.
    *
-   * Going through {@link getSessions} rather than constructing the new list here
+   * Going through {@link allSessions} rather than constructing the new list here
    * is deliberate: the event has to describe what a listener would see if it
-   * asked, and the only way to guarantee that is to ask.
+   * asked, and the only way to guarantee that is to ask. It asks the unfiltered
+   * one — a refresh has no caller and therefore no account to narrow to.
    */
   private async refreshPublished(): Promise<void> {
-    await this.getSessions();
+    await this.allSessions();
+  }
+
+  /**
+   * The profile an account belongs to, preferring the active one.
+   *
+   * An account names a deployment and a user; a profile names a deployment. Two
+   * profiles can therefore share one account, and when one of them is active
+   * that is the one meant — the alternative is signing in to a profile the user
+   * is not looking at because it sorts first.
+   */
+  private profileForAccount(
+    account: vscode.AuthenticationSessionAccountInformation,
+  ): { name: string; profile: ViyaProfile } | undefined {
+    const active = this.profiles.active();
+    if (active !== undefined && ownsAccount(active.profile, account)) {
+      return active;
+    }
+
+    for (const name of this.profiles.names()) {
+      const profile = this.profiles.get(name);
+      if (profile !== undefined && ownsAccount(profile, account)) {
+        return { name, profile };
+      }
+    }
+    return undefined;
   }
 
   /** Publishes a new list, firing the change event only on a real transition. */
@@ -634,6 +927,21 @@ function toSession(
     },
     scopes: NO_SCOPES,
   };
+}
+
+/**
+ * Whether an account was issued for this profile's deployment.
+ *
+ * Asked as "is this the sole account for that endpoint", with a list of one, so
+ * the rule that builds an account id and the rule that reads one back stay in
+ * the same function in `identity.ts`. A second, inlined prefix comparison here
+ * is how the two drift apart the next time the id gains a component.
+ */
+function ownsAccount(
+  profile: ViyaProfile,
+  account: vscode.AuthenticationSessionAccountInformation,
+): boolean {
+  return accountForEndpoint(profile.endpoint, [account]) !== undefined;
 }
 
 function summarise(session: vscode.AuthenticationSession): SessionSummary {

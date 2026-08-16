@@ -19,9 +19,23 @@ address, the browser returns you to the editor by itself and the box closes
 without you touching it. Both routes are live at the same time, so whichever one
 your deployment supports is the one that finishes.
 
-Signing in establishes who you are and nothing else. To get somewhere to run,
-see [Connecting to Viya](connecting.md) — and note that the connect command signs
-you in on its own if you are not already, so you rarely need this one directly.
+You can change your mind. Press `Escape` on the box, or close the browser tab and
+leave it, and the sign-in simply stops — no error message, nothing to dismiss.
+Only the log records it, under **Python on Viya** in the Output panel. Run the
+command again whenever you are ready; nothing was left behind.
+
+Signing in also connects. There is little point proving who you are and then
+stopping, so once the sign-in completes the extension opens a compute session on
+the active profile and the message names both — see
+[Connecting to Viya](connecting.md) for what that session is and how long it
+lasts. If the session cannot be opened, the sign-in still stands and the message
+says so, because the one thing worth knowing at that point is that you do not
+have to sign in a second time to try again.
+
+The two commands meet in the middle. **Connect** signs you in first if you are
+not signed in, and **Sign In** connects afterwards, so from a cold start either
+one gets you the whole way and which you reach for is a matter of what you were
+thinking about.
 
 ## The Accounts menu
 
@@ -30,6 +44,13 @@ same mechanism GitHub and Microsoft accounts use. That means your sign-in shows
 up in the Accounts menu at the bottom of the Activity Bar, next to the gear, and
 you can sign in and out from there instead of from the Command Palette if you
 prefer.
+
+Signing in from that menu does **not** connect, which is the one place the two
+routes differ. The editor polls that menu, you open it to read rather than to
+start something, and it can act on a deployment other than the one your active
+profile names — so a SAS process started from it would be one you did not ask
+for, on a deployment you were not looking at. Run **Python on Viya: Connect to
+SAS Viya** when you want the session.
 
 The name shown next to the account is your display name as Viya reports it. If
 your identity provider does not publish one, your login name is shown instead,
@@ -65,6 +86,24 @@ of the Accounts menu and the reason is written to the log. Nothing pops up,
 because you did not ask for anything: opening a menu is not a request to be
 interrupted. Run **Python on Viya: Show Log** to see what happened, then sign in
 again.
+
+Some deployments are configured not to issue refresh tokens at all. There is
+nothing wrong when that happens — the sign-in works — but the session can only
+last as long as its access token, usually about an hour, and then the account
+leaves the Accounts menu on its own. The log says so when it does, so that a
+sign-in which seems to have undone itself has an explanation you can find. Sign
+in again to continue; there is no setting on this side that changes it.
+
+A deployment that is switched off does not hold up the others. Profiles are
+renewed side by side, and the menu is drawn with whatever has arrived within ten
+seconds — so a test Viya that is down for the weekend cannot keep a production
+account you are signed in to out of the list. The slow renewal is not abandoned:
+when it lands it is kept, and that account appears the next time anything asks.
+
+Connecting is the exception, on purpose. When something asks for one *particular*
+account — which connecting does, because it knows which deployment it wants — it
+waits for that account however long it takes. A deliberate request would rather
+be slow than be told there is no session when there is.
 
 ## What is stored, and what is not
 
@@ -160,8 +199,10 @@ the first is fixed by signing in again. The log says which one happened.
 folder, because it reads a stored credential and runs code on a remote server
 under your identity — and because the folder is what names the endpoint the
 credential is sent to. In an untrusted folder the Accounts menu shows no SAS Viya
-session, the two sign-in commands are disabled, and asking for either through the
-API is refused with a message pointing at **Workspaces: Manage Workspace Trust**.
+session, the two sign-in commands drop out of the Command Palette — that is how
+VS Code renders a command that is currently unavailable — and asking for either
+through the API is refused with a message pointing at **Workspaces: Manage
+Workspace Trust**.
 Nothing is signed out and nothing is deleted; trust the folder and the session
 comes back without a reload. Profile management still works without trust. See
 [ADR-0002](adr/0002-workspace-trust-posture.md).

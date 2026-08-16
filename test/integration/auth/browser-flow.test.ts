@@ -10,6 +10,7 @@ import {
   type BrowserSignInDeps,
   type BrowserSignInRequest,
 } from "../../../src/auth/browserFlow";
+import { isSignInCancelled } from "../../../src/auth/cancellation";
 import { SessionStore } from "../../../src/auth/sessionStore";
 import { sessionSecretKey } from "../../../src/auth/signIn";
 import type { HttpTransport } from "../../../src/auth/transport";
@@ -70,7 +71,9 @@ interface Harness {
   dispose(): void;
 }
 
-function harness(options: { openExternal?: boolean } = {}): Harness {
+function harness(
+  options: { openExternal?: boolean; refuseExchange?: boolean } = {},
+): Harness {
   const log = testLogChannel("browser flow");
   const handler = new AuthUriHandler(log);
   const secrets = memorySecrets();
@@ -81,6 +84,15 @@ function harness(options: { openExternal?: boolean } = {}): Harness {
 
   const transport: HttpTransport = (_url, init) => {
     exchanges.push(new URLSearchParams(init.body));
+    if (options.refuseExchange === true) {
+      // What a deployment that will not honour the code looks like from here.
+      return Promise.resolve({
+        ok: false,
+        status: 400,
+        headers: {},
+        text: () => Promise.resolve(JSON.stringify({ error: "invalid_grant" })),
+      });
+    }
     return Promise.resolve({
       ok: true,
       status: 200,
@@ -248,13 +260,37 @@ describe("browser sign-in", () => {
   });
 
   it("treats a dismissed box as a cancellation and says nothing", async () => {
+    // Thrown rather than returned as another `undefined`, because `undefined`
+    // already means "it failed and the user has been told why" — and the caller
+    // has to reject either way, so the only question is whether it rejects with
+    // something the command can recognise and swallow.
     h.answers.push(undefined);
 
-    const tokens = await signInWithBrowser(request, h.deps);
+    await assert.rejects(
+      signInWithBrowser(request, h.deps),
+      (error: unknown) => isSignInCancelled(error),
+      "a dismissed box did not read as a cancellation",
+    );
 
-    assert.equal(tokens, undefined);
     assert.equal(h.exchanges.length, 0, "a cancelled sign-in exchanged a code");
     assert.equal(h.secrets.entries.size, 0);
+  });
+
+  it("does not read a refused exchange as a cancellation", async () => {
+    // The other half of the same distinction, and the one that would be quiet if
+    // it went wrong: a deployment that refuses the code has failed, and a failure
+    // swallowed as a cancellation is a command that appears to do nothing at all.
+    const refusing = harness({ refuseExchange: true });
+    try {
+      refusing.answers.push("pasted-code");
+
+      const tokens = await signInWithBrowser(request, refusing.deps);
+
+      assert.equal(tokens, undefined, "a refused exchange produced tokens");
+      assert.equal(refusing.secrets.entries.size, 0);
+    } finally {
+      refusing.dispose();
+    }
   });
 
   it("lets a stale or forged callback pass without ending the attempt", async () => {
@@ -300,8 +336,11 @@ describe("browser sign-in", () => {
       assert.ok(redirect.includes(CALLBACK_PATH), redirect);
     }
 
+    // Ends the attempt so the test does not leave a flow in flight. Dismissing
+    // the box is a cancellation, so this rejects — awaiting it plainly would
+    // fail the test on the way out.
     h.answers.push(undefined);
-    await signedIn;
+    await assert.rejects(signedIn);
   });
 
   it("asks the host anyway on the built-in client, and sends nothing", async () => {

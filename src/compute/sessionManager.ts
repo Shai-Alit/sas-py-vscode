@@ -41,6 +41,9 @@
 import * as vscode from "vscode";
 
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
+import { isSignInCancelled } from "../auth/cancellation";
+import { accountForEndpoint } from "../auth/identity";
+import { getSessionOptions, type AuthRequest } from "../auth/sessionRequest";
 import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { bindingMatches, type SessionBinding } from "./binding";
@@ -112,8 +115,20 @@ export interface ComputeSessionDeps {
   /** Defaults to `vscode.authentication.getSession` for this provider. */
   authSession?:
     | ((
-        createIfNone: boolean,
+        request: AuthRequest,
       ) => Thenable<vscode.AuthenticationSession | undefined>)
+    | undefined;
+  /**
+   * Defaults to `vscode.authentication.getAccounts` for this provider.
+   *
+   * Read once per connect, to work out which account the active profile's
+   * deployment is already signed in to. Never called per request: the answer
+   * travels with the connection instead.
+   */
+  accounts?:
+    | (() => Thenable<
+        readonly vscode.AuthenticationSessionAccountInformation[]
+      >)
     | undefined;
   /** Defaults to {@link createComputeClient}. */
   createClient?: ((config: ComputeClientConfig) => ComputeClient) | undefined;
@@ -270,16 +285,29 @@ export class ComputeSessionManager implements vscode.Disposable {
     const held = this.live.get(active.profile.id);
     if (held !== undefined) return held;
 
-    // Asked for once, with `createIfNone`, so an unsigned-in user gets the
-    // browser flow rather than an error telling them to run another command.
-    const auth = await this.authSession(true);
+    // Asked for once, interactively, so an unsigned-in user gets the browser
+    // flow rather than an error telling them to run another command — and asked
+    // *for a named account* whenever this deployment already has one, so a
+    // window signed in to two Viyas resumes the right session instead of
+    // offering the user a list only one entry of which can work.
+    const account = await this.accountFor(active.profile);
+    const auth = await this.authSession(
+      account === undefined ? { kind: "new" } : { kind: "known", account },
+    );
     if (auth === undefined) return undefined;
 
     // The provider issues one session per profile and its id **is** the profile
-    // id, so this compares like with like. It matters because `getSession` picks
-    // the account, not us: with two profiles signed in, VS Code asks the user,
-    // and answering with the other one would otherwise open a session on a
-    // deployment they did not select. Refusing names the command that fixes it.
+    // id, so this compares like with like.
+    //
+    // This used to be the ordinary outcome of having two profiles, because
+    // nothing above named an account and VS Code chose one. It is now the
+    // narrow case the account hint cannot reach: **two profiles pointing at the
+    // same deployment**. They share an account id — it is keyed on endpoint and
+    // user, and neither distinguishes them — so the hint is satisfied by either
+    // profile's session and the host may return the other one. There is no
+    // option on `getSession` that says "this profile"; the session id is ours
+    // and the host does not take it as input. So the check stays, as the last
+    // thing between a picked account and a compute session started under it.
     if (auth.id !== active.profile.id) {
       this.fail(
         vscode.l10n.t(
@@ -290,7 +318,9 @@ export class ComputeSessionManager implements vscode.Disposable {
       return undefined;
     }
 
-    const client = this.clientFor(active.profile);
+    // `auth.account`, not the hint: the hint may have been absent, and after an
+    // interactive sign-in this is who was actually signed in as.
+    const client = this.clientFor(active.profile, auth.account);
 
     const context = await this.contextFor(active.profile, client);
     if (context === undefined) return undefined;
@@ -530,17 +560,32 @@ export class ComputeSessionManager implements vscode.Disposable {
   /**
    * A client for a profile, whose token is fetched per request.
    *
-   * `createIfNone: false` inside the token function on purpose: this runs behind
-   * a request that is already in flight, and a browser window opening there
-   * would be a sign-in prompt with no visible cause. Connecting has already asked
-   * once, interactively, at a moment the user was expecting it.
+   * Silent on purpose: this runs behind a request that is already in flight, and
+   * a browser window opening there would be a sign-in prompt with no visible
+   * cause. Connecting has already asked once, interactively, at a moment the
+   * user was expecting it.
+   *
+   * `account` is that connect's answer, carried in rather than looked up again.
+   * It has to be named here as well or the silent refresh is the unguarded call
+   * the interactive one no longer is: a window signed in to two deployments
+   * would renew from whichever account the host offered, and the wrong bearer
+   * token would be sent to a live Compute session under a name nobody chose.
+   * That failure reports nothing — the request either 401s or, worse, succeeds
+   * against a deployment the user did not pick — which makes it the more
+   * important of the two paths to get right, not the lesser one.
    */
-  private clientFor(profile: ViyaProfile): ComputeClient {
+  private clientFor(
+    profile: ViyaProfile,
+    account?: vscode.AuthenticationSessionAccountInformation,
+  ): ComputeClient {
     const create = this.deps.createClient ?? createComputeClient;
     return create({
       root: profile.endpoint,
       token: async () => {
-        const session = await this.authSession(false);
+        const session = await this.authSession({
+          kind: "silent",
+          ...(account === undefined ? {} : { account }),
+        });
         if (session === undefined) {
           throw new Error(
             vscode.l10n.t("The SAS Viya sign-in for this profile has ended."),
@@ -584,27 +629,78 @@ export class ComputeSessionManager implements vscode.Disposable {
   }
 
   /**
-   * The two ways this asks for a token, and they are not the same call.
+   * A token, or `undefined` if the user decided not to sign in after all.
    *
-   * `createIfNone` is the interactive one, made once when the user asked to
-   * connect. `silent` is the per-request one: it answers only if this extension
-   * already has access, and never puts UI in front of someone who is waiting for
-   * a request to come back. Passing both to VS Code at once is rejected, which is
-   * why this branches rather than assembling one options object.
+   * Cancelling is the one rejection this turns back into a value. It arrives
+   * here as a rejection because `getSession` has no other way to say it — but
+   * connecting already has a word for "no session", and it is `undefined`, so
+   * translating here means every frame above stays as it was.
+   *
+   * This is also the one place in the extension where the error being caught has
+   * crossed an RPC hop: `vscode.authentication.getSession` reaches our own
+   * provider through the editor, which rebuilds anything thrown as a plain
+   * `Error`. See `src/auth/cancellation.ts` for why the check is on `name`.
    */
   private async authSession(
-    createIfNone: boolean,
+    request: AuthRequest,
+  ): Promise<vscode.AuthenticationSession | undefined> {
+    try {
+      return await this.askForSession(request);
+    } catch (error) {
+      if (!isSignInCancelled(error)) {
+        // Everything else is still thrown, and still lands on the user as
+        // "Running the contributed command … failed". That is #130's to fix and
+        // not this one's: a deployment that cannot be reached is a real failure
+        // and deserves a real message, it just deserves a better one than that.
+        throw error;
+      }
+
+      // The user closed the browser. `undefined` is what every other "no session
+      // for you" answer looks like to `runConnect`, so connecting stops here and
+      // says nothing — and the provider has already logged it, on this side of
+      // the hop as well as the other, because both ends are this extension.
+      return undefined;
+    }
+  }
+
+  /**
+   * The one call to `getSession` this extension makes. See {@link AuthRequest}
+   * for the three shapes a request comes in, and {@link getSessionOptions} for
+   * what each one turns into — including why the `new` arm has to clear the
+   * host's remembered account.
+   *
+   * That mapping is next door and pure on purpose. It used to be a `switch`
+   * here, which meant the injected port below sat *above* the only code that
+   * knew what we actually asked for, and no test could reach it.
+   */
+  private async askForSession(
+    request: AuthRequest,
   ): Promise<vscode.AuthenticationSession | undefined> {
     const get = this.deps.authSession;
-    if (get !== undefined) return await get(createIfNone);
+    if (get !== undefined) return await get(request);
 
-    return await (createIfNone
-      ? vscode.authentication.getSession(AUTH_PROVIDER_ID, [], {
-          createIfNone: true,
-        })
-      : vscode.authentication.getSession(AUTH_PROVIDER_ID, [], {
-          silent: true,
-        }));
+    return await vscode.authentication.getSession(
+      AUTH_PROVIDER_ID,
+      [],
+      getSessionOptions(request),
+    );
+  }
+
+  /**
+   * Which account this deployment is already signed in to, if exactly one is.
+   *
+   * One call per connect, and its failure mode is deliberately quiet: no account
+   * is an ordinary state — nobody has signed in yet — and so is an ambiguous
+   * one. Both mean the same thing to the caller, which is that the sign-in has
+   * to be asked for rather than resumed.
+   */
+  private async accountFor(
+    profile: ViyaProfile,
+  ): Promise<vscode.AuthenticationSessionAccountInformation | undefined> {
+    const list =
+      this.deps.accounts ??
+      (() => vscode.authentication.getAccounts(AUTH_PROVIDER_ID));
+    return accountForEndpoint(profile.endpoint, await list());
   }
 
   private async withProgress<T>(

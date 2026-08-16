@@ -144,6 +144,49 @@ export function accountId(endpoint: string, userId: string): string {
 }
 
 /**
+ * The one account already signed in to this deployment, if there is exactly one.
+ *
+ * The inverse of {@link accountId}, as far as it can be: an account id carries
+ * the deployment *and* the user, and a profile names only the deployment. So the
+ * endpoint half can be matched and the user half cannot, and the honest answer
+ * when two people are signed in to the same Viya from this machine is that we do
+ * not know which of them the profile means.
+ *
+ * That ambiguity resolves to `undefined`, deliberately, and `undefined` is not a
+ * failure — it is "ask, do not assume". A hint is a shortcut past the account
+ * picker; guessing wrong would spend somebody else's token against this
+ * profile's deployment, which is the confused deputy {@link accountId} exists to
+ * prevent. Showing the picker one more time is the cheaper mistake.
+ *
+ * Generic over the account so this stays a string rule: the caller passes
+ * `vscode.AuthenticationSessionAccountInformation[]` and gets one back, without
+ * this module knowing that type exists.
+ */
+export function accountForEndpoint<T extends { readonly id: string }>(
+  endpoint: string,
+  accounts: readonly T[],
+): T | undefined {
+  const prefix = `${root(endpoint)}::`;
+  // The separator is part of the prefix, and the non-empty tail is required.
+  // Without both, `https://viya.example.com` would match an account keyed to
+  // `https://viya.example.com.evil.test`, and a hint is a shortcut past the
+  // account picker — the one place the user would otherwise notice.
+  //
+  // This is not a parse, and it does not need to be. The remaining ambiguity is
+  // an id whose *user* half begins with `::`, which would need an endpoint that
+  // is another endpoint plus `::`; an IPv6 authority is the only thing that puts
+  // `::` in a root at all (`https://[2001:db8::1]`) and it cannot be produced by
+  // extending a shorter valid root, because the brackets would not close. The
+  // cost of being wrong anyway is bounded: the id that comes back is checked
+  // against the profile before a session is used.
+  const matches = accounts.filter(
+    (account) =>
+      account.id.startsWith(prefix) && account.id.length > prefix.length,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/**
  * What to show in the Accounts menu.
  *
  * Display name, then login, then the raw id. The chain exists because only `id`

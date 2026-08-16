@@ -614,6 +614,23 @@ reason — the pure half is unit-testable and the shell half is not:
 > **ADR-0012**, which also records why reclaim-by-listing was rejected after the
 > probes made it possible. Integration-tested, one test per shell module.
 > *Medium.*
+>
+> **2a-iii — one account, one command.** *Added 2026-08-15, after 2a-ii merged and
+> was used by hand.* Five defects in `src/auth`, none of which the suite caught.
+> Connecting must ask VS Code for the **active profile's account** rather than
+> accepting whichever it is handed and then refusing it — without that, a second
+> profile could not be connected to at all, which foreclosed in practice the
+> multi-profile capability 2a-ii built. The refusal survives as an assertion, for
+> the one case an account cannot express: two profiles pointing at the same
+> deployment share an account. On top of it: *Sign In* connects, so one command
+> reaches a session — from the command, never from the provider, so that the
+> polled Accounts menu cannot start a SAS process; the Accounts menu resolves
+> profiles concurrently and bounds each answer, so one unreachable deployment
+> does not stall it, while a caller that names an account — connecting does —
+> still waits for that one; a cancelled sign-in is reported as
+> a cancellation; and a session that is not restored says why — at debug when
+> nobody was signed in, at information when one that was working has expired
+> with nothing stored to renew it from. *Small.*
 
 **The generated OpenAPI client is not vendored — see ADR-0010.** This reverses
 what this plan pre-agreed. Upstream's client is 28,673 lines of which the session

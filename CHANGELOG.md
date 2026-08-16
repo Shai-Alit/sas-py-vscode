@@ -228,7 +228,11 @@ called out under **Changed** with a migration note.
   session write is not awaited, so a window closing straight after sign-in can
   lose the session it just established. Here a held token is served from memory
   and renewed only against the absolute `expiresAt` 1b-i already computes, an
-  unknown id is an error, and the write is awaited.
+  unknown id is an error, and the write is awaited. Both provider calls honour the
+  account a caller names — `getSessions` answers for that one, and `createSession`
+  signs in to the profile it belongs to rather than whichever is active — while
+  still publishing the whole session list, because narrowing what is published
+  would announce every other session as removed.
 
 - `src/auth/identity.ts`, which reads the signed-in user, and asks for
   `application/vnd.sas.identity.user.summary+json` **explicitly**. That header is
@@ -364,21 +368,37 @@ called out under **Changed** with a migration note.
   and a token may not.
 
   Connect refuses in an untrusted workspace, before it reads a profile or makes a
-  request, and *Connect* is not offered in the palette there. It also refuses when
-  the account VS Code hands back belongs to a different profile than the one
-  selected, rather than opening a session on a deployment the user did not choose.
-  A profile with no compute context configured is asked once, and the answer is
+  request, and *Connect* is not offered in the palette there. It names the account
+  belonging to the active profile's deployment, so a window signed in to two Viyas
+  resumes the right session rather than offering a list on which only one entry can
+  work, and a deployment nobody has signed in to yet goes straight to its own
+  sign-in. Where an account cannot identify a profile — two profiles pointing at
+  the same deployment, or two people signed in to one — it asks rather than
+  guesses, and still refuses outright if what comes back belongs to another
+  profile. A profile with no compute context configured is asked once, and the answer is
   written back into the profile once a session has actually started on it — a
   context that turns out not to work leaves the profile alone, so the picker is
   still there next time. Cancelling the progress notification stops the connect
   and says nothing further, because a cancelled request is indistinguishable on
   the wire from a deployment that is down.
 
-  **Known limitation:** connecting after *Switch Connection Profile* fails with
-  "The account chosen is not the one … uses". The extension does not yet tell
-  VS Code which account it wants, so VS Code reuses the last one it issued and
-  the guard against connecting to an unselected deployment fires on every
-  switch. Use one profile at a time until this is fixed.
+- Signing in connects. **Python on Viya: Sign In** now opens a compute session
+  once it has signed you in, because there is no other reason to sign in to a
+  compute server and asking for two commands to reach one outcome is friction
+  with nobody paying for it. The two commands meet in the middle: *Connect*
+  already signed you in if you were not, so from a cold start either one now
+  gets the whole way. A sign-in whose connect does not happen still says the
+  sign-in worked — the connect has already reported its own failure, and what
+  would otherwise be lost is the one fact that stops you signing in twice.
+
+  The **Accounts menu** deliberately does not connect. That menu is polled by the
+  editor, it is opened to read rather than to start something, and it can act on
+  a profile other than the active one — so a SAS process started from it would be
+  one nobody asked for, on a deployment the user was not looking at. The connect
+  therefore lives in the command rather than in the authentication provider,
+  which is what both routes share. *Connect* survives for reconnecting: after a
+  session times out, after switching profile, after ending one deliberately.
+  Recorded as ADR-0013, with the alternatives that lost.
 
 ### Fixed
 
@@ -488,6 +508,63 @@ called out under **Changed** with a migration note.
   backend "encrypts" with the identity function and reads `""` back as
   `undefined`. So the claim is kept in `globalState`, where a fact about
   configuration belongs, and the secret store holds only secrets.
+- One unreachable deployment no longer stalls the Accounts menu, or anything
+  else that asks who is signed in. Profiles were renewed one after another, so a
+  test Viya that was switched off held every account behind it for up to
+  forty-five seconds — the token request's thirty plus the identity request's
+  fifteen — and the editor polls that menu, so the stall repeated. Profiles are
+  now renewed concurrently, in the order they were given so the menu does not
+  reorder itself by network weather, and each answer is bounded at ten seconds.
+  The bound is on the *answer*, not on the work: the slow renewal keeps running,
+  and when it lands it is kept, so the next caller is served from memory rather
+  than starting again. That, in turn, is why a renewal already in flight is now
+  shared instead of restarted — without it, polling a dead host would open a
+  fresh socket every few seconds and never close one.
+- A caller that names an account is no longer bounded. Connecting asks for one
+  particular account, and it would rather wait than be told there is no session
+  when there is; a menu poll names nothing and takes the ten seconds. The
+  distinction falls out of the `getSessions` signature, so it needed no new
+  plumbing. Not yet solved: a connect that has no account to name — two profiles
+  pointing at one deployment — is still bounded like a poll.
+- One unreadable keychain entry no longer empties the Accounts menu. A rejected
+  renewal took the whole list down with it, so a single corrupt stored secret
+  hid every other signed-in account; each profile's failure is now confined to
+  that profile and written to the log at warning level.
+- Closing the browser without signing in is now treated as an answer rather than
+  a fault. It used to end in an error dialog saying the sign-in did not complete,
+  which told the user that the thing they had just chosen to do had gone wrong;
+  now it shows nothing, on the command and on the connect alike, and only the log
+  records it. Dismissing the client-secret prompt counts the same way, which it
+  did not before — that prompt appears before the browser opens, so the sign-in
+  flow could not see it. Everything that is not a cancellation is still reported
+  exactly as loudly as it was.
+- A session that is not restored now says why. Finding nothing stored for a
+  profile used to be completely silent, which is right when nobody has signed in
+  — the Accounts menu asks constantly, and that answer goes to the log at debug —
+  but wrong when a session that was working has just ended. A deployment
+  configured to issue no refresh token can only keep you signed in for as long as
+  the access token lasts, and the account leaving the menu on its own looked
+  exactly like a fault; it is now stated once, at information level, naming the
+  deployment. Neither line quotes a token or a correlation id.
+- Connecting after switching profile no longer signs you in to the deployment you
+  switched *away* from. Found by hand against two live deployments. Asking the
+  editor for a session without naming an account does not leave the choice open:
+  VS Code fills in the account it remembered from the last interactive sign-in
+  and passes that to the provider, which honours a named account above the active
+  profile — deliberately, because that is how the Accounts menu's *sign in again*
+  row has to behave. The two rules are each correct and together they sent the
+  browser to the wrong SASLogon. The request now clears that remembered account,
+  so a deployment nobody has signed in to yet is decided by the active profile and
+  nothing else. Only the interactive request clears it: a request that already
+  names an account never consulted the preference, and the Accounts menu's poll
+  must not write anything at all.
+
+  The mapping from "which kind of session do we want" to the options the editor
+  actually receives now lives in a module of its own, `src/auth/sessionRequest.ts`,
+  and is unit-tested. It was previously inline, one frame *below* the seam the
+  tests inject at, which is why a green suite had nothing to say about a wrong
+  deployment: every test could see which request was chosen and none could see
+  what it turned into.
 
 ### Changed
 

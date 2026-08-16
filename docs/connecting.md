@@ -6,8 +6,10 @@ interpreter, started for you and kept alive between commands.
 
 Run **Python on Viya: Connect to SAS Viya** from the Command Palette. If you are
 not signed in yet you will be, so this is the only command you need from a cold
-start. A progress notification appears while the session opens, and an
-information message names the profile you are connected to when it is ready.
+start — and it works the other way round too, because
+[**Sign In**](signing-in.md) connects once it has signed you in. A progress
+notification appears while the session opens, and an information message names
+the profile you are connected to when it is ready.
 
 Nothing runs Python yet. This slice ships the connection the run command will
 use, and the reason it ships on its own is that almost everything that can go
@@ -20,10 +22,12 @@ four minutes building. That state lives in the session, so it survives from one
 run to the next in the same way a notebook kernel does, and it dies with the
 session.
 
-That is the whole reason connecting is a separate step with its own command
-rather than something the run command does silently: a session you cannot see is
-a session you cannot deliberately keep, and the state in it is the expensive
-part.
+That is why Connect survives as a command of its own even though signing in now
+does it for you: a session you cannot see is a session you cannot deliberately
+keep, and the state in it is the expensive part. What changes is when you reach
+for it. Connect is for *re*connecting — after a session has timed out, after
+switching profile, after ending one deliberately — rather than for getting
+started.
 
 ## One session per folder, per profile
 
@@ -42,15 +46,11 @@ in the other. If you want two independent namespaces, open two different folders
 
 Two *profiles*, on the other hand, are always separate: a test deployment and a
 production one can hold a session each at the same time, and connecting to one
-does not disturb the other.
-
-::: warning A second profile is not usable yet
-That is how the extension is built, but it is not yet how it behaves. Connecting
-after **Switch Connection Profile** currently fails with *"The account chosen is
-not the one … uses"*, because the extension does not tell VS Code which account
-it wants and VS Code reuses the last one it handed out. Until that is fixed, use
-one profile at a time. See the troubleshooting entry below.
-:::
+does not disturb the other. Connecting names the account for the deployment the
+active profile points at, so switching profile and connecting again signs you in
+to the right place — or, if you have never signed in to that deployment, takes
+you straight to its sign-in rather than offering you the account you already have
+for a different one.
 
 The remembered session id is treated as a hint rather than a fact. The extension
 tries it, and if the session has ended in the meantime it opens a new one and
@@ -99,17 +99,20 @@ administers the deployment which context is the right one.
 
 ## When it does not work
 
-**Connect is greyed out in the Command Palette.** Either no connection profile
-exists yet — run **Python on Viya: Add Connection Profile** — or the folder is
-not trusted, or you are already connected.
+**Connect does not appear in the Command Palette.** A command that is currently
+unavailable is left out of the palette rather than shown greyed, so a missing
+entry is the normal way this looks. Either no connection profile exists yet — run
+**Python on Viya: Add Connection Profile** — or the folder is not trusted, or you
+are already connected.
 
 **"Select a SAS Viya connection profile before connecting."** Profiles exist but
 none is active in this window. Run **Python on Viya: Switch Connection Profile**.
 
-**"The account chosen is not the one … uses."** VS Code lets you choose an
-account when more than one is signed in, and the one you chose belongs to a
-different profile than the one that is active. Switch profile, or connect again
-and pick the matching account. The extension refuses rather than opening a
+**"The account chosen is not the one … uses."** Rare, and it means one thing:
+two profiles point at the *same* deployment, so an account cannot tell them
+apart and VS Code answered with the other one's session. Run **Python on Viya:
+Switch Connection Profile** to the profile that account belongs to, or give the
+two profiles different deployments. The extension refuses rather than opening a
 session on a deployment you did not select.
 
 **"The compute context … does not offer a `createSession` link."** The context

@@ -527,26 +527,51 @@ gh api -X PUT  repos/Shai-Alit/sas-py-vscode/vulnerability-alerts
 gh api -X PUT  repos/Shai-Alit/sas-py-vscode/private-vulnerability-reporting
 ```
 
-☐ **Enable `secret_scanning_non_provider_patterns`.** The 2026-08-16 API response
-shows it `disabled`, and it matters here more than the default suggests. Provider
-patterns match known vendor formats — an AWS key, a GitHub token. **A SAS Viya
-bearer token is a plain JWT that no vendor pattern claims**, so provider-only
-scanning does not cover the one credential this project actually handles.
-Generic-pattern detection is the arm that would. It is noisier, which on a repo
-this size is a fair trade. Whether push protection blocks on generic patterns as
-reliably as on provider ones is unconfirmed, so `check:secrets` stays either way.
+☑ **Closed 2026-08-16 — not available on this repository.** The reasoning for
+wanting it stands: provider patterns match known vendor formats, an AWS key or a
+GitHub token, and **a SAS Viya bearer token is a plain JWT that no vendor pattern
+claims**, so provider-only scanning does not cover the one credential this project
+actually handles. Generic-pattern detection is the arm that would.
+
+It cannot be turned on here. The `PATCH` below was run and returned **200 with the
+field still `disabled`** — the repository-update endpoint silently drops
+`security_and_analysis` sub-fields it will not accept, so a no-op is
+indistinguishable from success on the wire. The UI settles it: under **Settings →
+Advanced Security** there is no *Scan for non-provider patterns* control at all,
+and no upsell either. Absent, not merely off. The likely gate is paid GitHub
+Secret Protection, but that was not confirmed and the distinction does not change
+the outcome.
+
+**Closed rather than left open, because the compensating control is already the
+stronger one.** `scripts/check-secrets.mjs` carries a `jwt` rule —
+`\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}` — plus a
+`bearer-header` rule, and that file's own doc comment says it exists precisely
+because GitHub's partner patterns will never match a Viya token. It runs in CI on
+every run. Buying GitHub Advanced Security to obtain a second, weaker net under a
+risk already covered by a tested first-party check would be the wrong call on a
+side project, so this is a decision, not a deferral. Revisit only if this repo
+moves under a SAS organisation that already licenses Secret Protection, where it
+would cost nothing.
+
+The one thing generic-pattern scanning would add that `check:secrets` does not:
+it scans **history**, while ours scans the working tree. That gap is accepted, and
+push protection — which *is* enabled — covers the direction that matters, a
+credential arriving in a new push.
 
 ```bash
+# Ran, returned 200, changed nothing. Kept as the record of what was attempted.
 echo '{"security_and_analysis":{"secret_scanning_non_provider_patterns":{"status":"enabled"}}}' | gh api -X PATCH repos/Shai-Alit/sas-py-vscode --input -
 ```
 
-☐ **Reconcile `allow_merge_commit` with A3.** A3 above says the repo is
-squash-merge only. The 2026-08-16 API response says `allow_squash_merge: true`,
+☑ **Done; confirmed on the live setting 2026-08-16.** A3 above says the repo is
+squash-merge only. The 2026-08-16 API response said `allow_squash_merge: true`,
 `allow_rebase_merge: false`, and `allow_merge_commit:` **`true`** — so the claim
-is not backed by the configuration. Nothing has gone wrong, because branch
-protection's linear-history rule blocks a merge commit on `main` regardless; but
-a record that says one thing while the config says another is the defect this
-section has already been bitten by twice. Turning it off costs nothing.
+was not backed by the configuration. Nothing had gone wrong, because branch
+protection's linear-history rule blocks a merge commit on `main` regardless; but a
+record that says one thing while the config says another is the defect this
+section has already been bitten by twice. `allow_merge_commit` is now `false`, and
+unlike the box above this one applied cleanly — a plain repository setting with no
+licensing behind it, so the `PATCH` did what it said.
 
 ```bash
 gh api -X PATCH repos/Shai-Alit/sas-py-vscode -F allow_merge_commit=false
@@ -2298,10 +2323,13 @@ of this size moves an aggregate by a tenth of a point, and testing.md's *round
 down further than feels necessary* exists precisely so a tenth of a point on one
 platform is not a red build on another.
 
-☐ **Manual check against your Viya, 2a-iii.** The five defects above were all
-found by hand and four of them are only observable by hand, so this is the gate
-on the slice rather than a nicety. It replaces the 2a-ii procedure rather than
-extending it: run this one from the top.
+☑ **Done; passed 2026-08-16.** The five defects above were all found by hand and
+four of them are only observable by hand, so this was the gate on the slice
+rather than a nicety. It replaced the 2a-ii procedure rather than extending it.
+Closed across two runs — 2026-08-15 for steps 1–5 and the reload, 2026-08-16 for
+step 6 in full plus a re-proof of the cold start and the context write-back on
+the post-#137 build. Three findings came out of the second run and none of them
+block the slice: #145, #146, #147, all recorded below.
 
 **Run 2026-08-15, steps 1–5 passed and step 6 failed.** Recorded here rather than
 in a commit message because the next reader needs the outcome next to the steps
@@ -2360,16 +2388,21 @@ endpoint, the compute context id and its name. That is the cold start and the
 context write-back, both proved on the build being shipped rather than the one
 before it.
 
-**What this box is still waiting on: the reload.** One step —
-**Developer: Reload Window**, then read the log for
-`Reconnected to the SAS Viya session for this folder.` It is singled out because
-it is the only check that exercises **ADR-0012**: the session id is held in
-`workspaceState`, and a reloaded window is supposed to reclaim the *same* Viya
-session rather than start a second one. Everything else in this slice can pass
-with that mechanism broken, and the failure is invisible without reading the log
-— a fresh session looks identical to a reclaimed one from the outside, except
-that whatever the user defined in it is gone. Confirmed on 2026-08-15
-pre-#137; unconfirmed since.
+**The reload is confirmed too**, on both runs: **Developer: Reload Window**
+followed by `Reconnected to the SAS Viya session for this folder.` in the log.
+That is **ADR-0012** working — the session id held in `workspaceState`, and a
+reloaded window reclaiming the *same* Viya session rather than starting a second
+one. Worth naming separately because it is the only check in this slice whose
+failure is invisible without reading the log: a fresh session looks identical to
+a reclaimed one from the outside, except that everything the user defined in it
+is gone.
+
+Unlike the cold start, this one did **not** need re-proving after #137. #137
+changed how `runConnect` asks for a session — the account hint and
+`clearSessionPreference`. The reload path does not go through that: it reads the
+id out of `workspaceState` and re-attaches. Recorded because the reflex of
+"#137 landed, so re-run everything" is right about the connect path and wrong
+here, and the distinction is what stops a future re-check being busywork.
 
 Every expected line below is quoted **exactly** as the code writes it, and each
 is marked either **notification** (a toast in the bottom right) or **log** (a

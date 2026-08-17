@@ -158,7 +158,9 @@ describe("check-contracts", () => {
     it("refuses a generation that is not a DialectId", () => {
       const problems = run([good("viya4"), good("viya35"), good("viya5")]);
       // Two: the bad generation, and the file name that now disagrees with it.
-      assert.ok(problems.some((problem) => /not a DialectId/.test(problem)));
+      assert.ok(
+        problems.some((problem) => problem.includes("not a DialectId")),
+      );
     });
 
     it("refuses an alias where the canonical id belongs", () => {
@@ -167,7 +169,9 @@ describe("check-contracts", () => {
       const contract = good("viya4");
       (contract.contract as Record<string, unknown>).generation = "v4";
       const problems = run([contract, good("viya35")]);
-      assert.ok(problems.some((problem) => /not a DialectId/.test(problem)));
+      assert.ok(
+        problems.some((problem) => problem.includes("not a DialectId")),
+      );
     });
 
     it("refuses a file whose name disagrees with its generation", () => {
@@ -247,7 +251,9 @@ describe("check-contracts", () => {
             },
           }),
         );
-        assert.ok(problems.some((problem) => /declares both/.test(problem)));
+        assert.ok(
+          problems.some((problem) => problem.includes("declares both")),
+        );
       });
 
       it("refuses neither a path nor a via", () => {
@@ -404,10 +410,19 @@ describe("check-contracts", () => {
       });
 
       it("names each missing top-level key", () => {
+        // Rebuilt without the key rather than `delete`d out of the object: a
+        // dynamic delete is banned by lint, and rebuilding says what the case
+        // is about — a file somebody wrote without that line — more directly
+        // than removing it afterwards does.
         const without = (key: string): string[] => {
-          const contract = good("viya4");
-          delete (contract.contract as Record<string, unknown>)[key];
-          return run([contract, good("viya35")]);
+          const body = good("viya4").contract as Record<string, unknown>;
+          const contract = Object.fromEntries(
+            Object.entries(body).filter(([name]) => name !== key),
+          );
+          return run([
+            { name: "contracts/viya4.yaml", contract },
+            good("viya35"),
+          ]);
         };
         has(without("generation"), /has no "generation"/);
         has(without("dialect"), /has no "dialect"/);

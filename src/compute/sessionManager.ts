@@ -605,7 +605,7 @@ export class ComputeSessionManager implements vscode.Disposable {
     signal: AbortSignal,
   ): Promise<DialectResolution> {
     const cached = this.generations.get(profile.id);
-    if (cached !== undefined && cached.endpoint === profile.endpoint) {
+    if (cached?.endpoint === profile.endpoint) {
       return cached.resolution;
     }
 

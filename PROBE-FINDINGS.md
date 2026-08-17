@@ -977,3 +977,269 @@ built on its shape.
   one. It should be nothing — the connect never reached a session — but that is
   reasoning, not an observation.
 - **Viya 3.5**, as everywhere else in this file.
+
+## 2026-08-16 — Submission mechanism (2-pre), before 2b freezes the interface (Viya 4)
+
+The probe `PRODUCTION_PLAN.md` requires **before** 2b, because all three answers
+shape the interface 2b freezes: how user code containing SAS-significant text
+behaves when it is inlined into a `SUBMIT` block, whether `SYSCC` is readable as
+a session variable rather than only from log text, and how the Python namespace
+is cleared without destroying the compute session.
+
+**This probe wrote.** Two sessions in the `SAS Studio compute context`, fourteen
+jobs between them, and one fileref whose content was uploaded twice. Both
+sessions were deleted at the end and the first was confirmed gone (`404`); the
+fileref was deassigned first (`204`). TLS verification was disabled for the probe
+only. The endpoint and the user identity are scrubbed here as elsewhere.
+
+### Finding 31 — A bare `endsubmit;` line ends the block; the same text inside a line does not
+
+Two forms, and only one of them is dangerous.
+
+**Embedded, harmless.** `x = "endsubmit;"` — the terminator inside a Python
+string on a line with other tokens — reached Python intact: `len(x)` printed
+`10`, and the block ran through to its last statement.
+
+**Alone on a line, fatal.** A line whose only content is `endsubmit;` ends the
+`SUBMIT` block even when Python considers it to be inside a triple-quoted string:
+
+```
+proc python;
+submit;
+print("MARK-A")
+s = """
+endsubmit;      <- SAS ends the block here
+"""
+print("MARK-B", len(s))
+```
+
+SAS then parsed the remainder as SAS. The `"""` on the next line produced
+`ERROR 180-322: Statement is not valid or it is used out of proper order`, the
+step was abandoned, and **not one line of the Python ran** — `MARK-A` never
+printed, although it came before the terminator. The job reported `state: error`.
+
+The risk is therefore not "the file mentions `endsubmit`". It is a line that
+stands alone as that statement after SAS has looked at it, which is ordinary
+Python inside any triple-quoted string, and entirely unremarkable in test data,
+documentation strings, or a file that talks about this extension.
+
+### Finding 32 — Inside an intact block, SAS neither resolves macros nor tokenises quotes
+
+Everything else thrown at the inline path came through byte for byte. With
+`%let probevar = SECRET42;` executed in the same job, immediately before the
+procedure:
+
+| Submitted inside `SUBMIT` | Python saw |
+| --- | --- |
+| `print("amp-dq:&probevar")` | `amp-dq:&probevar` |
+| `print('amp-sq:&probevar')` | `amp-sq:&probevar` |
+| `print("pct: %let notreally = 1;")` | `pct: %let notreally = 1;` |
+| `t = "don't stop"` | `len(t)` → `10` |
+| `u = 'it''s'` | `len(u)` → `3` |
+| `# don't stop -- a lone apostrophe in a comment` | ignored as a comment; the job stayed healthy and a following `data _null_` step still ran |
+| `v = "quote: \" and apos: '"` | `len(v)` → `20` |
+
+Three of those matter more than the rest. **No macro resolution happens**, in
+either quote style, for an automatic (`&sysuserid`, tested separately) or a
+user-defined variable — so the `&`-in-a-string hazard `PRODUCTION_PLAN.md` §1.5
+anticipated does not fire inside a `SUBMIT` block. **`''` is not collapsed**:
+Python received both apostrophes and read them as its own implicit concatenation
+of `'it'` and `'s'`, giving 3 characters. And **an unbalanced apostrophe in a
+comment is harmless** while the block is intact.
+
+That last one is worth stating carefully, because it is easy to read finding 33
+as contradicting it. It does not: the quote damage there happened *after* the
+block had already been ended early by finding 31's mechanism, at a point where
+SAS was no longer reading Python.
+
+### Finding 33 — A block ended early can leave the tokeniser inside an open quote, and every later job then does nothing while reporting `completed`
+
+This is the worst thing in this probe, and it was found by accident.
+
+The job in finding 31 left SAS parsing `"""` as SAS source: an empty literal
+followed by an unterminated one. The session stayed in that state **across job
+boundaries**. The next job's statements were swallowed as string content — no
+output, no error, no NOTE that anything was wrong — and the one after that
+finally produced `NOTE: The quoted string currently being processed has become
+more than 262 bytes long. You might have unbalanced quotation marks.` Both jobs
+returned **`state: completed`** with the source echoed into the log and nothing
+executed. A `PROC PYTHON` step swallowed this way was later measured at
+`real time 1:36.57`, so it also hangs.
+
+Recovery is the incantation `PRODUCTION_PLAN.md` §1.5 already names, and it
+works:
+
+```
+*';*";*/;quit;run;
+options nosyntaxcheck nodmssynchk;
+%let syscc=0;
+```
+
+After it, a `data _null_` step printed again and `PROC PYTHON` resumed its
+previous state. **Consequences for the client, and they are not small.** A job's
+`state` is *not* a success signal — `completed` covered two jobs that ran nothing
+at all. Whatever submission mechanism 3a chooses must either be incapable of
+ending the block early (finding 35) or must send the recovery incantation before
+every submission, and the extension cannot rely on the user noticing, because the
+symptom is silence.
+
+### Finding 34 — `PROC PYTHON`'s option set is enumerated by its own error message
+
+`proc python file=probef;` is not valid syntax, and the error is more useful than
+the documentation:
+
+```
+ERROR 22-322: Syntax error, expecting one of the following:
+              ;, COMMAND, ECHO, INFILE, RESTART, SRC, TERMINATE, TIMEOUT.
+```
+
+So the surface is `COMMAND`, `ECHO`, `INFILE`, `RESTART`, `SRC`, `TERMINATE`,
+`TIMEOUT`. `INFILE` and `RESTART` are used below. `ECHO` and `TIMEOUT` are
+unprobed and both look relevant later — `ECHO` to the log noise 3b filters, and
+`TIMEOUT` to 3d-i's Cancel. `TERMINATE` and `RESTART` are *options on the `PROC`
+statement*, not statements inside the block: `terminate;` written as a statement
+is `ERROR 180-322`.
+
+### Finding 35 — `infile=` runs an uploaded file byte for byte, and echoes no source
+
+`proc python infile=<fileref>;` and `proc python infile="/path/to/file.py";` both
+execute an uploaded file, and the file is never seen by the SAS tokeniser. The
+same content that destroyed the inline path in finding 31 ran correctly:
+
+| In the file | Result |
+| --- | --- |
+| `endsubmit;` alone on a line inside `"""…"""` | survived — `len(s)` → `12`, i.e. `\nendsubmit;\n` |
+| `"has %let and &sysuserid and ; semicolons"` | survived — `len(t)` → `40` |
+| `# don't …` (apostrophe in a comment) | harmless |
+| `café ✓` (UTF-8) | printed correctly |
+| no trailing newline | ran |
+
+**The file's source is not echoed into the log**, which the inline path does line
+by line. That removes the largest single category of noise 3b would otherwise
+have to strip, and it means the log holds Python's own output plus SAS's NOTEs
+and nothing else.
+
+`restart` composes with it in one statement — `proc python restart infile=probef;`
+destroyed the interpreter, started a new one, and ran the file, all in one step.
+
+**This is the answer to 2-pre (i): upload and `infile=`, not inline.** Inline is
+byte-faithful in every case tested except one, but that one is silent, is trivial
+to hit by accident, and poisons the session rather than the submission.
+
+### Finding 36 — Uploading needs an `If-Match`, and the round trip is byte-identical
+
+A fileref is created with `POST /compute/sessions/{id}/filerefs`, media type
+`application/vnd.sas.compute.fileref.request+json`, body `{"name":…,"path":…}`.
+The response carries `accessMethod: "DISK"`, `fileName`, `filePath`, `fileSize`,
+an `id` equal to the requested name, and seven links: `self`, `alternate`,
+`deassign` (`DELETE` the fileref), `content` (`GET`), **`upload` (`PUT`
+…/content)**, `append` (`POST`), and `delete` (`DELETE` …/content).
+
+`PUT …/content` with `Content-Type: application/octet-stream` and no `If-Match`
+returns **`428 Precondition Required`**. With the `ETag` from a `GET` of the
+fileref it returns **`201`**. A 191-byte payload — UTF-8, no trailing newline —
+came back from `GET …/content` **byte-identical**, md5 for md5.
+
+Two smaller things. The fileref collection starts at `count: 0` in a new session,
+so nothing has to be cleaned up before use. And the `files` endpoint (as opposed
+to `filerefs`) rejects `application/vnd.sas.collection+json` with a `406` and
+names the acceptable types in `remediation`; its hrefs encode path separators as
+`~fs~`.
+
+### Finding 37 — `SYSCC` is a readable session variable, and Compute resets it per job
+
+`GET /compute/sessions/{id}/variables/SYSCC` returns `200` and
+`{"name":"SYSCC","scope":"GLOBAL","value":"0","version":1}` with a `self` link.
+The variables collection reports `count: 83` on a fresh session, and a `%let`
+issued in a job shows up in it (`PROBEVAR` / `SECRET42`), so the endpoint reads
+live session state rather than a snapshot.
+
+**`SYSCC` is therefore not log-only, and 3a does not depend on 3b.** The plan's
+contingency — reorder or merge the two slices — is not needed. `SYSERR` and
+`SYSERRORTEXT` are readable the same way; after the finding 31 failure
+`SYSERRORTEXT` held `180-322: Statement is not valid or it is used out of prop…`,
+truncated by the service, not by us.
+
+**Compute resets `SYSCC` between jobs.** A job that ended with `SYSCC=1012` was
+followed by one that read `&syscc` as `0` in its first statement, with no reset
+sent by us. So the value read after a job is that job's, and the client does not
+have to zero it first — but nothing here proves the reset is a documented
+guarantee rather than an implementation detail, so 3a should still read the value
+it cares about immediately after the job it cares about.
+
+### Finding 38 — The interpreter persists across jobs, and `restart` clears it without touching the session
+
+`NOTE: Resuming Python state from previous PROC PYTHON invocation.` appears on
+every `PROC PYTHON` after the first, in the same session, **including across
+separate jobs**. A variable set in one job was still defined in the next, with
+the same interpreter pid.
+
+`proc python restart;` prints `NOTE: Previous Python state destroyed.` followed
+by `NOTE: Python initialized.`, and afterwards the marker variable was gone and
+the pid had changed (382 → 480). `proc python terminate;` prints
+`NOTE: Python terminated.` and the next invocation initialises a fresh one. The
+compute session is untouched by either — macro variables, librefs and filerefs
+survive, because only the interpreter is recycled.
+
+**This is the answer to 2-pre (iii): `restart`.** It costs about 3.4 seconds to
+destroy and initialise, measured twice; a first initialisation in a new session
+is about 1.8–4.5 seconds. So `freshNamespace` is a real option on every run
+rather than a session-lifecycle event, and neither `reset()` nor the cancellation
+fallback needs to destroy the session.
+
+### Finding 39 — A Python exception is `SYSCC=1012`, and the traceback carries two wrapper frames
+
+An unhandled exception produced, in this order: the output written before it, an
+`ERROR: Unhandled Python exception.` log line of type `error`, the Python
+traceback as `normal` lines, and `NOTE: The SAS System stopped processing this
+step because of errors.` The job reported `state: error`, and afterwards
+`SYSCC` = `SYSERR` = **`1012`**, with `SYSERRORTEXT` = `Unhandled Python
+exception.` A SAS-side syntax error gives `SYSCC=3000` instead, so the two are
+distinguishable.
+
+The traceback is not clean:
+
+```
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "<stdin>", line 2, in <module>
+  File "<string>", line 2, in <module>
+ValueError: boom-at-line-2
+```
+
+The user's own frame is the **last** one, `<string>`, and its line number is
+correct against the uploaded file — line 2 raised. The two `<stdin>` frames above
+it belong to the harness `PROC PYTHON` wraps around the code. With `infile=` the
+offset map for the user's frame is therefore the identity, which is one fewer
+thing for 3a to get wrong, but 3b must drop the wrapper frames or every traceback
+the user sees will point at lines they did not write.
+
+### What 2-pre settles
+
+1. **Submission is by upload, not by inlining.** Create a fileref, `PUT` the
+   editor's bytes with an `If-Match`, run `proc python infile=<fileref>;`. This
+   is the only mechanism tested that cannot end the block early, and it also
+   removes the source echo from the log.
+2. **Failure detection reads `SYSCC` from the variables endpoint.** 3a is
+   independent of 3b; the slices keep their planned order.
+3. **`freshNamespace` is `proc python restart`,** at roughly 3.4 seconds, with
+   the compute session left alone.
+
+### What this probe did not settle
+
+- **`ECHO`, `TIMEOUT`, `COMMAND` and `SRC`.** Named by finding 34's error message
+  and never tried. `TIMEOUT` may be the honest answer to 3d-i's Cancel, and `SRC`
+  may be a second way to hand over code; both should be probed before 3a fixes a
+  design.
+- **Whether `SYSCC`'s per-job reset is contractual.** Observed twice, not
+  documented here.
+- **Large files and concurrency.** The uploaded payload was 191 bytes and one
+  job ran at a time. Nothing here says how a megabyte of Python behaves, nor what
+  a second job submitted during a `PROC PYTHON` step does.
+- **Where the uploaded file should live, and who can read it.** `/tmp` on the
+  compute node was used because it was convenient. The session home directory
+  under `…/compsrv/default/<session-id>` is the obvious alternative and was not
+  compared, and no permissions were checked.
+- **Cleanup on failure.** The fileref was deassigned by hand at the end. What
+  happens to an uploaded file when a session dies mid-run was not observed.
+- **Viya 3.5**, as everywhere else in this file.

@@ -400,6 +400,21 @@ called out under **Changed** with a migration note.
   session times out, after switching profile, after ending one deliberately.
   Recorded as ADR-0013, with the alternatives that lost.
 
+- `PROBE-FINDINGS.md` findings 31-39, settling how Python will be submitted before
+  the backend interface freezes around the wrong shape. It will be an upload plus
+  `proc python infile=<fileref>;` rather than an inline `submit`/`endsubmit`
+  block: a line reading `endsubmit;` inside a triple-quoted Python string does end
+  the block, and the truncated remainder leaves the SAS tokeniser in a state where
+  the **next** job reports `completed` while executing nothing at all. That is the
+  failure this project has been most worried about, and it is worse than expected
+  — silent rather than loud, and it outlives the submission that caused it. Inside
+  an intact block nothing else misbehaves: `%let` and `&sysuserid` are literal
+  text and an apostrophe opens no SAS quote. Also settled: `SYSCC` is readable
+  from the session variables endpoint rather than only from log text, so failure
+  detection does not have to wait on the log filter, and `proc python restart;`
+  clears the Python namespace in about three seconds while the compute session,
+  its libraries and its filerefs carry on.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

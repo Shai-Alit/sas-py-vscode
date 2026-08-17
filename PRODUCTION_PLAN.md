@@ -653,6 +653,25 @@ not, 3a's failure detection depends on 3b and they must merge or reorder;
 (iii) how to reset the Python namespace **without** destroying the compute session
 — `reset()` and the cancellation fallback both depend on the answer.
 
+> **Run 2026-08-16 against Viya 4 — findings 31–39.** (i) **Upload plus
+> `proc python infile=<fileref>;`** is the mechanism. A bare `endsubmit;` inside a
+> triple-quoted string ends the block, and the truncated remainder poisons the
+> tokeniser so that the *next* job reports `completed` while executing nothing —
+> a silent wrong answer rather than an error. Inside an intact block, `%let` and
+> `&sysuserid` are literal text and an apostrophe opens nothing, so inlining fails
+> in exactly one way, and that way is unacceptable. The option is `INFILE=`, not
+> `FILE=`; `PUT …/filerefs/{ref}/content` needs `If-Match` or returns `428`.
+> (ii) **`SYSCC` is readable** from the variables endpoint (`1012` for an uncaught
+> Python exception, `3000` for a SAS syntax error), so **3a does not depend on 3b**
+> and the order below stands. It reset to `0` per job unprompted, but whether that
+> is contractual is unsettled — do not rely on it. (iii) **`proc python restart;`**
+> clears the interpreter in ~3.4 s without touching the session, and composes with
+> `infile=` in one statement, so `reset()` keeps its planned shape.
+>
+> **What this hands 2b:** the interface must express *upload a file, then run it*,
+> not merely *submit a string*. Freezing a `submit(code)` seam would freeze the
+> wrong one.
+
 **2b — `ExecutionBackend` interface + dialect layer.** Define the interface (§2.2)
 including the **busy/queue contract** and `freshNamespace` semantics, `Dialect`
 base with Viya 4 and 3.5 subclasses, `resolve()` with an alias registry, and
@@ -686,6 +705,16 @@ standing between a user and a program that runs and means something else. The
 **offset map** from submitted-block lines to editor lines, session options
 (`PAGESIZE=MAX` to suppress page-break headers), `freshNamespace` handling, the
 busy/serial contract, and success/failure detection. *Medium.*
+
+> **Amended 2026-08-16 by the 2-pre findings.** Submission is upload plus
+> `proc python infile=<fileref>;`, so **escaping is not the deliverable — upload
+> fidelity is**. The corpus still ships in this slice and still has to round-trip
+> byte for byte; what it exercises is the upload/`If-Match`/`infile=` path, not a
+> quoting function, because nothing tokenises the file's contents. The offset map
+> gets simpler too: with no source echo and no wrapper block, the file's line
+> numbers are the editor's. Success/failure detection reads `SYSCC` from
+> `GET /compute/sessions/{id}/variables/SYSCC` — but read it per job rather than
+> assuming the observed per-job reset to `0` is contractual.
 
 **3b — Log filter.** SAS log → clean Python stdout: strip numbered source echo,
 page-break headers, `>>>` markers, and procedure NOTEs. Pure-function, heavily
@@ -1053,9 +1082,9 @@ get written.
 | Risk | Impact | Mitigation |
 |---|---|---|
 | ~~Licensing — Apache-2.0 code shipped under MIT~~ | ~~High — legal~~ | **Retired.** Settled to Apache-2.0 (ADR-0000); executed in 0a. Residual risk is now only header/NOTICE discipline, enforced by the CI copyright check |
-| **`endsubmit;` / macro injection** in submitted Python | **High — correctness + security** | 2-pre probe; `proc python file=` if inlining is unsafe; escaping tests in 3a |
+| **`endsubmit;` / macro injection** in submitted Python | **High — correctness + security** | **Settled 2026-08-16 (findings 31–35).** Inlining *is* unsafe — `endsubmit;` in a string ends the block and the poisoned session then reports `completed` having run nothing. Mitigation is upload + `proc python infile=<fileref>;`, which tokenises none of the file; 3a's corpus tests upload fidelity rather than escaping |
 | Rich output has no clean return path | High — reshapes Phase 3 | Probe (3c) before writing rendering code; `print`-only is an acceptable v1 floor |
-| Namespace reset requires killing the session | Medium — degrades cancel *and* Run File | 2-pre probe; if true, redesign `reset()` and say so in the UI |
+| ~~Namespace reset requires killing the session~~ | ~~Medium — degrades cancel *and* Run File~~ | **Retired 2026-08-16 (finding 38).** `proc python restart;` clears the interpreter in ~3.4 s with the compute session, its libraries and its filerefs untouched, and composes with `infile=` in one statement |
 | Session dies mid-run / state lost on reconnect | Medium | Explicit detection and messaging in 2a; fixture-driven tests |
 | `PROC PYTHON` absent on Viya 3.5 | Medium | Capability probe degrades gracefully; docs make no unverified claim |
 | Compute cancellation doesn't interrupt a running Python step | Medium — bad UX | Probe after 3d-i; fall back to session reset with a clear message |

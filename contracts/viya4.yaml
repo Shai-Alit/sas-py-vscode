@@ -34,6 +34,137 @@ reference: https://developer.sas.com/rest-apis
 #
 # Declaring both is an error. So is declaring neither.
 endpoints:
+  # ── Compute: contexts, sessions, jobs ──────────────────────────────────────
+  #
+  # One chain, declared in the order it is walked. Two entries below compose a
+  # URL — `compute_contexts` and `compute_session_attach`, which are the only two
+  # composed URLs in the project — and every other one names the relation it is
+  # followed from, which is why each `via.from` points at the endpoint whose
+  # response carried the link.
+  #
+  # Four relations are **not** here yet, and their absence is a limitation of
+  # this file rather than of the code: `scripts/check-contracts.mjs` requires
+  # `via.type` to be a string, and a session's `cancel` and `delete` omit `type`
+  # entirely while a job's carry `type: null` (finding 46). Two of the four are
+  # followed today, by `cancelSession` and `deleteSession`; the job's two have no
+  # caller until slice 2c-ii writes `cancelJob`. It is 2c-ii that relaxes the
+  # checker and adds all four in the same change — relaxing a check before
+  # anything needs it loosens the gate for nothing, and the relaxation has to
+  # accept **absent or null**, not merely null.
+  - id: compute_contexts
+    method: GET
+    path: /compute/contexts
+    accept: application/vnd.sas.collection+json
+    # The first of the project's two composed paths — the other is
+    # `compute_session_attach` below, and there are no others. `resolveContext`
+    # sends a `filter=eq(name,'…')` with the apostrophe doubled (finding 22) and
+    # reads the first match; `listContexts` follows `next` to the end.
+    response_fields: [items, links]
+    # `createSession` arrives on the *summary* item (finding 15), carrying both
+    # media types, so a session is started without the extra GET of the full
+    # context that upstream does. `count` is deliberately absent from this list:
+    # it is `null` whenever the collection is truncated (finding 16), which is
+    # exactly when a pager would want it.
+    item_fields: [id, name, links]
+
+  - id: compute_session_create
+    method: POST
+    via:
+      from: compute_contexts
+      relation: createSession
+      type: application/vnd.sas.compute.session.request
+    observed_href: /compute/contexts/{contextId}/sessions
+    accept: application/vnd.sas.compute.session+json
+    # A `201` carrying `Location`, an `ETag` and the whole representation — 22
+    # link relations, which is the entire session API (finding 21). The
+    # `Location` is not followed: the body already holds what it points at.
+    # `attributes.sessionInactiveTimeout` is 900 on the observed deployment and
+    # is read rather than assumed, because it is a configurable and 2a-ii puts
+    # the number in front of the user.
+    response_fields: [id, state, attributes, links]
+
+  - id: compute_session_attach
+    method: GET
+    path: /compute/sessions/{sessionId}
+    accept: application/vnd.sas.compute.session+json
+    # The second composed path, and the exception that proves the rule. ADR-0012
+    # persists a session id so a reloaded window gets its Python namespace back,
+    # and there is no link left to follow: the representation that carried the
+    # links died with the previous window, so a stored id is all that survives.
+    # A `404` here is the whole answer — the session is gone and a new one is the
+    # only remedy (finding 29's uniform 404).
+    #
+    # Declared here rather than in 2a-ii, which wrote it. An inventory that omits
+    # a URL the code composes is exactly the gap this file exists to close, and
+    # the checker cannot find it: nothing walks `src/` looking for requests.
+    response_fields: [id, state, attributes, links]
+
+  - id: compute_session_state
+    method: GET
+    via:
+      from: compute_session_create
+      relation: state
+      type: text/plain
+    observed_href: /compute/sessions/{sessionId}/state
+    # `text/plain`, and the body is the bare word — `pending`, seven bytes with
+    # no trailing newline. With an `If-None-Match` and `?wait=N` it is a long
+    # poll that answers `304` when the window elapses (findings 19 and 28); with
+    # no validator the `wait` is inert.
+    accept: text/plain
+
+  - id: job_create
+    method: POST
+    via:
+      from: compute_session_create
+      relation: execute
+      type: application/vnd.sas.compute.job.request
+    observed_href: /compute/sessions/{sessionId}/jobs
+    accept: application/vnd.sas.compute.job+json
+    # `{name, code: [...statements]}` in, `201` out. The job representation is
+    # six fields and ten relations (finding 46); `state` is `pending` there, so
+    # a create response never carries an answer about completion. Neither the
+    # `name` nor the `code` is echoed back — unlike a session's name — and the
+    # `ETag` on the reply is not read, because nothing sends a validator to a job.
+    response_fields: [id, state, links]
+
+  - id: job_state
+    method: GET
+    via:
+      from: job_create
+      relation: state
+      type: text/plain
+    observed_href: /compute/sessions/{sessionId}/jobs/{jobId}/state
+    # `text/plain`, read unconditionally. The five states a job does not come
+    # back from are `done`, `canceled`, `error`, `warning` and `completed`; only
+    # `error` and `completed` have been observed (finding 53) and the other three
+    # are kept because a missing terminal state is a loop that never exits.
+    accept: text/plain
+
+  - id: job_log
+    method: GET
+    via:
+      from: job_create
+      relation: log
+      type: application/vnd.sas.collection
+    observed_href: /compute/sessions/{sessionId}/jobs/{jobId}/log
+    accept: application/vnd.sas.collection+json
+    # `?start=N&limit=L&timeout=T`. `timeout` really long-polls (finding 48) and
+    # is always sent: without it the loop is a busy-wait that looks correct.
+    # There is **no `ETag`** on this collection, so `start` is the entire cursor,
+    # and expiry is a `200` with `items: []` rather than a `304` (finding 49).
+    # The drain follows `next` until it is absent — it disappears even on a full
+    # final page (finding 51). `count` is a live running total here rather than
+    # the null of finding 16, and is still not read: it is stale on a running job.
+    response_fields: [items, links]
+    # Exactly three keys, no timestamp and no sequence number, so position in the
+    # collection is the only ordering there is. `type` is an open set — `source`,
+    # `note`, `normal`, `error` observed — and `note` is a catch-all that covers
+    # blank and whitespace-only lines (finding 52), so it is passed through
+    # rather than switched on. `version` is the item's representation version and
+    # is not read.
+    item_fields: [line, type]
+
+  # ── Capability probing ─────────────────────────────────────────────────────
   - id: deployment_data_root
     method: GET
     path: /deploymentData

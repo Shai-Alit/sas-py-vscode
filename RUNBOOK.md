@@ -2907,6 +2907,19 @@ what the checker's other direction exists to catch. Found by sweeping for the
 superseded value rather than by hitting it during 2c, which is the point of
 sweeping.
 
+**Narrowed 2026-08-17, while writing 2c-i: it is 2c-*ii* that must fix it, and
+the fix is wider than the sentence above.** Seven endpoints — the whole
+contexts → session → job → state → log chain, plus the session attach whose
+composed URL the inventory had been missing since 2a-ii — were declarable without
+touching the checker, because every one of their `via.type` values is a string
+and `attach` has no `via` at all. The four
+that cannot be declared are `cancel` and `delete` on each of a session and a job,
+and none of them is called until 2c-ii writes `cancelJob`, so the relaxation ships
+in the pull request that needs it rather than ahead of it. Note also that the
+relaxation must accept **absent or null**, not just null: a session's `cancel`
+omits `type` entirely, so a checker taught only about `null` would still reject
+half of them.
+
 **One design question 2c owns, deliberately left open by ADR-0017.** A pump that
 polls whether or not anything is consuming `outputs` accumulates lines in memory,
 so 2c must decide the buffer policy: whether there is a cap at all, what it is,
@@ -2914,11 +2927,124 @@ which end is dropped on overflow, and whether an overflow is reported to the
 consumer. ADR-0017 records the consequence but takes no position on the remedy —
 that decision belongs to the slice that writes the buffer.
 
+**Settled 2026-08-17: cap it, drop the oldest, and count what was dropped.** The
+cap is a named constant set high enough that no ordinary program reaches it, so
+in normal use nothing is ever dropped and the policy is invisible. On overflow the
+**oldest** lines go, because a runaway loop's last thousand lines are where its
+failure is and its first thousand are its start-up; and the count of what was
+dropped is **reported to the consumer** rather than silently absorbed, because a
+log with a hole in it and no marker is a log that lies. This is 2c-ii's to build —
+2c-i has no buffer in it.
+
 Not settled, and listed in full at the end of the findings section: whether
 `timeout` has a server maximum (60 was accepted but never elapsed, so a silent
 clamp is indistinguishable from an honoured ceiling), whether a `WARNING:`
 produces a `warning` line type or terminal state, and what `listing` and
 `results` contain — the last of which is probably where 3c's ODS output lives.
+
+**2c split in two, 2026-08-17, along the line the probe drew.** Everything the
+findings settled about a *single request* is 2c-i; everything they settled about a
+*loop* is 2c-ii. That puts job creation, job-state reading, the terminal set and
+the stateless single-page log reader in the first, and the pump — the poll, the
+drain, the `AsyncIterable`, the buffer, cancellation — in the second. The log
+reader sits with the first rather than the second because `session.ts` established
+that every function in these modules makes exactly one request and reports what
+happened; a one-request function held back for the slice that loops over it would
+be the first exception to that, and it would arrive with no test of its own.
+
+☑ **2c-i punch list.** Complete 2026-08-17. Nothing here is user-visible, so there
+is no hand-run procedure for this slice — the first thing a person can see is
+2c-ii's stream.
+
+- ☑ **Done 2026-08-17. `src/compute/job.ts` — create, state, terminal set, one log
+  page.** Four exported calls, each one request, no retry, no timer, no composed
+  URL: `createJob` follows a session's `execute`, `readJobState` reads the job's
+  `state`, `readLogPage` reads from a cursor, and `followLogPage` follows a page's
+  `next` exactly as sent. `TERMINAL_STATES` keeps all five of upstream's members
+  and `isTerminal` reads the list **the right way round** — upstream's `isDone`
+  tests `indexOf(state) === -1` and so answers `true` when the job is not done.
+- ☑ **Done 2026-08-17. `readJobState` is unconditional, and that closes a door.**
+  No `wait`, no `If-None-Match`, and therefore no `304` arm — `wait` is inert
+  without a validator (finding 28), the job state's expiry has never been observed
+  (finding 49), and ADR-0017 consults the state only after a poll came back fast
+  and empty, which wants an immediate answer. With no `304` arm there is no place
+  for upstream's `getState()` recursion to grow.
+- ☑ **Done 2026-08-17. `timeout` is not optional on a log read.** It is always in
+  the query, and a value that is not a positive integer is refused rather than
+  sent, because a `timeout` computed to zero is the busy-wait wearing a disguise.
+  The client timeout is `timeout + WAIT_MARGIN_SECONDS`, imported from
+  `session.ts` rather than restated, so a client that aborts every poll a moment
+  before it would have answered cannot happen by drift.
+- ☑ **Done 2026-08-17. Blank log lines survive.** Six of finding 52's twenty-one
+  lines are empty or whitespace, and `note` is a catch-all rather than a `NOTE:`
+  prefix. The "drop empty values" reflex that `readLinks` and `readContext` both
+  apply would delete the log's vertical spacing here, so the fixture test asserts
+  the count and the blanks.
+- ☑ **Done 2026-08-17. Seven endpoints declared in `contracts/viya4.yaml`** — the
+  whole contexts → session → job → state → log chain, each naming the relation it
+  is followed from, plus `compute_session_attach`, whose composed URL has been
+  live since 2a-ii and was never in the inventory. That last one was found by the
+  review pass below, and it is the failure this file is least able to catch on its
+  own: nothing walks `src/` looking for requests, so an endpoint the code composes
+  and the contract omits is invisible to the checker in the one direction that
+  matters. Two fixtures alongside them, `compute-job-created.json` and
+  `compute-job-log-page.json`, with the fixture README separating, item by item,
+  what came off the wire from what was reconstructed.
+- ☑ **Ratchet measured 2026-08-17, and deliberately not moved.** In
+  `.c8rc.json`'s own order — lines, statements, functions, branches — the floor is
+  **91 / 91 / 90 / 95** and the measurement was 91.68 lines, 91.68 statements,
+  90.72 functions, 95.29 branches. Rounded down that is 91 / 91 / 90 / 95, which
+  is exactly where the floor already sits, so `.c8rc.json` is unchanged: the rule
+  is that a slice adding source raises the floor to `floor(measured)`, and here
+  `floor(measured)` did not move. `job.ts` itself is 100 on all four; the
+  `src/compute` directory is 99.83 lines and statements, 97.39 branches, 100
+  functions, the shortfall being pre-existing lines in `client.ts`, `contexts.ts`
+  and `problems.ts`. The drag is still `scripts/`, as it has been since 1b-i.
+
+  Worth recording *how* it got there, because the first run failed the gate:
+  branches came out at 94.82 against a floor of 95, with `job.ts` at 90.14 and
+  **seven** uncovered lines. Six were real and now have tests: the `options?.
+  signal` optional chain in each of `createJob`, `readJobState` and
+  `followLogPage` (three, not four — `readLogPage` takes a required `options`, so
+  there is no chain there to miss, and it got a signal test anyway); a body that
+  is JSON `null`; a reply naming no media type; and an `id` or `state` that is
+  present but empty. The **seventh** was an unreachable `parameters.length === 0`
+  guard in a private helper only ever called with three parameters, and it was
+  deleted rather than tested. A coverage failure that can only be fixed by
+  writing a test for code that cannot run is the gate saying the code should not
+  be there.
+- ☑ **Done 2026-08-17. A failure path never quotes the body.** A log page is the
+  one *response* in this project made entirely of the user's own program output,
+  so `malformed` describes the response by status and media type and says what was
+  wrong with it. `link-missing` takes its noun as an argument for the same class
+  of reason: deriving it from the relation would be one `rel` away from telling
+  someone their *session* has no log. The statements `createJob` sends travel the
+  other way and are not the same problem — a `400` quoting them back is the user's
+  own text returning to the user's own window, which is `problems.ts`'s stated
+  reason for having no redaction pass. What would change that is a request body
+  carrying something the user did not type, and nothing here sends one.
+- ☑ **Done 2026-08-17. Adversarial review, and the one defect it found.** No AI
+  reviewer runs on this repository's pull requests, so a subagent was pointed at
+  the finished diff with instructions to find what would embarrass the author in
+  public. It found a real bug and it was in the seam, not in the code: `LogPage`
+  exposed only `lines`, so a caller advancing its cursor by `lines.length` would
+  re-read a line after any dropped item, and on a page whose single item was
+  dropped would not advance at all — a `start` the deployment answers instantly,
+  which is a busy-wait reached through the parser rather than through a missing
+  `timeout`. `LogPage.advance` now carries `items.length` and three tests hold the
+  two numbers apart. Worth noting what made it findable: the bug was invisible in
+  2c-i, which has no caller, and would have surfaced in 2c-ii as an intermittent
+  duplicated line. Splitting a slice puts the seam under review before anything
+  leans on it, which is an argument for splitting that was not in the original
+  case for it. The rest of the review was paperwork drift, all of it fixed in the
+  same change: `timeout=5` also elapsed, so ten is the *largest* verified ceiling
+  and not the only one (corrected in finding 48 as well as in the code); a `404`
+  on a job is read as `session-gone` on an ambiguity finding 53 names explicitly,
+  which is now written down where the reading is made; `attachSession`'s composed
+  URL was missing from `contracts/viya4.yaml` entirely, added here rather than
+  explained away; the fixture README claimed no test asserted on a reconstructed
+  part and then described one; and ADR-0017 still said the checker had to be
+  relaxed before a job could be described, which 2c-i disproved by describing one.
 
 ```bash
 # ⛔ BARRIER
@@ -2935,9 +3061,13 @@ git commit -m "feat(dialects): add API contract files, their checker, and stage-
 git checkout -b phase-2c-pre-log-probe
 git commit -m "docs(probe): record the job log wire shape and long-poll behaviour"
 
-# 2c — log streaming
-git checkout -b phase-2c-log-streaming
-git commit -m "feat(compute): add long-poll log streaming and ETag state polling"
+# 2c-i — job creation, job state, and one page of log
+git checkout -b phase-2c-i-jobs
+git commit -m "feat(compute): add job creation, job state polling, and log paging"
+
+# 2c-ii — the pump
+git checkout -b phase-2c-ii-log-streaming
+git commit -m "feat(compute): stream a job's log as it runs"
 ```
 
 ### Phase 3 — Run Python

@@ -458,7 +458,10 @@ export async function deleteSession(
  * already reaches the right answer for a `401`, and the client hands it over
  * intact.
  *
- * Exported because slice 3a's job calls need exactly this reading of a `404`.
+ * Exported because the job calls need exactly this reading of a `404`. Written
+ * expecting slice 3a; `job.ts` arrived in 2c-i and took it, and the caveat that
+ * came with it is recorded there — finding 53 established that a `404` on a job
+ * resource cannot be told apart from a `404` on a dead session by status alone.
  */
 export function asSessionGone(failure: ComputeFailure): ComputeFailure {
   const { problem } = failure;

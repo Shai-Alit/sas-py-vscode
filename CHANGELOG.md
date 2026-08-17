@@ -581,6 +581,48 @@ called out under **Changed** with a migration note.
   "must not stall waiting for a consumer that never arrives" is not a defensive
   nicety — it is what keeps the two members of `ExecutionHandle` independent.
 
+- `src/compute/job.ts` — submitting statements into a live session, asking
+  whether the job has finished, and reading a page of its log. Four calls, each
+  making exactly one request and reporting what happened, in the shape
+  `src/compute/session.ts` established: no retry, no loop, no timers, and no URL
+  composed anywhere. The loop that turns these into a stream is the next slice;
+  this one is the parts that have no concurrency in them.
+
+  Three of those calls exist as they do because of something measured. The job
+  state is read **unconditionally** — no `wait`, no `If-None-Match`, and so no
+  `304` arm at all, since a `wait` is inert without a validator and the loop above
+  only asks for the state when it already wants an immediate answer. That also
+  leaves nowhere for the upstream `getState()` recursion — which answers a `304`
+  by fetching the state it just asked not to be sent — to be ported into. The log
+  read always sends its `timeout`, and refuses a value that is not a positive
+  integer, because the parameter is the only thing standing between the loop above
+  and a busy-wait. And the five terminal states are read the right way round:
+  upstream's `isDone` tests `indexOf(state) === -1` and therefore answers `true`
+  when the job is still running.
+
+  Blank lines are kept. Six of the twenty-one lines in the sampled log are empty
+  or whitespace-only, and the "drop empty values" rule that the link and context
+  readers both apply would quietly delete the log's vertical spacing. Nothing here
+  interprets a line's `type` either — the vocabulary is an open set the deployment
+  owns, and filtering on it is a later slice's job.
+
+  A page reports how far the cursor moves separately from what it could parse.
+  The two are the same number on every page a real deployment has sent; they come
+  apart when an item arrives with no text in it, and a reader that advanced by
+  what parsed would show the following line twice — or, on a page holding one
+  such item, would stop advancing altogether and poll a position the deployment
+  answers instantly. That is the busy-wait the mandatory `timeout` exists to
+  prevent, reached through the parser instead of through the query string.
+
+- Seven compute endpoints declared in `contracts/viya4.yaml` — the whole
+  contexts → session → job → state → log chain, each entry naming the link
+  relation it is followed from rather than a path, plus the session *attach*
+  endpoint, whose composed URL had been live since 2a-ii without ever being
+  written down. Two scrubbed fixtures come with them, and the fixture README now
+  separates, item by item, what came off the wire from what was reconstructed —
+  including the one assertion a test makes on a reconstructed part, and why that
+  assertion is about the parser rather than about the service.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

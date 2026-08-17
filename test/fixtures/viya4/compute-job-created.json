@@ -1,0 +1,70 @@
+{
+  "creationTimeStamp": "2026-08-17T17:21:21.463Z",
+  "id": "A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D",
+  "sessionId": "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000",
+  "state": "pending",
+  "stateElapsedTime": 0,
+  "version": 1,
+  "links": [
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.compute.job"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/state",
+      "method": "GET",
+      "rel": "state",
+      "type": "text/plain"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/state?value=canceled",
+      "method": "PUT",
+      "rel": "cancel",
+      "type": null
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D",
+      "method": "DELETE",
+      "rel": "delete",
+      "type": null
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/log",
+      "method": "GET",
+      "rel": "log",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/log",
+      "method": "GET",
+      "rel": "logAsText",
+      "type": "text/plain"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/listing",
+      "method": "GET",
+      "rel": "listing",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/listing",
+      "method": "GET",
+      "rel": "listingAsText",
+      "type": "text/plain"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/results",
+      "method": "GET",
+      "rel": "results",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000",
+      "method": "GET",
+      "rel": "up",
+      "type": "application/vnd.sas.compute.session"
+    }
+  ]
+}

@@ -1591,9 +1591,10 @@ The wait is honoured to its stated length. Against a job deliberately silent for
 silence ended — the value is a ceiling, not a delay. Note that this says nothing
 about whether 60 is *honoured*: the request was released by a log line long
 before the ceiling could elapse, so a server that silently clamps large values to
-some smaller maximum would have produced exactly the same measurement. The only
-timeout observed actually elapsing is `timeout=10` (10.27 s). Treat anything
-above 10 as unverified, and do not rely on a long ceiling for correctness — the
+some smaller maximum would have produced exactly the same measurement. Two
+timeouts have been observed actually elapsing — `timeout=5` at 5.37 s and
+`timeout=10` at 10.27 s — and 10 is therefore the largest verified ceiling.
+Treat anything above 10 as unverified, and do not rely on a long ceiling for correctness — the
 loop must be correct at any clamp, because an early empty return is
 indistinguishable from a short poll.
 

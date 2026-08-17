@@ -137,6 +137,16 @@ match it too.
 green. The key sets are closed, so adding a field means changing the checker as
 well as the file, which is the intended amount of friction.
 
+**A `via` must name a media type, and today that is too strict.** `from`,
+`relation` and `type` are each required to be a string, which is right for the
+relations that carry one and wrong for the ones that do not: a compute job's
+`cancel` and `delete` arrive with `type` set explicitly to null, and the same two
+relations on a *session* omit the key altogether. Four endpoints therefore cannot
+be declared yet, and their absence is a limitation of the format rather than of
+the code — recorded in `contracts/viya4.yaml` where the gap is, so the file says
+what it is missing. The relaxation ships with the slice that first calls one of
+them, and it has to accept **absent or null**, not merely null.
+
 The union of generations is read out of `src/dialects/dialect.ts` with
 TypeScript's own parser rather than imported, because the check runs *before*
 `build` on purpose: a check that needs its subject to compile first cannot report

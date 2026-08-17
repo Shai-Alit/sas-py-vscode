@@ -8,7 +8,9 @@
   and its no-stall clause), ADR-0010 (the client navigates by link relation),
   ADR-0014 (Python is submitted as an uploaded file, which is 3a's concern and
   not this one)
-- **Executed in:** slice `2c`
+- **Executed in:** slices `2c-i` (the single requests this is built on) and
+  `2c-ii` (the pump itself) — 2c was split on 2026-08-17 along the line the probe
+  drew, between what one request settles and what a loop settles
 - **Evidence:** `PROBE-FINDINGS.md` findings 46–53 (`2c-pre`, 2026-08-17)
 
 ## Context
@@ -60,6 +62,15 @@ cursor and there is no conditional-request machinery to maintain (finding 48).
 `GET {job}/log?start=N&limit=L&timeout=T`, advancing `N` by the number of items
 returned. Not the session-state long poll, not the job-state long poll, and not
 `logAsText`.
+
+"Items returned" is meant literally, and 2c-i had to put it on the page type to
+keep it honest: `LogPage` carries an `advance` separately from its `lines`,
+because an item the parser drops still occupied a position in the deployment's
+numbering. Advancing by what parsed rather than by what arrived re-reads a line
+after any drop, and on a one-item page it does not advance at all — which the
+deployment answers instantly, turning this loop into the busy-wait that the whole
+of the `timeout` argument below exists to prevent. Same reason a server-side
+clamp on `L` is harmless: the cursor follows what was sent.
 
 `timeout` is **not an option a caller may omit**. It is passed at the call site,
 by construction, because omitting it produces a request that looks correct and
@@ -168,21 +179,31 @@ trade worth making.
 **An unconsumed stream accumulates lines.** A pump that polls regardless of
 consumption will, given a runaway program and a consumer that never arrives, hold
 a growing log in the extension host's memory. That is a direct consequence of the
-decision above and it is recorded here as such. **What to do about it is left
-open for 2c to decide** — whether the buffer is capped at all, and if so at what
-size and which end is dropped, is a policy question this ADR deliberately does
-not answer. It is tracked as an open question against the slice in `RUNBOOK.md`.
+decision above and it is recorded here as such. This ADR took no position on the
+remedy when it was written, leaving it to the slice that builds the buffer.
 
-**2c has to relax the contract checker before it can describe a job.**
-`scripts/check-contracts.mjs` requires `via.from`, `via.relation` and `via.type`
-to each be a string, and a job's `cancel` and `delete` relations carry
-`type: null` (finding 46) — while a *session's* equivalents omit the key
-entirely, which fails the same `typeof` check, so the checker could already not
-describe those either. Either `via.type` becomes optional-or-absent-or-null or
-none of those endpoints can be declared — and an endpoint the code calls that the contract
-omits is exactly what the checker's other direction exists to catch. This was
-found by sweeping for the superseded value after the probe, not by hitting it
-mid-slice.
+**Settled 2026-08-17, before 2c-i: cap it, drop the oldest, and count what was
+dropped.** The cap is a named constant set high enough that no ordinary program
+reaches it, so in normal use nothing is dropped and the policy is invisible. On
+overflow the **oldest** lines go, because a runaway loop's last thousand lines
+are where its failure is and its first thousand are its start-up. And the number
+dropped is **reported to the consumer** rather than silently absorbed, because a
+log with a hole in it and no marker is a log that lies. 2c-ii builds it; 2c-i has
+no buffer in it at all.
+
+**The contract checker did not have to be relaxed to describe a job**, which is a
+correction to what this ADR first said. `scripts/check-contracts.mjs` requires
+`via.from`, `via.relation` and `via.type` to each be a string, and every relation
+on the path from a context to a log page carries a media type — so 2c-i declared
+the whole chain, `job_create`, `job_state` and `job_log` included, without
+touching the checker. What the constraint actually blocks is narrower and wider
+at once: four relations, `cancel` and `delete` on each of a session and a job,
+where a job's carry `type: null` (finding 46) and a *session's* **omit the key**
+entirely. Both fail the same `typeof` test, so the relaxation has to accept
+absent or null rather than merely null. It ships with `cancelJob` in 2c-ii, which
+is the first thing to call one of them — an endpoint the code calls that the
+contract omits is what the checker's other direction exists to catch, and until
+then nothing calls them.
 
 **The two upstream recursions are replaced rather than ported**, as the plan
 already said, and 2c-pre narrows why for one of them. `rest/job.ts::getState`

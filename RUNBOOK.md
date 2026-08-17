@@ -2726,19 +2726,54 @@ after success rather than before.
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.
 
-☐ **2-pre.** Using the `viya-api-probe` skill and `creds.json`, settle three
-things and record them in `PROBE-FINDINGS.md`:
+☑ **2-pre — run 2026-08-16 against Viya 4, written up as findings 31–39.** Using
+the `viya-api-probe` skill and `creds.json`, settle three things and record them
+in `PROBE-FINDINGS.md`:
 
 1. **Injection.** Submit Python containing `endsubmit;` in a string, plus `%let`
    and `&sysuserid`. Does the block terminate early? Does SAS macro resolution
    fire? Then test `proc python file="…"` (upload the code to the session
-   filesystem) as the injection-free alternative.
+   filesystem) as the injection-free alternative. *The option name in this
+   question is wrong — it is `INFILE=`; see answer 1 below.*
 2. **Failure signal.** Is `SYSCC` readable from
    `GET /compute/sessions/{id}/variables/SYSCC`, or only from log text? **If only
    from log text, 3a depends on 3b** and the two must be reordered or merged.
 3. **Reset.** How is the Python namespace cleared *without* destroying the compute
    session? If the only way is killing the session, `reset()` and the cancellation
    fallback both need redesigning — which is exactly why this runs before 2b.
+
+**The three answers, and what each one settles.**
+
+1. **Inline submission is out; upload plus `infile=` is in.** A line reading
+   `endsubmit;` inside a triple-quoted Python string **does** end the block —
+   SAS finds the statement before Python ever sees the string. Nothing else in an
+   *intact* block misbehaves: `%let` and `&sysuserid` pass through as literal text
+   and an apostrophe does not open a SAS quote, so the danger is narrower than
+   feared but it is real, and it is worse than a syntax error. The truncated
+   block leaves the tokeniser poisoned, and **the next job in that session reports
+   `completed` while executing nothing at all** — a silent wrong answer, not a
+   failure. The option is `INFILE=`, not `FILE=` (SAS enumerates the real list in
+   `ERROR 22-322`); `proc python infile=<fileref>;` runs an uploaded file
+   byte-for-byte with no source echo and no tokenising of its contents. Uploading
+   via `PUT /compute/sessions/{id}/filerefs/{ref}/content` requires `If-Match`
+   from a prior `GET` — without it, `428`.
+2. **`SYSCC` is readable as a session variable**, so **3a does not depend on 3b
+   and the slice order stands.** `GET /compute/sessions/{id}/variables/SYSCC`
+   returned `1012` for an uncaught Python exception and `3000` for a SAS syntax
+   error, and it reset to `0` at the start of the next job without being told to.
+   Whether that per-job reset is contractual is *not* settled — write the code so
+   it does not matter.
+3. **`proc python restart;` clears the interpreter without touching the compute
+   session**, in about 3.4 s, and composes into one statement with `infile=`. So
+   `reset()` keeps its shape: the libraries, filerefs and SAS-side state survive,
+   and only the Python namespace goes.
+
+Consequence for 2b: the backend interface must be able to express *upload then
+run a file*, not just *send a string*. A `submit(code: string)` seam that assumes
+inline text would be frozen wrong. All of this is **ADR-0014** — read it before
+writing 2b, because it also lists what the probe did *not* settle, and two of
+those (`TIMEOUT` for Cancel, `SRC` as a second hand-over path) are worth probing
+before 3a designs around their absence.
 
 ```bash
 # ⛔ BARRIER
@@ -2776,7 +2811,7 @@ identifiers and content, an empty file, and no trailing newline. Assert **byte f
 byte** on what the interpreter received, not on what we sent, in the unit tier and
 again in the live tier — the unit tier can only prove we built what we meant to
 build, not that SAS agreed. Then pick the submission mechanism that passes it.
-`proc python file="…"` is favoured precisely because a file transfer has no
+Running an uploaded file is favoured precisely because a file transfer has no
 tokeniser in the middle; if the inline form cannot pass the corpus, that is the
 answer rather than a reason to iterate on an escaper. See `PRODUCTION_PLAN.md`
 §1.5 item 1 and §4.
@@ -2784,6 +2819,15 @@ answer rather than a reason to iterate on an escaper. See `PRODUCTION_PLAN.md`
 > **Why this gets its own item.** Every other failure in this project announces
 > itself. This one does not: a mis-tokenised program runs and means something
 > else, and the user's evidence for that is a wrong number, not an error.
+
+**The mechanism is now chosen — 2-pre chose it, on 2026-08-16.** Upload plus
+`proc python infile=<fileref>;`, for the reason this item predicted: the inline
+form cannot pass the corpus. The corpus still ships, and it still asserts byte for
+byte, but its job has changed from *proving an escaper* to *proving the upload
+path* — that what the interpreter read is what the editor held, across CRLF, tabs,
+non-ASCII, an empty file and no trailing newline. Keep the hostile cases anyway:
+they are now the evidence that nothing tokenises the file, and the first case to
+fail would tell us that something does. Findings 31–35 in `PROBE-FINDINGS.md`.
 
 ```bash
 # 3a — PROC PYTHON backend

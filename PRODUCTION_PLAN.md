@@ -168,6 +168,12 @@ prevents them being discovered as "small" tasks mid-phase.
 2. **Log hygiene.** The Compute log is a *SAS* log: numbered source echo, page-break
    headers, `>>>` REPL markers, procedure timing NOTEs. Turning it into clean
    Python stdout is real parsing work, not a pass-through.
+
+   > **Reduced 2026-08-17 by 2c-pre.** Less parsing than feared: lines arrive
+   > *typed* (`source`, `note`, `normal`, `error`), so the filter switches on
+   > `type` rather than matching prefixes, and `infile=` submission should mean
+   > no source echo to strip at all. `note` is a catch-all including blank
+   > lines, which is the trap — see the 3b amendment.
 3. **Rich output.** `print` works; matplotlib figures and DataFrame HTML have no
    confirmed return path yet. This is the single biggest unknown and gets a
    dedicated probe slice (3c) *before* any rendering code is written.
@@ -768,6 +774,49 @@ recursion in `rest/job.ts::getState`, and the 412 recursion in
 `rest/session.ts::cancel()` — the latter matters because 3d-i's Cancel rides on it.
 *Medium.*
 
+> **Measured 2026-08-17 by 2c-pre**, findings 46–53. The mechanics above survive
+> with four corrections, but the *shape* named above does not — see the fifth:
+> - **The log has no ETag.** Its cursor is `start` alone and `If-None-Match` has
+>   nothing to send, so "ETag state polling" above can only mean the *job state*
+>   resource (finding 28). Two long polls with two different mechanisms, not one
+>   mechanism used twice.
+> - **`timeout` is not optional.** It long-polls for real: against a job silent
+>   for 25 s, `timeout=10` blocked the full 10.27 s while the same request
+>   without it came back empty in 0.56 s; against a job printing a line a
+>   second, `timeout=10` released in about 1.0 s each time. The parameter is the
+>   only thing between this loop and a busy-wait, so it belongs at the call site
+>   rather than in an options bag a caller can leave out.
+> - **Expiry is `200` with `items: []`,** never `304` — where the session
+>   state's expiry, the only other one measured, is a `304` (finding 28). The
+>   job state's expiry has never been observed.
+> - **The drain is free.** A terminal job short-circuits the wait (0.26 s), so
+>   there is no trailing ten-second stall and the loop can afford to keep
+>   reading until `next` is absent. `next` disappears even on a *full* final
+>   page, so the terminator is the link's absence and never a short page.
+> - **"Port the async generators" is wrong**, and this is the larger correction.
+>   ADR-0017 rejects `async function*` outright: a generator does not poll until
+>   somebody iterates, so an unconsumed stream never runs and its `done` never
+>   settles, which is exactly what ADR-0015's no-stall clause forbids. 2c writes
+>   a self-driving pump instead.
+>
+> The mechanics also make a cheaper loop available: long-poll the log, and ask
+> the job state for a verdict only when a poll returns empty *quickly* — during
+> a live but silent stretch the poll blocks its full window, so a fast empty
+> page is a usable hint that the job has finished. A hint only: the probe
+> measured terminal-implies-fast once and never the converse, so the state
+> resource keeps the final say. One state request per quiet interval instead of
+> one per iteration.
+>
+> All of it, plus the stream's shape, is
+> [ADR-0017](docs/adr/0017-the-log-stream-is-a-self-driving-pump.md): the
+> outputs are a **self-driving pump** behind ADR-0015's `AsyncIterable`, not an
+> `async function*`, because a generator does not poll until somebody iterates
+> and a caller awaiting `done` while ignoring `outputs` is a caller that
+> deadlocks. The ADR leaves one policy question to 2c on purpose: an unconsumed
+> pump accumulates lines, and what to do about that — cap or no cap, which end
+> is dropped, whether an overflow is reported — is the slice's to decide. 2c is
+> otherwise an implementation slice.
+
 *Exit:* can open a compute session against a real Viya, stream its log, reconnect,
 survive session death gracefully, and report stage-1 capabilities — all covered by
 mocked-HTTP unit tests.
@@ -796,11 +845,24 @@ busy/serial contract, and success/failure detection. *Medium.*
 > `GET /compute/sessions/{id}/variables/SYSCC` — but read it per job rather than
 > assuming the observed per-job reset to `0` is contractual.
 
-**3b — Log filter.** SAS log → clean Python stdout: strip numbered source echo,
-page-break headers, `>>>` markers, and procedure NOTEs. Pure-function, heavily
+**3b — Log filter.** SAS log → clean Python stdout: strip page-break headers,
+`>>>` markers, and procedure NOTEs. Pure-function, heavily
 unit-tested against recorded log fixtures — including the awkward real-world cases
 where a page break splits the stdout region mid-stream, and where stdout volume is
 large enough to paginate.  *Medium.*
+
+> **Amended 2026-08-17 by 2c-pre**, findings 47 and 52. Two changes. First,
+> **stripping the numbered source echo is no longer expected to be needed**:
+> 3a submits via `infile=`, which echoes no source (finding 35), so a 3a log
+> should carry no `source` lines at all — a prediction 2c confirms the first
+> time it streams a real submission, not a measurement. Second, **the filter
+> switches on the line's `type`, not on its prefix**: every line arrives as
+> `{line, type, version}` and the four observed values are `source`, `note`,
+> `normal`, `error`. `normal` is the user's own output — that alone is most of
+> the filter. Beware `note`: it is a catch-all that also covers continuation
+> lines, whitespace-only lines and blank ones, so "hide notes" would delete the
+> log's vertical spacing. The vocabulary is open, so an unrecognised `type` is
+> passed through rather than dropped.
 
 **3c — Rich output probe, then implementation.** **Probe first, per the standard
 workflow.** Determine how matplotlib figures and DataFrame HTML can be returned —

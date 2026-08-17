@@ -112,10 +112,21 @@ prevents them being discovered as "small" tasks mid-phase.
    token `endsubmit;` — even inside a string or comment — terminates the block
    early and the remainder is interpreted as **SAS**. `&` and `%` may additionally
    trigger SAS macro resolution inside the block. That is both a bug and an
-   injection path from Python source into SAS. Unverified by the probe. The
-   injection-free alternative is `proc python file="…"`, uploading the code to the
-   session filesystem instead of inlining it; that is likely the right answer and
-   must be probed before 3a is written.
+   injection path from Python source into SAS. The injection-free alternative is
+   to upload the code to the session filesystem and run it from there instead of
+   inlining it; that is likely the right answer and must be probed before 3a is
+   written.
+
+   > **Settled 2026-08-16 by 2-pre (findings 31–35).** Confirmed, and the option
+   > is **`INFILE=`**, not `FILE=` — `proc python file=…` is not valid syntax, and
+   > `ERROR 22-322` enumerates the real set (`COMMAND, ECHO, INFILE, RESTART, SRC,
+   > TERMINATE, TIMEOUT`). So the mechanism is upload plus
+   > `proc python infile=<fileref>;`. Two corrections to the paragraph above: a
+   > stray `endsubmit;` terminates the block *even inside a triple-quoted string*,
+   > and `&`/`%` do **not** trigger macro resolution inside an intact block. The
+   > danger is therefore narrower than feared and worse than feared — the
+   > truncated block poisons the tokeniser, and the next job in that session
+   > reports `completed` while executing nothing.
 
    **Quoting is the sharp edge of this, and it is sharper than it looks.** SAS
    tokenises before it ever hands the block to Python, and its string rules are
@@ -147,8 +158,13 @@ prevents them being discovered as "small" tasks mid-phase.
    submission path needs a **fidelity corpus** (§4) — real Python programs, chosen
    to be hostile to SAS tokenisation, asserted to arrive at the interpreter byte
    for byte — and that any submission mechanism which cannot pass that corpus is
-   the wrong mechanism. `proc python file="…"` is favoured for exactly this reason:
-   a file transfer has no tokeniser in the middle of it.
+   the wrong mechanism. Running an uploaded file is favoured for exactly this
+   reason: a file transfer has no tokeniser in the middle of it.
+
+   > **Settled 2026-08-16 by 2-pre.** It is `proc python infile=<fileref>;`, and
+   > the reason held up: the file's contents are not tokenised, there is no source
+   > echo, and inlining failed the corpus's central case. The corpus still ships in
+   > 3a; what it now proves is upload fidelity rather than an escaper.
 2. **Log hygiene.** The Compute log is a *SAS* log: numbered source echo, page-break
    headers, `>>>` REPL markers, procedure timing NOTEs. Turning it into clean
    Python stdout is real parsing work, not a pass-through.
@@ -647,7 +663,8 @@ run **before** 2b* — all three findings shape the interface 2b freezes, so pro
 after it would be backwards. Settle and record in `PROBE-FINDINGS.md`:
 (i) how user code containing `endsubmit;`, `%let`, and `&sysuserid` behaves when
 inlined, and whether `proc python file="…"` (upload to the session filesystem) is
-the injection-free submission path; (ii) whether `SYSCC` is readable from
+the injection-free submission path — *the option name in this question is wrong;
+it is `INFILE=`, per the findings below*; (ii) whether `SYSCC` is readable from
 `GET /compute/sessions/{id}/variables/SYSCC` rather than only from log text — if
 not, 3a's failure detection depends on 3b and they must merge or reorder;
 (iii) how to reset the Python namespace **without** destroying the compute session

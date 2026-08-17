@@ -2733,7 +2733,8 @@ in `PROBE-FINDINGS.md`:
 1. **Injection.** Submit Python containing `endsubmit;` in a string, plus `%let`
    and `&sysuserid`. Does the block terminate early? Does SAS macro resolution
    fire? Then test `proc python file="…"` (upload the code to the session
-   filesystem) as the injection-free alternative.
+   filesystem) as the injection-free alternative. *The option name in this
+   question is wrong — it is `INFILE=`; see answer 1 below.*
 2. **Failure signal.** Is `SYSCC` readable from
    `GET /compute/sessions/{id}/variables/SYSCC`, or only from log text? **If only
    from log text, 3a depends on 3b** and the two must be reordered or merged.
@@ -2807,7 +2808,7 @@ identifiers and content, an empty file, and no trailing newline. Assert **byte f
 byte** on what the interpreter received, not on what we sent, in the unit tier and
 again in the live tier — the unit tier can only prove we built what we meant to
 build, not that SAS agreed. Then pick the submission mechanism that passes it.
-`proc python file="…"` is favoured precisely because a file transfer has no
+Running an uploaded file is favoured precisely because a file transfer has no
 tokeniser in the middle; if the inline form cannot pass the corpus, that is the
 answer rather than a reason to iterate on an escaper. See `PRODUCTION_PLAN.md`
 §1.5 item 1 and §4.

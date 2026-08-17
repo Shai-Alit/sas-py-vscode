@@ -768,6 +768,37 @@ recursion in `rest/job.ts::getState`, and the 412 recursion in
 `rest/session.ts::cancel()` — the latter matters because 3d-i's Cancel rides on it.
 *Medium.*
 
+> **Measured 2026-08-17 by 2c-pre**, findings 46–53. The sketch above survives,
+> with four corrections:
+> - **The log has no ETag.** Its cursor is `start` alone and `If-None-Match` has
+>   nothing to send, so "ETag state polling" above means the *job state*
+>   resource (finding 28) and nothing else. Two long polls with two different
+>   mechanisms, not one mechanism used twice.
+> - **`timeout` is not optional.** It long-polls for real — measured blocking
+>   10.27 s for `timeout=10` and releasing in 1.02 s when a line arrived — and
+>   omitting it returns in 0.27 s empty. The parameter is the only thing
+>   between this loop and a busy-wait, so it belongs at the call site rather
+>   than in an options bag a caller can leave out.
+> - **Expiry is `200` with `items: []`,** never `304`, so the log poll has one
+>   response shape where the two state resources have two between them.
+> - **The drain is free.** A terminal job short-circuits the wait (0.26 s), so
+>   there is no trailing ten-second stall and the loop can afford to keep
+>   reading until `next` is absent. `next` disappears even on a *full* final
+>   page, so the terminator is the link's absence and never a short page.
+>
+> That makes the cheap shape available: long-poll the log, and ask the job
+> state for a verdict only when a poll returns empty *quickly* — during a live
+> but silent stretch the poll blocks its full window, so a fast empty page is
+> already strong evidence the job has finished. One state request per quiet
+> interval instead of one per iteration.
+>
+> All of it, plus the stream's shape, is
+> [ADR-0017](docs/adr/0017-the-log-stream-is-a-self-driving-pump.md): the
+> outputs are a **self-driving pump** behind ADR-0015's `AsyncIterable`, not an
+> `async function*`, because a generator does not poll until somebody iterates
+> and a caller awaiting `done` while ignoring `outputs` is a caller that
+> deadlocks. 2c is now an implementation slice.
+
 *Exit:* can open a compute session against a real Viya, stream its log, reconnect,
 survive session death gracefully, and report stage-1 capabilities — all covered by
 mocked-HTTP unit tests.

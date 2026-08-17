@@ -537,6 +537,47 @@ called out under **Changed** with a migration note.
 - `docs/architecture/capability-probing.md` and
   `docs/architecture/contracts.md`.
 
+- `PROBE-FINDINGS.md` findings 46-53, measuring the job log before the log
+  stream is written. The load-bearing question was whether the log endpoint's
+  `timeout=` parameter really long-polls, because the upstream loop being ported
+  passes it and nothing had ever checked: it does, blocking the full 10.27
+  seconds on a silent job and releasing in 1.02 seconds when a line arrived,
+  where the same request without it returns in 0.27 seconds empty. So the stream
+  is driven by the log rather than by the session-state long poll — but the
+  parameter is the only thing between that loop and a busy-wait against a
+  corporate network, which is why it belongs at the call site rather than in an
+  options bag a caller can leave out. Expiry is a `200` carrying an empty array
+  rather than the `304` either state resource answers with, and the log carries
+  no `ETag` at all, so `start` is the entire cursor.
+
+  The drain turns out to be free: a job that has reached a terminal state
+  short-circuits the wait and answers in 0.26 seconds, so there is no trailing
+  ten-second stall at the end of every execution. Reading past the end is a
+  `200` with zero items rather than an error, and the `next` link disappears
+  even on a *full* final page — so the drain terminates on the link's absence
+  and must never key on a short page.
+
+  Also settled: the job representation and its ten link relations, two of which
+  carry `type: null`, which answers the question finding 21 left open and
+  constrains what the contract checker may require. And the line `type`
+  vocabulary 3b's filter will be built on — `source`, `note`, `normal`, `error`,
+  an open set in which `note` is a catch-all covering continuation lines,
+  whitespace and blank lines rather than a `NOTE:` prefix test. A real log will
+  carry no `source` lines at all, because those only appear for inline
+  submission and ADR-0014 chose upload plus `infile=`, which echoes nothing.
+
+- ADR-0017, recording what those measurements decide about the stream that has
+  not been written yet: the loop is driven by the log's own long poll, the job
+  module stays neutral about what the statements it submits say, and the stream
+  is a **self-driving pump** behind the `AsyncIterable` that ADR-0015 froze —
+  polling that runs whether or not anything is consuming it. The obvious
+  implementation is an `async function*`, and it is the alternative this record
+  exists to reject: a generator's body does not run until something calls
+  `next()`, so a caller that awaits the outcome and ignores the output would
+  deadlock against a job that completed on the server minutes earlier. ADR-0015's
+  "must not stall waiting for a consumer that never arrives" is not a defensive
+  nicety — it is what keeps the two members of `ExecutionHandle` independent.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

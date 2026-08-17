@@ -2828,6 +2828,80 @@ before 3a designs around their absence.
 > profile setting yet letting a user assert `viya35` by hand. That setting is the
 > obvious next move if a 3.5 deployment ever appears.
 
+> **⚠ 2c-pre is a probe, and it decides what drives 2c's loop.** Same reason
+> 2-pre ran before 2b: the alternative is porting upstream's loop on the
+> assumption that its `timeout` parameter does something, and finding out
+> otherwise from a user's network.
+
+☑ **2c-pre — run 2026-08-17 against Viya 4, written up as findings 46–53.** Four
+questions, none of them answerable without creating a job:
+
+1. **Does the log endpoint's `timeout=` actually long-poll?** If not, upstream's
+   `while` loop is a hot spin throttled only by latency and 2c must drive from
+   the session-state long poll (finding 19) instead.
+2. **What does a job representation look like**, and does it carry the links 2c
+   needs — the open question finding 21 left.
+3. **How does the drain terminate** — paging past the end, when `next` appears,
+   and whether the log survives the job reaching a terminal state.
+4. **What is the `type` vocabulary**, since 3b's filter is built on it.
+
+**The four answers.**
+
+1. **It long-polls, so the loop is driven by the log.** Measured: `timeout=10`
+   blocked the full 10.27 s on a silent job and released in 1.02 s when a line
+   arrived; the same request without `timeout` returned in 0.27 s empty. Expiry
+   is `200` with `items: []`, never `304` — unlike *either* state resource. And
+   **the log carries no ETag at all**, so `start` is the entire cursor and the
+   `If-None-Match` machinery of finding 28 applies only to the job state.
+2. **Six fields and ten relations**, including `log`, `logAsText`, `listing`,
+   `results`, `cancel` and `delete`. Two of them matter to code: `cancel` and
+   `delete` carry **`type: null`**, which a contract typing the media type as a
+   required string would reject; and `log` and `logAsText` are the *same href*,
+   distinguished only by `rel` and the `Accept` you send.
+3. **Drain until `next` is absent, and it costs nothing.** A terminal job
+   short-circuits the wait — 0.26 s, not 10 — so there is no trailing stall at
+   the end of an execution. Reading past the end is a `200` with zero items, not
+   a `416`. `next` vanishes even on a *full* final page, so the terminator is the
+   link's absence and never a short page.
+4. **Four types observed — `source`, `note`, `normal`, `error` — and the set is
+   open.** `note` is a catch-all covering continuation lines, whitespace and
+   blank lines, not a `NOTE:` prefix test; `normal` is the user's own output and
+   the rarest thing in the log. An unrecognised type must pass through rather
+   than be discarded, and the `ERROR:` line arrives *before* the `run;` it
+   belongs to, so nothing may pair a diagnostic with the source line above it.
+
+Three things to carry into 2c and 3b. **`timeout` belongs at the call site, not
+in an options bag** — upstream declares `wait` on the session state and never
+passes it (finding 19), and the same omission here is a busy-wait that looks
+correct and returns `200` every time. **A real 3a log will contain no `source`
+lines**: they only appear because this probe submitted inline `code[]`, and
+ADR-0014 chose upload plus `infile=`, which echoes nothing (finding 35). And
+**a failing job's terminal state is `error` while its session stays `idle`**, so
+only two of upstream's five terminal states have ever been observed — keep all
+five anyway, because an unobserved extra member costs nothing and a missing one
+is a loop that never exits.
+
+The design those answers force is **ADR-0017**, written in this same pull
+request: the loop is driven by the log's own long poll, `job.ts` stays neutral
+about what its statements say so ADR-0014's mechanism remains 3a's, and the
+stream is a self-driving pump behind ADR-0015's `AsyncIterable` rather than an
+`async function*`. Read it before writing 2c — it also names the two upstream
+recursions and the inverted `isDone` that the port must not carry forward.
+
+**One thing 2c must fix in code before it can describe a job.**
+`scripts/check-contracts.mjs` requires `via.from`, `via.relation` and `via.type`
+to each be a string. A job's `cancel` and `delete` relations carry `type: null`,
+so either `type` becomes optional-or-null on a `via` or those two endpoints
+cannot be declared — and an undeclared endpoint the code calls is exactly what
+the checker's other direction exists to catch. Found by sweeping for the
+superseded value rather than by hitting it during 2c, which is the point of
+sweeping.
+
+Not settled, and listed in full at the end of the findings section: whether
+`timeout` has a server maximum, whether a `WARNING:` produces a `warning` line
+type or terminal state, and what `listing` and `results` contain — the last of
+which is probably where 3c's ODS output lives.
+
 ```bash
 # ⛔ BARRIER
 # 2b-i — the seam and the dialects
@@ -2839,6 +2913,10 @@ git checkout -b phase-2b-ii-contracts-and-probing
 git commit -m "feat(dialects): add API contract files, their checker, and stage-1 capability probing"
 
 # ⛔ BARRIER
+# 2c-pre — probe the job log (docs only)
+git checkout -b phase-2c-pre-log-probe
+git commit -m "docs(probe): record the job log wire shape and long-poll behaviour"
+
 # 2c — log streaming
 git checkout -b phase-2c-log-streaming
 git commit -m "feat(compute): add long-poll log streaming and ETag state polling"

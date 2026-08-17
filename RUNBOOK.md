@@ -375,6 +375,20 @@ and fixes nothing. `vitepress@1.6.4` is latest and pins `vite@^5.4.14` → `esbu
 the only escape is `vitepress@2.0.0-alpha.19`. Re-check before assuming any of
 this is still true.
 
+☑ **Corrected 2026-08-16, on `chore/override-vite-6`: four of the seven were
+fixable all along.** Taking the entry above at its word ("re-check") found that
+the vite advisories are ranged `<=6.4.1`/`<=6.4.2` and that **vite 6.4.3 shipped
+2026-06-01**, before the allow-list was written. `overrides: { "vite": "^6.4.3" }`
+in `package.json` pins it under `vitepress@1.6.4`, brings `esbuild ^0.25` with it,
+and `npm audit` drops from seven advisories to three. The four entries are
+deleted from `scripts/advisory-allowlist.json` — an entry matching no advisory
+fails the gate, so this is not optional bookkeeping. The mocha half of the
+original entry was re-measured and still holds. **The reasoning error: it asked
+whether `vitepress` could move and never asked whether `vite` could.** A
+transitive advisory has two escape routes; check both before writing `no fix`.
+The override is outside vitepress's declared range, so `npm run docs:build` is
+the evidence it works — see [ADR-0005](docs/adr/0005-supply-chain-policy.md).
+
 ☑ **Settled 2026-08-12: the gate is hard on production, allow-listed on dev.**
 `npm audit --omit=dev` fails at any severity — vacuous today, because the
 production tree is empty, but it is the real gate the day a runtime dependency

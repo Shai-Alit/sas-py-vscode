@@ -568,6 +568,18 @@ called out under **Changed** with a migration note.
 
 ### Changed
 
+- `vite` is pinned to `^6.4.3` through an `overrides` block, which clears four of
+  the seven dev-tree advisories the audit gate was allow-listing — three in
+  `vite` itself, including a high-severity Windows `server.fs.deny` bypass, and
+  one in the `esbuild` nested underneath it. Those four entries are deleted from
+  `scripts/advisory-allowlist.json` rather than left to expire, because an entry
+  matching no current advisory fails the gate too. They had been recorded as
+  unfixable, which was wrong: the fix was to override the child rather than move
+  the parent, and only the parent had been checked. `vitepress@1.6.4` declares
+  `vite ^5.4.14`, so the pin overrules it deliberately; `npm run docs:build` is
+  the evidence it holds. Three advisories remain, all reached only through
+  `mocha`, which has no fixed release.
+
 - The authentication provider's label goes through `vscode.l10n.t()` like every
   other string the editor shows. It is a product name and will usually come back
   unchanged, but the manifest already contributes it as `%authentication.label%`,

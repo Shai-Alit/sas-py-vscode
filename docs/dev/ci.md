@@ -423,6 +423,24 @@ restatement, and an `expires`. The expiry is the point: an allow-list without
 expiry dates is just a mute button. When one lapses the build fails and somebody
 re-reads the advisory, which is the whole mechanism.
 
+**Before you write "no fix available", check both escape routes.** A transitive
+advisory can be cleared by moving the parent *or* by overriding the child, and
+the first version of this allow-list checked only the parent. Four of its seven
+entries — the three `vite` advisories and the nested `esbuild` one — were
+deleted on 2026-08-16 because they were **fixed**, not because they lapsed:
+`overrides: { "vite": "^6.4.3" }` in `package.json` pins a vite underneath
+vitepress that is out of every vulnerable range and brings `esbuild ^0.25` with
+it. Three remain, all on the `mocha` path, which is a genuine dead end.
+
+That `overrides` block is the one place this repository overrules a package's
+declared dependency range: `vitepress@1.6.4` asks for `vite ^5.4.14`. It is
+deliberate, [ADR-0005](../adr/0005-supply-chain-policy.md) records why, and the
+evidence that it is safe is that **`docs:build` passes** — VitePress is the only
+consumer of vite here, so the `docs` job is the test. Remove the block if that
+job ever goes red because of it, and restore the four allow-list entries in the
+same change; remove it for good when a stable vitepress depends on vite 6 by
+itself.
+
 As with `check:package`, exit codes are split — **1** means the policy was
 violated, **2** means the script or its input is wrong — and the classification
 logic checks itself against a fixed set of cases on every run.

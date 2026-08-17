@@ -13,7 +13,14 @@
     "",
     "Note that `npm audit`'s headline count is packages, not advisories: it said",
     "6 on 2026-08-12 while there were 7 distinct GHSAs, because three separate",
-    "vite advisories collapse into one line of its human-readable output."
+    "vite advisories collapse into one line of its human-readable output.",
+    "",
+    "Four of those seven — the three vite advisories and the nested esbuild one —",
+    "were removed on 2026-08-16 because they were fixed, not because they lapsed.",
+    "`overrides.vite` in package.json pins vite ^6.4.3 under vitepress, which",
+    "carries esbuild ^0.25. The reasoning is in ADR-0005's amendment; the lesson",
+    "is that a transitive advisory has two escape routes, and the first pass only",
+    "checked one of them."
   ],
   "allowed": [
     {
@@ -35,34 +42,6 @@
       "package": "serialize-javascript",
       "severity": "moderate",
       "why": "Second advisory against the same package on the same unfixable mocha path. CPU exhaustion while serialising array-likes we author ourselves.",
-      "expires": "2026-11-12"
-    },
-    {
-      "id": "GHSA-67MH-4WV8-2F99",
-      "package": "esbuild",
-      "severity": "moderate",
-      "why": "This is vite's nested esbuild@0.21.5, not the esbuild@0.28.2 that builds the extension — that one is well clear of the vulnerable range. Exposure is the dev server only, so it requires `npm run docs:dev` to be running and a malicious page to be open in the same browser. No fix: vitepress@1.6.4 is latest and pins vite@^5.4.14; only vitepress 2, still alpha, escapes.",
-      "expires": "2026-11-12"
-    },
-    {
-      "id": "GHSA-4W7W-66W2-5VF9",
-      "package": "vite",
-      "severity": "moderate",
-      "why": "Path traversal in optimized-deps `.map` handling. Dev server only, same vitepress-pins-vite-5 dead end. Not visible in npm audit's summary output, which folds all three vite advisories into one line.",
-      "expires": "2026-11-12"
-    },
-    {
-      "id": "GHSA-FX2H-PF6J-XCFF",
-      "package": "vite",
-      "severity": "high",
-      "why": "`server.fs.deny` bypass via Windows alternate paths — the most serious of the set, and worth naming because it is Windows-specific and this project is developed on Windows. Still dev server only: it needs `npm run docs:dev` running and something malicious able to reach it. Same vitepress-pins-vite-5 dead end. Revisit sooner than the others if vitepress 2 stabilises.",
-      "expires": "2026-11-12"
-    },
-    {
-      "id": "GHSA-V6WH-96G9-6WX3",
-      "package": "vite",
-      "severity": "moderate",
-      "why": "launch-editor NTLMv2 hash disclosure through UNC path handling, again Windows-specific and again reachable only while the docs dev server is running. Same dead end.",
       "expires": "2026-11-12"
     }
   ]

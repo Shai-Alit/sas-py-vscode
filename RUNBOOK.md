@@ -2770,7 +2770,10 @@ in `PROBE-FINDINGS.md`:
 
 Consequence for 2b: the backend interface must be able to express *upload then
 run a file*, not just *send a string*. A `submit(code: string)` seam that assumes
-inline text would be frozen wrong.
+inline text would be frozen wrong. All of this is **ADR-0014** — read it before
+writing 2b, because it also lists what the probe did *not* settle, and two of
+those (`TIMEOUT` for Cancel, `SRC` as a second hand-over path) are worth probing
+before 3a designs around their absence.
 
 ```bash
 # ⛔ BARRIER

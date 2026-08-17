@@ -44,3 +44,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0011](0011-choosing-where-python-runs.md) | Where Python runs is a visible per-workspace target, not a reinterpretation of the run button | Accepted |
 | [0012](0012-compute-session-lifetime-and-storage.md) | A compute session belongs to a workspace and a profile, and its id is a hint | Accepted |
 | [0013](0013-signing-in-opens-a-session.md) | Signing in opens a compute session, and only from the command | Accepted |
+| [0014](0014-python-is-submitted-as-an-uploaded-file.md) | Python is submitted as an uploaded file and run with `infile=`, not inlined in a `SUBMIT` block | Accepted |

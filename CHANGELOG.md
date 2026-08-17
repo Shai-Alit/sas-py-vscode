@@ -415,6 +415,17 @@ called out under **Changed** with a migration note.
   clears the Python namespace in about three seconds while the compute session,
   its libraries and its filerefs carry on.
 
+- ADR-0014, recording that decision and the reasoning the changelog bullet above
+  cannot carry: why the tempting middle path was rejected (sending the
+  `*';*";*/;quit;run;` recovery incantation before every inline submission heals
+  the poisoning but leaves the truncated code executing as SAS, and its
+  `nosyntaxcheck` would suppress genuine errors on every run), why scanning user
+  code for `endsubmit;` is the same mistake as writing an escaper, and what the
+  probe left open — `ECHO`, `TIMEOUT`, `COMMAND` and `SRC`, large files and
+  concurrency, where the uploaded file should live and who can read it, and
+  cleanup when a session dies mid-run. Nothing ships yet; this is the shape 2b
+  freezes and 3a implements.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

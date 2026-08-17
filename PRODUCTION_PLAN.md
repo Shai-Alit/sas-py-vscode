@@ -687,10 +687,14 @@ not, 3a's failure detection depends on 3b and they must merge or reorder;
 >
 > **What this hands 2b:** the interface must express *upload a file, then run it*,
 > not merely *submit a string*. Freezing a `submit(code)` seam would freeze the
-> wrong one.
+> wrong one. **Recorded as ADR-0014**, with the rejected alternatives — including
+> the tempting one, sending the recovery incantation before every inline
+> submission — and the six things findings 31–39 did not settle.
 
 **2b — `ExecutionBackend` interface + dialect layer.** Define the interface (§2.2)
-including the **busy/queue contract** and `freshNamespace` semantics, `Dialect`
+**per ADR-0014** — the submission method expresses *upload these bytes, then run
+that file*, and `submit(code: string)` is foreclosed — including the **busy/queue
+contract** and `freshNamespace` semantics, `Dialect`
 base with Viya 4 and 3.5 subclasses, `resolve()` with an alias registry, and
 **stage-1 (HTTP-derived) capability probing only** (§2.3). Land a **minimal
 `contracts/` file and checker here** and grow it per slice — contracts are built

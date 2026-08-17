@@ -64,7 +64,7 @@ One step: `npm run verify`. That is the whole chain —
 
 ```
 format:check  →  lint  →  typecheck  →  check:copyright  →  check:secrets  →
-check:coverage-scope  →  build  →  coverage
+check:coverage-scope  →  check:contracts  →  build  →  coverage
 ```
 
 — and it runs on Ubuntu with the Node version in `.nvmrc`.
@@ -87,6 +87,18 @@ matches the rule in both directions, so it can neither hide a testable module
 nor silently omit a new one. See
 [testing.md](testing.md#what-the-number-is-measured-over) and
 [ADR-0009](../adr/0009-coverage-scope.md).
+
+`check:contracts` runs immediately after it, and **before `build`** on purpose.
+It asserts that the files under `contracts/`, the dialect layer and the fixture
+directories still agree — in both directions, so a generation cannot quietly lose
+its contract and a contract cannot quietly name a dialect that no longer exists.
+The set of generations is the `DialectId` union, which is a TypeScript type and
+therefore does not survive to run time; the script reads it out of the source with
+TypeScript's own parser rather than importing it, because a check that needs its
+subject to compile first cannot report the interesting failures. That is the same
+technique, for the same reason, as `check:coverage-scope`. See
+[API contracts](../architecture/contracts.md) and
+[ADR-0016](../adr/0016-api-contracts-are-checked-yaml.md).
 
 ## test
 

@@ -472,6 +472,71 @@ called out under **Changed** with a migration note.
   code as it stands, while an ADR records what was decided on a date and is
   superseded rather than edited.
 
+- `contracts/` — the REST footprint this extension depends on, one file per Viya
+  generation, checked by `npm run check:contracts` as a step in `verify`. Three
+  things have to agree — the contract, the dialect layer and the fixture
+  directories — and the agreement is asserted in **both** directions. The reverse
+  half is the one that earns its keep: a one-way check catches a contract naming
+  a generation nobody supports, which is a mistake people make while deleting
+  things, and misses the one people actually make — adding a generation to the
+  union and never writing its contract, a failure whose only evidence is a file
+  nobody created.
+
+  `viya35.yaml` has no endpoints and an `absent` list instead, because stage-1
+  probing identifies a deployment as 3.5 by *not* finding something and the thing
+  not found has to be written down somewhere other than a branch. Every id under
+  `absent` must appear as an endpoint in another contract, so the list cannot
+  decay into notes about endpoints that no longer exist anywhere. Nothing in that
+  file has been observed; endpoints arrive there when something has talked to a
+  3.5, not when a manual describes one.
+
+  YAML, with a dev-only parser, because better than half of each file is prose —
+  which probe found this, which media type is required, which field is
+  deliberately not read — and a format whose comments live in a sibling document
+  is a format whose comments go stale separately. Nothing under `src/` imports
+  the parser, no contract is read at run time, and `contracts/**` is excluded
+  from the VSIX. ADR-0016 records the alternatives, including a TypeScript module
+  — rejected because a contract importable from `src/` is a version branch with a
+  data file to read from.
+
+- Stage-1 capability probing: the extension now asks a deployment which
+  generation it is, and says so in the log. Two requests rather than one — from
+  `/deploymentData` to whatever its `cadenceVersion` relation points at — because
+  ADR-0010 expresses a version difference as the presence or absence of a link
+  relation, and a composed path cannot tell a missing feature from a moved one.
+  The relation is selected by media type as well as by name: it appears **twice**
+  in that document, differing only in `type` (finding 44), so selecting on the
+  name works today by luck.
+
+  It runs after a session has been established, never before, and that ordering
+  is the design rather than an implementation detail. A routed Viya service
+  answers a bad path with a Viya error document; an unrouted one is answered by
+  the ingress with a bodyless 404 carrying no content type, and a proxy or a VPN
+  portal produces something in the same family (finding 42). So a 404 alone can
+  never mean "Viya 3.5" — read that way, anything in the network path could name
+  the generation on the deployment's behalf, and the user would then be told
+  their deployment has no built-in OAuth client. A live compute session is the
+  evidence that closes the gap: it proves the host is a reachable Viya that this
+  token works against.
+
+  The answer is logged as one line whose **level is the certainty** — information
+  when the version was determined, a warning when it was assumed — carrying what
+  the resolver's own reason throws away: the release's support-track display
+  name, or the detail that separates a proxy in the way from a deployment that
+  really has no such endpoint. Everything done after an assumed resolution is
+  done on an assumption, and a bug report opening with that warning has already
+  named its most likely cause.
+
+  Cached per profile, keyed on the endpoint as well as the id — a profile is a
+  settings entry people edit in place, and one repointed at another deployment
+  must not be answered for by the deployment it used to name. Only *certain*
+  resolutions are cached: an inconclusive answer is a report about one attempt to
+  ask, not a finding about the deployment, and caching it would let a cancelled
+  connect decide how the window talks to a deployment until it is reloaded.
+
+- `docs/architecture/capability-probing.md` and
+  `docs/architecture/contracts.md`.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in
@@ -639,6 +704,22 @@ called out under **Changed** with a migration note.
   what it turned into.
 
 ### Changed
+
+- The copyright check now scans `contracts/`, and its header extractor
+  understands `#` comments alongside `//`. YAML has no other comment form, so a
+  header there is a run of `#` lines ended by the first key — the same shape as
+  everywhere else, in different punctuation. `.vscodeignore` gains `contracts/**`
+  in the same change: it is allow-by-default, so a new top-level directory ships
+  inside the VSIX unless it is named. Both gaps were recorded in advance in
+  `RUNBOOK.md` as things this slice would inherit, and both are closed here
+  rather than carried forward.
+
+- The coverage ratchet rises to 91 / 91 / 90 / 95 (lines, statements, functions,
+  branches). The branch figure moved twice: the new gate script pushed it *down*
+  first, because its defensive arms — the ones that fire on a malformed contract
+  rather than an incorrect one — had no cases. Those are now stated as tests, on
+  the grounds that a gate whose failure mode is a stack trace three frames in
+  gets read as a broken gate.
 
 - The coverage rule gains a second way to be unreachable, and ADR-0009 is
   amended rather than worked around. A file of nothing but types compiles to an

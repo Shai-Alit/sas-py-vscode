@@ -189,6 +189,7 @@
     "check:audit": "node scripts/check-audit.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:coverage-scope": "node scripts/check-coverage-scope.mjs",
+    "check:contracts": "node scripts/check-contracts.mjs",
     "check:docs": "npm run docs:reference:check && npm run docs:samples && npm run docs:links:self && npm run docs:build",
     "docs:reference": "node scripts/generate-reference.mjs",
     "docs:reference:check": "node scripts/generate-reference.mjs --check",
@@ -200,7 +201,7 @@
     "docs:preview": "vitepress preview docs",
     "l10n:extract": "vscode-l10n-dev export --outDir ./l10n ./src",
     "package": "vsce package --out dist/python-on-viya.vsix && npm run check:package",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run check:copyright && npm run check:secrets && npm run check:coverage-scope && npm run build && npm run coverage"
+    "verify": "npm run format:check && npm run lint && npm run typecheck && npm run check:copyright && npm run check:secrets && npm run check:coverage-scope && npm run check:contracts && npm run build && npm run coverage"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -216,6 +217,7 @@
     "eslint": "10.8.1",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.10.0",
+    "js-yaml": "4.3.1",
     "mocha": "11.8.0",
     "msw": "2.15.0",
     "prettier": "3.9.6",

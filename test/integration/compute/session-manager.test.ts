@@ -20,7 +20,11 @@ import {
   type ComputeSessionDeps,
 } from "../../../src/compute/sessionManager";
 import type { ViyaProfile } from "../../../src/profile/model";
-import { memoryMemento, testLogChannel } from "../../helpers/auth-host";
+import {
+  memoryMemento,
+  recordingLog,
+  testLogChannel,
+} from "../../helpers/auth-host";
 
 /**
  * The connect/reconnect orchestrator, in a host, against a scripted deployment.
@@ -46,6 +50,10 @@ const CONTEXT = "SAS Job Execution compute context";
 const CONTEXT_ID = "00000000-0000-4000-8000-0000000000c1";
 const SESSION_ID = "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000";
 const SESSION_PATH = `/compute/sessions/${SESSION_ID}`;
+/** Stage-1 capability probing: the entry point, and where it points. */
+const DEPLOYMENT_DATA_PATH = "/deploymentData";
+const CADENCE_PATH = "/deploymentData/cadenceVersion";
+const RELEASE = "2026.03";
 
 function profile(init?: Partial<ViyaProfile>): ViyaProfile {
   return {
@@ -119,6 +127,42 @@ function contextsBody(): unknown {
   };
 }
 
+/**
+ * `/deploymentData`, trimmed to the part the probe navigates.
+ *
+ * Both `cadenceVersion` relations are kept, because finding 44 is the reason the
+ * probe selects by media type rather than by `rel`, and a fixture with one of
+ * them would let a `rel`-only lookup pass. `method` is `null` on every link in
+ * the real document, so it is `null` here too.
+ */
+function deploymentDataBody(links?: unknown[]): unknown {
+  return {
+    version: 1,
+    links: links ?? [
+      {
+        method: null,
+        rel: "cadenceVersion",
+        href: CADENCE_PATH,
+        type: "application/vnd.sas.deployment.data.cadence.version",
+      },
+      {
+        method: null,
+        rel: "cadenceVersion",
+        href: CADENCE_PATH,
+        type: "application/vnd.sas.app.registry.cadence.version",
+      },
+    ],
+  };
+}
+
+/** The cadence resource, as finding 40 measured it. */
+function cadenceBody(): unknown {
+  return {
+    cadenceVersion: RELEASE,
+    cadenceDisplayName: `Long-Term Support ${RELEASE}`,
+  };
+}
+
 /** A session that has already settled, so nothing polls its state. */
 function sessionBody(init?: { state?: string }): unknown {
   return {
@@ -154,11 +198,35 @@ function gone(): ComputeResult<ComputeResponse> {
   };
 }
 
+/** A `DELETE` that succeeded, which is how a session is ended. */
+function deleted(): ComputeResult<ComputeResponse> {
+  return {
+    ok: true,
+    value: { status: 204, notModified: false, text: "", body: undefined },
+  };
+}
+
 interface Deployment {
   readonly requests: ComputeRequest[];
   readonly client: ComputeClient;
   /** Hrefs requested, in order — the shortest form of "what did it do". */
   readonly hrefs: string[];
+}
+
+/**
+ * What a Viya 4 answers the version probe with, unless a test says otherwise.
+ *
+ * Merged under every script by {@link deployment} rather than written out per
+ * test. Stage-1 probing runs after *every* successful connect, so without a
+ * default every test about reattaching or about binding would have to script a
+ * version check it says nothing about — and the ones that did not would be
+ * asserting against a probe that had silently failed.
+ */
+function viya4Probe(): Partial<Record<string, ComputeResult<ComputeResponse>>> {
+  return {
+    deploymentData: ok(deploymentDataBody()),
+    cadenceVersion: ok(cadenceBody()),
+  };
 }
 
 /**
@@ -173,6 +241,7 @@ function deployment(
 ): Deployment {
   const requests: ComputeRequest[] = [];
   const hrefs: string[] = [];
+  const scripted = { ...viya4Probe(), ...replies };
   return {
     requests,
     hrefs,
@@ -180,7 +249,7 @@ function deployment(
       send: (request) => {
         requests.push(request);
         hrefs.push(request.link.href);
-        const reply = replies[request.link.rel];
+        const reply = scripted[request.link.rel];
         assert.ok(
           reply !== undefined,
           `nothing was scripted for the "${request.link.rel}" link (${request.link.href})`,
@@ -239,12 +308,14 @@ function harness(init: {
   client: ComputeClient;
   deps?: Partial<ComputeSessionDeps>;
   state?: ReturnType<typeof memoryMemento>;
+  /** Only where the log line *is* the behaviour — see {@link recordingLog}. */
+  log?: vscode.LogOutputChannel;
 }): {
   manager: ComputeSessionManager;
   bindings: SessionBindingStore;
   shown: Shown;
 } {
-  const log = testLogChannel("session manager");
+  const log = init.log ?? testLogChannel("session manager");
   const state = init.state ?? memoryMemento();
   const bindings = new SessionBindingStore(state, log);
   const shown: Shown = { errors: [], infos: [] };
@@ -348,6 +419,7 @@ describe("compute session manager", () => {
       release = resolve;
     });
     const replies: Partial<Record<string, ComputeResult<ComputeResponse>>> = {
+      ...viya4Probe(),
       contexts: ok(contextsBody()),
       createSession: ok(sessionBody(), 201),
     };
@@ -393,9 +465,18 @@ describe("compute session manager", () => {
 
     assert.ok(connection, "the stored session was not reattached to");
     assert.equal(connection.session.id, SESSION_ID);
-    // One request, straight at the session. The stored id is used rather than
-    // checked: a probe first would cost the same round trip and answer nothing.
-    assert.deepEqual(scripted.hrefs, [SESSION_PATH]);
+    // Straight at the session, with no context resolution in front of it. The
+    // stored id is used rather than checked: asking first would cost the same
+    // round trip and answer nothing.
+    //
+    // The two that follow are stage-1 capability probing, and their position is
+    // the point — the version is asked for only once a session proves the host
+    // is a reachable Viya that this token works against (finding 42).
+    assert.deepEqual(scripted.hrefs, [
+      SESSION_PATH,
+      DEPLOYMENT_DATA_PATH,
+      CADENCE_PATH,
+    ]);
   });
 
   it("starts a new session when the stored one has gone, and rebinds", async () => {
@@ -925,6 +1006,7 @@ describe("compute session manager", () => {
       release = resolve;
     });
     const replies: Partial<Record<string, ComputeResult<ComputeResponse>>> = {
+      ...viya4Probe(),
       contexts: ok(contextsBody()),
       createSession: ok(sessionBody(), 201),
       delete: {
@@ -983,5 +1065,263 @@ describe("compute session manager", () => {
     // session on exit are contradictory, and a reload is the case the
     // persistence exists for.
     assert.equal(scripted.requests.length, before);
+  });
+
+  /**
+   * Stage-1 capability probing, from the host's side.
+   *
+   * `probeCadence` itself is covered exhaustively at the unit tier — every shape
+   * a 404 comes in, and which of them may and may not mean Viya 3.5. What is
+   * only reachable here is the wiring: that it happens after a session and not
+   * before, that its answer reaches the connection, that it is asked once per
+   * profile, and that it cannot take a working connection down with it.
+   */
+  describe("version probing", () => {
+    /** Ends the session, so the next `connect` is not answered from `live`. */
+    async function reconnect(manager: ComputeSessionManager): Promise<void> {
+      await manager.disconnect();
+      await manager.connect();
+    }
+
+    it("carries the deployment's cadence version on the connection", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+      });
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "connecting produced no session");
+      assert.equal(connection.generation.dialect.id, "viya4");
+      assert.deepEqual(connection.generation.dialect.deployment, {
+        kind: "viya4",
+        release: RELEASE,
+      });
+      assert.ok(connection.generation.certain);
+    });
+
+    it("reads a deployment that offers no cadence relation as Viya 3.5", async () => {
+      // A Viya service answered, with a document of the right shape, and it does
+      // not advertise the relation. That is the one positive signal Viya 3.5
+      // gives — the endpoint is a Viya 4 addition.
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        deploymentData: ok(deploymentDataBody([])),
+      });
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection);
+      assert.equal(connection.generation.dialect.id, "viya35");
+      assert.ok(connection.generation.certain);
+      // Nothing followed: there was no relation to follow.
+      assert.ok(!scripted.hrefs.includes(CADENCE_PATH));
+    });
+
+    it("assumes Viya 4 without claiming it when the version cannot be read", async () => {
+      // `gone()` is a bodyless 404 — the shape finding 42 records an *ingress*
+      // producing for a path no service is routed to. A proxy, a VPN portal or a
+      // mistyped host produces the same thing, so it must never be read as "this
+      // deployment has no cadence endpoint, therefore Viya 3.5".
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        deploymentData: gone(),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "a failed probe took the connection down with it");
+      assert.equal(connection.generation.dialect.id, "viya4");
+      assert.ok(!connection.generation.certain);
+      // The Viya 4 dialect bound to an `unknown` deployment: we will speak Viya 4
+      // to it, and we do not know what it is. Nothing downstream inherits a
+      // confidence nobody earned.
+      assert.deepEqual(connection.generation.dialect.deployment, {
+        kind: "unknown",
+      });
+      // Probing is decoration. The user asked to connect, and they connected.
+      assert.deepEqual(shown.errors, []);
+    });
+
+    it("survives a client that rejects rather than answering", async () => {
+      // The residue `probeCadence`'s one sanctioned `catch` exists for. A
+      // rejection escaping here would fail a connect that had already succeeded.
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+      });
+      const client: ComputeClient = {
+        send: async (request) => {
+          if (request.link.rel === "deploymentData") {
+            throw new Error("the socket closed");
+          }
+          return await scripted.client.send(request);
+        },
+      };
+      const { manager, shown } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(
+        connection,
+        "a throwing probe took the connection down with it",
+      );
+      assert.ok(!connection.generation.certain);
+      assert.deepEqual(shown.errors, []);
+    });
+
+    it("asks the deployment its version once, however often it reconnects", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        delete: deleted(),
+      });
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+      });
+
+      await manager.connect();
+      await reconnect(manager);
+
+      // Two connects, two sessions, one version check. A deployment does not
+      // change generation between one session and the next, and re-asking would
+      // be two round trips to re-learn a fact that changes about once a quarter.
+      assert.equal(
+        scripted.hrefs.filter((href) => href === DEPLOYMENT_DATA_PATH).length,
+        1,
+      );
+      assert.ok(manager.current(PROFILE_ID)?.generation.certain);
+    });
+
+    it("does not remember a version it could not determine", async () => {
+      // The direction that matters more than the caching. `certain: false` is a
+      // report about one attempt, not a finding about the deployment — cache it
+      // and a proxy that was in the way for a moment decides how this window
+      // talks to Viya until it is reloaded.
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        delete: deleted(),
+      });
+      let asked = 0;
+      const client: ComputeClient = {
+        send: async (request) => {
+          if (request.link.rel === "deploymentData") {
+            asked += 1;
+            if (asked === 1) return gone();
+          }
+          return await scripted.client.send(request);
+        },
+      };
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client,
+      });
+
+      await manager.connect();
+      await reconnect(manager);
+
+      assert.equal(asked, 2, "an inconclusive probe was cached");
+      assert.ok(manager.current(PROFILE_ID)?.generation.certain);
+    });
+
+    it("asks again when the profile is pointed at another deployment", async () => {
+      // A profile is a settings entry the user edits in place. Repoint one and
+      // the id it keeps would otherwise answer for the deployment it used to
+      // name — the same edit `rememberContext` guards against.
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        delete: deleted(),
+      });
+      const profiles = profileSource(profile({ context: CONTEXT }));
+      const { manager } = harness({
+        profiles,
+        client: scripted.client,
+      });
+
+      await manager.connect();
+      profiles.replace(
+        PROFILE_NAME,
+        profile({ endpoint: "https://other.example.com", context: CONTEXT }),
+      );
+      await reconnect(manager);
+
+      assert.equal(
+        scripted.hrefs.filter((href) => href === DEPLOYMENT_DATA_PATH).length,
+        2,
+      );
+    });
+
+    it("says which generation it found and why", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+      });
+      const log = recordingLog("session manager version");
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+        log: log.channel,
+      });
+
+      await manager.connect();
+
+      // The whole point of the wiring: a wrong dialect presents as a dozen
+      // unrelated bugs, and this line is what makes it diagnosable from a bug
+      // report. The release, and the display name the release alone is half of.
+      const line = log.lines.find(({ message }) =>
+        message.includes("SAS Viya version"),
+      );
+      assert.ok(line, "the version was not logged");
+      assert.equal(line.level, "info");
+      assert.match(line.message, /Viya 4 2026\.03/);
+      assert.match(line.message, /Long-Term Support 2026\.03/);
+    });
+
+    it("warns, and says what it saw, when the version was assumed", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        deploymentData: gone(),
+      });
+      const log = recordingLog("session manager version assumed");
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+        log: log.channel,
+      });
+
+      await manager.connect();
+
+      const line = log.lines.find(({ message }) =>
+        message.includes("SAS Viya version"),
+      );
+      assert.ok(line, "the assumption was not logged");
+      // The level is the certainty: everything after this is done on a guess.
+      assert.equal(line.level, "warn");
+      assert.match(line.message, /assumed/);
+      // And the detail `deploymentFromSignal` throws away, which is the
+      // difference between a proxy in the way and a real Viya 3.5.
+      assert.match(line.message, /404/);
+    });
   });
 });

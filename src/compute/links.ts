@@ -137,6 +137,49 @@ export function findLink(
 }
 
 /**
+ * The link with this relation **and** this media type, or `undefined`.
+ *
+ * {@link findLink} takes the first match, which is right when a relation appears
+ * once. Finding 44 records a document where one does not: `/deploymentData`
+ * advertises `cadenceVersion` **twice**, differing only in `type` —
+ * `application/vnd.sas.deployment.data.cadence.version` and
+ * `application/vnd.sas.app.registry.cadence.version`. Both hrefs happen to be
+ * identical today, so a `rel`-only lookup there works by luck rather than by
+ * construction, and luck is a poor thing to have a version probe standing on.
+ *
+ * The comparison is on the **essence**, normalised: parameters dropped, case
+ * folded, and a `+json` suffix ignored. That last part is not laxity, it is
+ * {@link computeMediaType}'s rule read backwards — Viya advertises its vendor
+ * types bare and serves them suffixed, so a deployment that one day advertises
+ * `…cadence.version+json` is saying the same thing as one that advertises
+ * `…cadence.version`, and a probe that failed on the difference would report the
+ * generation as unknown for a purely cosmetic change.
+ */
+export function findLinkOfType(
+  links: readonly Link[],
+  rel: string,
+  type: string,
+): Link | undefined {
+  const wanted = mediaTypeKey(type);
+  return links.find(
+    (link) =>
+      link.rel === rel &&
+      link.type !== null &&
+      link.type !== undefined &&
+      mediaTypeKey(link.type) === wanted,
+  );
+}
+
+/** A media type reduced to the part two spellings of it agree on. */
+function mediaTypeKey(type: string): string {
+  const [essence = ""] = type.split(";");
+  const trimmed = essence.trim().toLowerCase();
+  return trimmed.endsWith("+json")
+    ? trimmed.slice(0, -"+json".length)
+    : trimmed;
+}
+
+/**
  * The HTTP method a link should be followed with.
  *
  * `GET` when unstated, which matches both HTTP's own default and every link

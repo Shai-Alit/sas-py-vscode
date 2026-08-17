@@ -39,6 +39,10 @@ const SCAN = [
   { dir: "src", extensions: [".ts"] },
   { dir: "scripts", extensions: [".mjs"] },
   { dir: "test", extensions: [".ts"], skip: ["scratch"] },
+  // The API contracts. Not code, but not generated either — they are written
+  // here, reviewed here, and `check-contracts.mjs` treats them as a source of
+  // truth, so they carry the same header as anything else that does.
+  { dir: "contracts", extensions: [".yaml", ".yml"] },
   // The docs site config is a source file that happens to live under docs/.
   // `cache` and `dist` are VitePress's own output and are not ours to licence.
   { dir: "docs/.vitepress", extensions: [".mjs"], skip: ["cache", "dist"] },
@@ -87,7 +91,11 @@ function extractHeader(source) {
       if (trimmed.includes("*/")) inBlockComment = false;
       continue;
     }
-    if (trimmed === "" || trimmed.startsWith("//")) {
+    // `#` joins `//` from 2b-ii, when `contracts/*.yaml` came under the scan.
+    // YAML has no other comment form, so a header there is a run of `#` lines
+    // and the first key ends it — which is the same shape as everything else
+    // here, in a different punctuation.
+    if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("#")) {
       header.push(line);
       continue;
     }

@@ -352,6 +352,33 @@ unavailable the extension says so plainly rather than failing obscurely on first
 run. Probing is deliberately **fail-soft** — the one sanctioned place where a
 swallowed exception is correct (§5), and it must carry a comment saying so.
 
+> **Stage 1 settled 2026-08-17 by 2b-ii.** `src/dialects/probe.ts`, wired into
+> `ComputeSessionManager.hold()`, with
+> [ADR-0016](docs/adr/0016-api-contracts-are-checked-yaml.md) for `contracts/`
+> and `docs/architecture/capability-probing.md` for the whole of it. Four
+> departures from the sketch above:
+>
+> - **Two requests, not one.** `/deploymentData` is fetched and its
+>   `cadenceVersion` relation followed, rather than composing
+>   `/deploymentData/cadenceVersion` — ADR-0010 expresses a version difference as
+>   the presence or absence of a relation, and a composed path cannot tell a
+>   missing feature from a moved one. The relation is selected by media type as
+>   well as by name: it appears twice in that document (finding 44).
+> - **"Absent ⇒ likely 3.5" is not readable from a status code.** Finding 42: an
+>   unrouted path is answered by the ingress with a bodyless 404, and a proxy or
+>   VPN portal answers the same way. The signal is a three-way union — cadence,
+>   absent, unreadable — and only the middle arm means 3.5.
+> - **Probing runs after a session exists**, because a live session is what makes
+>   a Viya-shaped 404 a statement about the endpoint rather than about the
+>   network. Not "before execution" in the sense of "first thing on connect".
+> - **Cached per profile, not per session**, and keyed on the endpoint too, since
+>   a profile can be repointed in place. Only *certain* resolutions are cached.
+>   Nothing is in the status bar yet — the log line is the whole surface, and its
+>   level is the certainty.
+>
+> Endpoint presence beyond the cadence pair is recorded in `contracts/` rather
+> than probed for. Stage 2 is unchanged and still 3e.
+
 ---
 
 ## 3. Phases

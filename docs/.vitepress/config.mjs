@@ -94,6 +94,11 @@ export default defineConfig({
             link: "/architecture/execution-backends",
           },
           { text: "The dialect layer", link: "/architecture/dialects" },
+          {
+            text: "Capability probing",
+            link: "/architecture/capability-probing",
+          },
+          { text: "API contracts", link: "/architecture/contracts" },
           { text: "Decision records", link: "/adr/" },
         ],
       },

@@ -54,13 +54,40 @@ export interface DialectResolution {
  *
  * Three outcomes, and the third is why this is a union rather than
  * `string | undefined`. "The deployment answered, and it has no cadence version"
- * means Viya 3.5. "We could not ask" means we know nothing — the endpoint may be
- * unreachable, or the signed-in user may simply not have permission to read it.
- * Collapsing those two into one absent value is how a permissions problem turns
+ * means Viya 3.5. "We could not ask" means we know nothing, and it has to stay a
+ * separate answer, because collapsing the two is how a network problem turns
  * into a confident, wrong claim of Viya 3.5.
+ *
+ * **What "could not ask" is, concretely.** An earlier draft of this comment said
+ * the signed-in user might lack permission to read the endpoint. Finding 41
+ * measured that and it is not so: on the deployment probed, the cadence resource
+ * answers `200` with **no `Authorization` header at all**, and with a deliberately
+ * malformed one. There is no permission there to lack. The real hazard is finding
+ * 42 — a request that never reaches Viya is answered by whatever *is* in the path,
+ * and an ingress answering for an absent service returns a bodyless `404` with no
+ * media type. A corporate proxy, a VPN portal or a mistyped host produces
+ * something in the same family. Read as "the endpoint is not there", any of them
+ * would name the generation on the deployment's behalf.
+ *
+ * One deployment does not prove every Viya 4 leaves the endpoint open, so
+ * `probeCadence` in `./probe` sends the token regardless; a deployment that *did*
+ * gate it would otherwise answer `401` and be read as Viya 3.5.
  */
 export type CadenceSignal =
-  | { kind: "cadence"; version: string }
+  | {
+      kind: "cadence";
+      version: string;
+      /**
+       * `cadenceDisplayName`, when the deployment sent one.
+       *
+       * "Long-Term Support 2026.03" — the release *and* the support track, where
+       * {@link CadenceSignal.version} alone is half of it (finding 40). It exists
+       * for the output channel and for nothing else: {@link deploymentFromSignal}
+       * drops it, because a support track is not a thing to branch on and putting
+       * it on `Deployment` would invite exactly that.
+       */
+      display?: string | undefined;
+    }
   | { kind: "absent" }
   | { kind: "unreadable"; detail: string };
 

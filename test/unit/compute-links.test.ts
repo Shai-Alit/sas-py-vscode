@@ -8,6 +8,7 @@ import {
   type Link,
   computeMediaType,
   findLink,
+  findLinkOfType,
   linkMethod,
   readLinks,
   resolveHref,
@@ -175,6 +176,95 @@ describe("findLink", () => {
     assert.equal(findLink(links, "Self"), undefined);
     assert.equal(findLink(links, "sel"), undefined);
     assert.equal(findLink(links, ""), undefined);
+  });
+});
+
+describe("findLinkOfType", () => {
+  /** Finding 44: `/deploymentData`, trimmed to the ambiguous pair. */
+  const links: readonly Link[] = readLinks({
+    links: [
+      {
+        rel: "cadenceVersion",
+        href: "/deploymentData/cadenceVersion",
+        type: "application/vnd.sas.deployment.data.cadence.version",
+      },
+      {
+        rel: "cadenceVersion",
+        href: "/deploymentData/appRegistryCadence",
+        type: "application/vnd.sas.app.registry.cadence.version",
+      },
+      { rel: "setinit", href: "/deploymentData/setinit", type: "text/plain" },
+    ],
+  });
+
+  it("picks the relation with the media type asked for, not the first one", () => {
+    // The whole reason this exists. `findLink` takes the first match, and the
+    // two hrefs above are identical on the real deployment — so a `rel`-only
+    // lookup is right by luck there and wrong here, which is the point of
+    // giving the fixture two different hrefs.
+    assert.equal(
+      findLinkOfType(
+        links,
+        "cadenceVersion",
+        "application/vnd.sas.app.registry.cadence.version",
+      )?.href,
+      "/deploymentData/appRegistryCadence",
+    );
+  });
+
+  it("treats the bare and +json spellings as the same type", () => {
+    // `computeMediaType`'s rule read backwards: Viya advertises its vendor types
+    // bare and serves them suffixed, so a deployment that starts advertising the
+    // suffixed form has not changed what it is offering.
+    assert.equal(
+      findLinkOfType(
+        links,
+        "cadenceVersion",
+        "application/vnd.sas.deployment.data.cadence.version+json",
+      )?.href,
+      "/deploymentData/cadenceVersion",
+    );
+  });
+
+  it("ignores parameters and case", () => {
+    assert.equal(
+      findLinkOfType(
+        links,
+        "cadenceVersion",
+        "Application/VND.SAS.Deployment.Data.Cadence.Version;version=1",
+      )?.href,
+      "/deploymentData/cadenceVersion",
+    );
+  });
+
+  it("answers undefined when the relation is there but the type is not", () => {
+    // Not the same as the relation being missing, and the caller that cares —
+    // the cadence probe — must not read this as "no such relation".
+    assert.equal(
+      findLinkOfType(links, "cadenceVersion", "application/json"),
+      undefined,
+    );
+  });
+
+  it("answers undefined for a link with no media type at all", () => {
+    // Finding 14: a link with no type omits the key entirely, and a `DELETE`
+    // link therefore has none. Nothing here may treat that as a wildcard.
+    const untyped = readLinks({
+      links: [{ rel: "delete", href: "/compute/sessions/S", method: "DELETE" }],
+    });
+    assert.equal(findLinkOfType(untyped, "delete", "text/plain"), undefined);
+    assert.equal(findLinkOfType([], "self", "text/plain"), undefined);
+  });
+
+  it("matches the relation exactly, as findLink does", () => {
+    assert.equal(
+      findLinkOfType(
+        links,
+        "cadenceversion",
+        "application/vnd.sas.deployment.data.cadence.version",
+      ),
+      undefined,
+    );
   });
 });
 

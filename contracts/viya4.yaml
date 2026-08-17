@@ -1,0 +1,71 @@
+# Copyright © 2026, Sean Ford and the Python on Viya contributors
+# SPDX-License-Identifier: Apache-2.0
+#
+# The REST footprint this extension depends on for SAS Viya 4.
+#
+# This file is documentation that fails the build when it stops being true.
+# `scripts/check-contracts.mjs` asserts that it, the dialect layer under
+# `src/dialects/`, and the fixture directories under `test/fixtures/` still agree
+# — in both directions, so a generation cannot quietly lose its contract and a
+# contract cannot quietly name a dialect that no longer exists.
+#
+# It is **not** shipped in the VSIX and **not** read at run time. The parser is a
+# devDependency, which is the whole reason this can be YAML with comments in it:
+# the comments are the point, and nothing in `src/` pays for them.
+#
+# When a probe changes what we know, this file changes in the same pull request
+# as the code and the fixtures. A contract updated afterwards is a contract
+# nobody was checking.
+
+generation: viya4
+dialect: createViya4Dialect
+fixtures: viya4
+reference: https://developer.sas.com/rest-apis
+
+# Every endpoint is reached one of two ways, and says which:
+#
+#   path:  composed against the deployment origin. ADR-0010 makes the origin the
+#          only base, so each of these is a URL we build ourselves and therefore
+#          a URL that can break when the service moves. Keep the list short.
+#   via:   followed from a link relation in another endpoint's response. This is
+#          how the service expects to be navigated and it cannot break on a path
+#          change. `observed_href` records what the relation actually pointed at
+#          when it was probed — for the reader, never for the client to compose.
+#
+# Declaring both is an error. So is declaring neither.
+endpoints:
+  - id: deployment_data_root
+    method: GET
+    path: /deploymentData
+    accept: application/vnd.sas.api+json
+    # A link document and nothing else. `links[]` is the only field read.
+    response_fields: [links]
+    # Finding 44: `method` is `null` on every link here, so the verb comes from
+    # this file rather than from the document. `type` is not decoration — the
+    # `cadenceVersion` relation appears **twice**, distinguished only by it, so
+    # code that selects on `rel` alone gets whichever came first.
+    item_fields: [rel, href, type]
+
+  - id: cadence_version
+    method: GET
+    via:
+      from: deployment_data_root
+      relation: cadenceVersion
+      type: application/vnd.sas.deployment.data.cadence.version
+    observed_href: /deploymentData/cadenceVersion
+    # `application/json` is on the 406's list of acceptable types (finding 43)
+    # and gives back a stable `application/json` rather than a versioned vendor
+    # type. We read two fields and have no use for the representation version.
+    accept: application/json
+    # `cadenceVersion` is `2026.03` — the shape `CADENCE` in
+    # `src/dialects/resolve.ts` already anchors on. `cadenceDisplayName` is
+    # "Long-Term Support 2026.03", which is the string for the output channel:
+    # it names the release and the support track in one line.
+    #
+    # Deliberately absent: `cadenceRelease` is a build stamp and must not be
+    # ordered, and `cadenceName` is the track on its own, which the display name
+    # already carries.
+    response_fields: [cadenceVersion, cadenceDisplayName]
+    # This is the whole of stage-1 capability probing (PRODUCTION_PLAN.md §2.3).
+    # Its absence is the Viya 3.5 signal — see `viya35.yaml`, which exists to
+    # record that absence and nothing else.

@@ -29,6 +29,14 @@
  * a string would start failing with 401s that a refresh has already fixed.
  * Nothing here reads `SecretStorage`; slice 1c owns credentials and this asks it.
  *
+ * ## The generation is asked once, and only once it can be asked honestly
+ *
+ * A connection carries the dialect the deployment will be spoken to in, and
+ * stage-1 probing runs in {@link ComputeSessionManager.hold} — after a session
+ * exists, never before. That ordering is the control `src/dialects/probe.ts`
+ * documents as its precondition rather than checking for itself. The answer is
+ * cached per profile, so reconnecting does not re-ask.
+ *
  * ## What is deliberately not here yet
  *
  * The busy check and the job poll. Both are on 2a-ii's punch list and both are
@@ -44,6 +52,13 @@ import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import { isSignInCancelled } from "../auth/cancellation";
 import { accountForEndpoint } from "../auth/identity";
 import { getSessionOptions, type AuthRequest } from "../auth/sessionRequest";
+import { probeCadence } from "../dialects/probe";
+import {
+  deploymentFromSignal,
+  resolveDialect,
+  type CadenceSignal,
+  type DialectResolution,
+} from "../dialects/resolve";
 import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { bindingMatches, type SessionBinding } from "./binding";
@@ -96,6 +111,23 @@ export interface ComputeConnection {
   readonly profileName: string;
   readonly context: string;
   readonly client: ComputeClient;
+  /**
+   * Which generation this deployment is, how sure we are, and why.
+   *
+   * Never absent, because `resolveDialect` is total: a probe that answered
+   * nothing still yields the Viya 4 dialect with `certain: false`, which is the
+   * fail-soft behaviour §2.3 asks for. Callers that must not act on a guess read
+   * `certain`; callers that just need to talk to the deployment reach straight
+   * through to `.dialect` and ignore it.
+   *
+   * The resolution rather than the bare `Dialect`, and `generation` rather
+   * than `dialect`, for the same reason. `certain` is the supported way to ask
+   * "was this determined?", and the alternative — inspecting
+   * `dialect.deployment.kind` — is version branching wearing a different hat.
+   * The name puts it inside `no-restricted-syntax`'s net, so a later slice that
+   * reaches for `connection.generation === …` is told where that belongs.
+   */
+  readonly generation: DialectResolution;
   /** As last read. A state is a fact about a moment; re-read before acting on it. */
   readonly session: ComputeSession;
 }
@@ -155,6 +187,31 @@ export interface ComputeSessionDeps {
 export class ComputeSessionManager implements vscode.Disposable {
   /** Keyed on profile id. Two profiles may hold sessions at the same time. */
   private readonly live = new Map<string, ComputeConnection>();
+
+  /**
+   * What stage-1 probing determined for a profile, so it is asked once.
+   *
+   * Keyed on profile id like {@link live}, but deliberately **outlives** the
+   * connection: reconnecting after a fifteen-minute idle reap does not make the
+   * deployment a different generation, and re-probing on every connect would be
+   * two round trips to re-learn a fact that changes about once a quarter.
+   *
+   * The endpoint is stored alongside because the id is not enough. A profile is
+   * a settings entry the user edits in place — repoint one at a different
+   * deployment, keep its id, and a cache keyed on the id alone would answer for
+   * the deployment it used to name. `rememberContext` guards the same edit for
+   * the same reason.
+   *
+   * Only `certain` resolutions are recorded; see {@link generationFor}. Nothing
+   * clears this deliberately: a deployment upgraded from one cadence to the next
+   * while the window is open reports the old release until the window is
+   * reloaded, which is the cost of not re-probing and is a fair one — the
+   * release is used to pick behaviour, not to display a version to the user.
+   */
+  private readonly generations = new Map<
+    string,
+    { endpoint: string; resolution: DialectResolution }
+  >();
 
   /**
    * The connect currently running, so a second invocation joins it.
@@ -414,7 +471,7 @@ export class ComputeSessionManager implements vscode.Disposable {
         this.log.info(
           vscode.l10n.t("Reconnected to the SAS Viya session for this folder."),
         );
-        return this.hold(active, context, client, attached.value);
+        return await this.hold(active, context, client, attached.value, signal);
       }
       if (attached.problem.code !== "session-gone") {
         this.reportFailure(attached, token.isCancellationRequested);
@@ -479,24 +536,101 @@ export class ComputeSessionManager implements vscode.Disposable {
         context,
       ),
     );
-    return this.hold(active, context, client, settled.value);
+    return await this.hold(active, context, client, settled.value, signal);
   }
 
-  private hold(
+  /**
+   * Records a connection, and gives it the dialect it will be spoken to in.
+   *
+   * The probe hangs here rather than in `runConnect` because this is the one
+   * point both of `open`'s success paths pass through — reattached and freshly
+   * created alike — and because it is the point at which the precondition
+   * `src/dialects/probe.ts` documents is satisfied: a session exists, so the
+   * host is a reachable Viya that this token works against. Only then is a
+   * Viya-shaped 404 a statement about the endpoint rather than about the
+   * network (finding 42).
+   */
+  private async hold(
     active: { name: string; profile: ViyaProfile },
     context: string,
     client: ComputeClient,
     session: ComputeSession,
-  ): ComputeConnection {
+    signal: AbortSignal,
+  ): Promise<ComputeConnection> {
     const connection: ComputeConnection = {
       profileId: active.profile.id,
       profileName: active.name,
       context,
       client,
+      generation: await this.generationFor(active.profile, client, signal),
       session,
     };
     this.live.set(active.profile.id, connection);
     return connection;
+  }
+
+  /**
+   * The deployment's generation: from {@link generations} if it is known, else
+   * probed for and, if the answer was conclusive, remembered.
+   *
+   * ## Why an inconclusive answer is not cached
+   *
+   * `certain: false` is not a finding about the deployment, it is a report about
+   * one attempt to ask — a cancelled connect, a proxy in the way, a service that
+   * had not come up yet. Caching it would let a transient failure decide how
+   * this window talks to the deployment until it is reloaded, which is the
+   * silent-and-wrong outcome the whole `CadenceSignal` union exists to avoid.
+   * The cost of not caching it is one extra pair of requests per connect on a
+   * deployment that keeps refusing to answer, which is the right way round.
+   *
+   * ## Why this cannot fail a connect
+   *
+   * `probeCadence` never rejects — it is decoration on a connection that has
+   * already succeeded, and it turns every outcome into a signal. Nothing here
+   * adds a way for it to throw: `resolveDialect` is total over `Deployment`, and
+   * logging cannot fail a `LogOutputChannel`.
+   *
+   * ## A cancelled probe is logged as an assumption like any other
+   *
+   * `reportFailure` refuses to blame a user who pressed Cancel, and that rule
+   * deliberately does not reach here. It applies to a connect that *failed*; a
+   * cancellation landing in the gap between a session settling and the probe
+   * answering leaves a connection the user is about to use, and the honest thing
+   * to say about it is that the version was not determined — which is what the
+   * warning says. Nothing is cached, so the next connect asks again.
+   */
+  private async generationFor(
+    profile: ViyaProfile,
+    client: ComputeClient,
+    signal: AbortSignal,
+  ): Promise<DialectResolution> {
+    const cached = this.generations.get(profile.id);
+    if (cached?.endpoint === profile.endpoint) {
+      return cached.resolution;
+    }
+
+    const probed = await probeCadence(client, { signal });
+    const resolution = resolveDialect(deploymentFromSignal(probed));
+    if (resolution.certain) {
+      this.generations.set(profile.id, {
+        endpoint: profile.endpoint,
+        resolution,
+      });
+    }
+
+    // Which generation, and why, in one line — `reason` carries both, including
+    // whether the generation was determined or assumed. The level is the
+    // certainty: everything the extension does after an assumed resolution is
+    // done on an assumption, and a bug report that opens with a warning here is
+    // a bug report that has already named its most likely cause.
+    const line = vscode.l10n.t(
+      "SAS Viya version: {0}.",
+      describeVersion(probed, resolution),
+    );
+    if (resolution.certain) this.log.info(line);
+    else this.log.warn(line);
+
+    return resolution;
   }
 
   /**
@@ -755,5 +889,52 @@ export class ComputeSessionManager implements vscode.Disposable {
   private fail(message: string): void {
     this.log.warn(message);
     this.report(message);
+  }
+}
+
+/**
+ * One sentence naming the generation, why it was chosen, and what else the probe
+ * saw.
+ *
+ * `DialectResolution.reason` is the spine of it and says everything a *correct*
+ * resolution needs to. The parenthetical is the part `./resolve` deliberately
+ * throws away, and it is exactly the part a bug report needs:
+ *
+ * - the `unreadable` **detail** — "`/deploymentData` answered HTTP 404, but not
+ *   with a link document" — which is the difference between a proxy in the way
+ *   and a deployment that really has no such endpoint. Without it the channel
+ *   would say only that the version could not be determined, which is the one
+ *   thing the reader already knows.
+ * - the `cadence` **display name** — "Long-Term Support 2026.03" against a
+ *   release of "2026.03" (finding 40). Appended rather than substituted,
+ *   because a support track is not a version and nothing may come to read it as
+ *   one.
+ *
+ * Not localised, and not by omission. Both halves are strings the deployment or
+ * the resolver produced, in the same register as `describeComputeProblem`'s
+ * output, and a translated frame around an untranslated diagnostic reads worse
+ * than an untranslated pair.
+ */
+function describeVersion(
+  probed: CadenceSignal,
+  resolution: DialectResolution,
+): string {
+  const aside = asideFor(probed);
+  return aside === undefined
+    ? resolution.reason
+    : `${resolution.reason} (${aside})`;
+}
+
+/** Whatever the signal knew that the resolution's reason does not. */
+function asideFor(probed: CadenceSignal): string | undefined {
+  switch (probed.kind) {
+    case "cadence":
+      return probed.display;
+    case "unreadable":
+      return probed.detail;
+    case "absent":
+      // Nothing to add: "the deployment is Viya 3.5" is the whole finding, and
+      // the evidence for it is an absence, which does not describe.
+      return undefined;
   }
 }

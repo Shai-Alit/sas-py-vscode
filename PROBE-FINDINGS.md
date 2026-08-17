@@ -1243,3 +1243,205 @@ the user sees will point at lines they did not write.
 - **Cleanup on failure.** The fileref was deassigned by hand at the end. What
   happens to an uploaded file when a session dies mid-run was not observed.
 - **Viya 3.5**, as everywhere else in this file.
+
+## 2026-08-17 — The cadence endpoint (2b-ii), before stage-1 probing is written (Viya 4)
+
+Stage-1 capability probing (§2.3) rests on a single endpoint:
+`GET /deploymentData/cadenceVersion`, added in Viya 4 and absent from Viya 3.5.
+`src/dialects/resolve.ts` already names its three outcomes — `cadence`, `absent`,
+`unreadable` — and this probe ran to find out what those three look like on the
+wire before code is written to tell them apart. The third one turned out to be
+the interesting one.
+
+**Read-only.** Seven `GET`s and one `HEAD`; nothing was created. TLS
+verification was disabled for the probe only. The endpoint host, the token and
+the per-request correlator ids are scrubbed here as elsewhere.
+
+### Finding 40 — The cadence resource carries four fields, and the one to show a user is not the one to branch on
+
+`GET /deploymentData/cadenceVersion` answers **200** with
+`content-type: application/vnd.sas.deployment.data.cadence.version+json; charset=utf-8; version=1`,
+in 0.25–0.29 s over three runs. The body:
+
+```json
+{
+  "cadenceDisplayName": "Long-Term Support 2026.03",
+  "cadenceName": "lts",
+  "cadenceRelease": "20260721.1784653667906",
+  "cadenceVersion": "2026.03",
+  "links": [
+    {
+      "rel": "self",
+      "href": "/deploymentData/cadenceVersion",
+      "uri": "/deploymentData/cadenceVersion",
+      "type": "application/vnd.sas.deployment.data.cadence.version"
+    }
+  ],
+  "version": 1
+}
+```
+
+`cadenceVersion` is `2026.03` — exactly the `^\d{4}\.\d{2}$` shape the `CADENCE`
+pattern in `resolve.ts` already anchors on, so `resolveDialectId` accepts it
+unchanged and no new parsing is needed. `cadenceRelease` is a build stamp rather
+than a version and nothing should try to order it. `cadenceName` is the support
+track (`lts`), and `cadenceDisplayName` is the string to put in the output
+channel: "Long-Term Support 2026.03" tells a user which release *and* which track
+in one line, where a bare `2026.03` tells them half of it.
+
+`links[].type` omits the `+json` suffix again (finding 14), and `version: 1` is
+the representation version, not the deployment's. `HEAD` answers 200 too, so
+presence is testable without a body — but the body is what we want, so the probe
+should `GET`.
+
+### Finding 41 — The endpoint is unauthenticated, and the union's stated reason is wrong
+
+No `Authorization` header at all: **200**. A deliberately malformed bearer
+token: **200**. For contrast, `/compute/contexts` with no token is **401** with a
+`vnd.sas.error+json;version=2` body reading "Full authentication is required to
+access this resource".
+
+Two consequences, one comfortable and one not. The comfortable one: an expired
+token cannot make the cadence probe fail, so an `unreadable` result never has to
+be explained to a user as "you may need to sign in again". The uncomfortable one:
+the doc comment on `CadenceSignal` justifies the three-way union by saying the
+signed-in user "may simply not have permission to read it", and on this
+deployment there is no permission to lack. The union still earns its keep — see
+finding 42 — but the reason given for it is not the reason it is needed, and that
+sentence is corrected in this slice.
+
+One deployment does not establish that every Viya 4 leaves this endpoint open.
+The probe should keep sending the token anyway: it costs nothing, and a
+deployment that *did* gate the endpoint would otherwise answer 401 and be read as
+Viya 3.5.
+
+### Finding 42 — Three different 404s, and only one of them means "no cadence endpoint"
+
+This is the finding that changes the design. Two 404s were provoked, and they do
+not look alike:
+
+| What was asked | Status | `content-type` | Body |
+|---|---|---|---|
+| `/deploymentData/noSuchThing` — service routed, path unknown | 404 | `application/vnd.sas.error+json;charset=utf-8;version=2` | `{"version":2,"httpStatusCode":404,"message":"There is no handler defined for the path \"/deploymentData/noSuchThing\"."}` |
+| `/noSuchServiceAtAll/thing` — nothing routed | 404 | *absent* | empty, `server: envoy` |
+
+The second is the ingress answering on behalf of a service that is not there. It
+carries no body, no Viya media type, and no message. A corporate proxy, a VPN
+portal or a mistyped host would produce something in the same family.
+
+So **status 404 alone is not evidence of Viya 3.5.** Keying the `absent` arm on
+the status would let anything sitting between the editor and the deployment
+manufacture a confident, wrong claim about the generation — and the wrong dialect
+chosen silently is the failure mode the `reason` field exists to prevent.
+
+There is a control available for free. Sean's wiring decision for this slice is
+that the probe runs *after* a Compute session connects, and a live session is
+itself proof that the host is a reachable Viya that our token works against. Given
+that, a 404 from `/deploymentData/cadenceVersion` is a statement about the
+endpoint rather than about reachability, and `absent` is honest. Without a
+connected session — a probe run from a colder position in some later slice — the
+same 404 should classify as `unreadable`.
+
+### Finding 43 — `Accept: application/json` is honoured, and a wrong one is a 406 that lists the right ones
+
+Asking with `Accept: application/json` returns 200 with
+`content-type: application/json; charset=utf-8` and the same body. Asking with
+`application/vnd.sas.collection+json` — a type this resource does not serve —
+returns **406** with a `vnd.sas.error+json` document whose `details` enumerate
+what would have worked:
+
+```
+application/vnd.sas.deployment.data.cadence.version+json;version=1
+application/vnd.sas.app.registry.cadence.version+json;version=1
+application/vnd.sas.deployment.data.cadence.version+json
+application/vnd.sas.app.registry.cadence.version+json
+application/json
+```
+
+Two useful things. `application/json` is on the list, so the contract can ask for
+it and get a stable content type back rather than a versioned vendor one — which
+matters because the client only reads `cadenceVersion` and has no use for the
+representation version. And 406 is a distinct, diagnosable outcome: a deployment
+that answers 406 is a Viya that has this resource, so a 406 is `unreadable` with a
+detail worth logging, never `absent`.
+
+### Finding 44 — `/deploymentData` is a link document, so the path never has to be composed
+
+`GET /deploymentData` answers 200 with `application/vnd.sas.api+json;version=1`
+and five links:
+
+| `rel` | `href` | `type` |
+|---|---|---|
+| `cadenceVersion` | `/deploymentData/cadenceVersion` | `application/vnd.sas.deployment.data.cadence.version` |
+| `cadenceVersion` | `/deploymentData/cadenceVersion` | `application/vnd.sas.app.registry.cadence.version` |
+| `licenseFile` | `/deploymentData/licenseFile` | `application/vnd.sas.deployment.data.license.file` |
+| `permissionToggles` | `/deploymentData/permissionToggles` | `application/vnd.sas.collection` |
+| `setinit` | `/deploymentData/setinit` | `text/plain` |
+
+`method` is `null` on every one of them, so ADR-0010's "navigate by relation"
+is available here but incomplete: the relation gives the path, and the verb has
+to come from the contract file rather than from the document.
+
+Note the relation appears **twice**, distinguished only by `type`. Any code that
+selects a link by `rel` alone gets whichever came first. The two hrefs happen to
+be identical today, which means a `rel`-only lookup works by luck rather than by
+construction — the contract file should record the media type alongside the
+relation, and the checker should not let one be added without the other.
+
+### Finding 45 — Upstream reads the path directly and collapses every failure into `"unknown"`
+
+For comparison, `client/src/connection/rest/RestContentAdapter.ts` in the SAS
+extension:
+
+```ts
+private async getViyaCadence(): Promise<string> {
+  try {
+    const { data } = await this.connection.get("/deploymentData/cadenceVersion");
+    return data.cadenceVersion;
+  } catch (e) {
+    console.error("fail to retrieve the viya cadence");
+  }
+  return "unknown";
+}
+```
+
+The composed path (ADR-0010), the swallowed exception with no detail carried
+forward, and `console.error` rather than an output channel the user can read. The
+substantive difference is the return type: a `string` cannot distinguish "no
+cadence endpoint" from "could not ask", so 404, 401 and a DNS failure all arrive
+as the same word. Upstream can afford that, because the value feeds exactly one
+comparison — `this.viyaCadence === "2023.03"`, guarding a `sortBy` parameter one
+cadence rejected — and being wrong costs a suboptimal query. It feeds our choice
+of dialect, where being wrong costs a dozen unrelated bugs.
+
+Not a criticism of upstream so much as a measurement of how much more weight we
+are putting on the same endpoint.
+
+### What this settles
+
+1. **The contract asks for `application/json`** and reads `cadenceVersion`, with
+   `cadenceDisplayName` carried alongside for the output channel.
+2. **`absent` requires more than a 404.** The 404 must come with a Viya error
+   document, and the probe must already have a connected session behind it.
+   Anything else — a bodyless ingress 404, a 401, a 406, a transport failure — is
+   `unreadable` with the detail attached.
+3. **The three-way union stays, with its justification rewritten.** Permission is
+   not the reason on this deployment; things in the network path are.
+4. **The link document is navigable but not sufficient**, and the `cadenceVersion`
+   relation is ambiguous by media type, so the contract file records both.
+
+### What this probe did not settle
+
+- **What Viya 3.5 actually answers.** The whole `absent` arm is still inference:
+  no 3.5 deployment was available, so "the endpoint is missing" was simulated
+  with a missing sibling path and an unrouted service on a Viya 4. If a 3.5
+  becomes reachable, this is the first thing to check.
+- **Whether any Viya 4 gates the endpoint.** Unauthenticated here; one
+  deployment.
+- **`licenseFile`, `permissionToggles` and `setinit`.** Named by the link
+  document, never fetched. `permissionToggles` may be relevant to a later slice
+  that has to explain why an action is unavailable.
+- **Caching.** The response sends `cache-control: no-cache, no-store` and no
+  `ETag`, so there is nothing to revalidate against; whether the cadence can
+  change under a live session was not tested, and the per-profile cache this
+  slice adds assumes it cannot within a session.

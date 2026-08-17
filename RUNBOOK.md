@@ -2792,10 +2792,41 @@ before 3a designs around their absence.
 > it lists what it does *not* settle, which is most of what 3a through 3e will
 > ask.
 >
-> Two known gaps 2b-ii inherits: `contracts/` is absent from the SCAN list in
-> `scripts/check-copyright.mjs`, and from `.vscodeignore` — which is
-> allow-by-default, so a new top-level directory ships inside the VSIX unless it
-> is named there.
+> ☑ Two known gaps 2b-ii inherited, **both closed 2026-08-17 in 2b-ii**:
+> `contracts/` is now in the SCAN list in `scripts/check-copyright.mjs` (which
+> needed a `#`-comment extractor arm as well as the directory — YAML is the first
+> scanned language whose comment marker is not `//`), and in `.vscodeignore`,
+> which is allow-by-default, so a new top-level directory ships inside the VSIX
+> unless it is named there.
+
+> **2b-ii done 2026-08-17.** `contracts/viya4.yaml` and `contracts/viya35.yaml`,
+> `scripts/check-contracts.mjs` wired into `verify`, and stage-1 probing in
+> `src/dialects/probe.ts` called from `ComputeSessionManager.hold()`. The format
+> decision is [ADR-0016](docs/adr/0016-api-contracts-are-checked-yaml.md); the
+> two new pages are `docs/architecture/contracts.md` and
+> `docs/architecture/capability-probing.md`. Four things worth carrying forward:
+>
+> - **The checker asserts in both directions**, so it fails on a contract listing
+>   an endpoint the code does not call *and* on code calling one the contract does
+>   not list. A one-directional check is a list that only ever grows.
+> - **The `DialectId` union is parsed out of the source, not imported**, because
+>   `check:contracts` runs before `build` and a gate that needs the thing it is
+>   gating to compile first is a gate that stops running the day compilation
+>   breaks. The parse fails loudly if the union stops being string literals.
+> - **A three-way signal, not a missing string.** Finding 42 is the reason: an
+>   unrouted path is answered by the ingress with a bodyless `404`, and so is a
+>   proxy or a VPN portal. Only *"Viya answered and there is no cadence"* means
+>   3.5; *"we could not ask"* means nothing, and resolves fail-soft to Viya 4 with
+>   the log line's **level** carrying the certainty.
+> - **The probe runs after a session exists**, which is why it lives in `hold()`
+>   rather than at connect: a live session is what makes a Viya-shaped 404 a
+>   statement about the endpoint rather than about the network.
+>
+> Still true and still worth saying: **no Viya 3.5 has ever been reachable from
+> this project.** If a real 3.5 answers `/deploymentData` the way an unrouted path
+> does, the probe says `unreadable` and Viya 4 is assumed — and there is no
+> profile setting yet letting a user assert `viya35` by hand. That setting is the
+> obvious next move if a 3.5 deployment ever appears.
 
 ```bash
 # ⛔ BARRIER

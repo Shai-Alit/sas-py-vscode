@@ -45,13 +45,28 @@ describe("deploymentFromSignal", () => {
   });
 
   it("keeps 'could not ask' apart from 'answered, and there is none'", () => {
-    // The reason this input is a union rather than `string | undefined`. A user
-    // without permission to read `/deploymentData` must not be reported as being
-    // on Viya 3.5 — that claim would then be used to tell them their deployment
-    // has no built-in OAuth client, which is a specific, wrong instruction.
+    // The reason this input is a union rather than `string | undefined`. A proxy
+    // or an ingress answering on behalf of a service it cannot route to must not
+    // be reported as Viya 3.5 (finding 42) — that claim would then be used to
+    // tell the user their deployment has no built-in OAuth client, which is a
+    // specific, wrong instruction.
     assert.deepEqual(
-      deploymentFromSignal({ kind: "unreadable", detail: "403" }),
+      deploymentFromSignal({ kind: "unreadable", detail: "a bodyless 404" }),
       { kind: "unknown" },
+    );
+  });
+
+  it("does not carry the display name into the deployment", () => {
+    // `cadenceDisplayName` is for the output channel. On `Deployment` it would
+    // be one more field for something downstream to branch on, and the support
+    // track is not a version.
+    assert.deepEqual(
+      deploymentFromSignal({
+        kind: "cadence",
+        version: "2026.03",
+        display: "Long-Term Support 2026.03",
+      }),
+      { kind: "viya4", release: "2026.03" },
     );
   });
 });

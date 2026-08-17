@@ -69,25 +69,41 @@ to the deployment ignore it and get the sane default.
 ## Three answers, not two
 
 Stage-1 probing reads `/deploymentData/cadenceVersion`, and what it finds is a
-three-way signal rather than a string that might be missing:
+three-way signal rather than a string that might be missing.
+[Capability probing](capability-probing.md) covers how that question is asked and
+when; this section is about what the answer is turned into.
 
 ```ts
 export type CadenceSignal =
-  | { kind: "cadence"; version: string }
+  | { kind: "cadence"; version: string; display?: string | undefined }
   | { kind: "absent" }
   | { kind: "unreadable"; detail: string };
 ```
 
 "The deployment answered, and it has no cadence version" means Viya 3.5 — the
 endpoint is a Viya 4 addition, so its considered absence is itself the version
-signal. "We could not ask" means we know nothing: the endpoint may be
-unreachable, or the signed-in user may simply lack permission to read it.
+signal. "We could not ask" means we know nothing.
 
-Collapsing those two into one absent value is how a permissions problem turns
-into a confident, wrong claim of Viya 3.5 — which would then be used to tell the
-user their deployment has no built-in OAuth client, a specific and wrong
-instruction. The union is what keeps the two apart, and
-`deploymentFromSignal()` maps the third to `unknown`.
+Collapsing those two into one absent value is how a network problem turns into a
+confident, wrong claim of Viya 3.5 — which would then be used to tell the user
+their deployment has no built-in OAuth client, a specific and wrong instruction.
+The union is what keeps the two apart, and `deploymentFromSignal()` maps the
+third to `unknown`.
+
+An earlier version of this page said the third arm was there because the
+signed-in user might lack permission to read the endpoint. Probe finding 41
+measured that and it is not so: the cadence resource answered `200` with no
+`Authorization` header at all. The union still earns its keep, but for finding
+42's reason instead — a request that never reaches Viya is answered by whatever
+*is* in the path, and an ingress answering for a service that is not there
+returns a bodyless `404` carrying no media type and no message. Read as "the
+endpoint is not there", a proxy, a VPN portal or a mistyped host would be naming
+the generation on the deployment's behalf.
+
+`display` is `cadenceDisplayName` — "Long-Term Support 2026.03", the release and
+the support track in one string, which is what belongs in the output channel.
+`deploymentFromSignal()` drops it deliberately: a support track is not something
+to branch on, and putting it on `Deployment` would invite exactly that.
 
 The `unknown` case produces the Viya 4 dialect **bound to an unknown
 deployment**, which is intentional rather than an inconsistency to be tidied
@@ -109,3 +125,7 @@ quietly call it Viya 4.
 An unrecognised string resolves to `undefined` rather than a guess. Guessing
 there would put the guess in the one place that has nowhere to log a reason for
 it.
+
+The contract file is the exception that proves the rule: it is written here,
+under review, so [the checker](contracts.md#what-the-check-actually-asserts)
+requires the exact id rather than merely something that resolves.

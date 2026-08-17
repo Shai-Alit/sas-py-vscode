@@ -10,6 +10,10 @@
 .vscode/**
 .vscode-test/**
 .vscode-test-web/**
+# The API contracts. Nothing reads them at run time — the YAML parser is a
+# devDependency and `check:contracts` is a build-time gate — so shipping them
+# would put a maintenance document in a user's extension directory.
+contracts/**
 docs/**
 node_modules/**
 out/**

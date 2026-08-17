@@ -18,6 +18,20 @@ updates:
       production-minor:
         dependency-type: production
         update-types: ["minor", "patch"]
+    ignore:
+      # `@types/vscode` is pinned to exactly the `engines.vscode` floor and is
+      # not a dependency that tracks its own latest. It is what tells the
+      # compiler which VS Code APIs exist, so raising it while `engines.vscode`
+      # stays put makes `tsc` accept APIs that are absent on the oldest host the
+      # extension claims to support: the build is clean and it fails at runtime,
+      # for that user only. No gate catches this, because the gate that would
+      # catch it is the type checker that the bump has just misinformed.
+      #
+      # Move it only in the same change that raises `engines.vscode` — which is
+      # a support decision, not a dependency update. Dependabot proposed
+      # 1.104.0 -> 1.125.0 inside the `dev-tooling` group on 2026-08-17 (PR #33,
+      # closed for this reason), which is what prompted this entry.
+      - dependency-name: "@types/vscode"
 
   - package-ecosystem: github-actions
     directory: "/"

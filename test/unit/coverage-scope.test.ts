@@ -16,6 +16,7 @@ interface CheckInput {
 // plain functions read off a module namespace.
 interface CheckCoverageScope {
   importsHostModule: (source: string, fileName?: string) => boolean;
+  isTypesOnly: (source: string, fileName?: string) => boolean;
   sourceExcludes: (exclude: string[]) => string[];
   check: (input: CheckInput) => string[];
   checkRepository: (root: string) => string[];
@@ -24,12 +25,13 @@ interface CheckCoverageScope {
 /**
  * The check that keeps the coverage exclude list honest.
  *
- * `.c8rc.json` drops the `vscode`-importing modules out of the unit coverage
+ * `.c8rc.json` drops the modules the unit tier cannot reach out of the coverage
  * denominator, and an exclude list is the classic place to bury code you would
  * rather not test. What makes it defensible is that the list is derived from a
- * rule — excluded if and only if the module imports `vscode` — and that the
- * rule is checked. So these tests are less about the script than about the
- * rule: the cases below are the ways the rule can be wrong.
+ * rule — excluded if and only if the module imports `vscode`, or is types only
+ * and compiles to nothing — and that the rule is checked. So these tests are
+ * less about the script than about the rule: the cases below are the ways the
+ * rule can be wrong.
  *
  * The last describe block is the one that will actually fire one day. It runs
  * the check against this repository, so adding a shell module without updating
@@ -116,6 +118,64 @@ describe("check-coverage-scope", () => {
     });
   });
 
+  describe("isTypesOnly", () => {
+    // Files with nothing to execute. c8 charges every line of these to the
+    // denominator — doc comments included, which in this repository is most of
+    // the file — while no test can execute one of them, because the compiler
+    // emits an empty JavaScript file.
+    const erased = {
+      interface: "export interface Program { bytes: Uint8Array }",
+      "type alias": 'export type Id = "viya4" | "viya35";',
+      "type-only import": 'import type { Uri } from "vscode";\ntype A = Uri;',
+      "type-only specifiers":
+        'import { type Uri } from "vscode";\ntype A = Uri;',
+      "type-only re-export": 'export type { Uri } from "vscode";',
+      "type-only export list": "type A = string;\nexport { type A };",
+      ambient: "declare const VERSION: string;",
+      empty: "",
+      "comment only": "// nothing here yet\n",
+    };
+
+    for (const [name, source] of Object.entries(erased)) {
+      it(`sees that a file of ${name} emits nothing`, () => {
+        assert.equal(script.isTypesOnly(source), true);
+      });
+    }
+
+    // Anything that survives compilation. The interesting cases are the ones
+    // that *look* like declarations: an enum and a class are both types you can
+    // also hold at run time, and both emit.
+    const emits = {
+      const: "export const answer = 42;",
+      function: "export function f(): void {}",
+      enum: "export enum Colour { Red }",
+      class: "export class Backend {}",
+      "value re-export": 'export { collect } from "./collect";',
+      "star re-export": 'export * from "./collect";',
+      "side-effect import": 'import "./register";',
+      "mixed export list":
+        "type A = string;\nconst b = 1;\nexport { type A, b };",
+    };
+
+    for (const [name, source] of Object.entries(emits)) {
+      it(`sees that a ${name} does not`, () => {
+        assert.equal(script.isTypesOnly(source), false);
+      });
+    }
+
+    it("is not fooled by one line of code among the types", () => {
+      // The rule that keeps the second exclusion from becoming a parking space:
+      // it holds only while *every* statement is erased, so the day a helper
+      // lands in a types file, the file goes back in the denominator.
+      const source = [
+        "export interface Program { bytes: Uint8Array }",
+        "export type Id = string;",
+        "export const EMPTY = new Uint8Array();",
+      ].join("\n");
+      assert.equal(script.isTypesOnly(source), false);
+    });
+  });
+
   describe("sourceExcludes", () => {
     it("takes the src entries and leaves the test-tier ones alone", () => {
       // `test/**` is excluded for a different reason — the test tier is not
@@ -136,6 +196,7 @@ describe("check-coverage-scope", () => {
   describe("check", () => {
     const HOST = 'import * as vscode from "vscode";\n';
     const PURE = "export const answer = 42;\n";
+    const TYPES = "export interface Program { bytes: Uint8Array }\n";
 
     const run = (excludes: string[], files: Record<string, string>): string[] =>
       script.check({
@@ -171,6 +232,25 @@ describe("check-coverage-scope", () => {
       assert.match(problems[0] ?? "", /not in the "exclude" list/);
     });
 
+    it("accepts a types-only module in the exclude list", () => {
+      assert.deepEqual(run(["src/types.ts"], { "src/types.ts": TYPES }), []);
+    });
+
+    it("catches a types-only module missing from the exclude list", () => {
+      // Left in the denominator it scores zero over its whole length, and the
+      // ratchet failure that follows names no file at all.
+      const problems = run([], { "src/types.ts": TYPES });
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /src\/types\.ts/);
+      assert.match(problems[0] ?? "", /types only/);
+    });
+
+    it("catches a types file that has grown code, still excluded", () => {
+      const problems = run(["src/types.ts"], { "src/types.ts": TYPES + PURE });
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /has code to run/);
+    });
+
     it("refuses a glob", () => {
       // `src/**` would satisfy "everything excluded imports vscode" only by
       // leaving nothing to disagree with it. A pattern that cannot be checked
@@ -198,7 +278,7 @@ describe("check-coverage-scope", () => {
   });
 
   describe("this repository", () => {
-    it("excludes a module from coverage if and only if it imports vscode", () => {
+    it("excludes a module from coverage if and only if the unit tier cannot reach it", () => {
       // `out/test/unit/` → repository root.
       const repoRoot = path.resolve(__dirname, "..", "..", "..");
       assert.deepEqual(

@@ -168,3 +168,50 @@ would have been the same mistake in miniature. When 2a-i comes, the choice is
 between keeping the client in the denominator and accepting the number, placing
 it outside `src/` so it is not a source file at all, or amending this ADR with a
 second rule that argues its case. Not a quiet entry in the list.
+
+## Amendment — 2026-08-16 (slice 2b-i): a module with nothing to execute
+
+The second rule this ADR invited has arrived, and it is not the generated client.
+
+Slice 2b-i adds `src/backend/backend.ts`, the `ExecutionBackend` seam: interfaces
+and type aliases, three type-only imports, and no runtime content whatsoever. It
+compiles to an empty JavaScript file. c8, running with `all: true`, cannot find a
+statement in it and charges all 306 source lines — most of them the doc comments
+that carry the seam's contract — to the denominator as uncovered. That is a 2.9
+point drop in the aggregate for a file which is, in the only sense the number is
+supposed to mean, fully specified: the contract tests drive every clause of it
+through a test double.
+
+**The rule becomes: excluded if and only if the unit tier cannot reach it.**
+Importing `vscode` is one way to be unreachable. Having nothing to run is
+another, and it is unreachable in a stricter sense — there is no line, no
+process, no tier in which a test could execute one.
+
+This is a widening of the exclusion, so it is worth being explicit about what
+stops it becoming the hiding place the original decision was built against.
+`isTypesOnly` in `scripts/check-coverage-scope.mjs` holds only while **every**
+top-level statement in the file is erased at compile time: an interface, a type
+alias, a type-only import or export, an ambient declaration. One `const`, one
+function, one enum — and enums and classes are the interesting cases, because
+they look like declarations and both emit — and the file no longer qualifies.
+And the check runs in both directions here too, so a types module that grows a
+helper does not quietly keep its exemption: the direction-1 failure fires on the
+next `npm run verify` and names the file. The predicate is TypeScript's parser
+again, for the same reason as before.
+
+The alternative was to invent a runtime export for `backend.ts` — a constant, a
+type guard — so that something in it could be executed. That is worse in the way
+that matters: it adds code nobody asked for to satisfy an instrument, and the
+next reader has no way to tell the difference between API and ballast. Excluding
+one line of JSON and arguing for it here costs less and lies less.
+
+The measured effect, on a tree where only this exclusion changed:
+
+| | statements | branches | functions | lines |
+|---|---|---|---|---|
+| before | 87.55 | 94.37 | 89.00 | 87.55 |
+| after | 90.55 | 94.55 | 89.57 | 90.55 |
+| new floor | 90 | 94 | 89 | 90 |
+
+The three points are the measurement again, not the code — the same distortion
+this ADR was written about, arriving from the other direction.

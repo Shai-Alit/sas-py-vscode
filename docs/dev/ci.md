@@ -133,6 +133,14 @@ That `path=` mechanism exists because of what the first real sample turned out
 to be: a mocha test. Without it, the only sample a checker can verify is one
 that imports nothing, which is not a useful class of sample.
 
+Listings in `docs/architecture/` are checked; listings in an ADR are marked
+`no-check`. That is a rule about what the two kinds of document are for. An
+architecture page describes the code as it stands, so a rename that leaves it
+stale is a bug and the compiler should say so. An ADR records what was decided on
+a date, and a superseded decision is superseded rather than edited — a checker
+that forced the listing to keep compiling would be a standing instruction to
+rewrite history whenever a type moved.
+
 It is also the one place in this toolchain where a string written in a document
 chooses a filename to write to, so it is validated as untrusted input: a
 location must be relative, free of `..`, and not drive-qualified, and the

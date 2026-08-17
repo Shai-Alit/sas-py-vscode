@@ -15,16 +15,25 @@
  * code you did not want to test. This script is the answer to that objection.
  * It asserts the rule in **both** directions:
  *
- *   1. Every `src/` path in the exclude list really does import `vscode`.
+ *   1. Every `src/` path in the exclude list really is out of the tier's reach.
  *      This is the direction with teeth. A pure module added to the list would
  *      otherwise lose its coverage floor permanently and silently.
- *   2. Every module that imports `vscode` is in the list. Without this, a new
- *      shell module lands in the denominator, scores zero, and the next person
- *      to see the ratchet fail is told a lie about which change broke it.
+ *   2. Every module out of reach is in the list. Without this, a new shell
+ *      module lands in the denominator, scores zero, and the next person to see
+ *      the ratchet fail is told a lie about which change broke it.
  *
  * It also refuses globs in the `src/` part of the list, because a glob cannot
  * be checked against direction 1 — `src/**` would satisfy "everything excluded
  * imports vscode" only in the sense that nothing is left to disagree with it.
+ *
+ * A second kind of unreachable module joined the rule on 2026-08-16, by
+ * amendment to ADR-0009: a file of nothing but types. It emits an empty
+ * JavaScript file, so there is no line for a test to execute, and c8 charges its
+ * whole source — doc comments and all — to the denominator. Both directions
+ * apply to it too, which is what stops the second rule from becoming a way to
+ * park code: a module qualifies only while *every* top-level statement in it is
+ * erased at compile time, and the day someone adds a function to it the check
+ * says so.
  *
  * The import test is TypeScript's own parser rather than a regular expression.
  * That is not fussiness: `src/` is full of doc comments that discuss importing
@@ -142,6 +151,65 @@ export function importsHostModule(source, fileName = "input.ts") {
 }
 
 /**
+ * Is every statement in this file erased by the compiler?
+ *
+ * The second exclusion rule, added by the 2026-08-16 amendment to ADR-0009. A
+ * module of nothing but interfaces and type aliases emits an empty JavaScript
+ * file, so no test can execute a line of it — and c8's `all` mode then counts
+ * every line of its source, doc comments included, as uncovered. The unit tier
+ * cannot reach it for the same kind of reason a `vscode` module cannot be
+ * reached: not because it is untested, but because there is nothing there to
+ * run.
+ *
+ * Top-level statements only, deliberately. A nested type declaration cannot be
+ * the whole of a file, and anything that *contains* one — a function, a class,
+ * a namespace with a value in it — is runtime content and disqualifies the file
+ * at the top level anyway. So the shallow test is the exact test.
+ *
+ * Exported for the unit test, which feeds it source text rather than paths.
+ */
+export function isTypesOnly(source, fileName = "input.ts") {
+  const parsed = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.ES2022,
+    /* setParentNodes */ false,
+    ts.ScriptKind.TS,
+  );
+
+  const isDeclared = (node) =>
+    ts.canHaveModifiers(node) &&
+    (ts
+      .getModifiers(node)
+      ?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword) ??
+      false);
+
+  const isErased = (node) => {
+    if (ts.isInterfaceDeclaration(node)) return true;
+    if (ts.isTypeAliasDeclaration(node)) return true;
+    if (ts.isImportDeclaration(node))
+      return !isRuntimeImport(node.importClause);
+    if (ts.isExportDeclaration(node)) {
+      if (node.isTypeOnly) return true;
+      const clause = node.exportClause;
+      // `export { type A, type B };` emits an empty object; `export *` and any
+      // value specifier emit a live re-export.
+      return (
+        clause !== undefined &&
+        ts.isNamedExports(clause) &&
+        clause.elements.every((element) => element.isTypeOnly)
+      );
+    }
+    // `declare const x: number` describes something that already exists rather
+    // than creating it, and emits nothing. Enums, classes and functions without
+    // it all emit.
+    return isDeclared(node);
+  };
+
+  return parsed.statements.every(isErased);
+}
+
+/**
  * The `src/` entries of the c8 exclude list, which is the list this script
  * exists to police. `test/**` and `out/test/**` are a different rule — the test
  * tier is not code under measurement — and are none of its business.
@@ -167,18 +235,24 @@ export function check({ excludes, sources, read }) {
       );
       continue;
     }
-    if (!importsHostModule(read(pattern), pattern)) {
+    const source = read(pattern);
+    if (!importsHostModule(source, pattern) && !isTypesOnly(source, pattern)) {
       problems.push(
-        `${pattern}\n    is excluded from coverage but does not import "${HOST_ONLY}", so the unit tier can reach it. Remove it from "exclude" in ${CONFIG} and write tests for it. Exclusions exist for code the tier physically cannot load, not for code that is inconvenient to test.`,
+        `${pattern}\n    is excluded from coverage but does not import "${HOST_ONLY}" and has code to run, so the unit tier can reach it. Remove it from "exclude" in ${CONFIG} and write tests for it. Exclusions exist for code the tier physically cannot load, not for code that is inconvenient to test.`,
       );
     }
   }
 
   for (const file of sources) {
     if (excluded.has(file)) continue;
-    if (importsHostModule(read(file), file)) {
+    const source = read(file);
+    if (importsHostModule(source, file)) {
       problems.push(
         `${file}\n    imports "${HOST_ONLY}" but is not in the "exclude" list in ${CONFIG}, so it sits in the coverage denominator scoring zero and drags the ratchet down with it. Add it — and add an integration test, because after you do, no number will notice if you don't.`,
+      );
+    } else if (isTypesOnly(source, file)) {
+      problems.push(
+        `${file}\n    is types only, so it compiles to an empty file and no test can execute a line of it — but c8 counts every line of the source, comments included, as uncovered. Add it to "exclude" in ${CONFIG}. If that is a surprise, the file has lost its runtime content: put the code back rather than the exclusion.`,
       );
     }
   }
@@ -219,14 +293,15 @@ function main() {
     );
     for (const problem of problems) console.error(`  ${problem}\n`);
     console.error(
-      "The rule: a module is excluded from unit coverage if and only if it\n" +
-        'imports "vscode". See docs/adr/0009-coverage-scope.md.\n',
+      "The rule: a module is excluded from unit coverage if and only if the\n" +
+        'unit tier cannot reach it — because it imports "vscode", or because it\n' +
+        "is types only and compiles to nothing. See docs/adr/0009-coverage-scope.md.\n",
     );
     process.exit(1);
   }
 
   console.log(
-    `check-coverage-scope: OK — ${String(sources.length)} source file(s), ${String(excludes.length)} extension-host-only.`,
+    `check-coverage-scope: OK — ${String(sources.length)} source file(s), ${String(excludes.length)} unreachable from the unit tier.`,
   );
 }
 

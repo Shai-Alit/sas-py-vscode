@@ -247,17 +247,26 @@ telling you about. What separates the two cases is that this exclusion is a
 **rule, and the rule is checked**. `npm run check:coverage-scope` asserts, on
 every `npm run verify`:
 
-- every `src/` path in the c8 `exclude` list really does import `vscode`, so a
-  merely inconvenient module cannot be parked there; and
-- every module that imports `vscode` is in the list, so a new shell module
-  cannot quietly sink the aggregate.
+- every `src/` path in the c8 `exclude` list really is unreachable from the unit
+  tier, so a merely inconvenient module cannot be parked there; and
+- every module that is unreachable is in the list, so a new shell module cannot
+  quietly sink the aggregate.
+
+There are two ways to be unreachable. Importing `vscode` is the first. The
+second, added 2026-08-16, is a file of nothing but types: it compiles to an empty
+JavaScript file, so no test can execute a line of it, while c8 charges its whole
+source — doc comments and all — to the denominator. `src/backend/backend.ts` is
+the first of these. A file qualifies only while *every* top-level statement in it
+is erased at compile time, so the day one grows a helper it goes back in the
+denominator and the check says so by name.
 
 Globs are refused in the `src/` part of the list, since `src/**` would satisfy
 the first assertion only by leaving nothing to disagree with it. The import test
 is TypeScript's parser rather than a text search, which matters twice over:
 comments in `src/` discuss importing `vscode` and a regex reports the prose, and
 `import type { Uri } from "vscode"` is erased before the code runs — a module
-that imports only types is unit-testable and keeps its floor.
+that imports only types is unit-testable and keeps its floor — unless types are
+*all* it contains, which is the second rule above.
 
 So adding a shell module is a two-line change: the module, and its path in
 `.c8rc.json`. Forget the second line and `verify` fails with a message naming the

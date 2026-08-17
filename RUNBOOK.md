@@ -2775,11 +2775,37 @@ writing 2b, because it also lists what the probe did *not* settle, and two of
 those (`TIMEOUT` for Cancel, `SRC` as a second hand-over path) are worth probing
 before 3a designs around their absence.
 
+> **2b split into 2b-i and 2b-ii, 2026-08-16.** Not the pure-core / shell seam
+> the earlier splits used — both halves are pure — but a *settled versus
+> unsettled* one. 2b-i is the interface, the dialects and `resolve()`: shapes
+> ADR-0014 and the 2-pre findings have already decided, which can be specified by
+> their tests and reviewed as a whole. 2b-ii is `contracts/`, its checker and
+> stage-1 probing: a file format that has to be chosen, a second gate script, and
+> the first code in this phase that asks a deployment a question. Together they
+> would have made one pull request in which the settled half is unreviewable
+> because the unsettled half is where all the argument is.
+>
+> **The seam is [ADR-0015](docs/adr/0015-the-execution-backend-seam.md)**,
+> written and accepted before the code. Read it with ADR-0014: it decides opaque
+> bytes over a code string, a streaming handle over an aggregate return,
+> reject-when-busy over a queue, and a failure vocabulary of the seam's own — and
+> it lists what it does *not* settle, which is most of what 3a through 3e will
+> ask.
+>
+> Two known gaps 2b-ii inherits: `contracts/` is absent from the SCAN list in
+> `scripts/check-copyright.mjs`, and from `.vscodeignore` — which is
+> allow-by-default, so a new top-level directory ships inside the VSIX unless it
+> is named there.
+
 ```bash
 # ⛔ BARRIER
-# 2b — ExecutionBackend interface + dialects
-git checkout -b phase-2b-backend-seam
+# 2b-i — the seam and the dialects
+git checkout -b phase-2b-i-backend-seam
 git commit -m "feat(backend): define ExecutionBackend interface and Viya dialect layer"
+
+# 2b-ii — contracts and stage-1 capability probing
+git checkout -b phase-2b-ii-contracts-and-probing
+git commit -m "feat(dialects): add API contract files, their checker, and stage-1 capability probing"
 
 # ⛔ BARRIER
 # 2c — log streaming

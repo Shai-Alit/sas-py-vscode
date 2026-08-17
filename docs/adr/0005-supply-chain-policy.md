@@ -7,6 +7,13 @@
   `PRODUCTION_PLAN.md` §4
 - **Executed in:** slice 0d-ii-a (`supply-chain` job, `scripts/check-audit.mjs`,
   `scripts/advisory-allowlist.json`, `allowScripts` in `package.json`, `.npmrc`)
+- **Amended 2026-08-16 (`chore/override-vite-6`):** the policy stands; one of the
+  facts it rests on does not. "Every advisory currently reported is unfixable by
+  upgrading" was **wrong about four of the seven**. It asked whether the parent
+  could move — vitepress — and never asked whether the child could. An
+  `overrides` entry pinning `vite ^6.4.3` clears the three vite advisories and
+  the nested-esbuild one, and the allow-list is down to the three on the mocha
+  path. See the amended entries under Context, Alternatives and Consequences.
 
 ## Context
 
@@ -38,6 +45,19 @@ is the latest release and pins `diff ^7.0.0` and `serialize-javascript ^6.0.2`;
 `vitepress` 1.6.4 is the latest 1.x and pins `vite ^5.4.14`, which brings esbuild
 0.21.5; only the vitepress 2 alpha escapes it. So "just upgrade" was not
 available, and a policy had to exist for the case where it is not.
+
+> **Amended 2026-08-16.** The mocha half of that paragraph is still true and was
+> re-measured: 11.8.0 is still latest, mocha 12 is still at `rc.6`. The vite half
+> was wrong, and wrong in a way worth keeping visible. The three vite advisories
+> are ranged `<=6.4.1`, `<=6.4.2` and `<=6.4.2`, and **vite 6.4.3 shipped
+> 2026-06-01 — before this ADR was written**; vite 6 depends on `esbuild ^0.25`,
+> clear of the nested-esbuild advisory's `<=0.24.2`. So `overrides: { "vite":
+> "^6.4.3" }` in `package.json` clears four of the seven, and `npm audit` now
+> reports three. **A transitive advisory has two escape routes — move the parent
+> or override the child — and checking only the parent reads as "no fix
+> available" when there is one.** The policy is unaffected: it exists for the
+> three that remain, and it is the reason the four that were fixed had to be
+> deleted from the allow-list in the same change rather than left to lapse.
 
 ## Decision
 
@@ -170,6 +190,23 @@ one.
 ([ADR-0004](0004-documentation-toolchain.md)). Trading a dev-only advisory for a
 pre-release build tool is not a trade.
 
+> **Amended 2026-08-16 — still rejected, and now unnecessary.** vitepress 2 is
+> `2.0.0-alpha.19` and upstream's next milestone is a beta, so nothing about this
+> paragraph has changed. What changed is that escaping the chain never required
+> moving vitepress: `overrides` pins vite 6.4.3 *underneath* vitepress 1.6.4,
+> which is the version of this trade with no pre-release in it.
+>
+> The cost is that the override is outside the range vitepress declares
+> (`vite ^5.4.14`), so npm is being told to do something the package did not
+> sanction. VitePress maintainers recommend exactly this in
+> `vuejs/vitepress#5072`, but a forum comment is not a support commitment; the
+> only real evidence is that `npm run docs:build` passes, which the `docs` job
+> runs on every pull request that touches documentation. If it ever stops
+> passing, delete the `overrides` block and put the four entries back in the
+> allow-list — the failure mode is a red docs build, not a silently wrong site.
+> Remove the override when vitepress ships a stable release that depends on vite
+> 6 or later on its own.
+
 **An allow-list keyed on package name, or on npm's own advisory numbers.**
 Rejected for the reason above: package granularity would have hidden three
 advisories behind one line. npm's numeric ids are also not stable across
@@ -220,6 +257,16 @@ it and enforces the policy. The
 allow-list is maintenance: seven entries come due on 2026-11-12 and somebody has
 to re-read seven advisories, which is the deliberate trade but is not free.
 `check:audit` needs the network, so it is not part of `npm run verify`.
+
+> **Amended 2026-08-16.** Three entries come due on 2026-11-12, not seven. The
+> maintenance cost landed earlier and in a better form than expected: re-reading
+> the four vite advisories is what found the fix, five days after they were
+> filed as unfixable rather than three months. That is the mechanism working —
+> but note that it worked because somebody re-read them early, not because the
+> expiry date arrived. An added cost the original did not name: the tree now
+> carries an `overrides` block, which is a standing instruction to npm that
+> nothing revalidates. `npm run docs:build` is the only thing that would notice
+> if it went bad.
 
 **Revisit trigger.** Move the whole policy into the normal jobs on the day
 `engines.node` moves to 22.22.2 or later, and delete the pinned npm install from

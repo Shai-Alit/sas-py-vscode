@@ -601,7 +601,9 @@ same call. The scrubbed payload is
 `content-type: application/vnd.sas.compute.session+json; charset=utf-8; version=2`
 — note the **spaces after the semicolons**, where the error type in finding 17 has
 none, so a comparison that is not parameter-tolerant fails on one or the other —
-plus a root-relative `Location` and `etag: "kp81i3skc0"`.
+plus a root-relative `Location` and an `etag` — written `"<etag-1>"` here and
+below, where both occurrences stood for the same ten-character opaque validator
+the server returned for that one throwaway session.
 
 Top-level keys: `applicationName`, `attributes`, `creationTimeStamp`,
 `description`, `environment`, `id`, `links`, `name`, `owner`, `serverId`,
@@ -644,7 +646,7 @@ href is expanded first — and the brace-free ones are still never rewritten.
 recorded so the next person does not think the fixture is truncated.
 
 The state resource answered `200`, `content-type: text/plain;charset=UTF-8`, body
-`pending` — **7 bytes, no trailing newline** — and `etag: "kp81i3skc0"`, byte for
+`pending` — **7 bytes, no trailing newline** — and `etag: "<etag-1>"`, byte for
 byte the ETag the create call returned. So the session ETag and the state
 validator are the same value at creation, which is what makes finding 19's
 `If-None-Match` poll work from a freshly created session. `DELETE` on the `delete`
@@ -1466,13 +1468,17 @@ never been enumerated, and whether the log endpoint's `timeout=` parameter reall
 long-polls was assumed from upstream's code rather than measured. That last one
 is load-bearing: if `timeout=` were inert, upstream's `while` loop would be a hot
 spin throttled only by network latency, and 2c would have to drive from the
-session-state long poll (finding 19) instead.
+**job-state** long poll instead — the one finding 28 measured releasing at the
+moment of change. Not the *session*-state poll: finding 27 already ruled that
+out, because completion is a property of the job and watching the session for
+`idle` reports a run finished two to three seconds late.
 
 **Mutating, and agreed first.** Nothing about a log is observable without a job
 to produce one. Three throwaway compute sessions were created and each was
 deleted in the same shell call under a `trap`; the jobs died with them. No
-existing object was read, written or deleted. Session ids, job ids, the ETag and
-the host are scrubbed below; line text, field names, types and ordering are
+existing object was read, written or deleted. Session ids, job ids and the host
+are scrubbed below, and the job-create `ETag` is omitted rather than replaced
+because nothing here reads it; line text, field names, types and ordering are
 reproduced exactly.
 
 ### Finding 46 — The job is six fields and ten relations, and two of them are the same URL
@@ -1549,11 +1555,11 @@ information there is, which is why `start` is the whole of the client's state.
 10 → 11 → 12 across three consecutive polls of a running job. It is a live total,
 not a page size and not a null. This is worth stating plainly because
 `/compute/contexts` answers `count: null` whenever the collection is truncated
-(finding 13), and code written defensively against that trap does not need the
+(finding 16), and code written defensively against that trap does not need the
 same defence here. It does need the opposite caution: `count` on a running job is
 stale the moment it is read.
 
-### Finding 48 — `timeout=` is a real long poll, and it is the only one available
+### Finding 48 — `timeout=` is a real long poll, and on the log it is the only mechanism there is
 
 Measured against a job printing one line per second, polling at the tail:
 
@@ -1582,8 +1588,14 @@ The wait is honoured to its stated length. Against a job deliberately silent for
 | `?timeout=60` | 6.34 s | 200 | 6 |
 
 `timeout=60` was accepted without complaint and returned after 6.34 s, when the
-silence ended — the value is a ceiling, not a delay. No upper bound was found;
-60 was the largest tried.
+silence ended — the value is a ceiling, not a delay. Note that this says nothing
+about whether 60 is *honoured*: the request was released by a log line long
+before the ceiling could elapse, so a server that silently clamps large values to
+some smaller maximum would have produced exactly the same measurement. The only
+timeout observed actually elapsing is `timeout=10` (10.27 s). Treat anything
+above 10 as unverified, and do not rely on a long ceiling for correctness — the
+loop must be correct at any clamp, because an early empty return is
+indistinguishable from a short poll.
 
 **There is no ETag on the log collection.** The response headers carry
 `content-type` and no `etag` at all, so `If-None-Match` has nothing to send and
@@ -1594,12 +1606,19 @@ has to track.
 
 ### Finding 49 — Expiry is a 200 with an empty page, not a 304
 
-Both expiry rows above are **200 with `items: []`**, never 304. The session
-state resource answers `304` when its `wait` elapses and the job state resource
-answers `200` with a fresh body (finding 28), so the three long polls in this API
-have three different expiry conventions. The log's is the easiest to consume:
-one status, one body shape, and "nothing happened" is an empty array rather than
-a second code path.
+Both expiry rows above are **200 with `items: []`**, never 304. The session state
+resource answers `304` when its `wait` elapses (finding 28), so the two expiry
+conventions that have actually been *measured* in this API disagree, and the
+log's is the easier to consume: one status, one body shape, and "nothing
+happened" is an empty array rather than a second code path.
+
+The job-state resource's expiry is **still unobserved**. Finding 28 measured it
+holding for `wait=20` and returning `200` after 12.96 s — but that was a release
+*at the moment of change*, not a window running out, and nothing has yet let a
+job-state `wait` elapse against an unchanged value. An earlier draft of this
+finding claimed three expiry conventions; there are two measured and one
+assumed, and the assumption is only that the job state behaves like the session
+state it sits beside.
 
 A consumer must therefore not treat an empty page as end-of-log. During a run it
 means "nothing yet"; only the job's state says whether more is coming.
@@ -1669,17 +1688,23 @@ observations, each of which constrains 3b's filter:
 
 1. **`note` is not "a line beginning with `NOTE:`".** It covers genuine notes,
    their indented continuation lines, whitespace-only lines, and completely
-   blank ones. Nine of the thirteen carry no `NOTE:` prefix and four are empty
-   or whitespace. A filter offering "hide notes" would delete the log's
+   blank ones. Ten of the thirteen carry no `NOTE:` prefix — only indices 5, 15
+   and 16 do — and six are empty or whitespace: four are the empty string
+   (3, 9, 14, 20) and two are spaces only (8, 19). A filter offering "hide
+   notes" would delete the log's
    vertical spacing along with them, which is a legitimate choice but must be a
    deliberate one.
 2. **`normal` is the user's own output** — the `put` — and it is the rarest type
    in a log dominated by machinery. `normal` plus `error` is the pair a
    "program output only" view wants.
-3. **The error arrives out of source order.** Line 12 (`ERROR:`) sits between
-   source lines 5 and 6, because SAS emits the diagnostic when it parses the
-   statement rather than when the step runs. Anything that tries to associate a
-   diagnostic with the source line above it will be right here and wrong often.
+3. **The diagnostic is interleaved with the source echo, not appended after
+   it.** Line 12 (`ERROR:`) sits between the echo of `set nosuchlib.nosuchtable;`
+   and the echo of `run;`, because SAS emits it as it parses that statement
+   rather than when the step runs. Here the error does follow the line it
+   belongs to — but it arrives *before the step it is part of has finished being
+   echoed*, so a renderer that assumes each step's source is contiguous will
+   split it. Whether the line immediately above an `error` is reliably its
+   source was not tested; one interleaving is not a rule.
 4. **`warning` was not observed** and neither was any type beyond these four.
    Nothing in this probe produced a `WARNING:`, so the vocabulary is a floor,
    not a closed set — the client must pass an unrecognised `type` through rather
@@ -1688,16 +1713,20 @@ observations, each of which constrains 3b's filter:
 Note also that the source lines are echoed with SAS's own line numbering, which
 only happens because this probe submitted statements inline in `code[]`.
 ADR-0014 chose upload plus `infile=` for 3a, and finding 35 established that
-`infile=` echoes no source at all — so a real 3a log will have **no `source`
-lines whatsoever**. 3b's filter must not be designed around their presence.
+`infile=` echoes no source at all — so a real 3a log is **predicted** to carry no
+`source` lines. That is a prediction, not a measurement: this probe submitted
+inline `code[]` and never read a log produced through `infile=`. 3b's filter must
+not be designed around `source` lines being present, and 2c should confirm the
+prediction the first time it streams a real 3a submission.
 
 ### Finding 53 — A SAS `ERROR:` is a job state of `error`, and the session still settles to `idle`
 
 The failing job's terminal state, read from `{job}/state` as `text/plain`, was
 **`error`** — not `failed`, not `completed`. The session's own state one moment
 later was **`idle`**: a job that errored does not poison its session, which is
-consistent with finding 27's observation that the session lags the job at the end
-and with `SYSCC` being reset per job (finding 37).
+consistent with finding 27's observation that the session lags the job at the
+end. The session being reusable after a failed job is the useful part — the next
+job may be submitted into it without a reset.
 
 Upstream's terminal set is
 `["done", "canceled", "error", "warning", "completed"]`. Only `error` and
@@ -1747,16 +1776,23 @@ read `details` or rely on its own record of what it created.
 7. **The contract checker has to change before 2c can describe a job.**
    `scripts/check-contracts.mjs` requires `via.from`, `via.relation` *and*
    `via.type` to each be a string, and a job's `cancel` and `delete` relations
-   carry `type: null` (finding 46). Either `type` becomes optional-or-null on a
-   `via`, or those two endpoints cannot be declared at all — and an endpoint the
-   code calls but the contract omits is precisely what the checker's other
-   direction is there to catch. 2c has to resolve that, in code, in its own
-   slice.
+   carry `type: null` (finding 46). The constraint is broader than the null: a
+   *session's* `cancel` and `delete` **omit** `type` entirely, and `typeof
+   undefined !== "string"` fails the same check — so the checker could already
+   not describe those either, and nothing had noticed because no contract had
+   yet needed to name them. Either `type` becomes optional-or-null on a `via`,
+   or none of those endpoints can be declared at all — and an endpoint the code
+   calls but the contract omits is precisely what the checker's other direction
+   is there to catch. 2c has to resolve that, in code, in its own slice.
 
 ### What this probe did not settle
 
-- **Whether `timeout` has a server-side maximum.** 60 was accepted; nothing
-  larger was tried, and the value that was accepted never actually elapsed.
+- **Whether `timeout` has a server-side maximum, or is silently clamped.** 60 was
+  accepted and nothing larger was tried — but 60 never elapsed, because a log
+  line released the request at 6.34 s, so a server clamping 60 down to something
+  smaller would have produced an identical measurement. The only value observed
+  running its full course is 10. A loop must therefore be correct whatever the
+  real ceiling is: an early empty return is indistinguishable from a short poll.
 - **The `warning` terminal state**, and whether a `WARNING:` line carries a
   `warning` line type. Neither was provoked.
 - **What `listing` and `results` contain.** Both relations exist on every job and

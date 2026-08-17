@@ -2838,7 +2838,8 @@ questions, none of them answerable without creating a job:
 
 1. **Does the log endpoint's `timeout=` actually long-poll?** If not, upstream's
    `while` loop is a hot spin throttled only by latency and 2c must drive from
-   the session-state long poll (finding 19) instead.
+   the job-state long poll (finding 28) instead — not the session's, which
+   finding 27 already ruled out as two to three seconds late.
 2. **What does a job representation look like**, and does it carry the links 2c
    needs — the open question finding 21 left.
 3. **How does the drain terminate** — paging past the end, when `next` appears,
@@ -2847,12 +2848,17 @@ questions, none of them answerable without creating a job:
 
 **The four answers.**
 
-1. **It long-polls, so the loop is driven by the log.** Measured: `timeout=10`
-   blocked the full 10.27 s on a silent job and released in 1.02 s when a line
-   arrived; the same request without `timeout` returned in 0.27 s empty. Expiry
-   is `200` with `items: []`, never `304` — unlike *either* state resource. And
-   **the log carries no ETag at all**, so `start` is the entire cursor and the
-   `If-None-Match` machinery of finding 28 applies only to the job state.
+1. **It long-polls, so the loop is driven by the log.** Two runs. Against a job
+   deliberately silent for 25 s, `timeout=10` blocked the full 10.27 s and
+   returned nothing, where the same request without `timeout` came back empty in
+   0.56 s. Against a job printing one line a second, `timeout=10` released in
+   about 1.0 s each time — the moment the next line appeared, not ten seconds
+   later. Expiry
+   is `200` with `items: []`, never `304` — where the session state's expiry, the
+   only other one measured, is a `304` (finding 28). And **the log carries no
+   ETag at all**, so `start` is the entire cursor and there is no
+   `If-None-Match` machinery here at all — both state resources have an ETag and
+   take a conditional request; the log has neither.
 2. **Six fields and ten relations**, including `log`, `logAsText`, `listing`,
    `results`, `cancel` and `delete`. Two of them matter to code: `cancel` and
    `delete` carry **`type: null`**, which a contract typing the media type as a
@@ -2867,15 +2873,18 @@ questions, none of them answerable without creating a job:
    open.** `note` is a catch-all covering continuation lines, whitespace and
    blank lines, not a `NOTE:` prefix test; `normal` is the user's own output and
    the rarest thing in the log. An unrecognised type must pass through rather
-   than be discarded, and the `ERROR:` line arrives *before* the `run;` it
-   belongs to, so nothing may pair a diagnostic with the source line above it.
+   than be discarded. The `ERROR:` line is interleaved with the source echo — it
+   follows the `set` statement that provoked it and *precedes* that step's
+   `run;` — so a renderer may not assume a step's source lines are contiguous.
 
 Three things to carry into 2c and 3b. **`timeout` belongs at the call site, not
 in an options bag** — upstream declares `wait` on the session state and never
 passes it (finding 19), and the same omission here is a busy-wait that looks
-correct and returns `200` every time. **A real 3a log will contain no `source`
-lines**: they only appear because this probe submitted inline `code[]`, and
-ADR-0014 chose upload plus `infile=`, which echoes nothing (finding 35). And
+correct and returns `200` every time. **A real 3a log is predicted to contain no
+`source` lines** — a prediction, not a measurement: they appear here only because
+this probe submitted inline `code[]`, and ADR-0014 chose upload plus `infile=`,
+which finding 35 measured echoing nothing. 2c should confirm it the first time it
+streams a real 3a submission. And
 **a failing job's terminal state is `error` while its session stays `idle`**, so
 only two of upstream's five terminal states have ever been observed — keep all
 five anyway, because an unobserved extra member costs nothing and a missing one
@@ -2891,16 +2900,25 @@ recursions and the inverted `isDone` that the port must not carry forward.
 **One thing 2c must fix in code before it can describe a job.**
 `scripts/check-contracts.mjs` requires `via.from`, `via.relation` and `via.type`
 to each be a string. A job's `cancel` and `delete` relations carry `type: null`,
-so either `type` becomes optional-or-null on a `via` or those two endpoints
-cannot be declared — and an undeclared endpoint the code calls is exactly what
-the checker's other direction exists to catch. Found by sweeping for the
+and a *session's* omit the key altogether — `typeof undefined` fails the same
+check — so either `type` becomes optional-or-absent-or-null on a `via` or none of
+those endpoints can be declared. An undeclared endpoint the code calls is exactly
+what the checker's other direction exists to catch. Found by sweeping for the
 superseded value rather than by hitting it during 2c, which is the point of
 sweeping.
 
+**One design question 2c owns, deliberately left open by ADR-0017.** A pump that
+polls whether or not anything is consuming `outputs` accumulates lines in memory,
+so 2c must decide the buffer policy: whether there is a cap at all, what it is,
+which end is dropped on overflow, and whether an overflow is reported to the
+consumer. ADR-0017 records the consequence but takes no position on the remedy —
+that decision belongs to the slice that writes the buffer.
+
 Not settled, and listed in full at the end of the findings section: whether
-`timeout` has a server maximum, whether a `WARNING:` produces a `warning` line
-type or terminal state, and what `listing` and `results` contain — the last of
-which is probably where 3c's ODS output lives.
+`timeout` has a server maximum (60 was accepted but never elapsed, so a silent
+clamp is indistinguishable from an honoured ceiling), whether a `WARNING:`
+produces a `warning` line type or terminal state, and what `listing` and
+`results` contain — the last of which is probably where 3c's ODS output lives.
 
 ```bash
 # ⛔ BARRIER

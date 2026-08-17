@@ -540,15 +540,17 @@ called out under **Changed** with a migration note.
 - `PROBE-FINDINGS.md` findings 46-53, measuring the job log before the log
   stream is written. The load-bearing question was whether the log endpoint's
   `timeout=` parameter really long-polls, because the upstream loop being ported
-  passes it and nothing had ever checked: it does, blocking the full 10.27
-  seconds on a silent job and releasing in 1.02 seconds when a line arrived,
-  where the same request without it returns in 0.27 seconds empty. So the stream
-  is driven by the log rather than by the session-state long poll — but the
-  parameter is the only thing between that loop and a busy-wait against a
-  corporate network, which is why it belongs at the call site rather than in an
-  options bag a caller can leave out. Expiry is a `200` carrying an empty array
-  rather than the `304` either state resource answers with, and the log carries
-  no `ETag` at all, so `start` is the entire cursor.
+  passes it and nothing had ever checked: it does. Against a job deliberately
+  silent for 25 seconds, `timeout=10` blocked the full 10.27 seconds while the
+  same request without it came back empty in 0.56 seconds; against a job
+  printing a line a second, it released in about a second each time, the moment
+  the line appeared. So the stream is driven by the log rather than by a
+  state long poll — but the parameter is the only thing between that loop and a
+  busy-wait against a corporate network, which is why it belongs at the call
+  site rather than in an options bag a caller can leave out. Expiry is a `200`
+  carrying an empty array, where the session state's expiry — the only other one
+  measured — is a `304`, and the log carries no `ETag` at all, so `start` is the
+  entire cursor.
 
   The drain turns out to be free: a job that has reached a terminal state
   short-circuits the wait and answers in 0.26 seconds, so there is no trailing
@@ -562,9 +564,10 @@ called out under **Changed** with a migration note.
   constrains what the contract checker may require. And the line `type`
   vocabulary 3b's filter will be built on — `source`, `note`, `normal`, `error`,
   an open set in which `note` is a catch-all covering continuation lines,
-  whitespace and blank lines rather than a `NOTE:` prefix test. A real log will
-  carry no `source` lines at all, because those only appear for inline
-  submission and ADR-0014 chose upload plus `infile=`, which echoes nothing.
+  whitespace and blank lines rather than a `NOTE:` prefix test. A real log is
+  predicted to carry no `source` lines at all, because those only appear for
+  inline submission and ADR-0014 chose upload plus `infile=`, which echoes
+  nothing — a prediction this probe could not check, since it submitted inline.
 
 - ADR-0017, recording what those measurements decide about the stream that has
   not been written yet: the loop is driven by the log's own long poll, the job

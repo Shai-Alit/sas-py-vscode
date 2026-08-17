@@ -30,15 +30,22 @@ parameter actually long-poll?** Upstream's loop passes it, but upstream also
 declares `wait` on the session-state resource and never passes it (finding 19),
 so its presence in a call was not evidence of anything. If `timeout=` were inert,
 the loop would be a busy-wait throttled only by network latency, and the stream
-would have to be driven from the session-state long poll instead — a different
-design, resting on `If-None-Match` and a `304` arm.
+would have to be driven from the **job-state** long poll instead — the one
+finding 28 measured releasing at the moment the state changed. Not the
+*session*-state poll: finding 27 already ruled that out, because completion is a
+property of the job, and watching the session settle to `idle` reports a run
+finished two to three seconds late.
 
-It is not inert. Measured on a live Viya 4: `timeout=10` blocked the full 10.27 s
-against a deliberately silent job and released in 1.02 s when a line appeared,
-where the same request without the parameter returned in 0.27 s empty
+It is not inert. Measured on a live Viya 4 across two runs: against a job
+deliberately silent for 25 s, `timeout=10` blocked the full 10.27 s and returned
+nothing, where the same request without the parameter came back empty in 0.56 s;
+against a job printing one line a second, `timeout=10` released in about 1.0 s
+each time, when the line appeared rather than when the window ran out
 (finding 48). Three further measurements shape everything below. Expiry is a
-`200` carrying `items: []` and never a `304`, so the log has one response shape
-where the two state resources have two between them (finding 49). A job that has
+`200` carrying `items: []` and never a `304`, where the session state's expiry —
+the only other one measured — is a `304` (finding 28); the job state's expiry has
+never been observed, because every job-state poll so far was released by a change
+rather than by its own clock (finding 49). A job that has
 reached a terminal state **short-circuits the wait**, answering in 0.26 s, so the
 drain costs nothing and there is no ten-second stall at the end of an execution
 (finding 50). And the log carries **no `ETag` at all**, so `start` is the entire
@@ -64,9 +71,15 @@ The job's terminal state is still authoritative for *stopping* — an empty page
 means "nothing yet", never "end of log" (finding 49). But the state does not have
 to be asked for on every iteration. Because a live-but-silent job makes the poll
 block its full window (finding 48) while a finished one returns immediately
-(finding 50), **a poll that comes back empty and fast is strong evidence the job
-has finished** — so the state is consulted then, and not otherwise. That is one
-state request per quiet interval instead of one per iteration.
+(finding 50), **a poll that comes back empty and fast is a cheap hint that the
+job may have finished** — so the state is consulted then, and not otherwise. That
+is one state request per quiet interval instead of one per iteration.
+
+The hint is weaker than it looks and is treated as such. The probe measured the
+implication in one direction only — a job already terminal answered fast, once —
+and never the converse, that a fast answer implies terminal. A loaded server, a
+clamped `timeout` (finding 48 could not rule one out) or any other early return
+produces the same signal from a running job.
 
 The heuristic decides only *when to ask*. It never decides the answer: the state
 resource is the sole authority on whether the job is done, and a fast empty page
@@ -129,18 +142,21 @@ read from it — but at that point the pump is the design and the generator is a
 thin adapter over a buffer, which is what is being written here without the
 pretence.
 
-**Driving from the session-state long poll** (finding 19), which is what upstream
-actually does for state. Rejected now that finding 48 exists: the log's own poll
-is real, and one mechanism with one response shape beats two mechanisms with
-three expiry conventions between them. It would also have made the log's cursor
-and the state's ETag two pieces of state that must not disagree.
+**Driving from a state long poll** — the job's, per the Context above. Rejected
+now that finding 48 exists: the log's own poll is real, so one mechanism with one
+response shape beats two mechanisms whose expiry conventions are known to
+disagree where they have been measured at all (finding 49). It would also have
+made the log's cursor and the state's ETag two pieces of state that must not
+disagree. Note that upstream does *not* long-poll its state either way: it calls
+the job state with no `wait` after every log page (finding 19), which is the
+request storm this ADR is avoiding, not a design to copy.
 
 **Reading `logAsText`.** The relation exists, and it is the *same href* as `log`
 differing only in `Accept` (finding 46). Rejected because the line `type` is the
 point: a blob puts us back to parsing `NOTE:` and `ERROR:` prefixes out of
 strings, and finding 52 shows exactly how badly that goes — `note` covers
 continuation lines, whitespace and blank lines, so prefix-matching would
-misclassify nine of thirteen notes in a twenty-one-line log.
+misclassify ten of thirteen notes in a twenty-one-line log.
 
 **A push interface — an `EventEmitter` or a callback.** A natural fit for a pump,
 and rejected on the ground that ADR-0015 already froze `AsyncIterable`. Reopening
@@ -149,32 +165,36 @@ trade worth making.
 
 ## Consequences
 
-**An unconsumed stream accumulates lines, so the buffer is bounded.** A pump that
-polls regardless of consumption will, given a runaway program and a consumer that
-never arrives, hold an unbounded log in the extension host's memory. The buffer
-therefore has a line cap — a named constant, set high enough that no ordinary
-program reaches it — and on overflow the **oldest** lines are dropped and counted.
-Oldest rather than newest because a diagnosis lives at the end of a log, and
-counted rather than silent because a stream that quietly loses lines is worse
-than one that says it lost 4,000 of them. Nothing about the cap is load-bearing
-for correctness; it is a bound on the failure, not a feature.
+**An unconsumed stream accumulates lines.** A pump that polls regardless of
+consumption will, given a runaway program and a consumer that never arrives, hold
+a growing log in the extension host's memory. That is a direct consequence of the
+decision above and it is recorded here as such. **What to do about it is left
+open for 2c to decide** — whether the buffer is capped at all, and if so at what
+size and which end is dropped, is a policy question this ADR deliberately does
+not answer. It is tracked as an open question against the slice in `RUNBOOK.md`.
 
 **2c has to relax the contract checker before it can describe a job.**
 `scripts/check-contracts.mjs` requires `via.from`, `via.relation` and `via.type`
 to each be a string, and a job's `cancel` and `delete` relations carry
-`type: null` (finding 46). Either `via.type` becomes optional-or-null or those
-endpoints cannot be declared — and an endpoint the code calls that the contract
+`type: null` (finding 46) — while a *session's* equivalents omit the key
+entirely, which fails the same `typeof` check, so the checker could already not
+describe those either. Either `via.type` becomes optional-or-absent-or-null or
+none of those endpoints can be declared — and an endpoint the code calls that the contract
 omits is exactly what the checker's other direction exists to catch. This was
 found by sweeping for the superseded value after the probe, not by hitting it
 mid-slice.
 
 **The two upstream recursions are replaced rather than ported**, as the plan
-already said, and 2c-pre narrows why. `rest/job.ts::getState` recurses into
-itself on a `304` because it has nowhere to keep the last value; a poller that
-holds its ETag alongside the value it validated has no `304` arm to recurse from.
-And upstream's `isDone` is inverted — it returns `true` when the state is *not*
-terminal — which is the kind of defect a port carries forward silently, so it is
-named here to make sure it is not.
+already said, and 2c-pre narrows why for one of them. `rest/job.ts::getState`
+recurses into itself on a `304` because it has nowhere to keep the last value; a
+poller that holds its ETag alongside the value it validated has no `304` arm to
+recurse from. The second is `rest/session.ts::cancel()`, which recurses on a
+`412` to re-read the ETag and retry — a retry loop with no bound, which 2c writes
+as a bounded loop instead.
+
+Separately, and *not* a recursion: upstream's `isDone` is inverted — it returns
+`true` when the state is *not* terminal. That is a plain defect, named here
+because it is the kind a port carries forward silently.
 
 **Only two of five terminal states have ever been observed.** A failing job's
 state is `error` and a successful one's is `completed` (finding 53); upstream's
@@ -185,7 +205,9 @@ inverted `isDone` and would be found the same unpleasant way.
 
 **Cancellation must settle `done`, not abandon it.** The pump owns an in-flight
 long poll that may have up to `timeout` seconds left to run, so cancelling an
-execution has to abort that request and resolve `done` with a cancelled outcome.
+execution has to abort that request and settle `done`. Per ADR-0015 it settles
+with a **`cancelled` failure, not with an outcome** — a cancelled run has no
+outcome to report, and the seam already says so; 2c must not quietly widen that.
 A handle whose `done` never settles is the no-stall defect wearing a different
 hat, and 3d-i's Cancel command rides directly on this.
 

@@ -89,6 +89,11 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: "Overview", link: "/architecture/" },
+          {
+            text: "Execution backends",
+            link: "/architecture/execution-backends",
+          },
+          { text: "The dialect layer", link: "/architecture/dialects" },
           { text: "Decision records", link: "/adr/" },
         ],
       },

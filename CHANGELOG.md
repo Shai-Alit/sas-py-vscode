@@ -426,6 +426,52 @@ called out under **Changed** with a migration note.
   cleanup when a session dies mid-run. Nothing ships yet; this is the shape 2b
   freezes and 3a implements.
 
+- The `ExecutionBackend` seam — the interface everything above execution talks
+  to, so that `PROC PYTHON` is one implementation rather than the shape of the
+  extension. A program is **bytes and an origin**, never a string of code, which
+  is ADR-0014 expressed as a type: there is no code text in between for an
+  `endsubmit;` to be interpolated into. `execute` returns a handle that streams
+  output and settles separately, because waiting for a finished result would
+  foreclose live output, cancellation and notebook rendering — and the aggregate
+  is still one short function away, which is the argument for the ordering.
+  Output is a list of typed parts rather than one HTML string. A second run while
+  one is in flight is **rejected**, naming the run in the way, rather than
+  queued: a queue is a visible policy decision and belongs to the slice with a
+  status bar in it.
+
+  The seam has its own failure vocabulary, separate from the Compute client's,
+  because ETags and status codes mean nothing to a backend that is not Viya. The
+  distinction it is built around: **a program that raises is not a failure** — the
+  backend did its job, and conflating the two is how a user's own
+  `ZeroDivisionError` gets presented as an extension malfunction. Recorded as
+  ADR-0015, with the two-phase `stage`/`run` seam, the aggregate return and the
+  queue among the alternatives that lost.
+
+- The dialect layer: `Dialect`, the Viya 4 and Viya 3.5 dialects, and
+  `resolveDialect()`, which returns the reason it chose along with the choice.
+  The dialects are nearly empty and stay that way — a method appears when a probe
+  or a known defect proves the generations differ, not in anticipation — because
+  nothing in this project has ever been run against Viya 3.5, and an empty seat
+  says so more honestly than a table of guesses would. Stage-1 probing's signal
+  is a three-way union rather than a string that might be missing: "answered, no
+  cadence version" means 3.5, while "could not ask" means unknown, and collapsing
+  them is how a permissions problem becomes a confident wrong claim about the
+  deployment. An inconclusive answer assumes Viya 4, says it assumed, and marks
+  itself uncertain.
+
+- Nothing implements the seam until 3a, so it ships with its specification
+  executable: a complete test double in `test/helpers/`, and a contract test file
+  whose tests read as sentences from ADR-0015 — including the `endsubmit;` string
+  from probe finding 31, carried through byte for byte. The `PROC PYTHON` backend
+  should be able to run that same file.
+
+- `docs/architecture/execution-backends.md` and `docs/architecture/dialects.md`.
+  Their interface listings are compiled by `docs:samples`, so a rename that
+  leaves them stale fails the build. The listing in ADR-0015 is marked
+  `no-check`, which is now the convention: an architecture page describes the
+  code as it stands, while an ADR records what was decided on a date and is
+  superseded rather than edited.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in
@@ -593,6 +639,19 @@ called out under **Changed** with a migration note.
   what it turned into.
 
 ### Changed
+
+- The coverage rule gains a second way to be unreachable, and ADR-0009 is
+  amended rather than worked around. A file of nothing but types compiles to an
+  empty JavaScript file, so no test can execute a line of it — while c8 charges
+  its whole source, doc comments and all, to the denominator. `backend.ts` is the
+  first such module here and cost three points of aggregate coverage for a file
+  the contract tests specify completely. The rule is now *excluded if and only if
+  the unit tier cannot reach it*, and the check enforces the new arm in both
+  directions: a file qualifies only while **every** top-level statement in it is
+  erased at compile time, so the day one grows a helper it returns to the
+  denominator and `verify` says so by name. The alternative — inventing a runtime
+  export so that something could be executed — would have added code nobody asked
+  for to satisfy an instrument.
 
 - `vite` is pinned to `^6.4.3` through an `overrides` block, which clears four of
   the seven dev-tree advisories the audit gate was allow-listing — three in

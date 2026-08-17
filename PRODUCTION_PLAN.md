@@ -303,6 +303,30 @@ The deliberate departure from the SAS extension is `RichOutput[]` replacing
 `RunResult { html5 }`. Getting this right early avoids a painful ripple through
 the result panel, notebook renderers, and exporters later.
 
+> **Settled 2026-08-16 by 2b-i.** The sketch above is superseded by
+> [ADR-0015](docs/adr/0015-the-execution-backend-seam.md) and the code in
+> `src/backend/`. `RichOutput[]` survives unchanged. Four things did not:
+>
+> - `execute` takes **bytes**, not code: `execute(program: Program, opts)` where
+>   `Program` is `{ bytes, origin }`. This is ADR-0014 expressed as a type —
+>   there is no code string for an `endsubmit;` to be interpolated into — and it
+>   moves `origin` out of `ExecuteOptions`, since it is a property of the program
+>   rather than of the run.
+> - Every method returns a `BackendResult<T>` rather than a bare promise.
+>   Failures are returned, not thrown, in the house style, over the seam's own
+>   `BackendProblem` union — separate from `ComputeProblem`, which is a
+>   vocabulary about HTTP.
+> - `execute` resolves with an **`ExecutionHandle`** — `{ id, outputs, done }` —
+>   that streams while the run is in flight. `ExecutionResult` is still the
+>   aggregate shape and `collect()` derives it from a handle.
+> - A second `execute` while one is in flight is **rejected**, not queued.
+>
+> The modules landed at `src/backend/{backend,problems,collect}.ts` and
+> `src/dialects/{dialect,viya4,viya35,resolve}.ts`, rather than under the
+> `client/src/connection/` tree sketched in §2 — this repository has no
+> `client/` directory, and `dialects/base.ts` is `dialects/dialect.ts`.
+> `contracts/` and stage-1 probing move to 2b-ii.
+
 ### 2.3 Capability probing — in two stages, deliberately
 
 Capabilities split by *how they are discovered*, and conflating the two creates a
@@ -700,6 +724,14 @@ base with Viya 4 and 3.5 subclasses, `resolve()` with an alias registry, and
 `contracts/` file and checker here** and grow it per slice — contracts are built
 alongside the dialect code, not retrofitted in Phase 5. No execution yet: this
 slice is pure structure and its unit tests are the specification. *Medium.*
+
+> **Split 2026-08-16 into 2b-i and 2b-ii**, along a settled/unsettled seam rather
+> than the usual pure/shell one. 2b-i is the interface, the dialects and
+> `resolve()` — shapes ADR-0014 and the 2-pre findings had already decided, now
+> recorded as ADR-0015 and specified by a contract test suite driving a test
+> double. 2b-ii is `contracts/`, its checker and stage-1 probing, where the file
+> format still has to be chosen. `RUNBOOK.md` carries the reasoning and the two
+> gaps 2b-ii inherits.
 
 **2c — Log streaming.** Port the long-poll `getLogStream` async generators
 (server-side `timeout: 10` long-poll, monotonic `start` cursor, then drain via the

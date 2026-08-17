@@ -45,3 +45,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0012](0012-compute-session-lifetime-and-storage.md) | A compute session belongs to a workspace and a profile, and its id is a hint | Accepted |
 | [0013](0013-signing-in-opens-a-session.md) | Signing in opens a compute session, and only from the command | Accepted |
 | [0014](0014-python-is-submitted-as-an-uploaded-file.md) | Python is submitted as an uploaded file and run with `infile=`, not inlined in a `SUBMIT` block | Accepted |
+| [0015](0015-the-execution-backend-seam.md) | The execution backend seam takes opaque bytes and returns a streaming handle | Accepted |

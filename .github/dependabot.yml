@@ -37,6 +37,26 @@ updates:
       # a support decision, not a dependency update.
       - dependency-name: "@types/vscode"
 
+      # `typescript` is held below 6.1 by `typescript-eslint`, not by us.
+      # `typescript-eslint@8.67.0` — and the `@typescript-eslint/parser` and
+      # `@typescript-eslint/eslint-plugin` packages it brings with it — each
+      # declare `peerDependencies.typescript: ">=4.8.4 <6.1.0"`, so any
+      # TypeScript at or above 6.1.0 fails `npm ci` with `ERESOLVE` before a
+      # single file is compiled. Dependabot proposed 6.0.3 -> 7.0.2 on
+      # 2026-08-17 (PR #35); ten checks went red on that one install failure,
+      # repeated once per job.
+      #
+      # The bound is the peer range rather than "no majors" on purpose. 6.1.0
+      # is a *minor* update and is equally unsatisfiable, so ignoring only
+      # major versions would let the same guaranteed-red proposal arrive under
+      # a different name. Patch releases within 6.0.x still flow.
+      #
+      # Lift this the day typescript-eslint ships a release that widens the
+      # range: read `peerDependencies.typescript` on that version and raise the
+      # bound here to match, rather than deleting the entry.
+      - dependency-name: "typescript"
+        versions: [">=6.1.0"]
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

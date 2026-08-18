@@ -19,7 +19,7 @@ npm run verify
 
 ```
 format:check → lint → typecheck → check:copyright → check:secrets →
-check:coverage-scope → build → coverage
+check:coverage-scope → check:contracts → build → coverage
 ```
 
 Run it before you push. If it passes locally it passes in CI; if it does not,
@@ -95,7 +95,7 @@ invisible in a trusted window, which is exactly how that class of bug ships.
 ## What the pieces do
 
 **esbuild** (`esbuild.mjs`) bundles `src/extension.ts` into a single CommonJS
-file at `dist/extension.js`, targeting Node 20 with `vscode` marked external —
+file at `dist/extension.js`, targeting Node 22 with `vscode` marked external —
 the host provides that module at runtime, and bundling it breaks loading. Only
 `dist/` ships; `.vscodeignore` keeps `src/`, tests, and config out of the VSIX,
 which is why the packaged extension is a few kilobytes rather than a few

@@ -103,13 +103,18 @@ technique, for the same reason, as `check:coverage-scope`. See
 ## test
 
 The unit and integration tiers, across ubuntu / windows / macOS × Node
-**20.19.0** and **22**, with `fail-fast: false` so one platform's failure does
+**22.18.0** and **24**, with `fail-fast: false` so one platform's failure does
 not hide the others.
 
-The Node versions are not arbitrary. `22` is what `.nvmrc` pins and what
-contributors actually use. `20.19.0` is the exact floor `engines.node` claims,
-and an untested floor is a guess — if that leg is ever dropped, the floor in
-`package.json` moves with it in the same pull request.
+The Node versions are not arbitrary. `22.18.0` is the exact floor `engines.node`
+claims, and an untested floor is a guess — if that number is ever moved, the
+floor in `package.json` moves with it in the same pull request. That number is
+not chosen here: it is the Node that VS Code 1.104 embeds in its extension host,
+and `engines.vscode` is what makes 1.104 the floor. `24` is the current Active
+LTS, and exists to catch a forward break before a VS Code upgrade delivers one —
+it replaced a leg written as a bare `22` to match `.nvmrc`, which stopped being
+informative once the floor itself moved onto 22.x. See
+[ADR-0018](../adr/0018-the-node-baseline.md).
 
 The full matrix runs on pull requests rather than post-merge. Six legs of
 downloading VS Code is not free, but this project has already been bitten twice
@@ -376,15 +381,18 @@ npm install -g npm@^12.0.0  →  npm ci  →  npm run check:audit
 
 The install-script policy is the `allowScripts` field in `package.json`, and
 `allowScripts` is understood **only by npm 12 and later**. npm 12 in turn
-requires Node `^22.22.2 || ^24.15.0 || >=26.0.0` — above the **20.19.0** floor
-that `engines.node` claims and that two legs of `test` deliberately exercise. The
+requires Node `^22.22.2 || ^24.15.0 || >=26.0.0` — above the **22.18.0** floor
+that `engines.node` claims and that three legs of `test`, one per platform,
+deliberately exercise. The
 control therefore cannot run everywhere without moving the project's supported
 Node floor, and moving a support floor is not something a security slice should
 do as a side effect. So it runs in exactly one place, on one pinned npm.
 
 Be clear-eyed about what that buys. Every *other* job in this workflow installs
-with those install scripts **running**, because the GitHub runners' bundled npm
-is 10.x. This job is a gate on what is allowed to enter the lockfile. It is not a
+with those install scripts **running**, because no GitHub runner ships npm 12:
+the Node 22 legs get npm 10.x and the Node 24 legs npm 11.x, and neither
+understands `allowScripts`. This job is a gate on what is allowed to enter the
+lockfile. It is not a
 guarantee about how any particular machine performed its install, and it never
 claimed to be.
 

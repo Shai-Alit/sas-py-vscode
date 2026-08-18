@@ -752,7 +752,7 @@ one is written `user@example.com`, and the OAuth client id is written
 `POST` to the context's `createSession` link answered **`201` in 6.4 s** in state
 `pending`, and reached its settled state at roughly **7 s**. That settled state is
 **`idle`**. A session is `running` only while a job is executing in it (finding
-25), so "the session came up" and "the session is busy" are different words, and
+27), so "the session came up" and "the session is busy" are different words, and
 the plausible guess — wait for `running` — would wait forever.
 
 This is the finding `src/compute/session.ts` was written blind against, and it

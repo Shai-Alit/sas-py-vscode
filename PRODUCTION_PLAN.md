@@ -88,6 +88,29 @@ extension calls **no** CAS APIs at all), and Viya Python environment awareness.
 **Dropped entirely** — SSH, COM/IOM, SAS Studio flow conversion, the SAS
 language server, syntaxes, themes, snippets.
 
+> **Three of these did not transfer — settled across 2a and 2c.** The list above
+> is the estimate made before any of the compute layer was written, and Phase 2
+> contradicted it in three places. (i) The **generated Compute/Files/Folders
+> OpenAPI clients** were not taken: nothing is vendored, and the client is hand
+> written against the links the service sends. Upstream's generated
+> `compute.ts` is 20,348 lines of URL builders for an API we navigate by `rel`,
+> and it would have to be re-generated and re-audited to be trusted.
+> [ADR-0010](docs/adr/0010-compute-client-is-hand-written.md) records it.
+> (ii) The **`Session` abstract base** was not taken either: there is no
+> template-method hierarchy here, because the seam that matters is the execution
+> backend, not the connection type. [ADR-0015](docs/adr/0015-the-execution-backend-seam.md).
+> (iii) The **long-poll log-stream generators** were rejected outright. The log
+> is drained by a self-driving pump with an explicit cursor rather than an
+> `async function*`, because a generator that is not being pulled stops polling,
+> and the reason the log stalls has to be visible in the code rather than in the
+> consumer's loop. [ADR-0017](docs/adr/0017-the-log-stream-is-a-self-driving-pump.md).
+>
+> What *did* transfer, and still stands: the OAuth2 + PKCE shape, the
+> `AuthenticationProvider` and per-profile SecretStorage handling, the idea of
+> navigating Compute by links, connection profiles, and the build and packaging
+> toolchain. The certificate helper transferred as a decision to write it
+> differently — see the audit note under 1c.
+
 ### 1.4 Supported Viya versions — the honest position
 
 Viya 3.5 is a frozen on-prem generation in Standard Support to 2027-10-01; Viya 4
@@ -188,9 +211,21 @@ prevents them being discovered as "small" tasks mid-phase.
    silently change results and reproducibility breaks. We must decide whether Run
    File resets the namespace by default, and how state is reset *without* killing
    the compute session — which the probe did not establish.
+   > **Half settled 2026-08-16 (finding 38).** The *mechanism* is known:
+   > `proc python restart;` clears the interpreter in about 3.4 s and leaves the
+   > compute session, its libraries and its filerefs untouched, and it composes
+   > with `infile=` in a single statement. The *policy* — whether Run File resets
+   > by default — is still open and belongs to 3a.
 7. **Concurrency.** `PROC PYTHON` in one compute session is strictly serial. A
    second Run while one is in flight has undefined behaviour today. The backend
    needs an explicit busy/queue contract.
+   > **Settled 2026-08-16 by 2b-i ([ADR-0015](docs/adr/0015-the-execution-backend-seam.md)).**
+   > A second `execute` while one is in flight is **rejected**, not queued, and
+   > the seam says so in its type: the rejection is a `BackendProblem`, not a
+   > thrown error. Queueing was rejected because a queue makes the second run's
+   > start time unpredictable and hides the serial constraint from the user
+   > instead of reporting it. Enforcing it is 3a's job — nothing calls the seam
+   > yet.
 8. **Session death mid-run.** Compute sessions time out and get reaped. Whether
    Python state survives a reconnect is unverified. Detection, honest user
    messaging, and state-loss recovery all need designing.
@@ -440,13 +475,18 @@ posture**, and whether we ever ship a **web/browser** target. *Small/medium.*
 
 **0c — Test harness.** Mocha + Chai + Sinon, `@vscode/test-electron` integration
 runner, **plus the HTTP mocking layer** (nock or msw) and `test/fixtures/`
+(*as built: Mocha + Sinon on `node:assert/strict`, no Chai — a second assertion
+vocabulary earns nothing once the first one is in the tree; msw rather than nock*)
 structure with per-generation subdirectories. Coverage instrumentation (c8) with
 a threshold that starts realistic and ratchets. A trivial passing test proves the
 whole harness. *Medium.*
 
 **0d-i-a — Core CI and packaging.** Lint/format, type-check, copyright and
 coverage gates; the test matrix (Node floor and working version × ubuntu /
-windows / macOS, `xvfb-run` on Linux for test-electron); `.vsix` packaging with
+windows / macOS, `xvfb-run` on Linux for test-electron — *as it now stands: the
+floor and the current Active LTS, 22.18.0 and 24, after
+[ADR-0018](docs/adr/0018-the-node-baseline.md) made the floor a derived value*);
+`.vsix` packaging with
 an assertion on what the package actually contains, uploaded as an artifact.
 *Medium.*
 
@@ -481,7 +521,10 @@ future maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small
 
 > **The constraint that shaped 0d-ii-a.** `allowScripts` is understood only by
 > npm 12.0.0+, and npm 12 requires Node `^22.22.2 || ^24.15.0 || >=26.0.0` — so it
-> cannot run on the Node 20.19.0 floor §4 claims and the matrix tests. Rather
+> cannot run on the Node 20.19.0 floor §4 claimed at the time and the matrix
+> tested. (The floor moved to 22.18.0 on 2026-08-18 — see
+> [ADR-0018](docs/adr/0018-the-node-baseline.md) — and the constraint survives
+> intact, because 22.18.0 is still below npm 12's `^22.22.2`.) Rather
 > than move the support floor as a side effect of a security slice, the policy is
 > enforced in one job that can run it. The rest of CI still installs with those
 > scripts running, and `docs/dev/building.md` says so rather than implying a
@@ -1134,7 +1177,12 @@ once per generation so a dialect regression fails loudly.
 per-run unique names and cleanup in `finally`.
 
 **Coverage** starts at a threshold the Phase 0 harness actually meets and ratchets
-upward per phase; the target is ≥85% on `connection/`, `dialects/`, and `python/`.
+upward per phase. The ≥85% target this section originally set was written against
+a source tree — `connection/`, `dialects/`, `python/` — that only ever came half
+true: the code landed under `src/{auth,backend,compute,dialects,profile}/`, and
+`connection/` and `python/` were never created. The gate is a single aggregate
+ratchet in `.c8rc.json` rather than a per-directory target, and as of 2026-08-18
+it stands at 92 / 92 / 91 / 95, so the original figure is long since passed.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
 
@@ -1278,7 +1326,7 @@ get written.
 | Session dies mid-run / state lost on reconnect | Medium | Explicit detection and messaging in 2a; fixture-driven tests |
 | `PROC PYTHON` absent on Viya 3.5 | Medium | Capability probe degrades gracefully; docs make no unverified claim |
 | Compute cancellation doesn't interrupt a running Python step | Medium — bad UX | Probe after 3d-i; fall back to session reset with a clear message |
-| Phase 2a exceeds a reviewable PR | Medium | Pre-agreed split at the generated-client boundary |
+| ~~Phase 2a exceeds a reviewable PR~~ | ~~Medium~~ | **Retired 2026-08-14.** The pre-agreed boundary was the generated client, and ADR-0010 means there is no generated client to split at. 2a split three ways on a different seam — core / VS Code shell / one account, one command — and each part was reviewable on its own |
 | Large stdout volumes truncate or slow the log poll | Medium | High-volume fixtures in 3b |
 | Ported code arrives carrying upstream defects | **Medium, and repeatedly confirmed** | Audit-don't-transcribe rule (Phase 1b). No longer a hypothetical: reading `auth.ts` found five, `AuthProvider.ts` four, and `CAHelper.ts` two. Every ported file gets read before it is trusted, and the findings are recorded in the slice that ports it |
 | Upstream SAS extension diverges | Low | We fork conceptually, not continuously; port once and own it |
@@ -1341,6 +1389,12 @@ get written.
    correct default, because "the tier physically cannot load this" is a fact and
    "this was generated, not written" is an argument. The ratchet itself is
    unchanged and still binding.
+   **Amended again 2026-08-16 by ADR-0009's own amendment:** importing `vscode`
+   is no longer the only way to be unreachable. A module of nothing but types
+   compiles to an empty JavaScript file that no test can execute either, so the
+   operative rule is *excluded if and only if the unit tier cannot reach it*,
+   with two ways to qualify. `src/backend/backend.ts` is the first module here to
+   qualify the second way.
    **Closed 2026-08-14 by ADR-0010:** no client is vendored, so the question of
    how to exclude one does not arise. The Compute layer is hand-written against
    the observed wire shape, imports no `vscode`, and stays in the denominator

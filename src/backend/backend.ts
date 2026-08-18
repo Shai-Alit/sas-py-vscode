@@ -132,7 +132,7 @@ export interface ExecutionOutcome {
    * Whether the program completed without raising.
    *
    * On Viya this is read from `SYSCC` rather than inferred from the log or from
-   * the job's terminal state (probe findings 36 and 37, and ADR-0014): a job that
+   * the job's terminal state (probe findings 33 and 37, and ADR-0014): a job that
    * reports `completed` may have executed nothing at all.
    */
   readonly succeeded: boolean;

@@ -990,5 +990,19 @@ called out under **Changed** with a migration note.
 - **Relicensed from MIT to Apache-2.0** to match the upstream
   `sassoftware/vscode-sas-extension` code this project derives from, and to give
   users an explicit patent grant. See `docs/adr/0000-repository-licence.md`.
+- The supported Node floor is **22.18.0**, raised from 20.19.0, and it is now
+  derived from `engines.vscode` rather than chosen: 22.18.0 is the Node that VS
+  Code 1.104 embeds in its extension host, and 1.104 is already the floor
+  `engines.vscode` claims. The old number described a runtime the extension
+  cannot be loaded on, and Node 20 reached end of life on 2026-04-30. The `test`
+  matrix legs change from 20.19.0 and 22 to **22.18.0 and 24** — the floor, and
+  the current Active LTS as a forward-break detector, replacing a bare `22` leg
+  that matched `.nvmrc` and that after the raise differs from the floor only at
+  patch level. `esbuild.mjs` targets `node22`.
+  `.nvmrc` is unchanged at an unpinned `22` and remains the reason the
+  `supply-chain` job can install npm 12. That job's design is unaffected: 22.18.0
+  is still below npm 12's own `^22.22.2` floor, so the install-script policy
+  still runs in exactly one pinned job.
+  [ADR-0018](docs/adr/0018-the-node-baseline.md).
 
 [Unreleased]: https://github.com/Shai-Alit/sas-py-vscode/commits/main

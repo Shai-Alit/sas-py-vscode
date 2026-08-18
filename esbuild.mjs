@@ -37,9 +37,16 @@ const context = await esbuild.context({
 
   // The extension host loads CommonJS from Node. Not a browser target — see
   // docs/adr/0003-extension-host-target.md.
+  //
+  // The target tracks the Node the extension host actually runs, which is
+  // derived from `engines.vscode` and not chosen here: VS Code has run Node 22
+  // in the extension host since 1.101, and 1.104 — our floor — embeds 22.18.0.
+  // See docs/adr/0018-the-node-baseline.md. Setting this lower does not buy
+  // compatibility with anything; it only makes esbuild down-level syntax that
+  // every host we support already understands.
   format: "cjs",
   platform: "node",
-  target: "node20",
+  target: "node22",
 
   // Provided by the extension host at runtime; bundling it would break loading.
   external: ["vscode"],

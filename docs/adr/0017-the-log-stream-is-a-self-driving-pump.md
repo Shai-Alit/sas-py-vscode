@@ -198,8 +198,11 @@ decision above and it is recorded here as such. This ADR took no position on the
 remedy when it was written, leaving it to the slice that builds the buffer.
 
 **Settled 2026-08-17, before 2c-i: cap it, drop the oldest, and count what was
-dropped.** The cap is a named constant set high enough that no ordinary program
-reaches it, so in normal use nothing is dropped and the policy is invisible. On
+dropped.** The cap is two named constants — a line count and a character count,
+because a program that prints one enormous line and a program that prints a
+million short ones exhaust the same memory by different routes — each set high
+enough that no ordinary program reaches it, so in normal use nothing is dropped
+and the policy is invisible. On
 overflow the **oldest** lines go, because a runaway loop's last thousand lines
 are where its failure is and its first thousand are its start-up. And the number
 dropped is **reported to the consumer** rather than silently absorbed, because a

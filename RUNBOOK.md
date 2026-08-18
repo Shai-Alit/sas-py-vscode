@@ -491,6 +491,14 @@ installed explicitly, and the Node floor and the six-leg matrix are left alone.
 > that loud, but it would also fail every Node 20 leg, which is why the floor
 > question had to be answered first.
 
+> **Amended 2026-08-18.** The floor is 22.18.0 now and the matrix legs are
+> 22.18.0 and 24 — see ADR-0018. The reasoning above is unchanged: 22.18.0 is
+> still below npm 12's `^22.22.2`, so the pinned job is still the only place the
+> control can run. `engine-strict` with an `engines.npm` floor would still fail,
+> and now on *every* leg rather than only the Node 20 ones — the Node 22 legs
+> get npm 10.x, the Node 24 legs npm 11.x, and neither is 12. The distance to
+> the revisit trigger is what shrank.
+
 ☑ **Divergence noted in `docs/dev/building.md`, 2026-08-12.** New section,
 *Install scripts, and why your install differs from CI's*: the policy, the fact
 that every job but `supply-chain` runs npm 10.x and therefore *does* run those
@@ -499,6 +507,11 @@ scripts, the `npm config get strict-allow-scripts` trap, and the
 worth knowing: `.nvmrc` says `22` unpinned, which is the only reason CI clears
 npm 12's `^22.22.2` floor — pinning it to an exact lower 22.x breaks the job on
 its `npm install -g` step for reasons unrelated to the change that pinned it.
+
+> **Amended 2026-08-18.** "npm 10.x" above is now "npm 10.x or 11.x": the matrix
+> moved to Node 22.18.0 and 24 (ADR-0018), and Node 24 ships npm 11.x. Neither
+> understands `allowScripts`, so the divergence the section records is the same
+> divergence.
 
 ☑ **Done; confirmed on the live rule 2026-08-16.** The new `supply-chain` check
 was added to branch protection after it first reported — same `PUT` as above,
@@ -729,6 +742,12 @@ proxy dispatcher to.
 > floor; those need the `undici` package installed. 1b-ii picks between one
 > runtime dependency, a hand-rolled `CONNECT` tunnel, or a narrower supported
 > configuration. Recorded now so it arrives as a decision instead of a surprise.
+
+> **Amended 2026-08-18.** Two values above are superseded and neither changes the
+> outcome. The floor is 22.18.0, not 20.19.0 (ADR-0018) — `ProxyAgent` is still
+> not public API there. And `package.json` has no `dependencies` key at all
+> rather than an empty one, which is strictly stronger than what this entry
+> claims. 1b-ii resolved the choice a fourth way, through `node:https`.
 
 ```bash
 # ⛔ BARRIER: merge 1a first.
@@ -3363,6 +3382,38 @@ git commit -m "feat(compute): add job creation, job state polling, and log pagin
 git checkout -b phase-2c-ii-log-streaming
 git commit -m "feat(compute): stream a job's log as it runs"
 ```
+
+### Interlude — the Node baseline (2026-08-18)
+
+☑ **`engines.node` raised from `>=20.19.0` to `>=22.18.0`, and the `.nvmrc` leg
+of the test matrix dropped in favour of Active LTS.** Settled in ADR-0018. Node
+20 reached end of life on 2026-04-30, so the floor named a runtime that no longer
+receives security fixes; more to the point, the floor was never independently
+chosen — VS Code's extension host has run Node 22 since **1.101**, and
+`engines.vscode` already requires 1.104, so 20.19.0 described a runtime the
+extension cannot be loaded on. 22.18.0 is the exact Node that 1.104 embeds.
+
+The matrix was 20.19.0 (the floor) and a bare `22` matching `.nvmrc`. With the
+floor at 22.18.0 that second leg stops being informative — newest-22.x differs
+from the floor only at patch level — so it became **24**, the current Active
+LTS, which is a forward-break detector rather than a near-duplicate. What is
+lost is newest-22.x on windows and macOS; `verify` still installs from `.nvmrc`
+and runs the unit tier on it, on ubuntu. `esbuild.mjs`
+targets `node22`, and `.nvmrc` stays at an unpinned `22`, still resolving to the
+newest 22.x and still the only reason `supply-chain` clears npm 12's `^22.22.2`.
+
+> **What did not change, and this is the point.** 22.18.0 is *below* `^22.22.2`,
+> so ADR-0005's whole design survives untouched: the policy still cannot run
+> outside the one pinned job. The revisit trigger there is now one minor floor
+> bump away rather than a major one, which is worth knowing but is not an
+> instruction to take it.
+
+☐ **`@types/node` is pinned to 26.2.0 and types against a runtime we do not ship
+on.** Found during the Phase 2 review, 2026-08-18. It is not the same defect as
+the floor — nothing has broken — but the types describe Node 26 APIs while the
+host runs 22, so `tsc` will accept a call that does not exist at runtime. The fix
+is `@types/node@^22`, and it needs a lockfile change, so it goes out with a
+`npm install` run on Sean's machine rather than from the sandbox.
 
 ### Phase 3 — Run Python
 

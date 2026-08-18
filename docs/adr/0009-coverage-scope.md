@@ -43,6 +43,13 @@ The 1b-i pull request said this in as many words:
 `vscode` are excluded from the c8 denominator, and `scripts/check-coverage-scope.mjs`
 asserts that the exclude list and that rule agree.
 
+> **Amended 2026-08-16 — importing `vscode` is no longer the only way to be
+> unreachable.** A module of nothing but types compiles to an empty JavaScript
+> file, which no test can execute either. The rule below is stated in its
+> original form on purpose; the operative one is *excluded if and only if the
+> unit tier cannot reach it*, with two ways to qualify. See the amendment at the
+> end of this record.
+
 The partition is not drawn by hand. It already existed:
 
 ```

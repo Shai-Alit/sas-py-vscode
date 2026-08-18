@@ -121,9 +121,15 @@ jobs:
           retention-days: 7
 
   # The tiers that can behave differently per platform. Both Node versions are
-  # deliberate: 20.19.0 is the exact floor `engines.node` claims to support, and
-  # a claimed floor nobody tests is a guess. When this line is dropped, the
-  # floor in package.json has to move with it.
+  # deliberate. 22.18.0 is the exact floor `engines.node` claims to support —
+  # the Node that VS Code 1.104 embeds in its extension host — and a claimed
+  # floor nobody tests is a guess. When that leg moves, the floor in
+  # package.json moves with it, in the same pull request.
+  #
+  # 24 is the current Active LTS, and is here to catch a forward break before a
+  # VS Code upgrade delivers one. It replaced a second leg pinned to `.nvmrc`,
+  # which duplicated the floor leg once the floor became 22. See
+  # docs/adr/0018-the-node-baseline.md.
   test:
     name: test (${{ matrix.os }}, node ${{ matrix.node }})
     needs: changes
@@ -136,7 +142,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        node: ["20.19.0", "22"]
+        node: ["22.18.0", "24"]
     steps:
       - uses: actions/checkout@v7
 
@@ -242,14 +248,16 @@ jobs:
   #
   # This job is pinned rather than folded into the matrix, and that is the whole
   # design. `allowScripts` is understood only by npm 12+, and npm 12 requires
-  # Node ^22.22.2 || ^24.15.0 || >=26.0.0 — above the 20.19.0 floor that
-  # `engines.node` claims and that two legs of `test` deliberately exercise. So
+  # Node ^22.22.2 || ^24.15.0 || >=26.0.0 — above the 22.18.0 floor that
+  # `engines.node` claims and that three legs of `test` deliberately exercise. So
   # the control cannot run everywhere without moving the project's support
   # floor, which is not a decision a security slice should make as a side
   # effect. It runs in the one place that can run it.
   #
   # Be clear-eyed about what that buys: every *other* job here installs with
-  # those install scripts running, because the runners' bundled npm is 10.x.
+  # those install scripts running, because no runner ships npm 12 — the Node 22
+  # legs get npm 10.x and the Node 24 legs npm 11.x, and neither has
+  # `allowScripts`.
   # This job is the gate on what enters the lockfile, not a guarantee about how
   # any given machine installed it. docs/dev/ci.md says so out loud.
   supply-chain:

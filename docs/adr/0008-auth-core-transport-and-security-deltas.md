@@ -32,7 +32,8 @@ not transcribe.
 
 ### No HTTP client dependency; the core takes an injected `fetch`-shaped port
 
-`package.json` has `"dependencies": {}`, and that is not an accident of a young
+`package.json` declares no runtime dependencies at all — there is no
+`dependencies` key, not an empty one — and that is not an accident of a young
 project. Slice 0d spent most of its effort on the dependency tree: every package
 that can run code at install time is denied through `allowScripts`, an audit gate
 fails on any advisory in the production tree at any severity, and a unit test
@@ -44,6 +45,10 @@ audit gate.
 It is also unnecessary. The engine floor is Node `>=20.19.0`, so `globalThis.fetch`
 exists; msw 2 — already the project's HTTP mocking layer — intercepts `fetch`
 natively.
+
+> **Amended 2026-08-18.** The floor is `>=22.18.0` now
+> ([ADR-0018](0018-the-node-baseline.md)). The argument is unaffected — it only
+> ever needed a floor at or above 18, and raising one cannot take `fetch` away.
 
 So `src/auth/tokenEndpoint.ts` declares a minimal structural type covering only the
 parts of `fetch` it uses, defaults it to `globalThis.fetch`, and accepts an
@@ -170,7 +175,10 @@ open cost was accurate about `fetch` and wrong about the size of the choice.
 ignores them entirely, and routing it through a proxy needs an undici
 `ProxyAgent` — not public API on this project's engine floor of `>=20.19.0`, so
 it means the `undici` package, installed. Node 24 grew built-in environment-proxy
-support, which does not help here either. All of that still holds. The error was
+support, which does not help here either — and note that raising the floor to
+22.18.0 in 2026-08 ([ADR-0018](0018-the-node-baseline.md)) does not change that
+either, since 22 is below 24 and the `node:https` path 1b-ii took makes the
+question moot in any case. All of that still holds. The error was
 framing the alternatives as dependency, hand-rolled `CONNECT`, or narrowed
 support, when a fourth option sat in the standard library.
 

@@ -588,8 +588,28 @@ export function streamJobLog(
         // fifteen minutes to reap it (finding 18 measures the idle timeout, not
         // a timeout on running work). There is deliberately no replacement
         // controller either: nothing here has a reason to abort this request.
+        //
+        // Unsignalled is not unbounded, which is the part worth stating because
+        // two readers have now assumed otherwise. `ComputeClient.send` composes
+        // `AbortSignal.timeout(timeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS)`
+        // into every request and combines it with the caller's signal rather than
+        // choosing between them, so a deployment that never answers this `PUT`
+        // fails it at the client's timeout — thirty seconds unless the profile
+        // says otherwise — and `cancel()` settles with that failure. What the
+        // omission removes is the *caller's* ability to abandon the request, not
+        // the bound on it, and removing that is the whole point: the one request
+        // this module must not abandon is the one that stops the job.
         return await cancelJob(client, job);
       })();
+      // The same guard `done` gets, on a second reference and for the same
+      // reason. `ComputeClient.send` is contracted never to reject, but it is an
+      // injected interface, so the contract holds only for the implementations
+      // this repository happens to ship — a test double is the likeliest thing to
+      // break it. A caller tearing down a window is also the likeliest one to
+      // fire `cancel()` without awaiting it, and those two together would turn a
+      // caller's defect into an unhandled rejection in someone else's process.
+      // `cancelling` itself still rejects for whoever does await it.
+      void cancelling.catch(() => undefined);
       return await cancelling;
     },
   };

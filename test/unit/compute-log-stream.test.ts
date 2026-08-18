@@ -158,6 +158,22 @@ function rejected(status: number): Reply {
 }
 
 /**
+ * What the client returns when a request it sent never came back — the shape a
+ * timeout takes, since the timeout aborts the transport and the abort is caught
+ * as a rejection.
+ */
+function unreachable(): Reply {
+  return {
+    ok: false,
+    reason: "could not reach the compute service",
+    problem: {
+      code: "compute-unreachable",
+      detail: "PUT /compute/sessions/s/jobs/j/state?value=canceled — aborted",
+    },
+  };
+}
+
+/**
  * One scripted request: what it answers, how much of the poll window it used,
  * and whether it answers at all until the test says so.
  */
@@ -788,6 +804,34 @@ describe("streamJobLog", () => {
       const ended = await stream.done;
 
       assert.ok(ended.ok, "an unsendable cancel failed the stream");
+      assert.equal(ended.value.outcome, "cancelled");
+    });
+
+    it("settles when the deployment never answers the cancel", async () => {
+      // The cancel request carries no signal of its own, which reads as
+      // unbounded and is not: the client composes a timeout into every request
+      // and combines it with the caller's, so a `PUT` into a black hole fails at
+      // that timeout as `compute-unreachable`. What must not happen is `cancel()`
+      // never settling — a caller waiting on it would have no way to recover,
+      // since concurrent callers share the one memoised promise.
+      const script = scripted([
+        { reply: EMPTY, hold: true },
+        fast(unreachable()),
+      ]);
+
+      const stream = streamJobLog(script.client, job(), { now: script.now });
+      const result = await stream.cancel();
+
+      assert.ok(!result.ok, "an unanswered cancel reported success");
+      assert.equal(result.problem.code, "compute-unreachable");
+
+      script.release(rejected(404));
+      const ended = await stream.done;
+
+      // And the run still ends as cancelled. The request is about the
+      // deployment; `done` is about the run, and the user's run is over either
+      // way.
+      assert.ok(ended.ok, "an unanswered cancel failed the stream");
       assert.equal(ended.value.outcome, "cancelled");
     });
 

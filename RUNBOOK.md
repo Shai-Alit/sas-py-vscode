@@ -3253,21 +3253,61 @@ one that only proves a module imports.
   every empty poll returns fast.
 - ☑ **Ratchet raised, 2026-08-18.** `logStream.ts` imports no `vscode`, so it
   landed in the coverage denominator with no `.c8rc.json` exclude and the
-  aggregate moved. Measured over 852 passing tests: **92.23 statements, 95.31
-  branches, 91.41 functions, 92.23 lines**, so the floors go to **92 / 95 / 91 /
+  aggregate moved. Measured over 853 passing tests, after the two review
+  responses below: **92.25 statements, 95.31 branches, 91.41 functions, 92.25
+  lines**, so the floors go to **92 / 95 / 91 /
   92** — statements and lines up one, functions up one, branches unchanged
   because 95.31 still rounds down to the 95 already in place. The rule is
   unchanged: a slice adding source raises each floor to `floor(measured)`, and
   the floor is never lowered to accommodate a slice.
 
   The module itself scores 100 % of statements, functions and lines with 97.93 %
-  of branches, the two uncovered branches (lines 677 and 716) being the
+  of branches, the two uncovered branches (lines 697 and 736) being the
   `if (… === undefined) break;` guards after a `queue.shift()` that a
   `while (this.queue.length > 0)` has already proved non-empty — unreachable by
   construction, and kept because `shift()` types as `T | undefined`. That is
   why the aggregate moved *up* rather than being dragged down by a thousand new
   lines: a fully covered module raises the total, which is the shape the ratchet
   is meant to reward.
+- ☑ **Codex's one blocking finding, answered 2026-08-18 — and it was wrong on the
+  claim that made it blocking.** The reading: `cancel()` sends the stop request
+  with no signal, so a `PUT` the deployment never answers hangs the `cancel()`
+  promise forever, and because concurrent callers share one memoised promise none
+  of them can recover. Checked against `client.ts` rather than argued: `send`
+  composes `AbortSignal.timeout(timeoutMs ?? config.timeoutMs ?? DEFAULT_TIMEOUT_MS)`
+  into **every** request and combines it with the caller's signal with
+  `AbortSignal.any` rather than choosing between them, and `cancelJob` sets no
+  `timeoutMs`, so the request fails at thirty seconds as `compute-unreachable` and
+  `cancel()` settles with that failure. Unsignalled is not unbounded.
+
+  Adding a controller as asked would have been a real defect rather than a
+  no-op: the only thing a signal on *that* request buys is the ability to abandon
+  it, and the one request this module must not abandon is the one that stops the
+  job.
+
+  What the finding did establish is that the comment invited the reading — two
+  readers reached it independently, since the adversarial subagent asked the same
+  question earlier. So the comment now says where the bound comes from, and a
+  test — *"settles when the deployment never answers the cancel"* — scripts the
+  cancel request failing as `compute-unreachable` and asserts that `cancel()`
+  resolves with that failure while `done` still ends `cancelled`. A reviewer's
+  question that the code cannot answer by itself is worth a test even when the
+  answer is "already correct".
+- ☑ **The Claude reviewer's nit, taken rather than argued, 2026-08-18.** `done`
+  is guarded against a caller-defect rejection with `void done.catch(…)` on a
+  second reference; the memoised `cancelling` promise had no equivalent, so a
+  caller that fires `cancel()` without awaiting it — the plausible shape at a
+  tear-down call site — would turn a rejecting `ComputeClient.send` into an
+  unhandled rejection. `send` is contracted never to reject, but it is an
+  **injected interface**, so the contract holds only for the implementations this
+  repository ships and a test double is the likeliest thing to break it. One line,
+  same pattern, and `cancelling` still rejects for whoever awaits it.
+
+  No test, deliberately, and for the same reason `done`'s guard has none: the
+  assertion would be the *absence* of a process-level `unhandledRejection`, which
+  needs a listener installed around the suite and reports in whichever test
+  happens to run next when it misfires. An instrument whose false positive lands
+  on an unrelated test is worse than the defect it watches for.
 
 ```bash
 # ⛔ BARRIER

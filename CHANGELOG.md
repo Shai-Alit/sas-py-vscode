@@ -735,7 +735,7 @@ called out under **Changed** with a migration note.
   gate does *not* check is the part worth remembering.
 
 - The coverage ratchet rises to 92 / 92 / 91 / 95 (lines, statements, functions,
-  branches) from a measured 92.23 / 92.23 / 91.41 / 95.31 over 852 tests. The
+  branches) from a measured 92.25 / 92.25 / 91.41 / 95.31 over 853 tests. The
   branch floor is unchanged only because it was already at the rounded-down
   figure. A slice this size normally pulls the aggregate *down* — a thousand new
   lines land in the denominator at once — and this one moved it up because the

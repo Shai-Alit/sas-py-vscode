@@ -1,0 +1,95 @@
+{
+  "count": 21,
+  "start": 0,
+  "items": [
+    { "line": "1    data _null_;", "type": "source", "version": 1 },
+    { "line": "2      put \"PROBE NORMAL LINE\";", "type": "source", "version": 1 },
+    { "line": "3    run;", "type": "source", "version": 1 },
+    { "line": "", "type": "note", "version": 1 },
+    { "line": "PROBE NORMAL LINE", "type": "normal", "version": 1 },
+    {
+      "line": "NOTE: DATA statement used (Total process time):",
+      "type": "note",
+      "version": 1
+    },
+    {
+      "line": "      real time           0.00 seconds",
+      "type": "note",
+      "version": 1
+    },
+    {
+      "line": "      cpu time            0.00 seconds",
+      "type": "note",
+      "version": 1
+    },
+    { "line": "      ", "type": "note", "version": 1 },
+    { "line": "", "type": "note", "version": 1 },
+    { "line": "4    data _null_;", "type": "source", "version": 1 },
+    {
+      "line": "5      set nosuchlib.nosuchtable;",
+      "type": "source",
+      "version": 1
+    },
+    {
+      "line": "ERROR: Libref 'nosuchlib' exceeds 8 characters.",
+      "type": "error",
+      "version": 1
+    },
+    { "line": "6    run;", "type": "source", "version": 1 },
+    { "line": "", "type": "note", "version": 1 },
+    {
+      "line": "NOTE: The SAS System stopped processing this step because of errors.",
+      "type": "note",
+      "version": 1
+    },
+    {
+      "line": "NOTE: DATA statement used (Total process time):",
+      "type": "note",
+      "version": 1
+    },
+    {
+      "line": "      real time           0.00 seconds",
+      "type": "note",
+      "version": 1
+    },
+    {
+      "line": "      cpu time            0.00 seconds",
+      "type": "note",
+      "version": 1
+    },
+    { "line": "      ", "type": "note", "version": 1 },
+    { "line": "", "type": "note", "version": 1 }
+  ],
+  "links": [
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/log",
+      "method": "GET",
+      "rel": "collection",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/log?start=0&limit=200",
+      "method": "GET",
+      "rel": "first",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/log?start=0&limit=200",
+      "method": "GET",
+      "rel": "last",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D/log?start=0&limit=200",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000/jobs/A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D",
+      "method": "GET",
+      "rel": "up",
+      "type": "application/vnd.sas.compute.job"
+    }
+  ]
+}

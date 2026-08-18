@@ -817,6 +817,23 @@ recursion in `rest/job.ts::getState`, and the 412 recursion in
 > is dropped, whether an overflow is reported — is the slice's to decide. 2c is
 > otherwise an implementation slice.
 
+> **Split 2026-08-17 into 2c-i and 2c-ii**, along the line the probe itself drew.
+> Everything findings 46–53 settled about a *single request* is 2c-i — job
+> creation, job-state reading, the five-member terminal set, and the stateless
+> single-page log reader — and everything they settled about a *loop* is 2c-ii:
+> the poll, the drain, the `AsyncIterable`, the buffer and cancellation. The log
+> reader belongs with the first half rather than the second because `session.ts`
+> established that every function in these modules makes exactly one request and
+> reports what happened; holding one back for the slice that loops over it would
+> make it the first exception to that rule, and it would arrive untested.
+>
+> The policy question the ADR left open is answered, and it is 2c-ii's to build:
+> **cap the buffer, drop the oldest lines, and report the dropped count to the
+> consumer.** The cap is set high enough that no ordinary program reaches it; the
+> oldest go first because a runaway loop's failure is in its last lines, not its
+> first; and the count is surfaced because a log with a hole in it and no marker
+> is a log that lies.
+
 *Exit:* can open a compute session against a real Viya, stream its log, reconnect,
 survive session death gracefully, and report stage-1 capabilities — all covered by
 mocked-HTTP unit tests.

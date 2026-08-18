@@ -94,14 +94,29 @@ produces the same signal from a running job.
 
 The heuristic decides only *when to ask*. It never decides the answer: the state
 resource is the sole authority on whether the job is done, and a fast empty page
-that turns out to belong to a still-running job simply costs one extra request.
-A timing heuristic given veto power over termination would be a stream that ends
-early on a fast network, which is not a trade this project makes.
+that turns out to belong to a still-running job simply costs one extra request
+for that window. On a deployment where *every* empty poll returns fast, that is
+one per empty window and so a sustained doubling of the request rate against a
+silent job — the cost of being wrong, and the only cost, because the state rather
+than the clock decides whether the stream ends. A timing heuristic given veto
+power over termination would be a stream that ends early on a fast network, which
+is not a trade this project makes.
 
 Termination is therefore: poll until the state is terminal, then drain by
 following `next` until the relation is absent. The drain must key on the link's
 absence and never on a short page — the final page of a 21-line log read at
 `limit=3` was *full* and still carried no `next` (finding 51).
+
+**Both of those loops carry a bound, and for the same reason** (added by 2c-ii).
+Each exits on a behaviour measured once, on one deployment: that a terminal job
+short-circuits its poll (finding 50), and that the `next` relation eventually
+stops arriving (finding 51). A deployment that differs would give a stream that
+never settles, which is the worst failure available to a module built this way.
+So the state is read at least every sixth *empty* window whatever the timing
+says, and the drain stops after ten thousand pages and reports a malformed
+response rather than presenting a truncated log as a whole one. A page carrying
+items resets the first counter, because output arriving is better evidence that
+the job is alive than the state resource could give.
 
 ### 2. `job.ts` creates jobs from opaque statements
 
@@ -200,10 +215,38 @@ touching the checker. What the constraint actually blocks is narrower and wider
 at once: four relations, `cancel` and `delete` on each of a session and a job,
 where a job's carry `type: null` (finding 46) and a *session's* **omit the key**
 entirely. Both fail the same `typeof` test, so the relaxation has to accept
-absent or null rather than merely null. It ships with `cancelJob` in 2c-ii, which
-is the first thing to call one of them — an endpoint the code calls that the
-contract omits is what the checker's other direction exists to catch, and until
-then nothing calls them.
+absent or null rather than merely null. It shipped with `cancelJob` in 2c-ii,
+which is the first thing to call one of them.
+
+The header those three endpoints send needed the same treatment, which 2c-ii's
+adversarial review found only after the relaxation above had shipped in the same
+diff. A `PUT` or `DELETE` link carrying no `responseType` produces a request with
+**no `Accept` header at all** — `acceptFor` in `src/compute/client.ts` falls back
+to the link's `type` only on a `GET` — and the contract had claimed `text/plain`
+for all three, which no request has ever sent. `accept` is now media-type-or-null
+on the same two-part shape, for the same reason: the key stays required, so that
+a forgotten value and a genuinely absent one remain different mistakes.
+
+**Correcting a claim this ADR made about the checker.** An earlier version of the
+paragraph above said that an endpoint the code calls but the contract omits "is
+what the checker's other direction exists to catch". It is not, and the same
+sentence reached `RUNBOOK.md`. `scripts/check-contracts.mjs` checks three
+bidirectional pairs — contract↔dialect, contract↔fixture directory, and
+contract↔code in the narrow sense that `dialect:` must name a factory exported
+under `src/dialects/` — and **nothing in it reads `src/compute/` or looks at a
+request at all**. So a call the inventory does not describe passes the gate
+silently. What actually closes that gap is a person adding the endpoint in the
+same pull request as the call, which is why `compute_session_attach` carries a
+comment saying it was declared late and why 2c-ii declared `session_cancel` and
+`session_delete` alongside the `job_cancel` it needed. Treat the checker as
+keeping the *contract* internally honest, not as an inventory audit.
+
+**And the fourth relation is deliberately not declared.** 2c-ii added three of
+the four, not four: the job's `delete` has no caller and is not going to get one.
+Reading a `404` from a job resource as "the session is gone" (finding 53) is
+sound only while nothing here can have deleted the job, so the absence of a
+`deleteJob` is load-bearing, and declaring the endpoint would put a dependency in
+the inventory that the code has decided not to have.
 
 **The two upstream recursions are replaced rather than ported**, as the plan
 already said, and 2c-pre narrows why for one of them. `rest/job.ts::getState`
@@ -231,6 +274,17 @@ with a **`cancelled` failure, not with an outcome** — a cancelled run has no
 outcome to report, and the seam already says so; 2c must not quietly widen that.
 A handle whose `done` never settles is the no-stall defect wearing a different
 hat, and 3d-i's Cancel command rides directly on this.
+
+2c-ii carries it one layer down as a **success** value — `outcome: "cancelled"`
+on a settled `ComputeResult` — because `cancelled` is a `BackendProblem` and
+deliberately not a `ComputeProblem`, so the compute layer has no vocabulary for
+it as a failure. 3a is where it becomes ADR-0015's `cancelled` failure, and 3a is
+also the layer that knows the user asked for it. Two details settled with it:
+cancelling stops sending anything from the moment the job's state comes back
+terminal rather than from the settling of `done`, since the drain runs between
+those two and the job is over throughout it; and the request that stops the job
+carries no cancellation signal, because the only one in scope is the one just
+aborted.
 
 **An unrecognised line `type` is passed through, never dropped.** Four values
 have been observed and the set is explicitly open (finding 52). 3b's filter is

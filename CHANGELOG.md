@@ -623,6 +623,126 @@ called out under **Changed** with a migration note.
   including the one assertion a test makes on a reconstructed part, and why that
   assertion is about the parser rather than about the service.
 
+- `src/compute/logStream.ts` — a job's log as a stream that runs while you read
+  it. `streamJobLog` returns three things: an `AsyncIterable` of log events, a
+  promise that settles when the job reaches a terminal state, and a `cancel`.
+  The loop behind them starts on the call and keeps running whether or not
+  anything ever iterates, which is the point — an `async function*` does not
+  execute until it is iterated, so a caller that awaited the completion promise
+  while ignoring the output would have waited forever for a job that finished on
+  the server minutes earlier. Buffering what the reader has not taken yet is the
+  price of keeping the two halves independent, and it is a price with a cap on
+  it.
+
+  The loop has no timer in it. The log endpoint's own `timeout` parameter is the
+  clock: a page that returned lines advances the cursor and asks again
+  immediately, and an empty page is the only place a decision is made. Two
+  measured numbers make that decision — a live but silent job blocks for the
+  whole window, while a job that has finished answers the same request in a
+  quarter of a second — so an empty page that came back in under half the window
+  is treated as a reason to go and read the job's state. It is only a reason to
+  ask. The state resource remains the sole authority on whether the job is
+  finished, and being wrong about the timing costs one extra request. Because
+  that timing is one observation on one deployment, the state is also read after
+  six empty windows regardless, so a deployment that behaves differently gets a
+  slower stream rather than one that never ends.
+
+  Draining after the job ends reads once more from the live cursor before
+  following the collection's `next` links, because output can land between the
+  last empty poll and the state read, and the line that would be lost is the
+  last one. The `next` links are then followed until the relation is absent
+  rather than until a page comes back short: a 21-line log read three at a time
+  gave a full final page with no `next` on it, so stopping on a short page would
+  stop early on precisely the log that filled its last one. That the relation
+  eventually goes away is one observation of one log, so the drain also stops
+  after ten thousand pages — twenty times what the buffer will hold — and reports
+  a malformed response rather than presenting a truncated log as a whole one. The
+  loop that never ends is the worst failure available to a module like this, and
+  both of its loops now have a bound that does not depend on the deployment.
+
+  The buffer is capped on lines **and** on characters, whichever is reached
+  first, because a hundred thousand short lines and one enormous line are the
+  same hazard and a single cap catches only one of them. When the cap is hit the
+  oldest output is dropped, and the loss is reported twice: as a marker in the
+  stream, sitting where the hole is so a reader can see which output went
+  missing, and as a total on the completion promise so a caller that never
+  iterates still learns the log is incomplete. Either report on its own leaves
+  one of the two kinds of caller unable to tell a truncated log from a short one.
+
+- Cancelling a job. `cancelJob` follows the job's `cancel` relation with its
+  query string intact, sends no validator and reads nothing back, in the same
+  one-request shape as everything else in `src/compute/`. What it promises is
+  that the request was accepted — whether a long-running Python step stops
+  promptly or runs to the end of the step first has not been measured, and is
+  recorded as unmeasured rather than assumed.
+
+  Cancelling a stream aborts the poll first and sends the request second, so the
+  completion promise settles for the person who pressed the button rather than
+  at the end of a ten-second window. The request itself goes out carrying **no
+  cancellation signal at all**: sending it on the one just aborted would abort
+  the very request meant to stop the job, leaving the program to run to
+  completion unattended — the session's inactivity timeout is no help there,
+  because a session running a job is not inactive and its clock only starts once
+  the program has finished. Nothing here has a reason to abort the request that
+  stops a job, so there is no replacement signal either. Cancelling a stream
+  whose job has already finished sends nothing and succeeds, because the
+  alternative is a request to a job whose session has since been reaped, which
+  answers `404` — reporting a failure to someone for cancelling a run that was
+  already over. "Already finished" starts at the job's terminal state and not at
+  the settling of the completion promise, since the drain runs between the two
+  and cancelling there would also abandon the tail of a log that is complete on
+  the server, with nothing left to count and so no marker to leave.
+
+  The completion promise reports every failure it is *able* to describe as a
+  settled result rather than a rejection, so awaiting it never needs a `try`. Two
+  things outside that are caller defects rather than conditions — a supplied
+  clock that throws, and an HTTP client that rejects instead of returning a
+  failure — and while neither is caught, the rejection is always handled, so a
+  caller exercising its right to ignore the promise entirely cannot be killed by
+  an unhandled rejection for a mistake it did not make.
+
+  There is deliberately no way to delete a job. A `404` from a job resource is
+  read as "the session is gone", and that reading is only sound while nothing in
+  this extension can have deleted the job itself; the missing function is part
+  of the reasoning rather than an omission, and says so where it would have been.
+
+- Three more endpoints in `contracts/viya4.yaml` — a session's `cancel` and
+  `delete`, and a job's `cancel` — which required relaxing the contract checker
+  first. A relation that involves no representation has no media type, and the
+  deployment says so two different ways: a session's links omit `type` entirely
+  while a job's carries it as `null`. The checker demanded a string and so could
+  not express either. It now accepts a media type or `null`, while still
+  requiring the key to be *written*, since a forgotten media type and a
+  genuinely absent one are otherwise the same absence and only one of them is
+  correct.
+
+  The same three endpoints needed the same treatment for the `Accept` header they
+  send, and getting there removed three values that had been invented rather than
+  observed. A `PUT` or `DELETE` link that carries no `responseType` produces a
+  request with no `Accept` header at all, because the client falls back to the
+  link's `type` only on a `GET`. The inventory had claimed `text/plain` for all
+  three. It now says `null`, on the same media-type-or-null shape, in a file
+  whose whole purpose is to record what this extension actually depends on.
+
+- The claim that the contract checker catches an endpoint the code calls but the
+  inventory omits was **wrong**, and it had reached both an architecture decision
+  record and the runbook. Nothing in the checker reads the client code or looks
+  at a request; it checks the contract against the dialect layer, against the
+  fixture directories, and against the existence of the dialect factory it names.
+  A call the inventory does not describe passes in silence — which is how a
+  composed URL went undeclared for four slices. Both copies of the sentence are
+  struck through and corrected in place rather than deleted, because what the
+  gate does *not* check is the part worth remembering.
+
+- The coverage ratchet rises to 92 / 92 / 91 / 95 (lines, statements, functions,
+  branches) from a measured 92.23 / 92.23 / 91.41 / 95.31 over 852 tests. The
+  branch floor is unchanged only because it was already at the rounded-down
+  figure. A slice this size normally pulls the aggregate *down* — a thousand new
+  lines land in the denominator at once — and this one moved it up because the
+  new module is fully covered but for two `if (… === undefined) break` guards
+  after a `shift()` on a queue already proved non-empty, which no test can reach
+  and which exist because `Array.prototype.shift` types as `T | undefined`.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

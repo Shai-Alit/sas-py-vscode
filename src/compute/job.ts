@@ -111,6 +111,21 @@ export const JOB_STATE_REL = "state";
 export const LOG_REL = "log";
 
 /**
+ * The relation on a job that stops it. `PUT`, and it carries its own query.
+ *
+ * The deployment sends it fully formed as `PUT …/state?value=canceled` with
+ * `type: null` (finding 46), so this is a link to follow rather than a request to
+ * build — the same shape as a session's `cancel` (finding 21) and for the same
+ * reason. It is also, on a job, one of only two relations with a query string
+ * already in the href, which is why anything appending to one of these has to
+ * test for a `?` rather than assume none.
+ *
+ * There is deliberately **no `delete` relation constant**, though the job sends
+ * one. See {@link cancelJob}.
+ */
+export const JOB_CANCEL_REL = "cancel";
+
+/**
  * The states a job does not come back from.
  *
  * Upstream's list, kept whole. Only `error` and `completed` have been seen on a
@@ -463,6 +478,46 @@ export async function followLogPage(
   options?: { signal?: AbortSignal | undefined },
 ): Promise<ComputeResult<LogPage>> {
   return await readPage(client, { link, signal: options?.signal });
+}
+
+/**
+ * Asks the deployment to stop the job.
+ *
+ * Follows the `cancel` link exactly as sent, query string included, and sends no
+ * `If-Match` — the same three decisions `cancelSession` documents, made for the
+ * same reasons. Upstream builds this call by hand with an ETag and answers the
+ * `412` that produces by recursing into itself without a bound, on the path that
+ * is by definition already going wrong; sending no validator means there is no
+ * `412` to recover from.
+ *
+ * **Whether the job stops promptly is unmeasured.** Whether a long-running Python
+ * step responds to job cancellation, or runs to the end of the step first, is a
+ * question the probes explicitly left open. So this reports whether the *request*
+ * was accepted and nothing more: a caller must not read a success here as the
+ * program having stopped, and `logStream.ts` does not — it settles its own stream
+ * on the user's intent rather than on this reply.
+ *
+ * **There is no `deleteJob`, and its absence is load-bearing.** The job carries a
+ * `delete` relation (finding 46) and nothing in this extension follows it. That
+ * is what lets a `404` from a job resource be read as the session having gone
+ * (finding 53): the reading is only sound while nothing here can have removed the
+ * job itself. Adding a delete would invalidate that reasoning everywhere
+ * {@link readJobState} and {@link readLogPage} depend on it, in exchange for
+ * tidying up a resource the session's own teardown already takes with it.
+ */
+export async function cancelJob(
+  client: ComputeClient,
+  job: ComputeJob,
+  options?: { signal?: AbortSignal | undefined },
+): Promise<ComputeResult<void>> {
+  const link = findLink(job.links, JOB_CANCEL_REL);
+  if (link === undefined) {
+    return linkMissing("compute job", job.id, JOB_CANCEL_REL);
+  }
+
+  const result = await client.send({ link, signal: options?.signal });
+  if (!result.ok) return asSessionGone(result);
+  return { ok: true, value: undefined };
 }
 
 /** The one request both log readers make, and the one reading of its reply. */

@@ -2902,10 +2902,17 @@ recursions and the inverted `isDone` that the port must not carry forward.
 to each be a string. A job's `cancel` and `delete` relations carry `type: null`,
 and a *session's* omit the key altogether — `typeof undefined` fails the same
 check — so either `type` becomes optional-or-absent-or-null on a `via` or none of
-those endpoints can be declared. An undeclared endpoint the code calls is exactly
-what the checker's other direction exists to catch. Found by sweeping for the
-superseded value rather than by hitting it during 2c, which is the point of
-sweeping.
+those endpoints can be declared. Found by sweeping for the superseded value
+rather than by hitting it during 2c, which is the point of sweeping.
+
+~~An undeclared endpoint the code calls is exactly what the checker's other
+direction exists to catch.~~ **Wrong, corrected 2026-08-18 in 2c-ii.**
+`scripts/check-contracts.mjs` never reads `src/compute/` and never looks at a
+request: its three bidirectional pairs are contract↔dialect, contract↔fixtures,
+and contract↔code only in the sense that `dialect:` must name a factory exported
+under `src/dialects/`. A call the inventory does not describe passes the gate in
+silence. Keeping the two in step is a person's job, done in the pull request that
+adds the call — the same sentence was in ADR-0017 and is corrected there too.
 
 **Narrowed 2026-08-17, while writing 2c-i: it is 2c-*ii* that must fix it, and
 the fix is wider than the sentence above.** Seven endpoints — the whole
@@ -3023,10 +3030,17 @@ is no hand-run procedure for this slice — the first thing a person can see is
   own text returning to the user's own window, which is `problems.ts`'s stated
   reason for having no redaction pass. What would change that is a request body
   carrying something the user did not type, and nothing here sends one.
-- ☑ **Done 2026-08-17. Adversarial review, and the one defect it found.** No AI
-  reviewer runs on this repository's pull requests, so a subagent was pointed at
-  the finished diff with instructions to find what would embarrass the author in
-  public. It found a real bug and it was in the seam, not in the code: `LogPage`
+- ☑ **Done 2026-08-17. Adversarial review, and the one defect it found.**
+  ~~No AI reviewer runs on this repository's pull requests, so~~ **the stated
+  reason here was wrong, corrected 2026-08-18 in 2c-ii: Claude and Codex both
+  review every pull request on this repository and have since 1a.** The subagent
+  is not a substitute for them, it is a pass that happens *before* the pull
+  request exists, and the case for it is cost rather than absence — a defect
+  caught before the push costs one more local commit, while the same defect
+  caught by a reviewer re-triggers both reviewers and all twelve required CI
+  contexts. That is now the standing rule in `CLAUDE.md`. A subagent was pointed
+  at the finished diff with instructions to find what would embarrass the author
+  in public. It found a real bug and it was in the seam, not in the code: `LogPage`
   exposed only `lines`, so a caller advancing its cursor by `lines.length` would
   re-read a line after any dropped item, and on a page whose single item was
   dropped would not advance at all — a `start` the deployment answers instantly,
@@ -3045,6 +3059,215 @@ is no hand-run procedure for this slice — the first thing a person can see is
   explained away; the fixture README claimed no test asserted on a reconstructed
   part and then described one; and ADR-0017 still said the checker had to be
   relaxed before a job could be described, which 2c-i disproved by describing one.
+
+☑ **2c-ii punch list.** Complete 2026-08-18. Like 2c-i, nothing here is
+user-visible. The 2c-i entry
+above predicted that "the first thing a person can see is 2c-ii's stream", and
+that was optimistic: the pump has no command wired to it either. Nothing calls
+`streamJobLog` outside its own tests until 3a builds a backend on it, and the
+first thing a person can *see* is 3d-i's output channel. There is therefore no
+hand-run procedure for this slice, and saying so is more useful than inventing
+one that only proves a module imports.
+
+- ☑ **Done 2026-08-18. `src/compute/logStream.ts` — the pump.** One exported
+  function, `streamJobLog`, returning `{ events, done, cancel }`. `events` is an
+  `AsyncIterable<LogEvent>` fed by a loop that is **already running**, not an
+  `async function*` — ADR-0017 is explicit about why, and it is the one design
+  point in this slice that cannot be recovered later by refactoring. A generator
+  does not execute until something iterates it, so a caller that awaited `done`
+  while ignoring `outputs` would deadlock against a job that finished on the
+  server minutes earlier, and ADR-0015 requires the two halves of an
+  `ExecutionHandle` to be independent. The pump starts on the call, buffers what
+  the consumer has not taken yet, and settles `done` whether or not anyone ever
+  iterates.
+- ☑ **Done 2026-08-18. The loop is driven by the log's own long poll, and asks
+  the state only when the timing says to.** `timeout=` really long-polls
+  (finding 48), so the poll *is* the clock: a page that returned items advances
+  `start` by `advance` and goes straight round again. An empty page is where the
+  decision lives, and the two measurements that decide it are finding 48 — a
+  live-but-silent job blocked the full window, 10.27 s for `timeout=10` — and
+  finding 50, where a terminal job answered the same request in 0.26 s. An empty
+  page that came back in under **half** the window is therefore evidence the job
+  may have ended, and only then is the job state read. The heuristic decides
+  *when to ask*, never what the answer is: the state resource is the sole
+  authority on termination, and a fast empty page on a job that is merely idle
+  costs one extra `GET` and nothing else.
+- ☑ **Done 2026-08-18. `MAX_WINDOWS_WITHOUT_STATE_READ = 6`, because the timing
+  evidence is one measurement on one deployment.** Finding 50 is a single
+  observation. If some deployment lets an empty poll run its full window even
+  on a terminal job, the heuristic above never fires and the stream never ends —
+  a hang, which is the worst failure this module has available to it. So the
+  state is read at least every six empty windows regardless of timing, which
+  mirrors `MAX_WAIT_WINDOWS` in `session.ts` for the same reason it exists
+  there. Under the observed behaviour this counter never reaches its limit; it
+  is priced at one extra request per minute in the case where it does.
+- ☑ **Done 2026-08-18. The drain reads once from the cursor, then follows
+  `next` until the relation is absent.** Two mechanisms, deliberately, and each
+  answers a different question. The re-read from the live cursor catches
+  anything written between the last empty poll and the state read — a window
+  that is small but not zero, and the log line it would drop is the last one,
+  which is the one the user is looking at. Following `next` after that is the
+  only correct way to reach the end: finding 51 saw a 21-line log at `limit=3`
+  give a **full** final page with no `next` on it, so a drain that stopped on a
+  short page would stop early on exactly the log that filled its last page. This
+  is also what gives `followLogPage`, written in 2c-i with no caller, its
+  production caller.
+- ☑ **Done 2026-08-18. The buffer is capped on lines *and* characters, whichever
+  is hit first, and the loss is reported twice.** A run that prints a hundred
+  thousand short lines and a run that prints one enormous line are the same
+  hazard to the extension host, and a single cap catches only one of them. The
+  defaults are 100 000 lines and 16 000 000 characters. Characters are
+  `String.length` — UTF-16 code units, not `Buffer.byteLength` — chosen so the
+  module stays free of a Node global and remains loadable anywhere; the number is
+  budgeted at roughly two bytes each and is a ceiling on memory, not an exact
+  byte count. Oldest is dropped. The loss surfaces **in band**, as a
+  `{ kind: "dropped", lines, characters }` marker sitting at the hole so a reader
+  can see *where* output went missing, coalesced so that repeated overflows leave
+  one growing marker rather than a run of them; and **again** as a total on the
+  settled outcome, so a caller that only awaits `done` still learns the log is
+  incomplete. Settled with Sean 2026-08-17: either report alone leaves one of the
+  two callers blind.
+
+  The coalescing happens on the way **out**, which is not how this item first
+  described it. A marker already at the head is shifted off with everything else
+  and its tally carried into the marker written afterwards; there is no
+  "head is already a marker, so merge into it" branch, and there cannot usefully
+  be one, because shifting a marker changes neither bound and the trim loop
+  therefore keeps going until the head is a line or the queue is empty. The
+  branch existed until the adversarial review below asked which input reached it.
+- ☑ **Done 2026-08-18. Cancellation aborts first and sends second, with no
+  signal on the second.** `cancel()` aborts the pump's controller so `done`
+  settles promptly for the person who pressed the button, then sends the `PUT` —
+  and it sends it carrying **no signal at all**, because passing the controller
+  just aborted would abort the very request meant to stop the job. There is no
+  replacement controller either: nothing in the module has a reason to abort the
+  request that stops a job, so a "fresh signal" would be a parameter with no
+  caller. The cost of getting this wrong is not the 900-second reaper of finding
+  18, which measures an *inactivity* timeout and does not run while a job is
+  executing: the program would run to completion unattended, and only then would
+  the idle clock start. Cancelling a stream whose job is already over sends
+  nothing and succeeds: ADR-0015 requires it, and a `PUT` at a job whose session
+  the reaper has taken is a `404`, which would surface as a reported failure for
+  pressing Cancel on a finished run. "Already over" begins at the terminal state
+  rather than at the settling of `done` — see the review item below. Concurrent
+  calls share one in-flight promise rather than sending twice.
+- ☑ **Done 2026-08-18. Cancellation is a success value, not a problem.**
+  `cancelled` is a `BackendProblem` and deliberately not a `ComputeProblem`, so
+  this layer has no vocabulary for it as a failure and reports `outcome:
+  "cancelled"` on a successful result instead. 3a translates that into ADR-0015's
+  `cancelled` failure, which is the layer that knows the user asked for it. The
+  dropped-line total is carried on the cancelled outcome too — cancelling does
+  not make the missing output less missing.
+- ☑ **Done 2026-08-18. `cancelJob` in `src/compute/job.ts`, and the `delete`
+  relation left undeclared.** One more one-request call in the shape the module
+  established: follow the `cancel` link with its query string intact, send no
+  `If-Match`, read nothing back. Whether a long-running Python step actually
+  stops promptly is **unmeasured** and is written down as unmeasured in both the
+  code and the contract; what is claimed is that the request was accepted. There
+  is no `deleteJob` and there is not going to be one by accident: reading a `404`
+  from a job resource as `session-gone` (finding 53) is only sound while nothing
+  in this extension can have deleted the job, so the absence is load-bearing and
+  says so beside the function.
+- ☑ **Done 2026-08-18. `scripts/check-contracts.mjs` accepts a `via.type` that
+  is a media type *or* `null`, and still requires the key.** A session's `cancel`
+  and `delete` omit `type` on the wire; a job's carry it as `null` (findings 21
+  and 46). Both mean "this relation involves no representation", and the checker
+  previously refused to let either be written down. The key must still be
+  *present*, because a forgotten media type and a genuinely absent one are
+  otherwise the same absence, and the first is a bug. Three endpoints follow:
+  `session_cancel`, `session_delete` and `job_cancel`. That is the fix the 2c
+  section above predicted, arriving in the slice it predicted. The same three
+  endpoints needed the same treatment for `accept`, which the review below found.
+- ☑ **Done 2026-08-18. The false claim about the checker, swept from both places
+  it reached.** ADR-0017 and this file both said that an endpoint the code calls
+  and the contract omits "is what the checker's other direction exists to catch".
+  It is not. `scripts/check-contracts.mjs` checks contract↔dialect,
+  contract↔fixtures, and contract↔code only in the narrow sense that `dialect:`
+  must name a factory exported under `src/dialects/` — **nothing in it reads
+  `src/compute/` or looks at a request at all**. Both copies are struck through
+  and corrected rather than edited away, because the sentence was load-bearing:
+  it is why `compute_session_attach` sat undeclared from 2a-ii to 2c-i. Keeping
+  the inventory in step with the calls is a person's job, done in the pull
+  request that adds the call.
+- ☑ **Done 2026-08-18. Adversarial review, and the nine changes it produced.**
+  The standing rule from 2c-i, applied to the finished diff: a subagent was
+  pointed at it with instructions to find what would embarrass the author in
+  public. Twelve findings, each verified by hand before anything moved — the
+  2c-i entry above records that four of six were wrong on inspection last time,
+  so verification is the load-bearing half of the exercise. All twelve stood.
+  Three of them are the corrections written into the items above; the rest are
+  here.
+
+  **`MAX_DRAIN_PAGES = 10 000`, for the same reason
+  `MAX_WINDOWS_WITHOUT_STATE_READ` exists.** The drain's only exit was the
+  deployment ceasing to send a `next` relation, which is finding 51: one
+  observation, of one 21-line log, on one deployment. A `next` pointing at
+  itself, or kept alive by a rewriting proxy, is an unbounded request storm
+  behind a `done` that never settles — precisely the failure the counter thirty
+  lines above exists to make impossible in the *other* loop. Leaving one loop
+  bounded and its neighbour unbounded was holding the same evidence to two
+  standards. Ten thousand pages is two million lines at the default page size,
+  twenty times what the buffer will hold, and reaching it is reported as
+  `response-malformed` rather than passed off as a finished log: a drain that
+  stopped early and said nothing is the hole-with-no-marker this module refuses
+  to produce anywhere else. Three weaker options were rejected on the way — a
+  bound derived from the buffer cap (dishonest, since the drain keeps the
+  *later* lines), a cycle detector alone (blind to an advancing but endless
+  chain), and silent truncation (a lie by the module's own standard).
+
+  **`accept: text/plain` on three endpoints was fabricated.** `session_cancel`,
+  `session_delete` and `job_cancel` are a `PUT` and two verbs whose links carry
+  no `responseType`, and `acceptFor` in `src/compute/client.ts` falls back to
+  `type` **only on a `GET`** — so all three requests go out with no `Accept`
+  header at all. Three headers in the file that calls itself "the record of what
+  we depend on" that no request has ever sent. `accept` is now media-type-or-null
+  on exactly the two-part shape `via.type` uses — the key is still required,
+  because a forgotten value and an absent one are otherwise the same absence —
+  and all three say `null`.
+
+  **A cancel arriving during the drain used to send a `PUT`.** `settled` is set
+  in `pump().finally()`, so it covers only the interval after the promise
+  resolves, and the drain sits between the terminal state and that. Cancelling
+  there sent a pointless `PUT` — a `404` against a reaped session, which
+  `cancelJob` reads as `session-gone` and would report as a failure of the one
+  operation ADR-0015 requires to succeed — *and* abandoned the tail of a log
+  that was already complete on the server, with nothing to count and so no
+  marker to leave. A separate `finished` flag, set the moment the state comes
+  back terminal, is what `cancel()` reads. The outcome stays `terminal`: the run
+  really did finish.
+
+  **`done` could reject, and ADR-0015 lets a caller ignore it.** `pump` has no
+  `try`, so a caller-supplied `now` that throws — or a client that rejects
+  instead of returning a failure — becomes an unhandled rejection, which under
+  Node's default policy takes the extension host down for a mistake the user did
+  not make. A `void done.catch(() => undefined)` attaches a handler to a second
+  reference, leaving `done` itself rejecting for whoever does await it.
+
+  The rest were prose, all of it in this file, in `CHANGELOG.md` or in the
+  module's own doc-comments, and all of it fixed in the same change: the "fresh
+  signal" that no code created, finding 18 cited three times for a timeout it
+  does not measure, 0.26 s of a 10 s window called five per cent when it is
+  under three, "the state is read at least this often" said of a counter that
+  only ever spans *empty* windows, and "one extra state request" for what is one
+  per empty window and therefore a sustained doubling on a deployment where
+  every empty poll returns fast.
+- ☑ **Ratchet raised, 2026-08-18.** `logStream.ts` imports no `vscode`, so it
+  landed in the coverage denominator with no `.c8rc.json` exclude and the
+  aggregate moved. Measured over 852 passing tests: **92.23 statements, 95.31
+  branches, 91.41 functions, 92.23 lines**, so the floors go to **92 / 95 / 91 /
+  92** — statements and lines up one, functions up one, branches unchanged
+  because 95.31 still rounds down to the 95 already in place. The rule is
+  unchanged: a slice adding source raises each floor to `floor(measured)`, and
+  the floor is never lowered to accommodate a slice.
+
+  The module itself scores 100 % of statements, functions and lines with 97.93 %
+  of branches, the two uncovered branches (lines 677 and 716) being the
+  `if (… === undefined) break;` guards after a `queue.shift()` that a
+  `while (this.queue.length > 0)` has already proved non-empty — unreachable by
+  construction, and kept because `shift()` types as `T | undefined`. That is
+  why the aggregate moved *up* rather than being dragged down by a thousand new
+  lines: a fully covered module raises the total, which is the shape the ratchet
+  is meant to reward.
 
 ```bash
 # ⛔ BARRIER

@@ -352,6 +352,25 @@ PRODUCTION_PLAN.md §4.1. The short version: VitePress fails its own build on
 dead internal links, so the link gate rides along with a build we already run,
 and external rot is somebody else's outage rather than a reason to redden a PR.
 
+☑ **The sweep's one false positive fixed 2026-08-18: the Visual Studio
+Marketplace answers `404` to `HEAD` and `200` to `GET`.** Noticed because
+`scripts/check-links.mjs` reported the `SAS.sas-lsp` listing that
+`docs/connection-profiles.md` links to as broken; the page is live, and fetching
+it with `GET` returned `200` with the extension at v1.20.0. `probe()` retried
+with `GET` on `403`, `405`, `429` and `501` — the statuses a server plausibly
+returns because it dislikes the method — and `404` was missing from that list
+because a `404` normally means what it says. It is now included. A genuinely
+missing page is still reported `404`, because the fallback returns the *second*
+answer; the cost is one extra request per dead link.
+
+No unit test accompanies it: `probe` and `classify` are module-private, and the
+script exports only `isSelfLink`, `selfLinkTarget` and `extractLinks`. Exporting
+a function so a test can reach it would be the tail wagging the dog for a
+one-line status list, and the sweep is not a PR gate — `link-check.yml` runs it
+weekly and opens an issue, so the observable failure of this defect was a
+spurious issue once a week, not a red pull request. `npm run verify` does not
+run it at all; only `docs:links:self` rides along there.
+
 ☑ **0d-ii split into 0d-ii-a and 0d-ii-b, 2026-08-12.** Same reasoning that split
 0d-i: the supply-chain half is a policy decision backed by an experiment, the
 scanning half is largely workflow wiring, and a reviewer should not have to hold
@@ -388,6 +407,18 @@ whether `vitepress` could move and never asked whether `vite` could.** A
 transitive advisory has two escape routes; check both before writing `no fix`.
 The override is outside vitepress's declared range, so `npm run docs:build` is
 the evidence it works — see [ADR-0005](docs/adr/0005-supply-chain-policy.md).
+
+☑ **The push banner's "1 high, 1 moderate" reconciled 2026-08-18 — it is the
+allow-list, seen through a different instrument.** GitHub had been reporting two
+alerts on `main` since the vite override landed, and nobody had matched them up.
+They are `GHSA-5C6J-R48X-RMVQ` (high) and `GHSA-QJ8W-GFJ5-8C6V` (moderate), both
+against `serialize-javascript`, both already allow-listed and in date until
+2026-11-12. The count differs from `npm audit`'s three because Dependabot does not
+surface the `low` `diff` advisory in the banner, not because the trees disagree.
+Re-measured the escape route at the same time: `mocha` is still `11.8.0` latest
+with `12.0.0-rc.6` on `next`, so the fix that does not exist in the entry still
+does not exist. Nothing to change; the value of the exercise was turning an
+unexplained banner into a known one.
 
 ☑ **Settled 2026-08-12: the gate is hard on production, allow-listed on dev.**
 `npm audit --omit=dev` fails at any severity — vacuous today, because the

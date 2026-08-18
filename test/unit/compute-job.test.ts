@@ -10,6 +10,7 @@ import {
   type ComputeResult,
 } from "../../src/compute/client";
 import {
+  cancelJob,
   type ComputeJob,
   createJob,
   DEFAULT_LOG_LIMIT,
@@ -251,9 +252,11 @@ describe("createJob", () => {
     // Finding 46, and the reason `Link.type` has a `null` arm at all. A session's
     // equivalents *omit* the key; a job's send it as null, and a reader that
     // treats one as valid and the other as a shape change is wrong about one of
-    // them. It also has a consequence outside the code: `via.type` in
-    // `contracts/viya4.yaml` cannot describe either until slice 2c-ii relaxes
-    // the contract checker.
+    // them. It also had a consequence outside the code: `via.type` in
+    // `contracts/viya4.yaml` could not describe either relation until slice
+    // 2c-ii taught the contract checker to accept a `type` that is a media type
+    // or null — where the session's *absent* key and the job's explicit null are
+    // both written `type: null`.
     const cancel = result.value.links.find((link) => link.rel === "cancel");
     const remove = result.value.links.find((link) => link.rel === "delete");
     assert.equal(cancel?.type, null);
@@ -769,5 +772,66 @@ describe("followLogPage", () => {
     // No second timeout on a drain: a terminal job answers immediately whatever
     // the query says (finding 50), so the client's ordinary bound is the right one.
     assert.equal(request.timeoutMs, undefined);
+  });
+});
+
+describe("cancelJob", () => {
+  /** The `cancel` relation as finding 46 sends it: query attached, type null. */
+  const cancel: Link = {
+    rel: "cancel",
+    method: "PUT",
+    href: `${JOB_PATH}/state?value=canceled`,
+    type: null,
+  };
+
+  it("follows the link with its query intact and sends no validator", async () => {
+    const scripted = fake([plain("")]);
+    const controller = new AbortController();
+
+    const result = await cancelJob(
+      scripted.client,
+      job([...jobLinks(), cancel]),
+      { signal: controller.signal },
+    );
+
+    assert.ok(result.ok, "an accepted cancel was reported as a failure");
+    const request = only(scripted.requests);
+    // The deployment composed `?value=canceled`; nothing here rebuilds it, and
+    // nothing appends to it — which is the trap, since this is one of only two
+    // job hrefs that arrive with a query already on them.
+    assert.equal(request.link.href, `${JOB_PATH}/state?value=canceled`);
+    assert.equal(request.link.method, "PUT");
+    // No `If-Match`, so there is no `412` to recover from. Upstream sends the
+    // ETag it happens to hold and answers the `412` by recursing into itself
+    // without a bound, on the path that is by definition already going wrong.
+    assert.equal(request.etag, undefined);
+    // A `PUT` whose entire payload is in the query carries no representation.
+    assert.equal(request.body, undefined);
+    assert.equal(request.signal, controller.signal);
+  });
+
+  it("reads a 404 as the session having gone", async () => {
+    // Finding 53: a `404` on a job resource cannot be told apart from a `404`
+    // on a dead session by status alone, and the reading is only sound because
+    // nothing in this extension deletes a job.
+    const scripted = fake([rejected(404)]);
+
+    const result = await cancelJob(
+      scripted.client,
+      job([...jobLinks(), cancel]),
+    );
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "session-gone");
+  });
+
+  it("says which relation was missing rather than which job", async () => {
+    const scripted = fake([]);
+
+    const result = await cancelJob(scripted.client, job());
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "link-missing");
+    assert.equal(scripted.requests.length, 0);
   });
 });

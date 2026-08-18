@@ -42,15 +42,29 @@ endpoints:
   # followed from, which is why each `via.from` points at the endpoint whose
   # response carried the link.
   #
-  # Four relations are **not** here yet, and their absence is a limitation of
-  # this file rather than of the code: `scripts/check-contracts.mjs` requires
-  # `via.type` to be a string, and a session's `cancel` and `delete` omit `type`
-  # entirely while a job's carry `type: null` (finding 46). Two of the four are
-  # followed today, by `cancelSession` and `deleteSession`; the job's two have no
-  # caller until slice 2c-ii writes `cancelJob`. It is 2c-ii that relaxes the
-  # checker and adds all four in the same change — relaxing a check before
-  # anything needs it loosens the gate for nothing, and the relaxation has to
-  # accept **absent or null**, not merely null.
+  # Three relations that involve no representation are declared below with
+  # `type: null` **and** `accept: null` — `session_cancel`, `session_delete` and
+  # `job_cancel`. Until slice 2c-ii they could not be written at all:
+  # `scripts/check-contracts.mjs` required both to be strings, and a session's
+  # `cancel` and `delete` omit `type` entirely while a job's carry `type: null`
+  # (finding 46). The checker now accepts either field as a media type **or**
+  # null, while still requiring the key to be written — see the notes beside
+  # those two checks for why the key and its value are different questions.
+  #
+  # `accept: null` is a claim about what the *client* sends, not about the link:
+  # `acceptFor` in `src/compute/client.ts` uses a link's `responseType` and falls
+  # back to `type` only on a `GET`, so a `PUT` or `DELETE` link carrying neither
+  # produces a request with no `Accept` header. Writing a media type there would
+  # have put three headers in the inventory that no request has ever carried.
+  #
+  # The job's fourth such relation, `delete`, is **deliberately not declared**,
+  # which is a change from the plan this comment used to carry. Nothing in this
+  # extension follows it, and that is load-bearing rather than incidental:
+  # reading a `404` from a job resource as "the session is gone" (finding 53) is
+  # only sound while nothing here can have deleted the job. `src/compute/job.ts`
+  # says so beside `cancelJob`. Declaring an endpoint we have decided not to have
+  # would put a footprint in the inventory that the code does not depend on, and
+  # this file is the record of what we depend on.
   - id: compute_contexts
     method: GET
     path: /compute/contexts
@@ -112,6 +126,44 @@ endpoints:
     # no validator the `wait` is inert.
     accept: text/plain
 
+  - id: session_cancel
+    method: PUT
+    via:
+      from: compute_session_create
+      relation: cancel
+      # Omitted on the wire for a session, `null` for a job (findings 21 and 46).
+      # Both mean the same thing and are written the same way here: a `PUT` whose
+      # entire payload is `?value=canceled` in the href sends no representation.
+      type: null
+    # The href arrives with its query string already on it, which makes this a
+    # link to follow rather than a request to build — and makes it the reason
+    # anything appending a parameter to a Viya href has to test for an existing
+    # `?`. No `If-Match`: sending no validator is what removes the `412` that
+    # upstream answers by recursing into itself without a bound.
+    observed_href: /compute/sessions/{sessionId}/state?value=canceled
+    # Nothing is read back, and nothing is *asked for*: the link carries no
+    # `responseType`, and `acceptFor` falls back to `type` only on a `GET`, so
+    # this request goes out with no `Accept` header at all. `null` says so. A
+    # `200` here means the request was accepted, not that whatever was running
+    # has stopped.
+    accept: null
+
+  - id: session_delete
+    method: DELETE
+    via:
+      from: compute_session_create
+      relation: delete
+      # Omitted on the wire, as on `session_cancel` above, and written here as an
+      # explicit claim for the reason given there.
+      type: null
+    observed_href: /compute/sessions/{sessionId}
+    # `204` with no `If-Match` (finding 18). A `404` is treated as success: this
+    # runs on teardown, usually underneath some other failure, and "the session
+    # you wanted gone is gone" is the outcome that was asked for.
+    #
+    # No `Accept` is sent — a `DELETE` link with no `responseType`.
+    accept: null
+
   - id: job_create
     method: POST
     via:
@@ -163,6 +215,26 @@ endpoints:
     # rather than switched on. `version` is the item's representation version and
     # is not read.
     item_fields: [line, type]
+
+  - id: job_cancel
+    method: PUT
+    via:
+      from: job_create
+      relation: cancel
+      # Explicitly `null` here, where the session's is absent (finding 46). The
+      # difference is the deployment's, not ours, and it is why the checker had
+      # to accept both before either could be written down.
+      type: null
+    observed_href: /compute/sessions/{sessionId}/jobs/{jobId}/state?value=canceled
+    # Same shape as `session_cancel` and the same four decisions: follow the href
+    # with its query intact, send no `If-Match`, send no `Accept`, read nothing
+    # back.
+    #
+    # **Whether the job actually stops promptly is unmeasured** — whether a
+    # long-running Python step responds to cancellation or runs to the end of the
+    # step first is an open probe question. So the contract for this endpoint is
+    # "the request was accepted" and nothing stronger.
+    accept: null
 
   # ── Capability probing ─────────────────────────────────────────────────────
   - id: deployment_data_root

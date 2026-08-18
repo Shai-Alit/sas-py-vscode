@@ -284,10 +284,26 @@ function checkOne({ name, contract, dialectIds, factories, fixtureDirs }) {
         `${at} has no "method". The link documents carry a null method (finding 44), so the verb has to come from here.`,
       );
     }
-    if (typeof endpoint.accept !== "string") {
+    // `accept` is the header the client actually sends, and on some endpoints it
+    // sends none. `acceptFor` in `src/compute/client.ts` uses the link's
+    // `responseType` when there is one and falls back to `type` **only on a
+    // GET** — because on a POST or PUT `type` describes the body going out — so a
+    // `PUT` or `DELETE` link carrying neither goes out with no `Accept` at all.
+    // A media type written here for one of those is a claim about the wire that
+    // the wire does not make.
+    //
+    // Same two-part shape as `via.type` below, for the same reason: `null` is the
+    // claim "nothing is sent", a missing key is silence, and only the claim
+    // passes.
+    if (!Object.hasOwn(endpoint, "accept")) {
       say(
-        `${at} has no "accept". Viya is media-type driven and the envelope changes with the header, so the header is part of the contract.`,
+        `${at} has no "accept". Viya is media-type driven and the envelope changes with the header, so the header is part of the contract — and where the client sends no \`Accept\` at all (a PUT or DELETE whose link carries no "responseType") write it as \`accept: null\` rather than leaving the line out.`,
       );
+    } else if (
+      endpoint.accept !== null &&
+      typeof endpoint.accept !== "string"
+    ) {
+      say(`${at} has an "accept" that is neither a media type nor null.`);
     }
 
     const hasPath = endpoint.path !== undefined;
@@ -319,10 +335,37 @@ function checkOne({ name, contract, dialectIds, factories, fixtureDirs }) {
         for (const key of unknownKeys(endpoint.via, VIA_KEYS)) {
           say(`${at} has an unknown "via" key "${key}".`);
         }
-        for (const key of ["from", "relation", "type"]) {
+        for (const key of ["from", "relation"]) {
           if (typeof endpoint.via[key] !== "string") {
             say(`${at} has a "via" with no "${key}".`);
           }
+        }
+        // `type` is the one `via` key that may legitimately have no value, and
+        // the two halves of this check are doing different jobs.
+        //
+        // Some relations involve no representation at all: a `DELETE`, or a
+        // `PUT` whose entire payload is in its query string. Viya says so in two
+        // different ways — a session's `cancel` and `delete` links **omit** the
+        // key, while a job's set it to **`null`** (findings 21 and 46) — so a
+        // checker demanding a string here cannot describe those endpoints, and
+        // for a while nothing noticed because no contract had needed to name one.
+        //
+        // But the key still has to be *written*, because an author who forgot a
+        // media type and an endpoint that genuinely has none are indistinguishable
+        // once the line is missing — and forgetting is by far the likelier of the
+        // two. `type: null` is a claim; no `type:` line is a silence. Only the
+        // claim passes.
+        if (!Object.hasOwn(endpoint.via, "type")) {
+          say(
+            `${at} has a "via" with no "type" key. Viya is media-type driven, so the type is part of the contract — and where a relation genuinely involves no representation (a DELETE, or a PUT carrying its payload in the query) write it as \`type: null\` rather than leaving the line out. An omitted key reads the same as an author who forgot one.`,
+          );
+        } else if (
+          endpoint.via.type !== null &&
+          typeof endpoint.via.type !== "string"
+        ) {
+          say(
+            `${at} has a "via" whose "type" is neither a media type nor null.`,
+          );
         }
         if (
           typeof endpoint.via.from === "string" &&

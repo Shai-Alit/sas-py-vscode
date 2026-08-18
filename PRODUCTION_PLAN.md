@@ -834,6 +834,37 @@ recursion in `rest/job.ts::getState`, and the 412 recursion in
 > first; and the count is surfaced because a log with a hole in it and no marker
 > is a log that lies.
 
+> **2c-ii built it, 2026-08-18, and settled the policy question in two places the
+> paragraph above left as one.** The cap is on **lines and characters, whichever
+> is reached first** — a hundred thousand short lines and one enormous line are
+> the same hazard to the extension host, and a line cap alone catches only the
+> first of them. Characters are counted as `String.length`, UTF-16 code units,
+> deliberately not `Buffer.byteLength`: the number is a memory ceiling budgeted
+> at about two bytes each, and paying for exactness would put a Node global into
+> a module that has no other reason to have one.
+>
+> The overflow is reported **twice, not once**. "Report the dropped count to the
+> consumer" assumed there was one consumer; ADR-0015 gives the handle two halves
+> and they fail differently. A caller reading the stream needs to know *where*
+> the hole is, so the loss arrives in band as a marker sitting at the hole; a
+> caller that only awaits completion never sees the stream at all, so the total
+> also rides on the settled outcome. Either report on its own leaves one of the
+> two blind to a truncated log.
+>
+> Two things in this section's file tree are now stale and are left as written,
+> since the tree is the *proposed* layout rather than a record: the code landed
+> under `src/compute/` rather than `src/connection/rest/`, and the log stream is
+> its own module, `src/compute/logStream.ts`, rather than part of `job.ts`.
+> Splitting it is what let 2c divide into a slice with no concurrency in it and a
+> slice that is nothing but concurrency, and the seam between them caught a
+> cursor-desync defect under review before anything leaned on it.
+>
+> One thing this section claimed about the tooling was wrong and is corrected in
+> `RUNBOOK.md` and ADR-0017: the contract checker does **not** catch an endpoint
+> the code calls but `contracts/*.yaml` omits. Nothing in it reads the client
+> code. Keeping §2.3's inventory honest is a person's job, done in the pull
+> request that adds the call.
+
 *Exit:* can open a compute session against a real Viya, stream its log, reconnect,
 survive session death gracefully, and report stage-1 capabilities — all covered by
 mocked-HTTP unit tests.

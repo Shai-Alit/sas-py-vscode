@@ -57,7 +57,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import yaml from "js-yaml";
+// js-yaml 5 is ESM with named exports and **no default export**, so a default
+// import fails at load time with "does not provide an export named 'default'".
+// The namespace form works on both 4.x and 5.x; do not "tidy" it back.
+import * as yaml from "js-yaml";
 import ts from "typescript";
 
 const CONTRACT_DIR = "contracts";

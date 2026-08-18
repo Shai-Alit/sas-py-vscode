@@ -276,6 +276,14 @@ async function probe(url) {
   // Plenty of servers do not implement HEAD and answer 403/405/501 to it while
   // serving GET perfectly well. HEAD first anyway: it is the cheap question,
   // and the fallback costs one extra request only on the servers that need it.
+  //
+  // **404 is in that list, which looks wrong and is not.** The Visual Studio
+  // Marketplace answers `404` to a HEAD of an extension page it serves `200` for
+  // on GET — measured 2026-08-18 against the SAS extension's item URL, the only
+  // marketplace link this repository carries. Taking a HEAD `404` as final
+  // reported a live page as broken. Retrying costs one request on genuinely
+  // missing pages and changes no verdict: a URL that is 404 on both methods is
+  // still reported 404, because it is the *second* answer that is returned.
   for (const method of ["HEAD", "GET"]) {
     let response;
     try {
@@ -288,7 +296,10 @@ async function probe(url) {
     } catch (error) {
       return { state: "error", detail: error.message };
     }
-    if (method === "HEAD" && [403, 405, 429, 501].includes(response.status)) {
+    if (
+      method === "HEAD" &&
+      [403, 404, 405, 429, 501].includes(response.status)
+    ) {
       continue;
     }
     return { state: "status", status: response.status };
@@ -300,8 +311,8 @@ async function classify(url) {
   let last = await probe(url);
 
   // A single retry, and only for the failures that are plausibly transient. A
-  // 404 is not going to change its mind, and retrying it just makes the sweep
-  // slower for no new information.
+  // 404 that already survived `probe`'s GET fallback is not going to change its
+  // mind, and retrying it just makes the sweep slower for no new information.
   const transient =
     last.state === "error" ||
     (last.state === "status" && (last.status === 429 || last.status >= 500));

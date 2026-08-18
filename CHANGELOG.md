@@ -908,6 +908,15 @@ called out under **Changed** with a migration note.
   tests inject at, which is why a green suite had nothing to say about a wrong
   deployment: every test could see which request was chosen and none could see
   what it turned into.
+- The weekly external link sweep no longer reports the Visual Studio Marketplace
+  as broken. `scripts/check-links.mjs` asks with `HEAD` first and falls back to
+  `GET` only for the statuses a server plausibly returns because it dislikes the
+  method; `404` was not among them. The Marketplace answers `404` to a `HEAD` of
+  an extension page it serves `200` for on `GET` — measured 2026-08-18 against
+  the SAS extension's own listing, which `docs/connection-profiles.md` links to.
+  `404` now joins that list. The verdict on a genuinely missing page does not
+  change, because it is the second answer that is returned: a URL that is `404`
+  to both methods is still reported `404`, at the cost of one extra request.
 
 ### Changed
 

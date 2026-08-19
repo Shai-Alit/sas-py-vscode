@@ -111,8 +111,16 @@ happy paths run once per generation so a dialect regression fails loudly.
 
 Live tests are gated three ways: the opt-in script, per-generation environment
 variables, and a separate `PYTHON_ON_VIYA_ALLOW_MUTATION` flag for anything that
-writes to a deployment. Mutating tests use per-run unique names and clean up in
-`finally`.
+writes to a deployment. Mutating tests carry a per-run unique value and clean up
+in `finally` — or in a Mocha `after` hook, which is the same promise made in the
+one place a failure partway through the test cannot skip it.
+
+The unique value does not have to be the object's name. `test/live/viya4-job.test.ts`
+creates a compute session whose name is a constant inside the module under test,
+because a test that passed a name of its own would no longer be exercising what
+the extension does; the uniqueness lives in the marker it writes to the log and
+reads back. Where a name is shared like that, say in the procedure how a run's
+own objects are told apart — ids, or a creation timestamp.
 
 ## Documentation
 

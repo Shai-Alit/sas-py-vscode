@@ -229,6 +229,205 @@ in a headless agent sandbox, so it was wired and type-checked blind; running it
 once here confirmed the two-halves runner, the discovery, the activation
 contract, and command registration all work against a real editor.
 
+☑ **P33 — `npm run test:live` run for the first time, 2026-08-19, against a live
+Viya 4 deployment.** §8 of the plan makes "the live tier passes against a real
+Viya 4" part of the definition of done, and until this date it had never been
+run at all — written in 0c, type-checked ever since, and unverified. Node
+24.18.0, npm 11.16.0, Windows. Four runs, each changing exactly one thing.
+
+1. **Unconfigured**, with no `PYTHON_ON_VIYA_*` variable in the shell —
+   confirmed by printing the matching variable names first, which came back
+   `(none)`. Result: `0 passing, 1 pending`, exit 0. Gate two skips rather than
+   fails, which is the property that keeps this tier from being switched off on
+   machines that cannot run it.
+2. **Configured**, URL and token exported from a credentials file outside the
+   repository and never echoed — only `url is https: true` and the token's
+   length. Result: `TypeError: fetch failed`, caused by `unable to verify the
+   first certificate`. That is the TLS handshake, not the request.
+3. **With `NODE_EXTRA_CA_CERTS`** pointing at a file carrying three
+   certificates. Result: the handshake completed and the request returned
+   **406**.
+4. **With the media type corrected.** Result: `1 passing`. Repeated against the
+   deployment's published CA file rather than the one that happened to be at
+   hand: `1 passing` again.
+
+**The 406 is the finding, and it is not about this deployment.** The test asked
+`/identities/users/@currentUser` for `application/vnd.sas.identity+json` — the
+media type finding 6 records as a 406, and the one `src/auth/identity.ts:71-75`
+names in as many words as the guess to avoid. The extension has been asking
+correctly since 1b-i; only the live test carried the refuted string, and it
+carried it for the entire life of the tier. Nothing in the other two tiers could
+have found it. The test now **imports** `CURRENT_USER_PATH` and
+`IDENTITY_SUMMARY_TYPE` from the module under test rather than restating either,
+which makes it the same claim instead of a copy of one — the rule to apply to
+every live test added from here. The job-creating one now exists and follows it:
+`test/live/viya4-job.test.ts` imports every path, relation, media type and bound
+it exercises from `src/compute/`, down to the Mocha timeout, which is computed
+from `MAX_WAIT_WINDOWS`, `DEFAULT_WAIT_SECONDS` and `WAIT_MARGIN_SECONDS` rather
+than written as a number — all three, because the wait's real ceiling is thirty
+twenty-five-second windows and a version of that line computed from the first two
+sat *below* the bound it was meant to sit above. See P40 below.
+
+**The certificate is a property of the tier, not of the deployment.** The live
+tier runs under bare `node`, which trusts its own bundled CA list; the extension
+never meets this because VS Code loads the OS certificate store into the
+extension host (`http.systemCertificates`, default on). So a developer whose
+editor talks to Viya perfectly well will still see the tier fail on TLS, which
+is a confusing first impression of a tier they have just been asked to trust.
+`docs/dev/testing.md` now says so, with both fixes — `NODE_EXTRA_CA_CERTS` and
+`node --use-system-ca` — and the warning that the file must hold the *issuing*
+authority, since "unable to verify the first certificate" means the deployment
+sent a leaf whose issuer Node cannot find.
+
+**The interval is the risk.** A live test written in one phase and first run
+three phases later is unverified for the whole gap, and reads as covered the
+entire time. Run this tier at the end of any slice that touches a request the
+extension makes, not at the end of the phase.
+
+☑ **P40 — the live tier's three gates, now that one test writes. Run
+2026-08-19 against deployment A, all six steps as expected.** P33 exercised
+gates one and two against a read-only suite; gate three had **no caller at all**
+until `test/live/viya4-job.test.ts` landed, so `PYTHON_ON_VIYA_ALLOW_MUTATION`
+was unit-tested and never reached. This is the run that proves the whole gate
+stack on the tier as it now stands, and it is one procedure rather than two
+because the job test had to exist before the mutation gate could be observed
+refusing anything.
+
+Results, in step order: `0 passing, 2 pending` and exit 0; a load-time refusal
+naming the URL variable; `1 passing, 1 pending` over a baseline of three live
+sessions; `2 passing`; `no-such-context` with a count of thirteen contexts and no
+names; and `before=3 after=3 new=0`. The duration of the job test was not
+captured and is still worth having before Phase 3 depends on it. Three things
+the run changed about the procedure itself are folded into it below — the
+certificate advice in the preamble, `env -u` in step 1, and the loss of the
+timestamp fallback in step 6 — and two defects it exposed are listed after it.
+
+Before any of it: the tier runs under bare `node`, so the deployment's TLS chain
+has to be trusted explicitly. **Prefer `NODE_OPTIONS=--use-system-ca`** —
+measured working here, and it keeps a per-machine pem path out of the procedure.
+`NODE_EXTRA_CA_CERTS` at the **issuing** authority is the fallback, and P33 above
+has the diagnosis; but do not sit waiting for its `unable to verify the first
+certificate` to appear, because that string is what the connectivity suite
+surfaces and the job suite prints problem codes rather than free text on purpose,
+so the same misconfiguration reaches you there as a bare `compute-unreachable`.
+Take the URL and token from `creds.json` and never echo the token; print its
+length if you want a check. Note that a connect **timeout** is not any of this:
+it is the VPN, and it cost a step-3 re-run on the day.
+
+1. **Nothing configured.** Run `npm run test:live` under `env -u` naming all six
+   variables — the four credentials `_VIYA4_URL`, `_VIYA4_TOKEN`, `_VIYA35_URL`
+   and `_VIYA35_TOKEN`, plus `_ALLOW_MUTATION` and `_VIYA4_CONTEXT`.
+
+   Expected: `0 passing, 2 pending`, exit 0. Two, not one: both suites skip. A
+   `1 pending` would mean mocha loaded only one of them, which points at the
+   `spec` glob in `.mocharc.live.json` and not at the compiler — `test:live` is
+   `compile:test && mocha`, so a file that failed to compile stops the run
+   before mocha is reached and produces no counts at all.
+
+   **`env -u` rather than "open a fresh terminal", which is what this step used
+   to say and which does not work.** On Windows these names can live in the user
+   environment, so every new shell inherits them; the first attempt on 2026-08-19
+   was run in a new terminal, connected to a real deployment, and was void.
+   Unsetting them in the command makes the step reproducible whatever the machine
+   holds. `_VIYA4_CONTEXT` is in the list because step 5 sets it to a deliberately
+   bad value and a leftover would quietly break a re-run of step 4; the mutation
+   flag is in it because `PYTHON_ON_VIYA_ALLOW_MUTATION` is prefixed precisely so
+   that some other project's bare `ALLOW_MUTATION` cannot open this one's write
+   gate. A step that assumes a clean shell is a step that passes by doing
+   nothing.
+
+2. **A plaintext URL.** Set `PYTHON_ON_VIYA_TEST_VIYA4_URL` to the deployment's
+   host with `http://` in front of it, set the token, and run again.
+
+   Expected: the run **fails** rather than skipping, with the gate's own message
+   naming the variable, and nothing leaves the machine. Refusing rather than
+   skipping is the point here: a token over plaintext is the one misconfiguration
+   that must not be quietly tolerated.
+
+3. **Configured, mutation withheld.** Put the URL back to `https://`, leave
+   `PYTHON_ON_VIYA_ALLOW_MUTATION` unset, and run.
+
+   Expected: `1 passing, 1 pending`. The connectivity test passes; the job suite
+   skips itself. This is also the pair of counts that separates "not configured"
+   from "configured but read-only" — step 1's `0 passing, 2 pending` is the
+   other one, and the job suite alone cannot tell you which situation you are in.
+
+   Then, with the `viya-api-probe` skill and `creds.json`, `GET
+   /compute/sessions` and **keep the result**. This is the baseline step 6
+   compares against, and it is only that: a listing taken here cannot show that
+   the withheld gate created nothing, for the same reason step 6 spells out — a
+   `python-on-viya` in it may be left from any earlier run. What shows the gate
+   held is the `1 pending` above, which is mocha reporting that the suite never
+   entered the test body at all.
+
+4. **Mutation allowed.** Export `PYTHON_ON_VIYA_ALLOW_MUTATION=1` and run.
+
+   Expected: `2 passing`. The job test resolves a context, starts a session,
+   submits one `%put` of a per-run marker, reads the marker back out of the log,
+   and deletes the session. Note roughly how long it takes: the session launch
+   dominates, and the number is worth having before Phase 3 depends on it.
+
+5. **The wrong context name, optional but cheap.** Keep everything from step 4
+   and add `PYTHON_ON_VIYA_TEST_VIYA4_CONTEXT` set to a name that does not exist.
+
+   Expected: a failure that says how many compute contexts the account can see
+   and points at the variable. A count and no names, on purpose — a context name
+   can carry a customer's or a team's name in it and this message ends up in
+   terminals and screenshots. If the count is `0` the problem is permissions, not
+   spelling.
+
+6. **Nothing left running.** `GET /compute/sessions` again and compare against
+   the listing kept at step 3.
+
+   Expected: no session present now that was not present then. **Compare ids, and
+   only ids.** The name is `SESSION_NAME`, a constant in `src/compute/session.ts`,
+   so every session this extension has ever started on this deployment carries
+   it — a `python-on-viya` in the list may be one a previous run or a previous
+   day left behind, and "none from this run" is not a thing the name can tell
+   you. The baseline is what makes the question answerable, and on 2026-08-19 it
+   gave `before=3 after=3 new=0`.
+
+   An earlier draft of this step offered `creationTimeStamp` as a second
+   discriminator. **There is no second discriminator**: the same run measured the
+   session collection item as carrying `id`, `links`, `owner`, `version`, and
+   `name` only where the session has one — no timestamp, no `state`, no
+   `attributes`. Finding 56 in `PROBE-FINDINGS.md` records it. Keep the baseline
+   file.
+
+   This step is the whole point of the procedure's tail. The suite deletes its
+   session in an `after` hook that runs even when the test itself failed, but a
+   cleanup failure is warned about rather than asserted — so a green run is *not*
+   evidence, and a hook that silently stopped working would leave a SAS process
+   alive on a real deployment with nothing anywhere to say so. If the warning did
+   appear, it names the session's constant name and the failure's problem code
+   and deliberately not its id; the id is in the listing you just took.
+
+☐ **Gate two skips a half-configured tier instead of refusing it.** Found by
+accident during P40 on 2026-08-19, when a mangled paste set
+`PYTHON_ON_VIYA_TEST_VIYA4_TOKEN` and left `PYTHON_ON_VIYA_TEST_VIYA4_URL`
+unset: the run reported `0 passing, 2 pending` and exited 0, which is
+indistinguishable from a machine where the tier was never set up.
+
+That is the failure gate two exists to prevent, and it is arguably worse than
+the plaintext case it *does* refuse, because plaintext at least shouts. A typo
+in one of the two variable names silently disables the tier, and the operator's
+evidence that it ran is a pending count that looks exactly like success. The
+fix is in `test/helpers/live-gate.ts` and is the same shape as the `https://`
+check: one of the pair present and the other absent is a **throw**, not an
+`undefined`. Wants a unit test alongside the ones the gate already has, so it
+is a source change and not a docs one — deliberately left out of the phase-2
+review PR rather than smuggled into it.
+
+☐ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** The extension's
+transport is `https.request`, chosen over `fetch` for system certificate trust
+(see the transport ADR), so the older of the two live suites exercises a
+transport `src/` never uses. Its failures are undici's — a
+`ConnectTimeoutError` on undici's ten-second default is what a dropped VPN
+produced on 2026-08-19 — and they say nothing about what the extension would
+have done. `viya4-job.test.ts` does not share the problem: it goes through
+`createComputeClient`. Port the connectivity check onto the real client in 3a,
+or delete it in favour of the job suite, which subsumes it.
+
 ☑ **Running the integration tier breaks `npm run lint` — fixed 2026-08-12.**
 `.vscode-test/` is git-ignored, ESLint flat config does not read `.gitignore`,
 and linting a gigabyte of downloaded VS Code exhausts the V8 heap. Found by
@@ -491,6 +690,14 @@ installed explicitly, and the Node floor and the six-leg matrix are left alone.
 > that loud, but it would also fail every Node 20 leg, which is why the floor
 > question had to be answered first.
 
+> **Amended 2026-08-18.** The floor is 22.18.0 now and the matrix legs are
+> 22.18.0 and 24 — see ADR-0018. The reasoning above is unchanged: 22.18.0 is
+> still below npm 12's `^22.22.2`, so the pinned job is still the only place the
+> control can run. `engine-strict` with an `engines.npm` floor would still fail,
+> and now on *every* leg rather than only the Node 20 ones — the Node 22 legs
+> get npm 10.x, the Node 24 legs npm 11.x, and neither is 12. The distance to
+> the revisit trigger is what shrank.
+
 ☑ **Divergence noted in `docs/dev/building.md`, 2026-08-12.** New section,
 *Install scripts, and why your install differs from CI's*: the policy, the fact
 that every job but `supply-chain` runs npm 10.x and therefore *does* run those
@@ -499,6 +706,11 @@ scripts, the `npm config get strict-allow-scripts` trap, and the
 worth knowing: `.nvmrc` says `22` unpinned, which is the only reason CI clears
 npm 12's `^22.22.2` floor — pinning it to an exact lower 22.x breaks the job on
 its `npm install -g` step for reasons unrelated to the change that pinned it.
+
+> **Amended 2026-08-18.** "npm 10.x" above is now "npm 10.x or 11.x": the matrix
+> moved to Node 22.18.0 and 24 (ADR-0018), and Node 24 ships npm 11.x. Neither
+> understands `allowScripts`, so the divergence the section records is the same
+> divergence.
 
 ☑ **Done; confirmed on the live rule 2026-08-16.** The new `supply-chain` check
 was added to branch protection after it first reported — same `PUT` as above,
@@ -729,6 +941,12 @@ proxy dispatcher to.
 > floor; those need the `undici` package installed. 1b-ii picks between one
 > runtime dependency, a hand-rolled `CONNECT` tunnel, or a narrower supported
 > configuration. Recorded now so it arrives as a decision instead of a surprise.
+
+> **Amended 2026-08-18.** Two values above are superseded and neither changes the
+> outcome. The floor is 22.18.0, not 20.19.0 (ADR-0018) — `ProxyAgent` is still
+> not public API there. And `package.json` has no `dependencies` key at all
+> rather than an empty one, which is strictly stronger than what this entry
+> claims. 1b-ii resolved the choice a fourth way, through `node:https`.
 
 ```bash
 # ⛔ BARRIER: merge 1a first.
@@ -1929,11 +2147,31 @@ second): **a value that was true when the work started is not a fact about the
 world when the work finishes** — and moving code later in a sequence is exactly
 what turns the first into the second.
 
-Not fixed, because it is not understood: the *same* context started a session
+Not fixed, because it was not understood: the *same* context started a session
 two minutes later without complaint. Filed as probe task #135 — if a context's
 link set depends on the token presented, `contexts.ts` is wrong to read an
 absent `createSession` as a permanent property of the deployment, and the
-message it writes is misleading. `docs/connecting.md` says so plainly for now.
+message it writes is misleading.
+
+**#135 was probed on 2026-08-19 and the misleading half is now fixed**
+(findings 54 and 55). The inference was indeed wrong, and for a reason nothing
+to do with tokens: the collection item the picker reads is the *summary*
+representation, and the resource it points at carries three relations the
+summary never does — four fields and four relations against twelve and seven,
+measured on the same context minutes apart. An absent relation therefore
+describes the response in hand, not the deployment. The comment in
+`contexts.ts`, the log fragment in `problems.ts` and the notification in
+`messages.ts` all said or implied otherwise and were corrected in the same
+change, along with `docs/connecting.md`.
+
+The flicker itself is **not** explained and is not being chased further:
+twenty-one reads across thirteen contexts never lost the relation, so it is not
+the request shape, and the surviving candidates — an authorization decision
+re-evaluated, a token refreshed mid-connect, a Compute transient — cannot be
+separated from outside. What is left of #135 is a *behaviour* question — whether
+`resolveContext` should fail at all rather than let the `POST` be refused by the
+server — and that carries tests, so it goes to the 3a punch list rather than
+here.
 
 Step 3 is **unconfirmed rather than failed**: `settings.json` showed no
 `context` after what looked like a successful connect, but the run never
@@ -2449,6 +2687,182 @@ id out of `workspaceState` and re-attaches. Recorded because the reflex of
 "#137 landed, so re-run everything" is right about the connect path and wrong
 here, and the distinction is what stops a future re-check being busywork.
 
+☑ **P35 — what the one Accounts row actually means. Run by hand 2026-08-19,
+against two live Viya 4 deployments.** A separate run with its own steps, written
+up here rather than further down because everything it settles belongs next to
+#146 and #147 above; the 2a-iii procedure itself resumes after it. #146 left two
+explanations standing and only one of them makes #138 necessary, so it was worth
+a procedure of its own. Both are now settled, and the run turned up a third thing
+neither question asked about.
+
+The run, step by step, with what each one produced. The two deployments are **A**
+and **B** throughout — their addresses are not written down anywhere in this
+repository.
+
+1. **Two reachable deployments, as two profiles.** Confirmed: two, both working.
+2. **Log level to Debug**, as the preamble below describes. Answered
+   "confirmed" at the time, and the channel says otherwise — see *the step that
+   passed without doing anything* below.
+3. **Switch to profile B, then Sign In.** Signed in — but the browser prompted
+   **twice**, which is the third finding at the end of this entry. The connect
+   that followed logged the previous session having ended, then
+   `Started a SAS Viya session on compute context "Data Mining compute context".`
+   and `SAS Viya version: the deployment reports Viya 4 2026.06 (Stable 2026.06).`
+4. **Switch back to profile A, then Sign In.** Prompted **once**.
+5. **Open the Accounts menu.** Exactly **one** row, reading exactly
+   `Sean Ford (SAS Viya)`. Checked at every step of the run, and never more than
+   one row at any point.
+6. **Read the log for a dropped profile.** No such lines — read at `info`,
+   where a `debug` line could not have appeared at all. This step proved
+   nothing; step 7 is what settles #146.
+7. **Sign Out from that one row.** Two `Signed out of …` lines, naming **both**
+   deployments, followed by three `no stored sign-in for …` debug lines — more
+   than one per profile, which is the list being re-resolved more than once as
+   the sign-out publishes and the menu polls. What matters is that every one of
+   them says a profile has no stored sign-in left.
+8. **Re-open the Accounts menu.** No rows.
+
+**#146 is the label, not the budget — and that is the answer that costs us
+something.** Step 7 settles it on its own, which is just as well, because step 6
+turned out not to be evidence. One row was signed out of, and the channel
+recorded `Signed out of …` **twice**, four milliseconds apart, naming both
+deployments — followed by three `no stored sign-in for …` lines and an empty
+menu. Had the resolve budget dropped a profile, the host would have been holding
+one session, and signing out of the one row it drew would have written **one**
+line. Two lines means the host held two sessions and drew them as one row. So
+the host groups the menu by `account.label`, which `accountLabel()` derives from
+the person — one person on two deployments is one label — and `accountId()`'s
+per-deployment keying, which is correct and unchanged, is simply not what the
+menu keys on.
+
+**Which decides #138.** The 2026-08-16 entry above said to settle this before
+#138 precisely because grouping by label would mean "signing out of that row
+signs you out of both", and that is what step 7 observed. The Accounts menu
+therefore **cannot** express signing out of one deployment while staying signed
+in to the other, and #138 has to supply its own per-deployment sign-out rather
+than lean on the menu. **#147** was re-observed at every step and compounds it:
+the row names the person and "SAS Viya" and never names this extension, so one
+row standing for two deployments reads as one deployment.
+
+**A support track the earlier runs had not exercised.** B reported
+`Viya 4 2026.06 (Stable 2026.06)` where A reports `2026.03 (Long-Term Support
+2026.03)` — a different cadence *and* a different track, through the same
+`cadenceDisplayName` path, which until this run had only ever been seen on
+long-term support.
+
+**And the one neither question asked about: Sign In prompted for the browser
+twice.** It turned out to be #146 a second time, in a place that costs more than
+a menu row. Step 3 logged `Signed in to …` for B at 06:04:44.917 and again
+at 06:04:55.784 — 10.9 seconds apart, same endpoint — and the browser login was
+completed twice by hand. That line is written at the end of `signInWithBrowser`
+(`src/auth/browserFlow.ts:188`), after the code exchange and the token write, so
+each of the two is a *completed sign-in*, not a consent dialog.
+
+**Step 4 is not a contrast, though it was written up as one.** Signing in on A
+prompted once, and the reason is not that the account hint was found: A's connect
+never reached the auth path at all. `runConnect` returns the connection the
+manager is already holding for the active profile before it asks for anything
+(`src/compute/sessionManager.ts:342-343`), and A's session had been running since
+05:58:40 and survived the excursion to B — which is #141, above, still holding.
+The channel proves the early return: `Signed in to …` at 06:07:15.198 is followed
+by **no** `Started`, no `Reconnected` and no version line, where step 3's sign-in
+was followed by all three. So this run contains exactly **one** observation of
+the double prompt and nothing to compare it against.
+
+How the second one is reached is settled; why is not. `signIn` calls
+`provider.createSession()` and then `deps.connect()`
+(`src/auth/commands.ts:124-131`), and `runConnect` has no way to know a sign-in
+has just happened: it asks `accountFor(profile)`
+(`src/compute/sessionManager.ts:350`, `:831-838`) and, on `undefined`, asks for
+`{kind: "new"}`, which becomes
+`{forceNewSession: true, clearSessionPreference: true}`
+(`src/auth/sessionRequest.ts:107`). **`forceNewSession` opens the browser
+unconditionally**, valid session or not. So the second prompt follows from
+`accountFor` returning `undefined` for a deployment signed in to a moment
+earlier. **P35a says why.**
+
+☑ **P35a — the same sign-in with the log at Debug from the first line, and the
+other deployment signed out. Run 2026-08-19, 07:24 to 07:27.** A fresh dev host
+(so no session is held and the early return above cannot hide anything), the
+level set to Debug and *proved* to be set, profile B made active with
+**Disconnect from SAS Viya** confirmed missing from the palette, then **Sign In**.
+
+**The double prompt did not reproduce.** One browser login, one `Signed in to B.`
+at 07:27:12.835, then the connect ran straight through to
+`Started a SAS Viya session on compute context "Data Mining compute context".`
+and the 2026.06 version line. Every `[debug]` line in the run — ten of them —
+reads `no stored sign-in for A`, and **not one** names B. So B was resolvable
+throughout, and no profile was ever dropped for time.
+
+**One thing differed between the two runs, and it is the whole answer: in P35, A
+was signed in as well.** `getAccounts` de-duplicates accounts **by
+`account.label`**, which is confirmed in upstream `AuthenticationService`
+(`src/vs/workbench/services/authentication/browser/authenticationService.ts`):
+it asks the provider for every session and then keeps a session's account only
+`if (!seenAccounts.has(session.account.label))`. So one person signed in to two
+deployments produces **one** account in the answer — the first session in our
+list, which follows profile order — and the second is discarded. `accountFor(B)`
+then hands `accountForEndpoint` a list containing only A's account, gets no id
+starting with B's root, and answers `undefined`. `runConnect` reads that as
+"nothing is signed in to this deployment", asks for `{kind: "new"}`, and
+`forceNewSession` opens the browser on a deployment signed in to eleven seconds
+earlier. P35a signed A out first, which left one account, which is why it
+prompted once.
+
+Read on upstream `main` rather than on the 1.104 floor this extension targets, so
+what the record rests on is the two runs; the source says why they differ. The
+same file shows the host keying access grants and the account preference on the
+label too — `isAccessAllowed(providerId, session.account.label, …)` and
+`_getAccountPreference` matching `session.account.label` — so **the label is the
+host's account key throughout, and `account.id` is ours alone.**
+
+**Which is why #146 is not cosmetic, and this is the part to carry into
+Phase 3.** One label collision costs three things, not one: the Accounts menu
+collapses to a row that signs you out of both (#146, #138); the #84 account hint
+silently stops working for **every deployment after the first**, which is the
+mechanism #137 exists to protect; and because the missing hint routes into
+`forceNewSession` rather than a picker, the user pays for it with a whole extra
+browser round trip instead of a wrong-looking list.
+
+**The candidate fix, deliberately not taken here.** `accountLabel()` is one
+function (`src/auth/identity.ts:202`), and a label that distinguished the
+deployment would give two rows, a working hint, a per-deployment sign-out and a
+row that says which Viya it is — #146, #147, #138 and this, together. Against it:
+decision 10 chose person-only on purpose, and the label is the string the user
+reads. It wants an ADR amendment rather than a quiet change, and #138's design
+should be written against whichever way that goes.
+
+**Filed as issue #42**, opened 2026-08-19, carrying both runs, the upstream
+quotation and the three costs. It is an issue rather than a punch-list item
+because it outlives this slice: the decision it asks for is an ADR amendment, and
+#138 cannot be designed until that decision is made. Punch-list numbers are
+written there without a `#`, because inside a GitHub issue `#146` reads as a
+reference to issue 146 — a number this repository will reach.
+
+**The resolve budget was ruled out twice, and the arithmetic is worth keeping**
+because it is the argument that did not need a second run. `accountFor` reaches
+`getAccounts` → `getSessions(undefined)` → `allSessions(undefined)`, in which
+every profile is bounded by `RESOLVE_BUDGET_MS` — 10 000 ms — since none is named
+as `unbounded` (`src/auth/authProvider.ts:336-362`). But P35's two sign-ins are
+**10.867 s** apart, and between them sit the identity fetch of `establish`, a
+publish, the account lookup, the browser opening, **a human completing a login**
+and the code exchange. One arm spending its full budget is 10.000 s on its own,
+leaving 0.867 s for all the rest including the human. P35a then confirmed it from
+the log: no drop line, for either profile.
+
+**And one about how a hand-run step fails — *the step that passed without doing
+anything*.** Step 2 sets the log level to Debug, and was answered "confirmed",
+but the channel contains **no** `[debug]` line before 06:10:16 — the sign-outs of
+step 7. That is not "nothing debug-worthy happened": the resolutions during the
+P39 run recorded above would each have written `no stored sign-in for …` for the
+profile not yet signed in to. So the level changed somewhere between steps 5 and
+7, and every earlier step ran at `info`. Step 6 was the casualty, and #146 would
+have been settled on evidence that could not exist had step 7 not been
+independent of it. The rule this adds to the one 2b-ii already records: **a step
+that changes how the log behaves must be verified by a line that behaviour
+produces** — here, "run any command and confirm a `[debug]` line appears" — and
+not by the operator agreeing that the setting was chosen.
+
 Every expected line below is quoted **exactly** as the code writes it, and each
 is marked either **notification** (a toast in the bottom right) or **log** (a
 line in the Output panel). If what you see differs from what is quoted, that is
@@ -2731,6 +3145,16 @@ previous SAS Viya session has ended, so a new one will be started. Anything
 defined in it is gone.` followed by a new `Started` line, and **no** error
 dialog, because a session ending on its own schedule is ordinary.
 
+**Half of it observed 2026-08-19; the timing was not.** The first connect of the
+P39 run recorded under 2b-ii below landed on exactly this path — a binding stored
+from an earlier window, whose session had been reaped in between — and logged
+`The previous SAS Viya session has ended, so a new one will be started. Anything
+defined in it is gone.` at `info`, then a `Started` line seven seconds later,
+with no error dialog. So the *handling* is confirmed and the *interval* is not:
+that earlier connect was never timed, and finding 18 remains the only evidence
+that the reaper fires at 900 idle seconds. The sixteen-minute step above is what
+would close the other half, and it stays optional.
+
 **Optional cross-check from the Viya side.** The compute session id is never
 logged on purpose, so find it by listing instead: with the `viya-api-probe`
 skill and `creds.json`, `GET /compute/sessions` and look for the one whose `name`
@@ -2749,10 +3173,14 @@ this profile has ended.` rather than as the network failure it usually is. It
 comes from the per-request token function, so it needs a connect that got past
 authentication — a Disconnect/Connect cycle against a deployment that has since
 become unreachable, not step 6, where `runConnect` returns before a client is
-ever built. And #135 is open on a compute context whose `createSession` link
-comes and goes; if a context you pick in step 3 fails to start a session, that
-is the one, and the picker is now reachable again because the write-back happens
-after success rather than before.
+ever built. And #135 has a half that is still open: a compute context whose
+`createSession` link comes and goes. Findings 54 and 55 settled what the absence
+*means* — it describes one response to one account, not the deployment — but
+never reproduced the flicker, so if a context you pick in step 3 fails to start
+a session and then works, that is the one, and it is worth capturing the
+**Python on Viya** log at the moment it happens rather than afterwards. The
+picker is reachable again either way, because the write-back happens after
+success rather than before.
 
 > **⚠ 2-pre is a probe, and it gates the interface 2b freezes.** Do not skip it,
 > and do not run it after 2b — that would be backwards.
@@ -2858,6 +3286,43 @@ before 3a designs around their absence.
 > does, the probe says `unreadable` and Viya 4 is assumed — and there is no
 > profile setting yet letting a user assert `viya35` by hand. That setting is the
 > obvious next move if a 3.5 deployment ever appears.
+
+☑ **P39 — the stage-1 probe confirmed by hand, 2026-08-19, against Viya 4.**
+Findings 40–45 read the cadence resource with `curl`. Nothing had ever confirmed
+the same two-request navigation through `ComputeClient` — with our bearer token,
+our `Accept` headers and the media-type-qualified relation lookup — which is what
+the log line reports. It does:
+
+1. `F5` (*Run Extension*), then **Python on Viya: Show Log**. The channel opens
+   at `Python on Viya activated.` and carries no version line.
+2. **Python on Viya: Connect to SAS Viya**. Logged `SAS Viya version: the
+   deployment reports Viya 4 2026.03 (Long-Term Support 2026.03).` The **level**
+   is the certainty, so `info` here says the generation was determined rather
+   than assumed, and the parenthetical is `cadenceDisplayName` — the support
+   track — rather than a second version number.
+3. **Disconnect**, then **Connect**. A new `Started` line and **no** second
+   version line: the resolution is cached per profile for the life of the
+   window, and `disconnect` clears the connection and the binding but not that
+   cache.
+4. **Developer: Reload Window**, then **Connect**. The version line returns,
+   identical. The cache is a field on the manager, so a reload re-probes.
+
+**Two things the run corrected, both in the paperwork rather than in the code.**
+The Phase 2 review's item 39 said every connect writes a version line. It does
+not: `generationFor` returns from the cache before it reaches the log call, so
+the line appears on the first connect for a profile in a window, on any connect
+after that profile's endpoint changes, and on every connect following an
+inconclusive answer — because only `certain` resolutions are cached. And the
+first draft of step 4 expected `Reconnected to the SAS Viya session for this
+folder.`, which cannot happen here: step 3 disconnects, which deletes the session
+and clears the binding, leaving nothing to reattach to.
+
+**And one about how a hand-run step fails.** In the first attempt at step 3 the
+Disconnect ran and the Connect did not, which produced a log matching the
+expectation — no second version line — for the wrong reason. The tell was not in
+the result but in the transcript: a successful connect always writes a `Started`
+or a `Reconnected` line, and neither was there. A step whose expectation is an
+**absence** has to name the line that proves the step happened at all.
 
 > **⚠ 2c-pre is a probe, and it decides what drives 2c's loop.** Same reason
 > 2-pre ran before 2b: the alternative is porting upstream's loop on the
@@ -3364,6 +3829,38 @@ git checkout -b phase-2c-ii-log-streaming
 git commit -m "feat(compute): stream a job's log as it runs"
 ```
 
+### Interlude — the Node baseline (2026-08-18)
+
+☑ **`engines.node` raised from `>=20.19.0` to `>=22.18.0`, and the `.nvmrc` leg
+of the test matrix dropped in favour of Active LTS.** Settled in ADR-0018. Node
+20 reached end of life on 2026-04-30, so the floor named a runtime that no longer
+receives security fixes; more to the point, the floor was never independently
+chosen — VS Code's extension host has run Node 22 since **1.101**, and
+`engines.vscode` already requires 1.104, so 20.19.0 described a runtime the
+extension cannot be loaded on. 22.18.0 is the exact Node that 1.104 embeds.
+
+The matrix was 20.19.0 (the floor) and a bare `22` matching `.nvmrc`. With the
+floor at 22.18.0 that second leg stops being informative — newest-22.x differs
+from the floor only at patch level — so it became **24**, the current Active
+LTS, which is a forward-break detector rather than a near-duplicate. What is
+lost is newest-22.x on windows and macOS; `verify` still installs from `.nvmrc`
+and runs the unit tier on it, on ubuntu. `esbuild.mjs`
+targets `node22`, and `.nvmrc` stays at an unpinned `22`, still resolving to the
+newest 22.x and still the only reason `supply-chain` clears npm 12's `^22.22.2`.
+
+> **What did not change, and this is the point.** 22.18.0 is *below* `^22.22.2`,
+> so ADR-0005's whole design survives untouched: the policy still cannot run
+> outside the one pinned job. The revisit trigger there is now one minor floor
+> bump away rather than a major one, which is worth knowing but is not an
+> instruction to take it.
+
+☐ **`@types/node` is pinned to 26.2.0 and types against a runtime we do not ship
+on.** Found during the Phase 2 review, 2026-08-18. It is not the same defect as
+the floor — nothing has broken — but the types describe Node 26 APIs while the
+host runs 22, so `tsc` will accept a call that does not exist at runtime. The fix
+is `@types/node@^22`, and it needs a lockfile change, so it goes out with a
+`npm install` run on Sean's machine rather than from the sandbox.
+
 ### Phase 3 — Run Python
 
 ☐ **Before 3a — build the submission fidelity corpus, and let it choose the
@@ -3405,6 +3902,19 @@ path* — that what the interpreter read is what the editor held, across CRLF, t
 non-ASCII, an empty file and no trailing newline. Keep the hostile cases anyway:
 they are now the evidence that nothing tokenises the file, and the first case to
 fail would tell us that something does. Findings 31–35 in `PROBE-FINDINGS.md`.
+
+☐ **#135's open half — decide whether an absent `createSession` should fail the
+connect at all.** `resolveContext` refuses before it posts anything, on the
+reasoning that failing while the context's name is still in hand beats a failure
+three steps later. Findings 54 and 55 leave that reasoning intact but remove its
+premise: the absence is a fact about one response to one account, and the probe
+that looked for it could not make it happen — so the pre-emptive refusal may be
+turning a request Viya would have accepted into a connect that never happened.
+The alternative is to follow the summary's `self` and read the resource before
+giving up, or to post to the conventional sessions path and report whatever the
+server says. Both are behaviour, both want tests, and neither belongs in a
+corrections change — which is why this is here and not in that one. Decide it in
+the next slice that touches connect.
 
 ```bash
 # 3a — PROC PYTHON backend

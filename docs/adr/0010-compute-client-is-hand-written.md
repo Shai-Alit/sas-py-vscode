@@ -60,7 +60,7 @@ generated, which is the worst of both.
 
 ### What the service actually puts on the wire
 
-The probe of 2026-08-14 (`PROBE-FINDINGS.md`, findings 10–17, run against a live
+The probe of 2026-08-14 (`PROBE-FINDINGS.md`, findings 13–21, run against a live
 Viya 4 at cadence LTS 2026.03) established three things that bear directly on
 this.
 

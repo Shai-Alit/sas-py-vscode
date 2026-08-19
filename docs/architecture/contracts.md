@@ -137,15 +137,28 @@ match it too.
 green. The key sets are closed, so adding a field means changing the checker as
 well as the file, which is the intended amount of friction.
 
-**A `via` must name a media type, and today that is too strict.** `from`,
-`relation` and `type` are each required to be a string, which is right for the
-relations that carry one and wrong for the ones that do not: a compute job's
-`cancel` and `delete` arrive with `type` set explicitly to null, and the same two
-relations on a *session* omit the key altogether. Four endpoints therefore cannot
-be declared yet, and their absence is a limitation of the format rather than of
-the code — recorded in `contracts/viya4.yaml` where the gap is, so the file says
-what it is missing. The relaxation ships with the slice that first calls one of
-them, and it has to accept **absent or null**, not merely null.
+**A `via` must carry a `type` key, and its value may be null.** `from` and
+`relation` are required to be strings; `type` is required to be *present*, and
+may be either a media type or null. The endpoint's own `accept` — a different
+key, one level up, describing the header the client sends rather than the link it
+follows — is governed by the same rule. The distinction that rule turns on is the
+point: `type: null` is a claim that the relation involves no representation, and
+a missing `type:` line is a silence — indistinguishable from an author who forgot
+one, which is by far the likelier of the two. So the key is mandatory and only
+its value is relaxed, and `scripts/check-contracts.mjs` reports an omitted key as
+an error rather than reading it as null.
+
+Until slice 2c-ii both fields had to be strings, so no relation without a
+representation could be declared at all. Three are declared now —
+`session_cancel`, `session_delete` and `job_cancel`, each with `type: null` and
+`accept: null`. Note that the contract does not transcribe the wire: a job's
+`cancel` and `delete` links arrive with `type` set explicitly to null while a
+session's omit the key altogether (findings 21 and 46), and both are written the
+same way here, because
+a contract states what the client may rely on rather than what one response
+happened to contain. The job's fourth such relation, `delete`, is deliberately
+*not* declared; `contracts/viya4.yaml` says why, and it is a decision about what
+this extension is allowed to do rather than a gap.
 
 The union of generations is read out of `src/dialects/dialect.ts` with
 TypeScript's own parser rather than imported, because the check runs *before*

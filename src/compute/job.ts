@@ -640,7 +640,7 @@ function positiveInteger(name: string, value: number): number {
 }
 
 /**
- * The failure for a representation that does not offer a relation.
+ * The failure for a representation that carried no such relation.
  *
  * Takes the noun as an argument because two different resources are read here —
  * `execute` is missing from a *session*, `state` and `log` from a *job* — and
@@ -655,7 +655,7 @@ function linkMissing(
 ): ComputeFailure {
   return {
     ok: false,
-    reason: `the ${resource} does not offer a "${rel}" link`,
+    reason: `the ${resource} carried no "${rel}" link in the response this account read`,
     problem: { code: "link-missing", rel, resource: `${resource} "${id}"` },
   };
 }

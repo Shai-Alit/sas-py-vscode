@@ -229,7 +229,7 @@ export async function createSession(
     // comparison rather than a `POST` to `undefined`.
     return {
       ok: false,
-      reason: `the compute context "${context.name}" does not offer a "${CREATE_SESSION_REL}" link`,
+      reason: `the compute context "${context.name}" carried no "${CREATE_SESSION_REL}" link in the response this account read`,
       problem: {
         code: "link-missing",
         rel: CREATE_SESSION_REL,
@@ -575,11 +575,11 @@ function readInactiveTimeout(body: object): number | undefined {
     : undefined;
 }
 
-/** The failure for a session that does not offer a relation. */
+/** The failure for a session representation that carried no such relation. */
 function linkMissing(session: ComputeSession, rel: string): ComputeFailure {
   return {
     ok: false,
-    reason: `the compute session does not offer a "${rel}" link`,
+    reason: `the compute session carried no "${rel}" link in the response this account read`,
     problem: {
       code: "link-missing",
       rel,

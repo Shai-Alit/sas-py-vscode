@@ -115,12 +115,25 @@ Switch Connection Profile** to the profile that account belongs to, or give the
 two profiles different deployments. The extension refuses rather than opening a
 session on a deployment you did not select.
 
-**"The compute context … does not offer a `createSession` link."** The context
-exists and you can see it, but the deployment did not offer a way to start a
-session with it — either it is a kind of context you may list but not launch, or
-your account does not have permission to launch it. Connect again and pick a
-different one; nothing was written to your profile. This has been observed
-inconsistently on the same context minutes apart, which is not yet explained.
+**"SAS Viya did not offer that operation to your account here."** Seen at
+connect time when the context you picked exists and you can see it, but the
+response listing it did not include a way to start a session with it. Two
+readings fit, and the message gives you both because the response it came from
+cannot tell them apart: your account may be allowed to list that context without
+launching it, or this deployment may not support the operation at all. Connect
+again and pick a different context; nothing was written to your profile, and
+asking your administrator for permission on the context you wanted is the other
+way out. The **Python on Viya** log names the relation that was missing and the
+resource it was missing from.
+
+Worth knowing if it happens to you once and then stops: this has been seen on
+the same context minutes apart, and a later probe could not reproduce it in
+twenty-one reads. What that probe did establish is that SAS Viya composes the
+set of links per response, so a missing one describes the answer your account
+received rather than a capability your deployment lacks — which is why the
+message no longer blames the deployment. If you can make it happen repeatably,
+the **Python on Viya** log records the request it acted on and is worth
+attaching to a report.
 
 **"This deployment offers no compute contexts you can see."** The deployment
 answered, and it listed nothing you are allowed to use. This one is for your

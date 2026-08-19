@@ -17,7 +17,7 @@
   "homepage": "https://github.com/Shai-Alit/sas-py-vscode#readme",
   "engines": {
     "vscode": "^1.104.0",
-    "node": ">=20.19.0"
+    "node": ">=22.18.0"
   },
   "allowScripts": {
     "@vscode/vsce-sign": false,

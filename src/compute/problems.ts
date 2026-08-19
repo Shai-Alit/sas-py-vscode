@@ -158,11 +158,14 @@ export type ComputeProblem =
   /**
    * A representation did not offer the link relation the next step needs.
    *
-   * Either the resource is in a state where the operation is unavailable, or the
-   * deployment does not support it at all — which on Viya 3.5 is a live
-   * possibility and is exactly how this layer is meant to discover version
-   * differences (ADR-0010). `resource` says what was being read, since a bare
-   * relation name is not enough to act on.
+   * Three readings, and nothing in the response separates them: this account is
+   * not authorized for the operation on that resource, the resource is in a
+   * state where the operation is unavailable, or the deployment does not support
+   * it at all — which on Viya 3.5 is a live possibility and is exactly how this
+   * layer is meant to discover version differences (ADR-0010). Findings 54 and
+   * 55 put the first of the three at the front, and forbid reporting the third
+   * as though the response had established it. `resource` says what was being
+   * read, since a bare relation name is not enough to act on.
    */
   | { code: "link-missing"; rel: string; resource: string }
   /**
@@ -206,7 +209,12 @@ export function describeComputeProblem(problem: ComputeProblem): string {
     case "response-malformed":
       return `the compute service answered with something unexpected: ${problem.detail}`;
     case "link-missing":
-      return `the ${problem.resource} does not offer a "${problem.rel}" link, so that operation is unavailable here`;
+      // "in the response this account read", not "does not offer": finding 54
+      // measured a summary carrying three fewer relations than its own
+      // resource, so the absence belongs to the response and not to the
+      // deployment. The log line is where the next occurrence of #135 will be
+      // diagnosed from, and it has to describe what was seen.
+      return `the ${problem.resource} carried no "${problem.rel}" link in the response this account read`;
     case "foreign-link":
       return `the "${problem.rel}" link pointed outside this deployment and was not followed: ${problem.href}`;
   }

@@ -200,14 +200,28 @@ export async function resolveContext(
     );
   }
 
-  // Checked here rather than at session creation. If this link is absent the
-  // one-call design does not apply to this deployment, and saying so while we
-  // still know which context was being resolved is worth more than a failure
-  // three steps later that can only say a link was missing.
+  // Checked here rather than at session creation, so that the failure can still
+  // name the context being resolved rather than arriving three steps later able
+  // to say only that a link was missing.
+  //
+  // What the absence means is narrower than it looks, and finding 54 is not
+  // quite the reason. It measured that a collection item is the *summary*
+  // representation and carries three fewer relations than its own resource —
+  // but `createSession` is on both, and the three the summary omits are
+  // `update`, `updateWithRules` and `rules`. So the measurement establishes the
+  // general rule, that a link set describes one representation read by one
+  // account, without accounting for this particular absence. The reading that
+  // would is per-caller authorization, which SAS's REST usage notes make
+  // plausible and no probe here has confirmed — the experiment needs a second
+  // identity that may list a context but not launch it. Both readings forbid
+  // the same inference, and it is the one the wording here and in `messages.ts`
+  // avoids. Whether this should fail at all,
+  // rather than let the `POST` be refused by the server, is #135's open half
+  // and belongs to a slice with tests, not to a comment.
   if (findLink(context.links, CREATE_SESSION_REL) === undefined) {
     return {
       ok: false,
-      reason: `the compute context "${name}" does not offer a "${CREATE_SESSION_REL}" link`,
+      reason: `the compute context "${name}" carried no "${CREATE_SESSION_REL}" link in the response this account read`,
       problem: {
         code: "link-missing",
         rel: CREATE_SESSION_REL,

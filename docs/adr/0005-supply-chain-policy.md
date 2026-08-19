@@ -66,7 +66,9 @@ available, and a policy had to exist for the case where it is not.
 Every package in the tree that can run code at install time is **denied**, via
 the `allowScripts` field in `package.json`. The lockfile carries six entries
 marked `hasInstallScript` across five package names — `@vscode/vsce-sign`,
-`esbuild` (at both 0.28.2 and 0.21.5, hence six entries), `fsevents`, `keytar`
+`esbuild` (at both 0.28.2 and 0.25.12, hence six entries — the nested copy moved
+from 0.21.5 when the `vite ^6.4.3` override landed, see the amendment above),
+`fsevents`, `keytar`
 and `msw`. `.npmrc` sets `strict-allow-scripts=true`, which turns npm's "install
 scripts were blocked" warning into `ESTRICTALLOWSCRIPTS` and a non-zero exit, so
 a new dependency that wants to run code at install time fails the build until
@@ -96,6 +98,11 @@ prebuilt `fsevents.node` and its packed `package.json` declares no `install` or
 nothing for the denial to break. The gap is stated here rather than papered over,
 and closes on its own when the npm floor moves and every leg can enforce the
 policy.
+
+> **Amended 2026-08-18.** There are two macOS legs now, on Node 22.18.0 and 24
+> ([ADR-0018](0018-the-node-baseline.md)), installing with npm 10.x and 11.x
+> respectively. Neither has `allowScripts`, so the gap recorded here stands
+> exactly as written.
 
 **esbuild's postinstall is not load-bearing**, which is the finding that made
 this a blanket deny rather than a list of exceptions. esbuild ≥0.19 resolves its
@@ -164,6 +171,16 @@ release has it — and npm 12 requires Node `^22.22.2 || ^24.15.0 || >=26.0.0`.
 That is above the **20.19.0** floor `engines.node` claims and that two legs of the
 `test` matrix deliberately exercise. The control therefore cannot run everywhere
 without moving the project's supported Node floor.
+
+> **Amended 2026-08-18.** The floor is **22.18.0** now, not 20.19.0, and the
+> matrix legs are 22.18.0 and 24 — see
+> [ADR-0018](0018-the-node-baseline.md). The argument in this section is
+> unaffected, because 22.18.0 is below npm 12's `^22.22.2`: the control still
+> cannot run everywhere, and the pinned job is still the reason it runs at all.
+> One value in it is stale — the runners' npm is no longer uniformly 10.x, since
+> the Node 24 legs ship npm 11.x. Neither version understands `allowScripts`, so
+> what that sentence was evidence for is unchanged. The other thing that changed
+> is the distance to the revisit trigger below.
 
 So it runs in one pinned `supply-chain` job, and the floor and the six-leg matrix
 are left alone. The honest consequence, stated in `docs/dev/ci.md` as well as

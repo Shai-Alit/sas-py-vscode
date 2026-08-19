@@ -134,6 +134,50 @@ export default tseslint.config(
     },
   },
 
+  // ADR-0003's second hedge, made enforceable. That ADR said Node built-ins
+  // "stay confined to the auth and certificate modules rather than being used
+  // casually across the codebase", and called both hedges "review checkpoints
+  // rather than aspirations" — but nothing checked it, and by 2026-08-18 it was
+  // already false: `src/profile/commands.ts` had picked up `node:crypto` for
+  // `randomUUID`. A checkpoint nobody can run is exactly the aspiration the ADR
+  // disclaimed, so it is a rule now.
+  //
+  // The allow-list is three files and no globs. Widening it is a visible diff
+  // here, which is the whole mechanism: the cost of a web build is Node APIs
+  // arriving one reasonable-looking import at a time.
+  {
+    files: ["src/**/*.ts"],
+    ignores: [
+      "src/auth/pkce.ts",
+      "src/auth/transport.ts",
+      "src/profile/commands.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              // A regex rather than a `group`, because a glob group cannot
+              // express this ban without leaving two holes. `group` matching is
+              // gitignore-style, where `*` stops at a `/`, so `node:*` catches
+              // `node:crypto` and misses `node:fs/promises`. And the prefix is
+              // optional at the resolver: `import "crypto"` reaches the same
+              // built-in as `import "node:crypto"`, so a rule that only reads
+              // the prefix is one an author evades by typing less. The name
+              // list is Node's public built-ins; the trailing `($|/)` is what
+              // keeps `console-table-printer` and friends out of it.
+              regex:
+                "^(node:|(assert|async_hooks|buffer|child_process|cluster|console|constants|crypto|dgram|diagnostics_channel|dns|domain|events|fs|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|sys|timers|tls|trace_events|tty|url|util|v8|vm|wasi|worker_threads|zlib)($|/))",
+              message:
+                "Node built-ins are confined to src/auth/pkce.ts, src/auth/transport.ts and src/profile/commands.ts (ADR-0003). The web extension host forbids them entirely, and every new site is a module a future web build has to reimplement. If this module genuinely needs one, add it to the allow-list in eslint.config.mjs and say why in the ADR — do not import it quietly.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   // Tests get the same type-aware rule sets as the source they exercise. A test
   // that only compiles under looser rules is testing something the extension
   // cannot do.

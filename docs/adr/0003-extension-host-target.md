@@ -42,6 +42,12 @@ Node built-ins stay confined to the auth and certificate modules rather than bei
 used casually across the codebase, and HTTP goes through one client module rather
 than scattered `fetch` calls, so a future web build has a single seam to swap.
 
+> **Amended 2026-08-18.** The second hedge was both misstated — there is no
+> certificate module — and unenforced, and it had already been broken. It is an
+> ESLint rule with a three-file allow-list now. See the amendment at the end of
+> this record; the sentence above is left as written because what it *failed* to
+> constrain is the part worth remembering.
+
 ## Alternatives considered
 
 **Dual-target from slice 0b.** Genuinely attractive for a remote-execution
@@ -74,3 +80,42 @@ do not eliminate it.
 
 **Revisit trigger.** Reconsider when Phase 5 closes, or sooner if browser-based
 Codespaces usage turns out to be a common request.
+
+## Amendment — 2026-08-18 (Phase 2 review): the second hedge is a lint rule now
+
+The Decision section called both hedges "review checkpoints rather than
+aspirations". The Phase 2 review found that the second one — *Node built-ins stay
+confined to the auth and certificate modules* — was neither. It was wrong in one
+direction and unenforced in the other.
+
+**Wrong:** there is no certificate module. `CAHelper.ts` was deliberately not
+ported — `PRODUCTION_PLAN.md`'s 1c-ii entry says why — and system trust is
+configured inside `src/auth/transport.ts` (ADR-0008), so one of the two homes
+this ADR named has never existed in the tree.
+
+**Unenforced:** by the close of Phase 2 the confinement had already been broken.
+`src/profile/commands.ts` imports `randomUUID` from `node:crypto` to mint a
+profile id — a reasonable line to write, which is the point. Nothing failed,
+because nothing was checking. A checkpoint that no gate runs is the aspiration
+this ADR said it was not.
+
+**The hedge as it now stands.** `eslint.config.mjs` restricts `node:*` imports
+across `src/**/*.ts` with an allow-list of exactly three files —
+`src/auth/pkce.ts` (`node:crypto`), `src/auth/transport.ts` (`node:http`,
+`node:https`) and `src/profile/commands.ts` (`node:crypto`). No globs, so a
+fourth module is a visible diff to the config and an answerable question in
+review. The first hedge — HTTP through one client module — is already structural:
+`transport.ts` is that module, and it is on the list.
+
+**What this deliberately does not do.** Two of the three uses have browser
+equivalents: the global `crypto.randomUUID()` would remove `src/profile/commands.ts`
+from the list outright, and `crypto.getRandomValues`/`crypto.subtle` would cover
+most of `pkce.ts`. Neither change is made here. Swapping a working PKCE
+implementation on the strength of a docs review is how security code acquires
+defects, and the profile change is not worth a slice on its own. Both are
+recorded as the cheapest first step whenever the revisit trigger in
+**Consequences** fires.
+
+The revisit trigger is unchanged, and this amendment does not reopen the
+Node-only decision — it only makes the cost of reversing it measurable, which was
+the hedge's whole purpose.

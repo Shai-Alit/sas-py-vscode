@@ -743,6 +743,22 @@ called out under **Changed** with a migration note.
   after a `shift()` on a queue already proved non-empty, which no test can reach
   and which exist because `Array.prototype.shift` types as `T | undefined`.
 
+- A live test that runs the whole of slice 2c against a real deployment —
+  resolve a context, start a session, submit a job, read its log to the end,
+  delete the session — asserting that a per-run marker submitted as a `%put`
+  comes back out of the log. The unit tier proves each module reads a recorded
+  response correctly; this proves the responses a deployment sends are still the
+  ones that were recorded.
+
+  It is also the first test anywhere that *writes* to a live Viya, and therefore
+  the first caller of the mutation gate. That gate had been unit-tested and never
+  reached, which is the state in which a safety check quietly stops working. The
+  suite skips itself when `PYTHON_ON_VIYA_ALLOW_MUTATION` is unset rather than
+  failing — a tier that goes red for someone with read-only access is a tier that
+  gets switched off — and still calls the gate at the point of the first write,
+  where restructuring the hooks cannot get round it. The compute context it runs
+  in defaults to the one the SAS extension ships and is overridable per machine.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in
@@ -917,6 +933,45 @@ called out under **Changed** with a migration note.
   `404` now joins that list. The verdict on a genuinely missing page does not
   change, because it is the second answer that is returned: a URL that is `404`
   to both methods is still reported `404`, at the cost of one extra request.
+- The live tier now passes against a real Viya 4, having never been run before
+  2026-08-19. Its one test asked `/identities/users/@currentUser` for
+  `application/vnd.sas.identity+json` — the media type this project had already
+  measured as a **406** (finding 6), and which `src/auth/identity.ts` names as
+  the guess to avoid. It now imports `CURRENT_USER_PATH` and
+  `IDENTITY_SUMMARY_TYPE` from the module under test rather than restating
+  either, so the strings cannot drift apart again. Nothing in the unit or
+  integration tiers could have caught this: a live test is only wrong against a
+  live deployment.
+- `docs/dev/testing.md` now says what to do when the live tier fails on the TLS
+  handshake rather than on the request. A deployment behind an internal
+  certificate authority produces `unable to verify the first certificate`,
+  because the tier runs under bare `node`, which carries its own CA store —
+  unlike the extension, whose requests VS Code routes through the operating
+  system's certificates by default.
+- A missing link relation no longer blames the deployment. Connecting to a
+  compute context that offered no `createSession` link reported "This SAS Viya
+  deployment does not offer that operation here", which sends the reader to an
+  administrator to ask about a capability that is probably present. Findings 54
+  and 55, probed 2026-08-19, measured why that is the wrong reading: the item the
+  picker reads is the *summary* representation, and the resource it points at
+  carries three relations the summary never does — so an absent relation
+  describes the response one account received, not the deployment. The
+  notification now offers both readings, permission first; the log line says what
+  was seen rather than what it implies; and the comments in `contexts.ts` that
+  asserted the old inference are corrected. `docs/connecting.md` no longer
+  records the behaviour as unexplained.
+
+  The first pass of that sweep reached `describeComputeProblem` and stopped
+  there, leaving the same superseded claim in the four failure `reason` strings
+  that `contexts.ts`, `session.ts` and `job.ts` compose alongside it — including
+  one directly beneath a comment stating it had been corrected. All four now read
+  "carried no `…` link in the response this account read". `docs/connecting.md`
+  had also quoted the old wording as though it were the message a user sees, and
+  attributed the missing link to permission "most often", which is a frequency
+  the finding cannot support: with one identity available, "summaries omit
+  administrative relations" and "the link set is computed per caller" are not
+  separable, and both forbid the same inference. The page now quotes the message
+  the extension actually shows and gives both readings without ranking them.
 
 ### Changed
 
@@ -990,5 +1045,19 @@ called out under **Changed** with a migration note.
 - **Relicensed from MIT to Apache-2.0** to match the upstream
   `sassoftware/vscode-sas-extension` code this project derives from, and to give
   users an explicit patent grant. See `docs/adr/0000-repository-licence.md`.
+- The supported Node floor is **22.18.0**, raised from 20.19.0, and it is now
+  derived from `engines.vscode` rather than chosen: 22.18.0 is the Node that VS
+  Code 1.104 embeds in its extension host, and 1.104 is already the floor
+  `engines.vscode` claims. The old number described a runtime the extension
+  cannot be loaded on, and Node 20 reached end of life on 2026-04-30. The `test`
+  matrix legs change from 20.19.0 and 22 to **22.18.0 and 24** — the floor, and
+  the current Active LTS as a forward-break detector, replacing a bare `22` leg
+  that matched `.nvmrc` and that after the raise differs from the floor only at
+  patch level. `esbuild.mjs` targets `node22`.
+  `.nvmrc` is unchanged at an unpinned `22` and remains the reason the
+  `supply-chain` job can install npm 12. That job's design is unaffected: 22.18.0
+  is still below npm 12's own `^22.22.2` floor, so the install-script policy
+  still runs in exactly one pinned job.
+  [ADR-0018](docs/adr/0018-the-node-baseline.md).
 
 [Unreleased]: https://github.com/Shai-Alit/sas-py-vscode/commits/main

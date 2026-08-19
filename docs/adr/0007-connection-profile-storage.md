@@ -32,7 +32,7 @@ Four questions had to be answered before writing any of it.
 ### Separate storage, plus a one-time read-only import
 
 `pythonOnViya.connectionProfiles`, ours, with our own schema. A command —
-`Python on Viya: Import Profiles from the SAS Extension` — reads
+`Python on Viya: Import Connection Profiles from the SAS Extension` — reads
 `SAS.connectionProfiles.profiles`, filters to `connectionType === "rest"`, and
 offers the matches in a multi-select pick, copying the endpoint, the compute
 context and the client id into our shape. It never writes their key.

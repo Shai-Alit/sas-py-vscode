@@ -221,12 +221,12 @@ Slice 3a gains a translation layer from `ComputeFailure` to `BackendProblem` tha
 it would not otherwise write. That is the recurring cost of this record, and it is
 also where Viya's wire-level errors become sentences a user can act on.
 
-The five new modules are pure — no runtime `vscode` import, `ProgramOrigin.uri`
+The seven new modules are pure — no runtime `vscode` import, `ProgramOrigin.uri`
 being a **type-only** import of `vscode.Uri` on the `bindingStore.ts` precedent —
-so four of them land in the coverage denominator under ADR-0009 and the ratchet
+so six of them land in the coverage denominator under ADR-0009 and the ratchet
 in `.c8rc.json` rises in the same pull request.
 
-`backend.ts` is the fifth and it turned out to be the first module in this
+`backend.ts` is the seventh and it turned out to be the first module in this
 repository with *nothing at all* to execute: interfaces and type aliases, and an
 empty JavaScript file after compilation. c8 charges every line of it, doc
 comments included, to the denominator while no test can execute one, which cost

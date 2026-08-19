@@ -110,11 +110,25 @@ export function localiseComputeProblem(problem: ComputeProblem): string {
         "SAS Viya answered with something this extension could not read. See the Python on Viya log for details.",
       );
     case "link-missing":
-      // The likeliest cause is a deployment that does not offer the operation at
-      // all — Viya 3.5 is a live possibility — so the message says the operation
-      // is unavailable rather than that something went wrong.
+      // Deliberately *not* "this deployment does not offer that operation",
+      // which is what this said until finding 54 measured why it is wrong: the
+      // response a link is missing from is one representation read by one
+      // account, and Viya composes a link set per representation. Whether it
+      // also composes one per caller's authorization is this project's reading
+      // of SAS's REST usage notes rather than anything measured here. Blaming
+      // the deployment sends someone to their administrator to ask about a
+      // capability that is probably present.
+      //
+      // The two readings in the sentence are the two **actionable** ones, not
+      // the two the finding leaves open — those are per-caller authorization
+      // and a summary that omits administrative relations by design, and
+      // neither is something a user can do anything with. Deployment support
+      // stays in: findings 54 and 55 establish that an absent link cannot be
+      // used to *infer* an unsupported operation, not that the operation is
+      // supported, and on Viya 3.5 ADR-0010 makes exactly that absence the
+      // intended way a version difference surfaces.
       return vscode.l10n.t(
-        "This SAS Viya deployment does not offer that operation here. See the Python on Viya log for details.",
+        "SAS Viya did not offer that operation to your account here. You may not have permission for it, or this deployment may not support it. See the Python on Viya log for details.",
       );
     case "foreign-link":
       // A security stop, and worded as one. Nothing observed on a real

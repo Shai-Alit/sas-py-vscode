@@ -124,7 +124,7 @@ needs the network to say so. External rot is still *found*, on a schedule, with
 the report shaped for a human. The settings and command tables cannot drift from
 `package.json` without CI noticing.
 
-**Costs.** Three links that point outside `docs/` had to become absolute GitHub
+**Costs.** Six links that point outside `docs/` had to become absolute GitHub
 URLs, so they read as external in the source even though they are checked as
 local files — a reader who does not know about `docs:links:self` will assume
 they are only swept weekly. `scripts/check-links.mjs` therefore carries two

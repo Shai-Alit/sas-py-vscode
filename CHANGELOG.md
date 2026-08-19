@@ -1059,5 +1059,14 @@ called out under **Changed** with a migration note.
   is still below npm 12's own `^22.22.2` floor, so the install-script policy
   still runs in exactly one pinned job.
   [ADR-0018](docs/adr/0018-the-node-baseline.md).
+- `@types/node` moves from **26.2.0 to 22.18.13**, and is held there by a
+  Dependabot `ignore` entry. It had been typing the project against a Node four
+  majors above the one the extension host runs, which means `tsc` was accepting
+  calls that do not exist at runtime — nothing had broken, and that is the
+  failure mode rather than a reason to leave it. `22.18.x` is the line that
+  describes Node 22.18.0, the Node VS Code 1.104 embeds and the one
+  `engines.node` is derived from, so the pin follows the floor rather than being
+  chosen. Same discipline `@types/vscode` is already held to, and for the same
+  reason: the types are what tell the compiler which APIs exist.
 
 [Unreleased]: https://github.com/Shai-Alit/sas-py-vscode/commits/main

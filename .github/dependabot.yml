@@ -37,6 +37,26 @@ updates:
       # a support decision, not a dependency update.
       - dependency-name: "@types/vscode"
 
+      # `@types/node` is pinned for the same reason and by the same derivation.
+      # `engines.node` is not chosen here either: an extension runs inside the
+      # editor's extension host, VS Code 1.104 embeds Node 22.18.0, and
+      # `engines.vscode` already requires 1.104 (ADR-0018). `@types/node@22.18.x`
+      # is the release line that describes that Node, so holding it there is what
+      # makes `tsc` reject a call the oldest host we claim to support does not
+      # have.
+      #
+      # This is not hypothetical: it was found at 26.2.0 during the Phase 2
+      # review, four majors above the runtime, which is a compiler that accepts
+      # anything Node has shipped since. Nothing had broken, and that is the
+      # failure mode — the types go wrong silently and the evidence is a runtime
+      # error in someone else's editor.
+      #
+      # Unlike `@types/vscode` there is no packaging check enforcing this from
+      # the other side, so this entry is the whole of the guard. Move it only in
+      # the same change that raises `engines.vscode`, and take the `@types/node`
+      # line that matches whatever Node the new floor embeds rather than latest.
+      - dependency-name: "@types/node"
+
       # `typescript` is held below 6.1 by `typescript-eslint`, not by us.
       # `typescript-eslint@8.67.0` — and the `@typescript-eslint/parser` and
       # `@typescript-eslint/eslint-plugin` packages it brings with it — each

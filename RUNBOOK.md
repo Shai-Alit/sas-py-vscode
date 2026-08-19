@@ -3854,12 +3854,25 @@ newest 22.x and still the only reason `supply-chain` clears npm 12's `^22.22.2`.
 > bump away rather than a major one, which is worth knowing but is not an
 > instruction to take it.
 
-☐ **`@types/node` is pinned to 26.2.0 and types against a runtime we do not ship
-on.** Found during the Phase 2 review, 2026-08-18. It is not the same defect as
-the floor — nothing has broken — but the types describe Node 26 APIs while the
-host runs 22, so `tsc` will accept a call that does not exist at runtime. The fix
-is `@types/node@^22`, and it needs a lockfile change, so it goes out with a
-`npm install` run on Sean's machine rather than from the sandbox.
+☑ **`@types/node` was pinned to 26.2.0 and typed against a runtime we do not
+ship on. Fixed 2026-08-19.** Found during the Phase 2 review, 2026-08-18. It is
+not the same defect as the floor — nothing had broken — but the types described
+Node 26 APIs while the host runs 22, so `tsc` would accept a call that does not
+exist at runtime.
+
+**Pinned exactly to `22.18.13`, not to the `^22` this item first proposed.**
+`22.18.x` is the `@types/node` line that describes Node 22.18.0, which is the
+Node VS Code 1.104 embeds and therefore the one `engines.node` is derived from
+(ADR-0018). `^22` would have floated to 22.20.x and reintroduced the same defect
+a minor at a time — narrower than four majors, identical in kind. The exact pin
+also matches what every other `@types` package in this repo already does, and
+`@types/vscode`'s reasoning transfers word for word: the types are what tell the
+compiler which APIs exist, so holding them at the floor is the whole mechanism.
+
+`.github/dependabot.yml` carries a matching `ignore` entry. `@types/vscode` has
+`vsce`'s `validateVSCodeTypesCompatibility` enforcing the same rule from the
+packaging side; `@types/node` has nothing equivalent, so that entry is the only
+guard and the comment on it says so.
 
 ### Phase 3 — Run Python
 

@@ -294,9 +294,12 @@ the mutation gate could be observed refusing anything.
 
 Before any of it: the tier runs under bare `node`, so export
 `NODE_EXTRA_CA_CERTS` at the deployment's **issuing** authority for every step
-that reaches the network — P33 above has the diagnosis if the run dies on
-`unable to verify the first certificate` instead. Take the URL and token from
-`creds.json` and never echo the token; print its length if you want a check.
+that reaches the network. P33 above has the diagnosis, but do not sit waiting for
+its `unable to verify the first certificate` to appear: that string is what the
+connectivity suite surfaces, and the job suite prints problem codes rather than
+free text on purpose, so the same misconfiguration reaches you there as a bare
+`compute-unreachable`. Take the URL and token from `creds.json` and never echo
+the token; print its length if you want a check.
 
 1. **Nothing configured.** In a shell with no `PYTHON_ON_VIYA_*` variable set,
    print the four names first — `_VIYA4_URL`, `_VIYA4_TOKEN`, `_VIYA35_URL`,
@@ -331,9 +334,12 @@ that reaches the network — P33 above has the diagnosis if the run dies on
    other one, and the job suite alone cannot tell you which situation you are in.
 
    Then, with the `viya-api-probe` skill and `creds.json`, `GET
-   /compute/sessions` and **keep the result**. Two jobs: it is the evidence that
-   the withheld gate created nothing, which the absence of a complaint from
-   mocha is not, and it is the baseline step 6 compares against.
+   /compute/sessions` and **keep the result**. This is the baseline step 6
+   compares against, and it is only that: a listing taken here cannot show that
+   the withheld gate created nothing, for the same reason step 6 spells out — a
+   `python-on-viya` in it may be left from any earlier run. What shows the gate
+   held is the `1 pending` above, which is mocha reporting that the suite never
+   entered the test body at all.
 
 4. **Mutation allowed.** Export `PYTHON_ON_VIYA_ALLOW_MUTATION=1` and run.
 

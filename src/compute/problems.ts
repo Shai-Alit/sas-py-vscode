@@ -158,11 +158,14 @@ export type ComputeProblem =
   /**
    * A representation did not offer the link relation the next step needs.
    *
-   * Either the resource is in a state where the operation is unavailable, or the
-   * deployment does not support it at all — which on Viya 3.5 is a live
-   * possibility and is exactly how this layer is meant to discover version
-   * differences (ADR-0010). `resource` says what was being read, since a bare
-   * relation name is not enough to act on.
+   * Three readings, and nothing in the response separates them: this account is
+   * not authorized for the operation on that resource, the resource is in a
+   * state where the operation is unavailable, or the deployment does not support
+   * it at all — which on Viya 3.5 is a live possibility and is exactly how this
+   * layer is meant to discover version differences (ADR-0010). Findings 54 and
+   * 55 put the first of the three at the front, and forbid reporting the third
+   * as though the response had established it. `resource` says what was being
+   * read, since a bare relation name is not enough to act on.
    */
   | { code: "link-missing"; rel: string; resource: string }
   /**

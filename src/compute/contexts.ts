@@ -204,12 +204,18 @@ export async function resolveContext(
   // name the context being resolved rather than arriving three steps later able
   // to say only that a link was missing.
   //
-  // What the absence means is narrower than it looks, and finding 54 measured
-  // the reason: this item is the *summary* representation, and the resource it
-  // points at carries three relations the summary never does. An absent
-  // relation is therefore a fact about the response in hand — this account,
-  // this representation, this moment — and not about the deployment. The
-  // wording here and in `messages.ts` says so. Whether this should fail at all,
+  // What the absence means is narrower than it looks, and finding 54 is not
+  // quite the reason. It measured that a collection item is the *summary*
+  // representation and carries three fewer relations than its own resource —
+  // but `createSession` is on both, and the three the summary omits are
+  // `update`, `updateWithRules` and `rules`. So the measurement establishes the
+  // general rule, that a link set describes one representation read by one
+  // account, without accounting for this particular absence. The reading that
+  // would is per-caller authorization, which SAS's REST usage notes make
+  // plausible and no probe here has confirmed — the experiment needs a second
+  // identity that may list a context but not launch it. Both readings forbid
+  // the same inference, and it is the one the wording here and in `messages.ts`
+  // avoids. Whether this should fail at all,
   // rather than let the `POST` be refused by the server, is #135's open half
   // and belongs to a slice with tests, not to a comment.
   if (findLink(context.links, CREATE_SESSION_REL) === undefined) {

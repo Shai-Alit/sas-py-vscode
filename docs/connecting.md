@@ -118,8 +118,8 @@ session on a deployment you did not select.
 **"SAS Viya did not offer that operation to your account here."** Seen at
 connect time when the context you picked exists and you can see it, but the
 response listing it did not include a way to start a session with it. Two
-readings fit, and the message gives you both because nothing measured so far
-separates them: your account may be allowed to list that context without
+readings fit, and the message gives you both because the response it came from
+cannot tell them apart: your account may be allowed to list that context without
 launching it, or this deployment may not support the operation at all. Connect
 again and pick a different context; nothing was written to your profile, and
 asking your administrator for permission on the context you wanted is the other

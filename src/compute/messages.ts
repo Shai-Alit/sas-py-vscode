@@ -113,11 +113,20 @@ export function localiseComputeProblem(problem: ComputeProblem): string {
       // Deliberately *not* "this deployment does not offer that operation",
       // which is what this said until finding 54 measured why it is wrong: the
       // response a link is missing from is one representation read by one
-      // account, and Viya composes a link set per representation — and,
-      // per SAS's REST usage notes, per caller's authorization. Blaming the
-      // deployment sends someone to their administrator to ask about a
-      // capability that is probably present. The two readings that survive the
-      // finding are both in the sentence, and both are actionable.
+      // account, and Viya composes a link set per representation. Whether it
+      // also composes one per caller's authorization is this project's reading
+      // of SAS's REST usage notes rather than anything measured here. Blaming
+      // the deployment sends someone to their administrator to ask about a
+      // capability that is probably present.
+      //
+      // The two readings in the sentence are the two **actionable** ones, not
+      // the two the finding leaves open — those are per-caller authorization
+      // and a summary that omits administrative relations by design, and
+      // neither is something a user can do anything with. Deployment support
+      // stays in: findings 54 and 55 establish that an absent link cannot be
+      // used to *infer* an unsupported operation, not that the operation is
+      // supported, and on Viya 3.5 ADR-0010 makes exactly that absence the
+      // intended way a version difference surfaces.
       return vscode.l10n.t(
         "SAS Viya did not offer that operation to your account here. You may not have permission for it, or this deployment may not support it. See the Python on Viya log for details.",
       );

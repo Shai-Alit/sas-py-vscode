@@ -1896,14 +1896,25 @@ not perturb it. For a caller who may launch a context, the relation is stable.
 ### What this settles
 
 1. **An absent relation is a statement about one response, not about the
-   deployment.** Finding 54 gives the mechanism that is certain — the summary
-   carries fewer relations than the resource — and SAS's own REST usage notes
-   give the reading that covers the rest: links "indicate actions, operations, or
-   state transitions that the client can make", and authorization is evaluated
-   per method per caller, so "an authenticated user can have authorization to
-   read a resource via a GET method, but not have authorization to update or
-   delete a resource via a PUT or a DELETE". A relation can therefore be absent
-   because of who asked, and the deployment is the last thing to blame.
+   deployment.** Finding 54 gives the mechanism that is certain: the summary
+   carries fewer relations than the resource, so one context answers two
+   different link sets depending on which representation was read.
+
+   The per-caller reading is **inferred and not measured**, and is recorded here
+   as an inference. SAS's REST usage notes say two things separately — links
+   "indicate actions, operations, or state transitions that the client can make",
+   and authorization is evaluated per method per caller, so "an authenticated
+   user can have authorization to read a resource via a GET method, but not have
+   authorization to update or delete a resource via a PUT or a DELETE" — and
+   reading a per-caller link set out of that pair is this project's inference
+   from them rather than a claim SAS makes. It is plausible enough to act on and
+   it is not confirmed; the experiment that would confirm it is listed below as
+   not run. It also does not account for the case that prompted the probe:
+   `createSession` was present on **both** representations, and the three the
+   summary omits are `update`, `updateWithRules` and `rules`.
+
+   What every reading forbids is the same, and that is the operational point:
+   the deployment is the last thing to blame.
 2. **The comment in `contexts.ts` was wrong and is corrected in this change.** It
    read the absence as meaning "the one-call design does not apply to this
    deployment". It means no such thing.

@@ -139,6 +139,14 @@ recorded, but it is not this one: fixing it edits `package-lock.json`, and a
 lockfile change belongs in a slice where the install is run and reviewed rather
 than as a rider on a config sweep.
 
+> **Done 2026-08-19, in its own change.** `@types/node` is `22.18.13`, pinned
+> exactly rather than to the `^22` first proposed: `22.18.x` is the line that
+> describes Node 22.18.0, so the types now follow the floor by the same
+> derivation this ADR gives for `engines.node` instead of floating one minor
+> ahead of it. A `.github/dependabot.yml` `ignore` entry holds it there, and it
+> is the only guard — `@types/vscode` has `vsce` refusing to package when it
+> exceeds `engines.vscode`, and there is no equivalent check for the Node types.
+
 ## Consequences
 
 The floor is now a derived value with a named source, so the next `engines.vscode`

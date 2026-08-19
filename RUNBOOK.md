@@ -284,27 +284,39 @@ three phases later is unverified for the whole gap, and reads as covered the
 entire time. Run this tier at the end of any slice that touches a request the
 extension makes, not at the end of the phase.
 
-☐ **P40 — the live tier's three gates, now that one test writes.** Written
-2026-08-19, not yet run. P33 exercised gates one and two against a read-only
-suite; gate three had **no caller at all** until `test/live/viya4-job.test.ts`
-landed, so `PYTHON_ON_VIYA_ALLOW_MUTATION` was unit-tested and never reached.
-This is the run that proves the whole gate stack on the tier as it now stands,
-and it is one procedure rather than two because the job test had to exist before
-the mutation gate could be observed refusing anything.
+☑ **P40 — the live tier's three gates, now that one test writes. Run
+2026-08-19 against deployment A, all six steps as expected.** P33 exercised
+gates one and two against a read-only suite; gate three had **no caller at all**
+until `test/live/viya4-job.test.ts` landed, so `PYTHON_ON_VIYA_ALLOW_MUTATION`
+was unit-tested and never reached. This is the run that proves the whole gate
+stack on the tier as it now stands, and it is one procedure rather than two
+because the job test had to exist before the mutation gate could be observed
+refusing anything.
 
-Before any of it: the tier runs under bare `node`, so export
-`NODE_EXTRA_CA_CERTS` at the deployment's **issuing** authority for every step
-that reaches the network. P33 above has the diagnosis, but do not sit waiting for
-its `unable to verify the first certificate` to appear: that string is what the
-connectivity suite surfaces, and the job suite prints problem codes rather than
-free text on purpose, so the same misconfiguration reaches you there as a bare
-`compute-unreachable`. Take the URL and token from `creds.json` and never echo
-the token; print its length if you want a check.
+Results, in step order: `0 passing, 2 pending` and exit 0; a load-time refusal
+naming the URL variable; `1 passing, 1 pending` over a baseline of three live
+sessions; `2 passing`; `no-such-context` with a count of thirteen contexts and no
+names; and `before=3 after=3 new=0`. The duration of the job test was not
+captured and is still worth having before Phase 3 depends on it. Three things
+the run changed about the procedure itself are folded into it below — the
+certificate advice in the preamble, `env -u` in step 1, and the loss of the
+timestamp fallback in step 6 — and two defects it exposed are listed after it.
 
-1. **Nothing configured.** In a shell with no `PYTHON_ON_VIYA_*` variable set,
-   print the four names first — `_VIYA4_URL`, `_VIYA4_TOKEN`, `_VIYA35_URL`,
-   `_VIYA35_TOKEN` — and the mutation flag, and confirm each comes back empty.
-   Then `npm run test:live`.
+Before any of it: the tier runs under bare `node`, so the deployment's TLS chain
+has to be trusted explicitly. **Prefer `NODE_OPTIONS=--use-system-ca`** —
+measured working here, and it keeps a per-machine pem path out of the procedure.
+`NODE_EXTRA_CA_CERTS` at the **issuing** authority is the fallback, and P33 above
+has the diagnosis; but do not sit waiting for its `unable to verify the first
+certificate` to appear, because that string is what the connectivity suite
+surfaces and the job suite prints problem codes rather than free text on purpose,
+so the same misconfiguration reaches you there as a bare `compute-unreachable`.
+Take the URL and token from `creds.json` and never echo the token; print its
+length if you want a check. Note that a connect **timeout** is not any of this:
+it is the VPN, and it cost a step-3 re-run on the day.
+
+1. **Nothing configured.** Run `npm run test:live` under `env -u` naming all six
+   variables — the four credentials `_VIYA4_URL`, `_VIYA4_TOKEN`, `_VIYA35_URL`
+   and `_VIYA35_TOKEN`, plus `_ALLOW_MUTATION` and `_VIYA4_CONTEXT`.
 
    Expected: `0 passing, 2 pending`, exit 0. Two, not one: both suites skip. A
    `1 pending` would mean mocha loaded only one of them, which points at the
@@ -312,10 +324,17 @@ the token; print its length if you want a check.
    `compile:test && mocha`, so a file that failed to compile stops the run
    before mocha is reached and produces no counts at all.
 
-   The printing is not ceremony. `PYTHON_ON_VIYA_ALLOW_MUTATION` is prefixed
-   precisely because a bare `ALLOW_MUTATION` exported for some other project
-   would open this one's write gate, and a step that assumes a clean shell is a
-   step that passes by doing nothing.
+   **`env -u` rather than "open a fresh terminal", which is what this step used
+   to say and which does not work.** On Windows these names can live in the user
+   environment, so every new shell inherits them; the first attempt on 2026-08-19
+   was run in a new terminal, connected to a real deployment, and was void.
+   Unsetting them in the command makes the step reproducible whatever the machine
+   holds. `_VIYA4_CONTEXT` is in the list because step 5 sets it to a deliberately
+   bad value and a leftover would quietly break a re-run of step 4; the mutation
+   flag is in it because `PYTHON_ON_VIYA_ALLOW_MUTATION` is prefixed precisely so
+   that some other project's bare `ALLOW_MUTATION` cannot open this one's write
+   gate. A step that assumes a clean shell is a step that passes by doing
+   nothing.
 
 2. **A plaintext URL.** Set `PYTHON_ON_VIYA_TEST_VIYA4_URL` to the deployment's
    host with `http://` in front of it, set the token, and run again.
@@ -360,14 +379,20 @@ the token; print its length if you want a check.
 6. **Nothing left running.** `GET /compute/sessions` again and compare against
    the listing kept at step 3.
 
-   Expected: no session present now that was not present then. **Compare ids, not
-   names.** The name is `SESSION_NAME`, a constant in `src/compute/session.ts`,
+   Expected: no session present now that was not present then. **Compare ids, and
+   only ids.** The name is `SESSION_NAME`, a constant in `src/compute/session.ts`,
    so every session this extension has ever started on this deployment carries
    it — a `python-on-viya` in the list may be one a previous run or a previous
    day left behind, and "none from this run" is not a thing the name can tell
-   you. The baseline is what makes the question answerable. Where the
-   representation carries `creationTimeStamp`, that is a second discriminator and
-   worth recording.
+   you. The baseline is what makes the question answerable, and on 2026-08-19 it
+   gave `before=3 after=3 new=0`.
+
+   An earlier draft of this step offered `creationTimeStamp` as a second
+   discriminator. **There is no second discriminator**: the same run measured the
+   session collection item as carrying `id`, `links`, `owner`, `version`, and
+   `name` only where the session has one — no timestamp, no `state`, no
+   `attributes`. Finding 56 in `PROBE-FINDINGS.md` records it. Keep the baseline
+   file.
 
    This step is the whole point of the procedure's tail. The suite deletes its
    session in an `after` hook that runs even when the test itself failed, but a
@@ -376,6 +401,32 @@ the token; print its length if you want a check.
    alive on a real deployment with nothing anywhere to say so. If the warning did
    appear, it names the session's constant name and the failure's problem code
    and deliberately not its id; the id is in the listing you just took.
+
+☐ **Gate two skips a half-configured tier instead of refusing it.** Found by
+accident during P40 on 2026-08-19, when a mangled paste set
+`PYTHON_ON_VIYA_TEST_VIYA4_TOKEN` and left `PYTHON_ON_VIYA_TEST_VIYA4_URL`
+unset: the run reported `0 passing, 2 pending` and exited 0, which is
+indistinguishable from a machine where the tier was never set up.
+
+That is the failure gate two exists to prevent, and it is arguably worse than
+the plaintext case it *does* refuse, because plaintext at least shouts. A typo
+in one of the two variable names silently disables the tier, and the operator's
+evidence that it ran is a pending count that looks exactly like success. The
+fix is in `test/helpers/live-gate.ts` and is the same shape as the `https://`
+check: one of the pair present and the other absent is a **throw**, not an
+`undefined`. Wants a unit test alongside the ones the gate already has, so it
+is a source change and not a docs one — deliberately left out of the phase-2
+review PR rather than smuggled into it.
+
+☐ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** The extension's
+transport is `https.request`, chosen over `fetch` for system certificate trust
+(see the transport ADR), so the older of the two live suites exercises a
+transport `src/` never uses. Its failures are undici's — a
+`ConnectTimeoutError` on undici's ten-second default is what a dropped VPN
+produced on 2026-08-19 — and they say nothing about what the extension would
+have done. `viya4-job.test.ts` does not share the problem: it goes through
+`createComputeClient`. Port the connectivity check onto the real client in 3a,
+or delete it in favour of the job suite, which subsumes it.
 
 ☑ **Running the integration tier breaks `npm run lint` — fixed 2026-08-12.**
 `.vscode-test/` is git-ignored, ESLint flat config does not read `.gitignore`,

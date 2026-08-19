@@ -1946,3 +1946,44 @@ not perturb it. For a caller who may launch a context, the relation is stable.
   does not belong in a corrections change.
 - **Viya 3.5.** Not probed, as ever. Whether its contexts collection is a summary
   in the same way is unknown.
+
+## 2026-08-19 — The session listing, during the first live mutating run (Viya 4)
+
+Not a probe in its own right. RUNBOOK **P40** exercises the live tier's three
+gates now that one live test writes to a deployment, and its last step lists the
+compute sessions before and after to prove the test cleans up after itself. The
+shape of that listing came out of it, and it changed the procedure.
+
+### Finding 56 — The session collection item carries no timestamp and no state
+
+Measured 2026-08-19 on deployment A. `GET /compute/sessions?limit=100` with
+`Accept: application/vnd.sas.collection+json` answered `count: 3`, three items,
+and the items carried:
+
+```
+id, links, owner, version          (2 of 3)
+id, links, owner, version, name    (1 of 3)
+```
+
+No `creationTimeStamp`, no `state`, no `attributes`. `name` is present only where
+the session has one, and none of the three carried `python-on-viya` — the
+constant this extension sends (`session.ts:105`) — which is what a baseline taken
+before the test runs should look like.
+
+**What it costs.** "Is anything of mine still running?" has exactly one
+answerable form on this collection: compare ids against a listing taken *before*
+the run. There is no timestamp to fall back on, and the name cannot discriminate
+between runs because `SESSION_NAME` is a constant in `session.ts` — every session
+this extension has ever started on a deployment carries the same one. P40 step 6
+offered the timestamp as a second discriminator until this measurement removed
+it.
+
+**Why it is not a surprise.** This is finding 54's principle on a second
+collection: the item is the summary representation. The session *resource*
+plainly carries more — finding 24 measured the name echoed back from it, and
+finding 18 read `attributes.sessionInactiveTimeout` off it — so the two
+representations differ here the same way the context's two do.
+
+**Not settled.** The exact field set of the session resource was never
+enumerated the way finding 54 enumerated the context's, so "how many fields the
+summary omits" is unquantified. Nothing currently needs the number.

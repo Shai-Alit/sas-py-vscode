@@ -206,7 +206,12 @@ export function describeComputeProblem(problem: ComputeProblem): string {
     case "response-malformed":
       return `the compute service answered with something unexpected: ${problem.detail}`;
     case "link-missing":
-      return `the ${problem.resource} does not offer a "${problem.rel}" link, so that operation is unavailable here`;
+      // "in the response this account read", not "does not offer": finding 54
+      // measured a summary carrying three fewer relations than its own
+      // resource, so the absence belongs to the response and not to the
+      // deployment. The log line is where the next occurrence of #135 will be
+      // diagnosed from, and it has to describe what was seen.
+      return `the ${problem.resource} carried no "${problem.rel}" link in the response this account read`;
     case "foreign-link":
       return `the "${problem.rel}" link pointed outside this deployment and was not followed: ${problem.href}`;
   }

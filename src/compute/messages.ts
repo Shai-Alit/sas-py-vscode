@@ -110,11 +110,16 @@ export function localiseComputeProblem(problem: ComputeProblem): string {
         "SAS Viya answered with something this extension could not read. See the Python on Viya log for details.",
       );
     case "link-missing":
-      // The likeliest cause is a deployment that does not offer the operation at
-      // all — Viya 3.5 is a live possibility — so the message says the operation
-      // is unavailable rather than that something went wrong.
+      // Deliberately *not* "this deployment does not offer that operation",
+      // which is what this said until finding 54 measured why it is wrong: the
+      // response a link is missing from is one representation read by one
+      // account, and Viya composes a link set per representation — and,
+      // per SAS's REST usage notes, per caller's authorization. Blaming the
+      // deployment sends someone to their administrator to ask about a
+      // capability that is probably present. The two readings that survive the
+      // finding are both in the sentence, and both are actionable.
       return vscode.l10n.t(
-        "This SAS Viya deployment does not offer that operation here. See the Python on Viya log for details.",
+        "SAS Viya did not offer that operation to your account here. You may not have permission for it, or this deployment may not support it. See the Python on Viya log for details.",
       );
     case "foreign-link":
       // A security stop, and worded as one. Nothing observed on a real

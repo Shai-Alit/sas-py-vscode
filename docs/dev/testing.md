@@ -181,11 +181,96 @@ Opt-in, and gated three separate ways.
    `requireMutation`. Read access and write access are different decisions: pointing the suite at a shared
    deployment to read from it should not also grant permission to create objects
    there. Mutating tests owe that deployment per-run unique names and cleanup in
-   a `finally`.
+   a `finally` — or in a Mocha `after` hook, which is the same promise made in
+   the one place a failure earlier in the test cannot skip.
 
 The gate itself is unit-tested — `test/unit/live-gate.test.ts` — including every
 refusal path, because it is the one piece of test infrastructure that can cause
 damage when it is wrong.
+
+### What the tier contains
+
+Two suites, and the second is the one to read before adding a third.
+
+`viya4-connectivity.test.ts` is read-only: it reaches
+`/identities/users/@currentUser` and asserts the status. It needs gates one and
+two.
+
+`viya4-job.test.ts` runs the whole of slice 2c — resolve a context, start a
+session, submit a `%put` of a per-run marker, read the log to the end, delete the
+session — and needs all three gates. It is the only caller of `requireMutation`
+outside that function's own unit test, which is half of why it exists: a gate
+with no exercised path is a gate that can break unnoticed.
+
+Three things about it generalise to any suite added later.
+
+It **skips** when `PYTHON_ON_VIYA_ALLOW_MUTATION` is absent rather than failing,
+and still calls `requireMutation` at the point of the first write. The skip is
+ergonomics — the same argument gate two makes, applied to someone pointing the
+tier at a deployment they may only read from — and the call is the guarantee,
+positioned where restructuring the hooks cannot get round it.
+
+It reports a failure by its `ComputeProblem` code and, where there is one, the
+HTTP status — never by the `reason` string that travels beside it. `reason` is
+composed for the extension's log and on the rejected path it carries the
+deployment's own sentence, which has been measured saying
+`A session with the ID "…" could not be found.` `live-gate.ts` sets the rule for
+the tier in as many words: a live failure message "may name the endpoint and the
+status code and nothing else". Interpolating `reason` into an assertion is the
+easy way to break it, because at the call site it looks like the more helpful
+choice.
+
+It runs in the context named by `PYTHON_ON_VIYA_TEST_VIYA4_CONTEXT`, defaulting
+to `SAS Job Execution compute context`, which is the name the SAS extension ships
+as its own default. That variable is a **parameter, not a gate**: it lives in the
+test file rather than in `live-gate.ts` because nothing about it decides whether
+the suite may run. When the name is wrong the failure says how many contexts the
+account could see — a count, not a list, since context names can carry a
+customer's or a team's name and this is a message that ends up in terminals and
+screenshots.
+
+There is deliberately no `PROC PYTHON` in it. Whether a deployment can run Python
+is a property of that deployment, and a test that failed on a Viya without an
+interpreter configured would be reporting site configuration as a defect. Slice
+3a owns that test and the skip that has to come with it.
+
+### When it fails on the certificate rather than the request
+
+A deployment behind an internal certificate authority fails like this:
+
+```
+TypeError: fetch failed
+Caused by: Error: unable to verify the first certificate
+```
+
+That is TLS, not authentication, and it is expected. This tier runs under bare
+`node`, which trusts its own bundled CA list and nothing else; the extension
+never meets the problem because VS Code loads the operating system's
+certificates into the extension host (`http.systemCertificates`, on by default).
+Point Node at the chain for the run:
+
+```bash
+NODE_EXTRA_CA_CERTS=/path/to/viya-ca.pem npm run test:live
+```
+
+The file must contain the **issuing** authority, not only the server's own
+certificate — `unable to verify the first certificate` means the deployment sent
+a leaf whose issuer Node cannot find. `node --use-system-ca` is the alternative
+where the root is already installed locally; Node suggests it in the error text
+itself. Neither belongs in the test code: a live tier that disables verification
+to get green is worse than one that skips.
+
+### What the first live run cost
+
+This tier was written in Phase 0 and first run on **2026-08-19**. It failed —
+it had been asking for `application/vnd.sas.identity+json`, the media type
+[finding 6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/PROBE-FINDINGS.md)
+records as a `406` and that `src/auth/identity.ts` explicitly warns against. Two
+things follow, and they generalise past this one string. A live test is only
+wrong against a live deployment, so the interval between writing one and running
+it is the interval in which it is unverified. And a live test should **import**
+the paths and media types it exercises from the code under test rather than
+restate them, so that it is the same claim rather than a copy of one.
 
 **Never log a token.** Not in an assertion message, not in a failure dump, not
 in a fixture. A live failure message may name the endpoint and the status code

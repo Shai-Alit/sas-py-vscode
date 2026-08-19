@@ -1807,3 +1807,131 @@ read `details` or rely on its own record of what it created.
 - **Interleaving.** Only one job ran per session. Whether two concurrent jobs in
   one session produce independent logs, or whether Compute even permits the
   second, was not tested.
+
+## 2026-08-19 — What an absent link means (#135), during the phase-2 review (Viya 4)
+
+Punch-list item #135 has been open since the 2a-iii manual run on 2026-08-15: a
+context picked from the picker was reported as offering no `createSession` link,
+and the *same* context started a session two minutes later. The interesting
+question is not why that one connect failed. It is what `resolveContext` is
+entitled to *conclude* from an absent relation — because it concluded something
+about the deployment, and `messages.ts` told the user so.
+
+**Read-only.** Twenty-one `GET`s against the contexts collection and three
+against one context resource. Nothing was created, updated or deleted and no
+session was started. Context ids are omitted below; the names are SAS's own
+defaults and say nothing about this deployment.
+
+### Finding 54 — The collection item is a summary, and the resource carries three relations the summary never does
+
+The same context, the same token, minutes apart. Below, `…` stands for the
+`application/vnd.sas.` prefix and `→` separates a relation's request type from
+its response type; a `—` means the relation carried neither. The collection
+item:
+
+```
+GET /compute/contexts?limit=50
+Accept: application/vnd.sas.collection+json
+
+fields: createdBy, id, name, version
+
+  rel              method  type / responseType
+  self             GET     …compute.context
+  alternate        GET     …compute.context.summary
+  delete           DELETE  —
+  createSession    POST    …compute.session.request → …compute.session
+```
+
+and the resource the item's `self` points at:
+
+```
+GET /compute/contexts/{id}
+Accept: application/vnd.sas.compute.context+json
+
+fields: createdBy, creationTimeStamp, description, environment, id,
+        launchContext, launchType, modifiedBy, modifiedTimeStamp, name,
+        resources, version
+
+  rel              method  type / responseType
+  self             GET     …compute.context
+  alternate        GET     …compute.context.summary
+  update           PUT     …compute.context → …compute.context
+  updateWithRules  PUT     …compute.context.request → …compute.context
+  delete           DELETE  —
+  createSession    POST    …compute.session.request → …compute.session
+  rules            GET     application/vnd.sas.collection
+```
+
+Four fields against twelve, and four relations against seven. The item is the
+**summary** representation — its own `alternate` says so — and the three
+relations it omits are inserted in the middle of the resource's list rather than
+appended, so the summary is not a truncated prefix of the resource but a
+different document.
+
+Asking the resource for `application/json` instead answers `200` with the same
+seven relations, so the difference is between *representations of different
+resources*, not between media types on one.
+
+What this does **not** distinguish, with one identity available: whether the
+three missing relations are omitted because a summary omits administrative
+relations by design, or because the set is computed against the caller. Both
+readings survive the measurement. Either way the consequence for the code is the
+same and is the point of the finding: **the link set on a collection item is not
+the link set on the resource**, so "this relation was not in the response I
+happened to read" cannot be turned into "this deployment does not offer this
+operation".
+
+### Finding 55 — `createSession` did not move
+
+Eight reads of the unfiltered collection over roughly forty seconds, plus one
+filtered read per context — `?filter=eq(name,'…')`, the exact request
+`resolveContext` sends — is twenty-one responses covering thirteen contexts.
+Every context carried `createSession` in every one of them, and every item
+carried the identical four relations. `count` was `1` on each filtered read.
+
+So the flicker recorded in 2a-iii **did not reproduce**, and nothing about the
+request shape explains it: filtered and unfiltered agree, and repetition does
+not perturb it. For a caller who may launch a context, the relation is stable.
+
+### What this settles
+
+1. **An absent relation is a statement about one response, not about the
+   deployment.** Finding 54 gives the mechanism that is certain — the summary
+   carries fewer relations than the resource — and SAS's own REST usage notes
+   give the reading that covers the rest: links "indicate actions, operations, or
+   state transitions that the client can make", and authorization is evaluated
+   per method per caller, so "an authenticated user can have authorization to
+   read a resource via a GET method, but not have authorization to update or
+   delete a resource via a PUT or a DELETE". A relation can therefore be absent
+   because of who asked, and the deployment is the last thing to blame.
+2. **The comment in `contexts.ts` was wrong and is corrected in this change.** It
+   read the absence as meaning "the one-call design does not apply to this
+   deployment". It means no such thing.
+3. **The user-facing wording was wrong too.** `messages.ts` said "This SAS Viya
+   deployment does not offer that operation here", which sends the reader to
+   their administrator to ask about a deployment capability. It now says the
+   operation was not offered *to this account on that resource*, which is what
+   was observed and is also the actionable reading — pick another context, or ask
+   for permission on this one.
+4. **Finding 15 is unaffected.** The summary still carries a fully formed
+   `createSession` link, so the one-call design stands; this finding narrows what
+   its *absence* proves, not what its presence buys.
+
+### What this probe did not settle
+
+- **Why the 2a-iii connect failed.** Twenty-one reads did not reproduce it. The
+  remaining candidates — an authorization decision cached and re-evaluated, a
+  token refreshed mid-connect, or a transient in the Compute service — are not
+  separable from outside, and the extension logs the response it acted on rather
+  than the response body, so the next occurrence will not distinguish them
+  either unless it is logged first.
+- **The decisive experiment.** Reading the same context as a user who may *not*
+  launch it would separate "summary omits administrative relations" from
+  "the set is computed per caller". It needs a second Viya account with
+  different entitlements, which this deployment did not offer to hand.
+- **Whether `resolveContext` should stop treating absence as fatal.** Filed
+  rather than fixed: see the 3a punch list. A retry, or handing the `POST` to the
+  server and reporting its answer, is a behaviour change with tests attached and
+  does not belong in a corrections change.
+- **Viya 3.5.** Not probed, as ever. Whether its contexts collection is a summary
+  in the same way is unknown.

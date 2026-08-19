@@ -200,14 +200,22 @@ export async function resolveContext(
     );
   }
 
-  // Checked here rather than at session creation. If this link is absent the
-  // one-call design does not apply to this deployment, and saying so while we
-  // still know which context was being resolved is worth more than a failure
-  // three steps later that can only say a link was missing.
+  // Checked here rather than at session creation, so that the failure can still
+  // name the context being resolved rather than arriving three steps later able
+  // to say only that a link was missing.
+  //
+  // What the absence means is narrower than it looks, and finding 54 measured
+  // the reason: this item is the *summary* representation, and the resource it
+  // points at carries three relations the summary never does. An absent
+  // relation is therefore a fact about the response in hand — this account,
+  // this representation, this moment — and not about the deployment. The
+  // wording here and in `messages.ts` says so. Whether this should fail at all,
+  // rather than let the `POST` be refused by the server, is #135's open half
+  // and belongs to a slice with tests, not to a comment.
   if (findLink(context.links, CREATE_SESSION_REL) === undefined) {
     return {
       ok: false,
-      reason: `the compute context "${name}" does not offer a "${CREATE_SESSION_REL}" link`,
+      reason: `the compute context "${name}" carried no "${CREATE_SESSION_REL}" link in the response this account read`,
       problem: {
         code: "link-missing",
         rel: CREATE_SESSION_REL,

@@ -1813,7 +1813,12 @@ git checkout -b phase-2a-ii-session-shell
 git commit -m "feat(compute): bind compute sessions to profiles, with reconnect and death handling"
 ```
 
-☐ **2a-ii punch list.**
+☑ **2a-ii punch list. Closed 2026-08-19.** Eleven of the twelve items below are
+done. The twelfth — refusing to submit into a busy session — was moved out
+of this slice on 2026-08-14 because it has no caller until something submits,
+and it is now carried by the 3a punch list rather than by an open box here. A
+slice held open by one item that is deliberately not in it reads as unfinished
+work and hides the eleven that are.
 
 - ☑ **A session belongs to a profile and borrows the provider's token.** Take it
   from `vscode.authentication.getSession`, never from storage directly, so
@@ -1863,7 +1868,13 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   parses. It stays not optional — it moves with its reasoning intact, and the
   header of `src/compute/sessionManager.ts` says under "what is deliberately not
   here yet" why the manager has no busy check.
-- ☐ **Poll the *job* for completion, never the session.** Finding 27 measured the
+
+  **Re-listed in the 3a punch list on 2026-08-19.** "Moved to 3a" had been
+  written here and nowhere else for five days, which is not a destination — it
+  is an item that leaves one list without joining another. It stays ☐ here as
+  the record of where it came from; the copy in Phase 3 is the one that gets
+  worked.
+- ☑ **Poll the *job* for completion, never the session.** Finding 27 measured the
   job reaching `completed` two to three seconds before the session returned to
   `idle`. Use the job's `state` link, and send `wait` **and** `If-None-Match`
   together — finding 28 measured `wait` alone returning immediately, which would
@@ -1873,6 +1884,17 @@ git commit -m "feat(compute): bind compute sessions to profiles, with reconnect 
   above: there is no job to poll until something submits one. The *session*
   long poll it is contrasted with did land in 2a-i (`waitWhilePending`), so the
   mechanism is built and tested; what moves is only the choice of resource.
+
+  **Settled in 2c-i on 2026-08-17, and not in 3a.** The resource choice landed
+  with `src/compute/job.ts`: `readJobState` follows the job's own `state` link
+  and nothing polls the session for completion, which is the whole of what this
+  item asked for. What did *not* land is the mechanism inside it — there is no
+  state long poll at all. `?wait=` is inert on a state resource without an
+  `If-None-Match` to validate against, the job state resource was never observed
+  to carry an ETag, and 2c-pre found the *log* endpoint's `timeout=` really does
+  long-poll, so completion is observed by draining the log rather than by
+  watching the state. The item's prescription is superseded; its instruction is
+  met. `job.ts:68` says the same thing at the code.
 - ☑ **Session death is one recoverable event with one observed shape.**
   `attributes.sessionInactiveTimeout` is **900 seconds** (finding 18), so this is
   routine rather than exceptional. Finding 29 measured a dead session answering
@@ -2179,6 +2201,25 @@ established whether the picker appeared, and #84 means the connect may not have
 been acting on the profile being inspected. Re-check it after #84 lands before
 concluding anything about the write-back.
 
+> ☐ **#84 landed, so this re-check is now owed. 2026-08-19.** The condition it
+> was waiting on was met in the 2a-iii punch list above, and the item then sat
+> here for four days as a sentence rather than as a step — which is the failure
+> this whole restructure is about. It is one connect:
+>
+> 1. Pick a profile with **no** `context` in `settings.json`, and confirm the
+>    setting is genuinely absent rather than empty.
+>    **Expected:** nothing yet; this is the precondition.
+> 2. Run **Python on Viya: Connect to SAS Viya** and answer the context picker.
+>    **Expected:** the picker appears, and the connect succeeds on the context
+>    you chose.
+> 3. Re-read `settings.json`.
+>    **Expected:** `context` now holds the name you picked, on the profile you
+>    connected with and on no other.
+>
+> If the picker does not appear at step 2, the write-back is not what failed and
+> the finding is a different one — say which of the two happened, because the
+> original run could not.
+
 **Three findings from the 2a-ii review, 2026-08-14**, all in `sessionManager.ts`.
 The first was raised independently by both reviewers, which is the signal worth
 recording — one of them can be wrong about intent, two agreeing about the same
@@ -2226,7 +2267,15 @@ git checkout -b phase-2a-iii-account-hint
 git commit -m "fix(auth): connect as the active profile's account"
 ```
 
-☐ **2a-iii punch list.** Five defects, every one of them found by using the
+☑ **2a-iii punch list. Complete; header ticked 2026-08-19.** All six items below
+were ☑ and the header was not, which under this runbook's own convention reads
+as "unrecorded" rather than "not done" — and it is the reading that costs
+something, because an open punch list on the last slice of a phase is the first
+thing anyone checks before starting the next one. The paragraph below says
+*five* and is left as it was written: the slice was scoped at five defects and
+grew a sixth, #137, out of the manual run on 2026-08-15.
+
+Five defects, every one of them found by using the
 extension or by review, and **not one of them by the test suite** — which is the
 argument for the manual procedure above, not an argument against the tests. They
 are one slice because they are one file's worth of surface: #84 changes both
@@ -3258,6 +3307,28 @@ before 3a designs around their absence.
 > which is allow-by-default, so a new top-level directory ships inside the VSIX
 > unless it is named there.
 
+> **2b-i done 2026-08-16** (PR #28). Recorded 2026-08-19: 2b-ii has had the
+> paragraph below since the day it merged and 2b-i had nothing, which made the
+> only slice in Phase 2 with no completion record the one that defines the seam
+> every Phase 3 slice implements.
+>
+> `src/backend/backend.ts`, `collect.ts` and `problems.ts`; the dialect layer as
+> `src/dialects/dialect.ts`, `resolve.ts`, `viya4.ts` and `viya35.ts`;
+> `test/helpers/fake-backend.ts` as the double; and `docs/architecture/`
+> gaining `execution-backends.md` and `dialects.md`. ADR-0009's coverage-scope
+> checker grew its `src/`-side arm in the same change. Two things carry forward
+> into 3a:
+>
+> - **`test/unit/backend-contract.test.ts` is the seam's evidence, and it is
+>   ADR-0015 clause by clause.** Its header states the intent plainly: nothing
+>   implements the seam until 3a, so without that file the interface would sit
+>   for two slices with no evidence its clauses are consistent with each other.
+> - **It says 3a's backend "should be able to run this same file", and as
+>   written it cannot.** All twenty-three cases construct `createFakeBackend()`
+>   directly; there is no factory parameter and no exported suite. Making that
+>   sentence true is a refactor, and it is on the 3a punch list rather than left
+>   as a surprise for whoever starts 3a expecting a reusable suite.
+
 > **2b-ii done 2026-08-17.** `contracts/viya4.yaml` and `contracts/viya35.yaml`,
 > `scripts/check-contracts.mjs` wired into `verify`, and stage-1 probing in
 > `src/dialects/probe.ts` called from `ComputeSessionManager.hold()`. The format
@@ -3929,6 +4000,56 @@ server says. Both are behaviour, both want tests, and neither belongs in a
 corrections change — which is why this is here and not in that one. Decide it in
 the next slice that touches connect.
 
+☐ **3a punch list.** Written 2026-08-19, and it is mostly not new work — it is
+the work six earlier items had already assigned to 3a, from five places, none of
+them a list of what 3a has to do — one of them is a comment in a test file.
+"Moved to 3a" and "goes to the 3a punch list" were written repeatedly against a
+punch list that did not exist, so each of these was one slice away from being
+lost. Where an item came from is
+named, because the reasoning is at the origin and is not repeated here.
+
+- ☐ **Refuse to submit into a busy session, and say so.** From the 2a-ii punch
+  list, moved 2026-08-14 because the check has no caller until something
+  submits — which is now. Finding 27: session state reads `running` while a job
+  executes and returns to `idle` after; finding 29 leaves concurrent submission
+  unobserved. This is the shared-window case's only defence, so it is not
+  optional. `src/compute/sessionManager.ts` says under "what is deliberately not
+  here yet" why the manager has no busy check; that comment comes out with this
+  item.
+- ☐ **Make `test/unit/backend-contract.test.ts` runnable against a real
+  backend.** Its header says 3a's backend "should be able to run this same
+  file", and all twenty-three cases call `createFakeBackend()` directly, so as
+  written it cannot. Export it as a suite taking a factory and run it twice —
+  once over the double, once over the `PROC PYTHON` backend. Doing this *first*
+  makes the contract the specification for the slice rather than something the
+  slice is checked against afterwards.
+- ☐ **Decide whether an absent `createSession` should fail the connect at all.**
+  The #135 item immediately above this one has the reasoning and the two
+  alternatives. It is on this list because "the next slice that touches connect"
+  is 3a and nothing else names it.
+- ☐ **Probe ADR-0014's two unsettled hand-over questions before designing
+  around their absence** — `TIMEOUT` for Cancel, and `SRC` as a second hand-over
+  path. Flagged in the 2-pre write-up as worth probing *before* 3a, which is a
+  deadline this list is the only place that records.
+- ☐ **Gate two of the live tier skips a half-configured tier instead of
+  refusing it.** Found by accident during P40 on 2026-08-19: with the token set
+  and the URL unset, the run reports `2 pending` and exit 0 — indistinguishable
+  from a machine that was never configured, on a tier whose whole value is that
+  it talks to a real deployment. The fix is in `test/helpers/live-gate.ts`, the
+  same shape as the `https://` check already there: one of the pair present and
+  the other absent must **throw**. It wants a unit test, and it is small enough
+  to be the slice's first commit.
+- ☐ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** So the one live
+  test that predates 3a exercises a transport `src/` never uses, which is the
+  same defect class as a test that copies the logic under test. Port it onto
+  `createComputeClient`, or delete it now that `viya4-job.test.ts` covers the
+  same ground through the real client.
+
+> **Before any of it, the submission fidelity corpus**, which has its own item
+> above and is not repeated here. It is listed as "Before 3a" rather than as
+> part of it because the corpus is what proves the mechanism 2-pre chose, and a
+> backend written first would be a backend the corpus is then fitted around.
+
 ```bash
 # 3a — PROC PYTHON backend
 git checkout -b phase-3a-proc-python-backend
@@ -4133,9 +4254,17 @@ Do this immediately after 0a-ii merges. Full detail in `AI-PR-REVIEWERS-RUNBOOK.
 > role is confirmed on SP `ab8a2947-ff16-4a9b-86b2-592eaea6c7e2` at the
 > `sefordfoundry` account scope; all four secrets and four variables are set on
 > the repo; and the three workflow files are written with prompts retailored for
-> TypeScript. Only the merge (0a-ii) and this smoke test remain.
+> TypeScript. 0a-ii merged, and both reviewers have run on every pull request
+> since, so nothing in this section remains outstanding.
+>
+> **E1–E5 lost their ☐ boxes on 2026-08-19.** They had kept them for three days
+> under a banner saying they would never be run, and a ☐ in this runbook means
+> "a manual step you perform" — so a reader scanning for open work found five,
+> directly above the release punch list. The steps are unchanged; only the boxes
+> are gone.
 
-☐ **E1.** Confirm the workflows are on `main`. Nothing works until they are.
+**E1 (not run).** Confirm the workflows are on `main`. Nothing works until they
+are.
 
 > **Also confirm the Claude GitHub App is installed on the repo** —
 > https://github.com/apps/claude → Configure → repository access. This is a
@@ -4144,13 +4273,14 @@ Do this immediately after 0a-ii merges. Full detail in `AI-PR-REVIEWERS-RUNBOOK.
 > with `401 Unauthorized - Claude Code is not installed on this repository`.
 > Installed here 2026-08-12.
 
-☐ **E2.** Create a throwaway branch with deliberately bad code. Seed it with
-defects that match the *retailored* prompts, so a silent bot and a working bot
-look different: a `fetch` with no timeout, an empty `catch` with no fail-soft
-comment, `Math.random()` in a PKCE verifier, a token written to `console.log`, a
-user-facing string not wrapped in `l10n.t()`, an `as any` cast across an API
-boundary, and an inline `if (version === "3.5")` outside `src/dialects/`. A
-reviewer that misses **all** of those is misconfigured, not merely quiet.
+**E2 (not run).** Create a throwaway branch with deliberately bad code. Seed it
+with defects that match the *retailored* prompts, so a silent bot and a working
+bot look different: a `fetch` with no timeout, an empty `catch` with no
+fail-soft comment, `Math.random()` in a PKCE verifier, a token written to
+`console.log`, a user-facing string not wrapped in `l10n.t()`, an `as any` cast
+across an API boundary, and an inline `if (version === "3.5")` outside
+`src/dialects/`. A reviewer that misses **all** of those is misconfigured, not
+merely quiet.
 
 The file `test/scratch/reviewer-smoke.ts` is already prepared in your working copy.
 
@@ -4162,11 +4292,12 @@ git push -u origin ci-reviewer-smoke-test
 gh pr create --base main --head ci-reviewer-smoke-test --fill
 ```
 
-☐ **E3.** Confirm **both** reviewers post inline comments plus a summary.
+**E3 (not run).** Confirm **both** reviewers post inline comments plus a
+summary.
 
-☐ **E4.** For the Claude reviewer, open the Actions log and check the success
-signals: `is_error: false`, `subtype: success`, `num_turns > 1`, a real non-zero
-`total_cost_usd`, and `modelUsage` entries with `provider: "foundry"`.
+**E4 (not run).** For the Claude reviewer, open the Actions log and check the
+success signals: `is_error: false`, `subtype: success`, `num_turns > 1`, a real
+non-zero `total_cost_usd`, and `modelUsage` entries with `provider: "foundry"`.
 
 > **If `azure/login` fails with `AADSTS700213: No matching federated identity
 > record found`:** the repo is emitting GitHub's *immutable* OIDC subject. Repos
@@ -4185,8 +4316,8 @@ signals: `is_error: false`, `subtype: success`, `num_turns > 1`, a real non-zero
 > principal at the Foundry *account* scope. Fix the RBAC, then use GitHub's
 > "Re-run failed jobs" — OIDC re-authenticates each run, so no new commit needed.
 
-☐ **E5.** **Close the smoke-test PR without merging** and delete the branch. The
-bad code must never reach `main`.
+**E5 (not run).** **Close the smoke-test PR without merging** and delete the
+branch. The bad code must never reach `main`.
 
 ```bash
 gh pr close ci-reviewer-smoke-test --delete-branch

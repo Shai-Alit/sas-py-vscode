@@ -1,0 +1,1 @@
+print("no trailing newline after this line")

@@ -236,6 +236,72 @@ endpoints:
     # "the request was accepted" and nothing stronger.
     accept: null
 
+  # ── Compute: filerefs (submission-fidelity corpus, slice 3-pre) ────────────
+  #
+  # The upload half of ADR-0014's mechanism — create a fileref, write its
+  # content — and nothing else. `src/compute/fileref.ts` does not compose
+  # `proc python infile=<fileref>;`; that belongs to slice 3a, on top of these
+  # two entries plus `job_create` above. Findings 35, 36 and 57.
+  - id: fileref_create
+    method: POST
+    via:
+      from: compute_session_create
+      relation: assign
+      type: application/vnd.sas.compute.fileref.request
+    observed_href: /compute/sessions/{sessionId}/filerefs
+    accept: application/vnd.sas.compute.fileref+json
+    # `{name, path}` in, `201` out. Finding 36 recorded the response `id` equal
+    # to the requested `name`, seven links (`self`, `alternate`, `deassign`,
+    # `content`, `upload`, `append`, `delete`), and `accessMethod: "DISK"`.
+    # Finding 57 added the type each of those links advertises, and measured a
+    # bare relative `path` resolving under the session's own run directory —
+    # which is why `createFileref` sends one value for both `name` and `path`.
+    # This module reads only `id` and the links it follows.
+    response_fields: [id, links]
+
+  - id: fileref_get
+    method: GET
+    via:
+      from: fileref_create
+      relation: self
+      type: application/vnd.sas.compute.fileref
+    observed_href: /compute/sessions/{sessionId}/filerefs/{filerefId}
+    accept: application/vnd.sas.compute.fileref+json
+    # Read for its `ETag` alone, immediately before every content write —
+    # `writeFilerefContent`'s own comment says why the create response's `ETag`
+    # is not reused. Finding 36 measured this `GET`'s `ETag` as the one that
+    # made the content `PUT` below succeed, and finding 57 reproduced it across
+    # five filerefs. Whether it equals the create response's `ETag` is still
+    # unmeasured, which is what keeps the extra `GET` here.
+    response_fields: [id, links]
+
+  - id: fileref_content_put
+    method: PUT
+    via:
+      from: fileref_create
+      relation: upload
+      # Not a SAS vendor type: a raw byte upload has no JSON envelope, so
+      # nothing here goes through the `+json` suffixing every other `via.type`
+      # relies on. Finding 57 measured the `upload` relation advertising
+      # `application/octet-stream` **itself**, so this is the link's own type
+      # being followed, not a value the code supplies. `client.ts`'s `rawBody`
+      # arm carries the same string as its default for a link that names no
+      # type; that arm is not the one taken here.
+      type: application/octet-stream
+    observed_href: /compute/sessions/{sessionId}/filerefs/{filerefId}/content
+    # `428 Precondition Required` with no `If-Match`, `201` with the `ETag`
+    # from `fileref_get` (findings 36 and 57). `accept: null` is a measured
+    # absence like the rest of this file's: finding 57 enumerated the `upload`
+    # relation's types and it carries no `responseType`. `fileref.ts` reads
+    # nothing from this response but its status either way.
+    #
+    # Reading the content back to prove fidelity is the live tier's job, and it
+    # does so as a test concern rather than something this extension depends on
+    # at run time, so no `fileref_content_get` id is declared here — though
+    # finding 57 records what that `GET` answers, including that its
+    # `Content-Type` is sniffed rather than echoed.
+    accept: null
+
   # ── Capability probing ─────────────────────────────────────────────────────
   - id: deployment_data_root
     method: GET

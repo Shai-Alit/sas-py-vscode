@@ -120,6 +120,22 @@ export interface ComputeRequest {
   /** Serialised as JSON when present. Absent means no request body at all. */
   body?: unknown;
   /**
+   * Sent exactly as given — never `JSON.stringify`'d, never decoded or
+   * re-encoded. Mutually exclusive with {@link ComputeRequest.body}.
+   *
+   * The one caller is `src/compute/fileref.ts`'s content upload. ADR-0014 runs
+   * Python as an uploaded file, and the submission-fidelity corpus (slice
+   * 3-pre) exists to prove that upload is byte-for-byte — a guarantee `body`
+   * cannot make, because `JSON.stringify` would quote and escape a Python
+   * source file rather than transmit it. `Content-Type` defaults to
+   * `application/octet-stream` for this arm rather than to `application/json`,
+   * because a raw body is never JSON — a **default**, not a measured value, and
+   * one the fileref path does not reach: finding 57 measured that path's
+   * `upload` relation advertising `application/octet-stream` itself, so the
+   * link's own type is what gets sent.
+   */
+  rawBody?: Uint8Array | undefined;
+  /**
    * Sent as `If-Match`, and **only when held**.
    *
    * Finding 18: `DELETE /compute/sessions/{id}` answered `204` with no
@@ -181,6 +197,16 @@ async function sendRequest(
   const { link } = request;
   const method = linkMethod(link);
 
+  // A caller defect, in the same spirit as `createJob`'s empty-statements
+  // check: nothing on the wire produces this, it can only be composed here, and
+  // failing before a network call beats sending one of the two bodies and
+  // silently discarding the other.
+  if (request.body !== undefined && request.rawBody !== undefined) {
+    throw new TypeError(
+      "a compute request cannot carry both a JSON body and a raw body",
+    );
+  }
+
   let url: string;
   try {
     url = resolveHref(config.root, link.href);
@@ -221,8 +247,21 @@ async function sendRequest(
   const accept = acceptFor(link, method);
   if (accept !== undefined) headers.accept = accept;
 
-  let body: string | undefined;
-  if (request.body !== undefined) {
+  let body: string | Uint8Array | undefined;
+  if (request.rawBody !== undefined) {
+    // Sent exactly as given. No `JSON.stringify`, no decode, no re-encode — see
+    // the field's own doc comment for why that promise matters here and nowhere
+    // else in this file. `application/octet-stream` is the default rather than
+    // `application/json` because a raw body is never JSON. It is a **default,
+    // not the measured value**: finding 57 recorded the only `rawBody` caller
+    // today, a fileref's `upload` relation, advertising `octet-stream` in the
+    // link itself, so `computeMediaType` passes that through and this fallback
+    // is not the arm taken. It exists for a future raw-body link that carries no
+    // type at all.
+    body = request.rawBody;
+    headers["content-type"] =
+      computeMediaType(link.type) ?? "application/octet-stream";
+  } else if (request.body !== undefined) {
     body = JSON.stringify(request.body);
     headers["content-type"] = computeMediaType(link.type) ?? "application/json";
   }

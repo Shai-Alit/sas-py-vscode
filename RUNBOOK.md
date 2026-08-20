@@ -3958,7 +3958,7 @@ guard and the comment on it says so.
 
 ### Phase 3 — Run Python
 
-☐ **Before 3a — build the submission fidelity corpus, and let it choose the
+☑ **Before 3a — build the submission fidelity corpus, and let it choose the
 mechanism.** SAS tokenises the block before Python ever sees it, and its string
 rules are not Python's: a quote opens a literal that runs to the next matching
 quote *across newlines*, so an apostrophe in a comment or a `don't` in a docstring
@@ -3997,6 +3997,74 @@ path* — that what the interpreter read is what the editor held, across CRLF, t
 non-ASCII, an empty file and no trailing newline. Keep the hostile cases anyway:
 they are now the evidence that nothing tokenises the file, and the first case to
 fail would tell us that something does. Findings 31–35 in `PROBE-FINDINGS.md`.
+
+**Written 2026-08-19, committed 2026-08-20 as `8063375` on branch
+`phase-3-pre-submission-corpus` (PR #46, open, under review — not yet
+merged).** The fourteen-file corpus, a new `src/compute/fileref.ts`
+(`createFileref`, `writeFilerefContent` — the fileref half of ADR-0014's
+mechanism, composing no `infile=` and touching no job, which stays 3a's),
+`ComputeRequest.rawBody` on `src/compute/client.ts` plus `TransportRequest.body`
+widened to `string | Uint8Array` in `src/auth/transport.ts`, three new
+`contracts/viya4.yaml` entries (`fileref_create`, `fileref_get`,
+`fileref_content_put`), a unit suite against a recorded transport
+(`compute-fileref.test.ts`, `submission-corpus.test.ts`, new `raw bodies` cases
+in `compute-client.test.ts`), and a live-tier suite round-tripping five fixtures
+against a real Viya 4 (`test/live/submission-corpus.test.ts`). One existing
+test needed a one-line fix (`test/integration/auth/browser-flow.test.ts`),
+where a fake transport's `new URLSearchParams(init.body)` stopped compiling
+once `body` could be a `Uint8Array`.
+
+Checked clean before `npm run verify`: both `tsc` projects, Prettier,
+`check-contracts`, `check-coverage-scope`, `check-secrets`, `check-copyright`,
+and one adversarial subagent pass over the finished diff (no blocking findings;
+it flagged two tautological
+`assert.equal(FILEREF_CONTENT_TYPE, "application/octet-stream")` tests that
+never exercised `client.ts`'s real header logic — fixed by adding the
+transport-level `raw bodies` suite to `compute-client.test.ts` and removing the
+redundant one from `submission-corpus.test.ts`).
+
+**`npm run verify` is green** — 892 passing, coverage
+92.41/95.06/91.57/92.41 (statements/branches/functions/lines), all above the
+92/95/91/92 floor with enough margin that the floor does not move this time:
+each measured value's integer truncation matches the existing floor exactly.
+One ESLint finding surfaced on the first run —
+`@typescript-eslint/no-unnecessary-condition` on
+`test/unit/compute-fileref.test.ts`, because Node's strict `assert.equal` is
+`asserts actual is T`-typed and narrowing `put?.link.rel` had already narrowed
+`put` itself, making a second `put?.etag` redundant — fixed by dropping the
+`?.`. Second run was clean.
+
+**The live tier has been run against a real Viya 4 (`verde`) and passes.**
+Getting there surfaced two things worth recording, neither a defect in this
+slice:
+
+- **TLS, not a code defect, was behind six of the first seven live failures.**
+  `verde` sends a leaf certificate with no intermediate, which Node cannot
+  build a trust chain from without `NODE_OPTIONS=--use-system-ca` — exactly the
+  scenario this file's own P40 preamble (§319–323) already predicted. The
+  connectivity suite surfaced the real
+  `unable to verify the first certificate` string because it uses `fetch` and
+  prints free text; every other live suite goes through `describeFailure`,
+  which prints only `problem.code`, so the identical misconfiguration reached
+  the operator as a bare `compute-unreachable` with no hint why. Worth
+  promoting that preamble paragraph into `docs/dev/testing.md`'s own preamble
+  too, not just P40's, since it is now load-bearing for more than one slice's
+  live run.
+- **A `PYTHON_ON_VIYA_TEST_VIYA4_CONTEXT` override was never needed.** The
+  file's own default, `SAS Job Execution compute context`, is valid on
+  `verde` and was the whole time; an earlier attempt to override it with
+  `Data mining compute context` failed on a capitalisation typo
+  (`Data Mining compute context` is the real name) that turned out to be
+  moot once the override was dropped entirely.
+
+**Finding 57 in `PROBE-FINDINGS.md`** (added 2026-08-20) is the live evidence
+behind this item's claims: the fileref's `upload` relation advertises
+`application/octet-stream` itself, so `client.ts`'s own octet-stream default
+for a `rawBody` request is never the arm actually taken on this path; a bare
+relative `path` lands inside the session's own run directory, which is what
+makes `createFileref` sending the same value for `name` and `path` defensible;
+and four corpus cases (CRLF, UTF-8 multi-byte, no-trailing-newline, and a
+genuinely empty file) round-tripped upload-then-read-back md5-identical.
 
 ☐ **#135's open half — decide whether an absent `createSession` should fail the
 connect at all.** `resolveContext` refuses before it posts anything, on the

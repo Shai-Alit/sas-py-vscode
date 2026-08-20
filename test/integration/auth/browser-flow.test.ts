@@ -83,6 +83,14 @@ function harness(
   let opened: URL | undefined = undefined;
 
   const transport: HttpTransport = (_url, init) => {
+    // `TransportRequest.body` widened to `string | Uint8Array` in slice 3-pre
+    // for the submission-fidelity corpus's fileref upload; the token endpoint
+    // this harness stands in for only ever sends a form-encoded string, so the
+    // `Uint8Array` arm has no path through this flow at all. `assert.equal` is
+    // not an assertion signature in Node's types — this `if` is what narrows.
+    if (typeof init.body !== "string") {
+      throw new Error("the token exchange sent a non-string body");
+    }
     exchanges.push(new URLSearchParams(init.body));
     if (options.refuseExchange === true) {
       // What a deployment that will not honour the code looks like from here.

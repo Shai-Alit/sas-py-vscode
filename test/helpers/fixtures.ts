@@ -1,7 +1,7 @@
 // Copyright © 2026, Sean Ford and the Python on Viya contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 
 /**
@@ -26,6 +26,40 @@ export function readFixture(...segments: string[]): string {
       { cause: error },
     );
   }
+}
+
+/**
+ * Reads a fixture as raw bytes, with no encoding applied in either direction.
+ *
+ * The submission-fidelity corpus (`test/fixtures/submission-corpus/`) is the
+ * one set of fixtures where `readFixture`'s `utf8` decode is the wrong tool: a
+ * test asserting byte-for-byte fidelity must start from the same bytes the
+ * upload path will send, not from a string a decode step has already round-
+ * tripped through. `empty.py` returns a zero-length array rather than throwing,
+ * which matches `readFileSync`'s own behaviour on a real empty file.
+ */
+export function readFixtureBytes(...segments: string[]): Uint8Array {
+  const file = path.join(FIXTURE_ROOT, ...segments);
+  try {
+    return readFileSync(file);
+  } catch (error) {
+    throw new Error(
+      `Fixture not found: ${segments.join("/")} (looked under ${FIXTURE_ROOT}).`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * The file names directly under a fixture directory, sorted.
+ *
+ * Sorted so a test's iteration order — and therefore Mocha's reported order —
+ * does not depend on the filesystem's own directory-entry order, which differs
+ * between the three operating systems CI runs on.
+ */
+export function listFixtureFiles(...segments: string[]): readonly string[] {
+  const dir = path.join(FIXTURE_ROOT, ...segments);
+  return [...readdirSync(dir)].sort();
 }
 
 /**

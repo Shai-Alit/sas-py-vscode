@@ -7,6 +7,14 @@
 *.cmd   text eol=crlf
 *.ps1   text eol=crlf
 
+# The submission-fidelity corpus is byte evidence, not source. `text=auto` above
+# would rewrite `crlf-line-endings.py` to LF on the way into a commit — measured:
+# the filtered blob is 51 bytes and the raw one 56 — which silently deletes the
+# only property that fixture exists to have, on every fresh clone including CI.
+# `-text` disables the filter in both directions. `.editorconfig` carries the
+# matching exemption for editors; `test/fixtures/README.md` says why.
+test/fixtures/submission-corpus/**  -text
+
 # Binary — never munge, never diff as text.
 *.png   binary
 *.jpg   binary

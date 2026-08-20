@@ -352,6 +352,14 @@ async function expectOk<T>(
  * deployment, and between them they say which of the ten failures happened —
  * which is what the person reading a red live run actually needs. The rest is in
  * the extension's log, where it belongs.
+ *
+ * `problem.detail` on the two members that carry one is not an exception to
+ * this and was tried as one on 2026-08-20. `compute-unreachable`'s detail is
+ * `${method} ${href} — ${message}`: the href holds a live session id, and a DNS
+ * failure's message holds the internal hostname. Neither belongs in a terminal
+ * either. The diagnostic that widening was meant to buy is instead written
+ * down where it costs nothing — see this suite's own doc comment on what an
+ * all-`compute-unreachable` run means.
  */
 function describeFailure(problem: ComputeProblem): string {
   return "error" in problem

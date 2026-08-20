@@ -759,6 +759,49 @@ called out under **Changed** with a migration note.
   where restructuring the hooks cannot get round it. The compute context it runs
   in defaults to the one the SAS extension ships and is overridable per machine.
 
+  A live failure still prints its code and HTTP status and nothing else. The
+  first live run of the corpus suite failed every case with a bare
+  `compute-unreachable`, which reads as a deployment outage; the real cause was
+  a local Node trust-store problem, and widening the failure message to carry
+  `problem.detail` was tried on 2026-08-20 and rejected — that detail is
+  `` `${method} ${link.href}` ``, which carries a live session id, and on a DNS
+  failure it carries the deployment's hostname. `test/helpers/live-gate.ts` says
+  a live failure may name the endpoint and the status code and nothing else, and
+  it means it. Both suites carry a comment pointing at RUNBOOK **P33** instead,
+  which names the symptom and the `NODE_OPTIONS=--use-system-ca` that fixes it.
+
+- `src/compute/fileref.ts`, the upload half of ADR-0014's mechanism: create a
+  fileref, then write its content with a fresh `If-Match` read immediately
+  before every `PUT`. It composes no `infile=<fileref>;` and touches no job —
+  that boundary belongs to slice 3a, on top of this module and `job.ts`.
+- The submission-fidelity corpus (`test/fixtures/submission-corpus/`), the
+  "Before 3a" item in `RUNBOOK.md`: fourteen hand-written Python files chosen to
+  be hostile to SAS's tokeniser, plus a unit suite that drives every one through
+  a real `ComputeClient` over a recording transport and compares what reaches
+  that transport against a second, independent read of the fixture, and a
+  live-tier suite round-tripping a curated five-file subset against a real
+  Viya 4. The corpus's job changed on 2026-08-16 (findings 31–36) from choosing a
+  submission mechanism to proving the chosen one — upload plus `infile=` — is
+  faithful. It covers the upload path only: no tier of it runs any Python, so
+  what the interpreter reads is 3a's to prove.
+  `.gitattributes` marks the directory `-text` and `.editorconfig` exempts it
+  from the line-ending and final-newline rules, because the repository-wide
+  `text=auto eol=lf` would otherwise rewrite the CRLF fixture on the way into a
+  commit and break that case on every fresh clone, CI included.
+- `ComputeRequest.rawBody` on `src/compute/client.ts`, and
+  `TransportRequest.body` widened to `string | Uint8Array` in
+  `src/auth/transport.ts`: the one path in this codebase that sends bytes
+  verbatim rather than as JSON, with `Content-Type` defaulting to
+  `application/octet-stream` rather than `application/json` when a link names
+  none — a default the fileref path does not reach, since finding 57 measured
+  the `upload` relation advertising that type itself. `ComputeRequest.body` and
+  `.rawBody` are mutually exclusive and a request carrying both is refused
+  before any network call.
+- Finding 57 in `PROBE-FINDINGS.md`: the media type every fileref relation
+  advertises, and that a bare relative `path` resolves inside the session's own
+  run directory, so a fileref is session-scoped and dies with it. Closes the two
+  gaps `fileref.ts` had been citing finding 36 for.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

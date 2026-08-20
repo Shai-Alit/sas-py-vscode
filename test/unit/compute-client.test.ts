@@ -285,6 +285,119 @@ describe("createComputeClient", () => {
     });
   });
 
+  describe("raw bodies", () => {
+    // `rawBody` exists for `src/compute/fileref.ts`'s content upload: the
+    // submission-fidelity corpus (slice 3-pre) needs a byte for byte
+    // guarantee `JSON.stringify`-then-parse cannot make. These tests go
+    // through the transport-level recorder, the same one `"serialises the
+    // body as JSON"` above uses, rather than asserting on the `ComputeRequest`
+    // this module was handed — the request-level tests in
+    // `compute-fileref.test.ts` already do that, and the point of this suite
+    // is to prove what actually reaches `HttpTransport`.
+    const UPLOAD: Link = {
+      rel: "upload",
+      href: "/compute/sessions/S/filerefs/F/content",
+      method: "PUT",
+    };
+
+    it("sends the bytes untouched, never through JSON.stringify", async () => {
+      const recorder = record(response({ status: 201 }));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+      // Content chosen so a JSON round trip would visibly mangle it: a quote,
+      // a backslash, and a newline are all JSON escape characters.
+      const bytes = new TextEncoder().encode(
+        'a "quote", a \\backslash\nand a newline',
+      );
+
+      await client.send({ link: UPLOAD, rawBody: bytes });
+
+      const call = only(recorder.calls);
+      assert.equal(call.init.body, bytes);
+    });
+
+    it("defaults Content-Type to application/octet-stream when the link names none", async () => {
+      const recorder = record(response({ status: 201 }));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+
+      await client.send({
+        link: UPLOAD,
+        rawBody: new TextEncoder().encode("x"),
+      });
+
+      assert.equal(
+        only(recorder.calls).init.headers["content-type"],
+        "application/octet-stream",
+      );
+    });
+
+    it("prefers the link's own type over the octet-stream default", async () => {
+      const recorder = record(response({ status: 201 }));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+
+      await client.send({
+        link: { ...UPLOAD, type: "text/plain" },
+        rawBody: new TextEncoder().encode("x"),
+      });
+
+      assert.equal(
+        only(recorder.calls).init.headers["content-type"],
+        "text/plain",
+      );
+    });
+
+    it("refuses to carry both a JSON body and a raw body", async () => {
+      const recorder = record(response({ status: 201 }));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+
+      await assert.rejects(
+        async () =>
+          await client.send({
+            link: UPLOAD,
+            body: { should: "not happen" },
+            rawBody: new TextEncoder().encode("x"),
+          }),
+        TypeError,
+      );
+      // Refused before the network call, same as `createJob`'s empty-statements
+      // check — a caller defect is reported by failing where it was composed,
+      // not by sending one of the two and silently dropping the other.
+      assert.equal(recorder.calls.length, 0);
+    });
+
+    it("still sends If-Match alongside a raw body", async () => {
+      const recorder = record(response({ status: 201 }));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+
+      await client.send({
+        link: UPLOAD,
+        rawBody: new TextEncoder().encode("x"),
+        etag: '"etag-1"',
+      });
+
+      assert.equal(only(recorder.calls).init.headers["if-match"], '"etag-1"');
+    });
+  });
+
   describe("conditional requests", () => {
     it("sends If-Match only when an ETag is held", async () => {
       // Finding 18: DELETE answered 204 with no If-Match at all. Upstream sends

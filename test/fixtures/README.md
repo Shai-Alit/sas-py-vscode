@@ -4,9 +4,10 @@ Recorded SAS Viya responses, used to drive the mock HTTP layer. Everything the
 unit tier knows about Viya, it learned from a file in here.
 
 ```
-viya4/     captured from a live Viya 4 deployment
-viya35/    captured from a live Viya 3.5 deployment
-harness/   synthetic; proves the plumbing, imitates nothing
+viya4/                 captured from a live Viya 4 deployment
+viya35/                captured from a live Viya 3.5 deployment
+harness/               synthetic; proves the plumbing, imitates nothing
+submission-corpus/     hand-written Python, hostile to SAS tokenisation
 ```
 
 The split by generation is the point. Happy paths run once per generation, so a
@@ -59,3 +60,33 @@ generation. Superseded findings are struck through, never deleted.
 **Fixtures are read from this directory, not copied into `out/`.** Use
 `readJsonFixture` from `test/helpers/fixtures.ts`; there is no build step to
 forget, and no stale copy to go green against.
+
+## `submission-corpus/`
+
+A fourth kind, and deliberately not evidence in the sense above: these are
+hand-written, not captured, and that is the point of them rather than an
+exception to the rule. Phase 3's submission-fidelity corpus
+(`RUNBOOK.md`, "Before 3a") is real Python source chosen to be hostile to SAS's
+tokeniser — an apostrophe in a docstring, mixed triple-quote styles, an
+f-string with nested quotes and braces, raw and byte strings, `&`/`%` in string
+literals, the literal token `endsubmit;` inside a comment and inside a string, a
+`;`-heavy one-liner, CRLF line endings, a tab-indented file, non-ASCII
+identifiers and content, an empty file, and a file with no trailing newline —
+see `PRODUCTION_PLAN.md` §4 for why each one is here.
+
+Read every file with no encoding argument (`fs.readFileSync(path)`, not
+`readFileSync(path, "utf8")`), so a test asserts on the real bytes rather than a
+re-decoded string. `empty.py` is a real zero-byte file, not a placeholder, and
+`no-trailing-newline.py`'s last byte is deliberately not `\n` — do not "fix"
+either with an editor that adds one on save.
+
+**Two config files exist to keep these bytes intact, and both are load-bearing.**
+`.gitattributes` marks the directory `-text`, because the repository-wide
+`* text=auto eol=lf` would otherwise rewrite `crlf-line-endings.py` on the way
+into a commit — measured: the filtered blob is 51 bytes against the raw 56, so
+the only property that fixture has would be deleted on every fresh clone,
+including CI, and nowhere else. `.editorconfig` carries the matching exemption
+for editors: `end_of_line`, `insert_final_newline` and `trim_trailing_whitespace`
+are each a way to destroy a different case on save. If a corpus assertion starts
+failing in CI but not locally, or locally but not in CI, look at those two files
+before looking at the test.

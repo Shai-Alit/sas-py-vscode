@@ -3998,6 +3998,46 @@ non-ASCII, an empty file and no trailing newline. Keep the hostile cases anyway:
 they are now the evidence that nothing tokenises the file, and the first case to
 fail would tell us that something does. Findings 31–35 in `PROBE-FINDINGS.md`.
 
+**Written 2026-08-19, on branch `phase-3-pre-submission-corpus`; not yet
+verified or merged, so this item stays ☐.** The fourteen-file corpus, a new
+`src/compute/fileref.ts` (`createFileref`, `writeFilerefContent` — the fileref
+half of ADR-0014's mechanism, composing no `infile=` and touching no job, which
+stays 3a's), `ComputeRequest.rawBody` on `src/compute/client.ts` plus
+`TransportRequest.body` widened to `string | Uint8Array` in
+`src/auth/transport.ts`, three new `contracts/viya4.yaml` entries
+(`fileref_create`, `fileref_get`, `fileref_content_put`), a unit suite against a
+recorded transport (`compute-fileref.test.ts`, `submission-corpus.test.ts`, new
+`raw bodies` cases in `compute-client.test.ts`), and a live-tier suite
+round-tripping five fixtures against a real Viya 4
+(`test/live/submission-corpus.test.ts`). One existing test needed a one-line fix
+(`test/integration/auth/browser-flow.test.ts`), where a fake transport's
+`new URLSearchParams(init.body)` stopped compiling once `body` could be a
+`Uint8Array`.
+
+Checked clean before `npm run verify`: both `tsc` projects, Prettier,
+`check-contracts`, `check-coverage-scope`, `check-secrets`, `check-copyright`,
+and one adversarial subagent pass over the finished diff (no blocking findings;
+it flagged two tautological
+`assert.equal(FILEREF_CONTENT_TYPE, "application/octet-stream")` tests that
+never exercised `client.ts`'s real header logic — fixed by adding the
+transport-level `raw bodies` suite to `compute-client.test.ts` and removing the
+redundant one from `submission-corpus.test.ts`).
+
+**`npm run verify` is now green** — 890 passing, coverage
+92.39/95.06/91.57/92.39 (statements/branches/functions/lines), all above the
+92/95/91/92 floor with enough margin that the floor does not move this time:
+each measured value's integer truncation matches the existing floor exactly.
+One ESLint finding surfaced on the first run —
+`@typescript-eslint/no-unnecessary-condition` on
+`test/unit/compute-fileref.test.ts`, because Node's strict `assert.equal` is
+`asserts actual is T`-typed and narrowing `put?.link.rel` had already narrowed
+`put` itself, making a second `put?.etag` redundant — fixed by dropping the
+`?.`. Second run was clean.
+
+**Still not run: the live tier**, `test/live/submission-corpus.test.ts`
+included. Tick this ☑ once that has actually been run at least once against a
+real Viya 4.
+
 ☐ **#135's open half — decide whether an absent `createSession` should fail the
 connect at all.** `resolveContext` refuses before it posts anything, on the
 reasoning that failing while the context's name is still in hand beats a failure

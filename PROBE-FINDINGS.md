@@ -1987,3 +1987,95 @@ representations differ here the same way the context's two do.
 **Not settled.** The exact field set of the session resource was never
 enumerated the way finding 54 enumerated the context's, so "how many fields the
 summary omits" is unquantified. Nothing currently needs the number.
+
+## 2026-08-20 — What a fileref's links actually say (Viya 4)
+
+Finding 36 established the fileref upload mechanism — seven relations, and a
+`PUT …/content` that is `428 Precondition Required` without an `If-Match` and
+`201` with the `ETag` from a `GET` of the fileref. It recorded neither the media
+type any of those relations advertises nor the `name`/`path` values it sent, and
+`src/compute/fileref.ts` had been written citing it for both. This probe was run
+to close that gap before the module ships.
+
+**Mutating.** Agreed with Sean beforehand. One compute session was created on
+deployment A, five filerefs were assigned inside it, content was written and
+read back, and the session was deleted at the end; the session listing was taken
+before and after, per RUNBOOK **P40**. Nothing outside that session was touched.
+Ids, hostnames and paths below are elided or synthetic except where the shape
+itself is the finding.
+
+### Finding 57 — The fileref's `upload` relation advertises `application/octet-stream` itself, and a bare relative `path` lands inside the session
+
+`POST /compute/sessions/{id}/filerefs` with body `{"name":"case1",
+"path":"case1"}` answered `201`. Below, `…` stands for the
+`application/vnd.sas.` prefix, `→` separates a relation's request type from its
+response type, and `—` means the relation carried neither:
+
+```
+  rel        method  type / responseType
+  self       GET     …compute.fileref
+  alternate  GET     …compute.fileref.summary
+  deassign   DELETE  —
+  content    GET     application/octet-stream
+  upload     PUT     application/octet-stream
+  append     POST    application/octet-stream
+  delete     DELETE  —
+```
+
+and the session's own relation that creates them:
+
+```
+  assign     POST    …compute.fileref.request → …compute.fileref
+```
+
+**Why the types matter.** Four of the seven carry one, and the three
+octet-stream ones are not SAS vendor types, so `computeMediaType` passes them
+through untouched — a raw byte upload is never suffixed `+json`, and a content
+`GET` asks for `octet-stream` rather than a vendor type it would be refused for
+(finding 6). The consequence for the code is that `client.ts`'s **default** of
+`application/octet-stream` for a `rawBody` request is not the arm taken on this
+path: the link's own type is used, and happens to carry the same value. The two
+were indistinguishable on the wire, which is exactly why the distinction had to
+be measured rather than assumed.
+
+**A bare relative `path` is session-scoped.** The response carried `filePath`
+`…/compsrv/default/<session-uuid>/case1` — the session's own run directory. So
+a fixed fileref name cannot collide between concurrent runs on one deployment,
+and the file dies with the session: a live test that deletes only its session
+leaks nothing. This is what makes `createFileref` sending the same value for
+`name` and `path` defensible rather than arbitrary; finding 36 elided the values
+it sent, so it established nothing about a divergent pair, and it still does
+not.
+
+**Round trips confirmed.** `PUT` with the `ETag` from a `GET` of the fileref,
+then `GET …/content`, over four of the corpus's cases plus a genuinely empty
+file: CRLF (34 B), UTF-8 multi-byte (22 B), no-trailing-newline (28 B) and the
+0-byte case all came back md5-identical to what was sent. `PUT` with no
+`If-Match` is still `428`, as finding 36 measured.
+
+**The read-back `Content-Type` is sniffed, not echoed.** `GET …/content`
+answered `text/plain` for the four non-empty cases and **`inode/x-empty`** for
+the empty one, despite every one of them having been uploaded as
+`application/octet-stream`. Neither is JSON, so `client.ts` leaves `body`
+undefined and a caller reads `text` — which is the behaviour wanted, but it is
+worth recording that the type on the way out says nothing about the type on the
+way in.
+
+**Also seen, and not recorded by finding 36:** the create response carries
+`version: 2`, `isAggregation` and `isDirectory` alongside the `accessMethod`,
+`fileName`, `filePath` and `fileSize` that finding did record.
+
+### What this probe did not settle
+
+- **A `404` from a fileref.** No fileref resource answered `404` in any request
+  here, so nothing establishes whether a missing fileref and a missing session
+  are distinguishable. `fileref.ts` reads both as `session-gone`, which is a
+  reading and is documented as one in that module.
+- **Whether `name` and `path` may diverge.** Only the matching pair was sent.
+  The `filePath` measurement makes a *relative* `path` session-scoped; it says
+  nothing about an absolute one, which was not attempted.
+- **Whether the create response's `ETag` matches the `self` read's.** Not
+  compared. `writeFilerefContent` issues the `GET` unconditionally rather than
+  taking the shortcut `session.ts` takes on finding 21's evidence, and this
+  probe gives no reason to change that.
+- **Viya 3.5.** Not probed, as ever.

@@ -103,8 +103,18 @@ export interface TransportRequest {
    * wire: an empty string still produces `content-length: 0`, and a `GET`
    * carrying a content-length is the kind of thing a strict gateway rejects and
    * nobody thinks to look at.
+   *
+   * **`Uint8Array`, since slice 3-pre, is not a convenience overload.** Every
+   * request before that one was JSON or `text/plain`, so a `string` this module
+   * hands to `.end()` and re-encodes as UTF-8 was always faithful. The
+   * submission-fidelity corpus uploads a fileref's content — a user's own
+   * Python file, byte for byte (ADR-0014) — and a string forces a decode-then-
+   * re-encode round trip through UTF-8 that a well-formed text file happens to
+   * survive but that this module has no way to promise. Passing the bytes
+   * straight through removes the promise it cannot make rather than relying on
+   * it. `src/compute/client.ts`'s `rawBody` is the only caller of this arm.
    */
-  body?: string | undefined;
+  body?: string | Uint8Array | undefined;
   /** Cancels the request. The caller supplies the timeout. */
   signal?: AbortSignal;
 }

@@ -39,6 +39,13 @@ interface Seen {
   url: string;
   headers: Record<string, string | string[] | undefined>;
   body: string;
+  /**
+   * The same bytes, undecoded. `body` is the UTF-8 decode, which is what almost
+   * every test here wants; the fileref upload path is the one caller whose
+   * whole claim is byte fidelity, and a decoded string cannot be evidence for
+   * it.
+   */
+  raw: Buffer;
 }
 
 describe("nodeHttpTransport", () => {
@@ -63,11 +70,13 @@ describe("nodeHttpTransport", () => {
       request.on("error", () => undefined);
       response.on("error", () => undefined);
       request.on("end", () => {
+        const raw = Buffer.concat(chunks);
         seen = {
           method: request.method ?? "",
           url: request.url ?? "",
           headers: request.headers,
-          body: Buffer.concat(chunks).toString("utf8"),
+          body: raw.toString("utf8"),
+          raw,
         };
         handler(request, response);
       });
@@ -147,6 +156,33 @@ describe("nodeHttpTransport", () => {
     // Nine characters, ten bytes. A length in characters truncates the body at
     // the server and the failure surfaces as an unrelated parse error.
     assert.equal(seen.headers["content-length"], "10");
+  });
+
+  it("writes a Uint8Array body through unchanged, and sizes it in bytes", async () => {
+    // The `rawBody` arm — `src/compute/client.ts` is its only caller, carrying a
+    // Python source file that ADR-0014 requires reach the interpreter byte for
+    // byte. Every other test in this file sends a string, so without this one
+    // nothing exercises `Buffer.byteLength`/`request.end` against the other
+    // half of `body`'s union and the whole submission-fidelity corpus rests on
+    // a boundary no test crosses.
+    //
+    // `0xc3 0x28` is deliberately **not** valid UTF-8: it is a lead byte
+    // followed by an illegal continuation. Any decode-then-re-encode on the way
+    // out replaces it with U+FFFD and three bytes arrive instead of two, so this
+    // fails loudly rather than surviving by luck the way well-formed text would.
+    const bytes = new Uint8Array([0xc3, 0x28, 0x0d, 0x0a, 0x09, 0x00, 0x7f]);
+
+    await send("/compute/filerefs/case1/content", {
+      method: "PUT",
+      headers: { "content-type": "application/octet-stream" },
+      body: bytes,
+    });
+
+    assert.ok(seen);
+    assert.equal(seen.method, "PUT");
+    assert.equal(seen.raw.length, bytes.length);
+    assert.deepEqual(new Uint8Array(seen.raw), bytes);
+    assert.equal(seen.headers["content-length"], String(bytes.length));
   });
 
   it("omits content-length entirely when there is no body", async () => {

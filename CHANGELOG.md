@@ -1068,5 +1068,14 @@ called out under **Changed** with a migration note.
   `engines.node` is derived from, so the pin follows the floor rather than being
   chosen. Same discipline `@types/vscode` is already held to, and for the same
   reason: the types are what tell the compiler which APIs exist.
+- `RUNBOOK.md` now records what is actually outstanding, closing the Phase 2
+  review's last finding. Two punch-list headers were unticked while every item
+  beneath them was done; five Section E steps kept their ☐ boxes under a banner
+  saying they would never be run; and six items had been deferred to slice 3a
+  from five separate places with no 3a punch list to arrive in — one of them
+  only as a comment in a test file. Phase 3 now opens with a written list of
+  what it inherits, slice 2b-i has the completion record it never got, and the
+  context write-back re-check that #84 unblocked is a numbered procedure rather
+  than a sentence. No source, tests, or published documentation change.
 
 [Unreleased]: https://github.com/Shai-Alit/sas-py-vscode/commits/main

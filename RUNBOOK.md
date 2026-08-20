@@ -12,6 +12,11 @@ Companion to `PRODUCTION_PLAN.md`. The plan says *what and why*; this says
 >   open costs something to anyone scanning for what is outstanding.
 > - 🤖 = prepared for you in the working copy — no action from you until the ☐
 >   that follows.
+> - **(not run)** = a step that was written and then overtaken by events before
+>   anyone performed it. The procedure is kept, because the detail underneath it
+>   is still what you would need if the situation recurred; the box is not,
+>   because there is nothing outstanding. Whatever superseded it says so on the
+>   spot.
 
 **Why the split.** The dev sandbox has no push access, no `gh` credentials, and
 no SSH keys for your repos. So the agent writes code, tests, docs, and scoped
@@ -4260,8 +4265,10 @@ Do this immediately after 0a-ii merges. Full detail in `AI-PR-REVIEWERS-RUNBOOK.
 > role is confirmed on SP `ab8a2947-ff16-4a9b-86b2-592eaea6c7e2` at the
 > `sefordfoundry` account scope; all four secrets and four variables are set on
 > the repo; and the three workflow files are written with prompts retailored for
-> TypeScript. 0a-ii merged, and both reviewers have run on every pull request
-> since, so nothing in this section remains outstanding.
+> TypeScript. 0a-ii has since merged, which was the last precondition E1 named.
+> The evidence that the reviewers work is in the banner above and it is
+> specific — three tasks that came out of their findings — rather than a claim
+> about every pull request, which nothing written here can check.
 >
 > **E1–E5 lost their ☐ boxes on 2026-08-19.** They had kept them for three days
 > under a banner saying they would never be run, and a ☐ in this runbook means

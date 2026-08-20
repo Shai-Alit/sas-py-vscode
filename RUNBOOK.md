@@ -4,8 +4,14 @@ Companion to `PRODUCTION_PLAN.md`. The plan says *what and why*; this says
 *which commands, in what order, and who runs them*.
 
 > **Legend**
-> ☐ = a manual step **you** perform.
-> 🤖 = prepared for you in the working copy — no action from you until the ☐ that follows.
+>
+> - ☐ = a manual step **you** perform.
+> - ☑ = that step is done, and the box is the record of it. So an unticked ☐
+>   above finished work reads as *unrecorded* rather than as *not done* — which
+>   is why a punch-list header is ticked once its items are, and why leaving one
+>   open costs something to anyone scanning for what is outstanding.
+> - 🤖 = prepared for you in the working copy — no action from you until the ☐
+>   that follows.
 
 **Why the split.** The dev sandbox has no push access, no `gh` credentials, and
 no SSH keys for your repos. So the agent writes code, tests, docs, and scoped
@@ -2268,7 +2274,7 @@ git commit -m "fix(auth): connect as the active profile's account"
 ```
 
 ☑ **2a-iii punch list. Complete; header ticked 2026-08-19.** All six items below
-were ☑ and the header was not, which under this runbook's own convention reads
+were ☑ and the header was not, which by the legend at the top of this file reads
 as "unrecorded" rather than "not done" — and it is the reading that costs
 something, because an open punch list on the last slice of a phase is the first
 thing anyone checks before starting the next one. The paragraph below says

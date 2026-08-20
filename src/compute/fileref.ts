@@ -164,10 +164,10 @@ export async function createFileref(
  *
  * Two requests, in order: a `GET` of the fileref's `self` relation for a fresh
  * `ETag` — see this module's own doc comment for why that `GET` is not
- * skipped — then a `PUT` of its `upload` relation carrying `bytes` as
- * {@link ComputeRequest.rawBody} and that `ETag` as `If-Match`. Neither request
- * re-encodes `bytes` in any way: `rawBody` reaches the transport unchanged, and
- * that is the entire property this function exists to have.
+ * skipped — then a `PUT` of its `upload` relation carrying `bytes` as the
+ * request's `rawBody` and that `ETag` as `If-Match`. Neither request re-encodes
+ * `bytes` in any way: `rawBody` reaches the transport unchanged, and that is the
+ * entire property this function exists to have.
  *
  * A `428` on the `PUT` (finding 36's observed failure for a missing or stale
  * `If-Match`) arrives through the ordinary `ComputeResult` failure path as

@@ -3999,8 +3999,8 @@ they are now the evidence that nothing tokenises the file, and the first case to
 fail would tell us that something does. Findings 31–35 in `PROBE-FINDINGS.md`.
 
 **Written 2026-08-19, committed 2026-08-20 as `8063375` on branch
-`phase-3-pre-submission-corpus` (PR #46, open, under review — not yet
-merged).** The fourteen-file corpus, a new `src/compute/fileref.ts`
+`phase-3-pre-submission-corpus`, merged 2026-08-20 as `629534b` (PR #46).**
+The fourteen-file corpus, a new `src/compute/fileref.ts`
 (`createFileref`, `writeFilerefContent` — the fileref half of ADR-0014's
 mechanism, composing no `infile=` and touching no job, which stays 3a's),
 `ComputeRequest.rawBody` on `src/compute/client.ts` plus `TransportRequest.body`
@@ -4065,6 +4065,19 @@ relative `path` lands inside the session's own run directory, which is what
 makes `createFileref` sending the same value for `name` and `path` defensible;
 and four corpus cases (CRLF, UTF-8 multi-byte, no-trailing-newline, and a
 genuinely empty file) round-tripped upload-then-read-back md5-identical.
+
+**What this item does not cover**, worth stating rather than assuming since
+the item otherwise reads as though the corpus settles the whole question:
+nothing in any tier of it runs Python. The unit tier ends at "the bytes
+reached the transport unchanged" and the live tier at "the deployment stored
+them and handed them back". That `proc python infile=<fileref>;` then *reads*
+those same bytes, and that a `\r\n` or a missing final newline does not change
+what executes, are unproved and land with **3a**. Finding 31 is why this is
+worth stating rather than assuming: the mechanism this replaced failed
+*silently*. Also unproved: the read-back side of the live round trip goes
+through Node's UTF-8 decoder, so it is only as faithful as
+decode-then-re-encode — lossless for well-formed UTF-8 source, which every
+case is by construction, and not a claim about arbitrary binary.
 
 ☐ **#135's open half — decide whether an absent `createSession` should fail the
 connect at all.** `resolveContext` refuses before it posts anything, on the

@@ -42,23 +42,44 @@ const ENV_VARS: Record<Generation, { url: string; token: string }> = {
 
 /**
  * Resolves the deployment for a generation, or `undefined` when this machine
- * is not configured to talk to one.
+ * is not configured to talk to one at all.
  *
  * This is gate two of three. Gate one is that only `npm run test:live` points
  * Mocha at `test/live/`, so a normal `npm test` cannot reach a real server no
  * matter what is in the environment. Gate three is {@link requireMutation}.
  *
- * Returning `undefined` rather than throwing is deliberate: an unconfigured
- * machine should *skip* the live tier, not fail it. A tier that fails when it
- * is not set up gets disabled, and a disabled tier never runs anywhere.
+ * Returning `undefined` when **neither** variable is set is deliberate: an
+ * unconfigured machine should *skip* the live tier, not fail it. A tier that
+ * fails when it is not set up gets disabled, and a disabled tier never runs
+ * anywhere.
+ *
+ * **A half-configured pair throws instead of skipping.** Found by accident
+ * during RUNBOOK P40 on 2026-08-19: with the token set and the URL unset, this
+ * used to return `undefined` the same as a wholly unconfigured machine, and
+ * the suite reported a skip and exited 0 — indistinguishable from a machine
+ * nobody had touched, on a tier whose entire value is that it talks to a real
+ * deployment. One variable present is evidence somebody meant to configure
+ * this generation, so the other being absent is a misconfiguration worth
+ * surfacing, not one worth skipping silently past.
  */
 export function liveTarget(generation: Generation): LiveTarget | undefined {
   const names = ENV_VARS[generation];
   const rawUrl = process.env[names.url]?.trim();
   const token = process.env[names.token]?.trim();
 
-  if (!rawUrl || !token) {
+  if (!rawUrl && !token) {
     return undefined;
+  }
+
+  if (!rawUrl || !token) {
+    const presentVar = rawUrl ? names.url : names.token;
+    const missingVar = rawUrl ? names.token : names.url;
+    throw new Error(
+      `${presentVar} is set but ${missingVar} is not. Set both to run ` +
+        `${generation}'s live tier, or unset ${presentVar} to skip it — a ` +
+        "half-configured pair cannot be told apart from an unconfigured " +
+        "machine any other way.",
+    );
   }
 
   const baseUrl = rawUrl.replace(/\/+$/, "");

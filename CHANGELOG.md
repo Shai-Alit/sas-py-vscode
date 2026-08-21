@@ -810,6 +810,17 @@ called out under **Changed** with a migration note.
   what was written, so it is not a second inline hand-over path. Neither result
   changes anything 3a was going to build; both close open questions the 2-pre
   write-up and finding 34 had left unprobed.
+- `ComputeSessionManager.startSubmission`/`endSubmission`/`isBusy` (slice
+  3a-ii): a per-profile busy-submission guard, keyed like the existing session
+  map. A bare start/end pair rather than a wrapping helper, since ADR-0017's
+  log-streaming pump has no design yet to wrap. Nothing calls it yet — 3a's
+  run path is what will.
+- `test/helpers/backend-contract-suite.ts` (slice 3a-ii): the ADR-0015
+  contract suite, exported as `describeExecutionBackendContract(createBackend)`
+  instead of being hard-wired to `createFakeBackend()`. `test/unit/backend-
+  contract.test.ts` is now nine lines registering it against the fake; 3a's
+  real backend can register its own double against the same twenty-three
+  cases without copying them.
 
 ### Fixed
 
@@ -1024,6 +1035,23 @@ called out under **Changed** with a migration note.
   administrative relations" and "the link set is computed per caller" are not
   separable, and both forbid the same inference. The page now quotes the message
   the extension actually shows and gives both readings without ranking them.
+
+- The live tier's second gate no longer confuses "half-configured" with "not
+  configured" (slice 3a-ii). `test/helpers/live-gate.ts`'s `liveTarget` used to
+  return `undefined` — a silent skip, exit 0 — whenever exactly one of a
+  generation's URL/token pair was set, the same as when neither was. Found by
+  accident during RUNBOOK P40 on 2026-08-19, on a tier whose whole reason to
+  exist is that it talks to a real deployment. It now throws, naming which
+  variable is present and which is missing, and only returns `undefined` when
+  neither is set at all.
+- `test/live/viya4-connectivity.test.ts` no longer hand-rolls its own request
+  with a bare `fetch` call (slice 3a-ii). It now calls `fetchCurrentUser` —
+  `src/auth/identity.ts`'s actual production function for asking the
+  deployment who the token belongs to — which gets the summary/full
+  media-type fallback finding 6 measured for free, rather than re-deriving it
+  by hand. `ComputeClient` was considered and does not fit: the identities
+  service is not `/compute/...`, and `ComputeClient.send` only follows a
+  `Link` under ADR-0010.
 
 ### Changed
 

@@ -37,13 +37,27 @@
  * documents as its precondition rather than checking for itself. The answer is
  * cached per profile, so reconnecting does not re-ask.
  *
- * ## What is deliberately not here yet
+ * ## The submission guard is a seam, not a submitter
  *
- * The busy check and the job poll. Both are on 2a-ii's punch list and both are
- * about *submitting* — finding 27's "refuse rather than queue" needs something to
- * refuse, and finding 28's `wait` + `If-None-Match` pairing needs a job to poll.
- * They land with the run path in 3a, against the same probe findings. What this
- * slice owes them is the seam they hang off, which is {@link ComputeConnection}.
+ * {@link ComputeSessionManager.startSubmission} and
+ * {@link ComputeSessionManager.endSubmission} are the whole of what this slice
+ * (3a-ii) owes 3a's run path: finding 27's "refuse rather than queue" needs
+ * something to refuse against, and finding 29 leaves what a *second* submission
+ * arriving mid-run actually does to a session unobserved — untested is not the
+ * same as safe, and finding 33 already showed one way a session can be left
+ * reporting `completed` on every later job while doing nothing at all. This is
+ * the client-side refusal, taken deliberately rather than discovered.
+ *
+ * It is a raw start/end pair rather than a wrapping `submit(profileId, run)`
+ * helper, on purpose: ADR-0017's log-streaming pump is "self-driving," and
+ * nothing here yet knows whether that pump is a single awaited `Promise`, an
+ * async generator, or something event-shaped. A wrapping helper would have to
+ * guess that shape today and likely guess wrong; a bare pair lets 3a bracket
+ * whatever the pump turns out to be with its own `try`/`finally`. What is
+ * deliberately not here yet is the job poll itself — finding 28's `wait` +
+ * `If-None-Match` pairing needs a job to poll, and that lands with the run path
+ * in 3a. What this slice owes it, beyond the guard, is the seam it hangs off,
+ * which is {@link ComputeConnection}.
  */
 
 import * as vscode from "vscode";
@@ -189,6 +203,18 @@ export class ComputeSessionManager implements vscode.Disposable {
   private readonly live = new Map<string, ComputeConnection>();
 
   /**
+   * Profile ids that currently have a submission in flight.
+   *
+   * Keyed like {@link live}, and deliberately independent of it: a session
+   * being reattached or torn down is a different question from whether a job
+   * is running in it, and this class answers both without conflating them.
+   * Nothing here clears an entry on {@link disconnect} or {@link dispose} — see
+   * those methods' own comments for why that is deliberate rather than an
+   * omission.
+   */
+  private readonly busySubmissions = new Set<string>();
+
+  /**
    * What stage-1 probing determined for a profile, so it is asked once.
    *
    * Keyed on profile id like {@link live}, but deliberately **outlives** the
@@ -234,6 +260,49 @@ export class ComputeSessionManager implements vscode.Disposable {
     return this.live.get(profileId);
   }
 
+  /** Whether a profile currently has a submission in flight. */
+  isBusy(profileId: string): boolean {
+    return this.busySubmissions.has(profileId);
+  }
+
+  /**
+   * Claims the right to submit for a profile, refusing a second claim over one
+   * already held.
+   *
+   * Returns `true` and marks the profile busy, or returns `false` — without
+   * changing anything — if a submission for this profile is already running.
+   * There is no queueing arm: finding 27 measured a session's own state
+   * settling back to `idle` once a job finishes, and finding 29 never
+   * exercised what a second job arriving *before* that happens does to it, so
+   * this refuses rather than guessing that it would be safe to wait and try
+   * again.
+   *
+   * @returns `false` means the caller must not submit and should tell the user
+   *   why, the same way every other refusal in this class does (see
+   *   {@link fail}). It is not this method's job to report it: unlike
+   *   {@link connect}, which owns its own failure messages end to end, a
+   *   submission's message benefits from naming what is running — a job id, a
+   *   file — which only 3a's run path has.
+   * @remarks A caller that receives `true` owes exactly one
+   *   {@link endSubmission} call for it, including on a thrown or rejected run
+   *   — a bare call without a `try`/`finally` around the work leaks the claim
+   *   for the rest of the window's life.
+   */
+  startSubmission(profileId: string): boolean {
+    if (this.busySubmissions.has(profileId)) return false;
+    this.busySubmissions.add(profileId);
+    return true;
+  }
+
+  /**
+   * Releases a profile's submission claim. Idempotent: ending a claim that is
+   * not held (already ended, or never started) does nothing rather than
+   * throwing, so a defensive `finally` never has to guard the call it makes.
+   */
+  endSubmission(profileId: string): void {
+    this.busySubmissions.delete(profileId);
+  }
+
   /**
    * Connects the active profile, reattaching to this workspace's session when
    * there is one to reattach to.
@@ -264,6 +333,12 @@ export class ComputeSessionManager implements vscode.Disposable {
    * to reach from the palette, but a keybinding, another extension and a second
    * window all call the command directly, and `connect` already guards the
    * mirror image of this race.
+   *
+   * **Deliberately does not touch {@link busySubmissions}.** A submission
+   * claim is released by whoever holds it, in its own `finally` — disconnecting
+   * out from under a running job does not make that job's promise settle any
+   * sooner, and the request it is mid-flight on will itself fail once the
+   * session is gone, which is what actually ends the claim.
    */
   async disconnect(): Promise<void> {
     // Swallowed rather than propagated: a connect that threw has already told
@@ -316,6 +391,10 @@ export class ComputeSessionManager implements vscode.Disposable {
     // discarded, and `dispose` is synchronous, so there is nowhere to await it
     // that VS Code would honour. The session itself is not orphaned by this:
     // it is reachable through the binding and reclaimed on the next connect.
+    //
+    // `busySubmissions` is left alone for the same reason as in `disconnect`:
+    // whoever holds a claim releases it themselves, and this instance is being
+    // discarded regardless, so there is nothing left to leak it into.
     this.live.clear();
   }
 

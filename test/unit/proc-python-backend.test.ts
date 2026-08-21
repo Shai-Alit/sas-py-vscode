@@ -87,6 +87,31 @@ function guard(initiallyBusy = false): SubmissionGuard & {
   };
 }
 
+/**
+ * A guard where `isBusy()` always reads clear, yet `startSubmission()` still
+ * fails — the genuine cross-window race `procPython.ts`'s own doc comment
+ * describes and the plain {@link guard} fixture above cannot represent, since
+ * that one backs both methods with the same boolean and so can only ever
+ * agree with itself. This models another window's `startSubmission()` winning
+ * in the gap between this backend's own `isBusy()` check and its call.
+ */
+function racingGuard(): SubmissionGuard & {
+  readonly calls: readonly string[];
+} {
+  const calls: string[] = [];
+  return {
+    calls,
+    isBusy: () => false,
+    startSubmission: () => {
+      calls.push("start");
+      return false;
+    },
+    endSubmission: () => {
+      calls.push("end");
+    },
+  };
+}
+
 type Reply = ComputeResult<ComputeResponse>;
 
 function ok(body: unknown, init?: Partial<ComputeResponse>): Reply {
@@ -147,6 +172,14 @@ interface RouterOptions {
   /** Held instead of answered on the first `variables` (`SYSCC`) request, if
    * given — simulates cancelling after the job is already terminal. */
   variablesGate?: Promise<Reply>;
+  /** Held instead of answered on the first `SYSERRORTEXT` read, if given —
+   * simulates cancelling in the second race window, after `SYSCC` has already
+   * confirmed a failure but before the SAS-side message has been read. */
+  syserrortextGate?: Promise<Reply>;
+  /** When `true`, the `SYSCC` filter matches nothing — `readVariable` resolves
+   * `{ ok: true, value: undefined }`, the "every session has one" guarantee
+   * finding 37 relies on turning out false for this one. */
+  sysccMissing?: boolean;
 }
 
 /** A `ComputeClient` that answers every request `ProcPythonBackend` makes,
@@ -159,6 +192,7 @@ function router(opts: RouterOptions): {
   let logCalls = 0;
   let executeCalls = 0;
   let sysccCalls = 0;
+  let syserrortextCalls = 0;
 
   const requests: ComputeRequest[] = [];
   const client: ComputeClient = {
@@ -255,9 +289,19 @@ function router(opts: RouterOptions): {
             if (sysccCalls === 1 && opts.variablesGate !== undefined) {
               return await opts.variablesGate;
             }
+            if (opts.sysccMissing === true) {
+              return ok({ count: 0, items: [] });
+            }
             return ok({ count: 1, items: [{ name, value: opts.syscc }] });
           }
           if (name === "SYSERRORTEXT") {
+            syserrortextCalls += 1;
+            if (
+              syserrortextCalls === 1 &&
+              opts.syserrortextGate !== undefined
+            ) {
+              return await opts.syserrortextGate;
+            }
             return opts.syserrortext === undefined
               ? ok({ count: 0, items: [] })
               : ok({ count: 1, items: [{ name, value: opts.syserrortext }] });
@@ -303,9 +347,7 @@ function texts(outputs: readonly RichOutput[]): string[] {
     .map((output) => output.data);
 }
 
-async function accept(
-  result: BackendResult<ExecutionHandle>,
-): Promise<ExecutionHandle> {
+function accept(result: BackendResult<ExecutionHandle>): ExecutionHandle {
   assert.ok(result.ok, "execute() did not accept the run");
   return result.value;
 }
@@ -371,7 +413,7 @@ describe("ProcPythonBackend", () => {
       );
       await backend.connect();
 
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram("print(2 + 4)"), {
           freshNamespace: false,
         }),
@@ -409,14 +451,19 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: true }),
       );
+      // The fileref/job wire calls happen in the background after `execute`
+      // has already resolved (ADR-0015: accepted, not finished) — `done` has
+      // to be awaited before `requests` reflects them.
+      await accepted.done;
 
       const submitted = requests.find(
         (request) => request.link.rel === "execute",
       );
-      const code = (submitted?.body as { code: string[] }).code;
+      assert.ok(submitted !== undefined, "no job was ever submitted");
+      const code = (submitted.body as { code: string[] }).code;
       assert.ok(code[0]?.startsWith("proc python restart infile="));
     });
 
@@ -439,7 +486,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       const outputs = await collect(accepted.outputs);
@@ -472,7 +519,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       const outputs = await collect(accepted.outputs);
@@ -504,6 +551,80 @@ describe("ProcPythonBackend", () => {
       });
     });
 
+    it("falls back to a plain message for SYSCC=1012 with no traceback header at all", async () => {
+      // `parseTraceback` returns `undefined` when no `Traceback (most recent
+      // call last):` line is found — a `SYSCC=1012` run whose log was
+      // truncated or never actually printed one. Untested either way before
+      // this; pins the fallback rather than assuming it.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [line("some ordinary output, no traceback here")],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "Unhandled Python exception.",
+      );
+      assert.ok(
+        !outputs.some(
+          (output) => output.mime === "application/vnd.python.traceback",
+        ),
+      );
+    });
+
+    it("falls back to a plain message for SYSCC=1012 with a header but no frame lines", async () => {
+      // The header-found, zero-frames path — `parseTraceback` also returns
+      // `undefined` here, distinct from "no header at all" above but exercising
+      // the same fallback. Not previously tested.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line("ValueError: boom-with-no-frames"),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "Unhandled Python exception.",
+      );
+      assert.ok(
+        !outputs.some(
+          (output) => output.mime === "application/vnd.python.traceback",
+        ),
+      );
+    });
+
     it("reports a SAS-side error as a message, with no traceback to invent", async () => {
       const { client } = router({
         syscc: "3000",
@@ -518,7 +639,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       const outputs = await collect(accepted.outputs);
@@ -551,7 +672,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const first = await accept(
+      const first = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       assert.ok(backend.busy);
@@ -561,9 +682,9 @@ describe("ProcPythonBackend", () => {
       });
       assert.ok(!second.ok);
       assert.equal(second.problem.code, "busy");
-      assert.ok(
-        second.problem.code === "busy" && second.problem.running === first.id,
-      );
+      // `assert.equal` above already narrows `second.problem` to the `busy`
+      // variant, so `running` is reachable without re-checking `code`.
+      assert.equal(second.problem.running, first.id);
     });
 
     it("defers to the shared guard when another window holds the claim", async () => {
@@ -583,6 +704,31 @@ describe("ProcPythonBackend", () => {
       assert.equal(result.problem.code, "busy");
     });
 
+    it("refuses via the guard's own race, even though isBusy() reads clear", async () => {
+      // The scenario `procPython.ts`'s doc comment gives for why `busy`
+      // delegates to a guard at all: another window's `startSubmission()` can
+      // win in the gap after this backend's own `isBusy()` already read
+      // clear. The shared `guard()` fixture cannot represent that; this one
+      // (`racingGuard()`) can, and it was untested either way before this.
+      const { client, requests } = router({ syscc: "0" });
+      const raced = racingGuard();
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        raced,
+      );
+      await backend.connect();
+
+      const result = await backend.execute(fakeProgram(), {
+        freshNamespace: false,
+      });
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "busy");
+      assert.deepEqual([...raced.calls], ["start"]);
+      assert.equal(requests.length, 0);
+    });
+
     it("releases the guard once the run settles", async () => {
       const { client } = router({ syscc: "0" });
       const submissionGuard = guard();
@@ -593,7 +739,7 @@ describe("ProcPythonBackend", () => {
         submissionGuard,
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       await accepted.done;
@@ -617,7 +763,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       await flush();
@@ -649,7 +795,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       await flush();
@@ -683,7 +829,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       await flush();
@@ -701,6 +847,48 @@ describe("ProcPythonBackend", () => {
       assert.equal(settled.problem.code, "cancelled");
     });
 
+    it("cancels a run even after SYSCC confirms failure, before SYSERRORTEXT is read", async () => {
+      // The `isCurrentRunAborted()` check right after the `SYSCC` read closes
+      // the cancel-race window for a *successful* run, but a failing run goes
+      // on to read `SYSERRORTEXT` before returning — an asymmetric second
+      // window an adversarial review of this slice found, since only the
+      // success path had been guarded. This pins the fix: the check is
+      // repeated after that second read too.
+      const gate = deferred<Reply>();
+      const { client, requests } = router({
+        syscc: "1012",
+        syserrortextGate: gate.promise,
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await flush();
+      assert.ok(
+        requests.some(
+          (request) =>
+            request.link.rel === "variables" &&
+            variableName(request.link.href) === "SYSERRORTEXT",
+        ),
+      );
+
+      const cancelled = await backend.cancel(accepted);
+      assert.ok(cancelled.ok);
+
+      gate.resolve(
+        ok({ count: 1, items: [{ name: "SYSERRORTEXT", value: "boom" }] }),
+      );
+      const settled = await accepted.done;
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "cancelled");
+    });
+
     it("succeeds and does nothing for a run that already settled", async () => {
       const { client } = router({ syscc: "0" });
       const backend = new ProcPythonBackend(
@@ -710,7 +898,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       await accepted.done;
@@ -729,7 +917,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       await flush();
@@ -749,6 +937,32 @@ describe("ProcPythonBackend", () => {
   });
 
   describe("failures translated from the compute layer", () => {
+    it("reports a session with no SYSCC variable as backend-failed", async () => {
+      // Finding 37 says every session carries SYSCC; `readVariable` still
+      // reports `undefined` rather than assuming that, per its own doc
+      // comment, and this pins what `runProgram` does with that surprise
+      // instead of leaving the branch untested.
+      const { client } = router({ syscc: "0", sysccMissing: true });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const settled = await accepted.done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "backend-failed");
+      assert.ok(
+        settled.problem.code === "backend-failed" &&
+          settled.problem.detail.includes(`"SYSCC"`),
+      );
+    });
+
     it("reports a failed upload as transfer-failed, and never submits a job", async () => {
       const { client, requests } = router({
         syscc: "0",
@@ -761,13 +975,97 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const result = await backend.execute(fakeProgram(), {
-        freshNamespace: false,
-      });
+      // `execute()` itself still resolves accepted — it settles as soon as
+      // the run is accepted, before the upload even starts — so the transfer
+      // failure surfaces on `done`, not on this call's own result.
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const result = await accepted.done;
 
       assert.ok(!result.ok);
       assert.equal(result.problem.code, "transfer-failed");
       assert.ok(!requests.some((request) => request.link.rel === "execute"));
+    });
+
+    it("reports a failed ETag re-read as transfer-failed, and never uploads or submits", async () => {
+      // `assignReply` above only exercises the `assign` POST failing;
+      // `writeFilerefContent`'s own `self` GET (the fresh-ETag re-read) is a
+      // second, distinct failure path that had no test of its own.
+      const { client, requests } = router({
+        syscc: "0",
+        selfReply: rejected("compute-rejected", "404 Not Found"),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const result = await accepted.done;
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "transfer-failed");
+      assert.ok(!requests.some((request) => request.link.rel === "upload"));
+      assert.ok(!requests.some((request) => request.link.rel === "execute"));
+    });
+
+    it("reports a failed content upload as transfer-failed, and never submits a job", async () => {
+      // The `upload` PUT itself failing (finding 36's `428 Precondition
+      // Required` shape) — distinct from both the `assign` and `self`
+      // failures above, and also untested until now.
+      const { client, requests } = router({
+        syscc: "0",
+        uploadReply: rejected("compute-rejected", "428 Precondition Required"),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const result = await accepted.done;
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "transfer-failed");
+      assert.ok(!requests.some((request) => request.link.rel === "execute"));
+    });
+
+    it("reports compute-unreachable while submitting as backend-gone too", async () => {
+      // The existing "session gone" test below exercises one of the two
+      // conditions `translate()`'s own doc comment names as recoverable
+      // (`session-gone`); `compute-unreachable` is the other, and was never
+      // separately exercised.
+      const { client } = router({
+        syscc: "0",
+        executeReply: {
+          ok: false,
+          reason: "the compute service could not be reached",
+          problem: { code: "compute-unreachable", detail: "aborted" },
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const settled = await accepted.done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "backend-gone");
     });
 
     it("reports a session gone while submitting as backend-gone", async () => {
@@ -786,7 +1084,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       const settled = await accepted.done;
@@ -807,7 +1105,7 @@ describe("ProcPythonBackend", () => {
         guard(),
       );
       await backend.connect();
-      const accepted = await accept(
+      const accepted = accept(
         await backend.execute(fakeProgram(), { freshNamespace: false }),
       );
       const settled = await accepted.done;
@@ -874,6 +1172,43 @@ describe("ProcPythonBackend", () => {
       const result = await backend.reset();
       assert.ok(!result.ok);
       assert.equal(result.problem.code, "not-connected");
+    });
+
+    it("defers to the shared guard when another window holds the claim", async () => {
+      // The execute() analogue of this exists already; reset() shares the
+      // same three guard calls but had no test of its own for either the
+      // plain isBusy() defer or the race below — both untested until now.
+      const { client, requests } = router({ syscc: "0" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(true),
+      );
+      await backend.connect();
+
+      const result = await backend.reset();
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "busy");
+      assert.equal(requests.length, 0);
+    });
+
+    it("refuses via the guard's own race, even though isBusy() reads clear", async () => {
+      const { client, requests } = router({ syscc: "0" });
+      const raced = racingGuard();
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        raced,
+      );
+      await backend.connect();
+
+      const result = await backend.reset();
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "busy");
+      assert.deepEqual([...raced.calls], ["start"]);
+      assert.equal(requests.length, 0);
     });
   });
 });

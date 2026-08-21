@@ -878,6 +878,36 @@ called out under **Changed** with a migration note.
   being read at an unlucky moment. Closing this needs `job.ts` to hand back
   an id even on a client-side abort, which is a change below this slice's
   layer; it is recorded here rather than silently accepted.
+- A second automated-review round on the `PROC PYTHON` backend (above) found
+  one more real correctness gap and five test-coverage gaps, all now closed.
+  **Fixed:** the `isCurrentRunAborted()` check that closes the cancel-race
+  window was present after the `SYSCC` read but not repeated after the
+  `SYSERRORTEXT` read that follows it on a failing run — an asymmetry between
+  the two reads that let a cancel arriving during the second one fall through
+  to a genuine outcome instead of ADR-0015's required `cancelled` failure.
+  **New test coverage, no behaviour change:** a session carrying no `SYSCC`
+  variable (the `backend-failed` branch `readVariable`'s own "every session is
+  expected to have one" contract can still be wrong about); `parseTraceback`'s
+  two `undefined`-return paths (no traceback header at all, and a header with
+  no frame lines following it), both of which fall back to a plain-message
+  diagnostic; the fixture in `test/unit/proc-python-backend.test.ts` gaining a
+  `racingGuard()` double alongside the existing `guard()`, since the latter
+  backs `isBusy()` and `startSubmission()` with one boolean and so cannot
+  represent the genuine cross-window race the module's own doc comment
+  describes — `execute()` and `reset()` are now both exercised against it;
+  and `writeFilerefContent`'s two failure paths (the `self` ETag re-read, the
+  `upload` PUT) plus a `compute-unreachable` submission failure, none of which
+  had a test distinct from the `assign`/`session-gone` cases already covered.
+  **Deliberately not closed in this slice:** `close()`'s own cancellation of
+  an in-flight run discards whatever `cancelActive` reports rather than
+  logging it, because this module must never import `vscode` and so has no
+  output channel to write to, and `close()`'s ADR-0015 contract returns
+  nothing for a caller to inspect either. A failure to cancel here is
+  therefore invisible by construction at this layer, the same shape as the
+  `createJob`-abort-race gap above; closing it would mean handing `close()` an
+  injectable log sink this backend does not have today, or having
+  `ComputeSessionManager` inspect a call it cannot observe. Recorded here
+  rather than silently accepted.
 
 ### Fixed
 

@@ -324,6 +324,15 @@ export function describeExecutionBackendContract(
       it("succeeds and does nothing for a run that already finished", async () => {
         // A user who hits Cancel as the run completes has not made a
         // mistake, and must not be shown a failure for winning a race.
+        //
+        // "Already finished" means `done` has actually settled — ADR-0015's
+        // own wording for `cancel` — not merely that `finish` has been
+        // called. The fake's `FakeRun.finish` settles `done` synchronously,
+        // so a real, asynchronously-driven backend (one whose `done` only
+        // resolves once it has actually polled through its transport) needs
+        // the explicit `await` below to reach the same state; without it,
+        // this test would only ever prove the fake's own synchronous
+        // shortcut rather than the clause every implementation must satisfy.
         const backend = createBackend();
         await backend.connect();
         const accepted = await backend.execute(fakeProgram(), {
@@ -331,6 +340,7 @@ export function describeExecutionBackendContract(
         });
         assert.ok(accepted.ok);
         backend.runs[0]?.finish({ succeeded: true, diagnostics: [] });
+        await accepted.value.done;
 
         const cancelled = await backend.cancel(accepted.value);
         assert.ok(cancelled.ok);

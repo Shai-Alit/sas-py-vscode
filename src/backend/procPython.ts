@@ -119,8 +119,10 @@ const SYSERRORTEXT_NAME = "SYSERRORTEXT";
 
 /** `proc python restart;` alone: the standalone form of `freshNamespace`
  * (finding 38 — destroys and reinitialises the interpreter, ~3.4 s, and touches
- * nothing else in the session). */
-const RESTART_STATEMENT = "proc python restart;";
+ * nothing else in the session). Exported so a test double can recognise a
+ * `reset()`-submitted job without restating the literal — see
+ * `test/helpers/recorded-proc-python.ts`. */
+export const RESTART_STATEMENT = "proc python restart;";
 
 const TRACEBACK_HEADER = "Traceback (most recent call last):";
 
@@ -348,23 +350,36 @@ export class ProcPythonBackend implements ExecutionBackend {
     return this.active !== undefined || this.guard.isBusy();
   }
 
-  async execute(
+  // Not `async`: every branch below returns synchronously (a plain
+  // `BackendFailure`, or a handle built without awaiting anything), so there
+  // is no `await` for the function body to contain. `Promise.resolve` on each
+  // return is what keeps the declared `Promise<...>` return type honest.
+  execute(
     program: Program,
     opts: ExecuteOptions,
   ): Promise<BackendResult<ExecutionHandle>> {
     if (!this.connected) {
-      return fail({ code: "not-connected" }, "running the program");
+      return Promise.resolve(
+        fail({ code: "not-connected" }, "running the program"),
+      );
     }
     if (this.busy) {
-      return fail(
-        { code: "busy", running: this.active?.id ?? "a run in another window" },
-        "running the program",
+      return Promise.resolve(
+        fail(
+          {
+            code: "busy",
+            running: this.active?.id ?? "a run in another window",
+          },
+          "running the program",
+        ),
       );
     }
     if (!this.guard.startSubmission()) {
-      return fail(
-        { code: "busy", running: "a run in another window" },
-        "running the program",
+      return Promise.resolve(
+        fail(
+          { code: "busy", running: "a run in another window" },
+          "running the program",
+        ),
       );
     }
 
@@ -386,19 +401,19 @@ export class ProcPythonBackend implements ExecutionBackend {
     // unhandled rejection. Same shape as `logStream.ts`'s own `void done.catch`.
     void done.catch(() => undefined);
 
-    return {
+    return Promise.resolve({
       ok: true,
       value: { id: run.id, outputs: relay.drain(), done },
-    };
+    });
   }
 
   async cancel(handle: ExecutionHandle): Promise<BackendResult<void>> {
-    if (this.active === undefined || this.active.id !== handle.id) {
+    if (this.active?.id !== handle.id) {
       // Already settled, or a handle this backend never issued — either way,
       // ADR-0015 requires cancelling a finished run to succeed and do nothing.
       return { ok: true, value: undefined };
     }
-    return this.cancelActive(this.active);
+    return await this.cancelActive(this.active);
   }
 
   /**
@@ -626,6 +641,16 @@ export class ProcPythonBackend implements ExecutionBackend {
         { signal: run.controller.signal },
       );
       const message = errorText.ok ? errorText.value : undefined;
+
+      // The same check as above the `SUCCESS_SYSCC` branch, repeated rather
+      // than hoisted above both reads: a cancel can just as well land during
+      // *this* network call as during the first one, and an asymmetry where
+      // only the success path closed the window was a real gap — found on
+      // review, and low-impact only because `SYSCC` had already confirmed a
+      // genuine failure by this point, not because the race can't happen.
+      if (this.isCurrentRunAborted()) {
+        return fail({ code: "cancelled" }, "running the program");
+      }
 
       const { outcome, trailingOutput } = buildFailureOutcome(
         syscc.value,

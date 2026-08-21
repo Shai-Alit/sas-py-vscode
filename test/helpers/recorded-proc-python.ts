@@ -47,6 +47,7 @@
 
 import {
   ProcPythonBackend,
+  RESTART_STATEMENT,
   type SubmissionGuard,
 } from "../../src/backend/procPython";
 import { type BackendResult, fail } from "../../src/backend/problems";
@@ -86,7 +87,20 @@ class SimulatedJob {
     this.queued.push(text);
   }
 
+  /**
+   * First call wins; later ones are no-ops.
+   *
+   * The suite calls `finish` more than once on the same run to prove `done`
+   * settles once (`backend-contract-suite.ts`'s "settles once…" case), the
+   * same way `fake-backend.ts`'s own `FakeRun.finish` is guarded by a
+   * `settled` flag. Without this, a second call here would silently rewrite
+   * `SYSCC` underneath a real backend that has not read it yet — the real
+   * backend has no equivalent of the fake's synchronous `settled` guard,
+   * because *its* `done` only settles once it actually polls through this
+   * simulated wire, so the guard has to live here instead.
+   */
   finish(succeeded: boolean, message: string | undefined): void {
+    if (this.state === "completed") return;
     this.syscc = succeeded ? "0" : "1012";
     this.syserrortext = message;
     this.state = "completed";
@@ -117,7 +131,7 @@ class SimulatedJob {
  * own doc comment for why `execute` cannot bind one synchronously. */
 class JobSlot {
   private job: SimulatedJob | undefined;
-  private queue: Array<(job: SimulatedJob) => void> = [];
+  private queue: ((job: SimulatedJob) => void)[] = [];
 
   bind(job: SimulatedJob): void {
     this.job = job;
@@ -202,8 +216,22 @@ function buildClient(slot: JobSlot): ComputeClient {
           return ok({ id: filerefName }, { etag: '"v1"' });
         case "upload":
           return ok(undefined, { status: 201 });
-        case "execute":
-          slot.bind(new SimulatedJob());
+        case "execute": {
+          const job = new SimulatedJob();
+          slot.bind(job);
+          // `reset()` submits this exact statement and has no
+          // `ExecutionHandle` for a test to drive with `emit`/`finish` —
+          // nothing production-side calls those for it either, since
+          // `ProcPythonBackend.reset()` just waits for the job to actually
+          // finish. A real deployment does that on its own; this stands in
+          // for it so `reset()` does not hang forever waiting on a run
+          // nobody can complete.
+          if (
+            (request.body as { code?: string[] }).code?.[0] ===
+            RESTART_STATEMENT
+          ) {
+            job.finish(true, undefined);
+          }
           return ok(
             {
               id: "recorded-job",
@@ -229,6 +257,7 @@ function buildClient(slot: JobSlot): ComputeClient {
             },
             { status: 201 },
           );
+        }
         case "log": {
           const job = slot.current();
           const lines = job === undefined ? [] : await job.nextPage();

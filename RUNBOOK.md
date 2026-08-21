@@ -4106,10 +4106,24 @@ named, because the reasoning is at the origin and is not repeated here.
   The #135 item immediately above this one has the reasoning and the two
   alternatives. It is on this list because "the next slice that touches connect"
   is 3a and nothing else names it.
-- ☐ **Probe ADR-0014's two unsettled hand-over questions before designing
+- ☑ **Probe ADR-0014's two unsettled hand-over questions before designing
   around their absence** — `TIMEOUT` for Cancel, and `SRC` as a second hand-over
   path. Flagged in the 2-pre write-up as worth probing *before* 3a, which is a
-  deadline this list is the only place that records.
+  deadline this list is the only place that records. **Probed 2026-08-20
+  (slice 3a-i, docs-only), findings 58–59.** Both questions settle in the
+  direction of "nothing to design around": `TIMEOUT=` on `PROC PYTHON` bounds
+  only the connect handshake — a submit block that opened with `timeout=2` and
+  then slept 5 seconds completed normally in 6.88s — and does not exist at all
+  on `SUBMIT` (a syntax error, not a silent no-op). `SRC=` parses, as finding 34's
+  option list said it would, but is the same file-open code path `INFILE=`
+  already uses — `src="print(1+1)"` fails with `ERROR: Failed to open the file
+  on the INFILE= statement`, naming `INFILE=` even though `SRC=` was what was
+  written — so it is not a second inline hand-over path. Neither finding changes
+  anything 3a was going to build: Cancel still has no execution-time bound to
+  rely on and must keep depending on the job's `cancel` relation (whether that
+  stops a running step promptly is still unmeasured, per `job.ts`'s own note),
+  and ADR-0014's `INFILE=`-via-upload mechanism remains the only real hand-over
+  path.
 - ☐ **Gate two of the live tier skips a half-configured tier instead of
   refusing it.** Found by accident during P40 on 2026-08-19: with the token set
   and the URL unset, the run reports `2 pending` and exit 0 — indistinguishable

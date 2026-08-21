@@ -2079,3 +2079,91 @@ way in.
   taking the shortcut `session.ts` takes on finding 21's evidence, and this
   probe gives no reason to change that.
 - **Viya 3.5.** Not probed, as ever.
+
+## 2026-08-20 — `TIMEOUT` and `SRC`, settling ADR-0014's two open questions before 3a (Viya 4)
+
+Finding 34 enumerated `PROC PYTHON`'s option set from its own error message —
+`COMMAND, ECHO, INFILE, RESTART, SRC, TERMINATE, TIMEOUT` — and flagged `TIMEOUT`
+as relevant to 3a-ii's Cancel design and `SRC` as a possibly-second hand-over path
+alongside `INFILE=`, both left unprobed at the time. This is that probe.
+
+**Documented shape, established first.** SAS's own "What's New in Programming on
+the SAS Viya Platform" page (a real, extractable PDF — the interactive HTML help
+center is a client-rendered Angular app and could not be scraped at all) states:
+"The TIMEOUT= option has been added to the PROC PYTHON statement. This option
+lets you specify the number of seconds to attempt to connect to the Python
+environment before ending." A separate syntax listing showed `TIMEOUT=n` inside
+angle brackets on the syntax diagram, appearing to place it on both the `PROC`
+statement and the `SUBMIT` statement. That second placement turned out to be a
+documentation-scraping artifact (see Finding 58's negative result below), not a
+real option.
+
+### Finding 58 — `TIMEOUT=` is a connect-time bound on `PROC PYTHON` itself, and does not exist on `SUBMIT`
+
+`submit timeout=2;` and `submit timeout=10;` both failed to parse, identically:
+
+```
+ERROR 22-322: Syntax error, expecting one of the following: a quoted string, ;.
+ERROR 202-322: The option or parameter is not recognized and will be ignored.
+ERROR 180-322: Statement is not valid or it is used out of proper order.
+```
+
+So `SUBMIT` takes no `TIMEOUT=` suboption on this deployment — the syntax
+diagram's apparent second placement does not hold up against the parser.
+
+`proc python timeout=2;` **is** valid, and does not bound the submit block's
+running time. A block that opened with `timeout=2` and then ran
+`time.sleep(5)` inside `submit`/`endsubmit` completed normally, printing its
+output, at a measured real time of 6.88 seconds — nearly 3.5× the `timeout`
+value, with no error, no early termination, and no `error` job state. A second
+run with `timeout=30` and `time.sleep(1)` completed in 1.00 second, the
+unremarkable case. The two runs together confirm the documented text literally:
+`TIMEOUT=` bounds only the connection handshake to the Python environment,
+never the wall-clock time of code already running inside it.
+
+**Consequence for 3a-ii's Cancel design:** there is no `TIMEOUT=`-based
+execution limit to build on. A hung or long-running Python step can only be
+stopped the way `job.ts` already does it — by following the job's `cancel`
+relation — and `cancelJob`'s own doc comment is correct that whether the
+running step actually stops promptly on that request is a separate, still-open
+question this probe does not touch. `TIMEOUT=` was never a candidate answer to
+it; it answers a different question (slow or hung interpreter *startup*) that
+this project has not needed to solve.
+
+### Finding 59 — `SRC=` parses, but is the same file-open code path as `INFILE=`, not an inline alternative
+
+`SRC` really is in the option grammar, exactly as finding 34's error message
+said. But it is not a second way to hand over code — it opens a *file*, the
+same as `INFILE=`, and gives the same error when it can't:
+
+- `proc python src="print(1+1)";` — parses. Runs. Fails with
+  `ERROR: Failed to open the file on the INFILE= statement` — note the message
+  names `INFILE=` even though the statement used `SRC=`. SAS attempted to open
+  a file literally named `print(1+1)`, not to execute the quoted text as
+  Python source.
+- `proc python src=nosuchfr;` (an unassigned fileref) — same failure, same
+  `INFILE=`-naming error message, confirming the fileref-resolution path is
+  shared with `INFILE=` rather than merely producing a similar-looking error.
+
+**Reading:** `SRC=` is an alias (or a legacy/internal name) for the same
+file-based mechanism `INFILE=` already uses, not an inline-source option. There
+is no evidence here of any way to hand `PROC PYTHON` code other than by naming
+a file or fileref — which is exactly ADR-0014's `INFILE=` mechanism. This
+settles the ADR's open question: `SRC=` was never a real second path to design
+around, and no code or design change follows from this finding.
+
+### What this probe did not settle
+
+- **Whether a hung Python step actually stops on `cancel`.** Unchanged from
+  `job.ts`'s existing note — this probe tested `TIMEOUT=`, not `cancel`, and
+  the two are now known to be unrelated mechanisms.
+- **`ECHO` and `COMMAND`**, the other two options finding 34 enumerated and
+  never probed. Still open; neither was in this probe's scope (3a-i was
+  `TIMEOUT` and `SRC` only, per the punch list).
+- **Whether `SRC=` differs from `INFILE=` in any way** (e.g., a different
+  default search path, or acceptance of a bare unquoted string `INFILE=`
+  rejects). Only the failure path was probed, because there was no successful
+  case to compare — a quoted string and an unassigned fileref were both tried
+  and both failed identically to `INFILE=`'s failure mode. A deployment or
+  release where `SRC=` succeeds has not been observed.
+- **Viya 3.5.** Not probed, as ever.

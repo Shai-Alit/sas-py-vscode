@@ -328,6 +328,17 @@ export class ProcPythonBackend implements ExecutionBackend {
     private readonly session: ComputeSession,
     private readonly dialect: Dialect,
     private readonly guard: SubmissionGuard,
+    /**
+     * Where {@link close} reports a cancellation it could not act on, since
+     * `ExecutionBackend.close()`'s own contract returns no result — "logged,
+     * not returned." A narrow callback rather than `vscode.LogOutputChannel`
+     * itself, for the same reason {@link SubmissionGuard} is a narrow port
+     * onto `ComputeSessionManager` and not that class directly: this module
+     * must never import `vscode` (see its own header) or it leaves the unit
+     * coverage denominator (ADR-0009). Optional, and a no-op when absent, so
+     * every existing construction of this class keeps working unchanged.
+     */
+    private readonly onBackgroundFailure?: (reason: string) => void,
   ) {}
 
   /** Cached; performs no I/O. Stage-2 (`runtime`) always reads `"unprobed"`
@@ -497,7 +508,31 @@ export class ProcPythonBackend implements ExecutionBackend {
       if (ended.value.outcome === "cancelled") {
         return fail({ code: "cancelled" }, "resetting the interpreter");
       }
-      return { ok: true, value: undefined };
+
+      // The bug ADR-0014/finding 33 already closed for `execute()`: a job's
+      // own terminal state is `completed` even when the statement never ran
+      // (a poisoned session, a missing license), so `reset()` cannot trust it
+      // either. `readSyscc` is the same check `runProgram` makes; this caller
+      // has no diagnostics channel of its own, so a failing `SYSCC` is just a
+      // `backend-failed` with whatever `SYSERRORTEXT` said, or a plain
+      // fallback naming the code when it said nothing.
+      const sysccResult = await this.readSyscc(
+        controller.signal,
+        "resetting the interpreter",
+      );
+      if (!sysccResult.ok) return sysccResult;
+      if (sysccResult.value.succeeded) {
+        return { ok: true, value: undefined };
+      }
+      return fail(
+        {
+          code: "backend-failed",
+          detail:
+            sysccResult.value.message ??
+            `SAS reported an error while restarting the interpreter (SYSCC=${sysccResult.value.syscc})`,
+        },
+        "resetting the interpreter",
+      );
     } finally {
       this.resetController = undefined;
       this.guard.endSubmission();
@@ -515,16 +550,18 @@ export class ProcPythonBackend implements ExecutionBackend {
    */
   async close(): Promise<void> {
     if (this.active !== undefined) {
-      // Discarded, not logged — this module must never import `vscode`
-      // (see its own header), so it has no output channel to write a
-      // failure to, and `close()`'s own contract (ADR-0015) returns no
-      // result for a caller to inspect either. A failure to cancel here is
-      // therefore invisible by construction at this layer; making it
-      // observable would mean either handing `close()` an injectable sink
-      // (this backend has none today) or `ComputeSessionManager` inspecting
-      // whatever this call does, which it cannot, since there is nothing to
-      // inspect. Not fixed in this slice — recorded rather than mis-claimed.
-      await this.cancelActive(this.active);
+      const result = await this.cancelActive(this.active);
+      if (!result.ok) {
+        // `close()`'s own contract (ADR-0015) returns no result to a
+        // caller — "logged, not returned" — and a caller invoking `close()`
+        // has, by definition, stopped waiting on anything this call could
+        // hand back. `onBackgroundFailure` is what actually makes this
+        // "logged" true rather than merely claimed: when the constructor
+        // was given one, the failure reaches it; when not (every test
+        // double in this repository today), it is still discarded, same as
+        // before this callback existed.
+        this.onBackgroundFailure?.(result.reason);
+      }
     }
     // `reset()` has no `ExecutionHandle` and no entry in `this.active` — it is
     // not an `execute()` run — but it is still in-flight work this backend
@@ -604,57 +641,18 @@ export class ProcPythonBackend implements ExecutionBackend {
         return fail({ code: "cancelled" }, "running the program");
       }
 
-      const syscc = await readVariable(this.client, this.session, SYSCC_NAME, {
-        signal: run.controller.signal,
-      });
-      if (!syscc.ok)
-        return this.translate(syscc, "reading the run's outcome", false);
-      if (syscc.value === undefined) {
-        return fail(
-          {
-            code: "backend-failed",
-            detail: `the compute session carried no "${SYSCC_NAME}" variable, which every session is expected to have`,
-          },
-          "reading the run's outcome",
-        );
-      }
-
-      // A cancel arriving between the log settling and this read succeeding
-      // would otherwise fall through to a genuine outcome below — the same
-      // race `cancelActive`'s own doc comment describes, just narrowed to the
-      // sliver still open after `readVariable` itself no longer fails on the
-      // abort. Checked once here rather than after every return below it.
-      if (this.isCurrentRunAborted()) {
-        return fail({ code: "cancelled" }, "running the program");
-      }
-
-      if (syscc.value === SUCCESS_SYSCC) {
+      const sysccResult = await this.readSyscc(
+        run.controller.signal,
+        "running the program",
+      );
+      if (!sysccResult.ok) return sysccResult;
+      if (sysccResult.value.succeeded) {
         return { ok: true, value: { succeeded: true, diagnostics: [] } };
       }
 
-      // Best-effort: a failure here does not undo a program that did raise, so
-      // the run is still reported as failed, just without the SAS-side message.
-      const errorText = await readVariable(
-        this.client,
-        this.session,
-        SYSERRORTEXT_NAME,
-        { signal: run.controller.signal },
-      );
-      const message = errorText.ok ? errorText.value : undefined;
-
-      // The same check as above the `SUCCESS_SYSCC` branch, repeated rather
-      // than hoisted above both reads: a cancel can just as well land during
-      // *this* network call as during the first one, and an asymmetry where
-      // only the success path closed the window was a real gap — found on
-      // review, and low-impact only because `SYSCC` had already confirmed a
-      // genuine failure by this point, not because the race can't happen.
-      if (this.isCurrentRunAborted()) {
-        return fail({ code: "cancelled" }, "running the program");
-      }
-
       const { outcome, trailingOutput } = buildFailureOutcome(
-        syscc.value,
-        message,
+        sysccResult.value.syscc,
+        sysccResult.value.message,
         run.lines,
       );
       if (trailingOutput !== undefined) relay.push(trailingOutput);
@@ -662,6 +660,82 @@ export class ProcPythonBackend implements ExecutionBackend {
     } finally {
       relay.close();
     }
+  }
+
+  /**
+   * Reads `SYSCC` once a job is known terminal and not cancelled — and,
+   * if it is non-zero, `SYSERRORTEXT` too — checking for a cancel race after
+   * each read. Shared by {@link runProgram}, which turns a failing `SYSCC`
+   * into diagnostics (and, for `1012`, a traceback) via `buildFailureOutcome`,
+   * and by {@link reset}, which has no diagnostics channel of its own and
+   * only needs to know whether the restart itself succeeded — the same
+   * question, asked by two different callers with two different uses for the
+   * answer.
+   *
+   * ADR-0014/finding 33 is why this is read at all rather than trusted from
+   * the job's own terminal state: `completed` does not mean the statement
+   * ran, so both `execute()` and `reset()` confirm it here instead.
+   */
+  private async readSyscc(
+    signal: AbortSignal,
+    context: string,
+  ): Promise<
+    BackendResult<
+      | { succeeded: true }
+      | { succeeded: false; syscc: string; message: string | undefined }
+    >
+  > {
+    const syscc = await readVariable(this.client, this.session, SYSCC_NAME, {
+      signal,
+    });
+    if (!syscc.ok) return this.translate(syscc, context, false);
+    if (syscc.value === undefined) {
+      return fail(
+        {
+          code: "backend-failed",
+          detail: `the compute session carried no "${SYSCC_NAME}" variable, which every session is expected to have`,
+        },
+        context,
+      );
+    }
+
+    // A cancel arriving between the log settling and this read succeeding
+    // would otherwise fall through to a genuine outcome below — the same
+    // race `cancelActive`'s own doc comment describes, just narrowed to the
+    // sliver still open after `readVariable` itself no longer fails on the
+    // abort. Checked once here rather than after every return below it.
+    if (this.isCurrentRunAborted()) {
+      return fail({ code: "cancelled" }, context);
+    }
+
+    if (syscc.value === SUCCESS_SYSCC) {
+      return { ok: true, value: { succeeded: true } };
+    }
+
+    // Best-effort: a failure here does not undo a program that did raise, so
+    // the run is still reported as failed, just without the SAS-side message.
+    const errorText = await readVariable(
+      this.client,
+      this.session,
+      SYSERRORTEXT_NAME,
+      { signal },
+    );
+    const message = errorText.ok ? errorText.value : undefined;
+
+    // The same check as above the `SUCCESS_SYSCC` branch, repeated rather
+    // than hoisted above both reads: a cancel can just as well land during
+    // *this* network call as during the first one, and an asymmetry where
+    // only the success path closed the window was a real gap — found on
+    // review, and low-impact only because `SYSCC` had already confirmed a
+    // genuine failure by this point, not because the race can't happen.
+    if (this.isCurrentRunAborted()) {
+      return fail({ code: "cancelled" }, context);
+    }
+
+    return {
+      ok: true,
+      value: { succeeded: false, syscc: syscc.value, message },
+    };
   }
 
   /**

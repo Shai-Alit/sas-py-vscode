@@ -503,40 +503,20 @@ describe("ProcPythonBackend", () => {
       ]);
     });
 
-    it("forwards a dropped-lines marker as its own text/plain output", async () => {
-      // `logStream.ts`'s `EventBuffer` overflows past `DEFAULT_MAX_BUFFERED_
-      // LINES` (100,000) by dropping the oldest and inserting one `"dropped"`
-      // marker event in their place — this run submits one poll's worth of
-      // lines past that cap so the pump actually emits that event kind, and
-      // pins how this backend forwards it: as its own `text/plain` output
-      // naming the count, not silently absorbed.
-      const overflow = 5;
-      const logLines = Array.from(
-        { length: 100_000 + overflow },
-        (_unused, index) => line(String(index)),
-      );
-      const { client } = router({ syscc: "0", logLines });
-      const backend = new ProcPythonBackend(
-        client,
-        session(),
-        dialect(),
-        guard(),
-      );
-      await backend.connect();
-      const accepted = accept(
-        await backend.execute(fakeProgram(), { freshNamespace: false }),
-      );
-      const outputs = await collect(accepted.outputs);
-      const settled = await accepted.done;
-
-      assert.ok(settled.ok);
-      assert.ok(settled.value.succeeded);
-      const dropped = texts(outputs).find((text) =>
-        text.includes("log line(s) dropped"),
-      );
-      assert.ok(dropped !== undefined, "no dropped-lines output was forwarded");
-      assert.equal(dropped, `[${String(overflow)} log line(s) dropped]\n`);
-    });
+    // A test for the "dropped log lines" forwarding branch (procPython.ts's
+    // own text/plain mapping of a `{ kind: "dropped" }` event) was attempted
+    // and reverted: the only way to make `logStream.ts`'s real `EventBuffer`
+    // emit that event kind through this backend's public surface is to push
+    // past `DEFAULT_MAX_BUFFERED_LINES` (100,000) in one poll, since
+    // `runProgram` calls `streamJobLog` with no override for it. That blew
+    // past `.mocharc.json`'s deliberate 2-second unit-test budget on CI —
+    // "anything taking longer than two seconds is not slow, it is stuck" — on
+    // every OS/Node combination, not just a slow one. Left uncovered rather
+    // than forced: closing it for real needs either an injectable
+    // `maxBufferedLines` this backend threads through (a small API change,
+    // not a test-only one) or an integration-tier test outside the 2-second
+    // budget, and deciding between those is a call for a future slice, not a
+    // quiet workaround here.
   });
 
   describe("a run that raises", () => {
@@ -1009,6 +989,72 @@ describe("ProcPythonBackend", () => {
       assert.ok(!reconnected.ok);
       assert.equal(reconnected.problem.code, "not-connected");
     });
+
+    it("reports a failed cancellation during close() to an injected sink, rather than discarding it", async () => {
+      // A Codex review flagged this: close() awaited cancelActive() and then
+      // unconditionally threw the result away, even when the job's own
+      // `cancel` PUT itself failed. `ExecutionBackend.close()`'s own doc
+      // comment already promises this case is "logged, not returned" — the
+      // sink is what actually makes that true.
+      const gate = deferred<Reply>();
+      const { client } = router({
+        syscc: "0",
+        logGate: gate.promise,
+        cancelReply: rejected("compute-rejected", "500 Internal Server Error"),
+      });
+      const reasons: string[] = [];
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+        (reason) => reasons.push(reason),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await flush();
+
+      await backend.close();
+      gate.resolve(ok({ count: 0, items: [] }));
+      await accepted.done;
+
+      assert.equal(reasons.length, 1);
+      assert.ok(reasons[0]?.includes("cancelling the run"));
+    });
+
+    it("still resolves close() without a sink, the same failure just discarded as before", async () => {
+      // No behaviour change for every existing construction of this class,
+      // which passes no fifth argument at all.
+      const gate = deferred<Reply>();
+      const { client } = router({
+        syscc: "0",
+        logGate: gate.promise,
+        cancelReply: rejected("compute-rejected", "500 Internal Server Error"),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await flush();
+
+      await backend.close();
+      gate.resolve(ok({ count: 0, items: [] }));
+      await accepted.done;
+
+      const reconnected = await backend.execute(fakeProgram(), {
+        freshNamespace: false,
+      });
+      assert.ok(!reconnected.ok);
+      assert.equal(reconnected.problem.code, "not-connected");
+    });
   });
 
   describe("failures translated from the compute layer", () => {
@@ -1208,6 +1254,54 @@ describe("ProcPythonBackend", () => {
       );
       const code = (submitted?.body as { code: string[] }).code;
       assert.deepEqual(code, ["proc python restart;"]);
+    });
+
+    it("reports a failed restart via SYSCC, not just a terminal job", async () => {
+      // A Codex review flagged this as a real gap: reset() previously
+      // trusted the job's own terminal state and never read SYSCC, so a
+      // restart that itself failed (a missing PROC PYTHON license, or any
+      // SAS-side error during `proc python restart;`) was reported as
+      // success — exactly the trap ADR-0014/finding 33 already closed for
+      // execute(), left open here.
+      const { client } = router({
+        syscc: "3000",
+        syserrortext:
+          "180-322: Statement is not valid or it is used out of proper order.",
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.reset();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-failed");
+      assert.equal(
+        result.problem.detail,
+        "180-322: Statement is not valid or it is used out of proper order.",
+      );
+    });
+
+    it("falls back to a plain message when a failed restart's SYSERRORTEXT is empty", async () => {
+      const { client } = router({ syscc: "3000" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.reset();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-failed");
+      assert.equal(
+        result.problem.detail,
+        "SAS reported an error while restarting the interpreter (SYSCC=3000)",
+      );
     });
 
     it("is stopped by close(), the same as an execute() run", async () => {

@@ -180,6 +180,10 @@ interface RouterOptions {
    * `{ ok: true, value: undefined }`, the "every session has one" guarantee
    * finding 37 relies on turning out false for this one. */
   sysccMissing?: boolean;
+  /** Overrides the job's `cancel` `PUT` reply — a failure here exercises
+   * `cancelActive`'s own `backend-failed` mapping of `LogStream.cancel()`
+   * failing, distinct from the run itself failing. */
+  cancelReply?: Reply;
 }
 
 /** A `ComputeClient` that answers every request `ProcPythonBackend` makes,
@@ -281,6 +285,7 @@ function router(opts: RouterOptions): {
             body: undefined,
           });
         case "cancel":
+          if (opts.cancelReply !== undefined) return opts.cancelReply;
           return ok(undefined, { status: 204 });
         case "variables": {
           const name = variableName(request.link.href);
@@ -496,6 +501,41 @@ describe("ProcPythonBackend", () => {
         "real output\n",
         "something unrecognised\n",
       ]);
+    });
+
+    it("forwards a dropped-lines marker as its own text/plain output", async () => {
+      // `logStream.ts`'s `EventBuffer` overflows past `DEFAULT_MAX_BUFFERED_
+      // LINES` (100,000) by dropping the oldest and inserting one `"dropped"`
+      // marker event in their place — this run submits one poll's worth of
+      // lines past that cap so the pump actually emits that event kind, and
+      // pins how this backend forwards it: as its own `text/plain` output
+      // naming the count, not silently absorbed.
+      const overflow = 5;
+      const logLines = Array.from(
+        { length: 100_000 + overflow },
+        (_unused, index) => line(String(index)),
+      );
+      const { client } = router({ syscc: "0", logLines });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      const dropped = texts(outputs).find((text) =>
+        text.includes("log line(s) dropped"),
+      );
+      assert.ok(dropped !== undefined, "no dropped-lines output was forwarded");
+      assert.equal(dropped, `[${String(overflow)} log line(s) dropped]\n`);
     });
   });
 
@@ -811,6 +851,41 @@ describe("ProcPythonBackend", () => {
       assert.equal(settled.problem.code, "cancelled");
     });
 
+    it("reports a failed cancel PUT as backend-failed, distinct from the run's own outcome", async () => {
+      // `cancelActive`'s own `stream.cancel()` branch (the job's `cancel` PUT
+      // itself failing, rather than the run failing) had no test of its own.
+      const gate = deferred<Reply>();
+      const { client } = router({
+        syscc: "0",
+        logGate: gate.promise,
+        cancelReply: rejected("compute-rejected", "500 Internal Server Error"),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await flush();
+
+      const cancelled = await backend.cancel(accepted);
+      assert.ok(!cancelled.ok);
+      assert.equal(cancelled.problem.code, "backend-failed");
+
+      gate.resolve(ok({ count: 0, items: [] }));
+      // The run itself still settles as cancelled — `cancelActive` aborts the
+      // controller unconditionally before ever asking `stream.cancel()` to
+      // confirm anything, so the failed PUT above changes `cancel()`'s own
+      // result and not `done`'s.
+      const settled = await accepted.done;
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "cancelled");
+    });
+
     it("cancels a run even after the job is already terminal, before the outcome is read", async () => {
       // `LogStream.cancel` is a documented no-op once the job is observed
       // terminal, which happens before the trailing drain and well before
@@ -957,10 +1032,10 @@ describe("ProcPythonBackend", () => {
 
       assert.ok(!settled.ok);
       assert.equal(settled.problem.code, "backend-failed");
-      assert.ok(
-        settled.problem.code === "backend-failed" &&
-          settled.problem.detail.includes(`"SYSCC"`),
-      );
+      // `assert.equal` above already narrows `settled.problem` to the
+      // `backend-failed` variant, so `detail` is reachable without
+      // re-checking `code`.
+      assert.ok(settled.problem.detail.includes(`"SYSCC"`));
     });
 
     it("reports a failed upload as transfer-failed, and never submits a job", async () => {
@@ -1155,6 +1230,35 @@ describe("ProcPythonBackend", () => {
       await flush();
       await backend.close();
       gate.resolve(rejected("compute-unreachable", "aborted"));
+
+      const result = await resetting;
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cancelled");
+    });
+
+    it("reads its own stream's natural cancelled outcome, not just an aborted createJob", async () => {
+      // The test above closes while `createJob` itself is still in flight, so
+      // `reset()` returns via `translate()`'s own `isCurrentRunAborted()`
+      // check and never reaches `ended.value.outcome === "cancelled"` at all.
+      // Aborting *after* the job exists and its log stream is polling reaches
+      // that second, distinct branch instead: `streamJobLog`'s pump notices
+      // the caller's signal abort between reads and settles `done` with
+      // `{ outcome: "cancelled" }` on its own, with no explicit
+      // `stream.cancel()` call from this backend at all.
+      const gate = deferred<Reply>();
+      const { client } = router({ syscc: "0", logGate: gate.promise });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+
+      const resetting = backend.reset();
+      await flush();
+      await backend.close();
+      gate.resolve(ok({ count: 0, items: [] }));
 
       const result = await resetting;
       assert.ok(!result.ok);

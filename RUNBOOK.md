@@ -4149,8 +4149,8 @@ named, because the reasoning is at the origin and is not repeated here.
   the other absent must **throw**. It wants a unit test, and it is small enough
   to be the slice's first commit. **Landed 2026-08-20 (slice 3a-ii)**: `liveTarget`
   now throws, naming which variable is present and which is missing, and only
-  returns `undefined` when neither is set. Three unit tests updated —
-  the half-configured test asserts a throw instead of `undefined`, the
+  returns `undefined` when neither is set. Two unit tests updated and one
+  added — the half-configured test asserts a throw instead of `undefined`, the
   blank-value test does the same, and a new test pins the both-blank-equals-
   absent case so the two are not confused.
 - ☑ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** So the one live

@@ -801,6 +801,15 @@ called out under **Changed** with a migration note.
   advertises, and that a bare relative `path` resolves inside the session's own
   run directory, so a fileref is session-scoped and dies with it. Closes the two
   gaps `fileref.ts` had been citing finding 36 for.
+- Findings 58–59 in `PROBE-FINDINGS.md` (slice 3a-i, docs-only): ADR-0014's two
+  open hand-over questions, settled against a live Viya 4 deployment. `TIMEOUT=`
+  on `PROC PYTHON` bounds only the connect handshake, not a running submit
+  block, and does not exist at all on `SUBMIT` — a syntax error there, not a
+  silent no-op. `SRC=` parses but is the same file-open code path `INFILE=`
+  already uses, failing with an error that names `INFILE=` even when `SRC=` is
+  what was written, so it is not a second inline hand-over path. Neither result
+  changes anything 3a was going to build; both close open questions the 2-pre
+  write-up and finding 34 had left unprobed.
 
 ### Fixed
 
@@ -1015,6 +1024,15 @@ called out under **Changed** with a migration note.
   administrative relations" and "the link set is computed per caller" are not
   separable, and both forbid the same inference. The page now quotes the message
   the extension actually shows and gives both readings without ranking them.
+
+- The live tier's second gate no longer confuses "half-configured" with "not
+  configured". `test/helpers/live-gate.ts`'s `liveTarget` used to return
+  `undefined` — a silent skip, exit 0 — whenever exactly one of a generation's
+  URL/token pair was set, the same as when neither was. Found by accident
+  during RUNBOOK P40 on 2026-08-19, on a tier whose whole reason to exist is
+  that it talks to a real deployment. It now throws, naming which variable is
+  present and which is missing, and only returns `undefined` when neither is
+  set at all.
 
 ### Changed
 

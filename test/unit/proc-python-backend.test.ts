@@ -141,6 +141,12 @@ interface RouterOptions {
   logGate?: Promise<Reply>;
   /** Held instead of answered on the `assign` request, if given. */
   assignGate?: Promise<Reply>;
+  /** Held instead of answered on the first `execute` (job-creation) request,
+   * if given — this is `createJob`, not `ExecutionBackend.execute`. */
+  executeGate?: Promise<Reply>;
+  /** Held instead of answered on the first `variables` (`SYSCC`) request, if
+   * given — simulates cancelling after the job is already terminal. */
+  variablesGate?: Promise<Reply>;
 }
 
 /** A `ComputeClient` that answers every request `ProcPythonBackend` makes,
@@ -151,6 +157,8 @@ function router(opts: RouterOptions): {
 } {
   let filerefName = "unknown";
   let logCalls = 0;
+  let executeCalls = 0;
+  let sysccCalls = 0;
 
   const requests: ComputeRequest[] = [];
   const client: ComputeClient = {
@@ -189,6 +197,10 @@ function router(opts: RouterOptions): {
           if (opts.uploadReply !== undefined) return opts.uploadReply;
           return ok(undefined, { status: 201 });
         case "execute":
+          executeCalls += 1;
+          if (executeCalls === 1 && opts.executeGate !== undefined) {
+            return await opts.executeGate;
+          }
           if (opts.executeReply !== undefined) return opts.executeReply;
           return ok(
             {
@@ -239,6 +251,10 @@ function router(opts: RouterOptions): {
         case "variables": {
           const name = variableName(request.link.href);
           if (name === "SYSCC") {
+            sysccCalls += 1;
+            if (sysccCalls === 1 && opts.variablesGate !== undefined) {
+              return await opts.variablesGate;
+            }
             return ok({ count: 1, items: [{ name, value: opts.syscc }] });
           }
           if (name === "SYSERRORTEXT") {
@@ -649,6 +665,42 @@ describe("ProcPythonBackend", () => {
       assert.equal(settled.problem.code, "cancelled");
     });
 
+    it("cancels a run even after the job is already terminal, before the outcome is read", async () => {
+      // `LogStream.cancel` is a documented no-op once the job is observed
+      // terminal, which happens before the trailing drain and well before
+      // `SYSCC` is read. A `cancel()` landing in that window must still make
+      // `done` resolve as cancelled rather than as a real outcome — the gap
+      // an adversarial review of this slice found and this test pins.
+      const gate = deferred<Reply>();
+      const { client, requests } = router({
+        syscc: "0",
+        variablesGate: gate.promise,
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await flush();
+      assert.ok(requests.some((request) => request.link.rel === "variables"));
+      // The job is already terminal and its log fully drained, so
+      // `stream.cancel()` alone would be a no-op here.
+      assert.ok(!requests.some((request) => request.link.rel === "cancel"));
+
+      const cancelled = await backend.cancel(accepted);
+      assert.ok(cancelled.ok);
+
+      gate.resolve(ok({ count: 1, items: [{ name: "SYSCC", value: "0" }] }));
+      const settled = await accepted.done;
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "cancelled");
+    });
+
     it("succeeds and does nothing for a run that already settled", async () => {
       const { client } = router({ syscc: "0" });
       const backend = new ProcPythonBackend(
@@ -783,6 +835,32 @@ describe("ProcPythonBackend", () => {
       );
       const code = (submitted?.body as { code: string[] }).code;
       assert.deepEqual(code, ["proc python restart;"]);
+    });
+
+    it("is stopped by close(), the same as an execute() run", async () => {
+      // reset() has no ExecutionHandle and no entry in `this.active`, so
+      // close() cannot find it through the same path cancel() uses — an
+      // adversarial review of this slice found close() silently leaving an
+      // in-flight reset() to run to completion unattended. This pins the fix:
+      // close() also aborts reset()'s own controller.
+      const gate = deferred<Reply>();
+      const { client } = router({ syscc: "0", executeGate: gate.promise });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+
+      const resetting = backend.reset();
+      await flush();
+      await backend.close();
+      gate.resolve(rejected("compute-unreachable", "aborted"));
+
+      const result = await resetting;
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cancelled");
     });
 
     it("refuses before connecting, the same as execute", async () => {

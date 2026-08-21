@@ -813,14 +813,71 @@ called out under **Changed** with a migration note.
 - `ComputeSessionManager.startSubmission`/`endSubmission`/`isBusy` (slice
   3a-ii): a per-profile busy-submission guard, keyed like the existing session
   map. A bare start/end pair rather than a wrapping helper, since ADR-0017's
-  log-streaming pump has no design yet to wrap. Nothing calls it yet — 3a's
-  run path is what will.
+  log-streaming pump has no design yet to wrap. Now called by `ProcPythonBackend`
+  (the `PROC PYTHON` backend slice, below), through a narrow `SubmissionGuard`
+  port rather than the concrete manager, so `src/backend/procPython.ts` stays
+  free of `vscode`.
 - `test/helpers/backend-contract-suite.ts` (slice 3a-ii): the ADR-0015
   contract suite, exported as `describeExecutionBackendContract(createBackend)`
   instead of being hard-wired to `createFakeBackend()`. `test/unit/backend-
   contract.test.ts` is now nine lines registering it against the fake; 3a's
   real backend can register its own double against the same twenty-three
   cases without copying them.
+- Finding 60 in `PROBE-FINDINGS.md` (probed 2026-08-21 against a live Viya 4
+  deployment, before writing the module below): the session's `variables`
+  relation is a real link, and a name filter on the collection returns the
+  value inline, so reading `SYSCC` is one request rather than a filter-then-
+  follow. `src/compute/variables.ts` reads `SYSCC`/`SYSERR`/`SYSERRORTEXT` this
+  way.
+- `src/backend/procPython.ts`: the `PROC PYTHON` `ExecutionBackend` — ADR-0014's
+  mechanism behind ADR-0015's seam. Uploads a program to a fresh fileref per
+  run (`fileref.ts`), submits `proc python infile=<fileref>;` (or, with
+  `freshNamespace`, `proc python restart infile=<fileref>;`) as a job
+  (`job.ts`), streams its log (`logStream.ts`) into `text/plain` output — every
+  line except one typed `note` or `source`, per finding 35's "what remains is
+  Python's own output plus SAS's NOTEs" — and once the job is terminal reads
+  `SYSCC` to learn whether it raised, per ADR-0014 rather than the job's own
+  terminal state. An unhandled exception (`SYSCC=1012`) is parsed into a raw,
+  unmapped `Traceback` — outermost frame first, wrapper frames intact — because
+  neither ADR-0014's own write-up nor `backend.ts`'s `TracebackFrame` doc
+  assigns the mapping or the wrapper-frame drop to this slice, and they
+  disagree with each other about which later one it belongs to; both readings
+  agree it is not 3a's, and the disagreement is recorded in the module rather
+  than resolved by guessing. `close()` cancels a run in flight, and a reset in
+  flight, before disconnecting. Covered by `test/unit/proc-python-backend.test.ts`
+  against a fake `ComputeClient`, and by a second run of the ADR-0015 contract
+  suite over `test/helpers/recorded-proc-python.ts`, a double that drives this
+  same real backend through a simulated wire. One assertion in
+  `backend-contract-suite.ts` changed to make that second run possible: it
+  compared an emitted output's `data` byte-for-byte, which does not hold for a
+  backend whose transport is a SAS log and therefore appends a trailing
+  newline per forwarded line, the same as a real `print()` call's output would
+  read back as. `contracts/viya4.yaml` gained the `variables_get` entry finding
+  60 established.
+- An adversarial review of the `PROC PYTHON` backend (above) before it was
+  proposed for merge found one blocking defect and two worth fixing, all now
+  fixed. **Blocking:** `cancel()` delegated entirely to `LogStream.cancel()`
+  once a job existed, which `logStream.ts` documents as a no-op once the job
+  is observed terminal — a state reached before the trailing log drain and
+  well before `SYSCC` is read — so a cancel arriving in that window did
+  nothing and `done` went on to resolve with a real outcome instead of
+  ADR-0015's required `cancelled` failure. `cancelActive` now aborts the
+  run's own controller unconditionally, which reaches both `readVariable`
+  calls that follow, and one further check closes the sliver of the window
+  still open after a `SYSCC` read has already succeeded. **Worth fixing:**
+  `close()` could not stop an in-flight `reset()` — it has no
+  `ExecutionHandle` and no entry in `this.active`, so `close()`'s own
+  "cancels whatever is in flight" contract silently did not reach it;
+  `reset()` now carries its own `AbortController` that `close()` also aborts.
+  Also worth fixing and **deliberately not closed in this slice**: if
+  `cancel()` arrives while `createJob`'s `POST` is in flight and the
+  deployment has already created the job before the client gives up waiting
+  on the response, the abandoned job keeps running against the shared
+  Compute session — and since `SYSCC` is live, mutated session state
+  (finding 37/60), a later run in the same session risks its own `SYSCC`
+  being read at an unlucky moment. Closing this needs `job.ts` to hand back
+  an id even on a client-side abort, which is a change below this slice's
+  layer; it is recorded here rather than silently accepted.
 
 ### Fixed
 

@@ -313,6 +313,11 @@ export class ProcPythonBackend implements ExecutionBackend {
 
   private connected = false;
   private active: ActiveRun | undefined;
+  /** `reset()`'s own abort, so {@link close} can stop it too. Separate from
+   * `ActiveRun.controller`: a reset is not an `execute()` run, carries no
+   * `SubmissionGuard` handle beyond its own start/end pair, and produces no
+   * `ExecutionHandle` for a caller to cancel by id. */
+  private resetController: AbortController | undefined;
   private runCounter = 0;
   private filerefCounter = 0;
 
@@ -403,6 +408,19 @@ export class ProcPythonBackend implements ExecutionBackend {
    * regardless of which handle a caller might name.
    */
   private async cancelActive(run: ActiveRun): Promise<BackendResult<void>> {
+    // Unconditional, and not an `else` on the branch below: `LogStream.cancel`
+    // is a documented no-op once the job is `finished` — which `logStream.ts`
+    // sets the instant the poll observes a terminal state, *before* the
+    // trailing drain and long before `runProgram` gets to reading `SYSCC`. A
+    // cancel arriving in that window would otherwise do nothing at all and
+    // still report success, while `runProgram` went on to resolve `done` with
+    // a genuine outcome instead of ADR-0015's required `cancelled` failure.
+    // Aborting here reaches that whole window: `run.controller.signal` is
+    // what `readVariable` is given for both the `SYSCC` and `SYSERRORTEXT`
+    // reads, so an abort lands on whichever of them is still in flight, and
+    // `translate()` already asks `isCurrentRunAborted()` before anything else.
+    run.controller.abort();
+
     if (run.stream !== undefined) {
       const result = await run.stream.cancel();
       if (!result.ok) {
@@ -414,14 +432,7 @@ export class ProcPythonBackend implements ExecutionBackend {
           "cancelling the run",
         );
       }
-      return { ok: true, value: undefined };
     }
-
-    // No job exists yet — still uploading, or still waiting on `createJob`.
-    // Aborting here is what lets `cancel` work "including while the program is
-    // still being transferred" (`backend.ts`), since there is no `LogStream` to
-    // hand the request to.
-    run.controller.abort();
     return { ok: true, value: undefined };
   }
 
@@ -444,14 +455,23 @@ export class ProcPythonBackend implements ExecutionBackend {
       );
     }
 
-    try {
-      const job = await createJob(this.client, this.session, [
-        RESTART_STATEMENT,
-      ]);
-      if (!job.ok)
-        return this.translate(job, "resetting the interpreter", false);
+    const controller = new AbortController();
+    this.resetController = controller;
 
-      const stream = streamJobLog(this.client, job.value);
+    try {
+      const job = await createJob(
+        this.client,
+        this.session,
+        [RESTART_STATEMENT],
+        { signal: controller.signal },
+      );
+      if (!job.ok) {
+        return this.translate(job, "resetting the interpreter", false);
+      }
+
+      const stream = streamJobLog(this.client, job.value, {
+        signal: controller.signal,
+      });
       // `proc python restart;` alone runs no Python; its log is not worth
       // surfacing here, so it is drained rather than forwarded anywhere.
       await drainEvents(stream.events);
@@ -464,6 +484,7 @@ export class ProcPythonBackend implements ExecutionBackend {
       }
       return { ok: true, value: undefined };
     } finally {
+      this.resetController = undefined;
       this.guard.endSubmission();
     }
   }
@@ -484,6 +505,13 @@ export class ProcPythonBackend implements ExecutionBackend {
       // that is being abandoned either way.
       await this.cancelActive(this.active);
     }
+    // `reset()` has no `ExecutionHandle` and no entry in `this.active` — it is
+    // not an `execute()` run — but it is still in-flight work this backend
+    // holds, and `close()`'s own contract is to stop whatever that is. The
+    // abort resolves `reset()`'s pending `createJob`/`streamJobLog` calls with
+    // a `cancelled` failure via `isCurrentRunAborted()`; there is nothing here
+    // to await, since `reset()` itself is what unwinds and releases the guard.
+    this.resetController?.abort();
     this.connected = false;
   }
 
@@ -570,6 +598,15 @@ export class ProcPythonBackend implements ExecutionBackend {
         );
       }
 
+      // A cancel arriving between the log settling and this read succeeding
+      // would otherwise fall through to a genuine outcome below — the same
+      // race `cancelActive`'s own doc comment describes, just narrowed to the
+      // sliver still open after `readVariable` itself no longer fails on the
+      // abort. Checked once here rather than after every return below it.
+      if (this.isCurrentRunAborted()) {
+        return fail({ code: "cancelled" }, "running the program");
+      }
+
       if (syscc.value === SUCCESS_SYSCC) {
         return { ok: true, value: { succeeded: true, diagnostics: [] } };
       }
@@ -643,7 +680,10 @@ export class ProcPythonBackend implements ExecutionBackend {
    * this class did not pass is never combined into a request it made.
    */
   private isCurrentRunAborted(): boolean {
-    return this.active?.controller.signal.aborted ?? false;
+    return (
+      (this.active?.controller.signal.aborted ?? false) ||
+      (this.resetController?.signal.aborted ?? false)
+    );
   }
 
   private nextRunId(): string {

@@ -41,18 +41,42 @@ describe("live-tier gate", () => {
     assert.equal(liveTarget("viya35"), undefined);
   });
 
-  it("stays shut when only half the credentials are present", () => {
+  it("refuses rather than skips when only half the credentials are present", () => {
+    // Found during RUNBOOK P40: this used to return `undefined`, the same as
+    // a wholly unconfigured machine, so a half-configured pair reported a
+    // silent skip and exit 0. One variable present is evidence someone meant
+    // to configure this generation, so the missing half is a misconfiguration
+    // to surface, not one to skip past.
     withEnv({ PYTHON_ON_VIYA_TEST_VIYA4_URL: "https://viya.example.com" });
-    assert.equal(liveTarget("viya4"), undefined);
+    assert.throws(
+      () => liveTarget("viya4"),
+      /PYTHON_ON_VIYA_TEST_VIYA4_URL is set but PYTHON_ON_VIYA_TEST_VIYA4_TOKEN is not/,
+    );
 
     withEnv({ PYTHON_ON_VIYA_TEST_VIYA4_TOKEN: "not-a-real-token" });
-    assert.equal(liveTarget("viya4"), undefined);
+    assert.throws(
+      () => liveTarget("viya4"),
+      /PYTHON_ON_VIYA_TEST_VIYA4_TOKEN is set but PYTHON_ON_VIYA_TEST_VIYA4_URL is not/,
+    );
   });
 
-  it("treats a blank value as absent", () => {
+  it("treats a blank value as absent, including for the half-configured refusal", () => {
     withEnv({
       PYTHON_ON_VIYA_TEST_VIYA4_URL: "  ",
       PYTHON_ON_VIYA_TEST_VIYA4_TOKEN: "not-a-real-token",
+    });
+    // A blank URL is absent, not present-but-empty, so this is the same
+    // half-configured case as the test above rather than a third outcome.
+    assert.throws(
+      () => liveTarget("viya4"),
+      /PYTHON_ON_VIYA_TEST_VIYA4_TOKEN is set but PYTHON_ON_VIYA_TEST_VIYA4_URL is not/,
+    );
+  });
+
+  it("stays shut when nothing at all is present for one generation", () => {
+    withEnv({
+      PYTHON_ON_VIYA_TEST_VIYA4_URL: "  ",
+      PYTHON_ON_VIYA_TEST_VIYA4_TOKEN: "   ",
     });
     assert.equal(liveTarget("viya4"), undefined);
   });

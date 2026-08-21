@@ -302,6 +302,28 @@ endpoints:
     # `Content-Type` is sniffed rather than echoed.
     accept: null
 
+  # ADR-0014's success signal — `SYSCC` — read as a filtered variables
+  # collection, not a composed single-item path. Finding 60 measured a name
+  # filter returning the value inline, so `src/compute/variables.ts` never
+  # follows an item's own `self` link at all.
+  - id: variables_get
+    method: GET
+    via:
+      from: compute_session_create
+      relation: variables
+      type: application/vnd.sas.collection
+    observed_href: /compute/sessions/{sessionId}/variables
+    accept: application/vnd.sas.collection+json
+    # `?filter=eq(name,'SYSCC')`, the same escape `contexts.ts` already uses
+    # (finding 22 — the apostrophe is the only character to double). The
+    # matching item carries `value` as a plain string ("0", "1012", …)
+    # directly on the filtered collection item — finding 60 — so this is the
+    # one request `variables.ts` makes; it never follows a variable's own
+    # `self` link, whose media type (`application/vnd.sas.compute.session.variable`,
+    # no `+json`) is recorded in that finding for anyone tempted to.
+    response_fields: [count, items]
+    item_fields: [name, value]
+
   # ── Capability probing ─────────────────────────────────────────────────────
   - id: deployment_data_root
     method: GET

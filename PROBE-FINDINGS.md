@@ -2167,3 +2167,88 @@ around, and no code or design change follows from this finding.
   and both failed identically to `INFILE=`'s failure mode. A deployment or
   release where `SRC=` succeeds has not been observed.
 - **Viya 3.5.** Not probed, as ever.
+
+## 2026-08-21 — The `variables` collection, before writing `variables.ts` (Viya 4)
+
+Finding 37 established that `SYSCC` is readable live via
+`GET /compute/sessions/{id}/variables/SYSCC`, but never recorded whether that
+path is followed from a link the deployment sends or composed by hand — a
+real gap, since ADR-0010 forbids composing anything the deployment did not
+hand back as an href. Probed against `verde` before writing the module 3a
+needs to read `SYSCC` for real, because guessing the shape and correcting it
+later is exactly the kind of wire mistake this project's probe-first
+discipline exists to catch.
+
+### Finding 60 — A collection item carries its own `self` link, and a filtered read returns the value inline
+
+The session's `variables` relation (finding 21 already listed it as one of
+the nine collection relations, never followed) is `GET`, `Accept:
+application/vnd.sas.collection+json`, and on a fresh session reports `count:
+82`. Each item carries exactly one link:
+
+```json
+{
+  "name": "SYS_COMPUTE_JOB_ID",
+  "links": [
+    {
+      "href": ".../variables/SYS_COMPUTE_JOB_ID",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.compute.session.variable",
+      "uri": ".../variables/SYS_COMPUTE_JOB_ID"
+    }
+  ]
+}
+```
+
+So the composed-looking path in finding 37 is not a guess after all — it is
+exactly what the collection's own `self` link says, one per variable, which
+is what makes following it (rather than composing `{href}/{name}` by hand)
+the ADR-0010-compliant read.
+
+**A name filter is better than either.** `GET .../variables?filter=eq(name,'SYSCC')`
+returns `{"count":1,"items":[{"name":"SYSCC","value":"0","links":[...]}]}` —
+the `value` is already inline on the filtered collection item, so reading one
+named variable is **one request**, not two: filter the collection, read
+`items[0].value`. There is no need to also follow the item's own `self` link
+unless a caller wants the single-variable representation for its own sake.
+
+**The single-variable media type has no `+json` suffix, unlike everything
+else in this codebase.** `GET` on an item's own `self` link with
+`Accept: application/vnd.sas.compute.variable+json` (the natural guess,
+matching every other Viya media type this project has seen) answered `406`:
+
+```json
+{
+  "httpStatusCode": 406,
+  "message": "An invalid or unexpected Accept header type of application/vnd.sas.compute.variable+json was provided...",
+  "remediation": "Valid Accept header values are: application/json, application/vnd.sas.compute.session.variable, text/plain."
+}
+```
+
+The real type is `application/vnd.sas.compute.session.variable` — `session.`
+inserted, and no `+json` — confirmed by the collection item's own `type` key
+above, which already carried it. This does not matter for `variables.ts`
+itself, since the filtered-collection read never needs this media type at
+all; it matters for anyone tempted to follow a variable's `self` link by hand
+with a guessed `Accept` header.
+
+**Reading:** `variables.ts` should follow the session's `variables` link,
+append `?filter=eq(name,'<var>')` the same way `contexts.ts` already filters
+by name (findings 15/22 — the apostrophe is the only character to escape),
+and read `value` off the one item the filter returns. No composed single-item
+href, no new media type constant beyond the ordinary collection one already
+in use everywhere else.
+
+### What this probe did not settle
+
+- **Whether an unrecognised variable name answers an empty collection or an
+  error.** Only `SYSCC`, which exists on every session, was tried. A caller
+  reading `SYSERR`/`SYSERRORTEXT` (finding 37 also names these) should not
+  need this, since all three are guaranteed session variables, but a name
+  that does not exist at all was not tested.
+- **Whether `value` is ever absent from a filtered item** rather than an
+  empty string. Not observed either way; `variables.ts` should decide how to
+  read a missing `value` defensively rather than assume the one case tried is
+  the only shape.
+- **Viya 3.5.** Not probed, as ever.

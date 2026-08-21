@@ -244,7 +244,22 @@ export function describeExecutionBackendContract(
         const iterator = accepted.value.outputs[Symbol.asyncIterator]();
         const first = await iterator.next();
         assert.ok(!first.done);
-        assert.equal(first.value.data, "still going");
+        // A trailing newline is tolerated, not required verbatim: this suite
+        // is a contract on *streaming* — that output arrives before the run
+        // settles — and not a promise that every implementation reproduces an
+        // opaque `RichOutput.data` byte-for-byte. `ProcPythonBackend` (3a) is
+        // line-oriented by construction — its transport is a SAS log, and it
+        // forwards each line as `` `${line}\n` `` the same way a real
+        // `print()` call's output would read back from one — so a run driven
+        // through its real pipeline legitimately answers `"still going\n"`
+        // for an emitted `"still going"`, and that difference says nothing
+        // about whether the backend is correct.
+        assert.equal(
+          typeof first.value.data === "string"
+            ? first.value.data.replace(/\n$/, "")
+            : first.value.data,
+          "still going",
+        );
         assert.ok(!run.settled);
       });
 
@@ -309,6 +324,15 @@ export function describeExecutionBackendContract(
       it("succeeds and does nothing for a run that already finished", async () => {
         // A user who hits Cancel as the run completes has not made a
         // mistake, and must not be shown a failure for winning a race.
+        //
+        // "Already finished" means `done` has actually settled — ADR-0015's
+        // own wording for `cancel` — not merely that `finish` has been
+        // called. The fake's `FakeRun.finish` settles `done` synchronously,
+        // so a real, asynchronously-driven backend (one whose `done` only
+        // resolves once it has actually polled through its transport) needs
+        // the explicit `await` below to reach the same state; without it,
+        // this test would only ever prove the fake's own synchronous
+        // shortcut rather than the clause every implementation must satisfy.
         const backend = createBackend();
         await backend.connect();
         const accepted = await backend.execute(fakeProgram(), {
@@ -316,6 +340,7 @@ export function describeExecutionBackendContract(
         });
         assert.ok(accepted.ok);
         backend.runs[0]?.finish({ succeeded: true, diagnostics: [] });
+        await accepted.value.done;
 
         const cancelled = await backend.cancel(accepted.value);
         assert.ok(cancelled.ok);

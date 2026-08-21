@@ -4087,21 +4087,37 @@ punch list that did not exist, so each of these was one slice away from being
 lost. Where an item came from is
 named, because the reasoning is at the origin and is not repeated here.
 
-- ☐ **Refuse to submit into a busy session, and say so.** From the 2a-ii punch
+- ☑ **Refuse to submit into a busy session, and say so.** From the 2a-ii punch
   list, moved 2026-08-14 because the check has no caller until something
   submits — which is now. Finding 27: session state reads `running` while a job
   executes and returns to `idle` after; finding 29 leaves concurrent submission
   unobserved. This is the shared-window case's only defence, so it is not
   optional. `src/compute/sessionManager.ts` says under "what is deliberately not
   here yet" why the manager has no busy check; that comment comes out with this
-  item.
-- ☐ **Make `test/unit/backend-contract.test.ts` runnable against a real
+  item. **Landed 2026-08-20 (slice 3a-ii)** as a seam rather than a submitter:
+  3a's run path still does not exist, so `ComputeSessionManager` gained
+  `startSubmission`/`endSubmission`/`isBusy` — a bare start/end pair keyed per
+  profile id, not a wrapping `submit(profileId, run)` helper, because
+  ADR-0017's log-streaming pump has not been designed yet and a wrapping
+  helper would have to guess its shape today. Five new integration tests in
+  `test/integration/compute/session-manager.test.ts` cover the refusal, the
+  release, per-profile independence and idempotent double-ending. 3a still has
+  to actually call this from its run command; nothing does yet.
+- ☑ **Make `test/unit/backend-contract.test.ts` runnable against a real
   backend.** Its header says 3a's backend "should be able to run this same
   file", and all twenty-three cases call `createFakeBackend()` directly, so as
   written it cannot. Export it as a suite taking a factory and run it twice —
   once over the double, once over the `PROC PYTHON` backend. Doing this *first*
   makes the contract the specification for the slice rather than something the
-  slice is checked against afterwards.
+  slice is checked against afterwards. **Landed 2026-08-20 (slice 3a-ii)**: all
+  twenty-three cases moved into a new `test/helpers/backend-contract-suite.ts`,
+  exported as `describeExecutionBackendContract(createBackend: BackendFactory)`.
+  `test/unit/backend-contract.test.ts` is now nine lines that call it with
+  `createFakeBackend`. The suite is typed against `FakeBackend` (`.runs`,
+  `.finish`/`.emit`/`.abort`), not the bare `ExecutionBackend` seam — that is
+  the interface 3a's own double has to satisfy to reuse this suite, and how
+  that double gets driven is 3a's decision, not anticipated here. "Run it
+  twice" is therefore still 3a's to finish, once its double exists.
 - ☐ **Decide whether an absent `createSession` should fail the connect at all.**
   The #135 item immediately above this one has the reasoning and the two
   alternatives. It is on this list because "the next slice that touches connect"
@@ -4124,19 +4140,35 @@ named, because the reasoning is at the origin and is not repeated here.
   stops a running step promptly is still unmeasured, per `job.ts`'s own note),
   and ADR-0014's `INFILE=`-via-upload mechanism remains the only real hand-over
   path.
-- ☐ **Gate two of the live tier skips a half-configured tier instead of
+- ☑ **Gate two of the live tier skips a half-configured tier instead of
   refusing it.** Found by accident during P40 on 2026-08-19: with the token set
   and the URL unset, the run reports `2 pending` and exit 0 — indistinguishable
   from a machine that was never configured, on a tier whose whole value is that
   it talks to a real deployment. The fix is in `test/helpers/live-gate.ts`, the
   same shape as the `https://` check already there: one of the pair present and
   the other absent must **throw**. It wants a unit test, and it is small enough
-  to be the slice's first commit.
-- ☐ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** So the one live
+  to be the slice's first commit. **Landed 2026-08-20 (slice 3a-ii)**: `liveTarget`
+  now throws, naming which variable is present and which is missing, and only
+  returns `undefined` when neither is set. Three unit tests updated —
+  the half-configured test asserts a throw instead of `undefined`, the
+  blank-value test does the same, and a new test pins the both-blank-equals-
+  absent case so the two are not confused.
+- ☑ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** So the one live
   test that predates 3a exercises a transport `src/` never uses, which is the
   same defect class as a test that copies the logic under test. Port it onto
   `createComputeClient`, or delete it now that `viya4-job.test.ts` covers the
-  same ground through the real client.
+  same ground through the real client. **Landed 2026-08-20 (slice 3a-ii)**, and
+  the fix named above turned out not to fit: `/identities/users/@currentUser`
+  is an identity-service endpoint, not a `/compute/...` one, and
+  `ComputeClient.send` only follows a `Link` under ADR-0010 — it has no way to
+  reach a path outside the Compute service at all. Deletion was also wrong:
+  `viya4-job.test.ts` requires `PYTHON_ON_VIYA_ALLOW_MUTATION` and skips
+  without it, so removing this suite would leave nobody who has only set the
+  URL/token pair with any live coverage at all. The actual fix ports the test
+  onto `src/auth/identity.ts`'s `fetchCurrentUser` — the real production
+  function for exactly this request, which already implements the finding-6
+  summary/full media-type fallback this test used to re-derive by hand with a
+  bare `fetch` call.
 
 > **Before any of it, the submission fidelity corpus**, which has its own item
 > above and is not repeated here. It is listed as "Before 3a" rather than as

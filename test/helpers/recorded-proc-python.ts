@@ -300,7 +300,20 @@ function fixedGuard(): SubmissionGuard {
 }
 
 function session(): ComputeSession {
-  return { id: SESSION_ID, state: "idle", links: [] };
+  return {
+    id: SESSION_ID,
+    state: "idle",
+    links: [
+      { method: "POST", rel: "assign", href: "/filerefs" },
+      { method: "POST", rel: "execute", href: "/jobs" },
+      {
+        method: "GET",
+        rel: "variables",
+        href: "/variables",
+        responseType: "application/vnd.sas.collection",
+      },
+    ],
+  };
 }
 
 function dialect(): Dialect {

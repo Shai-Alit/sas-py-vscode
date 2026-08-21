@@ -500,9 +500,15 @@ export class ProcPythonBackend implements ExecutionBackend {
    */
   async close(): Promise<void> {
     if (this.active !== undefined) {
-      // The result is logged, not returned — `close()`'s own contract — and
-      // there is nothing more useful to do with a failure to cancel a run
-      // that is being abandoned either way.
+      // Discarded, not logged — this module must never import `vscode`
+      // (see its own header), so it has no output channel to write a
+      // failure to, and `close()`'s own contract (ADR-0015) returns no
+      // result for a caller to inspect either. A failure to cancel here is
+      // therefore invisible by construction at this layer; making it
+      // observable would mean either handing `close()` an injectable sink
+      // (this backend has none today) or `ComputeSessionManager` inspecting
+      // whatever this call does, which it cannot, since there is nothing to
+      // inspect. Not fixed in this slice — recorded rather than mis-claimed.
       await this.cancelActive(this.active);
     }
     // `reset()` has no `ExecutionHandle` and no entry in `this.active` — it is

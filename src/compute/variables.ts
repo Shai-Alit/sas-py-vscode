@@ -29,12 +29,14 @@
  *
  * ## The filter is the same escape `contexts.ts` already uses
  *
- * `quoteFilterValue` is imported rather than restated, because finding 22
- * already measured the apostrophe as the only character a Viya filter literal
- * has to escape, and every variable name this module is ever asked to read
- * (`SYSCC`, `SYSERR`, `SYSERRORTEXT`) is an unquoted SAS name that could not
- * contain one anyway — the shared function is what stops a future caller from
- * growing a second, untested interpolation for a case that cannot occur today.
+ * `contextFilter` is imported rather than restated, because it is already
+ * exactly `eq(name,${quoteFilterValue(name)})` — an equality filter by name,
+ * despite its name reading as context-specific — and finding 22 already
+ * measured the apostrophe as the only character a Viya filter literal has to
+ * escape. Every variable name this module is ever asked to read (`SYSCC`,
+ * `SYSERR`, `SYSERRORTEXT`) is an unquoted SAS name that could not contain one
+ * anyway — the shared function is what stops a future caller from growing a
+ * second, untested interpolation for a case that cannot occur today.
  */
 
 import {
@@ -43,7 +45,7 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "./client";
-import { quoteFilterValue } from "./contexts";
+import { contextFilter } from "./contexts";
 import { findLink } from "./links";
 import { asSessionGone, type ComputeSession } from "./session";
 
@@ -76,7 +78,7 @@ export async function readVariable(
     return linkMissing(session.id, VARIABLES_REL);
   }
 
-  const filter = encodeURIComponent(`eq(name,${quoteFilterValue(name)})`);
+  const filter = encodeURIComponent(contextFilter(name));
   const result = await client.send({
     link: { ...link, href: withQuery(link.href, `filter=${filter}`) },
     signal: options?.signal,

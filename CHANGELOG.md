@@ -1025,15 +1025,6 @@ called out under **Changed** with a migration note.
   separable, and both forbid the same inference. The page now quotes the message
   the extension actually shows and gives both readings without ranking them.
 
-- The live tier's second gate no longer confuses "half-configured" with "not
-  configured". `test/helpers/live-gate.ts`'s `liveTarget` used to return
-  `undefined` — a silent skip, exit 0 — whenever exactly one of a generation's
-  URL/token pair was set, the same as when neither was. Found by accident
-  during RUNBOOK P40 on 2026-08-19, on a tier whose whole reason to exist is
-  that it talks to a real deployment. It now throws, naming which variable is
-  present and which is missing, and only returns `undefined` when neither is
-  set at all.
-
 ### Changed
 
 - The copyright check now scans `contracts/`, and its header extractor

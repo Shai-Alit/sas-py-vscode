@@ -4124,19 +4124,14 @@ named, because the reasoning is at the origin and is not repeated here.
   stops a running step promptly is still unmeasured, per `job.ts`'s own note),
   and ADR-0014's `INFILE=`-via-upload mechanism remains the only real hand-over
   path.
-- ☑ **Gate two of the live tier skips a half-configured tier instead of
+- ☐ **Gate two of the live tier skips a half-configured tier instead of
   refusing it.** Found by accident during P40 on 2026-08-19: with the token set
   and the URL unset, the run reports `2 pending` and exit 0 — indistinguishable
   from a machine that was never configured, on a tier whose whole value is that
-  it talks to a real deployment. **Fixed 2026-08-20** in
-  `test/helpers/live-gate.ts`'s `liveTarget`: neither variable present still
-  returns `undefined` (skip), but exactly one present now **throws**, naming
-  which variable is set and which is missing. Three unit tests updated —
-  `"stays shut when only half the credentials are present"` became
-  `"refuses rather than skips…"`, the blank-value test now asserts the same
-  refusal rather than a silent `undefined`, and a new test pins the
-  both-blank-equals-absent case so the two are not confused. `tsc` (both
-  projects) and Prettier clean; `npm run verify` not yet re-run.
+  it talks to a real deployment. The fix is in `test/helpers/live-gate.ts`, the
+  same shape as the `https://` check already there: one of the pair present and
+  the other absent must **throw**. It wants a unit test, and it is small enough
+  to be the slice's first commit.
 - ☐ **`test/live/viya4-connectivity.test.ts:40` calls `fetch`.** So the one live
   test that predates 3a exercises a transport `src/` never uses, which is the
   same defect class as a test that copies the logic under test. Port it onto

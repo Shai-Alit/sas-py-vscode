@@ -1324,4 +1324,88 @@ describe("compute session manager", () => {
       assert.match(line.message, /404/);
     });
   });
+
+  /**
+   * The seam 3a's run path claims before submitting, and releases when done.
+   *
+   * No job, no `createJob`, no fake job lifecycle: `startSubmission` and
+   * `endSubmission` are plain state keyed on a profile id, so they are
+   * testable without a deployment at all. What matters here is the refusal
+   * itself, that it is per profile, and that ending a claim that was never
+   * held is not an error.
+   */
+  describe("submission guard", () => {
+    it("refuses a second submission while one is already claimed", () => {
+      const { manager } = harness({
+        profiles: profileSource(),
+        client: deployment({}).client,
+      });
+
+      assert.equal(manager.startSubmission(PROFILE_ID), true);
+      assert.equal(manager.isBusy(PROFILE_ID), true);
+      // The second claim is refused, and the first is left exactly as it was.
+      assert.equal(manager.startSubmission(PROFILE_ID), false);
+      assert.equal(manager.isBusy(PROFILE_ID), true);
+    });
+
+    it("allows a new submission once the previous one ends", () => {
+      const { manager } = harness({
+        profiles: profileSource(),
+        client: deployment({}).client,
+      });
+
+      assert.equal(manager.startSubmission(PROFILE_ID), true);
+      manager.endSubmission(PROFILE_ID);
+
+      assert.equal(manager.isBusy(PROFILE_ID), false);
+      assert.equal(manager.startSubmission(PROFILE_ID), true);
+    });
+
+    it("keeps two profiles' claims independent", () => {
+      const { manager } = harness({
+        profiles: profileSource(),
+        client: deployment({}).client,
+      });
+
+      assert.equal(manager.startSubmission(PROFILE_ID), true);
+
+      // A different profile id is a different claim entirely — one profile's
+      // running job must never block another profile's from starting.
+      assert.equal(manager.startSubmission(OTHER_NAME), true);
+      assert.equal(manager.isBusy(OTHER_NAME), true);
+      assert.equal(manager.isBusy(PROFILE_ID), true);
+    });
+
+    it("treats ending an unheld claim as a no-op, not an error", () => {
+      const { manager } = harness({
+        profiles: profileSource(),
+        client: deployment({}).client,
+      });
+
+      // Never started at all.
+      assert.doesNotThrow(() => {
+        manager.endSubmission(PROFILE_ID);
+      });
+      assert.equal(manager.isBusy(PROFILE_ID), false);
+
+      // Started, ended, then ended again — the second end is what a `finally`
+      // guarding an already-cleaned-up claim would produce, and it must not
+      // throw either.
+      manager.startSubmission(PROFILE_ID);
+      manager.endSubmission(PROFILE_ID);
+      assert.doesNotThrow(() => {
+        manager.endSubmission(PROFILE_ID);
+      });
+      assert.equal(manager.isBusy(PROFILE_ID), false);
+    });
+
+    it("reports no profile as busy before anything has claimed one", () => {
+      const { manager } = harness({
+        profiles: profileSource(),
+        client: deployment({}).client,
+      });
+
+      assert.equal(manager.isBusy(PROFILE_ID), false);
+    });
+  });
 });

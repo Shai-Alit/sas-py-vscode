@@ -35,7 +35,6 @@ const every: ComputeProblem[] = [
   },
   { code: "forbidden", error: { status: 403 } },
   { code: "session-gone", error: { status: 404, errorCode: 5837 } },
-  { code: "no-such-context", name: "SAS Job Execution compute context" },
   { code: "compute-rejected", error: { status: 500 } },
   { code: "response-malformed", detail: "no id field in the session response" },
   { code: "link-missing", rel: "execute", resource: "compute session" },
@@ -85,13 +84,6 @@ describe("describeComputeProblem", () => {
     assert.match(expired, /Access token expired/);
     assert.match(missing, /without credentials/);
     assert.notEqual(expired, missing);
-  });
-
-  it("names the context that could not be found", () => {
-    assert.match(
-      describeComputeProblem({ code: "no-such-context", name: "Data Mining" }),
-      /"Data Mining"/,
-    );
   });
 
   it("names the status on an unclassified rejection", () => {

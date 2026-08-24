@@ -38,7 +38,6 @@ const PROBLEMS: ComputeProblem[] = [
   { code: "forbidden", error: VIYA_ERROR },
   { code: "session-gone", error: { status: 404, errorCode: 5837 } },
   { code: "session-not-ready", state: "pending", seconds: 300 },
-  { code: "no-such-context", name: "SAS Job Execution compute context" },
   { code: "compute-rejected", error: { status: 500 } },
   { code: "response-malformed", detail: "no id in a session representation" },
   {
@@ -70,7 +69,7 @@ describe("compute problem messages under the real l10n", () => {
   });
 
   it("gives each code its own message", () => {
-    assert.equal(new Set(PROBLEMS.map(localiseComputeProblem)).size, 10);
+    assert.equal(new Set(PROBLEMS.map(localiseComputeProblem)).size, 9);
   });
 
   it("delegates a 401 to the sign-in wording rather than rewording it", () => {

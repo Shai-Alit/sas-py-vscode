@@ -578,6 +578,34 @@ export class ComputeSessionManager implements vscode.Disposable {
       this.reportFailure(resolved, token.isCancellationRequested);
       return undefined;
     }
+    if (resolved.value === undefined) {
+      // Not a `ComputeFailure`: `resolveContext` no longer decides that an
+      // empty `items` array means anything on its own (#135's open half,
+      // settled 2026-08-24 — see `contexts.ts`). This is the one place that
+      // reads a plain "not found" as a real refusal to connect, because this
+      // caller — unlike `resolveContext` — knows the name did not come out of
+      // thin air: it was chosen from `contextFor`'s own poll of this same
+      // collection, at pick time or from a stored profile. Worded the same as
+      // the two-readings case always was, since the deployment still gives one
+      // answer to both questions.
+      //
+      // `reportedCancellation` first, and not `this.fail` unconditionally: the
+      // empty collection can arrive in the same instant the user cancels, and
+      // every other exit from this method already lets a cancellation say so
+      // rather than reporting the failure underneath it. This one carries no
+      // `ComputeFailure` to hand `reportFailure`, which is the only reason it
+      // is not that call — the cancellation reading has to be the same either way.
+      if (this.reportedCancellation(token.isCancellationRequested)) {
+        return undefined;
+      }
+      this.fail(
+        vscode.l10n.t(
+          'No compute context named "{0}" is available. Check the name against the compute contexts on your deployment — you may not have permission to see it.',
+          context,
+        ),
+      );
+      return undefined;
+    }
 
     const created = await createSession(client, resolved.value, { signal });
     if (!created.ok) {
@@ -829,12 +857,28 @@ export class ComputeSessionManager implements vscode.Disposable {
    * fact is easier to carry across a boundary than the object it came from.
    */
   private reportFailure(failure: ComputeFailure, cancelled: boolean): void {
-    if (cancelled) {
-      this.log.info(vscode.l10n.t("Connecting to SAS Viya was cancelled."));
-      return;
-    }
+    if (this.reportedCancellation(cancelled)) return;
     this.log.error(describeComputeProblem(failure.problem));
     this.report(localiseComputeProblem(failure.problem));
+  }
+
+  /**
+   * The cancellation half of {@link reportFailure}, on its own so a refusal
+   * that never became a `ComputeFailure` can still honour it.
+   *
+   * `open()`'s empty-context branch is why this exists separately: a `resolveContext`
+   * that comes back `{ ok: true, value: undefined }` (#135's open half, settled
+   * 2026-08-24 — see `contexts.ts`) has nothing to hand `reportFailure`, but the
+   * same race `reportFailure`'s own doc comment describes applies to it just as
+   * much — the empty collection can arrive in the same instant the user cancels,
+   * and telling them their own cancellation was a naming error would be wrong in
+   * exactly the way `reportFailure` already refuses to be wrong for every other
+   * outcome in this method.
+   */
+  private reportedCancellation(cancelled: boolean): boolean {
+    if (!cancelled) return false;
+    this.log.info(vscode.l10n.t("Connecting to SAS Viya was cancelled."));
+    return true;
   }
 
   private trusted(): boolean {

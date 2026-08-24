@@ -149,21 +149,32 @@ export function contextFilter(name: string): string {
 /**
  * Resolves a context by name, in one request.
  *
- * Returns `no-such-context` when the collection answers with an empty `items`,
- * which is also what the deployment says when the context exists but this user
- * may not see it — the two are the same response by design, which is why the
- * message `describeComputeProblem` writes offers both readings.
+ * Returns `undefined` rather than a failure when the collection answers with
+ * an empty `items` — the same choice `readVariable` makes for the same
+ * reason: "you may not see it" and "it does not exist" are the same response
+ * by design (the deployment gives one answer to two questions), so this is
+ * not this module's fact to adjudicate. #135's open half asked whether that
+ * pre-emptive read should stop a connect at all, on the reasoning that
+ * failing while the context's name is still in hand beats a failure three
+ * steps later — findings 54 and 55 left the reasoning intact but removed the
+ * confidence behind it, since neither could reproduce a case where a context
+ * a caller could actually use was ever really absent from this exact read. So
+ * the decision, settled 2026-08-24: stop manufacturing a `no-such-context`
+ * verdict here, and let whoever is trying to start a session decide what an
+ * absent context means for them — the caller already knows more about how
+ * this name was chosen (the profile picker already polled the same
+ * collection) than this function can infer from one empty response.
  *
- * A `404` here is **not** turned into `no-such-context`. A 404 on the collection
- * means the Compute service is not at that path at all, which is a deployment
- * problem and not a naming one; relabelling it would send someone to check the
- * spelling of a setting that is spelled correctly.
+ * A `404` here is a failure regardless. A 404 on the collection means the
+ * Compute service is not at that path at all, which is a deployment problem
+ * and not a naming one; folding it into "not found" would send someone to
+ * check the spelling of a setting that is spelled correctly.
  */
 export async function resolveContext(
   client: ComputeClient,
   name: string,
   options?: ContextOptions,
-): Promise<ComputeResult<ComputeContext>> {
+): Promise<ComputeResult<ComputeContext | undefined>> {
   const filter = encodeURIComponent(contextFilter(name));
   const result = await client.send({
     link: contextsLink(`filter=${filter}`),
@@ -177,11 +188,7 @@ export async function resolveContext(
 
   const first = items[0];
   if (first === undefined) {
-    return {
-      ok: false,
-      reason: `no compute context named "${name}" was returned by the deployment`,
-      problem: { code: "no-such-context", name },
-    };
+    return { ok: true, value: undefined };
   }
 
   // Deliberately the first of however many. Viya does not enforce that context

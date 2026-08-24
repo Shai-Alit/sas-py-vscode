@@ -143,14 +143,6 @@ export type ComputeProblem =
    * is included because "it is taking a while" is not actionable without it.
    */
   | { code: "session-not-ready"; state: string; seconds: number }
-  /**
-   * No compute context by that name is visible to this user.
-   *
-   * Not an HTTP failure: the contexts collection answers `200` with an empty
-   * `items`, because "you may not see it" and "it does not exist" are the same
-   * response by design. So the message must offer both readings.
-   */
-  | { code: "no-such-context"; name: string }
   /** Any other non-2xx. `error.status` carries which. */
   | { code: "compute-rejected"; error: ViyaError }
   /** A 2xx whose body was not what the representation should have been. */
@@ -202,8 +194,6 @@ export function describeComputeProblem(problem: ComputeProblem): string {
       return `the compute session is no longer available${describeViyaError(problem.error)}`;
     case "session-not-ready":
       return `the compute session was still "${problem.state}" after ${String(problem.seconds)} seconds`;
-    case "no-such-context":
-      return `no compute context named "${problem.name}" is visible to this user`;
     case "compute-rejected":
       return `the compute service returned HTTP ${String(problem.error.status)}${describeViyaError(problem.error)}`;
     case "response-malformed":

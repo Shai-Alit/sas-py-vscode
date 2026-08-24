@@ -339,6 +339,22 @@ export class ProcPythonBackend implements ExecutionBackend {
      * every existing construction of this class keeps working unchanged.
      */
     private readonly onBackgroundFailure?: (reason: string) => void,
+    /**
+     * Overrides `streamJobLog`'s buffer caps (`logStream.ts`'s
+     * `DEFAULT_MAX_BUFFERED_LINES`/`_CHARACTERS`), for one reason only: the
+     * "dropped log lines" forwarding branch below cannot otherwise be
+     * exercised inside `.mocharc.json`'s 2-second unit-test budget, since the
+     * real default is 100,000 lines. **Not part of `ExecutionBackend` or
+     * `ExecuteOptions`** — this is not a capability a caller or a dialect
+     * chooses, it is a test seam local to this implementation, the same way
+     * {@link onBackgroundFailure} is. Absent in every real construction of
+     * this class; a test double is the only caller that has a reason to set
+     * it small.
+     */
+    private readonly logBufferLimits?: {
+      readonly maxBufferedLines?: number;
+      readonly maxBufferedCharacters?: number;
+    },
   ) {}
 
   /** Cached; performs no I/O. Stage-2 (`runtime`) always reads `"unprobed"`
@@ -619,6 +635,8 @@ export class ProcPythonBackend implements ExecutionBackend {
 
       const stream = streamJobLog(this.client, job.value, {
         signal: run.controller.signal,
+        maxBufferedLines: this.logBufferLimits?.maxBufferedLines,
+        maxBufferedCharacters: this.logBufferLimits?.maxBufferedCharacters,
       });
       run.stream = stream;
 

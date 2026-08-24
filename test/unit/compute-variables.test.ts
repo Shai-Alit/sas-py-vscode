@@ -165,6 +165,43 @@ describe("readVariable", () => {
     assert.equal(result.problem.code, "response-malformed");
   });
 
+  it("fails when the response body is not an object at all", async () => {
+    // `readItems`'s guard is `typeof body !== "object" || body === null` —
+    // two distinct conditions collapsed into one early return. A body that
+    // is not an object (a bare string, here) trips the first; nothing had
+    // exercised it, only the "object but no items key" shape above.
+    const scripted = fake(ok("not a collection at all"));
+
+    const result = await readVariable(scripted.client, session(), "SYSCC");
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "response-malformed");
+  });
+
+  it("fails when the response body is null", async () => {
+    // The second half of the same guard: `typeof null === "object"` is true
+    // in JS, so `body === null` is the operand that actually catches this —
+    // distinct from the "not an object" case above, and also untested.
+    const scripted = fake(ok(null));
+
+    const result = await readVariable(scripted.client, session(), "SYSCC");
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "response-malformed");
+  });
+
+  it("ignores an item in the collection that is not an object", async () => {
+    // `readName`'s own type guard, reachable because an `items` array is
+    // exactly what the wire sent — nothing upstream of it has validated each
+    // element's shape yet.
+    const scripted = fake(ok({ count: 1, items: ["not-an-object"] }));
+
+    const result = await readVariable(scripted.client, session(), "SYSCC");
+
+    assert.ok(result.ok);
+    assert.equal(result.value, undefined);
+  });
+
   it("fails when the matching item carries no string value", async () => {
     const scripted = fake(ok({ count: 1, items: [{ name: "SYSCC" }] }));
 

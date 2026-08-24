@@ -180,6 +180,11 @@ interface RouterOptions {
    * `{ ok: true, value: undefined }`, the "every session has one" guarantee
    * finding 37 relies on turning out false for this one. */
   sysccMissing?: boolean;
+  /** Overrides the `SYSERRORTEXT` reply outright (rather than gating it) — a
+   * genuine, non-cancellation failure here exercises `readSyscc`'s
+   * best-effort fallback: the run is still reported failed on `SYSCC` alone,
+   * just without the SAS-side message. */
+  syserrortextReply?: Reply;
   /** Overrides the job's `cancel` `PUT` reply — a failure here exercises
    * `cancelActive`'s own `backend-failed` mapping of `LogStream.cancel()`
    * failing, distinct from the run itself failing. */
@@ -306,6 +311,9 @@ function router(opts: RouterOptions): {
               opts.syserrortextGate !== undefined
             ) {
               return await opts.syserrortextGate;
+            }
+            if (opts.syserrortextReply !== undefined) {
+              return opts.syserrortextReply;
             }
             return opts.syserrortext === undefined
               ? ok({ count: 0, items: [] })
@@ -503,20 +511,45 @@ describe("ProcPythonBackend", () => {
       ]);
     });
 
-    // A test for the "dropped log lines" forwarding branch (procPython.ts's
-    // own text/plain mapping of a `{ kind: "dropped" }` event) was attempted
-    // and reverted: the only way to make `logStream.ts`'s real `EventBuffer`
-    // emit that event kind through this backend's public surface is to push
-    // past `DEFAULT_MAX_BUFFERED_LINES` (100,000) in one poll, since
-    // `runProgram` calls `streamJobLog` with no override for it. That blew
-    // past `.mocharc.json`'s deliberate 2-second unit-test budget on CI —
-    // "anything taking longer than two seconds is not slow, it is stuck" — on
-    // every OS/Node combination, not just a slow one. Left uncovered rather
-    // than forced: closing it for real needs either an injectable
-    // `maxBufferedLines` this backend threads through (a small API change,
-    // not a test-only one) or an integration-tier test outside the 2-second
-    // budget, and deciding between those is a call for a future slice, not a
-    // quiet workaround here.
+    it("forwards a dropped-lines marker as its own text/plain output", async () => {
+      // A first attempt at this test pushed 100,005 lines through the real
+      // `DEFAULT_MAX_BUFFERED_LINES` (100,000) to provoke `logStream.ts`'s
+      // `EventBuffer` into emitting a `{ kind: "dropped" }` event, and blew
+      // past `.mocharc.json`'s deliberate 2-second unit-test budget on every
+      // CI runner — "anything taking longer than two seconds is not slow, it
+      // is stuck." `logBufferLimits` is the test-only seam added afterward so
+      // this branch is cheaply reachable instead: a cap of 3 lines, fed 5 in
+      // one poll, drops the oldest 2.
+      const { client } = router({
+        syscc: "0",
+        logLines: [line("1"), line("2"), line("3"), line("4"), line("5")],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+        undefined,
+        { maxBufferedLines: 3 },
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      const dropped = texts(outputs).find((text) =>
+        text.includes("log line(s) dropped"),
+      );
+      assert.equal(dropped, "[2 log line(s) dropped]\n");
+      assert.deepEqual(
+        texts(outputs).filter((text) => text !== dropped),
+        ["3\n", "4\n", "5\n"],
+      );
+    });
   });
 
   describe("a run that raises", () => {
@@ -675,6 +708,37 @@ describe("ProcPythonBackend", () => {
         !outputs.some(
           (output) => output.mime === "application/vnd.python.traceback",
         ),
+      );
+    });
+
+    it("still reports the failure when reading SYSERRORTEXT itself fails", async () => {
+      // `readSyscc`'s own doc comment calls this "best-effort": a failure
+      // reading SYSERRORTEXT does not undo a program SYSCC already confirmed
+      // failed, it just means the run is reported without the SAS-side
+      // message. Every other SYSERRORTEXT-adjacent test only ever gated or
+      // cancelled this read; a genuine, non-cancellation failure here (a
+      // dropped session) had never been exercised.
+      const { client } = router({
+        syscc: "3000",
+        syserrortextReply: rejected("compute-rejected", "404 Not Found"),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "SAS reported an error (SYSCC=3000)",
       );
     });
   });
@@ -960,6 +1024,29 @@ describe("ProcPythonBackend", () => {
 
       const cancelled = await backend.cancel(accepted);
       assert.ok(cancelled.ok);
+    });
+
+    it("closes cleanly when nothing is in flight", async () => {
+      // Every other close() test here has an execute() or reset() run
+      // active at the moment of the call, so `this.active !== undefined`'s
+      // false arm — close() called with nothing running, the ordinary case
+      // of tearing down an idle backend — had never been exercised.
+      const { client } = router({ syscc: "0" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+
+      await backend.close();
+
+      const result = await backend.execute(fakeProgram(), {
+        freshNamespace: false,
+      });
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "not-connected");
     });
 
     it("closing cancels what is in flight and disconnects", async () => {
@@ -1254,6 +1341,34 @@ describe("ProcPythonBackend", () => {
       );
       const code = (submitted?.body as { code: string[] }).code;
       assert.deepEqual(code, ["proc python restart;"]);
+    });
+
+    it("refuses while an execute() run is in flight, naming it", async () => {
+      // `reset()`'s own `busy` check reads `this.active?.id ?? "a run in
+      // another window"`, the same fallback `execute()`'s naming does — but
+      // every existing reset()-vs-guard test left `this.active` undefined
+      // (the guard alone was busy). This is the other half: a run already in
+      // flight on *this* instance, so `this.active` really is defined and its
+      // id is what should be named.
+      const { client } = router({
+        syscc: "0",
+        logGate: deferred<Reply>().promise,
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const running = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+
+      const result = await backend.reset();
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "busy");
+      assert.equal(result.problem.running, running.id);
     });
 
     it("reports a failed restart via SYSCC, not just a terminal job", async () => {

@@ -199,10 +199,11 @@ describe("live: Viya 4 job execution", function () {
       (failure) =>
         `the compute context "${contextName}" could not be resolved (${failure})`,
     );
-    // Not a `ComputeFailure` any more (#135's open half, settled 2026-08-24):
-    // an empty collection is a legitimate absent value, and this suite is the
-    // caller that decides what it means, the same as `sessionManager.ts` does.
-    // Here, it means the fixture is broken and the run cannot continue.
+    // Not a `ComputeFailure`: an empty collection is a legitimate absent
+    // value (see `resolveContext`'s own doc comment — a decision distinct
+    // from RUNBOOK's still-open `#135`), and this suite is the caller that
+    // decides what it means, the same as `sessionManager.ts` does. Here, it
+    // means the fixture is broken and the run cannot continue.
     if (resolved === undefined) {
       assert.fail(
         `no compute context named "${contextName}" was returned by the deployment. ${await describeVisibleContexts(compute)} Set ${CONTEXT_VAR} to a compute context this account can use.`,

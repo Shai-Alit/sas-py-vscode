@@ -580,14 +580,15 @@ export class ComputeSessionManager implements vscode.Disposable {
     }
     if (resolved.value === undefined) {
       // Not a `ComputeFailure`: `resolveContext` no longer decides that an
-      // empty `items` array means anything on its own (#135's open half,
-      // settled 2026-08-24 — see `contexts.ts`). This is the one place that
-      // reads a plain "not found" as a real refusal to connect, because this
-      // caller — unlike `resolveContext` — knows the name did not come out of
-      // thin air: it was chosen from `contextFor`'s own poll of this same
-      // collection, at pick time or from a stored profile. Worded the same as
-      // the two-readings case always was, since the deployment still gives one
-      // answer to both questions.
+      // empty `items` array means anything on its own — see its own doc
+      // comment for why, and for the distinction from RUNBOOK's `#135`, which
+      // is the separate `createSession`-link question and is still open. This
+      // is the one place that reads a plain "not found" as a real refusal to
+      // connect, because this caller — unlike `resolveContext` — knows the
+      // name did not come out of thin air: it was chosen from `contextFor`'s
+      // own poll of this same collection, at pick time or from a stored
+      // profile. Worded the same as the two-readings case always was, since
+      // the deployment still gives one answer to both questions.
       //
       // `reportedCancellation` first, and not `this.fail` unconditionally: the
       // empty collection can arrive in the same instant the user cancels, and
@@ -867,12 +868,13 @@ export class ComputeSessionManager implements vscode.Disposable {
    * that never became a `ComputeFailure` can still honour it.
    *
    * `open()`'s empty-context branch is why this exists separately: a `resolveContext`
-   * that comes back `{ ok: true, value: undefined }` (#135's open half, settled
-   * 2026-08-24 — see `contexts.ts`) has nothing to hand `reportFailure`, but the
-   * same race `reportFailure`'s own doc comment describes applies to it just as
-   * much — the empty collection can arrive in the same instant the user cancels,
-   * and telling them their own cancellation was a naming error would be wrong in
-   * exactly the way `reportFailure` already refuses to be wrong for every other
+   * that comes back `{ ok: true, value: undefined }` (see its own doc comment —
+   * a distinct decision from RUNBOOK's `#135`, which is still open) has nothing
+   * to hand `reportFailure`, but the same race `reportFailure`'s own doc comment
+   * describes applies to it just as much — the empty collection can arrive in
+   * the same instant the user cancels, and telling them their own cancellation
+   * was a naming error would be wrong in exactly the way `reportFailure` already
+   * refuses to be wrong for every other
    * outcome in this method.
    */
   private reportedCancellation(cancelled: boolean): boolean {

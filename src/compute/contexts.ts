@@ -153,17 +153,21 @@ export function contextFilter(name: string): string {
  * an empty `items` — the same choice `readVariable` makes for the same
  * reason: "you may not see it" and "it does not exist" are the same response
  * by design (the deployment gives one answer to two questions), so this is
- * not this module's fact to adjudicate. #135's open half asked whether that
- * pre-emptive read should stop a connect at all, on the reasoning that
- * failing while the context's name is still in hand beats a failure three
- * steps later — findings 54 and 55 left the reasoning intact but removed the
- * confidence behind it, since neither could reproduce a case where a context
- * a caller could actually use was ever really absent from this exact read. So
- * the decision, settled 2026-08-24: stop manufacturing a `no-such-context`
- * verdict here, and let whoever is trying to start a session decide what an
- * absent context means for them — the caller already knows more about how
- * this name was chosen (the profile picker already polled the same
- * collection) than this function can infer from one empty response.
+ * not this module's fact to adjudicate.
+ *
+ * This is a separate call from RUNBOOK's `#135` open half, which is the
+ * `createSession`-link check further down in this same function, for a
+ * context that *is* found. That question is still open, and findings 54 and
+ * 55 — measured against contexts a filtered read actually returned — are its
+ * evidence, not this one's: neither probe said anything about whether a real
+ * name can produce an empty `items` array for an account that could use it,
+ * because neither ran that experiment. This decision rests on narrower
+ * ground: the name reaching this function was already validated once, by
+ * polling this same collection at profile-setup or picker time, so a second
+ * local refusal here — dressed up as though it were the deployment's own
+ * verdict on the name — was adding a claim this response cannot actually
+ * support. What an empty collection means is now the caller's to decide,
+ * since the caller, not this function, knows why the name was chosen.
  *
  * A `404` here is a failure regardless. A 404 on the collection means the
  * Compute service is not at that path at all, which is a deployment problem

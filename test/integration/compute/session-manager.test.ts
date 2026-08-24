@@ -395,6 +395,67 @@ describe("compute session manager", () => {
     });
   });
 
+  it("fails the connect when no compute context is returned by that name", async () => {
+    // Not a `ComputeFailure` any more (#135's open half, settled 2026-08-24 —
+    // see `contexts.ts`): an empty `items` array is `resolveContext`'s answer
+    // when it has nothing to report, and `open()` is the one place that turns
+    // that plain absence into a real refusal to connect. Before this slice the
+    // equivalent case was a `no-such-context` `ComputeFailure` and this was a
+    // unit test on `describeComputeProblem`; there is no `ComputeProblem`
+    // variant left to unit test, so the coverage moves here, onto the one
+    // caller that renders a message for it.
+    const scripted = deployment({
+      contexts: ok({ count: 0, items: [], links: [] }),
+    });
+    const { manager, shown } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+    });
+
+    const connection = await manager.connect();
+
+    assert.equal(connection, undefined);
+    assert.equal(shown.errors.length, 1);
+    assert.ok(
+      (shown.errors[0] ?? "").includes(CONTEXT),
+      shown.errors[0] ?? "(nothing shown)",
+    );
+  });
+
+  it("says nothing when a cancelled connect finds no such context", async () => {
+    // The race `reportedCancellation` exists for: the empty collection can
+    // arrive in the same instant the user cancels, and this checks that the
+    // cancellation is what gets said — not the naming refusal that would
+    // otherwise follow the same response.
+    const source = new vscode.CancellationTokenSource();
+    const scripted = deployment({
+      contexts: ok({ count: 0, items: [], links: [] }),
+    });
+    const log = recordingLog("session manager context cancelled");
+    const { manager, shown } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      log: log.channel,
+      deps: {
+        withProgress: (_title, run) => {
+          source.cancel();
+          return run(source.token);
+        },
+      },
+    });
+
+    assert.equal(await manager.connect(), undefined);
+
+    assert.deepEqual(shown.errors, []);
+    const line = log.lines.find(({ message }) => message.includes("cancelled"));
+    assert.ok(line, "the cancellation was not logged");
+    assert.equal(line.level, "info");
+    assert.ok(
+      !log.lines.some(({ message }) => message.includes(CONTEXT)),
+      "the naming failure was logged despite the cancellation",
+    );
+  });
+
   it("hands back the session it already holds without asking again", async () => {
     const scripted = deployment({
       contexts: ok(contextsBody()),

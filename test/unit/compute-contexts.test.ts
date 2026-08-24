@@ -291,8 +291,10 @@ describe("resolveContext", () => {
   it("resolves an empty collection to an absent context, not a failure", async () => {
     // Same choice `readVariable` makes for the same reason: "you may not see
     // it" and "it does not exist" are one response by design, and it is not
-    // this function's fact to adjudicate (#135's open half, settled
-    // 2026-08-24). The caller decides what an absent context means for it.
+    // this function's fact to adjudicate. Distinct from RUNBOOK's `#135`,
+    // which is the separate, still-open `createSession`-link question — see
+    // `resolveContext`'s own doc comment. The caller decides what an absent
+    // context means for it.
     const scripted = fake([ok(collection({ items: [], count: 0 }))]);
 
     const result = await resolveContext(scripted.client, "Not here");

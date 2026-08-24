@@ -4,8 +4,8 @@ Run Python on SAS Viya from Visual Studio Code — using the Python packages you
 Viya administrator installed and manages, without installing Python locally.
 
 > **Status: pre-release, under active development.** Nothing is published to the
-> marketplace yet. See [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) for the phased
-> plan and [RUNBOOK.md](RUNBOOK.md) for the current punch list.
+> marketplace yet. See [STATUS.md](STATUS.md) for the current phase, or
+> [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) for the overall architecture and plan.
 
 > **Not a SAS product.** This is an independent project. It is not built,
 > endorsed, or supported by SAS Institute Inc. It reuses Apache-2.0 licensed code
@@ -67,13 +67,19 @@ there is nothing to turn off.
 
 ## Documentation
 
-- [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) — architecture, phases, risks, open decisions
-- [RUNBOOK.md](RUNBOOK.md) — the maintainer punch list
-- [PROBE-FINDINGS.md](PROBE-FINDINGS.md) — what we confirmed against a live Viya, and what remains unverified
+- [STATUS.md](STATUS.md) — current phase, and which phase file to open
+- [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) — cross-cutting architecture, test strategy, quality gates, risks, open decisions
+- [RUNBOOK.md](RUNBOOK.md) — repo setup, the per-slice loop, cross-cutting reminders
+- [docs/phases/](docs/phases/) — per-phase plan detail, punch list, and probe findings, bundled one file per phase
+- [docs/release-checklist.md](docs/release-checklist.md) — cutting a release
+- [docs/ai-reviewer-setup.md](docs/ai-reviewer-setup.md) — AI PR reviewer bootstrap
 - [docs/adr/](docs/adr/) — architecture decision records
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to build, test, and submit changes
 - [SECURITY.md](SECURITY.md) — reporting vulnerabilities
 - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — expectations for participation
+
+`PROBE-FINDINGS.md` and the old undivided `RUNBOOK.md`/`PRODUCTION_PLAN.md` phase
+content now live under `docs/phases/` — see `STATUS.md`.
 
 ## Licence
 

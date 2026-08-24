@@ -288,19 +288,19 @@ describe("resolveContext", () => {
     ]);
   });
 
-  it("reports an empty collection as no such context", async () => {
-    // Which is also what a context this user may not see looks like — the same
-    // response by design, so the problem carries the name and the message says
-    // both.
+  it("resolves an empty collection to an absent context, not a failure", async () => {
+    // Same choice `readVariable` makes for the same reason: "you may not see
+    // it" and "it does not exist" are one response by design, and it is not
+    // this function's fact to adjudicate. Distinct from RUNBOOK's `#135`,
+    // which is the separate, still-open `createSession`-link question — see
+    // `resolveContext`'s own doc comment. The caller decides what an absent
+    // context means for it.
     const scripted = fake([ok(collection({ items: [], count: 0 }))]);
 
     const result = await resolveContext(scripted.client, "Not here");
 
-    assert.ok(!result.ok, "an empty collection was reported as a success");
-    assert.deepEqual(result.problem, {
-      code: "no-such-context",
-      name: "Not here",
-    });
+    assert.ok(result.ok, "an empty collection was reported as a failure");
+    assert.equal(result.value, undefined);
   });
 
   it("takes the first match deterministically", async () => {
@@ -320,6 +320,7 @@ describe("resolveContext", () => {
     const result = await resolveContext(scripted.client, NAME);
 
     assert.ok(result.ok, "a duplicated name was reported as a failure");
+    assert.ok(result.value !== undefined, "a matching item resolved to none");
     assert.equal(result.value.id, "first");
   });
 

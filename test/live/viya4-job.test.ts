@@ -194,11 +194,22 @@ describe("live: Viya 4 job execution", function () {
     // which is half the reason this file exists.
     requireMutation(target);
 
-    const context = await expectOk(
+    const resolved = await expectOk(
       resolveContext(compute, contextName),
-      async (failure) =>
-        `the compute context "${contextName}" could not be resolved (${failure}). ${await describeVisibleContexts(compute)} Set ${CONTEXT_VAR} to a compute context this account can use.`,
+      (failure) =>
+        `the compute context "${contextName}" could not be resolved (${failure})`,
     );
+    // Not a `ComputeFailure`: an empty collection is a legitimate absent
+    // value (see `resolveContext`'s own doc comment — a decision distinct
+    // from RUNBOOK's still-open `#135`), and this suite is the caller that
+    // decides what it means, the same as `sessionManager.ts` does. Here, it
+    // means the fixture is broken and the run cannot continue.
+    if (resolved === undefined) {
+      assert.fail(
+        `no compute context named "${contextName}" was returned by the deployment. ${await describeVisibleContexts(compute)} Set ${CONTEXT_VAR} to a compute context this account can use.`,
+      );
+    }
+    const context = resolved;
 
     const created = await expectOk(
       createSession(compute, context),
@@ -349,7 +360,7 @@ async function expectOk<T>(
  *
  * So: the discriminant, plus the HTTP status for the three variants that carry
  * one. Both are ours or the protocol's, neither is free text from the
- * deployment, and between them they say which of the ten failures happened —
+ * deployment, and between them they say which of the nine failures happened —
  * which is what the person reading a red live run actually needs. The rest is in
  * the extension's log, where it belongs.
  *
@@ -368,15 +379,16 @@ function describeFailure(problem: ComputeProblem): string {
 }
 
 /**
- * How many contexts this account can see, for a `no-such-context` failure.
+ * How many contexts this account can see, when `resolveContext` came back
+ * empty rather than with the deployment's own failure.
  *
- * The count and not the names. A count separates the two failures worth telling
- * apart — nothing visible at all, which is a permissions problem, from a
- * collection this account can read perfectly well that simply does not hold the
- * name it was asked for, which is a spelling or configuration problem. The names
- * would add little to that and can carry a customer's or a team's name in them,
- * which is the kind of thing this repository keeps out of logs and screenshots
- * by default.
+ * The count and not the names. A count separates the two readings worth
+ * telling apart — nothing visible at all, which is a permissions problem, from
+ * a collection this account can read perfectly well that simply does not hold
+ * the name it was asked for, which is a spelling or configuration problem. The
+ * names would add little to that and can carry a customer's or a team's name
+ * in them, which is the kind of thing this repository keeps out of logs and
+ * screenshots by default.
  */
 async function describeVisibleContexts(client: ComputeClient): Promise<string> {
   const listed = await listContexts(client);

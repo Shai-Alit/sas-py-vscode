@@ -87,14 +87,6 @@ export function localiseComputeProblem(problem: ComputeProblem): string {
         problem.state,
         String(problem.seconds),
       );
-    case "no-such-context":
-      // Both readings, because the deployment gives one answer to two questions:
-      // the contexts collection returns an empty `items` whether the name is
-      // wrong or the user simply may not see it.
-      return vscode.l10n.t(
-        'No compute context named "{0}" is available. Check the name against the compute contexts on your deployment — you may not have permission to see it.',
-        problem.name,
-      );
     case "compute-rejected":
       return vscode.l10n.t(
         "SAS Viya refused the request (HTTP {0}). See the Python on Viya log for details.{1}",

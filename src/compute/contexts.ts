@@ -149,21 +149,36 @@ export function contextFilter(name: string): string {
 /**
  * Resolves a context by name, in one request.
  *
- * Returns `no-such-context` when the collection answers with an empty `items`,
- * which is also what the deployment says when the context exists but this user
- * may not see it — the two are the same response by design, which is why the
- * message `describeComputeProblem` writes offers both readings.
+ * Returns `undefined` rather than a failure when the collection answers with
+ * an empty `items` — the same choice `readVariable` makes for the same
+ * reason: "you may not see it" and "it does not exist" are the same response
+ * by design (the deployment gives one answer to two questions), so this is
+ * not this module's fact to adjudicate.
  *
- * A `404` here is **not** turned into `no-such-context`. A 404 on the collection
- * means the Compute service is not at that path at all, which is a deployment
- * problem and not a naming one; relabelling it would send someone to check the
- * spelling of a setting that is spelled correctly.
+ * This is a separate call from RUNBOOK's `#135` open half, which is the
+ * `createSession`-link check further down in this same function, for a
+ * context that *is* found. That question is still open, and findings 54 and
+ * 55 — measured against contexts a filtered read actually returned — are its
+ * evidence, not this one's: neither probe said anything about whether a real
+ * name can produce an empty `items` array for an account that could use it,
+ * because neither ran that experiment. This decision rests on narrower
+ * ground: the name reaching this function was already validated once, by
+ * polling this same collection at profile-setup or picker time, so a second
+ * local refusal here — dressed up as though it were the deployment's own
+ * verdict on the name — was adding a claim this response cannot actually
+ * support. What an empty collection means is now the caller's to decide,
+ * since the caller, not this function, knows why the name was chosen.
+ *
+ * A `404` here is a failure regardless. A 404 on the collection means the
+ * Compute service is not at that path at all, which is a deployment problem
+ * and not a naming one; folding it into "not found" would send someone to
+ * check the spelling of a setting that is spelled correctly.
  */
 export async function resolveContext(
   client: ComputeClient,
   name: string,
   options?: ContextOptions,
-): Promise<ComputeResult<ComputeContext>> {
+): Promise<ComputeResult<ComputeContext | undefined>> {
   const filter = encodeURIComponent(contextFilter(name));
   const result = await client.send({
     link: contextsLink(`filter=${filter}`),
@@ -177,11 +192,7 @@ export async function resolveContext(
 
   const first = items[0];
   if (first === undefined) {
-    return {
-      ok: false,
-      reason: `no compute context named "${name}" was returned by the deployment`,
-      problem: { code: "no-such-context", name },
-    };
+    return { ok: true, value: undefined };
   }
 
   // Deliberately the first of however many. Viya does not enforce that context

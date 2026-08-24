@@ -149,11 +149,21 @@ describe("live: Viya 4 submission-fidelity corpus (upload round trip)", function
       // across an `await`, even where it happens to hold today.
       let active: ComputeSession;
       if (session === undefined) {
-        const context = await expectOk(
+        const resolved = await expectOk(
           resolveContext(compute, contextName),
           (failure) =>
             `the compute context "${contextName}" could not be resolved (${failure})`,
         );
+        // Not a `ComputeFailure`: an empty `items` array is a legitimate
+        // absent value now (see `contexts.ts`), and this fixture is the
+        // caller that decides what an absent context means for it — here,
+        // that the fixture itself is misconfigured.
+        if (resolved === undefined) {
+          assert.fail(
+            `no compute context named "${contextName}" was returned by the deployment`,
+          );
+        }
+        const context = resolved;
         const created = await expectOk(
           createSession(compute, context),
           (failure) =>

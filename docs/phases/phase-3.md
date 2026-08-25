@@ -191,19 +191,24 @@ pass left open: `deleteFile` needs `If-Match` with an ETag obtainable from a
 properties `GET` alone, no content fetch required, and the mechanism holds at
 a realistic image size (262,591 bytes, not just 23,206).
 
-☐ **3c step 2 — size and split.** Turn the findings into one or more sized slices.
-Proposed, pending confirmation: **3c-i** — matplotlib/pandas rich-output capture
+☑ **3c step 2 — size and split.** Turn the findings into one or more sized slices.
+**Confirmed 2026-08-25: 3c-i** — matplotlib/pandas rich-output capture
 via write-to-session-filesystem + Compute-files-API fetch, decoded into the
 existing `RichOutput` union (`image/png`, `text/html`); *Medium*. Traceback
 structuring (`application/vnd.python.traceback`) does not depend on anything
 this probe found — finding 39 already established tracebacks arrive as ordinary
-log lines — so it can stay a separate item (**3c-ii**) rather than being sized
-against this probe's findings.
+log lines — so it stays a separate item, **3c-ii**, rather than being sized
+against this probe's findings. 3c-i is next.
 
 ```bash
-# 3c — rich output (scope set by the probe)
-git checkout -b phase-3c-rich-output
-git commit -m "feat(python): capture and return rich output"
+# 3c-i — matplotlib/pandas rich-output capture (findings 61-66)
+git checkout -b phase-3c-i-rich-output-capture
+git commit -m "feat(python): capture matplotlib/pandas rich output via the session filesystem"
+
+# ⛔ BARRIER
+# 3c-ii — traceback structuring
+git checkout -b phase-3c-ii-traceback-structuring
+git commit -m "feat(python): structure Python tracebacks for the result panel"
 
 # ⛔ BARRIER
 # 3d-i — commands and text output (already shippable on its own)

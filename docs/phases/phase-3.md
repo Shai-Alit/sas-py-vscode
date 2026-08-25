@@ -88,6 +88,17 @@ which one people reach for.
 host↔webview messaging, and renderers for the `RichOutput` union. Accessibility is
 in scope, not deferred. *Medium.*
 
+> **Open item, found during 3b's review (2026-08-25):** nothing in the
+> `ExecutionBackend` seam is localised today — `backend.ts`'s own doc comment
+> on `RichOutput` names the three extension-authored English strings that
+> exist so far. Neither `procPython.ts` nor `logFilter.ts` may import `vscode`
+> (ADR-0009), so `l10n.t()` has nowhere to live upstream of here, and ADR-0015
+> never assigned this seam a localisation boundary. 3d-i's output channel and
+> this slice's webview are the first layers in the chain that already have to
+> import `vscode`, so whichever of the two renders `outputs`/`diagnostics`
+> first is where that boundary gets decided — not by threading `vscode` down
+> into the backend to solve one string at a time.
+
 **3e — Runtime capability probe, and telling the user what they can import.**
 Stage-2 capabilities (§2.3): interpreter version and path, installed package set,
 confirmation that `PROC PYTHON` works. Needs 3a and 3b, which is why it lives here
@@ -128,6 +139,26 @@ git commit -m "feat(python): add PROC PYTHON execution backend with offset mappi
 git checkout -b phase-3b-log-filter
 git commit -m "feat(python): add SAS log to Python stdout filter"
 ```
+
+> **Landed 2026-08-24 as `src/backend/logFilter.ts`.** Extracted from
+> `procPython.ts`'s own shortcut — that module could not produce any output at
+> all without deciding *something* about which log lines were noise, and did
+> so inline in 3a. This slice gives the decision (`isNoiseLine`,
+> `logLineOutput`, `droppedLinesOutput`) its dedicated, pure, fixture-tested
+> home, switching on a line's `type` rather than scanning its text.
+> `procPython.ts` now calls into it instead of carrying its own copy. Covered
+> by `test/unit/backend-log-filter.test.ts`, including finding 52's 21-line
+> recorded log verbatim. Full detail in `CHANGELOG.md`'s entry rather than
+> repeated here.
+>
+> **Also settled here:** this item's own plan text, above, still describes the
+> pre-2c-pre shape of the problem — "strip page-break headers, `>>>` markers" —
+> which does not survive that probe's findings: the log arrives as typed lines
+> rather than text to scan, so neither concern applies to what this filter
+> actually does. Separately, `PAGESIZE=MAX` (named under 3a's own plan text) is
+> still not sent at session creation — a real gap, recorded in the CHANGELOG
+> entry rather than fixed here, since it does not change this filter's design
+> either way.
 
 > **⚠ 3c is a probe slice, not an implementation slice.** Do not let it start as
 > "implement rich output." Run the probe, write up what the mechanism actually is,

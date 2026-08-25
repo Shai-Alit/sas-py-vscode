@@ -157,6 +157,21 @@ export interface ExecutionResult extends ExecutionOutcome {
  * HTML is the upstream mistake this project is not inheriting: it throws away the
  * distinction between a value, a table, an image and a failure at the one point
  * where it is still cheap to keep.
+ *
+ * **Not localised, anywhere in this seam, and that is a known gap rather than
+ * a decision.** `text/plain`'s `data`, {@link Traceback.message}, and
+ * {@link PythonDiagnostic.message} can all carry extension-authored English —
+ * `src/backend/procPython.ts`'s `"an unhandled Python exception"` fallback and
+ * its `SAS reported an error (SYSCC=…)` message, and `logFilter.ts`'s dropped-
+ * lines marker, are the three that exist today. None go through `l10n.t()`,
+ * because neither `procPython.ts` nor `logFilter.ts` may import `vscode`
+ * (ADR-0009's coverage-scope discipline), and ADR-0015 never assigned this
+ * seam a localisation boundary at all. The natural place for one is whatever
+ * eventually renders `outputs`/`diagnostics` to the user — 3d-i's output
+ * channel or 3d-ii's result panel — since that layer already has to import
+ * `vscode` for reasons unrelated to this. Decide it there rather than
+ * threading `vscode` (and therefore this seam's exit from the coverage
+ * denominator) down into `procPython.ts` to solve one string at a time.
  */
 export type RichOutput =
   | { readonly mime: "text/plain"; readonly data: string }

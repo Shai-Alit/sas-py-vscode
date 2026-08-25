@@ -908,6 +908,50 @@ called out under **Changed** with a migration note.
   injectable log sink this backend does not have today, or having
   `ComputeSessionManager` inspect a call it cannot observe. Recorded here
   rather than silently accepted.
+- `src/backend/logFilter.ts` — the log filter, Phase 3b. `job.ts`'s own doc
+  comment on `LogLine.type` already said "interpreting a type is 3b's filter,"
+  and it shipped once before this, inline inside `procPython.ts`, because 3a
+  could not produce any visible output at all without deciding *something*
+  about which log lines were noise. This slice gives that decision its
+  dedicated, fixture-tested home: `isNoiseLine` (only `note` and `source` are
+  excluded; `source` should not occur at all through the `infile=` path, and is
+  kept out defensively rather than because a real run is expected to produce
+  one), `logLineOutput`, and `droppedLinesOutput`, all pure and switching on a
+  line's `type` rather than scanning its text. `procPython.ts` now calls into
+  this module instead of carrying its own copy, and its own doc comment is
+  updated to say so. Covered by `test/unit/backend-log-filter.test.ts`,
+  including finding 52's 21-line recorded log verbatim — the real example a
+  future change to this filter should keep passing — and a case mirroring a
+  predicted-but-unmeasured real 3a log (no `source` lines at all, per finding
+  35).
+
+  The plan originally described this slice as stripping "page-break headers,
+  `>>>` markers, and procedure NOTEs," which was the shape of the problem
+  before 2c-pre measured the log at all. Neither concern survives contact with
+  what that probe found: the log arrives as a collection of already-typed
+  lines rather than text a client has to parse, and a type switch cannot be
+  split mid-line the way raw paginated text could be, so "a page break splits
+  the stdout region mid-stream" — the awkward case the original text
+  named — cannot happen to it. No literal page-break banner has been observed
+  on the wire in any probe to date, and separately, `PAGESIZE=MAX` (named
+  under 3a in `docs/phases/phase-3.md`) is not currently sent at session
+  creation — `sessionManager.ts`'s `open()` calls `createSession` with no
+  `options` — a real gap, recorded here rather than folded into this slice
+  silently, since fixing it is a one-line change to a different module and
+  does not change this filter's design either way: if a banner is ever
+  emitted, it arrives as its own log item with its own `type`, most plausibly
+  `note`, and this filter already drops or passes a whole line at a time.
+
+  **`npm run verify` is green** — 979 passing, coverage
+  93.05/95.1/92.48/93.05 (statements/branches/functions/lines), against the
+  93/95/92/93 floor — ratchet raised from 92/95/91/92, since three of the four
+  measured values' integer truncations moved past the existing floor
+  (branches alone stayed at 95). Both AI reviewers approved. Codex's one
+  finding — the dropped-lines marker bypasses `l10n.t()` — is real but its
+  suggested fix is not (`procPython.ts` cannot import `vscode` any more than
+  this module can) and the underlying gap already exists, unflagged, in
+  merged 3a code; recorded rather than patched, in `src/backend/backend.ts`'s
+  `RichOutput` doc comment and in this item's own "Open item" note above.
 
 ### Fixed
 

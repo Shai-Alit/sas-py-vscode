@@ -44,17 +44,14 @@
  *
  * ## Where the log-to-output mapping stops
  *
- * Turning a `LogLine` into a `RichOutput` is this slice's to do — ADR-0015's
- * seam is exactly this translation, the same way 3a translates `ComputeFailure`
- * into `BackendProblem` — but *how much* of it to do is bounded by what
- * `infile=` actually produces. Finding 35: the uploaded file's source is never
- * echoed, so "what remains is Python's own output plus SAS's NOTEs." This
- * module forwards every line except one whose `type` is `"note"` or `"source"`
- * (the latter should not occur with `infile=` at all, and is excluded on the
- * chance a deployment differs) — everything else, including an unrecognised
- * type, is shown, because `job.ts`'s own `LogLine.type` doc calls the vocabulary
- * "a floor, not a closed set" and a filter that hides an unknown type by default
- * would hide real output the day the vocabulary grows.
+ * Turning a `LogLine` into a `RichOutput` is 3b's job now, in `logFilter.ts` —
+ * ADR-0015's seam is exactly this translation, the same way 3a translates
+ * `ComputeFailure` into `BackendProblem`. It shipped here first, inline,
+ * because this slice could not produce any visible output at all without
+ * deciding *something* about which log lines were noise; `logFilter.ts`'s own
+ * doc comment records why that could not wait for a dedicated slice and what
+ * moved once one existed. This module now calls into it rather than carrying
+ * its own copy of `isNoiseLine` or the line-to-`RichOutput` mapping.
  *
  * ## Traceback frames are raw, and deliberately not disambiguated further
  *
@@ -94,6 +91,7 @@ import {
   type Traceback,
   type TracebackFrame,
 } from "./backend";
+import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
 import { type BackendFailure, type BackendResult, fail } from "./problems";
 
 import { type ComputeClient, type ComputeFailure } from "../compute/client";
@@ -209,13 +207,6 @@ async function drainEvents(events: AsyncIterable<unknown>): Promise<void> {
     const next = await iterator.next();
     if (next.done === true) return;
   }
-}
-
-/** Whether a log line is noise `infile=` is known to produce (finding 35) and
- * this backend does not forward. Anything else — including a type nothing
- * here recognises — is shown; see this module's own doc comment. */
-function isNoiseLine(type: string | undefined): boolean {
-  return type === "note" || type === "source";
 }
 
 /**
@@ -642,15 +633,12 @@ export class ProcPythonBackend implements ExecutionBackend {
 
       for await (const event of stream.events) {
         if (event.kind === "dropped") {
-          relay.push({
-            mime: "text/plain",
-            data: `[${String(event.lines)} log line(s) dropped]\n`,
-          });
+          relay.push(droppedLinesOutput(event.lines));
           continue;
         }
         if (isNoiseLine(event.line.type)) continue;
         run.lines.push(event.line.line);
-        relay.push({ mime: "text/plain", data: `${event.line.line}\n` });
+        relay.push(logLineOutput(event.line));
       }
 
       const ended = await stream.done;

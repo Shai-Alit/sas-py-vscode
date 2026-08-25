@@ -129,6 +129,26 @@ git checkout -b phase-3b-log-filter
 git commit -m "feat(python): add SAS log to Python stdout filter"
 ```
 
+> **Landed 2026-08-24 as `src/backend/logFilter.ts`.** Extracted from
+> `procPython.ts`'s own shortcut — that module could not produce any output at
+> all without deciding *something* about which log lines were noise, and did
+> so inline in 3a. This slice gives the decision (`isNoiseLine`,
+> `logLineOutput`, `droppedLinesOutput`) its dedicated, pure, fixture-tested
+> home, switching on a line's `type` rather than scanning its text.
+> `procPython.ts` now calls into it instead of carrying its own copy. Covered
+> by `test/unit/backend-log-filter.test.ts`, including finding 52's 21-line
+> recorded log verbatim. Full detail in `CHANGELOG.md`'s entry rather than
+> repeated here.
+>
+> **Also settled here:** this item's own plan text, above, still describes the
+> pre-2c-pre shape of the problem — "strip page-break headers, `>>>` markers" —
+> which does not survive that probe's findings: the log arrives as typed lines
+> rather than text to scan, so neither concern applies to what this filter
+> actually does. Separately, `PAGESIZE=MAX` (named under 3a's own plan text) is
+> still not sent at session creation — a real gap, recorded in the CHANGELOG
+> entry rather than fixed here, since it does not change this filter's design
+> either way.
+
 > **⚠ 3c is a probe slice, not an implementation slice.** Do not let it start as
 > "implement rich output." Run the probe, write up what the mechanism actually is,
 > *then* size the implementation. This is the one slice in the plan whose scope is

@@ -11,7 +11,7 @@
   (coverage-scope discipline), ADR-0010 (link-following discipline)
 - **Executed in:** slice `3c-i`
 - **Evidence:** `docs/phases/phase-3.md`'s 2026-08-25 probe-findings section,
-  findings 61–66
+  findings 61–67
 
 ## Context
 
@@ -59,10 +59,14 @@ call.**
 1. **Before** the job is created, list the session's working directory
    (`src/compute/files.ts`, new — owns `getFiles` → `getDirectoryMembers` and
    nothing upstream of ADR-0010's link-following discipline). Record each
-   entry's name and whatever identifies its content — size is sufficient;
-   an `ETag` is not guaranteed present on every listing entry the way it is
-   on a `getFileProperties`/content response (finding 65 only measured the
-   latter), so size is the comparison this slice relies on, not identity.
+   entry's name and its `size` — finding 67 confirms a bare listing item
+   carries `size` directly (and `modifiedTimeStamp`, not used here), with no
+   properties or content fetch needed to read it, so the before/after diff
+   costs exactly one listing request on each side of the run, not one
+   request per candidate file. An `ETag`, by contrast, is confirmed present
+   only on a `getFileProperties`/content response, never observed on a bare
+   listing entry (finding 65) — which is why size, not identity, is this
+   slice's comparison key.
 2. Run the job exactly as `procPython.ts` already does.
 3. **After** the job settles — **and only if it did not end `cancelled`** —
    list the directory again.

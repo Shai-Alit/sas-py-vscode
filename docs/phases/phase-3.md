@@ -793,3 +793,43 @@ evidence requires.
   rather than a live concern for 3c-i's design.
 - **Multi-megabyte files.** Not tested at any size above ~256 KB.
 - **Viya 3.5.** Not probed, as ever — no 3.5 credentials available.
+
+### Finding 67 — A `getDirectoryMembers` listing item carries `size` directly, with no content fetch needed
+
+Raised by the Claude reviewer on ADR-0019's PR: the ADR asserted "size is
+sufficient" for the before/after directory diff without citing evidence that
+a bare listing entry (as opposed to a `getFileProperties` or content
+response) actually carries one. The reviewer's challenge to the *citation*
+was right — this had never been written up as its own finding — but its
+factual claim, that no probe had shown a listing item carrying `size`, was
+wrong, and re-checked live against `verde` rather than settled from memory
+alone (a fresh session, a plain 12,345-byte file, a `GET` on
+`getDirectoryMembers` with no properties or content request in between):
+
+```json
+{
+  "isDirectory": false,
+  "links": [ … ],
+  "modifiedTimeStamp": "2026-08-25T19:25:36.815Z",
+  "name": "size_check.txt",
+  "path": "/opt/sas/…/<session-guid>",
+  "readOnly": false,
+  "size": 12345,
+  "version": 1
+}
+```
+
+`size` is present on the listing item itself, matching `os.path.getsize`
+exactly, with no properties GET or content fetch in the request chain. The
+item also carries `modifiedTimeStamp` and `version`, either of which could
+have supplemented or replaced size as a diff key — not pursued, since size
+alone already answers ADR-0019's diff step without a second request per
+candidate.
+
+**Reading:** ADR-0019's design stands as written; only its citation was
+missing, now fixed by pointing at this finding instead of asserting the
+claim bare. The reply to the reviewer's comment says the same thing, with
+this finding as the evidence.
+
+**Session cleanup:** the probe session was deleted and confirmed gone with
+`404` after this check.

@@ -132,13 +132,24 @@ rich output rendered. **This is the first genuinely useful build.**
 ```bash
 # 3a — PROC PYTHON backend
 git checkout -b phase-3a-proc-python-backend
-git commit -m "feat(python): add PROC PYTHON execution backend with offset mapping"
+git commit -m "feat(python): add PROC PYTHON execution backend"
+# the real commit dropped "with offset mapping" — see the "Landed" note below
 
 # ⛔ BARRIER
 # 3b — log filter
 git checkout -b phase-3b-log-filter
 git commit -m "feat(python): add SAS log to Python stdout filter"
 ```
+
+> **Landed 2026-08-21, merged as PR #50.** `src/backend/procPython.ts` and
+> `src/compute/variables.ts`, three rounds of review (an adversarial subagent
+> pass, then Claude and Codex on the open PR — full detail, including the two
+> real Codex findings and the reverted coverage regression, is in
+> `docs/phases/phase-2b.md`'s 3a punch list rather than repeated here, since
+> that punch list is where this slice's obligations were tracked). Final
+> state at merge: 970 tests passing, coverage
+> 92.99/95.1/92.43/92.99 against the 92/95/91/92 floor, ratchet raised to
+> 92/95/92/92 — later raised again to 93/95/92/93 when 3b landed, above.
 
 > **Landed 2026-08-24 as `src/backend/logFilter.ts`.** Extracted from
 > `procPython.ts`'s own shortcut — that module could not produce any output at

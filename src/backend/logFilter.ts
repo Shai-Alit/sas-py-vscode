@@ -40,20 +40,22 @@
  *    load-bearing, kept on the chance a deployment or a future submission
  *    path differs, not because a real 3a run is expected to produce one.
  *
- * A literal page-break banner was never observed on the wire in any probe —
- * PAGESIZE=MAX (`docs/phases/phase-3.md`'s own note under 3a) is not currently
- * sent at session creation (`sessionManager.ts`'s `open()` calls
- * `createSession` with no `options`), which is a real gap but a different
- * one, worth its own item rather than folded into this slice silently. It
- * does not change this filter's design: if a deployment ever does emit a
- * page-break banner, it arrives as its own log item with its own `type` —
- * most plausibly `note`, since a banner is SAS's own chrome and not a user's
- * `print()` — and a type switch drops or passes it as a whole line either
- * way. There is no text for a banner to corrupt mid-line, because nothing
- * here ever concatenates a line with its neighbours before deciding what it
- * is. "A page break splits the stdout region mid-stream," the awkward case
- * the original plan text named, cannot happen to a typed line the way it
- * could to raw paginated text: each item is atomic, typed once, on its own.
+ * A page-break banner is no longer hypothetical. 3c's probe (2026-08-25,
+ * `docs/phases/phase-3.md`'s findings) triggered one for real: it arrives as
+ * its own log item typed `title` — not `note`, the guess this comment made
+ * before any deployment had actually been asked to produce one.
+ * `isNoiseLine` does not exclude `title` today, so a banner currently passes
+ * through as visible output rather than being silently dropped; whether it
+ * should join `note` and `source` as noise is an open question for whichever
+ * 3c/3d slice next touches this filter, not settled here. PAGESIZE=MAX
+ * (`docs/phases/phase-3.md`'s own note under 3a) is still not sent at session
+ * creation (`sessionManager.ts`'s `open()` calls `createSession` with no
+ * `options`), a real, separate gap. Neither changes this filter's design in
+ * the way that matters: a banner still arrives as its own atomic,
+ * already-typed log item, never as text spliced into a neighbouring line, so
+ * "a page break splits the stdout region mid-stream" — the awkward case the
+ * original plan text named — still cannot happen to it regardless of which
+ * type wins the argument above.
  *
  * ## What counts as noise, and why the vocabulary stays open
  *

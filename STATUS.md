@@ -1,6 +1,8 @@
 # Status
 
-**Current phase: 2a** — see `docs/phases/phase-2a.md`
+**Current phase: 3** — see `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
+backend, plus the `resolveContext` no-such-context correction) is merged; 3b
+(log filter) is next.
 
 > Update this file at the end of every phase (or slice, for phase 2). It is the
 > only file every session should need to open to know where to start — open the
@@ -13,9 +15,9 @@
 |---|---|---|
 | 0 — Repository foundation | ✅ done | `docs/phases/phase-0.md` |
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
-| 2a — Compute core & VS Code shell | ▶ in progress | `docs/phases/phase-2a.md` |
-| 2b — Backend seam, dialects, job log & the pump | not started | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | not started | `docs/phases/phase-3.md` |
+| 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
+| 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
+| 3 — Run Python (vertical slice) | ▶ in progress (3a done, 3b next) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

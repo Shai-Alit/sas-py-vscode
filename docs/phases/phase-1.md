@@ -221,7 +221,7 @@ audit is the part that needs undivided attention.
 
 ☑ **Upstream `auth.ts` audited before porting, 2026-08-13** — all 145 lines of
 `client/src/connection/rest/auth.ts`, recorded in
-[ADR-0008](docs/adr/0008-auth-core-transport-and-security-deltas.md) and in the
+[ADR-0008](../adr/0008-auth-core-transport-and-security-deltas.md) and in the
 block quote under 1b in the plan. Five deltas, where the plan had previously
 recorded one. The one it had not: **upstream never validates `state`**, so its
 URI handler accepts an authorization code from any inbound URI. That is the

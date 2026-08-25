@@ -68,7 +68,7 @@ whole harness. *Medium.*
 coverage gates; the test matrix (Node floor and working version × ubuntu /
 windows / macOS, `xvfb-run` on Linux for test-electron — *as it now stands: the
 floor and the current Active LTS, 22.18.0 and 24, after
-[ADR-0018](docs/adr/0018-the-node-baseline.md) made the floor a derived value*);
+[ADR-0018](../adr/0018-the-node-baseline.md) made the floor a derived value*);
 `.vsix` packaging with
 an assertion on what the package actually contains, uploaded as an artifact.
 *Medium.*
@@ -106,7 +106,7 @@ future maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small
 > npm 12.0.0+, and npm 12 requires Node `^22.22.2 || ^24.15.0 || >=26.0.0` — so it
 > cannot run on the Node 20.19.0 floor §4 claimed at the time and the matrix
 > tested. (The floor moved to 22.18.0 on 2026-08-18 — see
-> [ADR-0018](docs/adr/0018-the-node-baseline.md) — and the constraint survives
+> [ADR-0018](../adr/0018-the-node-baseline.md) — and the constraint survives
 > intact, because 22.18.0 is still below npm 12's `^22.22.2`.) Rather
 > than move the support floor as a side effect of a security slice, the policy is
 > enforced in one job that can run it. The rest of CI still installs with those
@@ -473,7 +473,7 @@ above, plus `supply-chain` and `analyze` — the two boxes further down this fil
 both of which were done at the time and left unticked. The twelve are `changes`,
 `verify`, `docs`, `package`, `supply-chain`, `analyze`, and the six
 `test (os, node)` legs. Before re-deriving any of this from `ci.yml`, read the
-"sharp edge" paragraph in [docs/dev/ci.md](docs/dev/ci.md) — that is the
+"sharp edge" paragraph in [docs/dev/ci.md](../dev/ci.md) — that is the
 authoritative statement of why `changes` is required, and `ci.yml` alone does not
 say so.
 
@@ -538,7 +538,7 @@ of the repo, and only one of those could survive.
 ☑ **Settled 2026-08-12, in 0d-i-b: VitePress; external links swept weekly, not
 gated on PRs; links back into this repository resolved against the working tree
 and gated; TypeDoc deferred until there is an exported API.** Recorded as
-[ADR-0004](docs/adr/0004-documentation-toolchain.md); summarised in
+[ADR-0004](../adr/0004-documentation-toolchain.md); summarised in
 PRODUCTION_PLAN.md §4.1. The short version: VitePress fails its own build on
 dead internal links, so the link gate rides along with a build we already run,
 and external rot is somebody else's outage rather than a reason to redden a PR.
@@ -597,7 +597,7 @@ original entry was re-measured and still holds. **The reasoning error: it asked
 whether `vitepress` could move and never asked whether `vite` could.** A
 transitive advisory has two escape routes; check both before writing `no fix`.
 The override is outside vitepress's declared range, so `npm run docs:build` is
-the evidence it works — see [ADR-0005](docs/adr/0005-supply-chain-policy.md).
+the evidence it works — see [ADR-0005](../adr/0005-supply-chain-policy.md).
 
 ☑ **The push banner's "1 high, 1 moderate" reconciled 2026-08-18 — it is the
 allow-list, seen through a different instrument.** GitHub had been reporting two
@@ -720,7 +720,7 @@ gh pr create --base main --head phase-0d-ii-b-scanning --fill
 ☑ **Implemented 2026-08-12.** `.github/workflows/codeql.yml`,
 `scripts/check-secrets.mjs`, `test/unit/secret-scan.test.ts` (31 tests),
 `check:secrets` in `npm run verify`, and
-[ADR-0006](docs/adr/0006-scanning-posture.md). Two defects found by running it
+[ADR-0006](../adr/0006-scanning-posture.md). Two defects found by running it
 rather than reasoning about it, both recorded in the ADR: an ALL_CAPS environment
 *variable name* read as a value, and a planted token printed to the terminal in
 full because redaction was opt-in rather than opt-out.
@@ -845,7 +845,7 @@ from the rest, which changes nothing: required checks are matched on job name.
 ### Phase 1 — Authentication
 
 ☑ **Settled 2026-08-12, before implementing 1a.** Four decisions, recorded in
-[ADR-0007](docs/adr/0007-connection-profile-storage.md) and grounded in a
+[ADR-0007](../adr/0007-connection-profile-storage.md) and grounded in a
 file-by-file audit of the upstream implementation rather than in preference.
 
 - **Separate storage, plus a one-time read-only import** (open decision #5). Our

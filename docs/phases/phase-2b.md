@@ -737,7 +737,7 @@ relation, and the checker should not let one be added without the other.
 For comparison, `client/src/connection/rest/RestContentAdapter.ts` in the SAS
 extension:
 
-```ts
+```ts no-check
 private async getViyaCadence(): Promise<string> {
   try {
     const { data } = await this.connection.get("/deploymentData/cadenceVersion");

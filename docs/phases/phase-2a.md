@@ -159,7 +159,7 @@ recursion in `rest/job.ts::getState`, and the 412 recursion in
 > one per iteration.
 >
 > All of it, plus the stream's shape, is
-> [ADR-0017](docs/adr/0017-the-log-stream-is-a-self-driving-pump.md): the
+> [ADR-0017](../adr/0017-the-log-stream-is-a-self-driving-pump.md): the
 > outputs are a **self-driving pump** behind ADR-0015's `AsyncIterable`, not an
 > `async function*`, because a generator does not poll until somebody iterates
 > and a caller awaiting `done` while ignoring `outputs` is a caller that
@@ -771,8 +771,7 @@ review rounds.
   all. A `debug` line naming the endpoint costs nothing at `info`.
 - **One unreachable profile stalls every connect** (#133). `getSessions()` walks
   the profiles serially and renews each, so a deployment that is down costs a
-  full connect timeout and an alarming `Could not renew the sign-in for
-  <endpoint>` line before the profile the user actually selected is looked at.
+  full connect timeout and an alarming `Could not renew the sign-in for <endpoint>` line before the profile the user actually selected is looked at.
   Not a correctness bug; it is what made a working connect look broken.
 - **Sign In should connect** (#134, a design change rather than a defect). Two
   commands to reach one outcome is friction with no payer: there is no other
@@ -1631,8 +1630,7 @@ level — including the one step 4 exists to read.
    progress, a quick pick titled *Select a compute context for this connection
    profile*, and a *Connecting to SAS Viya…* progress.
 
-   Notification: `Signed in as <your name>, and connected using profile
-   "<name>".` — **one** notification naming both halves. Two separate messages,
+   Notification: `Signed in as <your name>, and connected using profile "<name>".` — **one** notification naming both halves. Two separate messages,
    or a sign-in that stops without connecting, is a finding.
 
    Log, in order: `Signed in to <endpoint>.` then `Started a SAS Viya session on
@@ -1941,7 +1939,7 @@ before 3a designs around their absence.
 > would have made one pull request in which the settled half is unreviewable
 > because the unsettled half is where all the argument is.
 >
-> **The seam is [ADR-0015](docs/adr/0015-the-execution-backend-seam.md)**,
+> **The seam is [ADR-0015](../adr/0015-the-execution-backend-seam.md)**,
 > written and accepted before the code. Read it with ADR-0014: it decides opaque
 > bytes over a code string, a streaming handle over an aggregate return,
 > reject-when-busy over a queue, and a failure vocabulary of the seam's own — and
@@ -1980,7 +1978,7 @@ before 3a designs around their absence.
 > **2b-ii done 2026-08-17.** `contracts/viya4.yaml` and `contracts/viya35.yaml`,
 > `scripts/check-contracts.mjs` wired into `verify`, and stage-1 probing in
 > `src/dialects/probe.ts` called from `ComputeSessionManager.hold()`. The format
-> decision is [ADR-0016](docs/adr/0016-api-contracts-are-checked-yaml.md); the
+> decision is [ADR-0016](../adr/0016-api-contracts-are-checked-yaml.md); the
 > two new pages are `docs/architecture/contracts.md` and
 > `docs/architecture/capability-probing.md`. Four things worth carrying forward:
 >

@@ -68,7 +68,7 @@ shippable**. *Medium.*
 
 This slice also answers *how the user chooses Viya over the local interpreter*,
 which is the question a first-time user asks before any of the above matters. The
-answer is [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): each workspace
+answer is [ADR-0011](../adr/0011-choosing-where-python-runs.md): each workspace
 has a **run target** — a profile, or Local — set from the status bar, published
 as the `pythonOnViya.runTarget` context key, and used to decide whether this
 extension puts a run affordance in the editor at all. It lives in
@@ -163,7 +163,7 @@ git commit -m "feat(backend): probe interpreter version and installed packages"
 ```
 
 ☐ **3d-i — contribute the run target, and let it decide whether we appear.**
-[ADR-0011](docs/adr/0011-choosing-where-python-runs.md) settles the mechanism; this
+[ADR-0011](../adr/0011-choosing-where-python-runs.md) settles the mechanism; this
 is the punch list for executing it.
 
 - The pure part first: parsing, validating and labelling a target, and the "what

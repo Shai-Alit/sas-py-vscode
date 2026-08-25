@@ -245,6 +245,17 @@ named, because the reasoning is at the origin and is not repeated here.
   `test/integration/compute/session-manager.test.ts` cover the refusal, the
   release, per-profile independence and idempotent double-ending. 3a still has
   to actually call this from its run command; nothing does yet.
+
+  > **Landed 2026-08-21 (the `PROC PYTHON` backend slice, merged as PR #50):**
+  > `ProcPythonBackend` never reaches for `ComputeSessionManager` directly —
+  > that would need `vscode` on a path this module must stay free of — so it
+  > takes a `SubmissionGuard` (`isBusy`/`startSubmission`/`endSubmission`,
+  > narrowed and bound to one profile id by whoever constructs the backend)
+  > and delegates `busy` to it rather than tracking a private flag.
+  > `procPython.ts`'s own doc comment says why a per-instance boolean cannot
+  > stand in: a fresh backend instance's flag starts `false` regardless of
+  > whether an earlier instance left a job running in the same session, and
+  > the manager's guard is what actually persists across that.
 - ☑ **Make `test/unit/backend-contract.test.ts` runnable against a real
   backend.** Its header says 3a's backend "should be able to run this same
   file", and all twenty-three cases call `createFakeBackend()` directly, so as
@@ -260,10 +271,38 @@ named, because the reasoning is at the origin and is not repeated here.
   the interface 3a's own double has to satisfy to reuse this suite, and how
   that double gets driven is 3a's decision, not anticipated here. "Run it
   twice" is therefore still 3a's to finish, once its double exists.
+
+  > **Landed 2026-08-21 (the `PROC PYTHON` backend slice, merged as PR #50):**
+  > `test/helpers/recorded-proc-python.ts` drives a real `ProcPythonBackend`
+  > over a simulated `ComputeClient` and satisfies `BackendFactory`, so
+  > `test/unit/proc-python-backend-contract.test.ts` is one line calling
+  > `describeExecutionBackendContract(createRecordedProcPythonBackend)`. One
+  > assertion in the suite itself had to change: it compared an emitted
+  > `text/plain` output's `data` byte-for-byte, which assumes an opaque value
+  > survives a backend's transport unchanged — true of the fake, not of a
+  > backend whose transport is a SAS log, which forwards each line with a
+  > trailing newline the same way a real `print()` call's output would read
+  > back from one. The comparison now tolerates exactly that one trailing
+  > newline, with the reasoning recorded at the assertion itself rather than
+  > only here.
 - ☐ **Decide whether an absent `createSession` should fail the connect at all.**
   The #135 item immediately above this one has the reasoning and the two
   alternatives. It is on this list because "the next slice that touches connect"
   is 3a and nothing else names it.
+
+  > **Still open after the `PROC PYTHON` backend slice landed 2026-08-21, and
+  > the reason is worth recording rather than leaving this looking
+  > overlooked.** `ExecutionBackend.connect()` (ADR-0015) is a no-op by
+  > contract — "constructed against a session that already exists" — and
+  > `ProcPythonBackend.connect()` does no I/O and never calls
+  > `resolveContext`. So this slice was not, in the sense this item means,
+  > "the next slice that touches connect": the connect this item is about is
+  > `ComputeSessionManager`'s own session/context handshake, which 3a-ii
+  > touched only for the busy guard. This stays open for whichever slice next
+  > changes `resolveContext` or `ComputeSessionManager.connect()` itself —
+  > see the separate, later decision below ("`resolveContext` stops
+  > manufacturing `no-such-context`"), which is **not** this item, despite
+  > touching the same function.
 - ☑ **Probe ADR-0014's two unsettled hand-over questions before designing
   around their absence** — `TIMEOUT` for Cancel, and `SRC` as a second hand-over
   path. Flagged in the 2-pre write-up as worth probing *before* 3a, which is a
@@ -311,6 +350,165 @@ named, because the reasoning is at the origin and is not repeated here.
   function for exactly this request, which already implements the finding-6
   summary/full media-type fallback this test used to re-derive by hand with a
   bare `fetch` call.
+- ☑ **The `PROC PYTHON` `ExecutionBackend` itself.** Not one of the six
+  pre-existing obligations above — the actual subject of this punch list's
+  own commit. **Landed 2026-08-21, merged as PR #50:** `src/backend/procPython.ts`
+  and `src/compute/variables.ts` (finding 60, probed against `verde` first),
+  with `test/unit/proc-python-backend.test.ts`, `test/unit/compute-variables.test.ts`,
+  and a second run of the ADR-0015 contract suite via
+  `test/helpers/recorded-proc-python.ts`. Full detail is in `CHANGELOG.md`'s
+  entry for `procPython.ts` rather than repeated here.
+
+  **Three rounds of review, all landed before merge — nothing deferred out of
+  this slice.**
+
+  *Round one, an adversarial subagent pass over the finished diff before it
+  was first proposed:* one blocking finding (a cancel arriving after the job
+  was already terminal but before `SYSCC` was read did nothing, so `done`
+  resolved with a real outcome instead of `cancelled`) and two worth fixing
+  (`close()` couldn't stop an in-flight `reset()`; a `cancel()` racing
+  `createJob`'s own `POST` can orphan a job on the shared session if the
+  deployment created it before the client gave up waiting). The first two are
+  fixed, with new tests pinning both. The third is **not fixed in this
+  slice** — closing it needs `job.ts` to hand back a job id even on a
+  client-side abort — and is recorded in `CHANGELOG.md` rather than silently
+  accepted.
+
+  *Round two, the Claude reviewer on the open PR:* one more real production
+  gap (the cancel-race check after `SYSCC` was not repeated after the
+  following `SYSERRORTEXT` read on a failing run — fixed, with a regression
+  test) and five test-coverage gaps, all closed with no behaviour change: a
+  missing-`SYSCC` session, `parseTraceback`'s two `undefined`-return paths, a
+  `racingGuard()` fixture double so `execute()` and `reset()` can both be
+  exercised against the genuine
+  `isBusy()`-clear-but-`startSubmission()`-fails race the plain `guard()`
+  fixture cannot represent, and `writeFilerefContent`'s `self`/`upload`
+  failure paths plus a `compute-unreachable` submission failure.
+
+  *Round three, Codex on the same PR — both findings real, both fixed:*
+  **Blocking:** `reset()` never read `SYSCC` at all, trusting the job's own
+  terminal state — exactly the trap ADR-0014/finding 33 already closed for
+  `execute()`, left open here. Fixed by extracting a shared private
+  `readSyscc()` helper used by both `runProgram` and `reset()`. **Major:**
+  `close()` awaited `cancelActive()` and discarded a failed cancellation
+  outright, contradicting `ExecutionBackend.close()`'s own doc comment
+  ("logged, not returned"). Fixed with an optional constructor parameter,
+  `onBackgroundFailure?: (reason: string) => void` — a narrow callback in the
+  same spirit as `SubmissionGuard`, so the module still never imports
+  `vscode`; absent in every real construction, so this is backward
+  compatible.
+
+  **One coverage regression, caught and reverted before merge, worth
+  recording as a lesson rather than erasing:** a test written to close
+  `procPython.ts`'s dropped-log-lines branch pushed 100,005 log lines through
+  the real `streamJobLog` pump in one case, which blew past
+  `.mocharc.json`'s deliberate 2-second unit-test budget on every CI runner
+  (all 7 jobs failed). Reverted, then closed properly with a narrow,
+  test-only constructor parameter (`logBufferLimits`, overriding
+  `streamJobLog`'s buffer caps — **not** part of
+  `ExecutionBackend`/`ExecuteOptions`) so the same branch is reachable with 5
+  lines instead of 100,005.
+
+  **Final state at merge:** 970 tests passing, coverage 92.99 / 95.1 / 92.43 /
+  92.99 (statements/branches/functions/lines) against the 92/95/91/92 floor —
+  ratchet raised to 92/95/92/92. No live test was run against `verde` for this
+  slice; the unit tier and the contract suite are what this item's own
+  verification rests on.
+
+### `resolveContext` stops manufacturing `no-such-context` — a separate decision from `#135`, settled 2026-08-23
+
+**Not `#135`.** The item above ("Decide whether an absent `createSession`
+should fail the connect at all") is specifically the `createSession`-link
+check further down `resolveContext`, for a context that *is* found —
+findings 54 and 55 were measured against contexts a filtered read actually
+returned, and say nothing about whether a real, usable context can produce
+an empty `items` array at all. That question was never probed and `#135`
+remains fully open, exactly as the item above says. What follows is a
+separate decision, about a different response shape, resting on its own
+grounds.
+
+**Decision (Sean, 2026-08-23):** stop treating an empty `items` array from
+the filtered contexts read as a failure `resolveContext` gets to declare on
+its own. The context name was already validated once, by polling the same
+collection at profile-setup or picker time; if it somehow does not resolve
+at connect time, the pre-emptive local refusal is not buying anything a real
+attempt wouldn't also catch, and it was dressing up "this collection came
+back empty" as if it were the deployment's own verdict on the name — a claim
+this response alone was never positioned to support, whether or not `#135`
+existed.
+
+**What "let Viya be the authority" turned out to mean structurally:**
+`createSession()` cannot literally be called through to let a `POST`
+decide, because `ComputeContext` doesn't exist yet when `items` is empty —
+there is no `createSession` link to point at (ADR-0010: no hand-composed
+URLs). So the change is not "attempt the `POST` anyway"; it's "stop
+synthesizing a domain-flavoured problem code for an absent value, and let
+the caller that actually knows why this name was chosen decide what an
+absent value means" — the same shape `readVariable` already uses for its own
+"filter matched nothing" case in `src/compute/variables.ts`.
+
+**What changed:**
+- `src/compute/contexts.ts`: `resolveContext` returns
+  `Promise<ComputeResult<ComputeContext | undefined>>`; an empty `items[0]`
+  is `{ ok: true, value: undefined }`, not a `ComputeFailure`.
+- `src/compute/problems.ts`: the `no-such-context` member is gone from the
+  `ComputeProblem` union, and its `describeComputeProblem` case with it.
+- `src/compute/messages.ts`: its `no-such-context` case is gone too — there
+  is no `ComputeProblem` left to localise.
+- `src/compute/sessionManager.ts`'s `open()`: a new branch right after the
+  `resolveContext` call, `if (resolved.value === undefined)`, calls the
+  existing `this.fail(...)` helper (the same one the "no contexts visible at
+  all" case in `contextFor` already uses) with the same wording the removed
+  `messages.ts` case used to carry, now composed at the one call site that
+  still needs it rather than duplicated across a `ComputeProblem` variant.
+- Tests updated to match: `test/unit/compute-contexts.test.ts`,
+  `test/unit/compute-problems.test.ts`,
+  `test/integration/compute/messages.test.ts` (its exhaustive-`PROBLEMS`
+  array and the "gives each code its own message" count, 10 → 9), and both
+  live tests that call `resolveContext` against a real deployment —
+  `test/live/viya4-job.test.ts` and `test/live/submission-corpus.test.ts` —
+  whose connect helper now narrows the resolved value with its own
+  `assert.fail` before calling `createSession`, since `expectOk` can no
+  longer be relied on to have ruled out `undefined`.
+- `test/integration/compute/session-manager.test.ts` gained two cases on
+  `open()`'s new branch directly: one asserting the `fail()` message and
+  `undefined` connection for a plain empty collection, one asserting that a
+  cancellation racing the same empty collection logs only the cancellation
+  (via `reportedCancellation`) and shows no error dialog — the branch and its
+  own cancellation short-circuit had no coverage at all before round two of
+  review below caught it.
+
+**Two rounds of review before this was proposed, per standing policy (this
+diff adds source and changes a documented invariant):**
+
+*Round one, an adversarial subagent pass over the finished diff:* one real
+finding, fixed — the new `resolved.value === undefined` branch in
+`sessionManager.ts`'s `open()` called `this.fail(...)` unconditionally,
+unlike every sibling exit in the same method, which checks
+`token.isCancellationRequested` first and reports a plain "Connecting to SAS
+Viya was cancelled" instead. A user cancelling at the exact moment the
+empty-collection response arrived would have seen an error dialog about a
+naming problem instead of the cancellation message every other outcome gives
+them. Fixed by extracting the cancellation short-circuit `reportFailure`
+already had into its own method, `reportedCancellation`, and calling it from
+both. A second, smaller finding (a stale "ten failures" count in a doc
+comment in `viya4-job.test.ts`, now nine) was also fixed.
+
+*Round two, the Claude reviewer on the open PR:* two real findings, both
+fixed. **Blocking:** the source comments (and this write-up's first draft)
+claimed this change settled "the empty-`items` half of `#135`" and cited
+findings 54/55 as support — both wrong, corrected everywhere the claim was
+repeated (`contexts.ts`, `sessionManager.ts` twice,
+`compute-contexts.test.ts`, `viya4-job.test.ts`). **Also real:** the new
+branch, and the cancellation short-circuit inside it, had no test anywhere —
+the `no-such-context` regression test it replaced was deleted along with the
+`ComputeProblem` variant, and nothing was written for the new call site.
+Fixed with the two `session-manager.test.ts` cases listed above.
+
+**Not touched:** the `link-missing` check lower in the same function, for a
+context that *was* found but carries no `createSession` link. This is the
+`#135` item above, and it is unresolved — nothing in this slice settles it,
+corrected framing above notwithstanding.
 
 > **Before any of it, the submission fidelity corpus**, which has its own item
 > above and is not repeated here. It is listed as "Before 3a" rather than as

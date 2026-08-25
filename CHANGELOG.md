@@ -932,15 +932,19 @@ called out under **Changed** with a migration note.
   lines rather than text a client has to parse, and a type switch cannot be
   split mid-line the way raw paginated text could be, so "a page break splits
   the stdout region mid-stream" — the awkward case the original text
-  named — cannot happen to it. No literal page-break banner has been observed
-  on the wire in any probe to date, and separately, `PAGESIZE=MAX` (named
-  under 3a in `docs/phases/phase-3.md`) is not currently sent at session
-  creation — `sessionManager.ts`'s `open()` calls `createSession` with no
-  `options` — a real gap, recorded here rather than folded into this slice
-  silently, since fixing it is a one-line change to a different module and
-  does not change this filter's design either way: if a banner is ever
-  emitted, it arrives as its own log item with its own `type`, most plausibly
-  `note`, and this filter already drops or passes a whole line at a time.
+  named — cannot happen to it. **Correction (2026-08-25, 3c's probe):** a
+  page-break banner has since been observed on the wire — it arrives typed
+  `title`, not the `note` this entry originally guessed, and `isNoiseLine`
+  does not exclude it, so it currently passes through as visible output.
+  Recorded as an open item in `docs/phases/phase-3.md` rather than fixed here.
+  Separately, `PAGESIZE=MAX` (named under 3a in `docs/phases/phase-3.md`) is
+  not currently sent at session creation — `sessionManager.ts`'s `open()`
+  calls `createSession` with no `options` — a real gap, recorded here rather
+  than folded into this slice silently, since fixing it is a one-line change
+  to a different module and does not change this filter's design either way:
+  a banner still arrives as its own atomic, already-typed log item, and this
+  filter already drops or passes a whole line at a time regardless of which
+  type it carries.
 
   **`npm run verify` is green** — 979 passing, coverage
   93.05/95.1/92.48/93.05 (statements/branches/functions/lines), against the

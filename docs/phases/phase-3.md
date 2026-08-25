@@ -132,13 +132,24 @@ rich output rendered. **This is the first genuinely useful build.**
 ```bash
 # 3a — PROC PYTHON backend
 git checkout -b phase-3a-proc-python-backend
-git commit -m "feat(python): add PROC PYTHON execution backend with offset mapping"
+git commit -m "feat(python): add PROC PYTHON execution backend"
+# the real commit dropped "with offset mapping" — see the "Landed" note below
 
 # ⛔ BARRIER
 # 3b — log filter
 git checkout -b phase-3b-log-filter
 git commit -m "feat(python): add SAS log to Python stdout filter"
 ```
+
+> **Landed 2026-08-21, merged as PR #50.** `src/backend/procPython.ts` and
+> `src/compute/variables.ts`, three rounds of review (an adversarial subagent
+> pass, then Claude and Codex on the open PR — full detail, including the two
+> real Codex findings and the reverted coverage regression, is in
+> `docs/phases/phase-2b.md`'s 3a punch list rather than repeated here, since
+> that punch list is where this slice's obligations were tracked). Final
+> state at merge: 970 tests passing, coverage
+> 92.99/95.1/92.43/92.99 against the 92/95/91/92 floor, ratchet raised to
+> 92/95/92/92 — later raised again to 93/95/92/93 when 3b landed, above.
 
 > **Landed 2026-08-24 as `src/backend/logFilter.ts`.** Extracted from
 > `procPython.ts`'s own shortcut — that module could not produce any output at
@@ -165,12 +176,29 @@ git commit -m "feat(python): add SAS log to Python stdout filter"
 > *then* size the implementation. This is the one slice in the plan whose scope is
 > genuinely unknown, and pretending otherwise is how it swallows the phase.
 
-☐ **3c step 1 — probe.** Using the `viya-api-probe` skill and `creds.json`,
+☑ **3c step 1 — probe.** Using the `viya-api-probe` skill and `creds.json`,
 determine how a matplotlib figure and a DataFrame HTML repr can be retrieved.
 Candidates: write to the session filesystem and fetch via the Compute files API,
-or base64 through the log. Record findings in `PROBE-FINDINGS.md`.
+or base64 through the log. Done 2026-08-25 against `verde` (Viya 4) — findings
+61–66 below. **The file-write-plus-Compute-files-API mechanism won outright**:
+byte-perfect for both a PNG and an HTML table, with the server reporting the
+correct MIME type unprompted. Base64-through-the-log is not viable as a naive
+channel — finding 62 measured a hard character-count wrap with no boundary
+marker, which corrupts anything long enough to wrap unless the emitting code
+adopts its own chunking-and-reassembly protocol, which the file mechanism makes
+unnecessary. A second pass (findings 65–66) closed the two gaps the first
+pass left open: `deleteFile` needs `If-Match` with an ETag obtainable from a
+properties `GET` alone, no content fetch required, and the mechanism holds at
+a realistic image size (262,591 bytes, not just 23,206).
 
 ☐ **3c step 2 — size and split.** Turn the findings into one or more sized slices.
+Proposed, pending confirmation: **3c-i** — matplotlib/pandas rich-output capture
+via write-to-session-filesystem + Compute-files-API fetch, decoded into the
+existing `RichOutput` union (`image/png`, `text/html`); *Medium*. Traceback
+structuring (`application/vnd.python.traceback`) does not depend on anything
+this probe found — finding 39 already established tracebacks arrive as ordinary
+log lines — so it can stay a separate item (**3c-ii**) rather than being sized
+against this probe's findings.
 
 ```bash
 # 3c — rich output (scope set by the probe)
@@ -486,3 +514,214 @@ in use everywhere else.
   read a missing `value` defensively rather than assume the one case tried is
   the only shape.
 - **Viya 3.5.** Not probed, as ever.
+
+## 2026-08-25 — Rich output: the file mechanism, the log-wrap trap, and one poisoned-session repro (Viya 4)
+
+3c's own punch list named two candidates for returning a matplotlib figure or a
+DataFrame's HTML repr: write to the session filesystem and fetch via the
+Compute files API, or base64 through the log. Probed against `verde` before
+sizing the implementation slice, because — per the user's own framing —
+whether this is possible at all with what `PROC PYTHON` provides was
+genuinely open going in.
+
+### Finding 61 — Writing to the session's cwd and fetching via the Compute files API is a clean, byte-perfect mechanism for both a PNG and an HTML file
+
+`fig.savefig("probe_plot.png")` inside a `submit`/`endsubmit` block wrote a
+23,206-byte file to the session's private working directory
+(`os.getcwd()` resolved to
+`/opt/sas/viya/config/var/run/compsrv/default/<session-guid>`). The session's
+own link set (`GET` on the session, `Accept:
+application/vnd.sas.compute.session+json`) carries a `getFiles` relation at
+`.../files`; following it returns the *cwd's own directory properties*, not a
+listing, with a `getDirectoryMembers` link. Following *that* returns a
+collection whose items are the files actually in the directory, and each item
+carries its own `getFile` link, method `GET`, at `.../<encoded-path>/content`.
+
+Fetching that link returned exactly 23,206 bytes, a valid PNG signature
+(`89 50 4E 47 0D 0A 1A 0A`), and decoded correctly as a 640×480 RGBA image —
+byte-for-byte the file `os.path.getsize` reported server-side. The same
+mechanism, unmodified, worked for `pandas.DataFrame.to_html()` written to a
+`.html` file: 393 bytes out, 393 bytes back, valid markup.
+
+**The server reports the correct MIME type unprompted.** The PNG's `getFile`
+link carried `"type": "image/png"`; the HTML file's carried `"type":
+"text/html"` — inferred from the file extension the Python code itself chose,
+not from any option this project set. A response fetched with no `Accept`
+header at all still answered with the matching `Content-Type` header.
+
+**Reading:** this is the mechanism. `RichOutput`'s `image/png` and `text/html`
+arms can both be filled by: have the emitted Python write to a
+predictable-but-collision-safe filename in its own cwd, follow the session's
+`getFiles` → `getDirectoryMembers` → item's `getFile` link chain (never
+compose the encoded path by hand — ADR-0010), and read the response body
+directly as bytes (base64-encoding only if `RichOutput.image/png`'s own
+contract requires it at the seam, which `backend.ts` already documents it
+does). No parsing of anything through the log is needed for either mime type.
+
+### Finding 62 — Base64 (or any text) through the log wraps at a hard character count, mid-token, with no boundary marker — ruling it out as a naive channel
+
+A `print("A" * 300)` — one logical call, no whitespace anywhere in the
+argument — arrived as **three** `normal`-typed log lines of length 132, 132,
+and 36. Since the source string had no word boundaries at all, this is not a
+word-aware wrap: it is a hard cut at a fixed column count, consistent with
+`LINESIZE`'s documented default of 132. A second string built from five
+50-character blocks joined by single spaces (254 characters total) wrapped as
+102, 102, 50 — still governed by the same column limit, not by a
+word-boundary rule; the apparent "space-aligned" breaks in that case were
+coincidental, not evidence of smarter wrapping.
+
+`options linesize=max;` before the `PROC PYTHON` block **raises the cap to
+256, it does not remove it**: the same 300-character no-whitespace string
+then wrapped as 256 + 44, two lines instead of three. There is no session
+option this probe found that disables the wrap outright.
+
+**Consequence:** any payload a naive implementation prints and expects back
+as one unbroken string — a base64-encoded image, in particular, which by
+construction contains no natural break points — will be silently corrupted
+past 132 (or 256, at best) characters, with **no marker distinguishing "this
+line is a wrapped continuation" from "this line just happens to be exactly
+132 characters long."** That ambiguity is not fixable by a consumer guessing
+at reassembly; it would require the *emitting* Python to chunk its own output
+below the wrap width with an explicit sequence marker per chunk (e.g.
+`print(f"B64|{i:06d}|{chunk}")`), turning a one-line print into a
+hand-rolled, per-payload reassembly protocol. Finding 61 makes this
+unnecessary: the file mechanism has no line-based transport step for a rich
+payload to pass through at all.
+
+**This does not touch 3b's already-shipped filter design.** `logFilter.ts`
+maps one `LogLine` to one `text/plain` output regardless of whether that
+line's text is a complete logical `print()` call or a wrapped fragment of a
+longer one — the filter was never responsible for reassembling wrapped
+`print()` output, only for deciding which typed lines are shown at all. The
+practical effect is cosmetic, not a defect: a single very long `print()` call
+will render as several consecutive `text/plain` outputs in whatever surface
+renders them (3d-i's output channel), with no indicator that they were
+originally one call. Worth naming as a known limitation if 3d-i's output
+channel design wants to address it; not something this probe's findings
+require fixing.
+
+### Finding 63 — A page-break banner is real, and it is typed `title`, not `note`
+
+`logFilter.ts`'s own doc comment guessed, before any deployment had been
+asked to produce one, that a page-break banner would arrive "most plausibly"
+typed `note`. The matplotlib job in finding 61 triggered one for real (a
+`PROC PYTHON` step long enough to force a page break), and it arrived as its
+own log item:
+
+```json
+{"type":"title","line":"3                                                          The SAS System                       Tuesday, August 25, 2026 11:05:00 AM"}
+{"type":"title","line":""}
+```
+
+— `title`, a fifth type alongside `source`, `note`, `normal`, `error`, not
+previously named in this project's vocabulary. `isNoiseLine` excludes only
+`note` and `source`, so a banner passes through **unfiltered, as visible
+output**, today. `logFilter.ts`'s doc comment and `CHANGELOG.md`'s 3b entry
+are both corrected in this same pass to stop citing the wrong guess; whether
+`title` should join the excluded set is left open for whichever slice next
+touches this filter, per this file's own review-findings policy of batching
+related edits rather than half-fixing one in passing.
+
+### Finding 64 — Inline `SUBMIT`-block content that is not valid for its context poisons the session's parser state for every later submission, until `PROC PYTHON RESTART`
+
+While probing, a job was submitted with bare Python (`import pandas as
+pd...`) accidentally missing its `proc python; submit; ... endsubmit; run;`
+wrapper. It failed, as expected, with `ERROR 180-322: Statement is not valid
+or it is used out of proper order.` at the first bare line. The **next** job
+submitted on the same session — this time correctly wrapped, `proc python;
+submit; ...` — failed with the *identical* `180-322` error, on the `proc
+python;` statement itself, which is otherwise unimpeachable syntax. The
+session's SAS-side parser state, not just its Python state, had been left
+inconsistent by the first failure. `proc python restart;` (a job of its own,
+`run;` and nothing else) recovered it cleanly — `NOTE: Previous Python state
+destroyed.` / `NOTE: Python initialized.` — and the same, now-correctly-wrapped
+job succeeded immediately afterward.
+
+**Reading:** this is a live, wire-confirmed instance of exactly the failure
+mode ADR-0014 already reasoned about in the abstract when it rejected inline
+`SUBMIT` of untrusted code in favour of `INFILE=` — "inlining code in a
+`SUBMIT` block can silently poison the session for every later submission." It
+does not change ADR-0014's decision (this project was never going to inline
+`SUBMIT` content, and this reproduction came from a probe script's own bug,
+not from anything the extension would ever construct), but it is worth
+recording as corroborating evidence rather than only a theoretical concern,
+and as a note for the `viya-api-probe` skill's own playbook: a probe session
+that starts erroring on syntactically valid statements has likely been
+poisoned by an earlier malformed submission on the same session, and
+`proc python restart;` is the recovery, not a fresh session.
+
+### What this probe did not settle
+
+- **Whether `title` should be added to `isNoiseLine`'s excluded set.** Left as
+  an open design question for the slice that next touches the filter, not
+  decided here.
+- **Whether a page-break banner can appear *mid-run*, splitting a single
+  logical output's surrounding log lines apart**, as opposed to appearing
+  between complete statements the way finding 63's reproduction did. Not
+  tested; the existing atomic-log-item reasoning in `logFilter.ts`'s doc
+  comment holds regardless, since each item is typed once, on its own, but
+  the specific interleaving was not exercised.
+- **Filenames and collision avoidance** for the write-then-fetch mechanism —
+  finding 61 used a single fixed name per probe run on a session used by
+  nothing else concurrently. A real implementation needs its own naming and
+  cleanup convention (this probe deleted its own files by relying on session
+  teardown, per finding below, not by exercising `deleteFile` successfully —
+  see next point).
+- **Viya 3.5.** Not probed, as ever — `creds.json` carries no 3.5 entry to
+  probe against.
+
+### Finding 65 — `deleteFile` needs `If-Match`, and the ETag is available without fetching the file's content
+
+The `428 Precondition Required` finding 61 left unresolved is exactly what it
+says: `deleteFile` (`DELETE` on a file's own link) requires an `If-Match`
+header carrying the file's current ETag, quoted. A `DELETE` with no
+`If-Match` at all answers `428`; the identical request with
+`If-Match: "<etag>"` answers `204`, and a follow-up `GET` on the same link
+then answers `404`.
+
+**The ETag does not require fetching the file's content first.** A plain
+`GET` on the file's own `getFileProperties`/`self` link (small, JSON,
+no `Accept` override needed) carries the same `ETag` **HTTP header** a full
+content fetch would — confirmed by deleting with an ETag read exactly this
+way, immediately after writing the file, with no intervening content GET.
+The ETag is **not** present anywhere in that response's JSON **body** — only
+the header carries it.
+
+**Reading:** the write-then-fetch-then-delete lifecycle a real 3c-i
+implementation needs is three requests, not four: write the file from
+Python, `GET` its properties to read `outputs` and grab the `ETag` header
+(or fetch content directly and read the same header off that response, if
+the content is being read anyway), then `DELETE` with `If-Match` once the
+`RichOutput` has been captured. No polling, no retry-on-428 loop needed —
+the precondition is satisfiable on the first attempt as long as the ETag
+came from a GET no earlier request has since invalidated.
+
+### Finding 66 — The write-then-fetch mechanism holds at a realistic image size, not just a trivial one
+
+Finding 61's PNG was a default-sized, mostly-empty 640×480 plot at 23,206
+bytes — small enough that a chunking or size-cap surprise could have hidden
+behind it. A four-panel, 2400×1800-pixel figure with 20,000 plotted points
+per panel and dpi=200 (`fig.savefig`, same mechanism, same session
+filesystem) produced a 262,591-byte file, written and fetched with no
+change to either step: same `getFiles` → `getDirectoryMembers` → `getFile`
+link chain, same byte-for-byte match between `os.path.getsize` and the
+fetched file's size on disk, same valid PNG signature, decoding correctly
+as 2400×1800 RGBA. Roughly 11× finding 61's size, chosen to be closer to
+what a real user's figure looks like rather than the library default.
+
+**Reading:** nothing about the mechanism is size-sensitive in the range this
+probe checked (tens of KB to a few hundred KB). No evidence either way for
+multi-megabyte figures (very high DPI, very large `figsize`, or an
+uncompressed format) — if 3c-i's design ever needs to bound output size, that
+would be its own, separately-motivated decision, not one this probe's
+evidence requires.
+
+### What this second pass did not settle
+
+- **Whether the ETag from a properties `GET` can go stale between reading
+  it and using it in `If-Match`** — e.g., another process rewriting the same
+  filename in between. Not tested; the single-writer, one-session-at-a-time
+  shape of `PROC PYTHON` (serial execution, ADR-0015) makes this an edge case
+  rather than a live concern for 3c-i's design.
+- **Multi-megabyte files.** Not tested at any size above ~256 KB.
+- **Viya 3.5.** Not probed, as ever — no 3.5 credentials available.

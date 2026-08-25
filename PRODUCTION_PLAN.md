@@ -504,16 +504,27 @@ it stands at 92 / 92 / 91 / 95, so the original figure is long since passed.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
 
-**The submission fidelity corpus** is a named test asset, introduced with Phase 3a
-and maintained forever after. It is a directory of real Python programs chosen to
+**The submission fidelity corpus** is a named test asset, maintained forever
+after it shipped. It is a directory of real Python programs chosen to
 be hostile to SAS tokenisation — apostrophes in comments and docstrings, an odd
 number of quotes in a line, triple-quoted strings containing both quote styles,
 f-strings with nested quotes and braces, raw and byte strings, `&` and `%` in
 string literals, the literal token `endsubmit;` inside a comment and inside a
 string, a `;`-heavy one-liner, CRLF line endings, a tab-indented file, non-ASCII
 identifiers and string content, an empty file, and a file with no trailing
-newline. Each one is asserted **byte for byte** at the far end, and the assertion
-is on what the interpreter received, not on what we sent.
+newline. Each one is asserted **byte for byte** at the far end.
+
+> **Corrected 2026-08-25** (raised in `phase-3-runbook-pending.md`, applied
+> here rather than held further — this is an amendments-log-style correction
+> to a factual claim, not a rewrite of the plan's intent): the corpus shipped
+> in **3-pre**, before 3a, not "introduced with Phase 3a" as this paragraph
+> used to say. And the two tiers assert different things, not one shared
+> claim: the **unit** tier compares against an independent second read of the
+> fixture (what we intended to send), after a review round found and fixed a
+> version that asserted on values it had itself constructed; only the
+> **live** tier reads the value back out of a real interpreter (what SAS
+> actually received). The paragraph below already describes this correctly —
+> only the sentence above needed fixing.
 
 That corpus runs in two tiers, and both are required. In the **unit** tier it runs
 against the submission builder with a recorded transport, which is fast enough to

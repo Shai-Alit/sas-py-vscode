@@ -120,6 +120,19 @@ future maintainers. The reviewer workflows themselves moved to **0a-ii**. *Small
 
 ## Runbook
 
+## Section C — Phase punch lists
+
+### Phase 0 — Repository foundation
+
+> **Do 0a first and alone.** `.gitattributes` must land before any other file so
+> line-ending normalisation applies to everything that follows. Dev is Windows,
+> CI is Linux; getting this wrong pollutes every later diff.
+
+☑ **Open decision #0 settled 2026-08-11: Apache-2.0.** 0a replaces `LICENSE`, adds
+`NOTICE`, and records the rationale in ADR-0000. It also copies `PROBE-FINDINGS.md`
+into the repo and stands up the `docs/` skeleton (`PRODUCTION_PLAN.md` §4.1).
+
+```bash
 # 0a — scaffold, hygiene, and licensing
 git checkout main && git pull --ff-only && git checkout -b phase-0a-scaffold
 #   … 🤖 implement 0a …
@@ -862,7 +875,6 @@ file-by-file audit of the upstream implementation rather than in preference.
 > per-extension, so tokens can never be shared and the user signs in twice
 > regardless. Sharing would have saved retyping one URL.
 
-```bash
 
 ---
 

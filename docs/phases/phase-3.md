@@ -118,6 +118,7 @@ rich output rendered. **This is the first genuinely useful build.**
 
 ## Runbook
 
+```bash
 # 3a — PROC PYTHON backend
 git checkout -b phase-3a-proc-python-backend
 git commit -m "feat(python): add PROC PYTHON execution backend with offset mapping"

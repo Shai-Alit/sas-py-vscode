@@ -14,8 +14,7 @@
 | 0 — Repository foundation | ✅ done | `docs/phases/phase-0.md` |
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ▶ in progress | `docs/phases/phase-2a.md` |
-| 2b — Seam, dialects, capability probing | not started | `docs/phases/phase-2b.md` |
-| 2c — Job log & the pump | not started | `docs/phases/phase-2c.md` |
+| 2b — Backend seam, dialects, job log & the pump | not started | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | not started | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
@@ -31,3 +30,7 @@ Each phase file bundles everything that phase needs: the plan section
 (architecture, scope), the runbook punch list (commands, order, barriers), and
 the relevant probe findings — so one file is normally all a session needs
 beyond this index and the trimmed `RUNBOOK.md` / `PRODUCTION_PLAN.md` cores.
+
+Phase 2b covers what were originally separate "2b" and "2c" labels in the
+source runbook — they share one continuous command block in the original
+document and don't split cleanly, so they're kept as one phase file here.

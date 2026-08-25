@@ -185,6 +185,7 @@ private CA reaches sign-in instead of failing at TLS; no secrets in logs.
 
 ## Runbook
 
+```bash
 # 1a — connection profiles
 git checkout -b phase-1a-connection-profiles
 git commit -m "feat(auth): add Viya connection profiles and profile commands"
@@ -878,7 +879,6 @@ quietly every time a new one is added. See #137 for the fix
 > slice has been repointed. One of the old notes did not survive the write-up:
 > see the `+json` item.
 
-```bash
 
 ---
 

@@ -16,6 +16,7 @@ _Not yet detailed in PRODUCTION_PLAN.md beyond the phase list._
 
 ## Runbook
 
+```bash
 # 2c-pre — probe the job log (docs only)
 git checkout -b phase-2c-pre-log-probe
 git commit -m "docs(probe): record the job log wire shape and long-poll behaviour"
@@ -305,8 +306,6 @@ named, because the reasoning is at the origin and is not repeated here.
 > above and is not repeated here. It is listed as "Before 3a" rather than as
 > part of it because the corpus is what proves the mechanism 2-pre chose, and a
 > backend written first would be a backend the corpus is then fitted around.
-
-```bash
 
 ---
 

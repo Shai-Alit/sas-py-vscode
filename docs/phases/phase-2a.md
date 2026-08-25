@@ -225,6 +225,7 @@ mocked-HTTP unit tests.
 
 ## Runbook
 
+```bash
 # 2a-i — the Compute core, no vscode import
 git checkout -b phase-2a-i-compute-core
 git commit -m "feat(compute): add the link layer, context resolution, and session lifecycle"
@@ -2523,8 +2524,6 @@ one that only proves a module imports.
   happens to run next when it misfires. An instrument whose false positive lands
   on an unrelated test is worse than the defect it watches for.
 
-```bash
-# ⛔ BARRIER
 
 ---
 

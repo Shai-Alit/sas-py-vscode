@@ -10,10 +10,13 @@
  * A run is: upload the program's bytes to a fresh fileref (`fileref.ts`), submit
  * `proc python infile=<fileref>;` (or, with `freshNamespace`,
  * `proc python restart infile=<fileref>;` — finding 35 measured the two
- * composing in one statement) as a job (`job.ts`), stream its log
- * (`logStream.ts`) into `text/plain` output, and once the job is terminal read
- * `SYSCC` (`variables.ts`) to learn whether it raised. ADR-0014 settled why the
- * last step reads `SYSCC` rather than the job's own terminal state: finding 33
+ * composing in one statement), **followed by a trailing `run;` as a second
+ * statement in the same job** (ADR-0014 amendment, finding 70 — without it the
+ * step never closes, and its log, `SYSCC` and any file it wrote all stay
+ * unflushed), as a job (`job.ts`), stream its log (`logStream.ts`) into
+ * `text/plain` output, and once the job is terminal read `SYSCC`
+ * (`variables.ts`) to learn whether it raised. ADR-0014 settled why the last
+ * step reads `SYSCC` rather than the job's own terminal state: finding 33
  * measured a job reporting `completed` having executed nothing at all.
  *
  * ## Why a fresh fileref every run, not one reused for the session
@@ -52,6 +55,19 @@
  * doc comment records why that could not wait for a dedicated slice and what
  * moved once one existed. This module now calls into it rather than carrying
  * its own copy of `isNoiseLine` or the line-to-`RichOutput` mapping.
+ *
+ * ## Rich output is a directory diff, not a channel this module parses
+ *
+ * A matplotlib figure or a DataFrame's HTML repr never travels through the
+ * log at all (ADR-0019, slice 3c-i): `runProgram` lists the session's working
+ * directory before creating the job and again after it settles without being
+ * cancelled, and `richOutput.ts`'s pure `selectRichOutputCandidates` decides
+ * which of whatever changed is worth surfacing. This module's own part is
+ * exactly the I/O `richOutput.ts` cannot perform itself — list, fetch,
+ * delete, and push the result to the relay in the order the ADR gives — never
+ * the diff/whitelist/decode policy, which stays in that module for the same
+ * "own module, fixture-tested independent of a real Compute client" reason
+ * `logFilter.ts` is split out from this one.
  *
  * ## Traceback frames are raw, and deliberately not disambiguated further
  *
@@ -93,9 +109,26 @@ import {
 } from "./backend";
 import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
 import { type BackendFailure, type BackendResult, fail } from "./problems";
+import {
+  decodeRichOutput,
+  exceedsCaptureCap,
+  MAX_CAPTURE_BYTES,
+  selectRichOutputCandidates,
+  skippedCaptureOutput,
+} from "./richOutput";
 
-import { type ComputeClient, type ComputeFailure } from "../compute/client";
+import {
+  type ComputeClient,
+  type ComputeFailure,
+  type ComputeResult,
+} from "../compute/client";
 import { createFileref, writeFilerefContent } from "../compute/fileref";
+import {
+  deleteSessionFile,
+  listSessionFiles,
+  readFileContent,
+  type SessionFile,
+} from "../compute/files";
 import { createJob } from "../compute/job";
 import { streamJobLog, type LogStream } from "../compute/logStream";
 import { describeComputeProblem } from "../compute/problems";
@@ -492,10 +525,14 @@ export class ProcPythonBackend implements ExecutionBackend {
     this.resetController = controller;
 
     try {
+      // ADR-0014 amendment, finding 70: same reasoning as `runProgram`'s own
+      // trailing `run;` — without it, this step never closes either, and
+      // `readSyscc` below would be reading a session that has not actually
+      // finished restarting.
       const job = await createJob(
         this.client,
         this.session,
-        [RESTART_STATEMENT],
+        [RESTART_STATEMENT, "run;"],
         { signal: controller.signal },
       );
       if (!job.ok) {
@@ -619,9 +656,27 @@ export class ProcPythonBackend implements ExecutionBackend {
         ? `proc python restart infile=${filerefName};`
         : `proc python infile=${filerefName};`;
 
-      const job = await createJob(this.client, this.session, [statement], {
+      // ADR-0019 point 1: listed now, immediately before the job that might
+      // change it — not earlier, alongside the fileref upload above, which
+      // touches a session's `filerefs` collection rather than its working
+      // directory and has no bearing on this diff either way.
+      const filesBefore = await listSessionFiles(this.client, this.session, {
         signal: run.controller.signal,
       });
+
+      // ADR-0014 amendment, finding 70: without a trailing `run;`, the step
+      // never closes, so its log, `SYSCC` and any file it wrote all stay
+      // unflushed — invisible to every request this run makes — until some
+      // later, unrelated request happens to close it. `run;` is filtered as
+      // noise the same way the wrapping statement's own source echo already
+      // is (`logFilter.ts`'s `isNoiseLine` excludes every `source`-typed
+      // line), so nothing downstream of this changes to accommodate it.
+      const job = await createJob(
+        this.client,
+        this.session,
+        [statement, "run;"],
+        { signal: run.controller.signal },
+      );
       if (!job.ok) return this.translate(job, "running the program", false);
 
       const stream = streamJobLog(this.client, job.value, {
@@ -652,19 +707,136 @@ export class ProcPythonBackend implements ExecutionBackend {
         "running the program",
       );
       if (!sysccResult.ok) return sysccResult;
+
+      let outcome: ExecutionOutcome;
       if (sysccResult.value.succeeded) {
-        return { ok: true, value: { succeeded: true, diagnostics: [] } };
+        outcome = { succeeded: true, diagnostics: [] };
+      } else {
+        const built = buildFailureOutcome(
+          sysccResult.value.syscc,
+          sysccResult.value.message,
+          run.lines,
+        );
+        outcome = built.outcome;
+        if (built.trailingOutput !== undefined)
+          relay.push(built.trailingOutput);
       }
 
-      const { outcome, trailingOutput } = buildFailureOutcome(
-        sysccResult.value.syscc,
-        sysccResult.value.message,
-        run.lines,
-      );
-      if (trailingOutput !== undefined) relay.push(trailingOutput);
+      // ADR-0019: reached only once a genuine `ExecutionOutcome` is about to
+      // be returned — never for a cancelled run (the early return above) and
+      // never for a run that failed before producing one (every earlier
+      // `return` in this method). That is the same "no outcome, no capture"
+      // rule the ADR states for cancellation, extended to the one case it
+      // does not itself name.
+      await this.captureRichOutput(run, relay, filesBefore);
+
+      // The same race `readSyscc`'s own two checks guard against, widened:
+      // capture adds a listing call and, per candidate, a fetch and a delete,
+      // all after `outcome` is already built — a much larger window than the
+      // single network call `readSyscc` was closing, for a cancel that lands
+      // after the program's own result is already known but before `done`
+      // resolves. Without this check, `cancelActive` would report success
+      // while the run still settled with a genuine, non-`cancelled` outcome —
+      // the same wrong shape `readSyscc`'s comment describes, here reached
+      // through capture rather than through the SYSCC read itself. It does
+      // not undo anything capture already did (a pushed `RichOutput`, a
+      // deleted file): only the outcome this call resolves with changes.
+      if (this.isCurrentRunAborted()) {
+        return fail({ code: "cancelled" }, "running the program");
+      }
+
       return { ok: true, value: outcome };
     } finally {
       relay.close();
+    }
+  }
+
+  /**
+   * ADR-0019's mechanism: list the working directory again now that the job
+   * has settled without being cancelled, diff against `filesBefore`, and push
+   * each whitelisted candidate's `RichOutput` to the relay — decoded and,
+   * once pushed, deleted; skipped and left undeleted if it exceeds
+   * `richOutput.ts`'s cap or cannot be fetched. Never fails the run: every
+   * failure here reaches `onBackgroundFailure` or becomes a `text/plain` skip
+   * note, the same "best-effort, report honestly" shape `readSyscc` already
+   * gives a failing `SYSERRORTEXT` read.
+   *
+   * `filesBefore` failing is a case ADR-0019 does not name — its worked
+   * example assumes the pre-run listing succeeds. This reading extends the
+   * ADR's own "no outcome, no capture" logic for a cancelled run: without a
+   * baseline there is nothing to diff, so the whole step is skipped rather
+   * than fabricating one against an empty listing, which would misreport
+   * every file already in the directory as newly created.
+   */
+  private async captureRichOutput(
+    run: ActiveRun,
+    relay: OutputRelay,
+    filesBefore: ComputeResult<readonly SessionFile[]>,
+  ): Promise<void> {
+    if (!filesBefore.ok) {
+      this.onBackgroundFailure?.(
+        `could not list the session's working directory before the run, so no rich output could be captured for it: ${filesBefore.reason}`,
+      );
+      return;
+    }
+
+    const filesAfter = await listSessionFiles(this.client, this.session, {
+      signal: run.controller.signal,
+    });
+    if (!filesAfter.ok) {
+      this.onBackgroundFailure?.(
+        `could not list the session's working directory after the run, so no rich output could be captured for it: ${filesAfter.reason}`,
+      );
+      return;
+    }
+
+    const candidates = selectRichOutputCandidates(
+      filesBefore.value,
+      filesAfter.value,
+    );
+
+    for (const candidate of candidates) {
+      if (exceedsCaptureCap(candidate.file)) {
+        relay.push(
+          skippedCaptureOutput(
+            candidate.file.name,
+            `it is larger than the ${String(MAX_CAPTURE_BYTES)}-byte capture limit`,
+          ),
+        );
+        continue;
+      }
+
+      const content = await readFileContent(this.client, candidate.file, {
+        signal: run.controller.signal,
+        maxBytes: MAX_CAPTURE_BYTES,
+      });
+      if (!content.ok) {
+        relay.push(
+          skippedCaptureOutput(
+            candidate.file.name,
+            describeComputeProblem(content.problem),
+          ),
+        );
+        continue;
+      }
+
+      relay.push(decodeRichOutput(candidate.mime, content.value));
+
+      // ADR-0019 point 9: a failed deletion is logged, not surfaced or
+      // retried, the same shape `close()`'s `onBackgroundFailure` already
+      // gives a cancellation that could not be acted on — a leaked file is a
+      // much smaller problem than failing an otherwise-successful run over
+      // its own cleanup step. Point 10: a *skipped* file (the two arms above)
+      // is never deleted at all — only a capture this backend actually read
+      // is assumed safe to discard.
+      const deleted = await deleteSessionFile(this.client, candidate.file, {
+        signal: run.controller.signal,
+      });
+      if (!deleted.ok) {
+        this.onBackgroundFailure?.(
+          `could not delete captured rich-output file "${candidate.file.name}": ${deleted.reason}`,
+        );
+      }
     }
   }
 

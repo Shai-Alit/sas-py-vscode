@@ -57,13 +57,20 @@ import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
 import { request as httpsRequest } from "node:https";
 
 /**
- * How much of a response body to read before giving up on it.
+ * How much of a response body to read before giving up on it, absent a
+ * per-request override.
  *
  * A token response is a few hundred bytes. This is not sized to be generous, it
  * is sized to bound the damage when the thing on the other end is not a token
  * endpoint at all — a proxy that streams an error page, or a misrouted request
  * that lands on something enormous. Without a cap, that is memory growth with an
  * unhappy user at the end of it rather than an error.
+ *
+ * {@link TransportRequest.maxBodyBytes} overrides this per request. The one
+ * caller that needs to (`src/compute/files.ts`'s rich-output content fetch,
+ * slice 3c-i, ADR-0019) raises it to accommodate a real figure, up to
+ * ADR-0019's own 10 MiB cap — every other caller (a token response, a compute
+ * session or job representation) keeps this default unchanged.
  */
 export const MAX_BODY_BYTES = 1_048_576;
 
@@ -90,6 +97,29 @@ export interface TransportResponse {
    */
   readonly headers: Readonly<Record<string, string>>;
   text(): Promise<string>;
+  /**
+   * The response body as raw bytes, exactly as received — never decoded.
+   *
+   * **Optional.** Every caller before slice 3c-i read `text()` alone, and
+   * `Buffer.toString("utf8")` — what `text()` is built from — is a fine
+   * decode for all of them: a token, a compute session, a job representation
+   * are all textual. It is not a fine decode for a matplotlib figure's PNG
+   * bytes, which `src/compute/files.ts`'s content fetch needs verbatim:
+   * invalid-UTF-8 byte sequences (near-certain in real PNG data — its CRCs
+   * and zlib streams are arbitrary bytes) get replaced with U+FFFD on decode,
+   * and that replacement cannot be undone by re-encoding the string. This
+   * accessor exists so that caller can read the same buffered response
+   * {@link text} does, without the lossy round trip.
+   *
+   * `nodeHttpTransport` provides it from the same buffer `text()` reads, at
+   * no extra network cost — the whole body is already read into memory
+   * before either accessor is called. A caller that needs bytes and is
+   * given a transport whose response has no `bytes` at all (an injected test
+   * double built before this existed, say) must treat that as "cannot read
+   * this response's content", not silently fall back to `text()` and accept
+   * the corruption this accessor exists to avoid.
+   */
+  bytes?: () => Promise<Uint8Array>;
 }
 
 export interface TransportRequest {
@@ -117,6 +147,15 @@ export interface TransportRequest {
   body?: string | Uint8Array | undefined;
   /** Cancels the request. The caller supplies the timeout. */
   signal?: AbortSignal;
+  /**
+   * Overrides {@link MAX_BODY_BYTES} for this one request.
+   *
+   * `src/compute/files.ts`'s content fetch is the only caller with a reason
+   * to raise it (ADR-0019's 10 MiB rich-output cap) — every other request in
+   * this codebase reads a token or a Compute JSON representation, all of
+   * which are small, and keeps the default by leaving this unset.
+   */
+  maxBodyBytes?: number | undefined;
 }
 
 /**
@@ -266,6 +305,8 @@ export const nodeHttpTransport: HttpTransport = (url, init) =>
       });
     });
 
+    const cap = init.maxBodyBytes ?? MAX_BODY_BYTES;
+
     request.on("response", (response) => {
       const status = response.statusCode ?? 0;
       const headers = collectHeaders(response.headers);
@@ -276,16 +317,14 @@ export const nodeHttpTransport: HttpTransport = (url, init) =>
       response.on("data", (chunk: Buffer) => {
         if (overflowed) return;
         length += chunk.length;
-        if (length > MAX_BODY_BYTES) {
+        if (length > cap) {
           overflowed = true;
           // Stop reading rather than accumulate a body we have already decided
           // not to trust. `destroy` here ends the response, not the process.
           response.destroy();
           finish(() => {
             reject(
-              new Error(
-                `the response body exceeded ${String(MAX_BODY_BYTES)} bytes`,
-              ),
+              new Error(`the response body exceeded ${String(cap)} bytes`),
             );
           });
           return;
@@ -300,13 +339,21 @@ export const nodeHttpTransport: HttpTransport = (url, init) =>
       });
 
       response.on("end", () => {
-        const body = Buffer.concat(chunks).toString("utf8");
+        // Buffered once, read both ways from the same bytes: `text()` decodes
+        // it as UTF-8 (fine for every caller before 3c-i — a token, a Compute
+        // JSON representation), and `bytes()` hands back a copy of the same
+        // buffer undecoded, for the one caller (`src/compute/files.ts`) that
+        // cannot afford `text()`'s lossy round trip. See `bytes`'s own doc
+        // comment on `TransportResponse`.
+        const raw = Buffer.concat(chunks);
+        const body = raw.toString("utf8");
         finish(() => {
           resolve({
             ok: status >= 200 && status < 300,
             status,
             headers,
             text: () => Promise.resolve(body),
+            bytes: () => Promise.resolve(new Uint8Array(raw)),
           });
         });
       });

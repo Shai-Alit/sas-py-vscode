@@ -300,6 +300,26 @@ function buildClient(slot: JobSlot): ComputeClient {
           }
           return ok({ count: 0, items: [] });
         }
+        // ADR-0019 (3c-i): `runProgram` lists the session's working
+        // directory before and after every run, unconditionally, to look for
+        // rich output. Nothing in this double's simulated session ever
+        // writes a file there, so an always-empty directory is the whole of
+        // what these two need to answer — `backend-contract-suite.ts` has no
+        // case that expects a candidate to be found.
+        case "getFiles":
+          return ok({
+            isDirectory: true,
+            links: [
+              {
+                rel: "getDirectoryMembers",
+                method: "GET",
+                href: "/files/cwd/members",
+                type: "application/vnd.sas.collection",
+              },
+            ],
+          });
+        case "getDirectoryMembers":
+          return ok({ count: 0, items: [] });
         default:
           throw new Error(
             `recorded-proc-python: unscripted request rel "${request.link.rel}"`,
@@ -340,6 +360,12 @@ function session(): ComputeSession {
         rel: "variables",
         href: "/variables",
         responseType: "application/vnd.sas.collection",
+      },
+      {
+        method: "GET",
+        rel: "getFiles",
+        href: "/files/cwd",
+        type: "application/vnd.sas.compute.file.properties",
       },
     ],
   };

@@ -48,15 +48,19 @@ const CORPUS_DIR = "submission-corpus";
  * quote-heavy case standing in for the rest of the tokenisation-hostile group,
  * which the unit tier already covers exhaustively against the recorded shape.
  *
- * **What this does not prove — the read-back path.** `ComputeResponse.text` is
- * a decoded string: `transport.ts` reads every response through Node's UTF-8
- * decoder, and nothing in this project's client exposes a raw response body. So
- * the read-back side of this round trip is only as byte-faithful as UTF-8
- * decode-then-re-encode, which is lossless for well-formed UTF-8 text and is not
- * a claim about arbitrary binary. That is an honest description of this corpus's
- * scope, not a gap being papered over: every case is real Python *source*, which
- * is well-formed UTF-8 by construction, and 3a has never proposed uploading
- * anything else.
+ * **What this does not prove — the read-back path.** This suite reads the
+ * fileref's content back through `ComputeResponse.text`, a decoded string, and
+ * compares it against the source re-encoded through the same UTF-8 path —
+ * not against `ComputeResponse.rawBody`, which slice 3c-i (ADR-0019) added to
+ * `client.ts` for exactly the case this corpus does not have: a binary
+ * response. So this suite's read-back side is only as byte-faithful as UTF-8
+ * decode-then-re-encode, which is lossless for well-formed UTF-8 text and is
+ * not a claim about arbitrary binary. That is an honest description of this
+ * corpus's scope, not a gap being papered over: every case here is real Python
+ * *source*, which is well-formed UTF-8 by construction, and 3a has never
+ * proposed uploading anything else. `test/live/proc-python-rich-output.test.ts`
+ * is where a real binary read-back (a PNG) is actually exercised, via
+ * `rawBody`.
  *
  * **What this does not prove — the interpreter.** Nothing here runs any Python
  * at all. This suite ends at "the deployment stored the bytes and handed them

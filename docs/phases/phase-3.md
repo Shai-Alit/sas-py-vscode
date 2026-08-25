@@ -90,8 +90,11 @@ in scope, not deferred. *Medium.*
 
 > **Open item, found during 3b's review (2026-08-25):** nothing in the
 > `ExecutionBackend` seam is localised today — `backend.ts`'s own doc comment
-> on `RichOutput` names the three extension-authored English strings that
-> exist so far. Neither `procPython.ts` nor `logFilter.ts` may import `vscode`
+> on `RichOutput` names the extension-authored English strings that exist so
+> far (three when this item was written; 3c-i's `richOutput.ts` added a
+> fourth, `skippedCaptureOutput`, so the count is not this item's own point —
+> the seam having no localisation boundary at all is). Neither `procPython.ts`
+> nor `logFilter.ts` may import `vscode`
 > (ADR-0009), so `l10n.t()` has nowhere to live upstream of here, and ADR-0015
 > never assigned this seam a localisation boundary. 3d-i's output channel and
 > this slice's webview are the first layers in the chain that already have to
@@ -237,9 +240,18 @@ ADR first; it is not repeated here.
 - **`src/compute/files.ts` (new).** Owns the Compute service's files API:
   listing a session's working directory (`getFiles` → `getDirectoryMembers`,
   ADR-0010 link-following, never a composed path), reading one file's
-  content, and deleting one file with `If-Match` off a properties `GET`'s
-  `ETag` (finding 65). Mirrors `variables.ts`/`fileref.ts`'s shape — one
-  small area of the Compute API, own module, never imports `vscode`.
+  content, and deleting one file with `If-Match` off a `getFileProperties`
+  `GET`'s `ETag` (finding 65, relation name confirmed by finding 68 — not
+  `self`/`delete`, both plausible guesses finding 68 ruled out). Mirrors
+  `variables.ts`/`fileref.ts`'s shape — one small area of the Compute API,
+  own module, never imports `vscode`.
+- **The transport layer needed a prerequisite it did not have** (finding 69):
+  `auth/transport.ts`/`src/compute/client.ts` could not carry a binary
+  response body byte-for-byte or above a 1 MiB cap before this slice. Fixed as
+  part of it — `TransportResponse.bytes()`, `ComputeResponse.rawBody`,
+  `maxBodyBytes` — see finding 69 and the short amendment on ADR-0019 itself.
+  Not a change to ADR-0019's own decision, but load-bearing for
+  `readFileContent` to be correct at all.
 - **`src/backend/richOutput.ts` (new).** The pure decision logic ADR-0019
   describes: diff two directory listings by name+size, filter to the
   `.png`/`.html` whitelist, sort by filename, and map a fetched file's bytes
@@ -281,10 +293,10 @@ ADR first; it is not repeated here.
     and asserting the `RichOutput` that comes back — the unit tier proves
     this backend calls the right things in the right order, not that a real
     deployment answers the way the recording assumes.
-- **Coverage-scope check** (`scripts/check-coverage-scope.mjs`) needs both
-  new files declared on the correct side — neither imports `vscode`, so both
-  stay inside the unit-reachable set ADR-0009 defines, same as
-  `logFilter.ts`/`variables.ts`/`fileref.ts` today.
+- **Coverage-scope check** (`scripts/check-coverage-scope.mjs`) — nothing to
+  declare by hand: the check derives the exclude list from the AST itself, and
+  ran clean against both new files unmodified (neither imports `vscode` nor is
+  types-only), same as `logFilter.ts`/`variables.ts`/`fileref.ts` today.
 - **Adversarial subagent review before this is proposed** — this slice adds
   source and a new documented invariant (ADR-0019 itself), squarely the case
   this repo's standing policy requires it for.
@@ -833,3 +845,202 @@ this finding as the evidence.
 
 **Session cleanup:** the probe session was deleted and confirmed gone with
 `404` after this check.
+
+### Finding 68 — The listing-item and directory-properties link relations, printed rather than read off prose
+
+Findings 61 and 65 described this mechanism's relations in prose —
+"the file's own `getFileProperties`/`self` link", "`deleteFile` (`DELETE` on
+a file's own link)" — without printing the literal `rel` strings a caller has
+to search for. Executing 3c-i needed the exact names, so this is that probe,
+run against `verde` on 2026-08-25: a fresh session, a context of
+`SAS Job Execution compute context`, a `PROC PYTHON` job writing one small
+text file (`probe_rel_check.txt`, 16 bytes, chosen over a PNG because the
+relation names do not depend on the file's content), and the full `links`
+array read at both levels before any relation was followed.
+
+**The session's `getFiles` relation resolves to the working directory's own
+properties representation** (`Accept: application/vnd.sas.compute.file.properties+json` —
+without the `+json` suffix the deployment answers `406`, confirming
+`computeMediaType`'s suffixing rule applies here too). That representation's
+own `links` carry, alongside `getDirectoryMembers`, five directory-management
+relations this module never follows: `self`, `getDirectoryProperties`
+(identical href to `self`), `deleteDirectory`, `renameDirectory`,
+`makeDirectory`, `createFile` (on the directory, for creating a *new* file —
+distinct from the per-item `createFile` below), and `copyDirectory`.
+
+**A listing item's own link set, confirmed in full:**
+
+```json
+{
+  "isDirectory": false,
+  "name": "probe_rel_check.txt",
+  "path": "/opt/sas/viya/config/var/run/compsrv/default/<session-guid>",
+  "size": 16,
+  "version": 1,
+  "links": [
+    { "rel": "self", "method": "GET" },
+    { "rel": "getFileProperties", "method": "GET" },
+    { "rel": "getFile", "method": "GET" },
+    { "rel": "deleteFile", "method": "DELETE" },
+    { "rel": "createFile", "method": "PUT" },
+    { "rel": "renameFile", "method": "PUT" },
+    { "rel": "copyFile", "method": "POST" }
+  ]
+}
+```
+
+(hrefs and the `~fs~`-escaped path segment finding 61 already described are
+elided above; every href on this item resolves to the same encoded path,
+`.../content` appended for `getFile`/`createFile`.) `self` and
+`getFileProperties` are **two distinct relation names at an identical href**
+— confirmed byte-identical, not assumed synonyms, which settles what finding
+65's own "`getFileProperties`/`self`" phrasing left ambiguous. **`deleteFile`
+is its own name, not `delete`** — the bare `delete` this project's other
+resources (a session, a job, a fileref's `deassign`) all use does not appear
+on a file item at all, so composing it by analogy from those would have been
+a wrong guess this probe exists to rule out before `files.ts` shipped with it.
+
+**The ETag round trip, re-confirmed alongside the relation names:** `DELETE`
+on `deleteFile` with no `If-Match` answered `428`; the identical request with
+`If-Match` set from the `ETag` **header** of a `getFileProperties` `GET`
+(absent from that response's JSON body, as finding 65 already found)
+answered `204`; a following `GET` on the same item answered `404`. No new
+behaviour here, only the same finding 65 measured, now against the exact
+relation names rather than a paraphrase of them.
+
+**Reading:** `files.ts` is written against these confirmed names
+(`GET_FILES_REL`, `DIRECTORY_MEMBERS_REL`, `FILE_PROPERTIES_REL`,
+`FILE_CONTENT_REL`, `FILE_DELETE_REL`) rather than against findings 61/65's
+prose. `deleteSessionFile` follows `getFileProperties`, not `self`, for its
+fresh-`ETag` read — either would work, since they are the same resource, but
+`getFileProperties` is the clearer name to read in a call site and is the one
+this finding actually printed.
+
+**What this did not settle:** whether `getDirectoryProperties`/`self`'s own
+apparent duplication (two names, one href) holds for every representation in
+this API family, or is specific to a compute file/directory resource — not
+pursued, since `files.ts` only ever needs one of the two names to work.
+Viya 3.5 is unprobed here, as ever.
+
+**Session cleanup:** the probe session was deleted and confirmed gone with
+`404` after this check.
+
+### Finding 69 — `ComputeClient`/`nodeHttpTransport` had no way to carry a binary response, discovered while writing `files.ts`'s content fetch
+
+Implementing `readFileContent` surfaced that `auth/transport.ts`'s
+`nodeHttpTransport` — the one transport every `ComputeClient` request shares
+— always decoded a response body with `Buffer.toString("utf8")` and capped it
+at `MAX_BODY_BYTES` (1 MiB), regardless of content type. Neither limit is a
+wire finding; both are properties of code this project had already written,
+for callers (a token response, a Compute JSON representation) that were
+always textual and always small. Finding 61's own read of a PNG's bytes back
+"directly as bytes" was true of the *deployment*, probed with `curl` outside
+this codebase — it was never a claim about what `client.ts` could do, and
+nothing before 3c-i had ever asked it to carry binary content.
+
+Decoding a PNG's bytes as UTF-8 is lossy and irreversible wherever the byte
+stream is not valid UTF-8 — near-certain in real PNG data, whose CRCs and
+zlib-compressed chunks are arbitrary bytes — so fetching finding 61/66's own
+23,206- or 262,591-byte figures through the transport as it stood would have
+silently corrupted them. Separately, the 1 MiB cap sits well under ADR-0019's
+own 10 MiB rich-output ceiling, a size finding 66 never had reason to probe
+(its largest measured figure was 262,591 bytes).
+
+**Fixed as part of 3c-i, confirmed with Sean before touching the shared
+layer** (a cross-cutting change, `auth/transport.ts` and `src/compute/client.ts`
+being shared by every Compute request in the project): `TransportResponse`
+gained an optional `bytes()` accessor, reading the same buffered response
+`text()` already does — no extra network cost — and `TransportRequest`/
+`ComputeRequest` gained an optional `maxBodyBytes` override, defaulting to the
+existing 1 MiB cap when absent. `ComputeResponse` gained `rawBody`, populated
+from `bytes()` whenever the transport provides it. Every existing caller is
+unaffected: `bytes`/`maxBodyBytes` are optional, no existing `TransportResponse`
+literal in the test suite needed updating, and the 1 MiB default is unchanged
+for everything that does not explicitly raise it. `files.ts`'s `readFileContent`
+is, today, the one caller that does — passing `richOutput.ts`'s
+`MAX_CAPTURE_BYTES` (10 MiB) through as the cap for a rich-output content
+fetch.
+
+**Reading:** this is not an amendment to ADR-0019's decision (the capture
+mechanism itself is unchanged) but a prerequisite ADR-0019 turned out to
+depend on without saying so — recorded here, and as a short amendment on
+ADR-0019 itself, so the next reader of that ADR does not have to rediscover
+that the byte-perfect fetch it describes needed the transport layer's own
+capability widened first.
+
+**What this did not settle:** whether a future caller wanting bytes from a
+transport that predates `bytes()` (none exist in this codebase today) should
+get a distinguishable failure rather than a silent `rawBody: undefined` —
+`files.ts`'s `readFileContent` already treats an absent `rawBody` as
+`response-malformed`, which was judged sufficient rather than adding a new
+`ComputeProblem` member for a case nothing has ever produced.
+
+### Finding 70 — `proc python infile=<fileref>;` alone never closes its step; the job reports `completed`, `SYSCC` reads its stale default, and nothing it wrote is visible, until something else closes it
+
+The live rich-output test (`test/live/proc-python-rich-output.test.ts`) failed
+its first real run against `verde` with zero outputs of any kind — not even
+the ordinary `text/plain` log lines a run with no `print()` output would
+still be expected to lack, which was itself the tell, since `SYSCC` still read
+`0` and the job still reported `completed`. Diagnosed with a standalone script
+against the project's own compiled `src/compute/*` modules (not the test
+suite — read-only-ish probing per the `viya-api-probe` skill's own workflow),
+against a fresh session, first job:
+
+A `proc python infile=<fileref>;` job — exactly what `runProgram` submits
+today, no `run;` — reports `state: completed` in under a second, nowhere near
+the several real seconds a matplotlib import measurably takes. Its log stays
+frozen at exactly two lines (the wrapping statement's own `source`-typed echo,
+and one blank `note`) for over sixty seconds of continuous polling, on both
+the job's log and a bare directory listing — no Python banner, no `print()`
+output, no `NOTE: PROCEDURE PYTHON used`, and the file the script wrote is
+absent from `getDirectoryMembers` the entire time. `SYSCC` reads `0`
+throughout, which is indistinguishable from genuine success, because `0` is
+also its value before anything has run.
+
+**Submitting a second job to the same session immediately surfaces
+everything the first job actually did** — its full log (Python banner, real
+output, procedure NOTE) appears prefixed onto the second job's own, and the
+first job's output file appears in the directory listing. Reproduced twice.
+A single non-job request (a bare `SYSCC` read) does **not** have this effect
+— only starting a new step does.
+
+**Confirmed as the fix: appending `run;` as a second statement in the same
+job.** `createJob(client, session, ["proc python infile=probeG;", "run;"])`
+against a fresh session's first job produced `state: completed` at the
+correct elapsed time (matching the real import cost), the full log
+immediately, and the output file in the very first post-job listing —
+no second job needed.
+
+**Reading:** SAS does not consider a step's log, variables or file writes
+final until the step closes — ordinarily at `run;`/`quit;` or, failing that,
+implicitly at the *next* step's boundary. `proc python infile=<fileref>;`
+alone never closes its own step, so the job resource's `completed` reflects
+only that the request was accepted and the file was read, not that the step
+finished — and every read this project makes afterward (`SYSCC`, the log, and
+now `files.ts`'s directory listing) can race a step that has not actually
+closed. This is not the poisoning finding 33 already named — no earlier
+statement failed here, this is a session's very first job — but it produces
+the same outward shape finding 33 does: `completed`, and nothing ran.
+
+**Why nothing caught this until now.** Finding 61's own probe used a
+`submit`/`endsubmit` block, not `infile=`, to write and verify a file — a
+different submission path, not the one `runProgram` actually sends.
+`test/live/viya4-job.test.ts`, the only prior live test to submit a job at
+all, submits a bare `%put <marker>;`, never `PROC PYTHON`. So `infile=`'s own
+completion signal, read immediately after a session's first job, had never
+been exercised end to end against a real deployment before this slice's own
+live test did — and ADR-0014's `SYSCC`-over-`state` mitigation, aimed at
+finding 33's poisoning case, does not protect against this one, since `SYSCC`
+itself is one of the things left unflushed.
+
+**Fixed in 3c-i** (ADR-0014 amendment, below): `runProgram`'s and `reset()`'s
+`createJob` calls both now send the statement as two array elements, the
+second always `"run;"`. No change to `logFilter.ts` was needed — `isNoiseLine`
+already excludes every `source`-typed line, which is what `run;`'s own echo
+arrives as, the same as the wrapping statement's.
+
+**What this does not settle.** Whether `quit;` is also needed alongside
+`run;` for every case, or whether a step can be left open long enough that a
+*third* job (not just a second) is needed to flush it, are both unprobed —
+`run;` alone was sufficient in every case tried here. Viya 3.5 is unprobed for
+this, same as everything else in this phase.

@@ -11,7 +11,15 @@
   (coverage-scope discipline), ADR-0010 (link-following discipline)
 - **Executed in:** slice `3c-i`
 - **Evidence:** `docs/phases/phase-3.md`'s 2026-08-25 probe-findings section,
-  findings 61–67
+  findings 61–69
+
+> **Amended 2026-08-25 (slice 3c-i, while executing this ADR).** Point 7's
+> "fetch each candidate's content" turned out to have a prerequisite this ADR
+> did not name: `auth/transport.ts`/`src/compute/client.ts` could not carry a
+> binary response body byte-for-byte, or above a 1 MiB cap, before this slice
+> extended them. See the amendment at the end of this record and finding 69.
+> This does not change the mechanism decided below — only what had to be true
+> of the transport underneath it for that mechanism to work at all.
 
 ## Context
 
@@ -166,3 +174,63 @@ them are `RichOutput` arms yet. Widening the whitelist without widening
 
 **Viya 3.5 is unverified for every part of this**, same as everything else
 in this project until it is actually probed against one.
+
+## Amendment — 2026-08-25 (slice 3c-i): the transport had no way to carry a binary response
+
+Writing `src/compute/files.ts`'s `readFileContent` against point 7 above
+surfaced that the shared HTTP transport could not actually do what this
+mechanism assumes. `auth/transport.ts`'s `nodeHttpTransport` — the one
+transport every `ComputeClient` request goes through — always decoded a
+response body with `Buffer.toString("utf8")` and capped it at
+`MAX_BODY_BYTES` (1 MiB), independent of what was being fetched. Neither of
+those is a wire finding about Viya; both are properties of code this project
+had already written, for callers — a token response, a Compute JSON
+representation — that were always textual and always small. Finding 61's own
+"read the response body directly as bytes" was a true statement about the
+*deployment*, probed with `curl` outside this codebase; it was never a claim
+about what `client.ts` could do, and nothing before this slice had ever asked
+it to carry binary content at all.
+
+The consequence was not hypothetical. `Buffer.toString("utf8")` replaces any
+byte sequence that is not valid UTF-8 with U+FFFD, and that replacement
+cannot be undone by re-encoding the resulting string — so fetching a real PNG
+(finding 61/66's own 23,206- and 262,591-byte figures, both containing
+arbitrary compressed bytes in their CRCs and zlib streams) through
+`ComputeClient.send` as it stood would have silently corrupted it. Separately,
+the 1 MiB cap sits well under this ADR's own 10 MiB rich-output ceiling — a
+size finding 66 never had reason to probe, since its largest measured figure
+was under 300 KB.
+
+**Fixed as part of this slice, confirmed with the developer before touching a
+layer every Compute request shares:**
+
+- `TransportResponse` gained an optional `bytes(): Promise<Uint8Array>`,
+  reading the same buffered response `text()` already does — no additional
+  network cost, since the whole body is read into memory before either
+  accessor is ever called.
+- `TransportRequest` and `ComputeRequest` gained an optional `maxBodyBytes`,
+  defaulting to the existing 1 MiB cap when a caller does not raise it.
+- `ComputeResponse` gained `rawBody`, populated from `bytes()` whenever the
+  transport provides one.
+
+Both additions are optional, so every existing `TransportResponse` built by a
+test before this slice — none of which construct a `bytes()` method — keeps
+compiling and keeps exercising the "no raw bytes available" path unchanged.
+No existing caller's behaviour changes: the 1 MiB default is untouched for
+every request that does not explicitly override it. `rawBody` is, in fact,
+populated on every request the real transport answers — `sendRequest` reads
+`bytes()` once before it branches on status, so it is present (typically
+zero-length) even on a 304 — but every existing caller keeps reading `body`/
+`text` unchanged and never looks at it, which is the sense in which nothing
+about them changes. `files.ts`'s `readFileContent` is, today, the only caller
+that sets `maxBodyBytes` or reads `rawBody`, passing `richOutput.ts`'s
+`MAX_CAPTURE_BYTES` (10 MiB) through.
+
+**This does not reopen this ADR's own decision.** The mechanism — diff, then
+whitelist, then order, then cap, then decode — is exactly as decided above.
+What changed is a fact about the layer underneath it: that a byte-perfect
+fetch was actually possible through this project's own client, which turned
+out not to be true until this slice made it true. See finding 69
+(`docs/phases/phase-3.md`) for the full account, including what this
+amendment does not settle (a distinguishable failure for a transport that
+predates `bytes()`, which no transport in this codebase is).

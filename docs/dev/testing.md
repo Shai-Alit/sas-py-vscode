@@ -264,7 +264,7 @@ to get green is worse than one that skips.
 
 This tier was written in Phase 0 and first run on **2026-08-19**. It failed —
 it had been asking for `application/vnd.sas.identity+json`, the media type
-[finding 6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/PROBE-FINDINGS.md)
+[finding 6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406)
 records as a `406` and that `src/auth/identity.ts` explicitly warns against. Two
 things follow, and they generalise past this one string. A live test is only
 wrong against a live deployment, so the interval between writing one and running

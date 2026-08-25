@@ -137,7 +137,7 @@ log file attached to a bug report.
 If a deployment refuses the summary type, the extension retries with the full one
 and discards the personal fields as it parses. That path exists because no Viya
 3.5 deployment was available to check the summary type against — see
-[`PROBE-FINDINGS.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/PROBE-FINDINGS.md),
+[`docs/phases/phase-1.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406),
 findings 6 to 9, for what was and was not established.
 
 The identity is read once per window and held. This resource asks not to be

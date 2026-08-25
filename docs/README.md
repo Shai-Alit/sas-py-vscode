@@ -42,9 +42,11 @@ URL.
 change with no documentation change is an incomplete pull request.
 
 **Do not document what you have not verified.** Claims about Viya behaviour must
-be supported by [`PROBE-FINDINGS.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/PROBE-FINDINGS.md). In particular, no
-document may claim Viya 3.5 support while it remains unverified — say so plainly
-instead. Both AI reviewers are instructed to flag violations of this.
+be supported by the **Probe findings** section of the relevant phase file
+(`docs/phases/phase-N.md`) — findings no longer live in one standalone file. In
+particular, no document may claim Viya 3.5 support while it remains unverified —
+say so plainly instead. Both AI reviewers are instructed to flag violations of
+this.
 
 **Machine-readable facts are generated, never transcribed.** A hand-typed copy of
 a settings table is a copy that will silently go stale.

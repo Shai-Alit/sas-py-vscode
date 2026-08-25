@@ -180,13 +180,16 @@ git commit -m "feat(python): add SAS log to Python stdout filter"
 determine how a matplotlib figure and a DataFrame HTML repr can be retrieved.
 Candidates: write to the session filesystem and fetch via the Compute files API,
 or base64 through the log. Done 2026-08-25 against `verde` (Viya 4) — findings
-61–64 below. **The file-write-plus-Compute-files-API mechanism won outright**:
+61–66 below. **The file-write-plus-Compute-files-API mechanism won outright**:
 byte-perfect for both a PNG and an HTML table, with the server reporting the
 correct MIME type unprompted. Base64-through-the-log is not viable as a naive
-channel — finding 63 measured a hard character-count wrap with no boundary
+channel — finding 62 measured a hard character-count wrap with no boundary
 marker, which corrupts anything long enough to wrap unless the emitting code
 adopts its own chunking-and-reassembly protocol, which the file mechanism makes
-unnecessary.
+unnecessary. A second pass (findings 65–66) closed the two gaps the first
+pass left open: `deleteFile` needs `If-Match` with an ETag obtainable from a
+properties `GET` alone, no content fetch required, and the mechanism holds at
+a realistic image size (262,591 bytes, not just 23,206).
 
 ☐ **3c step 2 — size and split.** Turn the findings into one or more sized slices.
 Proposed, pending confirmation: **3c-i** — matplotlib/pandas rich-output capture
@@ -664,11 +667,61 @@ poisoned by an earlier malformed submission on the same session, and
   cleanup convention (this probe deleted its own files by relying on session
   teardown, per finding below, not by exercising `deleteFile` successfully —
   see next point).
-- **`deleteFile` on an individual file returned `428 Precondition Required`**
-  in this probe, suggesting an `If-Match` header this probe did not supply.
-  Not investigated further, since deleting the whole probe session reclaimed
-  its private working directory (confirmed via a subsequent `404` on the
-  session itself) and made the individual file deletes moot for cleanup
-  purposes. A real implementation that wants to delete one rich-output file
-  without tearing down the session will need to resolve this.
-- **Viya 3.5.** Not probed, as ever.
+- **Viya 3.5.** Not probed, as ever — `creds.json` carries no 3.5 entry to
+  probe against.
+
+### Finding 65 — `deleteFile` needs `If-Match`, and the ETag is available without fetching the file's content
+
+The `428 Precondition Required` finding 61 left unresolved is exactly what it
+says: `deleteFile` (`DELETE` on a file's own link) requires an `If-Match`
+header carrying the file's current ETag, quoted. A `DELETE` with no
+`If-Match` at all answers `428`; the identical request with
+`If-Match: "<etag>"` answers `204`, and a follow-up `GET` on the same link
+then answers `404`.
+
+**The ETag does not require fetching the file's content first.** A plain
+`GET` on the file's own `getFileProperties`/`self` link (small, JSON,
+no `Accept` override needed) carries the same `ETag` **HTTP header** a full
+content fetch would — confirmed by deleting with an ETag read exactly this
+way, immediately after writing the file, with no intervening content GET.
+The ETag is **not** present anywhere in that response's JSON **body** — only
+the header carries it.
+
+**Reading:** the write-then-fetch-then-delete lifecycle a real 3c-i
+implementation needs is three requests, not four: write the file from
+Python, `GET` its properties to read `outputs` and grab the `ETag` header
+(or fetch content directly and read the same header off that response, if
+the content is being read anyway), then `DELETE` with `If-Match` once the
+`RichOutput` has been captured. No polling, no retry-on-428 loop needed —
+the precondition is satisfiable on the first attempt as long as the ETag
+came from a GET no earlier request has since invalidated.
+
+### Finding 66 — The write-then-fetch mechanism holds at a realistic image size, not just a trivial one
+
+Finding 61's PNG was a default-sized, mostly-empty 640×480 plot at 23,206
+bytes — small enough that a chunking or size-cap surprise could have hidden
+behind it. A four-panel, 2400×1800-pixel figure with 20,000 plotted points
+per panel and dpi=200 (`fig.savefig`, same mechanism, same session
+filesystem) produced a 262,591-byte file, written and fetched with no
+change to either step: same `getFiles` → `getDirectoryMembers` → `getFile`
+link chain, same byte-for-byte match between `os.path.getsize` and the
+fetched file's size on disk, same valid PNG signature, decoding correctly
+as 2400×1800 RGBA. Roughly 11× finding 61's size, chosen to be closer to
+what a real user's figure looks like rather than the library default.
+
+**Reading:** nothing about the mechanism is size-sensitive in the range this
+probe checked (tens of KB to a few hundred KB). No evidence either way for
+multi-megabyte figures (very high DPI, very large `figsize`, or an
+uncompressed format) — if 3c-i's design ever needs to bound output size, that
+would be its own, separately-motivated decision, not one this probe's
+evidence requires.
+
+### What this second pass did not settle
+
+- **Whether the ETag from a properties `GET` can go stale between reading
+  it and using it in `If-Match`** — e.g., another process rewriting the same
+  filename in between. Not tested; the single-writer, one-session-at-a-time
+  shape of `PROC PYTHON` (serial execution, ADR-0015) makes this an edge case
+  rather than a live concern for 3c-i's design.
+- **Multi-megabyte files.** Not tested at any size above ~256 KB.
+- **Viya 3.5.** Not probed, as ever — no 3.5 credentials available.

@@ -226,6 +226,69 @@ git checkout -b phase-3e-runtime-capabilities
 git commit -m "feat(backend): probe interpreter version and installed packages"
 ```
 
+☐ **3c-i — matplotlib/pandas rich-output capture.** Scoped 2026-08-25, design
+confirmed the same day: **[ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)**
+settles the mechanism (a passive before/after directory diff, not an explicit
+helper library the user's script would have to import) and every wire-level
+detail (the size cap, the closed `.png`/`.html` whitelist, ordering,
+cleanup, cancellation). This is the punch list for executing it — read the
+ADR first; it is not repeated here.
+
+- **`src/compute/files.ts` (new).** Owns the Compute service's files API:
+  listing a session's working directory (`getFiles` → `getDirectoryMembers`,
+  ADR-0010 link-following, never a composed path), reading one file's
+  content, and deleting one file with `If-Match` off a properties `GET`'s
+  `ETag` (finding 65). Mirrors `variables.ts`/`fileref.ts`'s shape — one
+  small area of the Compute API, own module, never imports `vscode`.
+- **`src/backend/richOutput.ts` (new).** The pure decision logic ADR-0019
+  describes: diff two directory listings by name+size, filter to the
+  `.png`/`.html` whitelist, sort by filename, and map a fetched file's bytes
+  plus extension to a `RichOutput` (base64 for `image/png`, UTF-8 decode for
+  `text/html`). No I/O, no `vscode` — same discipline as `logFilter.ts`, and
+  the same reason: this is exactly the kind of decision that wants
+  fixture-tested coverage independent of a real Compute client.
+- **`src/backend/procPython.ts`'s `runProgram` wired to call both**, in the
+  order ADR-0019 gives: snapshot before `createJob`, snapshot after the job
+  settles (skipped entirely if the outcome is `cancelled`), diff, fetch and
+  push each candidate's `RichOutput` to the relay, delete what was
+  successfully captured. A candidate that fails to fetch or exceeds the
+  10 MiB cap pushes a `text/plain` note naming it instead of failing the run
+  — same "best-effort, report honestly" shape `readSyscc` already uses for
+  `SYSERRORTEXT`.
+- **Known, accepted l10n gap, same as `logFilter.ts`'s and this documented
+  elsewhere:** the new "could not retrieve rich output file …" note is
+  another extension-authored English string this seam cannot run through
+  `l10n.t()` (`procPython.ts` still may not import `vscode`). Add it to
+  `backend.ts`'s existing list in the `RichOutput` doc comment rather than
+  treating it as a new, separate gap.
+- **Test plan**, matching the existing shape for a new Compute module plus a
+  new pure `backend/` module:
+  - `test/unit/compute-files.test.ts` — the new module against a recorded
+    transport, the same pattern `compute-variables.test.ts` already uses.
+  - `test/unit/backend-rich-output.test.ts` — the pure diff/filter/sort/decode
+    logic against plain fixtures, including a before/after listing pair
+    shaped like what finding 61's probe actually observed, and a real tiny
+    PNG byte fixture for the decode path (not a recording — a real, minimal
+    PNG belongs in `test/fixtures/`, same as the submission corpus's own
+    fixtures are real files, not descriptions of files).
+  - `test/unit/proc-python-backend.test.ts` extended: a recorded run whose
+    "after" listing carries a new `.png` and a new `.html` produces both
+    `RichOutput`s, in filename order, after the run's text output; a run
+    whose candidate exceeds the size cap produces the skip note instead; a
+    cancelled run captures nothing at all.
+  - A live test against `verde`, gated the same way `viya4-job.test.ts`
+    already is, actually running `fig.savefig(...)` through a real session
+    and asserting the `RichOutput` that comes back — the unit tier proves
+    this backend calls the right things in the right order, not that a real
+    deployment answers the way the recording assumes.
+- **Coverage-scope check** (`scripts/check-coverage-scope.mjs`) needs both
+  new files declared on the correct side — neither imports `vscode`, so both
+  stay inside the unit-reachable set ADR-0009 defines, same as
+  `logFilter.ts`/`variables.ts`/`fileref.ts` today.
+- **Adversarial subagent review before this is proposed** — this slice adds
+  source and a new documented invariant (ADR-0019 itself), squarely the case
+  this repo's standing policy requires it for.
+
 ☐ **3d-i — contribute the run target, and let it decide whether we appear.**
 [ADR-0011](../adr/0011-choosing-where-python-runs.md) settles the mechanism; this
 is the punch list for executing it.

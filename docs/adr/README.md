@@ -49,3 +49,4 @@ Editing history to look wiser than you were defeats the purpose.
 | [0016](0016-api-contracts-are-checked-yaml.md) | API contracts are hand-written YAML, not shipped, and checked against the code in both directions | Accepted |
 | [0017](0017-the-log-stream-is-a-self-driving-pump.md) | The log stream is a self-driving pump, driven by the log's own long poll | Accepted |
 | [0018](0018-the-node-baseline.md) | The Node baseline is derived from `engines.vscode`, not chosen | Accepted |
+| [0019](0019-rich-output-is-captured-by-diffing-the-working-directory.md) | Rich output is captured by diffing the session's working directory | Accepted |

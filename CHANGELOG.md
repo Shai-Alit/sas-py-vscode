@@ -942,6 +942,17 @@ called out under **Changed** with a migration note.
   emitted, it arrives as its own log item with its own `type`, most plausibly
   `note`, and this filter already drops or passes a whole line at a time.
 
+  **`npm run verify` is green** — 979 passing, coverage
+  93.05/95.1/92.48/93.05 (statements/branches/functions/lines), against the
+  93/95/92/93 floor — ratchet raised from 92/95/91/92, since three of the four
+  measured values' integer truncations moved past the existing floor
+  (branches alone stayed at 95). Both AI reviewers approved. Codex's one
+  finding — the dropped-lines marker bypasses `l10n.t()` — is real but its
+  suggested fix is not (`procPython.ts` cannot import `vscode` any more than
+  this module can) and the underlying gap already exists, unflagged, in
+  merged 3a code; recorded rather than patched, in `src/backend/backend.ts`'s
+  `RichOutput` doc comment and in this item's own "Open item" note above.
+
 ### Fixed
 
 - Sign-in against a default Viya 4 deployment now works at all. The built-in

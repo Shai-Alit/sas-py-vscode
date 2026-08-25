@@ -162,8 +162,10 @@ export interface ExecutionResult extends ExecutionOutcome {
  * a decision.** `text/plain`'s `data`, {@link Traceback.message}, and
  * {@link PythonDiagnostic.message} can all carry extension-authored English —
  * `src/backend/procPython.ts`'s `"an unhandled Python exception"` fallback and
- * its `SAS reported an error (SYSCC=…)` message, and `logFilter.ts`'s dropped-
- * lines marker, are the three that exist today. None go through `l10n.t()`,
+ * its `SAS reported an error (SYSCC=…)` message, `logFilter.ts`'s dropped-
+ * lines marker, and `richOutput.ts`'s `skippedCaptureOutput`
+ * (`"could not retrieve rich output file …"`, slice 3c-i) are the four that
+ * exist today. None go through `l10n.t()`,
  * because neither `procPython.ts` nor `logFilter.ts` may import `vscode`
  * (ADR-0009's coverage-scope discipline), and ADR-0015 never assigned this
  * seam a localisation boundary at all. The natural place for one is whatever

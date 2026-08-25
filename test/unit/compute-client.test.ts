@@ -43,13 +43,25 @@ function response(init: {
   status?: number;
   headers?: Record<string, string>;
   text?: string;
+  bytes?: Uint8Array;
 }): TransportResponse {
   const status = init.status ?? 200;
+  // A local `const`, not `init.bytes` re-read inside the closure below: TS
+  // only carries the `!== undefined` narrowing across into a closure for a
+  // `const` binding, not for a property access, which is what forced a
+  // choice between `as Uint8Array` and `!` here in the first place — neither
+  // allowed by this repo's lint config. Binding it once sidesteps both.
+  const bytes = init.bytes;
   return {
     ok: status >= 200 && status < 300,
     status,
     headers: init.headers ?? {},
     text: () => Promise.resolve(init.text ?? ""),
+    // Only present when a test asks for it — deliberately mirrors `bytes`
+    // being optional on the real interface, so every test above this one
+    // (built before `rawBody` existed) keeps exercising the "transport does
+    // not provide bytes" arm rather than being silently upgraded.
+    ...(bytes === undefined ? {} : { bytes: () => Promise.resolve(bytes) }),
   };
 }
 
@@ -593,6 +605,84 @@ describe("createComputeClient", () => {
         !JSON.stringify(result).includes('{"id": '),
         "the unparseable body was repeated into the problem",
       );
+    });
+  });
+
+  describe("raw response bytes", () => {
+    // `rawBody` exists for `src/compute/files.ts`'s content fetch (slice
+    // 3c-i, ADR-0019): `text`'s `Buffer.toString("utf8")` decode is lossy for
+    // a PNG's bytes, so that module reads `rawBody` instead. These tests
+    // prove what this layer does with `TransportResponse.bytes` when a
+    // transport provides it — not what `files.ts` does with the result,
+    // which `compute-files.test.ts` covers.
+    it("carries the transport's raw bytes as rawBody", async () => {
+      const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: record(response({ bytes })).transport,
+      });
+
+      const result = await client.send({ link: SELF });
+
+      assert.ok(result.ok, "a 200 was reported as a failure");
+      assert.deepEqual(result.value.rawBody, bytes);
+    });
+
+    it("leaves rawBody undefined when the transport gives no bytes", async () => {
+      // Every transport this project actually runs (`nodeHttpTransport`)
+      // provides `bytes`; this is the fallback for one that does not, rather
+      // than a case expected against a real deployment.
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: record(response({ text: "ok" })).transport,
+      });
+
+      const result = await client.send({ link: SELF });
+
+      assert.ok(result.ok, "a 200 was reported as a failure");
+      assert.equal(result.value.rawBody, undefined);
+    });
+
+    it("carries rawBody on a 304 too, when the transport provides it", async () => {
+      const bytes = new Uint8Array([1, 2, 3]);
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: record(response({ status: 304, bytes })).transport,
+      });
+
+      const result = await client.send({ link: SELF });
+
+      assert.ok(result.ok, "a 304 was reported as a failure");
+      assert.deepEqual(result.value.rawBody, bytes);
+    });
+
+    it("passes maxBodyBytes through to the transport", async () => {
+      const recorder = record(response({}));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+
+      await client.send({ link: SELF, maxBodyBytes: 10 * 1024 * 1024 });
+
+      assert.equal(only(recorder.calls).init.maxBodyBytes, 10 * 1024 * 1024);
+    });
+
+    it("leaves maxBodyBytes unset when the caller does not raise it", async () => {
+      const recorder = record(response({}));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport: recorder.transport,
+      });
+
+      await client.send({ link: SELF });
+
+      assert.equal(only(recorder.calls).init.maxBodyBytes, undefined);
     });
   });
 

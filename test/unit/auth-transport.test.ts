@@ -341,6 +341,66 @@ describe("nodeHttpTransport", () => {
     );
   });
 
+  it("returns the response's raw bytes via bytes(), undecoded", async () => {
+    // `src/compute/files.ts`'s reason for existing: `text()`'s
+    // `Buffer.toString("utf8")` replaces an invalid byte sequence with
+    // U+FFFD, and that replacement cannot be undone by re-encoding the
+    // string. `0xc3 0x28` is a lead byte followed by an illegal
+    // continuation — the same deliberately-invalid pair the raw-body send
+    // test above uses, here on the *response* side.
+    const raw = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0xc3, 0x28, 0x0a]);
+    handler = (_request, response) => {
+      response.writeHead(200, { "content-type": "application/octet-stream" });
+      response.end(raw);
+    };
+
+    const response = await send("/compute/sessions/S/files/F/content", {
+      method: "GET",
+      headers: {},
+      body: undefined,
+    });
+
+    assert.ok(response.bytes, "nodeHttpTransport did not provide bytes()");
+    const bytes = await response.bytes();
+    assert.deepEqual(new Uint8Array(bytes), new Uint8Array(raw));
+    // The lossy counterpart, named so a future reader sees the contrast
+    // rather than rediscovering it: decoding first and measuring the
+    // re-encoded length shows the round trip does not come back the same
+    // size, let alone the same bytes.
+    const lossyRoundTrip = Buffer.from(await response.text(), "utf8");
+    assert.notEqual(lossyRoundTrip.length, raw.length);
+  });
+
+  it("raises the cap when maxBodyBytes is given", async () => {
+    // One byte over the module default, accepted only because this request
+    // raised its own cap — `src/compute/files.ts`'s content fetch is the one
+    // caller that does, per ADR-0019's 10 MiB rich-output limit.
+    const oversized = MAX_BODY_BYTES + 1;
+    handler = (_request, response) => {
+      response.writeHead(200, { "content-type": "application/octet-stream" });
+      response.end(Buffer.alloc(oversized, "x"));
+    };
+
+    const response = await send("/token", { maxBodyBytes: oversized });
+
+    assert.equal(response.status, 200);
+    const bytes = await response.bytes?.();
+    assert.equal(bytes?.length, oversized);
+  });
+
+  it("still enforces a smaller maxBodyBytes than the module default", async () => {
+    const small = 16;
+    handler = (_request, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("x".repeat(small + 1));
+    };
+
+    await assert.rejects(
+      send("/token", { maxBodyBytes: small }),
+      new RegExp(`response body exceeded ${String(small)} bytes`),
+    );
+  });
+
   it("prefixes Node's error code onto a connection failure", async () => {
     const port = await reservedPort();
 

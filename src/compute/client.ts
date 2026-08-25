@@ -156,6 +156,15 @@ export interface ComputeRequest {
   signal?: AbortSignal | undefined;
   /** Overrides {@link ComputeClientConfig.timeoutMs} for this one request. */
   timeoutMs?: number | undefined;
+  /**
+   * Overrides the transport's default response-body size cap
+   * (`auth/transport.ts`'s `MAX_BODY_BYTES`) for this one request.
+   *
+   * `src/compute/files.ts`'s content fetch is the only caller with a reason to
+   * raise it — ADR-0019 sets a 10 MiB cap on a captured rich-output file,
+   * well above what any other request in this codebase ever reads back.
+   */
+  maxBodyBytes?: number | undefined;
 }
 
 export interface ComputeResponse {
@@ -176,6 +185,27 @@ export interface ComputeResponse {
   readonly text: string;
   /** The parsed body when the response was JSON, `undefined` otherwise. */
   readonly body: unknown;
+  /**
+   * The response body as raw bytes, when the transport provided them.
+   *
+   * Populated on **every** status this layer reports as `ok`, a 304 included
+   * — `sendRequest` reads {@link TransportResponse.bytes} once, before it
+   * branches on status, so a 304's `rawBody` is a real (typically
+   * zero-length) `Uint8Array`, not `undefined`. `test/unit/compute-client.test.ts`'s
+   * "carries rawBody on a 304 too" proves exactly this. The only case this
+   * is actually `undefined` is a transport that provides no
+   * {@link TransportResponse.bytes} at all — every transport this project
+   * actually runs (`nodeHttpTransport`) does provide one, so that case is a
+   * fallback for a transport this codebase does not have, not something a
+   * caller against a real deployment will see. Read this instead of
+   * {@link text} for a binary response: {@link text}'s
+   * `Buffer.toString("utf8")` decode is lossy for bytes that are not valid
+   * UTF-8, which real PNG content is virtually certain to contain.
+   * `src/compute/files.ts`'s content fetch is the one caller that needs this;
+   * every JSON-representation caller in this codebase keeps reading
+   * {@link body}/{@link text} unchanged.
+   */
+  readonly rawBody?: Uint8Array | undefined;
 }
 
 export interface ComputeClient {
@@ -295,9 +325,23 @@ async function sendRequest(
 
   let response: TransportResponse;
   let text: string;
+  let rawBody: Uint8Array | undefined;
   try {
-    response = await transport(url, { method, headers, body, signal });
+    response = await transport(url, {
+      method,
+      headers,
+      body,
+      signal,
+      maxBodyBytes: request.maxBodyBytes,
+    });
     text = await response.text();
+    // Read alongside `text`, from the same already-buffered response, rather
+    // than only when a caller asks for it: `response.bytes` is cheap when
+    // present (no extra network I/O — see its own doc comment) and optional
+    // when it is not, so this never costs anything a caller who only reads
+    // `body`/`text` would notice. `src/compute/files.ts`'s content fetch is
+    // the one caller that reads `rawBody` instead.
+    rawBody = await response.bytes?.();
   } catch (error) {
     // The message only. An injected transport's rejection can carry the request
     // that produced it, and this request's headers contain an access token.
@@ -327,6 +371,7 @@ async function sendRequest(
         ...(contentType === undefined ? {} : { contentType }),
         text,
         body: undefined,
+        ...(rawBody === undefined ? {} : { rawBody }),
       },
     };
   }
@@ -401,6 +446,7 @@ async function sendRequest(
       ...(contentType === undefined ? {} : { contentType }),
       text,
       body: parsed,
+      ...(rawBody === undefined ? {} : { rawBody }),
     },
   };
 }

@@ -7,6 +7,15 @@
 - **Settled by:** the 2-pre probe (`PROBE-FINDINGS.md`, findings 31–39)
 - **Executed in:** slice `2b` (the interface) and slice `3a` (the implementation)
 
+> **Amended 2026-08-25 (slice 3c-i).** `proc python infile=<fileref>;` alone,
+> with no `run;`, never closes its own step — discovered when 3c-i's live
+> rich-output test found a session's first job reporting `completed` with
+> `SYSCC` still `0` while its log, and the file it wrote, stayed invisible for
+> over sixty seconds. See the amendment at the end of this record and
+> `docs/phases/phase-3.md`'s finding 70. This does not change the mechanism
+> decided below — `infile=` is still how the file reaches the interpreter —
+> only what the job submitting it must also send.
+
 ## Context
 
 Every design in this project has assumed the obvious mechanism: wrap the editor's
@@ -206,3 +215,43 @@ everything here is Viya 4, as everywhere else in `PROBE-FINDINGS.md`.
 `PROC PYTHON`'s availability on 3.5 was already a named risk; `infile=` and the
 filerefs upload are two more things the 3.5 dialect has to confirm rather than
 inherit.
+
+## Amendment — 2026-08-25 (slice 3c-i): the submitted statement was missing its own terminator
+
+This ADR settled that success is read from `SYSCC`, not from the job's own
+`completed` state, because finding 33 showed `completed` lying about a
+poisoned session. What it did not settle — because nothing before 3c-i's live
+rich-output test had submitted `proc python infile=<fileref>;` end to end
+against a real deployment and checked the *first* job's own log and variables
+immediately afterward — is that the statement this project has sent since 3a,
+on its own, never closes its SAS step at all. Finding 70
+(`docs/phases/phase-3.md`) is the full account: a fresh session's first
+`proc python infile=X;` job reports `completed` in under a second, its log
+stays frozen at two lines and `SYSCC` reads its stale pre-run `0` for over a
+minute of polling — not because the code failed, but because the step was
+never told to end. `run;`, or the start of some later, unrelated step, is what
+ends it; nothing before this slice ever sent the former or waited for the
+latter.
+
+**This narrows what "read `SYSCC`, not job state" actually bought.** It is
+still the right mitigation for finding 33's poisoning case — a session stuck
+mid-quote really does keep answering `completed` for everything, and `SYSCC`
+is the only signal that catches it. But `SYSCC` itself is one of the things a
+never-closed step leaves stale, so it was never a complete substitute for
+"did the step actually finish" the way this ADR's Consequences section implied
+— it substitutes for one specific way `state` lies, not for every way a
+signal read too early can be wrong.
+
+**Fixed by sending the statement as two elements of the job's `code` array,
+the second always `"run;"`** — in both `runProgram`'s ordinary and
+`freshNamespace` statements and in `reset()`'s standalone `proc python
+restart;`. Confirmed live: with the trailing `run;`, a fresh session's first
+job reports `completed` at the elapsed time the work actually costs, and its
+log and any file it wrote are visible in that same job's own first read — no
+second job required. `logFilter.ts` needed no change: `run;` echoes as a
+`source`-typed line, the same type the wrapping statement's own echo already
+was, and `isNoiseLine` already excludes the whole type.
+
+**This does not reopen the mechanism this ADR decided.** Upload plus
+`infile=` is still how the file reaches the interpreter untouched; what
+changed is that the job carrying it must also tell SAS the step is over.

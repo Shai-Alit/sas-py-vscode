@@ -21,6 +21,7 @@ import {
 import { type ComputeSession } from "../../src/compute/session";
 import { type Dialect } from "../../src/dialects/dialect";
 import { fakeProgram } from "../helpers/fake-backend";
+import { readFixtureBytes } from "../helpers/fixtures";
 
 /**
  * `ProcPythonBackend` — ADR-0014's mechanism wired to ADR-0015's seam.
@@ -51,6 +52,12 @@ function session(): ComputeSession {
         rel: "variables",
         href: `${SESSION_PATH}/variables`,
         responseType: "application/vnd.sas.collection",
+      },
+      {
+        method: "GET",
+        rel: "getFiles",
+        href: `${SESSION_PATH}/files/cwd`,
+        type: "application/vnd.sas.compute.file.properties",
       },
     ],
   };
@@ -189,6 +196,66 @@ interface RouterOptions {
    * `cancelActive`'s own `backend-failed` mapping of `LogStream.cancel()`
    * failing, distinct from the run itself failing. */
   cancelReply?: Reply;
+  /** The session working directory's contents `runProgram`'s pre-job listing
+   * sees (ADR-0019 point 1). Defaults to empty. */
+  filesBefore?: readonly { name: string; size: number }[];
+  /** The directory's contents the post-job listing sees (ADR-0019 point 3).
+   * Defaults to `filesBefore` unchanged, i.e. no candidates. */
+  filesAfter?: readonly { name: string; size: number }[];
+  /** A `getFile` fetch answers with these bytes, keyed by file name. Absent
+   * names answer with an empty body. */
+  fileContent?: Record<string, Uint8Array>;
+  /** Overrides a `getFile` reply outright for a given name — a genuine fetch
+   * failure, distinct from the cap simply excluding it beforehand. */
+  fileContentReply?: Record<string, Reply>;
+  /** Names for which `deleteFile` answers with a rejection instead of `204`. */
+  deleteFails?: readonly string[];
+  /** Overrides a `getDirectoryMembers` reply outright, keyed by the call's
+   * 1-based ordinal — `1` is `runProgram`'s pre-job listing (ADR-0019 point
+   * 1), `2` is `captureRichOutput`'s post-job listing (point 3). A rejection
+   * here, rather than a gate, exercises `captureRichOutput`'s own "no
+   * baseline to diff, so skip the whole step" and "after-listing failed"
+   * branches — distinct from anything `compute-files.test.ts` already covers
+   * at `listSessionFiles`'s own level, since these are `procPython.ts`'s
+   * branches around that call, not `files.ts`'s. */
+  directoryMembersCallReply?: Record<number, Reply>;
+  /** Held instead of answered on the first `getFile` request, if given —
+   * simulates cancelling in the race window `captureRichOutput` itself opens:
+   * after `SYSCC` has already confirmed the run's outcome, but before a
+   * candidate's content fetch (and everything after it) has resolved. */
+  fileContentGate?: Promise<Reply>;
+}
+
+/** The file name a `getFileProperties`/`getFile`/`deleteFile` href names —
+ * the last path segment, `/content` stripped, percent-decoded. Mirrors how
+ * `fileLinksFor` below builds those hrefs in the first place. */
+function fileNameFromHref(href: string): string {
+  const base = href.endsWith("/content")
+    ? href.slice(0, -"/content".length)
+    : href;
+  const segment = base.split("/").pop() ?? "";
+  return decodeURIComponent(segment);
+}
+
+/** One listing item's own link set, shaped like finding 68's confirmed
+ * relations: `getFileProperties` and `getFile` as `GET`s, `deleteFile` as a
+ * `DELETE` — never `self`/`delete`. */
+function fileLinksFor(name: string): unknown[] {
+  const path = `${SESSION_PATH}/files/cwd/${encodeURIComponent(name)}`;
+  return [
+    {
+      rel: "getFileProperties",
+      method: "GET",
+      href: path,
+      type: "application/vnd.sas.compute.file.properties",
+    },
+    {
+      rel: "getFile",
+      method: "GET",
+      href: `${path}/content`,
+    },
+    { rel: "deleteFile", method: "DELETE", href: path },
+  ];
 }
 
 /** A `ComputeClient` that answers every request `ProcPythonBackend` makes,
@@ -196,12 +263,16 @@ interface RouterOptions {
 function router(opts: RouterOptions): {
   readonly client: ComputeClient;
   readonly requests: ComputeRequest[];
+  readonly deletedNames: readonly string[];
 } {
   let filerefName = "unknown";
   let logCalls = 0;
   let executeCalls = 0;
   let sysccCalls = 0;
   let syserrortextCalls = 0;
+  let directoryMemberCalls = 0;
+  let getFileCalls = 0;
+  const deletedNames: string[] = [];
 
   const requests: ComputeRequest[] = [];
   const client: ComputeClient = {
@@ -321,12 +392,67 @@ function router(opts: RouterOptions): {
           }
           return ok({ count: 0, items: [] });
         }
+        case "getFiles":
+          return ok({
+            isDirectory: true,
+            links: [
+              {
+                rel: "getDirectoryMembers",
+                method: "GET",
+                href: `${SESSION_PATH}/files/cwd/members`,
+                type: "application/vnd.sas.collection",
+              },
+            ],
+          });
+        case "getDirectoryMembers": {
+          directoryMemberCalls += 1;
+          const override =
+            opts.directoryMembersCallReply?.[directoryMemberCalls];
+          if (override !== undefined) return override;
+          const listing =
+            directoryMemberCalls === 1
+              ? (opts.filesBefore ?? [])
+              : (opts.filesAfter ?? opts.filesBefore ?? []);
+          return ok({
+            count: listing.length,
+            items: listing.map((file) => ({
+              name: file.name,
+              size: file.size,
+              links: fileLinksFor(file.name),
+            })),
+          });
+        }
+        case "getFileProperties": {
+          const name = fileNameFromHref(request.link.href);
+          return ok({ name }, { etag: `"etag-${name}"` });
+        }
+        case "getFile": {
+          getFileCalls += 1;
+          if (getFileCalls === 1 && opts.fileContentGate !== undefined) {
+            return await opts.fileContentGate;
+          }
+          const name = fileNameFromHref(request.link.href);
+          if (opts.fileContentReply?.[name] !== undefined) {
+            return opts.fileContentReply[name];
+          }
+          return ok(null, {
+            rawBody: opts.fileContent?.[name] ?? new Uint8Array(),
+          });
+        }
+        case "deleteFile": {
+          const name = fileNameFromHref(request.link.href);
+          if (opts.deleteFails?.includes(name)) {
+            return rejected("compute-rejected", "500 Internal Server Error");
+          }
+          deletedNames.push(name);
+          return ok(undefined, { status: 204 });
+        }
         default:
           throw new Error(`unscripted request rel: ${request.link.rel}`);
       }
     },
   };
-  return { client, requests };
+  return { client, requests, deletedNames };
 }
 
 /** The `name` a filtered `variables` read was asking for. */
@@ -439,10 +565,13 @@ describe("ProcPythonBackend", () => {
       assert.deepEqual(settled.value.diagnostics, []);
       assert.deepEqual(texts(outputs), ["6\n"]);
 
-      // Upload before submission, submission before any log or variable read.
+      // Upload before the pre-run directory listing (ADR-0019 point 1),
+      // before submission, before any log or variable read.
       const order = requests.map((request) => request.link.rel);
       assert.deepEqual(order.slice(0, 3), ["assign", "self", "upload"]);
-      assert.equal(order[3], "execute");
+      assert.equal(order[3], "getFiles");
+      assert.equal(order[4], "getDirectoryMembers");
+      assert.equal(order[5], "execute");
       assert.ok(order.includes("variables"));
 
       // `restart` was not composed in — `freshNamespace: false` was asked for.
@@ -450,9 +579,12 @@ describe("ProcPythonBackend", () => {
         (request) => request.link.rel === "execute",
       );
       const code = (submitted?.body as { code: string[] }).code;
-      assert.equal(code.length, 1);
+      // ADR-0014 amendment, finding 70: a trailing `run;` closes the step —
+      // without it, the step's own log/SYSCC/file-writes never flush.
+      assert.equal(code.length, 2);
       assert.ok(code[0]?.startsWith("proc python infile="));
       assert.ok(!code[0]?.includes("restart"));
+      assert.equal(code[1], "run;");
     });
 
     it("composes `restart` into the same statement for a fresh namespace", async () => {
@@ -1340,7 +1472,9 @@ describe("ProcPythonBackend", () => {
         (request) => request.link.rel === "execute",
       );
       const code = (submitted?.body as { code: string[] }).code;
-      assert.deepEqual(code, ["proc python restart;"]);
+      // ADR-0014 amendment, finding 70: `reset()`'s own step needs the same
+      // trailing `run;` `runProgram`'s does, for the same reason.
+      assert.deepEqual(code, ["proc python restart;", "run;"]);
     });
 
     it("refuses while an execute() run is in flight, naming it", async () => {
@@ -1522,6 +1656,318 @@ describe("ProcPythonBackend", () => {
       assert.equal(result.problem.code, "busy");
       assert.deepEqual([...raced.calls], ["start"]);
       assert.equal(requests.length, 0);
+    });
+  });
+
+  describe("rich output capture (ADR-0019)", () => {
+    it("captures a new PNG and a new HTML file, in filename order, after the run's text output, and deletes both", async () => {
+      const png = readFixtureBytes("rich-output", "tiny.png");
+      const html = new TextEncoder().encode("<table></table>");
+      const { client, deletedNames } = router({
+        syscc: "0",
+        logLines: [line("hello")],
+        filesAfter: [
+          { name: "b_plot.png", size: png.length },
+          { name: "a_table.html", size: html.length },
+        ],
+        fileContent: { "b_plot.png": png, "a_table.html": html },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+
+      // The run's own text output first, then the two captures — filename
+      // order (`a_table.html` before `b_plot.png`), not the order they were
+      // written to the fixture list above.
+      assert.deepEqual(
+        outputs.map((output) => output.mime),
+        ["text/plain", "text/html", "image/png"],
+      );
+      const htmlOutput = outputs.find(
+        (output): output is Extract<RichOutput, { mime: "text/html" }> =>
+          output.mime === "text/html",
+      );
+      const pngOutput = outputs.find(
+        (output): output is Extract<RichOutput, { mime: "image/png" }> =>
+          output.mime === "image/png",
+      );
+      assert.ok(htmlOutput !== undefined, "no text/html output was captured");
+      assert.ok(pngOutput !== undefined, "no image/png output was captured");
+      assert.equal(htmlOutput.data, "<table></table>");
+      assert.deepEqual(Buffer.from(pngOutput.data, "base64"), Buffer.from(png));
+
+      // Every captured file is deleted afterward (ADR-0019 point 9).
+      assert.deepEqual([...deletedNames].sort(), [
+        "a_table.html",
+        "b_plot.png",
+      ]);
+    });
+
+    it("skips a candidate over the cap with a text/plain note, and does not delete it", async () => {
+      const { client, deletedNames } = router({
+        syscc: "0",
+        filesAfter: [{ name: "huge.png", size: 10 * 1024 * 1024 + 1 }],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      assert.ok(!outputs.some((output) => output.mime === "image/png"));
+      const note = texts(outputs).find((text) => text.includes("huge.png"));
+      assert.ok(note !== undefined, "no skip note was produced");
+      assert.equal(deletedNames.length, 0);
+    });
+
+    it("skips a candidate that fails to fetch with a text/plain note, and does not delete it", async () => {
+      const { client, deletedNames } = router({
+        syscc: "0",
+        filesAfter: [{ name: "unreadable.png", size: 100 }],
+        fileContentReply: {
+          "unreadable.png": rejected("compute-rejected", "404 Not Found", 404),
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      assert.ok(!outputs.some((output) => output.mime === "image/png"));
+      const note = texts(outputs).find((text) =>
+        text.includes("unreadable.png"),
+      );
+      assert.ok(note !== undefined, "no skip note was produced");
+      assert.equal(deletedNames.length, 0);
+    });
+
+    it("captures nothing at all on a cancelled run", async () => {
+      // ADR-0019: capture never runs for a cancelled run. A candidate is
+      // configured here specifically so the assertion is meaningful — if
+      // `captureRichOutput` ran anyway, this would have something to find.
+      const gate = deferred<Reply>();
+      const { client, requests, deletedNames } = router({
+        syscc: "0",
+        logGate: gate.promise,
+        filesAfter: [{ name: "plot.png", size: 100 }],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await flush();
+
+      const cancelled = await backend.cancel(accepted);
+      assert.ok(cancelled.ok);
+
+      gate.resolve(ok({ count: 0, items: [] }));
+      const settled = await accepted.done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "cancelled");
+      // Exactly one `getDirectoryMembers` call — the pre-job listing. A
+      // second (the post-job listing `captureRichOutput` would have made)
+      // never happens, and neither does any per-file request.
+      const rels = requests.map((request) => request.link.rel);
+      assert.equal(
+        rels.filter((rel) => rel === "getDirectoryMembers").length,
+        1,
+      );
+      assert.ok(!rels.includes("getFile"));
+      assert.ok(!rels.includes("deleteFile"));
+      assert.equal(deletedNames.length, 0);
+    });
+
+    it("resolves as cancelled, not successful, when cancel lands mid-capture", async () => {
+      // A race `readSyscc`'s own two checks do not cover: `SYSCC` has already
+      // been read (unhindered here — this is not that gate), the outcome is
+      // already built, and the run is now in `captureRichOutput`'s own extra
+      // network calls when cancel() arrives. `runProgram`'s check right after
+      // `captureRichOutput` is what this test is for; without it, `done`
+      // would resolve with the genuine (successful) outcome below instead.
+      const gate = deferred<Reply>();
+      const { client, requests, deletedNames } = router({
+        syscc: "0",
+        filesAfter: [{ name: "plot.png", size: 100 }],
+        fileContentGate: gate.promise,
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputsPromise = collect(accepted.outputs);
+      await flush();
+
+      const cancelled = await backend.cancel(accepted);
+      assert.ok(cancelled.ok);
+
+      gate.resolve(ok(null, { rawBody: new Uint8Array([1, 2, 3, 4]) }));
+      const outputs = await outputsPromise;
+      const settled = await accepted.done;
+
+      // The outcome flips to `cancelled` even though the fetch and delete
+      // below both actually ran and succeeded — `runProgram`'s new check does
+      // not, and must not, undo work `captureRichOutput` already did.
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "cancelled");
+      assert.ok(
+        outputs.some((output) => output.mime === "image/png"),
+        "the candidate already in flight when cancel() landed should still have been captured",
+      );
+      const rels = requests.map((request) => request.link.rel);
+      assert.ok(rels.includes("getFile"));
+      assert.ok(rels.includes("deleteFile"));
+      assert.deepEqual([...deletedNames], ["plot.png"]);
+    });
+
+    it("logs a background failure and still succeeds when the pre-run listing fails", async () => {
+      // `captureRichOutput`'s own "no baseline, so skip the whole step"
+      // branch: `filesBefore` is `runProgram`'s pre-job listing, threaded
+      // through as an already-settled `ComputeResult` — this fails it
+      // outright rather than gating it, since there is no run in flight yet
+      // to cancel.
+      const reasons: string[] = [];
+      const { client, requests } = router({
+        syscc: "0",
+        directoryMembersCallReply: {
+          1: rejected("compute-rejected", "500 Internal Server Error"),
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+        (reason) => reasons.push(reason),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      // The run's own outcome is unaffected — this is a capture-step failure,
+      // not a program failure (ADR-0019: "the run's own outcome is
+      // unaffected").
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      assert.equal(reasons.length, 1);
+      assert.ok(reasons[0]?.includes("before the run"));
+      // Exactly one `getDirectoryMembers` call: the failed pre-job listing.
+      // `captureRichOutput` never lists again without a baseline to diff.
+      const rels = requests.map((request) => request.link.rel);
+      assert.equal(
+        rels.filter((rel) => rel === "getDirectoryMembers").length,
+        1,
+      );
+    });
+
+    it("logs a background failure and still succeeds when the post-run listing fails", async () => {
+      // The sibling branch: the pre-job listing succeeded, but the listing
+      // `captureRichOutput` itself makes after the job settles fails.
+      const reasons: string[] = [];
+      const { client } = router({
+        syscc: "0",
+        directoryMembersCallReply: {
+          2: rejected("compute-rejected", "500 Internal Server Error"),
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+        (reason) => reasons.push(reason),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      assert.equal(reasons.length, 1);
+      assert.ok(reasons[0]?.includes("after the run"));
+    });
+
+    it("logs a background failure, but still reports the output, when deleting a captured file fails", async () => {
+      // ADR-0019 point 9: "a failed deletion is logged, not surfaced or
+      // retried" — a leaked file is a much smaller problem than failing an
+      // otherwise-successful run over its own cleanup step.
+      const reasons: string[] = [];
+      const { client, deletedNames } = router({
+        syscc: "0",
+        filesAfter: [{ name: "plot.png", size: 100 }],
+        deleteFails: ["plot.png"],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+        (reason) => reasons.push(reason),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      assert.ok(outputs.some((output) => output.mime === "image/png"));
+      assert.equal(reasons.length, 1);
+      assert.ok(reasons[0]?.includes("plot.png"));
+      // The router's own rejection means `deleteFile` was answered, not
+      // skipped — `deletedNames` only records a *successful* delete.
+      assert.equal(deletedNames.length, 0);
     });
   });
 });

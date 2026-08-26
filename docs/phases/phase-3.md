@@ -594,6 +594,27 @@ is the punch list for executing it.
 > changes as a deliberate event" policy — the agreed direction is
 > [ADR-0020](../adr/0020-run-target-defaults-to-local.md), reversing the
 > default to Local, implemented in the same slice once agreed.
+>
+> **Re-checked by hand, 2026-08-26, in a folder never opened with this
+> extension before, after ADR-0020 landed.** Every expectation held: no icon
+> from this extension in the editor toolbar with nothing configured (only
+> `ms-python.python`'s own **Run Python file**, no dropdown); `Python on Viya:
+> Run File` from the Command Palette still reported "The run target is Local
+> Python. Switch the run target to a SAS Viya profile to run this on Viya."
+> exactly as always; `Select Run Target` listed **Local Python** plus both
+> configured profiles; picking **innovation** made this extension's **Run
+> File** appear, merged with `ms-python.python`'s into one button with a
+> dropdown, and running it connected and executed correctly. One false alarm
+> along the way worth recording verbatim, because it will recur: clicking the
+> *notification toast* that names a refusal ("Source: Python on Viya…", the
+> one with a gear/chevron/`X`, sitting in the bottom-right corner of the
+> editor) does nothing, and is easy to mistake for "the status bar" — the
+> actual status bar switch is the solid bar along the very bottom edge of the
+> whole window, where this extension's item sits left-aligned, just after the
+> problem counts (`$(server) innovation` once a profile is picked). Clicking
+> *that* opened the picker correctly the first time it was tried once the
+> right element was identified.
+>
 > **Two more defects, found running `npm run test:integration` against a real
 > test host after this slice was proposed — not caught by the adversarial
 > review above, which reads the diff rather than running it:**

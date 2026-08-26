@@ -778,7 +778,27 @@ cancel it. Confirm whether the compute job cancel actually interrupts Python or
 blocks until the step finishes. If it blocks, fall back to session reset with a
 clear user-facing message, and log it in `PROBE-FINDINGS.md`.
 
-☐ **Milestone.** This is the first genuinely useful build. Install the `.vsix`
+☐ **After 3d-i — a fake-transport regression test for `commands.ts`'s
+post-`connect()` paths.** Deferred deliberately, not forgotten: raised by
+Claude Bot's review on PR #63, and the same gap `commands.ts`'s own 3d-i
+Runbook entry above already named before that review — every test in
+`test/integration/run/commands.test.ts` uses `sessionsThatMustNotConnect()`,
+so the suite only ever exercises the pre-`connect()` guards (readiness, the
+editor/selection checks, `selectRunTarget`). None of the following are
+pinned by an automated test anywhere in the tree, despite each one having
+needed a second review pass to get right during 3d-i itself:
+`backendFor()`'s reconnect-orphan close (a still-busy cached backend closed
+before being overwritten, when a new `ComputeConnection` arrives for the
+same profile), `cancelRun`'s `currentReset` fallback (interrupting an
+in-flight `reset()` via `close()`), and the `backend.busy` serialisation
+guard in `runNow`/`resetPythonState` (stopping a second invocation from
+clobbering `currentRun`/`currentReset` in the shared `finally`). Closing this
+needs a `RunCommandSessions.connect()` fake that actually resolves to a
+`ComputeConnection`-shaped value, backed by a fake client/session
+`ProcPythonBackend` can be constructed against and driven through fake
+`execute()`/`reset()` calls to simulate a busy backend, a reconnect, and an
+in-flight reset — real test-infrastructure work, not a quick addition, which
+is why it is a named follow-up rather than folded into 3d-i or 3d-ii. This is the first genuinely useful build. Install the `.vsix`
 locally and use it for real work for a few days before starting Phase 4. Real use
 will reorder your priorities more reliably than the plan will.
 

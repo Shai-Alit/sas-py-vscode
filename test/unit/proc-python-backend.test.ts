@@ -685,7 +685,7 @@ describe("ProcPythonBackend", () => {
   });
 
   describe("a run that raises", () => {
-    it("reports an unhandled Python exception as a structured traceback", async () => {
+    it("reports an unhandled Python exception as a structured traceback, with the harness's <stdin> wrapper frames dropped (3c-ii, finding 39)", async () => {
       const { client } = router({
         syscc: "1012",
         syserrortext: "Unhandled Python exception.",
@@ -728,12 +728,98 @@ describe("ProcPythonBackend", () => {
       );
       assert.ok(traceback !== undefined, "no traceback was forwarded");
       assert.equal(traceback.data.message, "ValueError: boom-at-line-2");
-      assert.equal(traceback.data.frames.length, 3);
-      assert.deepEqual(traceback.data.frames[2], {
-        file: "<string>",
-        line: 2,
-        name: "<module>",
+      // Only the user's own frame survives — both `<stdin>` harness frames
+      // are dropped, not just re-ordered.
+      assert.deepEqual(traceback.data.frames, [
+        { file: "<string>", line: 2, name: "<module>" },
+      ]);
+    });
+
+    it("keeps every <string> frame when the user's own code recurses, dropping only the harness's <stdin> frames", async () => {
+      // Frames are dropped by name, not by position: the user's own code can
+      // recurse and print several `<string>` frames, and only the exact
+      // `<stdin>` label belongs to the harness (3c-ii, finding 39).
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<stdin>", line 5, in <module>'),
+          line('  File "<stdin>", line 2, in <module>'),
+          line('  File "<string>", line 4, in <module>'),
+          line('  File "<string>", line 2, in boom'),
+          line("RecursionError: maximum recursion depth exceeded"),
+        ],
       });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.deepEqual(traceback.data.frames, [
+        { file: "<string>", line: 4, name: "<module>" },
+        { file: "<string>", line: 2, name: "boom" },
+      ]);
+    });
+
+    it("reports an empty frame list, not a plain-message fallback, when only the harness's own <stdin> frames are present", async () => {
+      // A header genuinely found, with genuine frame lines following it, but
+      // every one of them is the harness's own `<stdin>` — the harness itself
+      // failing rather than the user's code. Distinct from "no frame lines at
+      // all", which still falls back to a plain message below.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<stdin>", line 5, in <module>'),
+          line("RuntimeError: harness-only-failure"),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(
+        traceback.data.message,
+        "RuntimeError: harness-only-failure",
+      );
+      assert.deepEqual(traceback.data.frames, []);
     });
 
     it("falls back to a plain message for SYSCC=1012 with no traceback header at all", async () => {

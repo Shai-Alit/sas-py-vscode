@@ -204,8 +204,13 @@ export interface TracebackFrame {
   /**
    * The file as the runtime named it.
    *
-   * Mapping this back to a {@link ProgramOrigin} is 3c's job, and the wrapper
-   * frames an implementation introduced are dropped there.
+   * Already stripped of the harness's own wrapper frames — 3c-ii's
+   * `parseTraceback` (`procPython.ts`) drops them by name (finding 39) before
+   * a {@link Traceback} ever reaches this seam. Mapping what remains back to
+   * a {@link ProgramOrigin} is **Phase 4's** job, not 3c's: this comment used
+   * to assign both to 3c, but `logFilter.ts`'s own doc and `phase-3.md`'s
+   * Phase 4 plan text settled on Phase 4 for the editor-position mapping, and
+   * this was the one place still disagreeing with that.
    */
   readonly file: string;
   /** One-based, as the runtime reports it. */

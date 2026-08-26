@@ -390,7 +390,7 @@ is the punch list for executing it.
 > the two documents disagreed and a future reader should not have to
 > reconstruct which one won.
 
-> **Landed 2026-08-26.** `src/run/target.ts` (pure — `RunTargetKind`,
+> **Landed 2026-08-26, merged as PR #63.** `src/run/target.ts` (pure — `RunTargetKind`,
 > `resolveRunTargetKind`, `runReadiness`, `runTargetPickEntries`),
 > `src/run/render.ts` (pure — `RichOutput` to display-line shape),
 > `src/run/targetStore.ts` (the `workspaceState` shell), `src/run/statusBar.ts`

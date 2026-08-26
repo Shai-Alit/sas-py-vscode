@@ -956,6 +956,29 @@ called out under **Changed** with a migration note.
   this module can) and the underlying gap already exists, unflagged, in
   merged 3a code; recorded rather than patched, in `src/backend/backend.ts`'s
   `RichOutput` doc comment and in this item's own "Open item" note above.
+- Matplotlib/pandas rich output (slice 3c-i). A matplotlib figure or a pandas
+  DataFrame's HTML repr is captured by diffing the session's working
+  directory before and after a run
+  ([ADR-0019](docs/adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md):
+  a passive diff, not a helper library the user's script would have to
+  import), filtering to a closed `.png`/`.html` whitelist, decoding into the
+  existing `RichOutput` union, and deleting each captured file afterward.
+  New: `src/compute/files.ts` (`getFiles`/`getDirectoryMembers`/`getFile`/
+  `deleteFile`, finding 68's confirmed relation names) and
+  `src/backend/richOutput.ts` (pure diff/filter/order/cap/decode logic, no
+  I/O, fixture-tested independent of a real Compute client). A prerequisite
+  surfaced while implementing this: the transport layer (`auth/transport.ts`,
+  `src/compute/client.ts`) had no way to carry a binary response body
+  byte-for-byte, or above a 1 MiB cap (finding 69) — both gained optional,
+  additive capabilities (`TransportResponse.bytes()`,
+  `ComputeRequest.maxBodyBytes`, `ComputeResponse.rawBody`), with no change to
+  any existing caller's behaviour. Verified live against a Viya 4 deployment:
+  9/9 `test/live` passing, including the new rich-output capture test.
+  Reviewed by two adversarial subagent passes over the finished diff, in
+  addition to the CI reviewers. *(Entry added retroactively — the PR that
+  shipped this, #59, merged without one, a gap CONTRIBUTING.md's "every pull
+  request updates `CHANGELOG.md`" rule should have caught at the time; see
+  the matching note on the `### Fixed` entry below.)*
 
 ### Fixed
 
@@ -1187,6 +1210,22 @@ called out under **Changed** with a migration note.
   by hand. `ComputeClient` was considered and does not fit: the identities
   service is not `/compute/...`, and `ComputeClient.send` only follows a
   `Link` under ADR-0010.
+- `proc python infile=<fileref>;` submitted alone, with no trailing `run;`,
+  never closed its SAS step (finding 70, an ADR-0014 amendment). A fresh
+  session's first job could report `completed` in under a second — far
+  faster than a real matplotlib import — while its log, `SYSCC`, and any
+  file it wrote all stayed unflushed for 60+ seconds, until an unrelated
+  second job forced the step closed. This affected **every**
+  `execute()`/`reset()` call, not only the rich-output capture slice (3c-i)
+  that found it, and had gone undetected since 3a because no live test
+  before that slice ever submitted `infile=` end to end against a real
+  deployment and checked a session's *first* job. Fixed by appending
+  `"run;"` as a second statement in both `runProgram`'s and `reset()`'s
+  `createJob` calls; `logFilter.ts` needed no change, since `run;`'s own echo
+  is `source`-typed and already excluded by `isNoiseLine`. Confirmed live,
+  twice: once via a hand-rolled job sequence, once by driving the real
+  `ProcPythonBackend` class end to end. *(Entry added retroactively,
+  alongside the `### Added` entry above — see its note for why.)*
 - A Python exception's structured traceback no longer includes `PROC PYTHON`'s
   own harness frames (slice 3c-ii, finding 39). Since 3a, `parseTraceback`
   read every frame the runtime printed unfiltered, including the two frames

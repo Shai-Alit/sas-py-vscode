@@ -373,9 +373,347 @@ two. Corrected in the same change rather than left disagreeing.
   3c-i's ADR-0019 change was held to, even though this slice carries no ADR of
   its own. Re-run after the review-finding fix above, over the corrected diff.
 
-☐ **3d-i — contribute the run target, and let it decide whether we appear.**
+☑ **3d-i — contribute the run target, and let it decide whether we appear.**
 [ADR-0011](../adr/0011-choosing-where-python-runs.md) settles the mechanism; this
 is the punch list for executing it.
+
+> **Scope note, settled before any code was written.** This phase file's own
+> plan text (above) describes 3d-i broadly — "Commands and text output: `Run
+> file`, `Run selection`, `Cancel`, `Reset Python state`; output channel…" —
+> but the Runbook punch list below, as it stood going into this slice, detailed
+> only ADR-0011's run-target mechanism (the picker, the context key, the
+> `workspaceState` store) and never said how the run/cancel/reset commands
+> themselves would be built, even though the punch list's own bullets already
+> assumed `editor/title/run`/`editor/context` entries existed to gate. Asked
+> directly rather than guessed at: the full plan-section scope is what this
+> slice covers, not the narrower Runbook-only reading. Recorded here because
+> the two documents disagreed and a future reader should not have to
+> reconstruct which one won.
+
+> **Landed 2026-08-26.** `src/run/target.ts` (pure — `RunTargetKind`,
+> `resolveRunTargetKind`, `runReadiness`, `runTargetPickEntries`),
+> `src/run/render.ts` (pure — `RichOutput` to display-line shape),
+> `src/run/targetStore.ts` (the `workspaceState` shell), `src/run/statusBar.ts`
+> (supersedes `src/profile/statusBar.ts`, removed in this slice — same item id,
+> new job, per ADR-0011), `src/run/outputChannel.ts` (the program-transcript
+> channel, separate from the extension's own log channel) and
+> `src/run/commands.ts` (`selectRunTarget`, `runFile`, `runSelection`,
+> `cancelRun`, `resetPythonState` — the first module to ever construct a
+> `ProcPythonBackend` from a live `ComputeConnection`). `src/backend/messages.ts`
+> is new alongside it — `localiseBackendProblem`, the `compute/messages.ts`-style
+> split `BackendProblem` was always missing, deferred here from 3a per that
+> module's own doc comment. `backend.ts`'s `RichOutput` doc is corrected to say
+> what this slice actually decided about the seam's localisation boundary
+> (3d-i's own strings are localised; the four `RichOutput`/`PythonDiagnostic`
+> payload strings named there are not, and stay a known gap).
+>
+> **Design decisions made while executing the punch list, not separately
+> planned:**
+> - The stored target is only ever `"local"` or `"viya"` — never a profile name
+>   of its own. Choosing a Viya profile in the picker writes both the target
+>   *and* `ProfileStore`'s active-profile pointer in one gesture, but the two
+>   remain two stores; `"viya"` with no active profile (`runReadiness`'s
+>   `"no-profile"` reason) is reached by switching the target to Viya before
+>   picking a profile, not folded into `"local"`. **No longer the
+>   fresh-install shape** — see [ADR-0020](../adr/0020-run-target-defaults-to-local.md)
+>   below; the fresh-install default is `"local"` now.
+> - `Run File` passes `freshNamespace: true`; `Run Selection` passes `false`,
+>   so repeatedly running a selection builds on state the way a notebook cell
+>   would — `backend.ts`'s own doc names Run File and a notebook cell as the
+>   two examples and leaves a selection unassigned; this slice assigns it to
+>   the notebook-cell side of that split.
+> - **Cancel** tracks the in-flight `execute()` handle at module scope so the
+>   Command Palette entry can cancel a run the progress notification's own
+>   Cancel button did not originate from. A `reset()` in progress has no
+>   handle at all; the only way the seam lets a caller interrupt one is
+>   `ExecutionBackend.close()`, which also disconnects — made safe to do
+>   from underneath a later run by having the per-profile backend cache always
+>   re-call the (idempotent, I/O-free) `connect()` before handing a cached
+>   backend back out.
+> - Text-only, per this slice's own plan text: `text/html` and `image/png`
+>   outputs get one localised "produced, not yet viewable" line each rather
+>   than being dumped as markup or base64; a structured traceback is not
+>   re-rendered at all, because the raw traceback text is already visible as
+>   plain log output by the time a caller sees it (`logFilter.ts`'s
+>   `isNoiseLine` never excluded `error`/`normal`).
+>
+> **Adversarial subagent review, before this was proposed** — this slice adds
+> source and a documented invariant (ADR-0011's execution), the bar this
+> project's standing policy sets for the review. It found three real defects,
+> all fixed in the same change rather than left for a round trip:
+> 1. `backendFor()` would silently orphan a still-running backend if a
+>    reconnect (a new `ComputeConnection` for the same profile) landed while
+>    a `reset()` was in flight on the old one — the cache entry was
+>    overwritten unconditionally. Fixed: the outgoing backend is closed first
+>    if it is busy.
+> 2. `cancelRun`'s reset-interrupt fallback scanned every cached backend and
+>    closed the first busy one it found, so a Cancel invoked while parked on
+>    one profile could reach in and stop a run on a different one the window
+>    had used earlier. Fixed: scoped to the currently active profile's own
+>    cached backend.
+> 3. The run's own progress notification was `ProgressLocation.Window` with
+>    `cancellable: true` — VS Code's own contract is that only
+>    `ProgressLocation.Notification` renders a cancel button, so the wiring
+>    was dead from the UI's side; only the Command Palette's `Cancel` command
+>    could ever have reached it. Fixed: moved to `Notification`, which is now
+>    also the reason `showProgress`'s helper (renamed from
+>    `withWindowProgress`) takes a location rather than assuming one.
+>
+> **What is still open, deliberately not closed by this slice:**
+> - ~~`src/profile/statusBar.ts` itself still needs deleting.~~ **Done**,
+>   alongside dropping its `.c8rc.json` exclude line — both in the commit
+>   that opened PR #63, once outside the sandbox that could not delete files
+>   on the mounted working tree.
+> - ~~Run by hand, 2026-08-26 — and the result is the bad one.~~ **Resolved the
+>   same day, by [ADR-0020](../adr/0020-run-target-defaults-to-local.md).**
+>   This extension's own **Run File** came up as the *primary*
+>   `editor/title/run` button, ahead of `ms-python.python`'s **Run Python
+>   File**, on a folder where `pythonOnViya.runFile` had never once been
+>   invoked before — not "last used remembered" (there was no prior use to
+>   remember), something else in how VS Code orders these contributions
+>   favoured ours. Precisely the "claim the play button by accident" outcome
+>   ADR-0011 said would mean revisiting the ADR, not working around it — and
+>   ADR-0020 is that revision: the run target now defaults to `"local"`, so an
+>   unconfigured workspace contributes nothing to the editor at all, and this
+>   extension's entry can only win the primary slot once a user has
+>   explicitly switched to Viya. See the procedure and its findings just
+>   below for the full record.
+> - **No keybinding**, unchanged from the ADR — still an open item, not a gap.
+> - A full run's actual streaming end to end is exercised by
+>   `proc-python-backend.test.ts`'s own unit suite (already covering
+>   `ProcPythonBackend` directly) and by `test/integration/run/commands.test.ts`'s
+>   guard-path coverage (refusals, `selectRunTarget`'s store writes) — not by a
+>   second, hand-built fake Compute transport driven through the commands layer
+>   itself. Worth a live test in a later slice if a defect ever turns up between
+>   the two tiers that neither currently catches.
+> - No user-facing page describes the run target or these commands yet — the
+>   pattern `connecting.md`/`signing-in.md`/`connection-profiles.md` already
+>   set at the top of `docs/` is where one would go. The CHANGELOG entry is the
+>   only user-facing writeup today; user documentation proper is 5c's job.
+>
+> **Manual test for ADR-0011's "confirm by hand" assumption, run 2026-08-26.**
+> How VS Code presents this extension's `editor/title/run` entry when another
+> extension contributes to the same menu — specifically `ms-python.python`,
+> the collision ADR-0011 names in its own "The collision" section — had never
+> been observed, only asserted from the contribution point's documented shape.
+> Nothing below is reachable from an automated test: it needs a real running
+> Extension Development Host with a second extension installed in it.
+>
+> **Setting up.** Open the repo in VS Code and press `F5` — the *Run
+> Extension* launch configuration builds first and opens an Extension
+> Development Host. In the dev host, open (or create) a trusted folder
+> containing a `.py` file, and open that file in the editor. Confirm
+> `ms-python.python` (Microsoft's Python extension) is installed in that
+> window — Extensions view, search "Python", publisher Microsoft — installing
+> it first if it is not, since it is the specific collision being checked.
+>
+> **This note applies from 2026-08-26 onward, after the run below.** The run
+> target now defaults to `"local"`
+> ([ADR-0020](../adr/0020-run-target-defaults-to-local.md), written because
+> of what this very procedure found the first time it was run) — this
+> extension contributes nothing to the editor until the target is switched to
+> Viya, so a repeat of this procedure needs `Select Run Target` (status bar,
+> or the palette) pointed at a configured profile *before* step 1, or there
+> is no button to observe at all. The run recorded below predates that
+> change: the button appeared with nothing configured, because Viya was
+> still the default at the time.
+>
+> 1. Look at the editor title bar's toolbar, top right of the open `.py` file.
+>    **Expected:** note whether exactly one play-shaped icon is visible there,
+>    or two separate ones side by side.
+> 2. Hover the play icon without clicking it.
+>    **Expected:** a tooltip names one command — either **Run Python File**
+>    (`ms-python.python`'s) or **Run File** (this extension's). Note which.
+> 3. Look for a small chevron immediately to the icon's right.
+>    **Expected:** note whether a dropdown arrow is present next to the icon.
+> 4. Click the chevron from step 3.
+>    **Expected:** a menu opens listing the *other* run command — whichever of
+>    **Run Python File** / **Run File** was not named in step 2.
+> 5. Click that other command.
+>    **Expected:** its own behaviour runs — this extension's **Run File**
+>    shows either "The run target is Local Python…" or "No SAS Viya connection
+>    profile is selected…", depending on the run target, since no profile is
+>    needed to observe the button itself.
+> 6. Without reloading the window, look at the toolbar icon again.
+>    **Expected:** note whether the tooltip now names the command run in step
+>    5 (VS Code promoted the last-used command to primary) or still names the
+>    one from step 2 (the primary assignment did not move).
+> 7. Repeat steps 2–6 once more, clicking whichever command the chevron offers
+>    this time.
+>    **Expected:** note whether the primary/secondary assignment settled at
+>    step 6 stays put, or keeps moving on every click.
+>
+> If step 1 shows two icons rather than one with a dropdown, VS Code did not
+> merge the two `editor/title/run` contributions at all — a materially
+> different finding from what ADR-0011 discusses, and worth its own note
+> rather than being forced into steps 3–7. If step 6 or 7 shows this
+> extension's **Run File** becoming primary without ever having been the entry
+> named in step 2 to begin with, that is the "claim the play button" outcome
+> ADR-0011 rejected, arriving by accident — the ADR needs revisiting, not a
+> workaround.
+>
+> **What this run found, 2026-08-26, with `ms-python.python` installed and
+> `pythonOnViya.runFile` never previously invoked in this folder:**
+> - **Step 1:** one play-shaped icon, not two. VS Code does merge same-group
+>   `editor/title/run` contributions into a single button with a dropdown,
+>   settling that half of the open question.
+> - **Step 2:** the tooltip named **Run File** — this extension's own command
+>   — not `ms-python.python`'s **Run Python File**. Confirmed as the *first*
+>   thing observed, before any command in this session had been run at all.
+> - **Step 3–4:** a chevron was present; opening it listed **Run File** first,
+>   then `ms-python.python`'s own entries in order (**Run Python file**, **Run
+>   Python file in dedicated terminal**, **Run current file in interactive
+>   window**, **Run as task**) followed by its two debugger entries. Matches
+>   ADR-0011's own account of what `ms-python.python` contributes to this
+>   menu, and confirms VS Code lists every contribution rather than picking a
+>   single "other" one.
+> - **Step 5–7:** every way of invoking **Run File** tried — the primary
+>   button, and selecting **Run File** explicitly from the chevron, tried more
+>   than once — ran correctly on the configured Viya profile (`Running
+>   test.py on SAS Viya profile "innovation"…`, the program's own output, then
+>   `Finished.`), and the primary assignment did not move across repeated
+>   invocations. `ms-python.python`'s own **Run Python file** was not
+>   exercised this run, so whether *it* would ever displace ours as primary is
+>   still unobserved.
+>
+> **The result is the one ADR-0011 said would need revisiting rather than
+> working around.** This extension's entry was primary *from the very first
+> observation*, ahead of `ms-python.python`, with no prior invocation in this
+> folder to explain it as "last used remembered" — the answer to "which
+> becomes the primary button" is not "whichever was used last," at least not
+> only that; something about how VS Code orders `editor/title/run`
+> contributions favoured this extension's entry by default. That is a
+> materially different, and worse, shape than the ADR's own framing
+> anticipated: a user who has never touched this extension, on a workspace
+> where `pythonOnViya.runTarget` defaults to `"viya"` with no profile
+> required for the button to appear at all, can have their editor's play
+> button silently mean "run on Viya" the first time they ever open a `.py`
+> file. A change to *which* button is primary is an architecture-level
+> decision, not a bug fix, so this was recorded and discussed with Sean rather
+> than patched on the spot, per this project's "Treat architecture-level
+> changes as a deliberate event" policy — the agreed direction is
+> [ADR-0020](../adr/0020-run-target-defaults-to-local.md), reversing the
+> default to Local, implemented in the same slice once agreed.
+>
+> **Re-checked by hand, 2026-08-26, in a folder never opened with this
+> extension before, after ADR-0020 landed.** Every expectation held: no icon
+> from this extension in the editor toolbar with nothing configured (only
+> `ms-python.python`'s own **Run Python file**, no dropdown); `Python on Viya:
+> Run File` from the Command Palette still reported "The run target is Local
+> Python. Switch the run target to a SAS Viya profile to run this on Viya."
+> exactly as always; `Select Run Target` listed **Local Python** plus both
+> configured profiles; picking **innovation** made this extension's **Run
+> File** appear, merged with `ms-python.python`'s into one button with a
+> dropdown, and running it connected and executed correctly. One false alarm
+> along the way worth recording verbatim, because it will recur: clicking the
+> *notification toast* that names a refusal ("Source: Python on Viya…", the
+> one with a gear/chevron/`X`, sitting in the bottom-right corner of the
+> editor) does nothing, and is easy to mistake for "the status bar" — the
+> actual status bar switch is the solid bar along the very bottom edge of the
+> whole window, where this extension's item sits left-aligned, just after the
+> problem counts (`$(server) innovation` once a profile is picked). Clicking
+> *that* opened the picker correctly the first time it was tried once the
+> right element was identified.
+>
+> **Two more defects, found running `npm run test:integration` against a real
+> test host after this slice was proposed — not caught by the adversarial
+> review above, which reads the diff rather than running it:**
+> 1. `test/integration/run/commands.test.ts` called `registerRunCommands`
+>    itself with its own fakes, which tries to claim `pythonOnViya.runFile`
+>    and the other four ids on the process-global `vscode.commands` registry —
+>    but the real extension had already claimed them at activation
+>    (`onStartupFinished` fires before any test body runs), so every one of
+>    the suite's eight tests failed with "command already exists," regardless
+>    of `afterEach` disposal. Every other command-test file in this repo
+>    avoids the collision by driving the already-activated real extension
+>    through `executeCommand` instead of re-registering. Fixed by giving
+>    `commands.ts` a `createRunCommandHandlers` export — the same five
+>    handlers, built with the caller's fakes, with no
+>    `vscode.commands.registerCommand` call among them; `registerRunCommands`
+>    is now the thin shell that wires those handlers to the real registry
+>    exactly once, and the test calls the handlers directly.
+> 2. Once that collision was fixed and the suite could actually run,
+>    `buildProgram` in `commands.ts` turned out to send **Run Selection with an
+>    empty selection to run the whole file** rather than reporting "Select
+>    some code to run" — `if (selection === undefined || selection.isEmpty)`
+>    folded "Run File's own deliberate `undefined`" and "Run Selection's own
+>    empty `Selection` object" into the same whole-document branch, contrary
+>    to what the function's doc comment already said. Fixed: only
+>    `selection === undefined` falls back to the whole document; a
+>    defined-but-empty selection now returns `undefined`. Caught by the guard
+>    test named for exactly this case, once it could run past the collision
+>    above.
+>
+> **PR #63's own review found three more, all fixed in the same PR rather
+> than a round trip:**
+> 1. **Blocking (Claude Bot).** `package.json`'s `contributes.commands` entries
+>    for `runFile`, `runSelection` and `resetPythonState` carried
+>    `enablement: "editorLangId == python && pythonOnViya.runTarget == viya &&
+>    isWorkspaceTrusted"` (`runSelection` also `&& editorHasSelection`) — but
+>    `enablement` governs the command everywhere it can be invoked, the
+>    Command Palette included, not just the editor placements it was copied
+>    from. That directly contradicts ADR-0011's Consequences section, "the
+>    palette command never disappears," and its Decision section, "the target
+>    governs placement, never meaning, so no gesture changes what it does
+>    under the user's hands." Fixed: the clause stays only on the
+>    `editor/title/run` and `editor/context` menu entries, where it already
+>    correctly gates placement; the three commands now carry no
+>    `enablement` at all (`cancelRun`'s own `pythonOnViya.running` gate is
+>    unrelated — it is not flagged and is left alone). The guard tests
+>    already covered every case this now makes reachable from the palette
+>    (no editor, empty selection, wrong target) — they exist because the
+>    behaviour was always meant to be hit this way, just never actually
+>    reachable through the entry point that matters.
+> 2. **Major (Codex).** `cancelRun`'s reset-interrupt fallback (the fix for
+>    finding 2 in the adversarial review above) re-derived "the busy backend"
+>    from `targets.status()` — the *currently active* profile — at the moment
+>    Cancel was pressed. That fixed the original "close whichever cached
+>    backend happens to be busy" bug, but broke as soon as the run target or
+>    active profile changed while the reset was still in flight: the
+>    fallback would then look at the wrong profile's cache entry, or none,
+>    and tell the user nothing was running while the reset kept going
+>    regardless — `pythonOnViya.running` stayed `true` and the progress
+>    notification kept spinning throughout. Fixed properly this time:
+>    `resetPythonState` now tracks the backend a reset is running on directly
+>    (`currentReset`, the same shape `currentRun` already used for
+>    `execute()`), and `cancelRun` checks it first. The profile-scanning
+>    fallback is gone entirely — it was a workaround for `reset()` returning
+>    no handle, not a design constraint, and tracking the backend directly in
+>    `commands.ts` sidesteps the need for it.
+> 3. **Minor (Claude Bot) — correct about the message, wrong to remove the
+>    check; caught by a second review pass before this landed.** `runNow` and
+>    `resetPythonState` each pre-checked `backend.busy` and, if true, reported
+>    a synthesized `{ code: "busy", running: "a run in this window" }` — and
+>    `localiseBackendProblem`'s `busy` arm does ignore `running` by its own
+>    design, so that value really is write-only, exactly as flagged. The first
+>    fix removed both pre-checks on that basis, reasoning that `execute()`/
+>    `reset()`'s own `busy` refusal a few lines below would produce the same
+>    user-visible message. A follow-up adversarial-review pass over that fix
+>    found it wrong: the check's real job was never the message, it was
+>    stopping a second invocation from ever reaching `syncRunningContext`,
+>    `currentRun`/`currentReset` and the shared `finally` below. Without it, a
+>    second `Run File` (or `Reset Python State`) fired while the first was
+>    still executing would pass through, get correctly refused as busy by
+>    `execute()`/`reset()` itself, but its own `finally` would still
+>    unconditionally clear the *first*, still-running invocation's tracking —
+>    reintroducing, for `currentRun`, the same class of bug finding 2 above
+>    fixed for `currentReset`. Both checks are back, with a comment explaining
+>    the serialisation reason rather than the (true, but incomplete) messaging
+>    one the review gave.
+> 4. **Minor/non-blocking (Claude Bot), on a later round.** `createRunCommandHandlers`'s
+>    `dispose()` tore down `targetChangeSubscription` and the output channel
+>    but never touched the `backends` cache — a still-busy `ProcPythonBackend`
+>    was simply dropped on window close, with no comment explaining why that
+>    is fine, unlike `ComputeSessionManager.dispose()`'s own explicit
+>    reasoning for the equivalent decision. Unlike that case, there genuinely
+>    is something worth attempting here: `close()` sends a real interrupt for
+>    whatever a backend has active. Fixed with the sweep the review offered
+>    as the alternative to a comment alone — `dispose()` now calls
+>    `close()` on every cached backend, fired and not awaited for the same
+>    reason `ComputeSessionManager.dispose()` does not join an in-flight
+>    `connect()`: synchronous, the window is closing regardless, and there is
+>    nowhere to await it that VS Code would honour. `close()`'s own contract
+>    makes this safe to call whether or not a given backend is actually busy.
 
 - The pure part first: parsing, validating and labelling a target, and the "what
   does this target imply" rules, in a module with **no `vscode` import**, so
@@ -440,7 +778,27 @@ cancel it. Confirm whether the compute job cancel actually interrupts Python or
 blocks until the step finishes. If it blocks, fall back to session reset with a
 clear user-facing message, and log it in `PROBE-FINDINGS.md`.
 
-☐ **Milestone.** This is the first genuinely useful build. Install the `.vsix`
+☐ **After 3d-i — a fake-transport regression test for `commands.ts`'s
+post-`connect()` paths.** Deferred deliberately, not forgotten: raised by
+Claude Bot's review on PR #63, and the same gap `commands.ts`'s own 3d-i
+Runbook entry above already named before that review — every test in
+`test/integration/run/commands.test.ts` uses `sessionsThatMustNotConnect()`,
+so the suite only ever exercises the pre-`connect()` guards (readiness, the
+editor/selection checks, `selectRunTarget`). None of the following are
+pinned by an automated test anywhere in the tree, despite each one having
+needed a second review pass to get right during 3d-i itself:
+`backendFor()`'s reconnect-orphan close (a still-busy cached backend closed
+before being overwritten, when a new `ComputeConnection` arrives for the
+same profile), `cancelRun`'s `currentReset` fallback (interrupting an
+in-flight `reset()` via `close()`), and the `backend.busy` serialisation
+guard in `runNow`/`resetPythonState` (stopping a second invocation from
+clobbering `currentRun`/`currentReset` in the shared `finally`). Closing this
+needs a `RunCommandSessions.connect()` fake that actually resolves to a
+`ComputeConnection`-shaped value, backed by a fake client/session
+`ProcPythonBackend` can be constructed against and driven through fake
+`execute()`/`reset()` calls to simulate a busy backend, a reconnect, and an
+in-flight reset — real test-infrastructure work, not a quick addition, which
+is why it is a named follow-up rather than folded into 3d-i or 3d-ii. This is the first genuinely useful build. Install the `.vsix`
 locally and use it for real work for a few days before starting Phase 4. Real use
 will reorder your priorities more reliably than the plan will.
 

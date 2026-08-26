@@ -14,8 +14,10 @@ import { SessionBindingStore } from "./compute/bindingStore";
 import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerProfileCommands } from "./profile/commands";
-import { createProfileStatusBarItem } from "./profile/statusBar";
 import { ProfileStore } from "./profile/store";
+import { registerRunCommands } from "./run/commands";
+import { createRunTargetStatusBarItem } from "./run/statusBar";
+import { RunTargetStore } from "./run/targetStore";
 
 /**
  * Activation is deliberately cheap, and happens once per window.
@@ -58,8 +60,17 @@ export function activate(context: vscode.ExtensionContext): void {
   // here touches the settings file or the secret store. Constructing the store
   // only registers a configuration listener.
   const profiles = new ProfileStore(context, output);
-  context.subscriptions.push(profiles, createProfileStatusBarItem(profiles));
+  context.subscriptions.push(profiles);
   registerProfileCommands(context, profiles, output);
+
+  // The run target (ADR-0011): local vs. Viya, kept separately from — but
+  // reading — the active profile. Its own workspaceState key, never a
+  // setting; see `RunTargetStore`'s own doc comment.
+  const runTargets = new RunTargetStore(context, profiles);
+  context.subscriptions.push(
+    runTargets,
+    createRunTargetStatusBarItem(profiles, runTargets),
+  );
 
   // One URI handler for the whole extension, registered here rather than inside
   // the sign-in flow: VS Code allows exactly one, and an attempt-scoped handler
@@ -97,6 +108,26 @@ export function activate(context: vscode.ExtensionContext): void {
   // auth to compute in one place rather than giving the provider — which VS
   // Code's Accounts menu also calls — the ability to start a SAS process.
   registerAuthCommands(context, auth, profiles, output, connect);
+
+  // Slice 3d-i: the commands that actually run Python on Viya. `connect` is
+  // the same wrapper `registerAuthCommands` above was given — reusing it,
+  // rather than `sessions.connect` directly, is what keeps
+  // `pythonOnViya.connected` honest when a run auto-connects instead of the
+  // user pressing Connect first.
+  registerRunCommands(
+    context,
+    {
+      connect,
+      isBusy: (profileId) => sessions.isBusy(profileId),
+      startSubmission: (profileId) => sessions.startSubmission(profileId),
+      endSubmission: (profileId) => {
+        sessions.endSubmission(profileId);
+      },
+    },
+    profiles,
+    runTargets,
+    output,
+  );
 }
 
 export function deactivate(): void {

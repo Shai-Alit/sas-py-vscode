@@ -158,22 +158,34 @@ export interface ExecutionResult extends ExecutionOutcome {
  * distinction between a value, a table, an image and a failure at the one point
  * where it is still cheap to keep.
  *
- * **Not localised, anywhere in this seam, and that is a known gap rather than
- * a decision.** `text/plain`'s `data`, {@link Traceback.message}, and
- * {@link PythonDiagnostic.message} can all carry extension-authored English —
- * `src/backend/procPython.ts`'s `"an unhandled Python exception"` fallback and
- * its `SAS reported an error (SYSCC=…)` message, `logFilter.ts`'s dropped-
- * lines marker, and `richOutput.ts`'s `skippedCaptureOutput`
- * (`"could not retrieve rich output file …"`, slice 3c-i) are the four that
- * exist today. None go through `l10n.t()`,
- * because neither `procPython.ts` nor `logFilter.ts` may import `vscode`
- * (ADR-0009's coverage-scope discipline), and ADR-0015 never assigned this
- * seam a localisation boundary at all. The natural place for one is whatever
- * eventually renders `outputs`/`diagnostics` to the user — 3d-i's output
- * channel or 3d-ii's result panel — since that layer already has to import
- * `vscode` for reasons unrelated to this. Decide it there rather than
- * threading `vscode` (and therefore this seam's exit from the coverage
- * denominator) down into `procPython.ts` to solve one string at a time.
+ * **The payload carried across this seam is not localised, and that stays a
+ * known gap rather than a decision.** `text/plain`'s `data`,
+ * {@link Traceback.message}, and {@link PythonDiagnostic.message} can all
+ * carry extension-authored English — `src/backend/procPython.ts`'s `"an
+ * unhandled Python exception"` fallback and its `SAS reported an error
+ * (SYSCC=…)` message, `logFilter.ts`'s dropped-lines marker, and
+ * `richOutput.ts`'s `skippedCaptureOutput` (`"could not retrieve rich output
+ * file …"`, slice 3c-i) are the four that exist today. None go through
+ * `l10n.t()`, because neither `procPython.ts` nor `logFilter.ts` may import
+ * `vscode` (ADR-0009's coverage-scope discipline), and ADR-0015 never
+ * assigned this seam a localisation boundary at all.
+ *
+ * **3d-i decided the boundary for what it renders itself, without solving the
+ * gap above.** `src/run/outputChannel.ts` — the first thing to render
+ * `outputs`/`diagnostics` to a person — localises everything *it* authors:
+ * the "running on profile …" header, the outcome summary, the
+ * `text/html`/`image/png` deferred-output placeholder, and every
+ * `BackendProblem` (via the new `src/backend/messages.ts`, the same
+ * `problems.ts`/`messages.ts` split `compute` and `auth` already use). What it
+ * does **not** do is translate the four strings named above: they are already
+ * plain English by the time they reach `RichOutput.data` or
+ * `PythonDiagnostic.message`, and `outputChannel.ts` writes them verbatim, the
+ * same as `logLineOutput`'s own output always was. Closing that part of the
+ * gap would need `vscode` threaded down into `procPython.ts`/`logFilter.ts`,
+ * which is the exact cost this comment always warned against paying "one
+ * string at a time" — still not worth it for four fallback messages.
+ * 3d-ii's result panel inherits the same split when it renders `text/html` and
+ * `image/png` for real.
  */
 export type RichOutput =
   | { readonly mime: "text/plain"; readonly data: string }

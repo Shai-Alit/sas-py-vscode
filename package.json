@@ -117,8 +117,56 @@
         "title": "%command.disconnect.title%",
         "category": "%extension.category%",
         "enablement": "pythonOnViya.connected"
+      },
+      {
+        "command": "pythonOnViya.selectRunTarget",
+        "title": "%command.selectRunTarget.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.runFile",
+        "title": "%command.runFile.title%",
+        "category": "%extension.category%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "pythonOnViya.runSelection",
+        "title": "%command.runSelection.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.cancelRun",
+        "title": "%command.cancelRun.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.running"
+      },
+      {
+        "command": "pythonOnViya.resetPythonState",
+        "title": "%command.resetPythonState.title%",
+        "category": "%extension.category%"
       }
     ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "pythonOnViya.runFile",
+          "when": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "pythonOnViya.runFile",
+          "when": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted",
+          "group": "pythonOnViya@1"
+        },
+        {
+          "command": "pythonOnViya.runSelection",
+          "when": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted && editorHasSelection",
+          "group": "pythonOnViya@2"
+        }
+      ]
+    },
     "configuration": {
       "title": "Python on Viya",
       "properties": {

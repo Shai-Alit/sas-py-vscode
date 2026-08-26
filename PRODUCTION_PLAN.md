@@ -584,10 +584,18 @@ settled — the licence choice, the trust posture, `PROC PYTHON` as the substrat
 the dialect seam. Two years from now the code says what; only the ADR says why,
 and this repo will be maintained mostly by people reading it cold.
 
-**`PROBE-FINDINGS.md` is the evidence base and is versioned.** Each probe slice
-(`2-pre`, `3c`, `3e`) appends dated findings. When a finding is superseded, it is
-struck through with the date and reason rather than deleted — a claim that quietly
+**The phase files are the evidence base, and are versioned.** Each probe slice
+(`2-pre`, `3c`, `3e`) appends dated findings to the **Probe findings** section of
+the current `docs/phases/phase-N.md`. When a finding is superseded, it is struck
+through with the date and reason rather than deleted — a claim that quietly
 changed is worse than one that visibly changed.
+
+> **Amended 2026-08-25.** This paragraph named `PROBE-FINDINGS.md` as the
+> evidence base. PR #52 split that file into `docs/phases/phase-N.md`, one per
+> phase; `PROBE-FINDINGS.md` is now a stub redirect holding no findings, and
+> finding numbers were not renumbered when the content moved. Recorded as an
+> amendment rather than a silent rewrite because where the evidence base lives
+> is a documented invariant.
 
 **Honesty gate.** Docs may not claim Viya 3.5 support while it is unverified (§1.4),
 may not document a capability the runtime probe can't confirm, and must state
@@ -838,9 +846,9 @@ TypeScript extension. The rewritten prompts enforce this plan's own rules: the
 sanctioned-fail-soft-catch carve-out, the two upstream recursion bugs, the
 `Math.random()` PKCE defect, `endsubmit;` escaping, `l10n.t()`, the Apache-2.0
 §4(b) modified-file notice, and the copy-logic-into-tests anti-goal from §4. Both
-reviewers are also pointed at `PROBE-FINDINGS.md` and instructed to flag any claim
-about Viya behaviour the evidence file doesn't support — which makes the probe
-document machine-enforced rather than merely well-intentioned.
+reviewers are also pointed at the phase files' **Probe findings** sections and
+instructed to flag any claim about Viya behaviour those files don't support —
+which makes the probe record machine-enforced rather than merely well-intentioned.
 
 What remains for 0a-ii is only the merge and the smoke test.
 

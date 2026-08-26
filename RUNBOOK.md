@@ -175,7 +175,8 @@ These apply to every slice. Most PR review comments trace back to one of them.
   when recording. Secret scanning runs in CI but should never be the thing that
   catches it.
 - **Probe before implementing** against an unverified endpoint. Record findings in
-  `PROBE-FINDINGS.md` and cite them in the PR description.
+  the **Probe findings** section of the current phase file (`docs/phases/phase-N.md`,
+  per `STATUS.md`) and cite the finding number in the PR description.
 - **New user-facing setting or command?** Add it to `package.json` contributions;
   the docs reference is *generated* from there, so never hand-edit the tables —
   regenerate them and commit the result, or CI will fail the diff check.

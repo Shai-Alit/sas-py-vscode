@@ -60,7 +60,8 @@ they do, so nothing changes meaning under your hands. See
 **Tested, and honestly so.** Unit tests mock at the HTTP boundary with no network;
 fixtures exist per Viya generation; a live tier runs against a real deployment and
 is opt-in. Behaviour we haven't verified against a real Viya is documented as
-unverified — see [PROBE-FINDINGS.md](PROBE-FINDINGS.md).
+unverified — see the **Probe findings** section of each phase file under
+[docs/phases/](docs/phases/), indexed by [STATUS.md](STATUS.md).
 
 **No telemetry.** None is collected. There is no setting to turn off, because
 there is nothing to turn off.

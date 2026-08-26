@@ -4,12 +4,12 @@
 backend, plus the `resolveContext` no-such-context correction) and 3b (the log
 filter) are merged. 3c's own probe (step 1, findings 61–66) is also merged —
 the file-write-plus-Compute-files-API mechanism won outright over
-base64-through-the-log. **3c-i (matplotlib/pandas rich-output capture) is
-next**, per the sizing proposed in `phase-3.md` and confirmed 2026-08-25;
-3c-ii (traceback structuring) follows it, split out because it doesn't
-depend on the probe's findings at all.
+base64-through-the-log. 3c-i (matplotlib/pandas rich-output capture) is merged
+too (PR #59, ADR-0019). **3c-ii (traceback structuring) is next** — split out
+from 3c-i because it doesn't depend on the probe's findings at all.
 
-> Update this file at the end of every phase (or slice, for phase 2). It is the
+> Update this file when a slice lands, not just at phase boundaries — in the
+> same PR that does the work. It is the
 > only file every session should need to open to know where to start — open the
 > phase file it points to, not the others, unless the current file says
 > otherwise or you have a specific reason to check history.
@@ -22,7 +22,7 @@ depend on the probe's findings at all.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ▶ in progress (3a, 3b, 3c-probe done; 3c-i next) | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | ▶ in progress (3a, 3b, 3c-probe, 3c-i done; 3c-ii next) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

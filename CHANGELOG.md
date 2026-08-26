@@ -1187,6 +1187,22 @@ called out under **Changed** with a migration note.
   by hand. `ComputeClient` was considered and does not fit: the identities
   service is not `/compute/...`, and `ComputeClient.send` only follows a
   `Link` under ADR-0010.
+- A Python exception's structured traceback no longer includes `PROC PYTHON`'s
+  own harness frames (slice 3c-ii, finding 39). Since 3a, `parseTraceback`
+  read every frame the runtime printed unfiltered, including the two frames
+  the harness wraps around the user's code, both labelled `File "<stdin>",
+  line N, in <module>` — every traceback the result panel will eventually
+  render pointed at two extra frames the user never wrote. `parseTraceback`
+  now drops the **leading contiguous run** of `<stdin>`-labelled frames only,
+  stopping at the first frame that is not one: a first version dropped every
+  frame with that label wherever it appeared, which an automated PR review
+  caught as wrong — user code that itself calls
+  `compile(src, "<stdin>", "exec")` can legitimately raise from a frame
+  labelled `<stdin>` too, and such a frame can only ever sit below a real
+  frame, never at the very top. `src/backend/backend.ts`'s
+  `TracebackFrame.file` doc is corrected to match: wrapper-frame dropping is
+  done here, and mapping a frame's line number to an editor position is
+  Phase 4's job, not this slice's.
 
 ### Changed
 

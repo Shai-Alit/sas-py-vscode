@@ -306,6 +306,73 @@ ADR first; it is not repeated here.
   source and a new documented invariant (ADR-0019 itself), squarely the case
   this repo's standing policy requires it for.
 
+☑ **3c-ii — traceback structuring: drop the harness's wrapper frames.** Scoped
+and landed 2026-08-25/26. Unlike 3c-i, this did not need a probe (finding 39
+already has the wire shape) or an ADR (a narrow correction, not a competing
+design) — it needed a scope decision, since three docs disagreed about who
+owns what.
+
+**What this slice found, before writing any code:** `parseTraceback` and the
+`application/vnd.python.traceback` `RichOutput` already shipped in **3a**
+(PR #50) — a Python exception already arrived as a structured `Traceback`,
+unfiltered. What was genuinely still open was the harness's own two `<stdin>`
+wrapper frames (finding 39), which neither 3a nor 3b dropped — `logFilter.ts`'s
+doc explicitly left "turning that traceback into a structured `Traceback`" to
+3c, and `backend.ts`'s `TracebackFrame.file` doc and `procPython.ts`'s own
+module doc disagreed about whether dropping the wrapper frames traveled
+together with mapping a frame to a `ProgramOrigin` (an editor position) or
+was separable from it.
+
+**Settled: the two are separable, and only the wrapper-frame drop is this
+slice's job.** `logFilter.ts`'s own doc and this phase file's own 3e/Phase 4
+text already pointed at **Phase 4** owning the editor-position mapping (its
+`ModuleNotFoundError` special-casing only makes sense once a frame maps to a
+line in the user's file); `backend.ts`'s `TracebackFrame.file` comment was the
+one place still asserting 3c owned both, and was stale relative to the other
+two. Corrected in the same change rather than left disagreeing.
+
+- **`src/backend/procPython.ts`'s `parseTraceback`** drops the harness's
+  `<stdin>` frames — **only the leading contiguous run of them**, immediately
+  after the header, stopping at the first frame that is not one. A header
+  found with only that leading run and no real frame at all (the harness
+  itself failing) returns a `Traceback` with an empty `frames` array,
+  distinct from "no frame lines at all," which still falls back to a plain
+  `SYSERRORTEXT` message as before.
+- **`src/backend/backend.ts`'s `TracebackFrame.file` doc corrected** to say
+  wrapper frames are already dropped by 3c-ii and that mapping to a
+  `ProgramOrigin` is Phase 4's job, not 3c's — matching `logFilter.ts` and
+  this file's own Phase 4 text instead of contradicting them.
+- **A real, blocking defect in the first version of this fix, caught by
+  automated PR review (Codex), not by the adversarial subagent pass below:**
+  the first `parseTraceback` change dropped *every* frame labelled `<stdin>`,
+  anywhere in the stack, reasoning (wrongly, as stated in a now-corrected
+  doc comment) that only the harness could ever produce that label. It can't
+  be true in general: user code that itself calls
+  `compile(src, "<stdin>", "exec")` (or `eval`/`exec` against a code object
+  built that way) can raise from a frame the runtime also labels `<stdin>`,
+  and a by-name filter would silently erase that real user frame. Such a
+  frame can only ever appear *below* at least one non-harness frame, though,
+  never at the very top — so the fix restricts the drop to the leading run
+  only, verified by hand-tracing the fix against the exact scenario the
+  review named. The adversarial subagent pass that ran before the PR was
+  opened checked the filter against finding 39's own recursion case and the
+  empty-frames edge case, and did **not** catch this — both passes' findings
+  are recorded here rather than only the one that turned out right, per this
+  project's own reviewer-calibration practice.
+- **Test plan:** `test/unit/proc-python-backend.test.ts`'s existing
+  "structured traceback" case asserts the leading `<stdin>` frames are gone;
+  one case confirms recursion-produced `<string>` frames all survive; one
+  confirms the harness-only-failure shape returns an empty `frames` array
+  rather than falling back to a plain message; a fourth, added for the review
+  finding above, confirms a user-generated `<stdin>` frame appearing *below*
+  a real frame survives untouched. No new Compute module, no new probe, no
+  live test — this changes pure decision logic already inside
+  `parseTraceback`'s existing unit coverage.
+- **Adversarial subagent review before this is proposed** — it changes a
+  documented invariant (`TracebackFrame.file`'s own contract), the same bar
+  3c-i's ADR-0019 change was held to, even though this slice carries no ADR of
+  its own. Re-run after the review-finding fix above, over the corrected diff.
+
 ☐ **3d-i — contribute the run target, and let it decide whether we appear.**
 [ADR-0011](../adr/0011-choosing-where-python-runs.md) settles the mechanism; this
 is the punch list for executing it.

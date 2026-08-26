@@ -69,18 +69,26 @@
  * "own module, fixture-tested independent of a real Compute client" reason
  * `logFilter.ts` is split out from this one.
  *
- * ## Traceback frames are raw, and deliberately not disambiguated further
+ * ## Traceback wrapper frames are dropped here; editor-position mapping is not
  *
- * ADR-0014's finding 39 says *"3b must drop [the wrapper] frames."*
- * `backend.ts`'s own `TracebackFrame.file` doc says something narrower:
- * *"Mapping this back to a `ProgramOrigin` is 3c's job, and the wrapper frames
- * … are dropped there."* The two disagree about which later slice owns the
- * cleanup. They agree on what matters here: **neither assigns it to 3a.** This
- * module's `parseTraceback` therefore does the one thing both descriptions
- * leave to the slice that produces the traceback at all — read the frames
- * exactly as the runtime printed them, outermost first, unmapped — and goes no
- * further. Whichever of 3b or 3c ends up owning the wrapper-frame drop and the
- * `ProgramOrigin` mapping, it is working from this module's output either way.
+ * 3a shipped `parseTraceback` reading every frame exactly as the runtime
+ * printed it, unfiltered — deliberately, since ADR-0014's finding 39 and
+ * `backend.ts`'s own (then-)`TracebackFrame.file` doc disagreed about whether
+ * 3b or 3c owned dropping the two `<stdin>` harness frames above the user's
+ * own, and neither assigned it to 3a.
+ *
+ * **3c-ii settles it:** `parseTraceback` now drops the harness's `<stdin>`
+ * frames itself — **only the leading run of them**, stopping at the first
+ * frame that is not one. A plain by-name filter shipped first and was wrong:
+ * an automated review caught that the user's own code can produce a frame
+ * labelled `<stdin>` too (`compile(src, "<stdin>", "exec")` and similar), and
+ * such a frame always sits below at least one real frame, never at the top —
+ * see {@link WRAPPER_FRAME_FILE}'s own doc comment for the full reasoning.
+ * What is still not done here is mapping a remaining frame's line number back
+ * to a `ProgramOrigin`. That might read as though `backend.ts`'s original doc
+ * assigned it to 3c too, but `logFilter.ts`'s own doc and `phase-3.md`'s
+ * Phase 4 plan text already pointed at Phase 4 for it, and `backend.ts`'s
+ * comment has been corrected to match rather than left disagreeing.
  *
  * ## What this backend does not attempt
  *
@@ -159,6 +167,23 @@ const TRACEBACK_HEADER = "Traceback (most recent call last):";
 
 /** `  File "<name>", line <n>, in <name>` — the one shape finding 39 measured. */
 const FRAME_PATTERN = /^ {2}File "(.*)", line (\d+), in (.+)$/;
+
+/** The file label `PROC PYTHON`'s own harness prints for the frames it wraps
+ * around the user's code (finding 39) — always the leading run at the very
+ * top of the stack, immediately after the header.
+ *
+ * **Not exclusive to the harness.** An earlier version of this comment
+ * claimed the user's own code could never produce this label, reasoning from
+ * how the *outer* program reaches the interpreter (`infile=`, ADR-0014) —
+ * true for the outer program, and wrong in general: user code that itself
+ * calls `compile(src, "<stdin>", "exec")` (or `eval`/`exec` against a code
+ * object built that way) can raise from a frame the runtime labels `<stdin>`
+ * too, and such a frame always sits *below* at least one non-harness frame,
+ * never at the very top. Caught by an automated review before this shipped —
+ * `parseTraceback` therefore drops only the **leading contiguous run** of
+ * `<stdin>` frames, stopping at the first frame that is not one, rather than
+ * dropping every frame with this label wherever it appears. */
+const WRAPPER_FRAME_FILE = "<stdin>";
 
 /**
  * The three calls of `ComputeSessionManager`'s busy guard, narrowed and bound
@@ -249,31 +274,54 @@ async function drainEvents(events: AsyncIterable<unknown>): Promise<void> {
  * whose own output happens to print that sentence would otherwise be
  * misparsed at an earlier, wrong occurrence — then reads consecutive frame
  * lines until one does not match, and takes what remains, joined, as the
- * exception message. Frames are kept in the order Python printed them
- * (outermost first), unmapped and undropped: see this module's doc comment for
- * why neither is this slice's job.
+ * exception message. The harness's own {@link WRAPPER_FRAME_FILE} frames are
+ * dropped before the result is returned (3c-ii, finding 39) — **only the
+ * leading run of them**, immediately after the header, never a frame with
+ * that label appearing later: see {@link WRAPPER_FRAME_FILE}'s own doc for
+ * why a plain by-name filter is wrong here. The remaining frames stay in the
+ * order Python printed them (outermost first) and unmapped — turning a line
+ * number into an editor position is Phase 4's job, not this one's (see this
+ * module's doc comment).
  *
  * Returns `undefined` if no traceback header is found, or if it is found with
- * no frame lines following it — both mean the log does not carry the shape
- * this parser knows, and the caller falls back to `SYSERRORTEXT` alone.
+ * no frame lines at all following it — both mean the log does not carry the
+ * shape this parser knows, and the caller falls back to `SYSERRORTEXT` alone.
+ * A header followed only by the harness's leading run, with nothing after it
+ * (the harness itself failing rather than the user's code), is a real,
+ * different case, and is returned as a `Traceback` with an empty `frames`
+ * array rather than falling back, since a header and a message were both
+ * genuinely found.
  */
 function parseTraceback(lines: readonly string[]): Traceback | undefined {
   const headerIndex = lines.lastIndexOf(TRACEBACK_HEADER);
   if (headerIndex === -1) return undefined;
 
-  const frames: TracebackFrame[] = [];
+  const rawFrames: TracebackFrame[] = [];
   let cursor = headerIndex + 1;
   for (; cursor < lines.length; cursor += 1) {
     const match = FRAME_PATTERN.exec(lines[cursor] ?? "");
     if (match === null) break;
     const [, file, lineText, name] = match;
-    frames.push({
+    rawFrames.push({
       file: file ?? "",
       line: Number(lineText ?? "0"),
       name: (name ?? "").trim(),
     });
   }
-  if (frames.length === 0) return undefined;
+  if (rawFrames.length === 0) return undefined;
+
+  // Only the *leading* run of `WRAPPER_FRAME_FILE` frames is the harness's —
+  // stop dropping at the first frame that isn't one, so a `<stdin>` frame the
+  // user's own code produces (e.g. via `compile(src, "<stdin>", "exec")`),
+  // which can only ever appear below a real frame, survives untouched.
+  let wrapperCount = 0;
+  while (
+    wrapperCount < rawFrames.length &&
+    rawFrames[wrapperCount]?.file === WRAPPER_FRAME_FILE
+  ) {
+    wrapperCount += 1;
+  }
+  const frames = rawFrames.slice(wrapperCount);
 
   const messageLines = lines
     .slice(cursor)

@@ -560,6 +560,21 @@ export function createRunCommandHandlers(
     dispose: () => {
       targetChangeSubscription.dispose();
       if (deps.outputChannel === undefined) outputChannel.dispose();
+      // Unlike `ComputeSessionManager.dispose()` — which has nothing worth
+      // tearing down server-side, and says so — a busy `ProcPythonBackend`
+      // has a real interrupt `close()` can send. Fired, not awaited: this
+      // method is synchronous, the window is closing regardless, and there
+      // is nowhere to await it that VS Code would honour, the same
+      // reasoning `ComputeSessionManager.dispose()` gives for not joining
+      // an in-flight `connect()`. If the interrupt never lands before the
+      // process exits, the SAS-side run keeps executing to its own
+      // conclusion, unwatched rather than orphaned — this window has simply
+      // stopped being the one that cares. Safe to call on every cached
+      // backend regardless of whether it is actually busy: past the cancel
+      // branch, `close()`'s own contract is a no-op. Raised on review.
+      for (const cached of backends.values()) {
+        void cached.backend.close();
+      }
     },
   };
 }

@@ -700,6 +700,20 @@ is the punch list for executing it.
 >    fixed for `currentReset`. Both checks are back, with a comment explaining
 >    the serialisation reason rather than the (true, but incomplete) messaging
 >    one the review gave.
+> 4. **Minor/non-blocking (Claude Bot), on a later round.** `createRunCommandHandlers`'s
+>    `dispose()` tore down `targetChangeSubscription` and the output channel
+>    but never touched the `backends` cache — a still-busy `ProcPythonBackend`
+>    was simply dropped on window close, with no comment explaining why that
+>    is fine, unlike `ComputeSessionManager.dispose()`'s own explicit
+>    reasoning for the equivalent decision. Unlike that case, there genuinely
+>    is something worth attempting here: `close()` sends a real interrupt for
+>    whatever a backend has active. Fixed with the sweep the review offered
+>    as the alternative to a comment alone — `dispose()` now calls
+>    `close()` on every cached backend, fired and not awaited for the same
+>    reason `ComputeSessionManager.dispose()` does not join an in-flight
+>    `connect()`: synchronous, the window is closing regardless, and there is
+>    nowhere to await it that VS Code would honour. `close()`'s own contract
+>    makes this safe to call whether or not a given backend is actually busy.
 
 - The pure part first: parsing, validating and labelling a target, and the "what
   does this target imply" rules, in a module with **no `vscode` import**, so

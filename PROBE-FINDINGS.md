@@ -8,16 +8,18 @@ list, and a **Probe findings** section. See [STATUS.md](STATUS.md) for which
 phase is current and which phase file to open.
 
 That restructuring commit was itself tagged `[skip-review]`, so the AI
-reviewers never saw this file disappear, and roughly thirty references
-across this repository — the PR template, `CONTRIBUTING.md`, `README.md`,
-`PRODUCTION_PLAN.md`, the root `RUNBOOK.md`, several ADRs, `src/` doc
-comments, test fixture READMEs, and this repo's own AI-reviewer
-configuration (`.github/scripts/ai_review.py`,
-`.github/workflows/claude-review.yml`) — still point at this file as if it
-were the single, current evidence base. This stub exists so those pointers
-resolve to something true instead of a 404, without redoing every one of
-those citations in the same pass. If you're the one doing that fuller sweep,
-this paragraph (and the notes it points at) is where to start.
+reviewers never saw this file disappear, and roughly thirty references across
+this repository were left pointing at it as if it were the single, current
+evidence base. **That sweep is complete as of 2026-08-25.** Every *live
+instruction* — the AI-reviewer configuration, the PR template,
+`CONTRIBUTING.md`, the root `RUNBOOK.md`, `README.md`, `PRODUCTION_PLAN.md`,
+and the test fixture guidance — now points at the phase files instead.
+
+References that remain are **deliberate historical citations**: ADRs, entries
+inside `docs/phases/*.md`, `CHANGELOG.md`, `src/` doc comments, and per-fixture
+READMEs recording where a fixture came from. Those were true when written,
+finding numbers were never renumbered, and rewriting them would edit the
+record for no gain. They are not an outstanding task — leave them.
 
 ## Finding a specific numbered finding
 
@@ -27,8 +29,8 @@ citation**, written before the split, and finding numbers were **not**
 renumbered when the content moved. To find finding *N*: search
 `docs/phases/*.md` for `Finding N —`. Each phase file's own **Probe
 findings** section is chronological and dated, and later phases continue
-the numbering the earlier ones left off (as of this writing, findings run
-through 66, in `docs/phases/phase-3.md`).
+the numbering the earlier ones left off — the highest-numbered findings are
+in the latest phase file that has any.
 
 ## For a reviewer checking a claim against this file
 

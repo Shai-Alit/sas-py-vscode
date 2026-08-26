@@ -98,11 +98,14 @@ jobs:
             support BOTH Viya 3.5 and Viya 4 behind a dialect layer. Review this PR
             as a senior TypeScript / VS Code extension maintainer.
 
-            Design intent is in PRODUCTION_PLAN.md and verified Viya behaviour is
-            in PROBE-FINDINGS.md — check changes against both, and flag any claim
-            about Viya behaviour that PROBE-FINDINGS.md does not support. Much of
-            the connection layer is ported from the Apache-2.0
-            sassoftware/vscode-sas-extension. The PR branch is already checked out.
+            Design intent is in PRODUCTION_PLAN.md. Verified Viya behaviour lives
+            in the Probe findings section of each docs/phases/phase-N.md — see
+            STATUS.md for the current phase. Check the phase file for the slice
+            under review, and earlier phases' files if the claim could have been
+            settled before this slice started; flag any claim about Viya behaviour
+            those files do not support. Much of the connection layer is ported
+            from the Apache-2.0 sassoftware/vscode-sas-extension. The PR branch is
+            already checked out.
 
             Focus, in priority order:
             - Correctness & error handling: no empty/swallowing `catch` (the one

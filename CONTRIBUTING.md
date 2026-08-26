@@ -87,10 +87,11 @@ See [NOTICE](NOTICE) and [docs/adr/0000-repository-licence.md](docs/adr/0000-rep
 ## Probing before implementing
 
 Where the plan calls for a probe, run it before writing code against the endpoint.
-Record what you observe in [PROBE-FINDINGS.md](PROBE-FINDINGS.md) and cite it in
-the pull request. Superseded findings are struck through with the date and reason
-rather than deleted — a claim that quietly changed is worse than one that visibly
-changed.
+Record what you observe in the **Probe findings** section of the current phase
+file (`docs/phases/phase-N.md` — see [STATUS.md](STATUS.md) for which) and cite
+the finding number in the pull request. Superseded findings are struck through
+with the date and reason rather than deleted — a claim that quietly changed is
+worse than one that visibly changed.
 
 Do not document behaviour you have not observed. In particular, no change may
 claim Viya 3.5 support while it remains unverified.

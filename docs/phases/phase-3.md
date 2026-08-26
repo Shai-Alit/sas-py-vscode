@@ -201,7 +201,7 @@ existing `RichOutput` union (`image/png`, `text/html`); *Medium*. Traceback
 structuring (`application/vnd.python.traceback`) does not depend on anything
 this probe found — finding 39 already established tracebacks arrive as ordinary
 log lines — so it stays a separate item, **3c-ii**, rather than being sized
-against this probe's findings. 3c-i is next.
+against this probe's findings.
 
 ```bash
 # 3c-i — matplotlib/pandas rich-output capture (findings 61-66)
@@ -229,13 +229,18 @@ git checkout -b phase-3e-runtime-capabilities
 git commit -m "feat(backend): probe interpreter version and installed packages"
 ```
 
-☐ **3c-i — matplotlib/pandas rich-output capture.** Scoped 2026-08-25, design
+☑ **3c-i — matplotlib/pandas rich-output capture.** Scoped 2026-08-25, design
 confirmed the same day: **[ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)**
 settles the mechanism (a passive before/after directory diff, not an explicit
 helper library the user's script would have to import) and every wire-level
 detail (the size cap, the closed `.png`/`.html` whitelist, ordering,
 cleanup, cancellation). This is the punch list for executing it — read the
 ADR first; it is not repeated here.
+
+> **Landed 2026-08-25, merged as PR #59.** `src/python/richOutput.ts` and
+> `src/compute/files.ts`, capturing matplotlib/pandas output via the
+> before/after working-directory diff ADR-0019 settles. Findings 67–70 in the
+> Probe findings section below record what the implementation turned up.
 
 - **`src/compute/files.ts` (new).** Owns the Compute service's files API:
   listing a session's working directory (`getFiles` → `getDirectoryMembers`,

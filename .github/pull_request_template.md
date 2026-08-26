@@ -1,12 +1,13 @@
 ## What and why
 
-<!-- What changed, and what problem it solves. Link the slice from
-     PRODUCTION_PLAN.md, e.g. "Implements slice 3a." -->
+<!-- What changed, and what problem it solves. Name the slice from the phase
+     file, e.g. "Implements slice 3a." -->
 
 ## How it was verified
 
 <!-- Which tests, which tier, and anything you checked by hand. If you probed a
-     live Viya, cite the PROBE-FINDINGS.md entry. -->
+     live Viya, cite the finding number in the phase file's Probe findings
+     section (see STATUS.md for the current phase). -->
 
 ## Checklist
 

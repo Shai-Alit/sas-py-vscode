@@ -54,8 +54,10 @@ deployment, and the whole point of these files is that they are evidence.
 `harness/` is hand-written and is formatted like the source it is.
 
 **Record where it came from.** A fixture that changes behaviour belongs with a
-`PROBE-FINDINGS.md` entry describing the endpoint, the date, and the deployment
-generation. Superseded findings are struck through, never deleted.
+finding in the current phase file's **Probe findings** section
+(`docs/phases/phase-N.md`, per `STATUS.md`) describing the endpoint, the date,
+and the deployment generation. Superseded findings are struck through, never
+deleted.
 
 **Fixtures are read from this directory, not copied into `out/`.** Use
 `readJsonFixture` from `test/helpers/fixtures.ts`; there is no build step to

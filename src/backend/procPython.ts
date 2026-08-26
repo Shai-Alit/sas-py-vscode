@@ -78,14 +78,17 @@
  * own, and neither assigned it to 3a.
  *
  * **3c-ii settles it:** `parseTraceback` now drops the harness's `<stdin>`
- * frames itself, by name rather than by position — the user's own code can
- * recurse and print more `<string>` frames of its own, but the harness's are
- * always `<stdin>`, never anything else. What is still not done here is
- * mapping a remaining frame's line number back to a `ProgramOrigin`. That
- * might read as though `backend.ts`'s original doc assigned it to 3c too, but
- * `logFilter.ts`'s own doc and `phase-3.md`'s Phase 4 plan text already
- * pointed at Phase 4 for it, and `backend.ts`'s comment has been corrected to
- * match rather than left disagreeing.
+ * frames itself — **only the leading run of them**, stopping at the first
+ * frame that is not one. A plain by-name filter shipped first and was wrong:
+ * an automated review caught that the user's own code can produce a frame
+ * labelled `<stdin>` too (`compile(src, "<stdin>", "exec")` and similar), and
+ * such a frame always sits below at least one real frame, never at the top —
+ * see {@link WRAPPER_FRAME_FILE}'s own doc comment for the full reasoning.
+ * What is still not done here is mapping a remaining frame's line number back
+ * to a `ProgramOrigin`. That might read as though `backend.ts`'s original doc
+ * assigned it to 3c too, but `logFilter.ts`'s own doc and `phase-3.md`'s
+ * Phase 4 plan text already pointed at Phase 4 for it, and `backend.ts`'s
+ * comment has been corrected to match rather than left disagreeing.
  *
  * ## What this backend does not attempt
  *
@@ -165,13 +168,21 @@ const TRACEBACK_HEADER = "Traceback (most recent call last):";
 /** `  File "<name>", line <n>, in <name>` — the one shape finding 39 measured. */
 const FRAME_PATTERN = /^ {2}File "(.*)", line (\d+), in (.+)$/;
 
-/** The file label `PROC PYTHON`'s own harness prints for the two frames it
- * wraps around the user's code (finding 39) — never a label the user's own
- * code can produce, since it reaches the interpreter as an uploaded file run
- * with `infile=` (ADR-0014), not typed at a `<stdin>` prompt. Dropped by name
- * in `parseTraceback` (3c-ii), not by position: the user's own code can
- * recurse and print more `<string>` frames of its own, but never another one
- * of these. */
+/** The file label `PROC PYTHON`'s own harness prints for the frames it wraps
+ * around the user's code (finding 39) — always the leading run at the very
+ * top of the stack, immediately after the header.
+ *
+ * **Not exclusive to the harness.** An earlier version of this comment
+ * claimed the user's own code could never produce this label, reasoning from
+ * how the *outer* program reaches the interpreter (`infile=`, ADR-0014) —
+ * true for the outer program, and wrong in general: user code that itself
+ * calls `compile(src, "<stdin>", "exec")` (or `eval`/`exec` against a code
+ * object built that way) can raise from a frame the runtime labels `<stdin>`
+ * too, and such a frame always sits *below* at least one non-harness frame,
+ * never at the very top. Caught by an automated review before this shipped —
+ * `parseTraceback` therefore drops only the **leading contiguous run** of
+ * `<stdin>` frames, stopping at the first frame that is not one, rather than
+ * dropping every frame with this label wherever it appears. */
 const WRAPPER_FRAME_FILE = "<stdin>";
 
 /**
@@ -264,18 +275,22 @@ async function drainEvents(events: AsyncIterable<unknown>): Promise<void> {
  * misparsed at an earlier, wrong occurrence — then reads consecutive frame
  * lines until one does not match, and takes what remains, joined, as the
  * exception message. The harness's own {@link WRAPPER_FRAME_FILE} frames are
- * dropped before the result is returned (3c-ii, finding 39); the remaining
- * frames stay in the order Python printed them (outermost first) and
- * unmapped — turning a line number into an editor position is Phase 4's job,
- * not this one's (see this module's doc comment).
+ * dropped before the result is returned (3c-ii, finding 39) — **only the
+ * leading run of them**, immediately after the header, never a frame with
+ * that label appearing later: see {@link WRAPPER_FRAME_FILE}'s own doc for
+ * why a plain by-name filter is wrong here. The remaining frames stay in the
+ * order Python printed them (outermost first) and unmapped — turning a line
+ * number into an editor position is Phase 4's job, not this one's (see this
+ * module's doc comment).
  *
  * Returns `undefined` if no traceback header is found, or if it is found with
  * no frame lines at all following it — both mean the log does not carry the
  * shape this parser knows, and the caller falls back to `SYSERRORTEXT` alone.
- * A header followed only by harness frames (no user frame at all) is a real,
- * different case — the harness itself failing rather than the user's code —
- * and is returned as a `Traceback` with an empty `frames` array rather than
- * falling back, since a header and a message were both genuinely found.
+ * A header followed only by the harness's leading run, with nothing after it
+ * (the harness itself failing rather than the user's code), is a real,
+ * different case, and is returned as a `Traceback` with an empty `frames`
+ * array rather than falling back, since a header and a message were both
+ * genuinely found.
  */
 function parseTraceback(lines: readonly string[]): Traceback | undefined {
   const headerIndex = lines.lastIndexOf(TRACEBACK_HEADER);
@@ -295,7 +310,18 @@ function parseTraceback(lines: readonly string[]): Traceback | undefined {
   }
   if (rawFrames.length === 0) return undefined;
 
-  const frames = rawFrames.filter((frame) => frame.file !== WRAPPER_FRAME_FILE);
+  // Only the *leading* run of `WRAPPER_FRAME_FILE` frames is the harness's —
+  // stop dropping at the first frame that isn't one, so a `<stdin>` frame the
+  // user's own code produces (e.g. via `compile(src, "<stdin>", "exec")`),
+  // which can only ever appear below a real frame, survives untouched.
+  let wrapperCount = 0;
+  while (
+    wrapperCount < rawFrames.length &&
+    rawFrames[wrapperCount]?.file === WRAPPER_FRAME_FILE
+  ) {
+    wrapperCount += 1;
+  }
+  const frames = rawFrames.slice(wrapperCount);
 
   const messageLines = lines
     .slice(cursor)

@@ -12,6 +12,7 @@ import {
   type RunCommandProfiles,
   type RunCommandSessions,
 } from "../../../src/run/commands";
+import { RunOutputChannel } from "../../../src/run/outputChannel";
 import {
   RunTargetStore,
   type RunTargetProfileSource,
@@ -76,6 +77,46 @@ function fakeProfiles(
   };
 }
 
+/**
+ * A `vscode.OutputChannel` double that does nothing, so that constructing a
+ * `RunOutputChannel` in every test below never calls the real
+ * `vscode.window.createOutputChannel`. None of these guard tests assert on
+ * the transcript — `output-channel.test.ts` already covers that — and
+ * `createRunCommandHandlers` builds a `RunOutputChannel` unconditionally,
+ * whether or not a given guard ever writes to it. Eight tests each creating
+ * and disposing a real, identically-named output channel in one extension
+ * host process is what was producing "Trying to add a disposable to a
+ * DisposableStore that has already been disposed of" noise in
+ * `test:integration`'s own output — harmless (every assertion still passed),
+ * but real VS Code API churn this suite has no reason to cause.
+ */
+function fakeOutputChannel(): vscode.OutputChannel {
+  return {
+    name: "fake",
+    append() {
+      /* no-op */
+    },
+    appendLine() {
+      /* no-op */
+    },
+    replace() {
+      /* no-op */
+    },
+    clear() {
+      /* no-op */
+    },
+    show() {
+      /* no-op */
+    },
+    hide() {
+      /* no-op */
+    },
+    dispose() {
+      /* no-op */
+    },
+  };
+}
+
 function fakeRecorder(): {
   readonly reported: string[];
   readonly informed: string[];
@@ -115,7 +156,12 @@ describe("run commands — guards", () => {
       profiles,
       targets,
       log,
-      deps,
+      {
+        outputChannel: new RunOutputChannel({
+          createChannel: () => fakeOutputChannel(),
+        }),
+        ...deps,
+      },
     );
     torndown.push(() => {
       handlers.dispose();

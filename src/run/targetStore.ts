@@ -73,7 +73,8 @@ export class RunTargetStore implements vscode.Disposable {
     return this.changed.event;
   }
 
-  /** The stored preference — `"viya"` by default. See `./target`'s own doc. */
+  /** The stored preference — `"local"` by default (ADR-0020). See
+   * `./target`'s own doc. */
   kind(): RunTargetKind {
     return resolveRunTargetKind(
       this.context.workspaceState.get<string>(RUN_TARGET_STATE_KEY),

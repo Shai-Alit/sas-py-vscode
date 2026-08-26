@@ -37,9 +37,14 @@ called out under **Changed** with a migration note.
   `pythonOnViya.switchProfile` is unchanged and still reachable from the
   Command Palette. The run target itself lives in `workspaceState` (never a
   setting — the same reasoning ADR-0002 already applies to the profile
-  settings), defaults to Viya, and the extension never changes it on the
-  user's behalf: a run against Viya with no profile, or a dead session, fails
-  with an actionable message rather than silently falling back to Local.
+  settings), defaults to **Local**
+  ([ADR-0020](docs/adr/0020-run-target-defaults-to-local.md), superseding
+  ADR-0011's original "defaults to Viya" — a manual check found this
+  extension's own run button became the editor's *primary* one, ahead of
+  `ms-python.python`'s, before anyone had configured anything), and the
+  extension never changes it on the user's behalf: a run against Viya with no
+  profile, or a dead session, fails with an actionable message rather than
+  silently falling back to Local.
 
 - Repository scaffold: hygiene files, contribution and security policy, issue and
   pull-request templates, Dependabot configuration, and the documentation skeleton.

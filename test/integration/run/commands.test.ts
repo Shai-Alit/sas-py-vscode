@@ -138,7 +138,11 @@ describe("run commands — guards", () => {
   it("refuses runSelection when viya has no active profile, without connecting", async () => {
     const profiles = fakeProfiles([]);
     const recorder = fakeRecorder();
-    const { handlers } = build(profiles, { ...recorder.deps });
+    const { targets, handlers } = build(profiles, { ...recorder.deps });
+    // Explicit: the default is Local (ADR-0020), and this test means to
+    // exercise the *other* refusal — viya with nothing to run against — not
+    // the one the default would give it for free.
+    await targets.setKind("viya");
 
     await handlers.runSelection();
     assert.equal(recorder.reported.length, 1);
@@ -158,10 +162,14 @@ describe("run commands — guards", () => {
   it("tells the user to open a Python file when there is no suitable editor", async () => {
     const profiles = fakeProfiles(["verde"]);
     const recorder = fakeRecorder();
-    const { handlers } = build(profiles, {
+    const { targets, handlers } = build(profiles, {
       ...recorder.deps,
       activeTextEditor: () => undefined,
     });
+    // Explicit: past the readiness check is the point of this guard, so the
+    // target has to be viya-with-a-profile (not Local, ADR-0020's default)
+    // for the run to reach the "no suitable editor" check at all.
+    await targets.setKind("viya");
 
     await handlers.runFile();
     assert.equal(recorder.informed.length, 1);
@@ -179,10 +187,14 @@ describe("run commands — guards", () => {
     editor.selection = new vscode.Selection(0, 0, 0, 0);
 
     const recorder = fakeRecorder();
-    const { handlers } = build(profiles, {
+    const { targets, handlers } = build(profiles, {
       ...recorder.deps,
       activeTextEditor: () => editor,
     });
+    // Explicit, same reason as the "no suitable editor" guard above: Local
+    // is the default now (ADR-0020), and this guard is reached only once
+    // the readiness check has already passed.
+    await targets.setKind("viya");
 
     await handlers.runSelection();
     assert.equal(recorder.informed.length, 1);
@@ -227,7 +239,6 @@ describe("run commands — guards", () => {
           ),
         ),
     });
-    await targets.setKind("local");
 
     await handlers.selectRunTarget();
     assert.deepEqual(targets.status(), { kind: "viya", profileName: "prod" });

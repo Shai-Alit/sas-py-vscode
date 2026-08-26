@@ -32,10 +32,10 @@ describe("run/target", () => {
       assert.equal(resolveRunTargetKind("viya"), "viya");
     });
 
-    it("defaults to viya for anything unrecognised, per ADR-0011", () => {
-      assert.equal(resolveRunTargetKind(undefined), "viya");
-      assert.equal(resolveRunTargetKind("nonsense"), "viya");
-      assert.equal(resolveRunTargetKind(null), "viya");
+    it("defaults to local for anything unrecognised, per ADR-0020", () => {
+      assert.equal(resolveRunTargetKind(undefined), "local");
+      assert.equal(resolveRunTargetKind("nonsense"), "local");
+      assert.equal(resolveRunTargetKind(null), "local");
     });
   });
 

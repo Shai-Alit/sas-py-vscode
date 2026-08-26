@@ -17,9 +17,12 @@
  * are the same gesture in the picker, but they write to two different stores,
  * because "which profile" already has an owner and duplicating it here would
  * give two places a stale copy of the same fact could live in. `"viya"` with
- * no active profile is not an error state — it is the ordinary shape of a
- * fresh install, per ADR-0011's "Default: Viya" — so {@link RunReadiness}
- * gives it its own reason rather than folding it into "local".
+ * no active profile is not an error state — it is what a workspace looks like
+ * once someone has switched the target to Viya but not yet picked a profile
+ * (ADR-0020: a fresh install starts at `"local"`, not `"viya"`, so this shape
+ * is reached by an explicit switch, not by doing nothing) — so
+ * {@link RunReadiness} gives it its own reason rather than folding it into
+ * "local".
  */
 
 /** The two things a workspace can be pointed at. */
@@ -31,19 +34,23 @@ export function isRunTargetKind(value: unknown): value is RunTargetKind {
 }
 
 /**
- * Reads a stored preference, defaulting to `"viya"` when there is none or it
+ * Reads a stored preference, defaulting to `"local"` when there is none or it
  * is not recognised.
  *
- * ADR-0011: "Installing this extension is the statement of intent, and local
- * execution already has a button." A value that is not one of the two known
- * strings — `undefined` on a fresh workspace, or anything a future build
- * might have written and this one does not recognise — resolves the same way
- * an absent one does, rather than being treated as a settings error: this is
- * `workspaceState`, which nobody hand-edits, and a mis-shaped read here has no
- * user-facing rejection to report to.
+ * ADR-0020 (superseding ADR-0011's "Default: Viya"): a manual check of
+ * ADR-0011's own open question found this extension's `editor/title/run`
+ * entry became the *primary* button ahead of `ms-python.python`'s, on a
+ * workspace where it had never been invoked — defaulting to Viya meant every
+ * install of this extension put a play button that silently means "run on
+ * Viya" in front of users who had done nothing to ask for that. A value that
+ * is not one of the two known strings — `undefined` on a fresh workspace, or
+ * anything a future build might have written and this one does not recognise
+ * — resolves the same way an absent one does, rather than being treated as a
+ * settings error: this is `workspaceState`, which nobody hand-edits, and a
+ * mis-shaped read here has no user-facing rejection to report to.
  */
 export function resolveRunTargetKind(stored: unknown): RunTargetKind {
-  return isRunTargetKind(stored) ? stored : "viya";
+  return isRunTargetKind(stored) ? stored : "local";
 }
 
 /** The target, plus the profile it resolves to when it is `"viya"`. */

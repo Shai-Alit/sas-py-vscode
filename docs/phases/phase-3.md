@@ -412,9 +412,11 @@ is the punch list for executing it.
 > - The stored target is only ever `"local"` or `"viya"` — never a profile name
 >   of its own. Choosing a Viya profile in the picker writes both the target
 >   *and* `ProfileStore`'s active-profile pointer in one gesture, but the two
->   remain two stores; `"viya"` with no active profile is the ordinary
->   fresh-install shape (`runReadiness`'s `"no-profile"` reason), not folded
->   into `"local"`.
+>   remain two stores; `"viya"` with no active profile (`runReadiness`'s
+>   `"no-profile"` reason) is reached by switching the target to Viya before
+>   picking a profile, not folded into `"local"`. **No longer the
+>   fresh-install shape** — see [ADR-0020](../adr/0020-run-target-defaults-to-local.md)
+>   below; the fresh-install default is `"local"` now.
 > - `Run File` passes `freshNamespace: true`; `Run Selection` passes `false`,
 >   so repeatedly running a selection builds on state the way a notebook cell
 >   would — `backend.ts`'s own doc names Run File and a notebook cell as the
@@ -462,11 +464,20 @@ is the punch list for executing it.
 >   alongside dropping its `.c8rc.json` exclude line — both in the commit
 >   that opened PR #63, once outside the sandbox that could not delete files
 >   on the mounted working tree.
-> - **The "confirm by hand, in the editor" bullet below is not done.** It
->   needs a real running editor window, which no session so far has had a way
->   to drive. See the manual test procedure just below for exactly what to run
->   and what to look for — do not rely on ADR-0011's assumption about how VS
->   Code presents the primary `editor/title/run` button until it has been.
+> - ~~Run by hand, 2026-08-26 — and the result is the bad one.~~ **Resolved the
+>   same day, by [ADR-0020](../adr/0020-run-target-defaults-to-local.md).**
+>   This extension's own **Run File** came up as the *primary*
+>   `editor/title/run` button, ahead of `ms-python.python`'s **Run Python
+>   File**, on a folder where `pythonOnViya.runFile` had never once been
+>   invoked before — not "last used remembered" (there was no prior use to
+>   remember), something else in how VS Code orders these contributions
+>   favoured ours. Precisely the "claim the play button by accident" outcome
+>   ADR-0011 said would mean revisiting the ADR, not working around it — and
+>   ADR-0020 is that revision: the run target now defaults to `"local"`, so an
+>   unconfigured workspace contributes nothing to the editor at all, and this
+>   extension's entry can only win the primary slot once a user has
+>   explicitly switched to Viya. See the procedure and its findings just
+>   below for the full record.
 > - **No keybinding**, unchanged from the ADR — still an open item, not a gap.
 > - A full run's actual streaming end to end is exercised by
 >   `proc-python-backend.test.ts`'s own unit suite (already covering
@@ -480,10 +491,10 @@ is the punch list for executing it.
 >   set at the top of `docs/` is where one would go. The CHANGELOG entry is the
 >   only user-facing writeup today; user documentation proper is 5c's job.
 >
-> **Manual test still owed for ADR-0011's "confirm by hand" assumption.** How
-> VS Code presents this extension's `editor/title/run` entry when another
+> **Manual test for ADR-0011's "confirm by hand" assumption, run 2026-08-26.**
+> How VS Code presents this extension's `editor/title/run` entry when another
 > extension contributes to the same menu — specifically `ms-python.python`,
-> the collision ADR-0011 names in its own "The collision" section — has never
+> the collision ADR-0011 names in its own "The collision" section — had never
 > been observed, only asserted from the contribution point's documented shape.
 > Nothing below is reachable from an automated test: it needs a real running
 > Extension Development Host with a second extension installed in it.
@@ -494,9 +505,18 @@ is the punch list for executing it.
 > containing a `.py` file, and open that file in the editor. Confirm
 > `ms-python.python` (Microsoft's Python extension) is installed in that
 > window — Extensions view, search "Python", publisher Microsoft — installing
-> it first if it is not, since it is the specific collision being checked. No
-> connection profile is needed: the run target defaults to `"viya"` with
-> nothing configured, which is enough for the button to appear.
+> it first if it is not, since it is the specific collision being checked.
+>
+> **This note applies from 2026-08-26 onward, after the run below.** The run
+> target now defaults to `"local"`
+> ([ADR-0020](../adr/0020-run-target-defaults-to-local.md), written because
+> of what this very procedure found the first time it was run) — this
+> extension contributes nothing to the editor until the target is switched to
+> Viya, so a repeat of this procedure needs `Select Run Target` (status bar,
+> or the palette) pointed at a configured profile *before* step 1, or there
+> is no button to observe at all. The run recorded below predates that
+> change: the button appeared with nothing configured, because Viya was
+> still the default at the time.
 >
 > 1. Look at the editor title bar's toolbar, top right of the open `.py` file.
 >    **Expected:** note whether exactly one play-shaped icon is visible there,
@@ -532,6 +552,48 @@ is the punch list for executing it.
 > ADR-0011 rejected, arriving by accident — the ADR needs revisiting, not a
 > workaround.
 >
+> **What this run found, 2026-08-26, with `ms-python.python` installed and
+> `pythonOnViya.runFile` never previously invoked in this folder:**
+> - **Step 1:** one play-shaped icon, not two. VS Code does merge same-group
+>   `editor/title/run` contributions into a single button with a dropdown,
+>   settling that half of the open question.
+> - **Step 2:** the tooltip named **Run File** — this extension's own command
+>   — not `ms-python.python`'s **Run Python File**. Confirmed as the *first*
+>   thing observed, before any command in this session had been run at all.
+> - **Step 3–4:** a chevron was present; opening it listed **Run File** first,
+>   then `ms-python.python`'s own entries in order (**Run Python file**, **Run
+>   Python file in dedicated terminal**, **Run current file in interactive
+>   window**, **Run as task**) followed by its two debugger entries. Matches
+>   ADR-0011's own account of what `ms-python.python` contributes to this
+>   menu, and confirms VS Code lists every contribution rather than picking a
+>   single "other" one.
+> - **Step 5–7:** every way of invoking **Run File** tried — the primary
+>   button, and selecting **Run File** explicitly from the chevron, tried more
+>   than once — ran correctly on the configured Viya profile (`Running
+>   test.py on SAS Viya profile "innovation"…`, the program's own output, then
+>   `Finished.`), and the primary assignment did not move across repeated
+>   invocations. `ms-python.python`'s own **Run Python file** was not
+>   exercised this run, so whether *it* would ever displace ours as primary is
+>   still unobserved.
+>
+> **The result is the one ADR-0011 said would need revisiting rather than
+> working around.** This extension's entry was primary *from the very first
+> observation*, ahead of `ms-python.python`, with no prior invocation in this
+> folder to explain it as "last used remembered" — the answer to "which
+> becomes the primary button" is not "whichever was used last," at least not
+> only that; something about how VS Code orders `editor/title/run`
+> contributions favoured this extension's entry by default. That is a
+> materially different, and worse, shape than the ADR's own framing
+> anticipated: a user who has never touched this extension, on a workspace
+> where `pythonOnViya.runTarget` defaults to `"viya"` with no profile
+> required for the button to appear at all, can have their editor's play
+> button silently mean "run on Viya" the first time they ever open a `.py`
+> file. A change to *which* button is primary is an architecture-level
+> decision, not a bug fix, so this was recorded and discussed with Sean rather
+> than patched on the spot, per this project's "Treat architecture-level
+> changes as a deliberate event" policy — the agreed direction is
+> [ADR-0020](../adr/0020-run-target-defaults-to-local.md), reversing the
+> default to Local, implemented in the same slice once agreed.
 > **Two more defects, found running `npm run test:integration` against a real
 > test host after this slice was proposed — not caught by the adversarial
 > review above, which reads the diff rather than running it:**

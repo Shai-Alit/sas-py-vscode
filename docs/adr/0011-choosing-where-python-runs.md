@@ -125,6 +125,11 @@ local execution already has a button. With no profile configured the status bar
 already reads "No profile", and the first run routes into profile creation, which
 is the onboarding we want.
 
+> **Superseded 2026-08-26 — see [ADR-0020](0020-run-target-defaults-to-local.md).**
+> The run target now defaults to Local. This paragraph is left as written,
+> unedited, as the record of what was decided and why at the time it was
+> decided; it no longer describes this extension's actual behaviour.
+
 **Files opened from Viya always run on Viya,** regardless of the switch, once
 Phase 6 introduces a non-`file` scheme. This is the one place upstream's
 `resourceScheme` qualifier applies to us directly.
@@ -211,6 +216,14 @@ the contribution point's documented shape, not from observation. If it turns out
 that our entry can become the primary click by accident, that is the "claim the
 play button" alternative arriving through the back door and this ADR needs
 revisiting, not working around.
+
+> **Confirmed 2026-08-26 — this is what happened.** The manual check found
+> this extension's entry became the primary click ahead of `ms-python.python`'s
+> own, on a workspace where it had never been invoked before. See
+> `docs/phases/phase-3.md`'s 3d-i entry for the procedure and findings, and
+> [ADR-0020](0020-run-target-defaults-to-local.md) for the revision this led
+> to — the default, not the mechanism described elsewhere in this ADR, is what
+> was revisited.
 
 **If the two-gesture story confuses beta users, routing is still available.** The
 reversal is the third alternative above, and nothing here forecloses it: the

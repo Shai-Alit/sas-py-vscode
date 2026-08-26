@@ -13,10 +13,18 @@ narrow correction rather than a competing design). **3d-i is up for review as
 any code, the full `Run File`/`Run Selection`/`Cancel`/`Reset Python State`
 commands and the program output channel, not only the run-target mechanism
 the Runbook's own punch list had detailed going in. See
-`docs/phases/phase-3.md`'s 3d-i entry for the scope note, the design
-decisions, and what is still open (chiefly: the "confirm by hand" editor
-check ADR-0011 calls for, not yet done — it needs a real running editor
-window). **3d-ii (the result panel webview) is next, once PR #63 merges.**
+`docs/phases/phase-3.md`'s 3d-i entry for the scope note and the design
+decisions. **The "confirm by hand" editor check ADR-0011 called for was run,
+2026-08-26, and found the outcome the ADR said would mean revisiting it**:
+this extension's own Run File came up as the *primary* `editor/title/run`
+button, ahead of `ms-python.python`'s, on a folder where it had never once
+been invoked before — not explainable as "last used remembered." **Resolved
+the same day by [ADR-0020](docs/adr/0020-run-target-defaults-to-local.md)**,
+which reverses the run target's default to Local — an unconfigured workspace
+now contributes nothing to the editor, so this extension can only win the
+primary slot once a user has explicitly asked for Viya. See phase-3.md's
+findings write-up and ADR-0020 for the full record. **3d-ii (the result
+panel webview) is next, once PR #63 merges.**
 
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the

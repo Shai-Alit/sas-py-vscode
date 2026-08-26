@@ -24,3 +24,8 @@ under their category.
 | Sign Out | `Python on Viya: Sign Out` | `pythonOnViya.signOut` |
 | Connect to SAS Viya | `Python on Viya: Connect to SAS Viya` | `pythonOnViya.connect` |
 | Disconnect from SAS Viya | `Python on Viya: Disconnect from SAS Viya` | `pythonOnViya.disconnect` |
+| Select Run Target | `Python on Viya: Select Run Target` | `pythonOnViya.selectRunTarget` |
+| Run File | `Python on Viya: Run File` | `pythonOnViya.runFile` |
+| Run Selection | `Python on Viya: Run Selection` | `pythonOnViya.runSelection` |
+| Cancel | `Python on Viya: Cancel` | `pythonOnViya.cancelRun` |
+| Reset Python State | `Python on Viya: Reset Python State` | `pythonOnViya.resetPythonState` |

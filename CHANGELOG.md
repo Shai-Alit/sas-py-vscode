@@ -12,6 +12,35 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **Python on Viya can now actually run Python on Viya.** Slice 3d-i
+  ([ADR-0011](docs/adr/0011-choosing-where-python-runs.md)) adds `Python on
+  Viya: Run File`, `Run Selection`, `Cancel` and `Reset Python State`, wiring
+  3a–3c-ii's `ProcPythonBackend` to real commands for the first time. Each run
+  streams to a new **Python on Viya: Output** channel — separate from the
+  existing log channel, because a program's stdout and the extension's own
+  diagnostics are two different transcripts — naming its target as the first
+  line. `text/html` and `image/png` outputs are reported as produced but not
+  yet rendered; the result panel that actually shows them is 3d-ii. `Run File`
+  clears the interpreter's globals first (`freshNamespace: true`); `Run
+  Selection` does not, so a selection can build on state a previous selection
+  run left behind, the same way a notebook cell would.
+  `editor/title/run` and `editor/context` entries for `Run File`/`Run
+  Selection` are gated on a new `pythonOnViya.runTarget` context key, so they
+  appear only when the workspace's run target is Viya — see the status bar
+  change below. No default keybinding ships; ADR-0011 explains why every
+  plausible default collides with something already on that key.
+- **The connection-profile status bar item is now the run-target switch.**
+  Still `pythonOnViya.activeProfile`, same status bar slot, but its command
+  changes from `pythonOnViya.switchProfile` to the new
+  `pythonOnViya.selectRunTarget`, and its text/tooltip now say **Local
+  Python** or **SAS Viya**, not just which profile is active.
+  `pythonOnViya.switchProfile` is unchanged and still reachable from the
+  Command Palette. The run target itself lives in `workspaceState` (never a
+  setting — the same reasoning ADR-0002 already applies to the profile
+  settings), defaults to Viya, and the extension never changes it on the
+  user's behalf: a run against Viya with no profile, or a dead session, fails
+  with an actionable message rather than silently falling back to Local.
+
 - Repository scaffold: hygiene files, contribution and security policy, issue and
   pull-request templates, Dependabot configuration, and the documentation skeleton.
 - `PROBE-FINDINGS.md`, recording behaviour confirmed against a live SAS Viya 4

@@ -373,9 +373,145 @@ two. Corrected in the same change rather than left disagreeing.
   3c-i's ADR-0019 change was held to, even though this slice carries no ADR of
   its own. Re-run after the review-finding fix above, over the corrected diff.
 
-☐ **3d-i — contribute the run target, and let it decide whether we appear.**
+☑ **3d-i — contribute the run target, and let it decide whether we appear.**
 [ADR-0011](../adr/0011-choosing-where-python-runs.md) settles the mechanism; this
 is the punch list for executing it.
+
+> **Scope note, settled before any code was written.** This phase file's own
+> plan text (above) describes 3d-i broadly — "Commands and text output: `Run
+> file`, `Run selection`, `Cancel`, `Reset Python state`; output channel…" —
+> but the Runbook punch list below, as it stood going into this slice, detailed
+> only ADR-0011's run-target mechanism (the picker, the context key, the
+> `workspaceState` store) and never said how the run/cancel/reset commands
+> themselves would be built, even though the punch list's own bullets already
+> assumed `editor/title/run`/`editor/context` entries existed to gate. Asked
+> directly rather than guessed at: the full plan-section scope is what this
+> slice covers, not the narrower Runbook-only reading. Recorded here because
+> the two documents disagreed and a future reader should not have to
+> reconstruct which one won.
+
+> **Landed 2026-08-26.** `src/run/target.ts` (pure — `RunTargetKind`,
+> `resolveRunTargetKind`, `runReadiness`, `runTargetPickEntries`),
+> `src/run/render.ts` (pure — `RichOutput` to display-line shape),
+> `src/run/targetStore.ts` (the `workspaceState` shell), `src/run/statusBar.ts`
+> (supersedes `src/profile/statusBar.ts`, removed in this slice — same item id,
+> new job, per ADR-0011), `src/run/outputChannel.ts` (the program-transcript
+> channel, separate from the extension's own log channel) and
+> `src/run/commands.ts` (`selectRunTarget`, `runFile`, `runSelection`,
+> `cancelRun`, `resetPythonState` — the first module to ever construct a
+> `ProcPythonBackend` from a live `ComputeConnection`). `src/backend/messages.ts`
+> is new alongside it — `localiseBackendProblem`, the `compute/messages.ts`-style
+> split `BackendProblem` was always missing, deferred here from 3a per that
+> module's own doc comment. `backend.ts`'s `RichOutput` doc is corrected to say
+> what this slice actually decided about the seam's localisation boundary
+> (3d-i's own strings are localised; the four `RichOutput`/`PythonDiagnostic`
+> payload strings named there are not, and stay a known gap).
+>
+> **Design decisions made while executing the punch list, not separately
+> planned:**
+> - The stored target is only ever `"local"` or `"viya"` — never a profile name
+>   of its own. Choosing a Viya profile in the picker writes both the target
+>   *and* `ProfileStore`'s active-profile pointer in one gesture, but the two
+>   remain two stores; `"viya"` with no active profile is the ordinary
+>   fresh-install shape (`runReadiness`'s `"no-profile"` reason), not folded
+>   into `"local"`.
+> - `Run File` passes `freshNamespace: true`; `Run Selection` passes `false`,
+>   so repeatedly running a selection builds on state the way a notebook cell
+>   would — `backend.ts`'s own doc names Run File and a notebook cell as the
+>   two examples and leaves a selection unassigned; this slice assigns it to
+>   the notebook-cell side of that split.
+> - **Cancel** tracks the in-flight `execute()` handle at module scope so the
+>   Command Palette entry can cancel a run the progress notification's own
+>   Cancel button did not originate from. A `reset()` in progress has no
+>   handle at all; the only way the seam lets a caller interrupt one is
+>   `ExecutionBackend.close()`, which also disconnects — made safe to do
+>   from underneath a later run by having the per-profile backend cache always
+>   re-call the (idempotent, I/O-free) `connect()` before handing a cached
+>   backend back out.
+> - Text-only, per this slice's own plan text: `text/html` and `image/png`
+>   outputs get one localised "produced, not yet viewable" line each rather
+>   than being dumped as markup or base64; a structured traceback is not
+>   re-rendered at all, because the raw traceback text is already visible as
+>   plain log output by the time a caller sees it (`logFilter.ts`'s
+>   `isNoiseLine` never excluded `error`/`normal`).
+>
+> **Adversarial subagent review, before this was proposed** — this slice adds
+> source and a documented invariant (ADR-0011's execution), the bar this
+> project's standing policy sets for the review. It found three real defects,
+> all fixed in the same change rather than left for a round trip:
+> 1. `backendFor()` would silently orphan a still-running backend if a
+>    reconnect (a new `ComputeConnection` for the same profile) landed while
+>    a `reset()` was in flight on the old one — the cache entry was
+>    overwritten unconditionally. Fixed: the outgoing backend is closed first
+>    if it is busy.
+> 2. `cancelRun`'s reset-interrupt fallback scanned every cached backend and
+>    closed the first busy one it found, so a Cancel invoked while parked on
+>    one profile could reach in and stop a run on a different one the window
+>    had used earlier. Fixed: scoped to the currently active profile's own
+>    cached backend.
+> 3. The run's own progress notification was `ProgressLocation.Window` with
+>    `cancellable: true` — VS Code's own contract is that only
+>    `ProgressLocation.Notification` renders a cancel button, so the wiring
+>    was dead from the UI's side; only the Command Palette's `Cancel` command
+>    could ever have reached it. Fixed: moved to `Notification`, which is now
+>    also the reason `showProgress`'s helper (renamed from
+>    `withWindowProgress`) takes a location rather than assuming one.
+>
+> **What is still open, deliberately not closed by this slice:**
+> - **`src/profile/statusBar.ts` itself still needs deleting.** The sandbox
+>   this slice was written in cannot delete files on the mounted working tree
+>   at all (confirmed against several unrelated paths, not just this one), so
+>   the old file is still on disk, unused — nothing imports
+>   `createProfileStatusBarItem` any more — and still in `.c8rc.json`'s
+>   exclude list on purpose, so the coverage-scope gate does not fail on a
+>   file that has not been removed yet. Delete the file and drop its
+>   `.c8rc.json` line in the same commit that lands this slice.
+> - **The "confirm by hand, in the editor" bullet below is not done.** It
+>   needs a real running editor window, which this session had no way to
+>   drive — record the observation the next time someone is in the editor
+>   with this build installed, before relying on ADR-0011's assumption about
+>   how VS Code presents the primary `editor/title/run` button.
+> - **No keybinding**, unchanged from the ADR — still an open item, not a gap.
+> - A full run's actual streaming end to end is exercised by
+>   `proc-python-backend.test.ts`'s own unit suite (already covering
+>   `ProcPythonBackend` directly) and by `test/integration/run/commands.test.ts`'s
+>   guard-path coverage (refusals, `selectRunTarget`'s store writes) — not by a
+>   second, hand-built fake Compute transport driven through the commands layer
+>   itself. Worth a live test in a later slice if a defect ever turns up between
+>   the two tiers that neither currently catches.
+> - No user-facing page describes the run target or these commands yet — the
+>   pattern `connecting.md`/`signing-in.md`/`connection-profiles.md` already
+>   set at the top of `docs/` is where one would go. The CHANGELOG entry is the
+>   only user-facing writeup today; user documentation proper is 5c's job.
+>
+> **Two more defects, found running `npm run test:integration` against a real
+> test host after this slice was proposed — not caught by the adversarial
+> review above, which reads the diff rather than running it:**
+> 1. `test/integration/run/commands.test.ts` called `registerRunCommands`
+>    itself with its own fakes, which tries to claim `pythonOnViya.runFile`
+>    and the other four ids on the process-global `vscode.commands` registry —
+>    but the real extension had already claimed them at activation
+>    (`onStartupFinished` fires before any test body runs), so every one of
+>    the suite's eight tests failed with "command already exists," regardless
+>    of `afterEach` disposal. Every other command-test file in this repo
+>    avoids the collision by driving the already-activated real extension
+>    through `executeCommand` instead of re-registering. Fixed by giving
+>    `commands.ts` a `createRunCommandHandlers` export — the same five
+>    handlers, built with the caller's fakes, with no
+>    `vscode.commands.registerCommand` call among them; `registerRunCommands`
+>    is now the thin shell that wires those handlers to the real registry
+>    exactly once, and the test calls the handlers directly.
+> 2. Once that collision was fixed and the suite could actually run,
+>    `buildProgram` in `commands.ts` turned out to send **Run Selection with an
+>    empty selection to run the whole file** rather than reporting "Select
+>    some code to run" — `if (selection === undefined || selection.isEmpty)`
+>    folded "Run File's own deliberate `undefined`" and "Run Selection's own
+>    empty `Selection` object" into the same whole-document branch, contrary
+>    to what the function's doc comment already said. Fixed: only
+>    `selection === undefined` falls back to the whole document; a
+>    defined-but-empty selection now returns `undefined`. Caught by the guard
+>    test named for exactly this case, once it could run past the collision
+>    above.
 
 - The pure part first: parsing, validating and labelling a target, and the "what
   does this target imply" rules, in a module with **no `vscode` import**, so

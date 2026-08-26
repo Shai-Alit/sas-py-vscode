@@ -458,19 +458,15 @@ is the punch list for executing it.
 >    `withWindowProgress`) takes a location rather than assuming one.
 >
 > **What is still open, deliberately not closed by this slice:**
-> - **`src/profile/statusBar.ts` itself still needs deleting.** The sandbox
->   this slice was written in cannot delete files on the mounted working tree
->   at all (confirmed against several unrelated paths, not just this one), so
->   the old file is still on disk, unused — nothing imports
->   `createProfileStatusBarItem` any more — and still in `.c8rc.json`'s
->   exclude list on purpose, so the coverage-scope gate does not fail on a
->   file that has not been removed yet. Delete the file and drop its
->   `.c8rc.json` line in the same commit that lands this slice.
+> - ~~`src/profile/statusBar.ts` itself still needs deleting.~~ **Done**,
+>   alongside dropping its `.c8rc.json` exclude line — both in the commit
+>   that opened PR #63, once outside the sandbox that could not delete files
+>   on the mounted working tree.
 > - **The "confirm by hand, in the editor" bullet below is not done.** It
->   needs a real running editor window, which this session had no way to
->   drive — record the observation the next time someone is in the editor
->   with this build installed, before relying on ADR-0011's assumption about
->   how VS Code presents the primary `editor/title/run` button.
+>   needs a real running editor window, which no session so far has had a way
+>   to drive. See the manual test procedure just below for exactly what to run
+>   and what to look for — do not rely on ADR-0011's assumption about how VS
+>   Code presents the primary `editor/title/run` button until it has been.
 > - **No keybinding**, unchanged from the ADR — still an open item, not a gap.
 > - A full run's actual streaming end to end is exercised by
 >   `proc-python-backend.test.ts`'s own unit suite (already covering
@@ -483,6 +479,58 @@ is the punch list for executing it.
 >   pattern `connecting.md`/`signing-in.md`/`connection-profiles.md` already
 >   set at the top of `docs/` is where one would go. The CHANGELOG entry is the
 >   only user-facing writeup today; user documentation proper is 5c's job.
+>
+> **Manual test still owed for ADR-0011's "confirm by hand" assumption.** How
+> VS Code presents this extension's `editor/title/run` entry when another
+> extension contributes to the same menu — specifically `ms-python.python`,
+> the collision ADR-0011 names in its own "The collision" section — has never
+> been observed, only asserted from the contribution point's documented shape.
+> Nothing below is reachable from an automated test: it needs a real running
+> Extension Development Host with a second extension installed in it.
+>
+> **Setting up.** Open the repo in VS Code and press `F5` — the *Run
+> Extension* launch configuration builds first and opens an Extension
+> Development Host. In the dev host, open (or create) a trusted folder
+> containing a `.py` file, and open that file in the editor. Confirm
+> `ms-python.python` (Microsoft's Python extension) is installed in that
+> window — Extensions view, search "Python", publisher Microsoft — installing
+> it first if it is not, since it is the specific collision being checked. No
+> connection profile is needed: the run target defaults to `"viya"` with
+> nothing configured, which is enough for the button to appear.
+>
+> 1. Look at the editor title bar's toolbar, top right of the open `.py` file.
+>    **Expected:** note whether exactly one play-shaped icon is visible there,
+>    or two separate ones side by side.
+> 2. Hover the play icon without clicking it.
+>    **Expected:** a tooltip names one command — either **Run Python File**
+>    (`ms-python.python`'s) or **Run File** (this extension's). Note which.
+> 3. Look for a small chevron immediately to the icon's right.
+>    **Expected:** note whether a dropdown arrow is present next to the icon.
+> 4. Click the chevron from step 3.
+>    **Expected:** a menu opens listing the *other* run command — whichever of
+>    **Run Python File** / **Run File** was not named in step 2.
+> 5. Click that other command.
+>    **Expected:** its own behaviour runs — this extension's **Run File**
+>    shows either "The run target is Local Python…" or "No SAS Viya connection
+>    profile is selected…", depending on the run target, since no profile is
+>    needed to observe the button itself.
+> 6. Without reloading the window, look at the toolbar icon again.
+>    **Expected:** note whether the tooltip now names the command run in step
+>    5 (VS Code promoted the last-used command to primary) or still names the
+>    one from step 2 (the primary assignment did not move).
+> 7. Repeat steps 2–6 once more, clicking whichever command the chevron offers
+>    this time.
+>    **Expected:** note whether the primary/secondary assignment settled at
+>    step 6 stays put, or keeps moving on every click.
+>
+> If step 1 shows two icons rather than one with a dropdown, VS Code did not
+> merge the two `editor/title/run` contributions at all — a materially
+> different finding from what ADR-0011 discusses, and worth its own note
+> rather than being forced into steps 3–7. If step 6 or 7 shows this
+> extension's **Run File** becoming primary without ever having been the entry
+> named in step 2 to begin with, that is the "claim the play button" outcome
+> ADR-0011 rejected, arriving by accident — the ADR needs revisiting, not a
+> workaround.
 >
 > **Two more defects, found running `npm run test:integration` against a real
 > test host after this slice was proposed — not caught by the adversarial
@@ -512,6 +560,63 @@ is the punch list for executing it.
 >    defined-but-empty selection now returns `undefined`. Caught by the guard
 >    test named for exactly this case, once it could run past the collision
 >    above.
+>
+> **PR #63's own review found three more, all fixed in the same PR rather
+> than a round trip:**
+> 1. **Blocking (Claude Bot).** `package.json`'s `contributes.commands` entries
+>    for `runFile`, `runSelection` and `resetPythonState` carried
+>    `enablement: "editorLangId == python && pythonOnViya.runTarget == viya &&
+>    isWorkspaceTrusted"` (`runSelection` also `&& editorHasSelection`) — but
+>    `enablement` governs the command everywhere it can be invoked, the
+>    Command Palette included, not just the editor placements it was copied
+>    from. That directly contradicts ADR-0011's Consequences section, "the
+>    palette command never disappears," and its Decision section, "the target
+>    governs placement, never meaning, so no gesture changes what it does
+>    under the user's hands." Fixed: the clause stays only on the
+>    `editor/title/run` and `editor/context` menu entries, where it already
+>    correctly gates placement; the three commands now carry no
+>    `enablement` at all (`cancelRun`'s own `pythonOnViya.running` gate is
+>    unrelated — it is not flagged and is left alone). The guard tests
+>    already covered every case this now makes reachable from the palette
+>    (no editor, empty selection, wrong target) — they exist because the
+>    behaviour was always meant to be hit this way, just never actually
+>    reachable through the entry point that matters.
+> 2. **Major (Codex).** `cancelRun`'s reset-interrupt fallback (the fix for
+>    finding 2 in the adversarial review above) re-derived "the busy backend"
+>    from `targets.status()` — the *currently active* profile — at the moment
+>    Cancel was pressed. That fixed the original "close whichever cached
+>    backend happens to be busy" bug, but broke as soon as the run target or
+>    active profile changed while the reset was still in flight: the
+>    fallback would then look at the wrong profile's cache entry, or none,
+>    and tell the user nothing was running while the reset kept going
+>    regardless — `pythonOnViya.running` stayed `true` and the progress
+>    notification kept spinning throughout. Fixed properly this time:
+>    `resetPythonState` now tracks the backend a reset is running on directly
+>    (`currentReset`, the same shape `currentRun` already used for
+>    `execute()`), and `cancelRun` checks it first. The profile-scanning
+>    fallback is gone entirely — it was a workaround for `reset()` returning
+>    no handle, not a design constraint, and tracking the backend directly in
+>    `commands.ts` sidesteps the need for it.
+> 3. **Minor (Claude Bot) — correct about the message, wrong to remove the
+>    check; caught by a second review pass before this landed.** `runNow` and
+>    `resetPythonState` each pre-checked `backend.busy` and, if true, reported
+>    a synthesized `{ code: "busy", running: "a run in this window" }` — and
+>    `localiseBackendProblem`'s `busy` arm does ignore `running` by its own
+>    design, so that value really is write-only, exactly as flagged. The first
+>    fix removed both pre-checks on that basis, reasoning that `execute()`/
+>    `reset()`'s own `busy` refusal a few lines below would produce the same
+>    user-visible message. A follow-up adversarial-review pass over that fix
+>    found it wrong: the check's real job was never the message, it was
+>    stopping a second invocation from ever reaching `syncRunningContext`,
+>    `currentRun`/`currentReset` and the shared `finally` below. Without it, a
+>    second `Run File` (or `Reset Python State`) fired while the first was
+>    still executing would pass through, get correctly refused as busy by
+>    `execute()`/`reset()` itself, but its own `finally` would still
+>    unconditionally clear the *first*, still-running invocation's tracking —
+>    reintroducing, for `currentRun`, the same class of bug finding 2 above
+>    fixed for `currentReset`. Both checks are back, with a comment explaining
+>    the serialisation reason rather than the (true, but incomplete) messaging
+>    one the review gave.
 
 - The pure part first: parsing, validating and labelling a target, and the "what
   does this target imply" rules, in a module with **no `vscode` import**, so

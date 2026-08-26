@@ -127,14 +127,12 @@
         "command": "pythonOnViya.runFile",
         "title": "%command.runFile.title%",
         "category": "%extension.category%",
-        "icon": "$(play)",
-        "enablement": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted"
+        "icon": "$(play)"
       },
       {
         "command": "pythonOnViya.runSelection",
         "title": "%command.runSelection.title%",
-        "category": "%extension.category%",
-        "enablement": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted && editorHasSelection"
+        "category": "%extension.category%"
       },
       {
         "command": "pythonOnViya.cancelRun",
@@ -145,8 +143,7 @@
       {
         "command": "pythonOnViya.resetPythonState",
         "title": "%command.resetPythonState.title%",
-        "category": "%extension.category%",
-        "enablement": "pythonOnViya.runTarget == viya && isWorkspaceTrusted"
+        "category": "%extension.category%"
       }
     ],
     "menus": {

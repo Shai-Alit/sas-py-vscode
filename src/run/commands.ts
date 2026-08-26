@@ -150,6 +150,17 @@ export function createRunCommandHandlers(
    * comment for how that case is handled instead. */
   let currentRun:
     { backend: ProcPythonBackend; handle: ExecutionHandle } | undefined;
+  /** The backend a `reset()` is currently running against, tracked the same
+   * way `currentRun` tracks `execute()` — `reset()` itself returns no handle,
+   * but nothing stops this module from remembering which backend it called
+   * it on. Set for the duration of `resetPythonState`'s own call, cleared in
+   * its `finally`. Codex's review on this PR found the previous design (no
+   * tracking at all; `cancelRun`'s fallback re-derived "the busy backend" from
+   * the *currently active* profile at cancel time) broke as soon as the run
+   * target or active profile changed while the reset was still in flight —
+   * the fallback would then look at the wrong profile's cache entry, or none,
+   * and tell the user nothing was running while the reset kept going. */
+  let currentReset: { backend: ProcPythonBackend } | undefined;
 
   const syncTargetContext = (): void => {
     void vscode.commands.executeCommand(
@@ -354,6 +365,20 @@ export function createRunCommandHandlers(
     if (built === undefined) return;
     const { backend, connection } = built;
 
+    // This check's own message is genuinely redundant with `execute()`'s own
+    // `busy` refusal below (`localiseBackendProblem`'s `busy` arm ignores
+    // `running` regardless of which one produced it, and this synthesized
+    // value is never logged) — a review round found that and an initial fix
+    // removed the check entirely on that basis. That was wrong: the check is
+    // what stops a second invocation from ever reaching `syncRunningContext`,
+    // `currentRun` and the try/finally below in the first place. Without it,
+    // a second `Run File` fired while the first is still executing would
+    // pass this point, `execute()` would correctly refuse it as busy, but
+    // this invocation's own `finally` would still unconditionally clear
+    // `currentRun` and flip `pythonOnViya.running` to `false` — out from
+    // under the *first*, still-running invocation, which owns that state.
+    // The message really is redundant; the serialisation is not. Caught by a
+    // second review pass after the first fix landed.
     if (backend.busy) {
       reportProblem({ code: "busy", running: "a run in this window" });
       return;
@@ -423,19 +448,17 @@ export function createRunCommandHandlers(
     // is what makes closing it here safe for whatever this window asks for
     // next.
     //
-    // Scoped to the *currently active* profile's own cached backend, not "any
-    // busy one in the map" — a window can hold a cached backend per profile
-    // it has ever run against, and a Cancel invoked while parked on profile B
-    // must not reach in and close a stray run still going on profile A.
-    const status = targets.status();
-    const profileId =
-      status.kind === "viya" && status.profileName !== undefined
-        ? profiles.get(status.profileName)?.id
-        : undefined;
-    const cached =
-      profileId === undefined ? undefined : backends.get(profileId);
-    if (cached?.backend.busy) {
-      await cached.backend.close();
+    // `currentReset` names the exact backend a reset is running on, tracked
+    // by `resetPythonState` for the duration of its own call — not
+    // re-derived from the *currently active* profile at cancel time. An
+    // earlier version of this scoped the fallback to `targets.status()`'s
+    // profile instead, which fixed the previous "close whichever cached
+    // backend is busy" bug but broke as soon as the run target or active
+    // profile changed while the reset was still going: the fallback would
+    // then look at the wrong profile, or none, and report nothing running
+    // while the reset kept going regardless. Codex's review on this PR.
+    if (currentReset !== undefined) {
+      await currentReset.backend.close();
       return;
     }
     inform(vscode.l10n.t("Nothing is running."));
@@ -452,6 +475,12 @@ export function createRunCommandHandlers(
     if (built === undefined) return;
     const { backend, connection } = built;
 
+    // See `runNow`'s matching comment: the message here is redundant with
+    // `reset()`'s own `busy` refusal below, but the check itself is what
+    // stops a second `Reset Python State` fired while one is already running
+    // from reaching `currentReset` and this function's `finally` — which
+    // would otherwise clear the *first*, still-running reset's tracking out
+    // from under it.
     if (backend.busy) {
       reportProblem({ code: "busy", running: "a run in this window" });
       return;
@@ -460,6 +489,7 @@ export function createRunCommandHandlers(
     syncRunningContext(true);
     outputChannel.reveal();
     outputChannel.writeResetHeader(connection.profileName);
+    currentReset = { backend };
     try {
       // Window, not Notification: this one is not cancellable (a reset has
       // no handle of its own — see `cancelRun`'s comment), so there is no
@@ -476,6 +506,7 @@ export function createRunCommandHandlers(
         outputChannel.writeResetSucceeded();
       }
     } finally {
+      currentReset = undefined;
       syncRunningContext(false);
     }
   };

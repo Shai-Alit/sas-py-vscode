@@ -76,17 +76,25 @@ available, and a policy had to exist for the case where it is not.
 > one dependency (`randombytes`) and sets a `node >=20` floor, comfortably under
 > this project's 22.18.0. `overrides` pins it at `^7.0.5` under mocha, which
 > declares `^6.0.2` (`>=6.0.2 <7.0.0`) — so this overrules a declared range
-> exactly as the vite pin does, not a milder thing. What differs is the cover:
-> the vite pin is checked only by `docs:build`, whereas `npm run test:unit`
-> runs mocha itself on every pull request, so a 7.x incompatibility surfaces as
-> a red unit run. mocha also runs the suites here serially, which keeps
-> `serialize-javascript` off the test path in the first place; the 1122-test
-> unit suite passes on 7.x regardless. The `low` `diff` advisory has the same
-> child-override route open — `diff@8.0.3` fixes it — and it is declined on
-> cost, not left unexamined: a two-major bump in the package mocha renders
-> assertion diffs with, for a denial of service Dependabot auto-dismissed. That
-> reasoning now lives in the allow-list entry, so the next reader does not
-> re-derive it.
+> exactly as the vite pin does. Its cover is *weaker*, though, and the
+> difference matters: `docs:build` genuinely exercises the vite pin end to end,
+> but `serialize-javascript` is loaded only by mocha's `--parallel` worker-pool
+> serializer (`lib/nodejs/serializer.js`), and this repo's `.mocharc.json` — and
+> every CI job — runs mocha serially. So `npm run test:unit` never imports the
+> pinned package and would not go red on a 7.x break. What stands behind the pin
+> instead: npm resolves it and `npm audit` is quiet; `serialize-javascript`'s
+> public `serialize()` surface is unchanged across the 6→7 major and 7.x is very
+> widely deployed (VS Code itself ships it); and a one-time `npx mocha
+> --parallel` run of the full unit suite on 2026-08-27 passed all 1122 cases
+> with `serialize-javascript` 7.1.0 actually loaded in the workers. A standing
+> `--parallel` smoke job would turn that one-time check into real cover; it is
+> noted as a possible follow-up rather than added here, on the same
+> "one CI job, not everywhere" grounds as the rest of this policy. The `low`
+> `diff` advisory has the same child-override route open — `diff@8.0.3` fixes
+> it — and it is declined on cost, not left unexamined: a two-major bump in the
+> package mocha renders assertion diffs with, for a denial of service Dependabot
+> auto-dismissed. That reasoning now lives in the allow-list entry, so the next
+> reader does not re-derive it.
 
 ## Decision
 
@@ -315,13 +323,16 @@ to re-read seven advisories, which is the deliberate trade but is not free.
 > if it went bad.
 
 > **Amended 2026-08-27.** One entry comes due on 2026-11-12 now, not three. The
-> `overrides` block has a second unvalidated pin in it — `serialize-javascript
-> ^7.0.5` under mocha — but this one has cheap live cover the vite pin lacks:
-> `npm run test:unit` exercises mocha itself on every pull request, so a 7.x
-> incompatibility surfaces as a red unit run rather than needing a dedicated
-> check. The maintenance mechanism worked the same way it did in August: the
-> Dependabot alerts were re-read between phases, not on the expiry date, and the
-> re-read is what found the fix.
+> `overrides` block has a second pin in it — `serialize-javascript ^7.0.5` under
+> mocha — and it has *less* standing cover than the vite pin, not more: nothing
+> in normal CI loads it, because `serialize-javascript` is only reachable
+> through mocha's `--parallel` serializer and every job here runs mocha
+> serially. It rests on `npm audit` going quiet, an unchanged public API across
+> the major, and a one-time `mocha --parallel` run (see the Context amendment);
+> a standing `--parallel` smoke job is the noted follow-up if that is not enough.
+> The maintenance mechanism worked the same way it did in August: the Dependabot
+> alerts were re-read between phases, not on the expiry date, and the re-read is
+> what found the fix.
 
 **Revisit trigger.** Move the whole policy into the normal jobs on the day
 `engines.node` moves to 22.22.2 or later, and delete the pinned npm install from

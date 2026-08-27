@@ -467,13 +467,18 @@ for an advisory Dependabot auto-dismissed.
 That `overrides` block carries two pins, [ADR-0005](../adr/0005-supply-chain-policy.md)
 records why for both. Both overrule a declared range: `vitepress@1.6.4` asks for
 `vite ^5.4.14`, and `mocha@11.8.0` asks for `serialize-javascript ^6.0.2`. What
-differs is the cover. The `vite` pin's only check is that **`docs:build` passes**,
-VitePress being the only consumer of vite here. The `serialize-javascript` pin is
-exercised by **`test:unit` running mocha itself** on every PR, so a break shows up
-as a red unit run. Remove either pin if its check goes red, restoring the matching
-allow-list entries in the same change; remove the `vite` pin for good when a stable
-vitepress depends on vite 6 by itself, and the `serialize-javascript` pin when
-mocha ships depending on 7.x.
+differs is the cover. `docs:build` exercises the `vite` pin end to end — VitePress
+is the only consumer of vite here, so a red `docs` job is the alarm. The
+`serialize-javascript` pin has no equivalent: the package is loaded only by
+mocha's `--parallel` worker serializer, and `.mocharc.json` plus every job here
+run mocha serially, so `test:unit` never imports it and would stay green on a 7.x
+break. It rests on `npm audit`, an unchanged `serialize()` API across the major,
+and a one-time `mocha --parallel` run of the full unit suite (2026-08-27, 1122
+passing on 7.1.0); a standing `--parallel` smoke job is the noted follow-up if
+that bar is too low. Remove either pin if its check goes red, restoring the
+matching allow-list entries in the same change; remove the `vite` pin for good
+when a stable vitepress depends on vite 6 by itself, and the `serialize-javascript`
+pin when mocha ships depending on 7.x.
 
 As with `check:package`, exit codes are split — **1** means the policy was
 violated, **2** means the script or its input is wrong — and the classification

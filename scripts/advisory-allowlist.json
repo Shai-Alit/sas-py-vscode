@@ -28,8 +28,10 @@
     "vite amendment warns about. serialize-javascript 7.0.5 fixed both advisories",
     "(GHSA-5C6J-R48X-RMVQ, GHSA-QJ8W-GFJ5-8C6V) and has no dependencies and a",
     "node >=20 floor, so `overrides.serialize-javascript` pins ^7.0.5 under mocha",
-    "and both alerts clear. The 1122-test unit suite passes on it. See ADR-0005's",
-    "2026-08-27 amendment. That leaves one entry, the low diff advisory."
+    "and both alerts clear. Normal CI does not exercise this pin (mocha loads",
+    "serialize-javascript only in --parallel mode, and every job runs serially);",
+    "cover is npm audit plus a one-time mocha --parallel run. See ADR-0005's",
+    "2026-08-27 amendments. That leaves one entry, the low diff advisory."
   ],
   "allowed": [
     {

@@ -1,6 +1,14 @@
 # Status
 
-**Current phase: 3** — see `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
+**Phase 3 is done; Phase 4 has not yet started.** Its between-phase
+housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
+ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
+into `docs/phases/phase-4.md`'s own Runbook, and ran the live check
+phase-3.md's own closing note called for: `probeRuntime()`'s full wire
+sequence (job, `SYSCC`, directory listing, content fetch, delete, cleanup),
+confirmed against `verde` — see `docs/phases/phase-3.md`'s Finding 71. The
+Dependabot alerts GitHub flagged on the PR #67 push are still unreviewed; see
+below. See `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
 backend, plus the `resolveContext` no-such-context correction) and 3b (the log
 filter) are merged. 3c's own probe (step 1, findings 61–66) is also merged —
 the file-write-plus-Compute-files-API mechanism won outright over
@@ -73,7 +81,7 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ▶ in progress (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii merged [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e merged [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)) | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | ✅ done (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii merged [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e merged [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

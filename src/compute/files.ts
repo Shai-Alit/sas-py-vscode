@@ -203,7 +203,10 @@ export interface ReadFileContentOptions {
   signal?: AbortSignal | undefined;
   /** Overrides the transport's default response-body size cap
    * (`ComputeRequest.maxBodyBytes`) for this one fetch. `richOutput.ts` is the
-   * only caller with a reason to raise it — ADR-0019's 10 MiB rich-output cap. */
+   * only caller with a reason to *raise* it — ADR-0019's 10 MiB rich-output
+   * cap. `backend/environment.ts`'s stage-2 probe also passes one explicitly
+   * (`MAX_ENVIRONMENT_PROBE_BYTES`), but only to pin the transport's own
+   * default rather than to loosen it. */
   maxBytes?: number | undefined;
 }
 

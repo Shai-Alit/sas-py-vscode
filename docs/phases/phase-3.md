@@ -1377,6 +1377,49 @@ editor is green and the run is a `ModuleNotFoundError`. `PRODUCTION_PLAN.md`
      against this module's own "leaves nothing behind" claim. The call is now
      `try`/`finally`, `del` in the `finally`. `sys.version` is also newline-
      flattened so a two-line build string cannot break the plain-text layout.
+- **Docs CI caught a real miss: `commands.md` was never regenerated.** Adding
+  `pythonOnViya.showEnvironment`/`refreshEnvironment` to `package.json` without
+  re-running `npm run docs:reference` left `docs/reference/commands.md` out of
+  sync with its own generator, and `docs:reference:check` failed the build on
+  it. Fixed by running the generator and committing just its two new rows
+  (`[skip-review]`, matching this project's convention for mechanical docs
+  regen) — `npm run check:docs` confirmed clean afterward.
+- **The automated PR reviewer raised two non-blocking points on the probe
+  change; both addressed in the same change.**
+  1. `probeRuntime`'s fetch of its own probe file passed no explicit size cap,
+     unlike `captureRichOutput`'s `maxBytes: MAX_CAPTURE_BYTES`. The transport
+     already hard-caps every response body at 1 MiB
+     (`auth/transport.ts`'s `MAX_BODY_BYTES`) when nothing is passed, so this
+     was never actually unbounded — and the reviewer's own suggestion,
+     `MAX_CAPTURE_BYTES` (10 MiB, sized for rich output), would have *loosened*
+     the cap rather than tightened it. Fixed with a dedicated
+     `MAX_ENVIRONMENT_PROBE_BYTES` constant in `environment.ts` (also 1 MiB,
+     matching the effective behaviour today) passed explicitly at the call
+     site — pinning the intended bound rather than inheriting whatever the
+     transport default happens to be later, with no behaviour change now.
+  2. `RuntimeCapabilities` has no cached "unavailable" member, so
+     `probeRuntime()` only ever writes `this.runtime` on success — a backend
+     probed successfully once and later re-probed into a failure keeps
+     reporting the stale `"available"` snapshot from `capabilities()`; the
+     failure reaches only the immediate caller. Currently inert (nothing in
+     `src/` reads `capabilities().runtime` yet), but worth pinning down before
+     a Phase 4/10 consumer trusts a stale success. Fixed with a doc-only
+     callout — `backend.ts`'s `probeRuntime` interface doc and
+     `procPython.ts`'s private `runtime` field doc both now say a consumer
+     must treat the call's own return value as the source of truth on a
+     refresh, not `capabilities()`. No logic change, so no new test; the
+     existing `probeRuntime` success/failure cases already exercise the paths
+     this callout describes.
+  Verified before pushing: `npx tsc --noEmit` (all three configs),
+  `npx prettier --check`, `npm run lint`, `npm run test:unit` (1122 passing),
+  `npm run check:docs` — all clean.
+- **One stale doc comment this pass found and fixed:** `compute/files.ts`'s
+  `ReadFileContentOptions.maxBytes` said "`richOutput.ts` is the only caller
+  with a reason to raise it" — no longer true in the letter, since
+  `procPython.ts`'s `probeRuntime` is now a second caller of the option,
+  though it doesn't *raise* the cap (it passes the same 1 MiB the transport
+  already defaults to). Reworded to distinguish "the only caller that raises
+  it" from "a second caller that only pins it."
 - **The stray comment-only `test/unit/environment-store.test.ts`** left by the
   first 3e draft is gone — and the path is now the real home of the store's
   test suite (see the lint-and-scope bullet), not a placeholder.

@@ -74,12 +74,14 @@ available, and a policy had to exist for the case where it is not.
 > route, with the child-override half left unchecked. `serialize-javascript`
 > 7.0.5 fixes `GHSA-5C6J-R48X-RMVQ` and `GHSA-QJ8W-GFJ5-8C6V`; 7.x dropped its
 > one dependency (`randombytes`) and sets a `node >=20` floor, comfortably under
-> this project's 22.18.0. `overrides` pins it at `^7.0.5` under mocha — and
-> unlike the vite pin, this override contradicts nothing a package declared:
-> mocha's `^6.0.2` is the only constraint on it, so npm is choosing between two
-> versions rather than being overruled. mocha runs the suites here serially, so
-> `serialize-javascript` is not on the test path at all; the 1122-test unit
-> suite passes on 7.x regardless. The `low` `diff` advisory has the same
+> this project's 22.18.0. `overrides` pins it at `^7.0.5` under mocha, which
+> declares `^6.0.2` (`>=6.0.2 <7.0.0`) — so this overrules a declared range
+> exactly as the vite pin does, not a milder thing. What differs is the cover:
+> the vite pin is checked only by `docs:build`, whereas `npm run test:unit`
+> runs mocha itself on every pull request, so a 7.x incompatibility surfaces as
+> a red unit run. mocha also runs the suites here serially, which keeps
+> `serialize-javascript` off the test path in the first place; the 1122-test
+> unit suite passes on 7.x regardless. The `low` `diff` advisory has the same
 > child-override route open — `diff@8.0.3` fixes it — and it is declined on
 > cost, not left unexamined: a two-major bump in the package mocha renders
 > assertion diffs with, for a denial of service Dependabot auto-dismissed. That

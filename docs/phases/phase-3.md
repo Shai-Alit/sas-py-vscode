@@ -1413,40 +1413,31 @@ editor is green and the run is a `ModuleNotFoundError`. `PRODUCTION_PLAN.md`
 - **The stray comment-only `test/unit/environment-store.test.ts`** left by the
   first 3e draft is gone — and the path is now the real home of the store's
   test suite (see the lint-and-scope bullet), not a placeholder.
+- **Live-verified end to end against `verde`, 2026-08-27, during Phase 3's
+  between-phase housekeeping — see Finding 71.** Everything up to this point
+  had only ever exercised `probeRuntime()` against `test/unit/proc-python-backend.test.ts`'s
+  `router()` fixture. The real success path (job, `SYSCC`, directory listing,
+  content fetch, delete, cleanup) now has a live confirmation, including an
+  exact match on finding 62's own package count and byte size for this
+  deployment (259 packages, 6833 bytes). The `runtime-unavailable` path and
+  Viya 3.5 both remain unprobed — `verde` has a working `PROC PYTHON`, so
+  there was nothing to fail against.
 - **What is still open, deliberately not closed by this slice:** Phase 4's
   traceback work special-casing `ModuleNotFoundError` against this list, and
   Phase 10 feeding the package set back to Pylance, both per this phase's own
   plan text; `EnvironmentStore.forget()` wired to profile deletion (noted
   above); no keybinding (none of this phase's commands ship one).
 
-☐ **After 3d-i — probe cancellation.** Run a deliberately long Python step and
-cancel it. Confirm whether the compute job cancel actually interrupts Python or
-blocks until the step finishes. If it blocks, fall back to session reset with a
-clear user-facing message, and log it in `PROBE-FINDINGS.md`.
+**Two "After 3d-i" follow-ups (probe cancellation; a fake-transport regression
+test for `commands.ts`'s post-`connect()` paths) moved to `docs/phases/phase-4.md`'s
+Runbook during Phase 3's between-phase housekeeping, 2026-08-27** — both had a
+stated reason to stay open (see that housekeeping's own record in `STATUS.md`),
+and both are naturally Phase 4's to pick up rather than lingering as Phase 3
+debt. See phase-4.md for the full carried-over text.
 
-☐ **After 3d-i — a fake-transport regression test for `commands.ts`'s
-post-`connect()` paths.** Deferred deliberately, not forgotten: raised by
-Claude Bot's review on PR #63, and the same gap `commands.ts`'s own 3d-i
-Runbook entry above already named before that review — every test in
-`test/integration/run/commands.test.ts` uses `sessionsThatMustNotConnect()`,
-so the suite only ever exercises the pre-`connect()` guards (readiness, the
-editor/selection checks, `selectRunTarget`). None of the following are
-pinned by an automated test anywhere in the tree, despite each one having
-needed a second review pass to get right during 3d-i itself:
-`backendFor()`'s reconnect-orphan close (a still-busy cached backend closed
-before being overwritten, when a new `ComputeConnection` arrives for the
-same profile), `cancelRun`'s `currentReset` fallback (interrupting an
-in-flight `reset()` via `close()`), and the `backend.busy` serialisation
-guard in `runNow`/`resetPythonState` (stopping a second invocation from
-clobbering `currentRun`/`currentReset` in the shared `finally`). Closing this
-needs a `RunCommandSessions.connect()` fake that actually resolves to a
-`ComputeConnection`-shaped value, backed by a fake client/session
-`ProcPythonBackend` can be constructed against and driven through fake
-`execute()`/`reset()` calls to simulate a busy backend, a reconnect, and an
-in-flight reset — real test-infrastructure work, not a quick addition, which
-is why it is a named follow-up rather than folded into 3d-i or 3d-ii. This is the first genuinely useful build. Install the `.vsix`
-locally and use it for real work for a few days before starting Phase 4. Real use
-will reorder your priorities more reliably than the plan will.
+> This is the first genuinely useful build. Install the `.vsix` locally and use
+> it for real work for a few days before starting Phase 4. Real use will
+> reorder your priorities more reliably than the plan will.
 
 ### Phase 4 — Diagnostics
 
@@ -2120,3 +2111,53 @@ arrives as, the same as the wrapping statement's.
 *third* job (not just a second) is needed to flush it, are both unprobed —
 `run;` alone was sufficient in every case tried here. Viya 3.5 is unprobed for
 this, same as everything else in this phase.
+
+### Finding 71 — `probeRuntime()`'s full wire sequence, confirmed end to end against a live Viya 4 session, 2026-08-27
+
+Phase 3's between-phase housekeeping called for a live check of 3e's probe —
+everything in `test/unit/proc-python-backend.test.ts` exercises it against the
+`router()` fixture, never a real deployment. Run against `verde` via a
+standalone script driving the raw Compute API (not the compiled extension, and
+not the test suite — the same `viya-api-probe`-style probing finding 70 used),
+submitting the exact statements `environmentProbeStatements()` produces (the
+`def`/`try`/`finally`/`del`-wrapped probe, plus the caller's own trailing
+`run;`) against a fresh `SAS Studio compute context` session:
+
+- **The job completed and `SYSCC` read `0`** — read correctly only after
+  switching from a guessed `GET /compute/sessions/{id}/variables/SYSCC` (which
+  the deployment answered `406`) to what `readVariable` actually does: follow
+  the session's own `variables` collection link and filter it by name
+  (finding 60). The first attempt's `406` is a defect in the probe script that
+  wrote it, not in `procPython.ts` — `readVariable` was never at risk of
+  making the same mistake, since ADR-0010 already forbids composing a path by
+  hand.
+- **The working directory held exactly one file, `__pyvia_environment_probe__.json`**
+  — confirming `probeRuntime()`'s single-listing design (no before/after diff
+  needed, unlike `captureRichOutput`) actually holds on a live session, not
+  just in the fixture.
+- **The fetched content parsed exactly as `parseEnvironmentProbeFile` expects:**
+  `version` (`3.12.12 (main, Jul 28 2026, ...)  [GCC 11.5.0 ...]`, single line —
+  `sys.version`'s embedded newline was already flattened by the independent
+  reviewer's fix, see above), `executable`
+  (`/opt/sas/viya/home/sas-pyconfig/default_py/bin/python3`), and **259
+  packages in 6833 bytes** — the identical package count and byte size finding
+  62's own re-verification already recorded for `verde`, an independent
+  confirmation that this deployment's installed set has not changed since.
+- **Deleting the file worked once the correct media type was used for the
+  properties read** (`application/vnd.sas.compute.file.properties+json`, per
+  finding 68 — an initial guess at a generic `file+json` type answered with no
+  `ETag` header, which is a probe-script mistake, not a `files.ts` one; the
+  real `deleteSessionFile` already reads `getFileProperties` at its documented
+  type). With the real `ETag`, the `DELETE` returned `204`, and a follow-up
+  listing confirmed the file was actually gone — not just a `204` taken on
+  faith.
+- **The session ended cleanly (`204`)** with nothing left behind.
+
+**What this settles:** the whole success path this project could not exercise
+live before now — job submission, `SYSCC`, directory listing, content fetch,
+delete, cleanup — behaves exactly as `procPython.ts`/`environment.ts` assume,
+on Viya 4. **What this does not settle:** the `runtime-unavailable` failure
+path (a deployment where `PROC PYTHON` genuinely does not work) is still
+unmeasured — `verde` has `PROC PYTHON` licensed and working, so there was
+nothing to fail against — and Viya 3.5 remains entirely unprobed for this
+slice, same as the rest of Phase 3.

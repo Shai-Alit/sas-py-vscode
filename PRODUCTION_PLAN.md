@@ -799,7 +799,14 @@ get written.
     naming is the obvious one: make our action the play button whenever a profile
     is signed in. That makes the button's meaning a function of authentication
     state, so a habitual click ends up in production because a token happened to
-    be live. Executed in 3d-i.
+    be live. Executed in 3d-i. **ADR-0011's own default (Viya) was reversed to
+    Local by [ADR-0020](docs/adr/0020-run-target-defaults-to-local.md),
+    2026-08-26** — the "confirm by hand" editor check ADR-0011 itself called
+    for found this extension's Run File winning the *primary*
+    `editor/title/run` slot ahead of `ms-python.python`'s on a workspace where
+    it had never been invoked, exactly the outcome ADR-0011 said would mean
+    revisiting the default. An unconfigured workspace now contributes nothing
+    to the editor until a user explicitly asks for Viya.
 
 **Smaller items to settle in-phase, recorded so they aren't forgotten:** activation
 events and a lazy-load rule (an `onLanguage:python` activation would fire for every

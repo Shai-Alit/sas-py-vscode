@@ -39,6 +39,7 @@ import type {
 } from "../compute/sessionManager";
 import type { ProfileStore } from "../profile/store";
 import { RunOutputChannel } from "./outputChannel";
+import { ResultPanel } from "./resultPanel";
 import { runTargetPickEntries } from "./target";
 import type { RunTargetStore } from "./targetStore";
 
@@ -107,6 +108,9 @@ export interface RunCommandDeps {
    * `context.subscriptions`, so a test can inspect it after the fact without
    * it being disposed out from under it at suite teardown. */
   outputChannel?: RunOutputChannel | undefined;
+  /** Defaults to a fresh `ResultPanel`. Same lifecycle rule as
+   * `outputChannel` above, for the same reason. */
+  resultPanel?: ResultPanel | undefined;
 }
 
 /**
@@ -127,6 +131,7 @@ export interface RunCommandDeps {
  */
 export interface RunCommandHandlers extends vscode.Disposable {
   readonly outputChannel: RunOutputChannel;
+  readonly resultPanel: ResultPanel;
   runFile(): Promise<void>;
   runSelection(): Promise<void>;
   cancelRun(): Promise<void>;
@@ -139,9 +144,11 @@ export function createRunCommandHandlers(
   profiles: RunCommandProfiles,
   targets: RunTargetStore,
   log: vscode.LogOutputChannel,
+  extensionUri: vscode.Uri,
   deps: RunCommandDeps = {},
 ): RunCommandHandlers {
   const outputChannel = deps.outputChannel ?? new RunOutputChannel();
+  const resultPanel = deps.resultPanel ?? new ResultPanel(extensionUri);
   const backends = new Map<string, CachedBackend>();
   /** The one run this window can have in flight, so the Cancel command can
    * find its handle without the progress notification being the only thing
@@ -400,6 +407,7 @@ export function createRunCommandHandlers(
 
       outputChannel.reveal();
       outputChannel.writeRunHeader(connection.profileName, description);
+      resultPanel.startRun();
       const handle = executed.value;
       currentRun = { backend, handle };
 
@@ -417,7 +425,7 @@ export function createRunCommandHandlers(
             void backend.cancel(handle);
           });
           try {
-            await drainOutputs(handle, outputChannel);
+            await drainOutputs(handle, outputChannel, resultPanel);
           } finally {
             subscription.dispose();
           }
@@ -427,8 +435,10 @@ export function createRunCommandHandlers(
       const settled = await handle.done;
       if (!settled.ok) {
         outputChannel.writeFailure(settled.problem);
+        resultPanel.writeFailure(settled.problem);
       } else {
         outputChannel.writeOutcome(settled.value);
+        resultPanel.writeOutcome(settled.value);
       }
     } finally {
       currentRun = undefined;
@@ -552,6 +562,7 @@ export function createRunCommandHandlers(
 
   return {
     outputChannel,
+    resultPanel,
     runFile: () => runNow(true),
     runSelection: () => runNow(false),
     cancelRun,
@@ -560,6 +571,7 @@ export function createRunCommandHandlers(
     dispose: () => {
       targetChangeSubscription.dispose();
       if (deps.outputChannel === undefined) outputChannel.dispose();
+      if (deps.resultPanel === undefined) resultPanel.dispose();
       // Unlike `ComputeSessionManager.dispose()` — which has nothing worth
       // tearing down server-side, and says so — a busy `ProcPythonBackend`
       // has a real interrupt `close()` can send. Fired, not awaited: this
@@ -592,6 +604,7 @@ export function registerRunCommands(
     profiles,
     targets,
     log,
+    context.extensionUri,
     deps,
   );
 
@@ -617,14 +630,17 @@ export function registerRunCommands(
   log.debug("registered the run commands");
 }
 
-/** Streams a handle's outputs into the channel until it ends. Separate
- * function so `runNow`'s `withProgress` callback reads as "drain, then wait
- * for the outcome" rather than a loop buried inside a bigger one. */
+/** Streams a handle's outputs into the channel and the result panel until it
+ * ends. Separate function so `runNow`'s `withProgress` callback reads as
+ * "drain, then wait for the outcome" rather than a loop buried inside a
+ * bigger one. */
 async function drainOutputs(
   handle: ExecutionHandle,
   outputChannel: RunOutputChannel,
+  resultPanel: ResultPanel,
 ): Promise<void> {
   for await (const output of handle.outputs) {
     outputChannel.writeOutput(output);
+    resultPanel.writeOutput(output);
   }
 }

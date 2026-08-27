@@ -35,6 +35,22 @@
  * erased at compile time, and the day someone adds a function to it the check
  * says so.
  *
+ * A third kind joined on 2026-08-26, by ADR-0021: `src/webview/` holds this
+ * repository's first browser-target code — bundled by its own esbuild context
+ * for a `WebviewPanel`, never for the extension host, and referencing globals
+ * (`document`, `acquireVsCodeApi`) that plainly do not exist under the unit
+ * tier's Node process. That is unreachable in the same *kind* of way a module
+ * importing `vscode` is unreachable — not "untested", but "this tier cannot
+ * load it, full stop" — so it is checked the same way, in both directions, by
+ * path rather than by import analysis: every file under `src/webview/` must be
+ * excluded, and every exclusion claiming this reason must actually live there.
+ * ADR-0021 also records the discipline that keeps this from becoming the
+ * hiding place the other two rules already guard against: almost everything
+ * `src/webview/` needs is written as ordinary, DOM-free, unit-tested logic
+ * living *outside* that directory, injected into a small port a fake can stand
+ * in for. What actually lives under `src/webview/` is meant to stay a thin,
+ * branch-free bootstrap for exactly that reason.
+ *
  * The import test is TypeScript's own parser rather than a regular expression.
  * That is not fussiness: `src/` is full of doc comments that discuss importing
  * `vscode`, and this file is one of them. A regex over the text reports the
@@ -218,6 +234,21 @@ export function sourceExcludes(exclude) {
   return exclude.filter((pattern) => pattern.startsWith(`${SOURCE_DIR}/`));
 }
 
+/** The directory whose whole contents run only inside a webview's browser
+ * context (ADR-0021) — never under the extension host, and so never under the
+ * unit tier either. Checked by path, not by content: unlike the other two
+ * reasons, "runs in a browser" is a fact about where a file is built and
+ * loaded, not something an import or a statement list can reveal on its own. */
+const BROWSER_ONLY_DIR = `${SOURCE_DIR}/webview/`;
+
+/** True for exactly the files this repository's build treats as browser-target
+ * (ADR-0021), and only those — a bare directory-name match, deliberately, so
+ * that `src/webviewFoo.ts` (not a real path in this repository, but not what
+ * this predicate is for either) does not slip in on a substring match. */
+export function isBrowserOnly(file) {
+  return file.startsWith(BROWSER_ONLY_DIR);
+}
+
 export function check({ excludes, sources, read }) {
   const problems = [];
   const excluded = new Set(excludes);
@@ -236,9 +267,13 @@ export function check({ excludes, sources, read }) {
       continue;
     }
     const source = read(pattern);
-    if (!importsHostModule(source, pattern) && !isTypesOnly(source, pattern)) {
+    if (
+      !importsHostModule(source, pattern) &&
+      !isTypesOnly(source, pattern) &&
+      !isBrowserOnly(pattern)
+    ) {
       problems.push(
-        `${pattern}\n    is excluded from coverage but does not import "${HOST_ONLY}" and has code to run, so the unit tier can reach it. Remove it from "exclude" in ${CONFIG} and write tests for it. Exclusions exist for code the tier physically cannot load, not for code that is inconvenient to test.`,
+        `${pattern}\n    is excluded from coverage but does not import "${HOST_ONLY}", is not types only, and is not under "${BROWSER_ONLY_DIR}" — so it has code to run and the unit tier can reach it. Remove it from "exclude" in ${CONFIG} and write tests for it. Exclusions exist for code the tier physically cannot load, not for code that is inconvenient to test.`,
       );
     }
   }
@@ -253,6 +288,10 @@ export function check({ excludes, sources, read }) {
     } else if (isTypesOnly(source, file)) {
       problems.push(
         `${file}\n    is types only, so it compiles to an empty file and no test can execute a line of it — but c8 counts every line of the source, comments included, as uncovered. Add it to "exclude" in ${CONFIG}. If that is a surprise, the file has lost its runtime content: put the code back rather than the exclusion.`,
+      );
+    } else if (isBrowserOnly(file)) {
+      problems.push(
+        `${file}\n    is under "${BROWSER_ONLY_DIR}", which only ever runs inside a webview's browser context (ADR-0021) and can never load under the unit tier's Node process. Add it to "exclude" in ${CONFIG}. If most of the file's actual logic can be tested, prefer moving that logic out to an ordinary, ported module and keeping this one a thin bootstrap — that is what keeps this exclusion from growing.`,
       );
     }
   }
@@ -294,8 +333,10 @@ function main() {
     for (const problem of problems) console.error(`  ${problem}\n`);
     console.error(
       "The rule: a module is excluded from unit coverage if and only if the\n" +
-        'unit tier cannot reach it — because it imports "vscode", or because it\n' +
-        "is types only and compiles to nothing. See docs/adr/0009-coverage-scope.md.\n",
+        'unit tier cannot reach it — because it imports "vscode", because it is\n' +
+        "types only and compiles to nothing, or because it lives under\n" +
+        `"${BROWSER_ONLY_DIR}" and only runs inside a webview. See\n` +
+        "docs/adr/0009-coverage-scope.md and docs/adr/0021-result-panel-webview.md.\n",
     );
     process.exit(1);
   }

@@ -32,9 +32,14 @@ export default tseslint.config(
     ],
   },
 
-  // Type-aware linting for the extension source.
+  // Type-aware linting for the extension source. src/webview/ is excluded
+  // here and linted by its own block below — ADR-0021: it is a different type
+  // space (DOM, not Node/vscode) and tsconfig.json's own `projectService`
+  // discovery has no reason to find tsconfig.webview.json, a differently named
+  // project file, on its own.
   {
     files: ["src/**/*.ts"],
+    ignores: ["src/webview/**"],
     extends: [
       js.configs.recommended,
       tseslint.configs.strictTypeChecked,
@@ -68,6 +73,41 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-member-access": "error",
       "@typescript-eslint/no-unsafe-return": "error",
 
+      "@typescript-eslint/consistent-type-imports": [
+        "error",
+        { prefer: "type-imports", fixStyle: "inline-type-imports" },
+      ],
+    },
+  },
+
+  // src/webview/ — ADR-0021. Same rule sets as the block above, mirrored
+  // rather than merged with it, because the two differ in exactly the two
+  // things that matter: the tsconfig this type information comes from
+  // (tsconfig.webview.json, named explicitly — `projectService`'s automatic
+  // discovery has nothing to find a differently-named project file with), and
+  // the global environment (browser, not Node — `document`/`window` are real
+  // here and never are in the block above, on purpose in both places).
+  {
+    files: ["src/webview/**/*.ts"],
+    extends: [
+      js.configs.recommended,
+      tseslint.configs.strictTypeChecked,
+      tseslint.configs.stylisticTypeChecked,
+    ],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.webview.json"],
+        tsconfigRootDir: import.meta.dirname,
+      },
+      globals: { ...globals.browser },
+    },
+    rules: {
+      "no-console": "error",
+      "no-empty": ["error", { allowEmptyCatch: false }],
+      "@typescript-eslint/no-explicit-any": "error",
+      "@typescript-eslint/no-unsafe-assignment": "error",
+      "@typescript-eslint/no-unsafe-member-access": "error",
+      "@typescript-eslint/no-unsafe-return": "error",
       "@typescript-eslint/consistent-type-imports": [
         "error",
         { prefer: "type-imports", fixStyle: "inline-type-imports" },

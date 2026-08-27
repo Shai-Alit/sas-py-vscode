@@ -33,5 +33,7 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["node_modules", "dist", "out"]
+  // src/webview/** is a different type space entirely — DOM, not Node/vscode —
+  // and compiles under tsconfig.webview.json instead. See ADR-0021.
+  "exclude": ["node_modules", "dist", "out", "src/webview"]
 }

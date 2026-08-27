@@ -17,6 +17,7 @@ interface CheckInput {
 interface CheckCoverageScope {
   importsHostModule: (source: string, fileName?: string) => boolean;
   isTypesOnly: (source: string, fileName?: string) => boolean;
+  isBrowserOnly: (file: string) => boolean;
   sourceExcludes: (exclude: string[]) => string[];
   check: (input: CheckInput) => string[];
   checkRepository: (root: string) => string[];
@@ -176,6 +177,34 @@ describe("check-coverage-scope", () => {
     });
   });
 
+  describe("isBrowserOnly", () => {
+    it("sees a file directly under src/webview/", () => {
+      assert.equal(script.isBrowserOnly("src/webview/entry.ts"), true);
+    });
+
+    it("sees a file nested further under src/webview/", () => {
+      assert.equal(script.isBrowserOnly("src/webview/dom/render.ts"), true);
+    });
+
+    it("does not match a name that merely starts with the same letters", () => {
+      // Not a real path in this repository, but the point of a directory
+      // boundary check rather than a substring one: "webview" appearing in a
+      // file name is not the same claim as "lives under src/webview/".
+      assert.equal(script.isBrowserOnly("src/webviewFoo.ts"), false);
+    });
+
+    it("does not match a file elsewhere in src/", () => {
+      assert.equal(script.isBrowserOnly("src/run/resultPanel.ts"), false);
+    });
+
+    it("does not match the directory reached from test/", () => {
+      assert.equal(
+        script.isBrowserOnly("test/unit/webview/render.test.ts"),
+        false,
+      );
+    });
+  });
+
   describe("sourceExcludes", () => {
     it("takes the src entries and leaves the test-tier ones alone", () => {
       // `test/**` is excluded for a different reason — the test tier is not
@@ -249,6 +278,28 @@ describe("check-coverage-scope", () => {
       const problems = run(["src/types.ts"], { "src/types.ts": TYPES + PURE });
       assert.equal(problems.length, 1);
       assert.match(problems[0] ?? "", /has code to run/);
+    });
+
+    it("accepts a browser-only module in the exclude list even though it imports nothing and has code to run", () => {
+      assert.deepEqual(
+        run(["src/webview/entry.ts"], { "src/webview/entry.ts": PURE }),
+        [],
+      );
+    });
+
+    it("catches a browser-only module missing from the exclude list", () => {
+      const problems = run([], { "src/webview/entry.ts": PURE });
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /src\/webview\/entry\.ts/);
+      assert.match(problems[0] ?? "", /webview's browser context/);
+    });
+
+    it("still refuses a plain module wrongly excluded outside src/webview/", () => {
+      // The direction-1 guarantee has to keep working for the third reason too:
+      // being pure and outside src/webview/ is not a licence to hide it.
+      const problems = run(["src/pure.ts"], { "src/pure.ts": PURE });
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /is not under/);
     });
 
     it("refuses a glob", () => {

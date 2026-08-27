@@ -20,8 +20,10 @@
     "src/profile/store.ts",
     "src/run/commands.ts",
     "src/run/outputChannel.ts",
+    "src/run/resultPanel.ts",
     "src/run/statusBar.ts",
     "src/run/targetStore.ts",
+    "src/webview/entry.ts",
     "test/**"
   ],
   "excludeAfterRemap": true,

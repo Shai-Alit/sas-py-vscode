@@ -57,9 +57,38 @@ const context = await esbuild.context({
   plugins: [problemMatcherPlugin],
 });
 
+// The result panel's own bundle (ADR-0021, 3d-ii) — a second, independent
+// context because it targets a browser inside a `WebviewPanel`, never Node.
+// `src/webview/` never imports `vscode`, so there is nothing to mark
+// `external` here; a webview has no access to Node or Electron APIs regardless
+// of what esbuild does or does not bundle. `format: "iife"` because this loads
+// as a plain `<script>` tag in the panel's own HTML shell
+// (`src/run/resultPanel.ts`), not as a module the panel's CSP would have to
+// carry a `type="module"` allowance for.
+const webviewContext = await esbuild.context({
+  entryPoints: ["src/webview/entry.ts"],
+  bundle: true,
+  outfile: "dist/webview/resultPanel.js",
+
+  format: "iife",
+  platform: "browser",
+  // Electron's bundled Chromium, not a Node version — this file never runs in
+  // the extension host. es2022 is a safe floor for whatever Chromium version
+  // ships with the Electron build behind our `engines.vscode` floor.
+  target: "es2022",
+
+  sourcemap: production ? false : "linked",
+  minify: production,
+  logLevel: "warning",
+  plugins: [problemMatcherPlugin],
+});
+
 if (watch) {
   await context.watch();
+  await webviewContext.watch();
 } else {
   await context.rebuild();
+  await webviewContext.rebuild();
   await context.dispose();
+  await webviewContext.dispose();
 }

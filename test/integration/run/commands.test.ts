@@ -156,6 +156,10 @@ describe("run commands — guards", () => {
       profiles,
       targets,
       log,
+      // Never actually read: every test in this suite exercises a guard path
+      // that returns before `ResultPanel.writeOutput` would ever be called,
+      // so the real `ResultPanel` this constructs never creates a webview.
+      vscode.Uri.file("/fake-extension"),
       {
         outputChannel: new RunOutputChannel({
           createChannel: () => fakeOutputChannel(),

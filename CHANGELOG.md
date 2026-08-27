@@ -29,6 +29,20 @@ called out under **Changed** with a migration note.
   appear only when the workspace's run target is Viya — see the status bar
   change below. No default keybinding ships; ADR-0011 explains why every
   plausible default collides with something already on that key.
+- **A result panel actually renders `text/html`, `image/png` and a structured
+  traceback.** Slice 3d-ii
+  ([ADR-0021](docs/adr/0021-result-panel-webview.md)) adds this repository's
+  first webview — a single, reused panel beside the editor, CSP-locked (no
+  script may execute except this extension's own bundle; a `text/html`
+  output's own markup is inserted safely because of that policy, not despite
+  it) and fed by a buffered host↔webview message protocol. It only pops open
+  when a run produces something the output channel cannot already show in
+  full — an image, a table, or a traceback — so an ordinary `print()`-only
+  script stays exactly as quiet as it was in 3d-i; its content still stays in
+  sync in the background if a panel from an earlier run is already open. An
+  image gets localised alt text; a `text/html` output keeps its own real
+  `<table>` semantics rather than being flattened; a traceback becomes a
+  heading, a message and a genuine list of frames.
 - **The connection-profile status bar item is now the run-target switch.**
   Still `pythonOnViya.activeProfile`, same status bar slot, but its command
   changes from `pythonOnViya.switchProfile` to the new

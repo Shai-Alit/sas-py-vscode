@@ -94,6 +94,24 @@ import { type PythonPackage, type RuntimeCapabilities } from "./backend";
 export const ENVIRONMENT_PROBE_FILENAME = "__pyvia_environment_probe__.json";
 
 /**
+ * The cap `ProcPythonBackend.probeRuntime` passes when fetching
+ * {@link ENVIRONMENT_PROBE_FILENAME}'s bytes back.
+ *
+ * The transport already refuses any response body over its own
+ * `MAX_BODY_BYTES` (1 MiB, `auth/transport.ts`), so this is not the
+ * difference between bounded and unbounded — it makes the intended bound
+ * explicit at the call site the same way `richOutput.ts` does with
+ * `MAX_CAPTURE_BYTES`, and pins it here rather than inheriting whatever the
+ * transport default happens to be later. The probe writes a `version`
+ * string, an `executable` path, and one `[name, version]` pair per installed
+ * distribution; even an interpreter with thousands of them lands far under
+ * this. A file that somehow exceeds it is a malformed probe result, surfaced
+ * as `backend-failed` like any other unparseable one, not something to grow
+ * the buffer for.
+ */
+export const MAX_ENVIRONMENT_PROBE_BYTES = 1024 * 1024;
+
+/**
  * The fixed Python source the probe runs, as SAS statements ready to hand to
  * `createJob` — a `submit`/`endsubmit` block, exactly like `procPython.ts`'s
  * own `RESTART_STATEMENT` handling, and for the same reason: this text is

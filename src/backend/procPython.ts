@@ -127,6 +127,7 @@ import {
 import {
   ENVIRONMENT_PROBE_FILENAME,
   environmentProbeStatements,
+  MAX_ENVIRONMENT_PROBE_BYTES,
   parseEnvironmentProbeFile,
 } from "./environment";
 import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
@@ -411,7 +412,13 @@ export class ProcPythonBackend implements ExecutionBackend {
    * run and produces no `ExecutionHandle` for a caller to cancel by id. */
   private probeController: AbortController | undefined;
   /** What {@link capabilities} reports for `runtime`. Starts `"unprobed"` and
-   * only ever changes inside {@link probeRuntime}, on success. */
+   * only ever changes inside {@link probeRuntime}, on success — a probe that
+   * *fails* leaves whatever was here untouched, so a successful probe followed
+   * by a failed re-probe keeps reporting the earlier `"available"` snapshot.
+   * `RuntimeCapabilities` has no cached "unavailable" member to move it to;
+   * the failure is returned to {@link probeRuntime}'s caller instead. See that
+   * type's doc comment in `backend.ts` for why, and the interface's
+   * {@link probeRuntime} doc for what a consumer must do about it. */
   private runtime: RuntimeCapabilities = { kind: "unprobed" };
   private runCounter = 0;
   private filerefCounter = 0;
@@ -759,6 +766,11 @@ export class ProcPythonBackend implements ExecutionBackend {
 
       const content = await readFileContent(this.client, probeFile, {
         signal: controller.signal,
+        // Explicit, for the same file-fetch discipline `captureRichOutput`
+        // applies with `MAX_CAPTURE_BYTES` — see
+        // `MAX_ENVIRONMENT_PROBE_BYTES`'s own doc for why the probe's answer
+        // is capped here rather than left to the transport default.
+        maxBytes: MAX_ENVIRONMENT_PROBE_BYTES,
       });
       if (!content.ok) {
         return this.translate(content, "probing the Python runtime", false);

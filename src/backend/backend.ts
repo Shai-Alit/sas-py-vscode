@@ -336,6 +336,15 @@ export interface ExecutionBackend {
    * `runtime-unavailable` failure here, not as a value — see {@link
    * RuntimeCapabilities}'s own doc comment for why.
    *
+   * A *failure* never writes back: because {@link RuntimeCapabilities} has no
+   * cached "unavailable" member, a backend that probed successfully once and
+   * is later re-probed into a `runtime-unavailable` (or any other) failure
+   * keeps reporting the earlier `"available"` snapshot from
+   * {@link capabilities} — the failure reaches only the immediate caller. A
+   * consumer that must not act on a stale success has to treat this call's
+   * own return value as the source of truth on a refresh, not
+   * {@link capabilities}.
+   *
    * Subject to the same serial contract as {@link execute}: fails with `busy`
    * while a run or a reset is in flight, and does nothing else while it does.
    * Takes no `signal`, matching {@link reset}'s own shape rather than {@link

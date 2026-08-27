@@ -60,3 +60,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0018](0018-the-node-baseline.md) | The Node baseline is derived from `engines.vscode`, not chosen | Accepted |
 | [0019](0019-rich-output-is-captured-by-diffing-the-working-directory.md) | Rich output is captured by diffing the session's working directory | Accepted |
 | [0020](0020-run-target-defaults-to-local.md) | The run target defaults to Local, not Viya | Accepted |
+| [0021](0021-result-panel-webview.md) | The result panel: a singleton CSP-locked `WebviewPanel`, a buffered message protocol, and a ported DOM layer | Accepted |

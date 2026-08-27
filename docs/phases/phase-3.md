@@ -758,6 +758,301 @@ is the punch list for executing it.
   open item, and it closes when a default is picked or the decision is recorded
   as "none by default, deliberately".
 
+☐ **3d-ii — the result panel webview.** Drafted 2026-08-26, adversarial
+review done and its findings fixed in the same diff, `tsc --noEmit` (all
+three configs), `prettier --check` and the small `check-*.mjs` gates all
+pass. **Not yet run: ESLint, the unit/integration suites, or
+`npm run coverage`** (this session's sandbox cannot run those reliably), and
+**not yet merged**. See the handoff note at the end of this session for the
+exact commands. [ADR-0021](../adr/0021-result-panel-webview.md) settles the
+mechanism (a singleton `WebviewPanel`, CSP-locked, a buffered host↔webview
+message protocol) and every wire-level decision (the reveal policy, the
+localisation boundary, how the browser-only bundle is tested); this is the
+punch list for what was actually written against it.
+
+- **`src/run/resultPanelModel.ts` (new, pure).** Reduces one streamed
+  `RichOutput` to a `RenderItem` — total over the mime union, unlike
+  `render.ts`'s `renderRichOutput`, which defers two arms and drops a fifth.
+  Also declares `ResultPanelMessage`, the one shared wire type both sides of
+  the host↔webview boundary import, and `isResultPanelMessage`/`isRenderItem`,
+  the runtime validation that closes `SECURITY.md`'s "unvalidated messages
+  crossing the extension/webview boundary" line item for this feature. Never
+  invents English text of its own — every localised string arrives as a
+  parameter, already translated by `resultPanel.ts`.
+- **`src/run/resultPanelDom.ts` (new, pure — no `vscode`, no DOM lib).**
+  Applies a `ResultPanelMessage` to a document expressed against `DomPort`,
+  this module's own small interface rather than `lib.dom.d.ts`'s real
+  `HTMLElement` — which is exactly why it needs no `tsconfig.webview.json` and
+  stays inside the ordinary unit tier and the coverage denominator, unlike the
+  one file that actually runs in a browser. Accessibility decisions live here:
+  an image's `alt` comes from the `RenderItem` it was handed; `text/html`
+  output is inserted as markup so a pandas table's own `<table>` survives as a
+  real table; a traceback becomes a heading, a message paragraph and a genuine
+  ordered list of frames.
+- **`src/webview/entry.ts` (new — this feature's only file under
+  `src/webview/`).** The literal browser bootstrap ADR-0021 describes:
+  `acquireVsCodeApi()`, a thin `DomPort` forwarding straight to the real
+  `document`, and a `message` listener wired to `resultPanelDom.ts`'s
+  `applyMessage`. No branch of its own worth testing that a test of the two
+  modules above would not already catch — excluded from coverage by the new
+  `isBrowserOnly` rule, not because it is untested but because
+  `acquireVsCodeApi`/`document` do not exist under the unit tier's Node
+  process.
+- **`src/run/resultPanel.ts` (new — the one `vscode`-importing module in this
+  feature).** Owns the `WebviewPanel`: creation, the CSP/nonce'd HTML shell,
+  the `"ready"`-handshake message buffer, and every `vscode.l10n.t()` call this
+  feature makes. Implements the reveal policy — opens and reveals the panel
+  only the first time a run's output is not already fully visible as
+  `text/plain` in the output channel; an outcome or a failure alone never
+  opens it either. `ResultWebviewPanel` narrows `vscode.WebviewPanel`/
+  `vscode.Webview` to the six members this class actually calls, the same
+  narrowing shape `RunCommandSessions` already uses for
+  `ComputeSessionManager`, so `test/integration/run/result-panel.test.ts`'s
+  fake only has to implement those six.
+- **`src/run/commands.ts` wired to call it** — `resultPanel.startRun()`
+  alongside `outputChannel.writeRunHeader`, `resultPanel.writeOutput` added to
+  `drainOutputs`, `resultPanel.writeOutcome`/`writeFailure` alongside the
+  output channel's own. `createRunCommandHandlers` gained a new required
+  `extensionUri` parameter (needed to build the panel's webview URIs) between
+  `log` and `deps`; `registerRunCommands` passes `context.extensionUri`
+  through. `resetPythonState` is deliberately **not** wired to the panel — a
+  reset produces no `RichOutput` for it to show.
+- **Build config, touched for the first time in this repository:**
+  `tsconfig.webview.json` (DOM lib, no `vscode`/Node types, scoped to
+  `src/webview/**`), `src/webview/**` excluded from `tsconfig.json` and
+  `tsconfig.test.json`'s own `include`, a second browser-target `esbuild`
+  context in `esbuild.mjs` (`dist/webview/resultPanel.js`), a matching
+  `eslint.config.mjs` block (`project: ["./tsconfig.webview.json"]`,
+  `globals.browser`), and `npm run typecheck` gained a third `tsc` invocation.
+- **`check-coverage-scope.mjs` gained a third exemption**, `isBrowserOnly` —
+  checked bidirectionally the same as the other two, and its own unit tests
+  extended in `test/unit/coverage-scope.test.ts`. `.c8rc.json` gained
+  `src/run/resultPanel.ts` (imports `vscode`) and `src/webview/entry.ts`
+  (browser-only) to its exclude list.
+- **Test plan, matching the shape a new pure module plus a new shell module
+  already takes elsewhere in this repo:**
+  - `test/unit/result-panel-model.test.ts` — `toRenderItem` over every mime
+    arm, the image-numbering contract, `isRenderItem`/`isResultPanelMessage`'s
+    accept and reject cases, `outcomeMessage`.
+  - `test/unit/result-panel-dom.test.ts` — `applyMessage` against a fake
+    `DomPort` that records what was asked of it: every `RenderItem` kind, the
+    outcome/failure arms, and a short sequence proving `"reset"` does not
+    disturb what comes after it.
+  - `test/integration/run/result-panel.test.ts` — `ResultPanel` against a
+    fake `ResultWebviewPanel`: the reveal policy for all three rich mimes and
+    its absence for text-only/outcome-only/failure-only, the CSP nonce
+    matching between the meta tag and the script tag, the ready-handshake
+    buffer-then-replay, and disposal.
+  - No live test and no change to `test/integration/run/commands.test.ts`'s
+    own guard-path scope — that suite's `sessionsThatMustNotConnect()` fakes
+    mean `ResultPanel.writeOutput` is never reached from it, matching the
+    already-recorded gap in 3d-i's own punch list about this suite's limits.
+- **What is still open, deliberately not closed by this slice:** no
+  interactive surface on the panel itself (copying an image, jumping from a
+  traceback frame to its source line — the latter is Phase 4's per
+  `backend.ts`'s own doc); no `WebviewPanelSerializer`, so a window reload
+  loses the panel's content exactly as it already loses the output channel's
+  scrollback; the coverage ratchet in `.c8rc.json` is **not** re-baselined in
+  this draft — measuring it needs `npm run coverage`, which this session does
+  not run, per this project's standing rule.
+- **Adversarial subagent review, before this was proposed.** Found two real
+  defects and three documentation gaps, all fixed in the same change rather
+  than left for a round trip:
+  1. **Major.** `ResultPanel.writeOutput` only ever called `.reveal()` on the
+     run that happened to *create* the panel — a panel left open but
+     unfocused from an earlier run never came back to front for a later
+     run's own qualifying output, contradicting ADR-0021's own per-run
+     wording. Fixed with a `revealedThisRun` flag, reset in `startRun()`,
+     that reveals an already-existing panel explicitly rather than only ever
+     doing so inside panel creation. Regression test added to
+     `result-panel.test.ts`.
+  2. **Worth documenting, not a live bug once traced through.** The review
+     asked whether replaying the whole backlog on every `"ready"` — with no
+     guard on `this.ready` already being `true` — could double-post content
+     if `"ready"` ever arrived twice against a still-populated DOM. Verified
+     it cannot: a `"ready"` can only originate from `entry.ts`'s top-level
+     script running, which only happens when the webview's document loads or
+     reloads, and `retainContextWhenHidden: false` (now set explicitly rather
+     than left as an implicit default) guarantees a hide/show cycle *is*
+     such a reload — so every `"ready"` this design will ever see already
+     corresponds to an empty document. Documented in both `resultPanel.ts`
+     (at the handler) and ADR-0021 itself, since the reasoning was previously
+     implicit rather than written down anywhere a later change to
+     `retainContextWhenHidden` would see it.
+  3. **Minor.** A comment added to `tsconfig.test.json` in this same slice
+     named a path, `src/webview/dom/`, that was an earlier draft's layout
+     and does not exist in what actually shipped (`src/run/resultPanelDom.ts`
+     is where that logic lives, precisely so it stays outside `src/webview/`
+     and inside the coverage denominator — see ADR-0021's own layer-2
+     reasoning). Corrected.
+  4. **Minor.** `resultPanelModel.ts`'s doc comment on `isRenderItem`/
+     `isResultPanelMessage` claimed "both sides" of the host↔webview boundary
+     now validate incoming messages; only the host-to-webview direction
+     actually does (the other direction has no vocabulary beyond the single
+     `"ready"` signal, checked by `resultPanel.ts`'s own narrow guard).
+     Reworded to say precisely that.
+
+- **`npm run verify`, run by Sean on his own machine (this session's sandbox
+  cannot run ESLint or the real esbuild build), found two real problems the
+  subagent pass above could not — neither is an ESLint config gap, both are
+  this diff's own defects:**
+  1. `src/run/resultPanel.ts` imported `randomUUID` from `node:crypto` for
+     the CSP nonce, which `no-restricted-imports` correctly refused —
+     ADR-0003's Node-builtins ban applies here and this file was never added
+     to the three-file allow-list. Fixed by using the Web Crypto global
+     (`crypto.randomUUID()`) instead of the Node-specific import: it needs no
+     import at all, resolves to the same standard API a browser exposes, and
+     keeps working unchanged in a hypothetical future web extension host —
+     strictly better than widening the allow-list for a case that does not
+     need it.
+  2. `test/unit/result-panel-dom.test.ts` (and one call site in
+     `result-panel.test.ts`) destructured a value out of an array
+     (`const [child] = root.children`) and then optionally-chained off it
+     (`child?.text`), which `@typescript-eslint/no-unnecessary-condition`
+     flagged. First fix attempt (below) diagnosed this as a
+     destructuring-vs-bracket-indexing gap and was wrong — recorded as
+     corrected in the next entry rather than edited away, since the mistake
+     and what it took to actually find the real cause are worth keeping.
+
+- **That fix did not hold.** Sean's second `npm run verify` run reported the
+  same class of errors again, at shifted line numbers, plus one new one
+  (`@typescript-eslint/prefer-find`) the first fix had introduced. Rather than
+  theorise a second time, this was checked empirically: a throwaway file with
+  the same shape, compiled directly with `tsc --noEmit --noUncheckedIndexedAccess`
+  outside this repo's own config, confirmed `noUncheckedIndexedAccess` widens
+  a bracket-indexed read (`root.children[0]`) to `T | undefined` regardless of
+  whether it is destructured or stored in a `const` first — the original
+  diagnosis of *why* the first errors appeared was wrong from the start, not
+  just incompletely fixed. What actually explains which specific `?.` chains
+  `no-unnecessary-condition` flags, on a variable whose type genuinely is
+  `T | undefined`, was not fully resolved (the rule's verdict on `x?.y` did
+  not depend solely on `x`'s nullability in the cases observed — e.g.
+  `root.children[0]?.tag` went unflagged next to `root.children[0]?.text`
+  flagged, both on the same expression) — pursuing that further stopped being
+  worth it once a strictly better fix was available:
+  `assert.ok(child)` (an `asserts value` signature in `@types/node`) narrows
+  the variable to non-`undefined` for TypeScript once, up front, so every
+  property read after it is a plain `.`, with no optional chain left for the
+  rule to misjudge either way. This is also a strictly better test: the old
+  `child?.text` pattern let a test comparing "is text undefined" pass
+  vacuously if `applyMessage` had failed to append a child at all; the
+  `assert.ok` guard fails loudly in that case instead. Applied throughout
+  `result-panel-dom.test.ts`. The second, unrelated new error
+  (`@typescript-eslint/prefer-find` on `.filter(isOutcomeMessage)[0]` in
+  `result-panel.test.ts`, introduced by the first fix attempt's own
+  `.filter(...)[0]` rewrite) was fixed by using `.find(isOutcomeMessage)`
+  instead, which returns the same `T | undefined` the existing `assert.ok`
+  guard already expected. Re-verified with `tsc --noEmit` (three configs) and
+  `prettier --check` on both files — clean — but ESLint itself still has not
+  been run in this session on this fix; that is Sean's next `npm run verify`
+  to confirm.
+
+- **That `npm run verify` (1085 passing, ESLint and the real test suites
+  both green) found one more failure — not in this feature's own code, but a
+  regression the `isBrowserOnly` edit above introduced in a pre-existing
+  test.** `check-coverage-scope.test.ts`'s `"catches a types file that has
+  grown code, still excluded"` asserts the exclude-verification error message
+  matches `/has code to run/`. Adding the browser-only clause to that shared
+  message (`", is not types only, and is not under \"src/webview/\""`)
+  dropped the original text's literal `"has code to run"` phrase the test
+  depends on, entirely by accident — the rewritten sentence said the same
+  thing with different words. Fixed by keeping the added clauses and putting
+  the phrase back (`"— so it has code to run and the unit tier can reach
+  it"`), rather than loosening the test's assertion to match the new
+  wording, since nothing about this message actually needed to stop saying
+  that. Re-verified with `tsc --noEmit` and `prettier --check` — clean. This
+  is the only failure `npm run verify` found in this round; the fix is
+  narrow enough (one string literal) that a third verify run should confirm
+  a clean pass.
+
+- **That third `npm run verify` passed clean, and `npm run test:integration`
+  — the real VS Code host, not the mocked `vscode` module — surfaced a real
+  bug this feature's own review had not: `.mocharc.json`'s `spec` is
+  `out/test/unit/**/*.test.js` only, so `test/integration/**` (including
+  `test/integration/run/result-panel.test.ts`) had never actually executed
+  before this run.** The failure it found —
+  `"disposes the underlying panel, and a run after disposal opens a new one"`
+  — traced to a real gap, not a test artefact: `revealedThisRun` was reset
+  in `startRun()` but never on panel disposal, and a user closing the panel
+  tab fires the identical `onDidDispose` event `ResultPanel.dispose()` does.
+  A user who closed the panel mid-run had permanently used up that run's one
+  reveal — any further rich output later in the same run would never bring a
+  panel back. Fixed by also resetting `revealedThisRun = false` inside
+  `open()`'s `onDidDispose` handler (`src/run/resultPanel.ts`). A second,
+  scoped adversarial review of just this change (the full slice had already
+  had one) found the fix correct and complete for the stated bug, no race
+  condition (the reset runs synchronously in the same tick as the rest of
+  disposal cleanup), and one real but non-blocking asymmetry the first
+  version of the explanatory comment glossed over: `ResultPanel.dispose()`
+  only ever runs from extension teardown, where `close()` on a still-busy
+  backend is fired, not awaited, so a straggling `writeOutput` can in
+  principle land after this handler runs and now resurrect a panel during
+  shutdown — an exposure that already existed before this fix for a run that
+  had not revealed yet, just widened to one that already had. Not worth
+  guarding against (VS Code is already tearing the extension host down
+  either way), but the comment now says so explicitly rather than implying
+  the two disposal causes are equivalent. Re-verified with `tsc --noEmit`
+  (both configs touched) and `prettier --check` — clean.
+
+- **`npm run test:integration`, re-run against the real VS Code host with the
+  fix in place: 193 passing, including the one that had failed** (`ResultPanel`
+  `"disposes the underlying panel, and a run after disposal opens a new one"`)
+  **and the rest of `test/integration/**`, exercised for the first time this
+  phase now that a real bug proved the mocked `vscode` tier alone was not
+  enough.** `npm run verify` (lint, typecheck, unit/coverage tier, contracts,
+  build) and `npm run test:integration` (the real host) have now both passed
+  clean against the same diff. `npm run check:docs` — covering the VitePress
+  build and ADR listing over the new `docs/adr/0021-result-panel-webview.md`
+  and the `docs/adr/README.md` row pointing at it — has not yet been run and
+  is the one remaining check before 3d-ii is ready to merge.
+
+- **`npm run check:docs` passed clean.** `npm run verify`, `npm run
+  test:integration`, and `npm run check:docs` all pass on the finished diff —
+  this slice's own checks are done. What's left is Sean's own manual review
+  of the diff and the commit/PR itself; the checkbox above ticks once this
+  actually merges, matching how 3d-i's entry recorded it.
+
+- **Sean's manual review of the diff, 2026-08-27 — four points, all fixed in
+  the same diff, none of them behaviour regressions:**
+  1. **l10n boundary hole.** `resultPanelDom.ts` built each traceback frame
+     line as `` `${file}, line ${line}, in ${name}` `` — "line" and "in" are
+     English prose emitted from the pure DOM layer, contradicting ADR-0021's
+     rule that every user-facing string is finished host-side by
+     `vscode.l10n.t()`. Fixed by adding `tracebackFrame` to `RenderItemLabels`
+     (a per-frame formatter, only invoked for a traceback output, like
+     `tracebackHeading`); `resultPanel.ts` supplies it as
+     `l10n.t("{0}, line {1}, in {2}", …)`. The traceback `RenderItem` now
+     carries `frameLines: readonly string[]` (already formatted) instead of
+     structured `frames` — the DOM layer only ever rendered a frame as one
+     `<li>` of text, and structured file/line/name has no consumer until
+     Phase 4's traceback-to-editor mapping, which ADR-0021 already defers and
+     which will shape its own message then. `isRenderItem` validates
+     `frameLines` via the existing `isStringArray`; `isRenderTracebackFrame`
+     is gone. Tests in all three files updated.
+  2. **Unbounded per-run backlog retention.** `ResultPanel.emit()` keeps
+     every message of a run — including every `text/plain` chunk of a run
+     that never opens a panel — until the next `startRun()`. It has to: a
+     `retainContextWhenHidden: false` panel replays the whole backlog on
+     every hide/show reload. Left as-is by design; the `backlog` field's doc
+     comment now states the retention cost explicitly and records that a
+     size-aware cap (which would cost full-run fidelity on a reloaded or
+     late-opening panel) is a deliberate non-goal, not an oversight.
+  3. **`<html lang="en">` hardcoded** in the panel shell while its own
+     strings are localised. Now set from `vscode.env.language` (filtered to
+     the documented BCP-47 shape, `"en"` fallback) so a screen reader
+     announces localised content in the right voice.
+  4. **`tsconfig.webview.json` comment** claimed "a file is compiled under
+     exactly one of these type spaces" — true for `src/webview/**`, but the
+     two `src/run/` files it also lists are deliberately checked under both
+     it and `tsconfig.json`, which is what proves they stay DOM-free and
+     `vscode`-free. Comment corrected to say that.
+
+  Re-verified locally with `tsc --noEmit` (all three configs) and
+  `prettier --check`. Sean re-ran `npm run verify` (1086 passing, 93.76%
+  coverage) and `npm run test:integration` against the finished diff — both
+  clean. Adversarial review, `verify`, `test:integration`, and `check:docs`
+  have all now passed on this exact diff.
+
 ☐ **3e — ship the package list as a user-facing thing, not a capability record.**
 The person writing code in this editor is writing against an interpreter they
 cannot see, on a machine they cannot log into, whose package set someone else

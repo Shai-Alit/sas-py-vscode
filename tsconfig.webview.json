@@ -1,0 +1,38 @@
+{
+  // The type space for src/webview/ only — ADR-0021. This directory's whole
+  // reason to exist is running inside a webview's browser context rather than
+  // the extension host, so it gets the DOM lib the rest of the extension
+  // deliberately excludes (tsconfig.json's own comment on `types` explains why
+  // that exclusion matters for everything else), and none of `vscode`'s or
+  // Node's own globals — a file here that reached for either would be reaching
+  // for something that does not exist at runtime.
+  //
+  // Deliberately its own file rather than a second `compilerOptions` block
+  // layered onto tsconfig.json. `src/webview/**` is excluded from both
+  // tsconfig.json and tsconfig.test.json's own `include`, so those files
+  // compile under exactly this type space and no other. The two `src/run/`
+  // files listed below are the deliberate exception: they are also in
+  // tsconfig.json's `include` and so are checked under both the DOM-typed
+  // space here and the Node/vscode-typed space there — which is the point,
+  // it is what proves they stay free of both DOM lib types and `vscode`
+  // (ADR-0021's layers 1 and 2).
+  "extends": "./tsconfig.json",
+  //
+  // No `rootDir`/`outDir`: this config is only ever run with `--noEmit`
+  // (esbuild does the real bundling — see esbuild.mjs's second context), and
+  // `src/webview/entry.ts` deliberately imports the pure logic it wires up
+  // from `src/run/` (ADR-0021's layers 1 and 2 live outside `src/webview/` on
+  // purpose). A `rootDir` scoped to `src/webview` would reject that import as
+  // outside the program's root, which is a constraint about *emit layout*
+  // this config never uses.
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": [
+    "src/webview/**/*.ts",
+    "src/run/resultPanelDom.ts",
+    "src/run/resultPanelModel.ts"
+  ],
+  "exclude": ["node_modules", "dist", "out"]
+}

@@ -1,0 +1,288 @@
+// Copyright © 2026, Sean Ford and the Python on Viya contributors
+// SPDX-License-Identifier: Apache-2.0
+
+import assert from "node:assert/strict";
+
+import * as vscode from "vscode";
+
+import {
+  ResultPanel,
+  type ResultWebviewPanel,
+} from "../../../src/run/resultPanel";
+import {
+  isResultPanelMessage,
+  type RenderItem,
+  type ResultPanelMessage,
+} from "../../../src/run/resultPanelModel";
+
+function isOutputMessage(
+  message: ResultPanelMessage,
+): message is Extract<ResultPanelMessage, { type: "output" }> {
+  return message.type === "output";
+}
+
+function isImageItem(
+  item: RenderItem,
+): item is Extract<RenderItem, { kind: "image" }> {
+  return item.kind === "image";
+}
+
+function isOutcomeMessage(
+  message: ResultPanelMessage,
+): message is Extract<ResultPanelMessage, { type: "outcome" }> {
+  return message.type === "outcome";
+}
+
+/** A `ResultWebviewPanel` double that records everything asked of it and lets
+ * a test drive the `"ready"` handshake and disposal by hand — the same shape
+ * `output-channel.test.ts`'s `fakeChannel()` takes for `vscode.OutputChannel`. */
+function fakePanel(): {
+  readonly panel: ResultWebviewPanel;
+  readonly posted: unknown[];
+  readonly revealed: { column: vscode.ViewColumn; preserveFocus: boolean }[];
+  readonly disposed: boolean[];
+  /** Simulates the webview's own bootstrap script sending its handshake. */
+  sendReady(): void;
+} {
+  const posted: unknown[] = [];
+  const revealed: { column: vscode.ViewColumn; preserveFocus: boolean }[] = [];
+  const disposed: boolean[] = [];
+  let messageListener: ((message: unknown) => void) | undefined;
+  const disposeListeners: (() => void)[] = [];
+
+  const panel: ResultWebviewPanel = {
+    // A plain mutable field, not an accessor — `ResultPanel` writes
+    // `panel.webview.html = …` directly, which mutates this same object, so
+    // a test reading `fake.panel.webview.html` back sees it with no
+    // get/set indirection needed.
+    webview: {
+      html: "",
+      cspSource: "vscode-webview://fake",
+      asWebviewUri: (uri) => uri,
+      postMessage: (message) => {
+        posted.push(message);
+        return Promise.resolve(true);
+      },
+      onDidReceiveMessage: (listener) => {
+        messageListener = listener;
+        return { dispose: () => undefined };
+      },
+    },
+    reveal: (column, preserveFocus) => {
+      revealed.push({
+        column: column ?? vscode.ViewColumn.Active,
+        preserveFocus: preserveFocus ?? false,
+      });
+    },
+    onDidDispose: (listener) => {
+      disposeListeners.push(listener);
+      return { dispose: () => undefined };
+    },
+    dispose: () => {
+      disposed.push(true);
+      for (const listener of disposeListeners) listener();
+    },
+  };
+
+  return {
+    panel,
+    posted,
+    revealed,
+    disposed,
+    sendReady: () => messageListener?.({ type: "ready" }),
+  };
+}
+
+const extensionUri = vscode.Uri.file("/fake-extension");
+
+describe("ResultPanel", () => {
+  it("creates no panel for a run that produces only text/plain output", () => {
+    let created = 0;
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => {
+        created += 1;
+        return fakePanel().panel;
+      },
+    });
+    panel.startRun();
+    panel.writeOutput({ mime: "text/plain", data: "hello\n" });
+    panel.writeOutput({ mime: "text/plain", data: "world\n" });
+    assert.equal(created, 0);
+  });
+
+  it("creates and reveals the panel, preserving focus, the first time a run produces image/png", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.startRun();
+    panel.writeOutput({ mime: "image/png", data: "aGVsbG8=" });
+    assert.deepEqual(fake.revealed, [
+      { column: vscode.ViewColumn.Beside, preserveFocus: true },
+    ]);
+  });
+
+  it("reveals again on a second run's first qualifying output, even though the panel already exists", () => {
+    // Caught on review: the first version of this class only ever revealed
+    // the run that happened to create the panel, so a panel left open but
+    // unfocused from an earlier run never came back to front for a later
+    // one — this is the regression test for that fix.
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.startRun();
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    assert.equal(fake.revealed.length, 1);
+
+    panel.startRun();
+    panel.writeOutput({ mime: "text/plain", data: "no reveal yet\n" });
+    assert.equal(fake.revealed.length, 1, "text/plain alone reveals nothing");
+    panel.writeOutput({ mime: "image/png", data: "BB==" });
+    assert.equal(fake.revealed.length, 2, "the second run's own rich output");
+  });
+
+  it("does the same for text/html and for a traceback", () => {
+    const htmlFake = fakePanel();
+    const htmlPanel = new ResultPanel(extensionUri, {
+      createPanel: () => htmlFake.panel,
+    });
+    htmlPanel.writeOutput({ mime: "text/html", data: "<table></table>" });
+    assert.equal(htmlFake.revealed.length, 1);
+
+    const tracebackFake = fakePanel();
+    const tracebackPanel = new ResultPanel(extensionUri, {
+      createPanel: () => tracebackFake.panel,
+    });
+    tracebackPanel.writeOutput({
+      mime: "application/vnd.python.traceback",
+      data: { message: "boom", frames: [] },
+    });
+    assert.equal(tracebackFake.revealed.length, 1);
+  });
+
+  it("never opens the panel for an outcome or a failure alone", () => {
+    let created = 0;
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => {
+        created += 1;
+        return fakePanel().panel;
+      },
+    });
+    panel.startRun();
+    panel.writeOutcome({ succeeded: true, diagnostics: [] });
+    panel.writeFailure({ code: "cancelled" });
+    assert.equal(created, 0);
+  });
+
+  it("builds an HTML shell whose CSP nonce matches the script tag's own nonce", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+
+    const html = fake.panel.webview.html;
+    assert.match(html, /Content-Security-Policy/);
+    assert.match(html, /script-src 'nonce-[^']+'/);
+    const cspNonce = /nonce-([^']+)'/.exec(html)?.[1];
+    const scriptNonce = /<script nonce="([^"]+)"/.exec(html)?.[1];
+    assert.ok(cspNonce !== undefined && cspNonce.length > 0);
+    assert.equal(scriptNonce, cspNonce);
+
+    // style-src legitimately carries 'unsafe-inline' (pandas' own inline
+    // table styling) — the guarantee this asserts is narrower and the one
+    // that actually matters: script-src's own directive never does.
+    const scriptSrcDirective = /script-src[^;]*/.exec(html)?.[0] ?? "";
+    assert.doesNotMatch(scriptSrcDirective, /unsafe-inline/);
+  });
+
+  it("buffers every message until the webview's ready handshake, then replays them in order", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.startRun();
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    // Nothing posted yet — the panel exists (it was just created), but has
+    // not sent "ready".
+    assert.deepEqual(fake.posted, []);
+
+    fake.sendReady();
+    assert.equal(fake.posted.length, 2, "the reset, then the one output");
+    assert.deepEqual(fake.posted[0], { type: "reset" });
+  });
+
+  it("posts immediately, without buffering, once the panel is already ready", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    panel.writeOutput({ mime: "image/png", data: "BB==" });
+    assert.equal(fake.posted.length, 1);
+  });
+
+  it("numbers images by image index, not by position among every output", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    fake.sendReady();
+    panel.writeOutput({ mime: "text/plain", data: "hi\n" });
+    panel.writeOutput({ mime: "image/png", data: "BB==" });
+
+    const images = fake.posted
+      .filter(isResultPanelMessage)
+      .filter(isOutputMessage)
+      .map((message) => message.item)
+      .filter(isImageItem);
+    assert.equal(images[0]?.alt, "Output image 1");
+    assert.equal(images[1]?.alt, "Output image 2");
+  });
+
+  it("localises a failed outcome's summary distinctly from a successful one", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    panel.writeOutcome({ succeeded: false, diagnostics: [] });
+    // `.find()`, not `.filter(...)[0]` — `@typescript-eslint/prefer-find`
+    // requires it, and it returns the same `T | undefined` that makes the
+    // `assert.ok` below a real check rather than one
+    // `@typescript-eslint/no-unnecessary-condition` would flag as always
+    // true: `const [message] = arr` (destructuring) or `arr.filter(...)[0]`
+    // both type `message` as definite in ways this codebase's lint
+    // configuration treats inconsistently, but `.find()`'s own declared
+    // return type is unambiguously `T | undefined`.
+    const message = fake.posted
+      .filter(isResultPanelMessage)
+      .find(isOutcomeMessage);
+    assert.ok(message !== undefined);
+    assert.equal(message.succeeded, false);
+    assert.notEqual(message.summary, "Finished.");
+  });
+
+  it("disposes the underlying panel, and a run after disposal opens a new one", () => {
+    const first = fakePanel();
+    const second = fakePanel();
+    let call = 0;
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => (call++ === 0 ? first.panel : second.panel),
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    panel.dispose();
+    assert.deepEqual(first.disposed, [true]);
+
+    panel.writeOutput({ mime: "image/png", data: "BB==" });
+    assert.equal(second.revealed.length, 1);
+  });
+});

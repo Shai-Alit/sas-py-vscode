@@ -20,5 +20,11 @@
     "types": ["node", "vscode", "mocha"]
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
-  "exclude": ["node_modules", "dist", "out", "test/scratch"]
+  // src/webview/** stays out of this type space too, same reason as
+  // tsconfig.json — it is DOM-typed code compiled under tsconfig.webview.json.
+  // Tests that exercise it (the DOM-port layer, and the pure model it renders)
+  // live in test/unit and import only from src/run/resultPanelDom.ts and
+  // src/run/resultPanelModel.ts, neither of which needs document/window in
+  // scope, so nothing under test/ needs the DOM lib either.
+  "exclude": ["node_modules", "dist", "out", "test/scratch", "src/webview"]
 }

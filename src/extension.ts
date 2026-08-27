@@ -16,6 +16,8 @@ import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
 import { registerRunCommands } from "./run/commands";
+import { createEnvironmentStatusBarItem } from "./run/environmentStatusBar";
+import { EnvironmentStore } from "./run/environmentStore";
 import { createRunTargetStatusBarItem } from "./run/statusBar";
 import { RunTargetStore } from "./run/targetStore";
 
@@ -72,6 +74,12 @@ export function activate(context: vscode.ExtensionContext): void {
     createRunTargetStatusBarItem(profiles, runTargets),
   );
 
+  // 3e's stage-2 capability cache: per-profile, `globalState`-backed, and
+  // never refreshed except when a command explicitly asks — see
+  // `environmentStore.ts`'s own doc comment.
+  const environment = new EnvironmentStore(context);
+  context.subscriptions.push(createEnvironmentStatusBarItem(runTargets));
+
   // One URI handler for the whole extension, registered here rather than inside
   // the sign-in flow: VS Code allows exactly one, and an attempt-scoped handler
   // means the second sign-in of a session either fails to register or replaces
@@ -126,6 +134,7 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     profiles,
     runTargets,
+    environment,
     output,
   );
 }

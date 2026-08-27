@@ -29,3 +29,5 @@ under their category.
 | Run Selection | `Python on Viya: Run Selection` | `pythonOnViya.runSelection` |
 | Cancel | `Python on Viya: Cancel` | `pythonOnViya.cancelRun` |
 | Reset Python State | `Python on Viya: Reset Python State` | `pythonOnViya.resetPythonState` |
+| Show Environment | `Python on Viya: Show Environment` | `pythonOnViya.showEnvironment` |
+| Refresh Environment Info | `Python on Viya: Refresh Environment Info` | `pythonOnViya.refreshEnvironment` |

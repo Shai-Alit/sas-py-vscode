@@ -92,15 +92,23 @@
  *
  * ## What this backend does not attempt
  *
- * It never reports `unsupported` or `runtime-unavailable`. The first would need
- * a capability this slice has no way to probe (3e's job, per `backend.ts`'s
- * `BackendCapabilities.runtime`); the second would need to recognise an
- * unlicensed or missing `PROC PYTHON` from its wire shape, which no probe has
- * measured. A session that cannot run `PROC PYTHON` at all fails `createJob` or
- * the run itself with whatever `ComputeFailure` the deployment actually gives,
- * translated to `backend-failed` like any other — a plainer message than a
- * dedicated one, and an honest one, since nothing here has seen the real shape
- * to word it better.
+ * `execute()`/`reset()` still never report `unsupported` or
+ * `runtime-unavailable` themselves: a session that cannot run `PROC PYTHON` at
+ * all fails `createJob` or the run itself with whatever `ComputeFailure` the
+ * deployment actually gives, translated to `backend-failed` like any other —
+ * a plainer message than a dedicated one, and an honest one, since neither of
+ * those two call sites has ever seen the real wire shape of "no such
+ * procedure" to word it better.
+ *
+ * **3e's `probeRuntime()` is the one place this backend does report
+ * `runtime-unavailable`**, and only from one signal: its own fixed probe
+ * script (`environment.ts`) failing with a non-zero `SYSCC`. That script is
+ * never user input and has been run successfully against a live Viya 4
+ * (`docs/phases/phase-3.md`'s 3e entry), so a failure there is read as
+ * evidence about the runtime rather than a bug in the probe — still not a
+ * measurement of what an unlicensed or missing `PROC PYTHON` actually looks
+ * like on the wire (no deployment lacking it has ever been available to this
+ * project), just the most honest available signal for it.
  */
 
 import {
@@ -112,9 +120,16 @@ import {
   type Program,
   type PythonDiagnostic,
   type RichOutput,
+  type RuntimeCapabilities,
   type Traceback,
   type TracebackFrame,
 } from "./backend";
+import {
+  ENVIRONMENT_PROBE_FILENAME,
+  environmentProbeStatements,
+  MAX_ENVIRONMENT_PROBE_BYTES,
+  parseEnvironmentProbeFile,
+} from "./environment";
 import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
 import { type BackendFailure, type BackendResult, fail } from "./problems";
 import {
@@ -392,6 +407,19 @@ export class ProcPythonBackend implements ExecutionBackend {
    * `SubmissionGuard` handle beyond its own start/end pair, and produces no
    * `ExecutionHandle` for a caller to cancel by id. */
   private resetController: AbortController | undefined;
+  /** {@link probeRuntime}'s own abort, so {@link close} can stop it too —
+   * same reasoning as {@link resetController}: a probe is not an `execute()`
+   * run and produces no `ExecutionHandle` for a caller to cancel by id. */
+  private probeController: AbortController | undefined;
+  /** What {@link capabilities} reports for `runtime`. Starts `"unprobed"` and
+   * only ever changes inside {@link probeRuntime}, on success — a probe that
+   * *fails* leaves whatever was here untouched, so a successful probe followed
+   * by a failed re-probe keeps reporting the earlier `"available"` snapshot.
+   * `RuntimeCapabilities` has no cached "unavailable" member to move it to;
+   * the failure is returned to {@link probeRuntime}'s caller instead. See that
+   * type's doc comment in `backend.ts` for why, and the interface's
+   * {@link probeRuntime} doc for what a consumer must do about it. */
+  private runtime: RuntimeCapabilities = { kind: "unprobed" };
   private runCounter = 0;
   private filerefCounter = 0;
 
@@ -429,13 +457,13 @@ export class ProcPythonBackend implements ExecutionBackend {
     },
   ) {}
 
-  /** Cached; performs no I/O. Stage-2 (`runtime`) always reads `"unprobed"`
-   * until slice 3e exists — see `BackendCapabilities`'s own doc comment. */
+  /** Cached; performs no I/O. `runtime` reads `this.runtime`, which only
+   * {@link probeRuntime} ever updates, and only on success. */
   capabilities(): BackendCapabilities {
     return {
       dialect: this.dialect.id,
       deployment: this.dialect.deployment,
-      runtime: "unprobed",
+      runtime: this.runtime,
     };
   }
 
@@ -632,6 +660,159 @@ export class ProcPythonBackend implements ExecutionBackend {
   }
 
   /**
+   * Stage-2 capability probing (3e): runs `environment.ts`'s fixed probe
+   * program, fetches the file it wrote, and — on success — updates
+   * {@link capabilities}'s `runtime`.
+   *
+   * Shaped like {@link reset} rather than {@link runProgram}: the probe's
+   * statements are submitted directly via `createJob`, with no fileref
+   * upload, because `environment.ts`'s source is this project's own fixed
+   * text, never user input (see that module's own doc comment for why
+   * ADR-0014's upload/`infile=` discipline does not apply to it). Its log is
+   * drained rather than forwarded — the probe's answer is the file it wrote,
+   * not anything it printed — the same choice `reset()` already makes for
+   * `RESTART_STATEMENT`'s own log.
+   */
+  async probeRuntime(): Promise<BackendResult<RuntimeCapabilities>> {
+    if (!this.connected) {
+      return fail({ code: "not-connected" }, "probing the Python runtime");
+    }
+    if (this.busy) {
+      return fail(
+        {
+          code: "busy",
+          running: this.active?.id ?? "a run in another window",
+        },
+        "probing the Python runtime",
+      );
+    }
+    if (!this.guard.startSubmission()) {
+      return fail(
+        { code: "busy", running: "a run in another window" },
+        "probing the Python runtime",
+      );
+    }
+
+    const controller = new AbortController();
+    this.probeController = controller;
+
+    try {
+      const job = await createJob(
+        this.client,
+        this.session,
+        // The trailing `run;` closes the step for the same reason
+        // `runProgram`'s own does (ADR-0014 amendment, finding 70) — without
+        // it, the file this probe writes is never flushed.
+        [...environmentProbeStatements(), "run;"],
+        { signal: controller.signal },
+      );
+      if (!job.ok) {
+        return this.translate(job, "probing the Python runtime", false);
+      }
+
+      const stream = streamJobLog(this.client, job.value, {
+        signal: controller.signal,
+      });
+      await drainEvents(stream.events);
+
+      const ended = await stream.done;
+      if (!ended.ok) {
+        return this.translate(ended, "probing the Python runtime", false);
+      }
+      if (ended.value.outcome === "cancelled") {
+        return fail({ code: "cancelled" }, "probing the Python runtime");
+      }
+
+      const sysccResult = await this.readSyscc(
+        controller.signal,
+        "probing the Python runtime",
+      );
+      if (!sysccResult.ok) return sysccResult;
+      if (!sysccResult.value.succeeded) {
+        // See this module's own doc comment ("What this backend does not
+        // attempt"): the probe is this project's own fixed script, so a
+        // failure here is read as evidence about the runtime, not a bug to
+        // recover from.
+        return fail(
+          {
+            code: "runtime-unavailable",
+            detail:
+              sysccResult.value.message ??
+              `SAS reported an error while probing the Python runtime (SYSCC=${sysccResult.value.syscc})`,
+          },
+          "probing the Python runtime",
+        );
+      }
+
+      const files = await listSessionFiles(this.client, this.session, {
+        signal: controller.signal,
+      });
+      if (!files.ok) {
+        return this.translate(files, "probing the Python runtime", false);
+      }
+
+      const probeFile = files.value.find(
+        (file) => file.name === ENVIRONMENT_PROBE_FILENAME,
+      );
+      if (probeFile === undefined) {
+        return fail(
+          {
+            code: "backend-failed",
+            detail: `the environment probe reported success but left no "${ENVIRONMENT_PROBE_FILENAME}" file behind`,
+          },
+          "probing the Python runtime",
+        );
+      }
+
+      const content = await readFileContent(this.client, probeFile, {
+        signal: controller.signal,
+        // Explicit, for the same file-fetch discipline `captureRichOutput`
+        // applies with `MAX_CAPTURE_BYTES` — see
+        // `MAX_ENVIRONMENT_PROBE_BYTES`'s own doc for why the probe's answer
+        // is capped here rather than left to the transport default.
+        maxBytes: MAX_ENVIRONMENT_PROBE_BYTES,
+      });
+      if (!content.ok) {
+        return this.translate(content, "probing the Python runtime", false);
+      }
+
+      // Best-effort, like `captureRichOutput`'s own deletion: a leaked probe
+      // file is a much smaller problem than failing an otherwise-successful
+      // probe over its own cleanup step.
+      const deleted = await deleteSessionFile(this.client, probeFile, {
+        signal: controller.signal,
+      });
+      if (!deleted.ok) {
+        this.onBackgroundFailure?.(
+          `could not delete the environment probe's own file "${ENVIRONMENT_PROBE_FILENAME}": ${deleted.reason}`,
+        );
+      }
+
+      if (this.isCurrentRunAborted()) {
+        return fail({ code: "cancelled" }, "probing the Python runtime");
+      }
+
+      const parsed = parseEnvironmentProbeFile(content.value);
+      if (parsed === undefined) {
+        return fail(
+          {
+            code: "backend-failed",
+            detail:
+              "the environment probe's own file did not parse as the shape it always produces",
+          },
+          "probing the Python runtime",
+        );
+      }
+
+      this.runtime = parsed;
+      return { ok: true, value: parsed };
+    } finally {
+      this.probeController = undefined;
+      this.guard.endSubmission();
+    }
+  }
+
+  /**
    * Cancels whatever is in flight, then disconnects.
    *
    * ADR-0015 gives `close` no result to return, but a caller closing the
@@ -662,6 +843,9 @@ export class ProcPythonBackend implements ExecutionBackend {
     // a `cancelled` failure via `isCurrentRunAborted()`; there is nothing here
     // to await, since `reset()` itself is what unwinds and releases the guard.
     this.resetController?.abort();
+    // Same reasoning, for `probeRuntime()`: no `ExecutionHandle`, no entry in
+    // `this.active`, still in-flight work `close()` must stop.
+    this.probeController?.abort();
     this.connected = false;
   }
 
@@ -1013,7 +1197,8 @@ export class ProcPythonBackend implements ExecutionBackend {
   private isCurrentRunAborted(): boolean {
     return (
       (this.active?.controller.signal.aborted ?? false) ||
-      (this.resetController?.signal.aborted ?? false)
+      (this.resetController?.signal.aborted ?? false) ||
+      (this.probeController?.signal.aborted ?? false)
     );
   }
 

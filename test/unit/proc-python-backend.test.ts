@@ -8,6 +8,10 @@ import {
   type RichOutput,
 } from "../../src/backend/backend";
 import {
+  ENVIRONMENT_PROBE_FILENAME,
+  environmentProbeStatements,
+} from "../../src/backend/environment";
+import {
   ProcPythonBackend,
   type SubmissionGuard,
 } from "../../src/backend/procPython";
@@ -504,7 +508,7 @@ describe("ProcPythonBackend", () => {
       const capabilities = backend.capabilities();
       assert.equal(capabilities.dialect, "viya4");
       assert.equal(capabilities.deployment.kind, "viya4");
-      assert.equal(capabilities.runtime, "unprobed");
+      assert.deepEqual(capabilities.runtime, { kind: "unprobed" });
     });
   });
 
@@ -2105,6 +2109,228 @@ describe("ProcPythonBackend", () => {
       // The router's own rejection means `deleteFile` was answered, not
       // skipped — `deletedNames` only records a *successful* delete.
       assert.equal(deletedNames.length, 0);
+    });
+  });
+
+  describe("probeRuntime", () => {
+    /** The router's `getDirectoryMembers` numbers its calls; `probeRuntime`
+     * lists the directory exactly once (unlike `execute()`'s before/after
+     * pair), so that one call is the router's "call 1" and the fixture
+     * belongs in `filesBefore` regardless of when the probe actually wrote
+     * the file in wall-clock terms. */
+    function probeFileListing(
+      bytes: Uint8Array,
+    ): NonNullable<RouterOptions["filesBefore"]> {
+      return [{ name: ENVIRONMENT_PROBE_FILENAME, size: bytes.length }];
+    }
+
+    it("refuses before connect()", async () => {
+      const { client } = router({ syscc: "0" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      const result = await backend.probeRuntime();
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "not-connected");
+    });
+
+    it("refuses while an execute() run is in flight, naming it", async () => {
+      const { client } = router({
+        syscc: "0",
+        logGate: deferred<Reply>().promise,
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const running = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+
+      const result = await backend.probeRuntime();
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "busy");
+      assert.equal(result.problem.running, running.id);
+    });
+
+    it("submits the probe's own fixed statements plus a trailing run;", async () => {
+      const bytes = new TextEncoder().encode(
+        JSON.stringify({
+          version: "3.12.0",
+          executable: "/usr/bin/python3",
+          packages: [["numpy", "2.0.0"]],
+        }),
+      );
+      const { client, requests } = router({
+        syscc: "0",
+        filesBefore: probeFileListing(bytes),
+        fileContent: { [ENVIRONMENT_PROBE_FILENAME]: bytes },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      await backend.probeRuntime();
+
+      const submitted = requests.find(
+        (request) => request.link.rel === "execute",
+      );
+      const code = (submitted?.body as { code: string[] }).code;
+      assert.deepEqual(code, [...environmentProbeStatements(), "run;"]);
+    });
+
+    it("parses a successful probe, updates capabilities(), and deletes its own file", async () => {
+      const bytes = new TextEncoder().encode(
+        JSON.stringify({
+          version: "3.12.0 (test)",
+          executable: "/opt/py/bin/python3",
+          packages: [
+            ["numpy", "2.0.0"],
+            ["pandas", "3.0.0"],
+          ],
+        }),
+      );
+      const { client, deletedNames } = router({
+        syscc: "0",
+        filesBefore: probeFileListing(bytes),
+        fileContent: { [ENVIRONMENT_PROBE_FILENAME]: bytes },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.probeRuntime();
+
+      assert.ok(result.ok);
+      assert.deepEqual(result.value, {
+        kind: "available",
+        version: "3.12.0 (test)",
+        executable: "/opt/py/bin/python3",
+        packages: [
+          { name: "numpy", version: "2.0.0" },
+          { name: "pandas", version: "3.0.0" },
+        ],
+      });
+      assert.deepEqual(backend.capabilities().runtime, result.value);
+      assert.deepEqual(deletedNames, [ENVIRONMENT_PROBE_FILENAME]);
+    });
+
+    it("reports runtime-unavailable when the probe's own script fails (non-zero SYSCC)", async () => {
+      const { client } = router({
+        syscc: "3000",
+        syserrortext: "PROC PYTHON is not licensed on this deployment.",
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.probeRuntime();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "runtime-unavailable");
+      assert.equal(
+        result.problem.detail,
+        "PROC PYTHON is not licensed on this deployment.",
+      );
+      // A failed probe must not overwrite a prior "unprobed" cache with
+      // anything that looks like an answer.
+      assert.deepEqual(backend.capabilities().runtime, { kind: "unprobed" });
+    });
+
+    it("falls back to a plain message when a failed probe's SYSERRORTEXT is empty", async () => {
+      const { client } = router({ syscc: "3000" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.probeRuntime();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "runtime-unavailable");
+      assert.equal(
+        result.problem.detail,
+        "SAS reported an error while probing the Python runtime (SYSCC=3000)",
+      );
+    });
+
+    it("reports backend-failed when SYSCC succeeds but the probe's own file is missing", async () => {
+      const { client } = router({ syscc: "0" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.probeRuntime();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-failed");
+      assert.ok(result.problem.detail.includes(ENVIRONMENT_PROBE_FILENAME));
+    });
+
+    it("reports backend-failed when the probe's own file does not parse", async () => {
+      const bytes = new TextEncoder().encode("not json");
+      const { client } = router({
+        syscc: "0",
+        filesBefore: probeFileListing(bytes),
+        fileContent: { [ENVIRONMENT_PROBE_FILENAME]: bytes },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const result = await backend.probeRuntime();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-failed");
+    });
+
+    it("is stopped by close(), the same as an execute() run and a reset()", async () => {
+      // Same proven shape as `reset()`'s own "is stopped by close()" case
+      // just above: gate `createJob` itself, close while it is still in
+      // flight, then resolve the gate — `translate()`'s own
+      // `isCurrentRunAborted()` check reports `cancelled` regardless of what
+      // the gate resolves with, because the controller was already aborted.
+      const gate = deferred<Reply>();
+      const { client } = router({ syscc: "0", executeGate: gate.promise });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+
+      const probing = backend.probeRuntime();
+      await flush();
+      await backend.close();
+      gate.resolve(rejected("compute-unreachable", "aborted"));
+
+      const result = await probing;
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cancelled");
     });
   });
 });

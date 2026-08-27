@@ -501,6 +501,20 @@ export const createRecordedProcPythonBackend: BackendFactory = (
       return real.reset();
     },
 
+    // 3e: delegates straight to the real backend, same as `cancel`/`reset`
+    // above. Not exercised by `backend-contract-suite.ts` today (that suite
+    // predates 3e and has no case naming `probeRuntime`) — this double's
+    // simulated `getDirectoryMembers` always answers empty (see the comment
+    // on that case in `buildClient`), so a probe run through this fixture
+    // would settle successfully on `SYSCC` and then fail to find its own
+    // output file. `proc-python-backend.test.ts`'s own `probeRuntime` cases
+    // use a smaller, purpose-built client instead, scripted for that
+    // method's exact call sequence, rather than extending this shared
+    // double to special-case a second kind of job alongside `execute()`'s.
+    probeRuntime() {
+      return real.probeRuntime();
+    },
+
     async close(): Promise<void> {
       await real.close();
       connected = false;

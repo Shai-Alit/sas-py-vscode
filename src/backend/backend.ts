@@ -261,13 +261,42 @@ export interface BackendCapabilities {
   /**
    * Stage-2 facts: whether Python actually runs, its version, its packages.
    *
-   * The only value this type currently admits is `"unprobed"`, and that is not an
-   * oversight — it is the shape of what we know before slice 3e exists. Widening
-   * the union is 3e's first act, and typing it this way means 3e has to do that
-   * deliberately rather than find a plausible-looking empty object already here.
+   * See {@link RuntimeCapabilities} for what the two members mean and why
+   * there is no cached "unavailable" one.
    */
-  readonly runtime: "unprobed";
+  readonly runtime: RuntimeCapabilities;
 }
+
+/** One installed distribution, as `importlib.metadata` names it. */
+export interface PythonPackage {
+  readonly name: string;
+  readonly version: string;
+}
+
+/**
+ * {@link BackendCapabilities.runtime}'s own type — what is known about the
+ * runtime once something has actually asked.
+ *
+ * `"unprobed"` until {@link ExecutionBackend.probeRuntime} has been called at
+ * least once — this is a cached, synchronous getter, never itself an I/O
+ * call, so there is no other way for it to become `"available"`. There is no
+ * cached "unavailable" member here: a probe that discovers Python does not
+ * work is a `BackendResult` failure (`problems.ts`'s own `runtime-unavailable`
+ * member, whose doc comment already names this as 3e's job), not a value this
+ * getter hands back — a caller has to act on that failure differently than it
+ * renders a value, the same reason `ExecutionOutcome` and a `BackendFailure`
+ * are two different types rather than one with an error field. `procPython.ts`
+ * and `src/backend/environment.ts` are the implementation; this seam only
+ * needs the shape.
+ */
+export type RuntimeCapabilities =
+  | { readonly kind: "unprobed" }
+  | {
+      readonly kind: "available";
+      readonly version: string;
+      readonly executable: string;
+      readonly packages: readonly PythonPackage[];
+    };
 
 /**
  * A place programs can run.
@@ -279,8 +308,51 @@ export interface ExecutionBackend {
   /** Stable, human-readable, and safe to log — e.g. `proc-python`. */
   readonly id: string;
 
-  /** Cached; never performs I/O. Probing happens in `connect()`. */
+  /**
+   * Cached; never performs I/O.
+   *
+   * **Not** refreshed automatically by {@link connect}. An earlier version of
+   * this comment said probing happened there; that does not survive slice
+   * 3e's own plan text, which calls for an explicit, user-triggered refresh
+   * (`PRODUCTION_PLAN.md` §2.3: "a slow answer that changes rarely") rather
+   * than taxing every reconnect with a full package-list probe. The only way
+   * {@link BackendCapabilities.runtime} becomes anything other than
+   * `"unprobed"` is a prior call to {@link probeRuntime} succeeding.
+   */
   capabilities(): BackendCapabilities;
+
+  /**
+   * Runs the stage-2 capability probe: whether Python actually works, its
+   * version and executable path, and its installed package set.
+   *
+   * Explicit and on-demand — never called by {@link connect} or {@link
+   * execute} themselves, per {@link capabilities}'s own doc. A caller (3e's
+   * `Show environment` command, and whatever refreshes its cache) decides
+   * when the cost is worth paying.
+   *
+   * On success, also updates what {@link capabilities} subsequently returns —
+   * that is the only way `BackendCapabilities.runtime` leaves `"unprobed"`.
+   * `PROC PYTHON` being missing or unlicensed is reported as a
+   * `runtime-unavailable` failure here, not as a value — see {@link
+   * RuntimeCapabilities}'s own doc comment for why.
+   *
+   * A *failure* never writes back: because {@link RuntimeCapabilities} has no
+   * cached "unavailable" member, a backend that probed successfully once and
+   * is later re-probed into a `runtime-unavailable` (or any other) failure
+   * keeps reporting the earlier `"available"` snapshot from
+   * {@link capabilities} — the failure reaches only the immediate caller. A
+   * consumer that must not act on a stale success has to treat this call's
+   * own return value as the source of truth on a refresh, not
+   * {@link capabilities}.
+   *
+   * Subject to the same serial contract as {@link execute}: fails with `busy`
+   * while a run or a reset is in flight, and does nothing else while it does.
+   * Takes no `signal`, matching {@link reset}'s own shape rather than {@link
+   * execute}'s: there is no handle for a caller to cancel by, and {@link close}
+   * is the one documented way to interrupt work this seam is already doing
+   * without one.
+   */
+  probeRuntime(): Promise<BackendResult<RuntimeCapabilities>>;
 
   /**
    * Makes the backend ready to run on the session it was constructed against.

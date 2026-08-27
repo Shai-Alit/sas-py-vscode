@@ -11,6 +11,11 @@ npm run test:live          # opt-in, env-gated, a real deployment
 npm run coverage           # the unit tier under c8, with the ratchet enforced
 ```
 
+Nothing here proves a person can install the packaged `.vsix`, point it at a
+deployment, and get a figure back. That is the [manual test
+pass](manual-test-pass.md) — a scripted walkthrough run by hand before a release
+and when a phase closes.
+
 ## The stack, and what is deliberately missing
 
 Mocha as the runner, `node:assert/strict` for assertions, Sinon for fakes and

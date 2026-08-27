@@ -98,15 +98,45 @@ script-src 'nonce-{nonce}';
   single load-bearing difference from upstream's approach: upstream trusts
   its payload and therefore never needed this; this project cannot make that
   assumption about its own.
-- **`style-src` allows `'unsafe-inline'`.** Rejected leaving this out: pandas'
-  own `to_html()` emits inline `style` attributes for cell formatting, and a
-  `style-src` that forbids them would render a `DataFrame` unstyled with no
-  way for a user to fix it from their own code. This is the standard,
-  accepted trade-off for rendering untrusted-but-not-executable HTML in a
-  webview (VS Code's own built-in notebook renderers make the same call for
-  the same reason) — a CSS-only side channel is a materially smaller risk
-  than script execution, and closing it entirely would cost real
-  functionality for a marginal gain.
+- **`style-src` allows `'unsafe-inline'` — a deliberate, bounded exception,
+  recorded here so it is not re-litigated on every scan.** `SECURITY.md`
+  names `unsafe-inline` in a webview as in scope for a security report, and
+  automated reviewers (CodeQL, LLM review bots) do and will keep flagging
+  this line. This is the standing answer.
+
+  *Why it is needed.* pandas renders tabular output two ways and both need
+  inline CSS: `DataFrame.to_html()` emits an inline `style` attribute on the
+  header row (`text-align`), and `DataFrame.style.to_html()` (the Styler)
+  emits a generated `<style>` element with per-cell rules and no attribute
+  this extension controls, so it cannot carry a nonce. Forbidding inline
+  styles would render both as unformatted tables with nothing the user could
+  do about it from their own code — the payload is produced on a machine they
+  cannot log into.
+
+  *Why it is safe enough.* `'unsafe-inline'` in `style-src` does not permit
+  code execution — styles are not script, and `script-src` remains
+  `'nonce-…'` only, so an injected `<script>` or an `onerror=`/`onclick=`
+  attribute in a `text/html` payload stays inert regardless. The residual
+  exposure is CSS-only: an injected payload could restyle or overlay content
+  *within this panel*. That is bounded hard by the rest of the policy — the
+  classic CSS side channels (attribute-selector exfiltration, `@import`,
+  `background: url(…)`, web fonts) all need an outbound request, and
+  `img-src` is `data:` + `cspSource` while everything else falls to
+  `default-src 'none'`, so there is no sink to exfiltrate to. Nothing
+  sensitive is in the panel's DOM to read in the first place, and the panel
+  is a read-only result surface with no actions to spoof a click onto. VS
+  Code's own built-in notebook and markdown renderers make the same
+  `style-src 'unsafe-inline'` call for the same reason.
+
+  *Alternative rejected.* Nonce the extension's own `<style>` block and drop
+  `'unsafe-inline'` (`style-src {cspSource} 'nonce-…'`). This keeps the
+  panel's own chrome working but still blocks the Styler's generated
+  `<style>` element and `to_html()`'s inline attribute — i.e. it accepts the
+  functionality loss above to satisfy a scanner rule, for a threat
+  (CSS-only restyling of a read-only panel, no exfiltration sink) that does
+  not justify it. Revisit if a future policy change makes inline `style-src`
+  a hard prohibition, or if a concrete CSS-channel exploit is demonstrated
+  against this specific policy — either gets its own record.
 - **`img-src` is `data:` only, plus the webview's own `cspSource`.** Every
   `image/png` output already arrives as base64 (ADR-0019's capture
   mechanism), so it is embedded as a `data:` URI directly — no
@@ -302,6 +332,15 @@ onward with a narrower, DOM-flavoured type space than the rest of the
 extension. Anyone adding a second webview later reuses `tsconfig.webview.json`
 and the `isBrowserOnly` rule rather than re-deriving them — this ADR is the
 place that reasoning lives.
+
+The `style-src 'unsafe-inline'` directive is a standing, accepted finding:
+automated scanners flag it, `SECURITY.md` now points a reporter at the
+"Content-security policy" section above for the analysis, and a scanner-only
+report against it with no demonstrated CSS-channel impact falls under
+`SECURITY.md`'s existing "out of scope" clause for exactly that. A test in
+`test/integration/run/result-panel.test.ts` asserts the directive is present
+*and* that `script-src` still carries no inline allowance, so removing either
+half trips a red test that points back here.
 
 What this record does not settle: an interactive surface on the panel
 itself (copying an image, jumping from a traceback frame to its source line)

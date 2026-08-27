@@ -1053,6 +1053,38 @@ punch list for what was actually written against it.
   clean. Adversarial review, `verify`, `test:integration`, and `check:docs`
   have all now passed on this exact diff.
 
+- **AI reviewers on the PR raised two more, 2026-08-27 — one dismissed, one
+  turned into an explicit recorded exception:**
+  1. **CodeQL — "missing origin verification in `postMessage` handler"
+     (Medium).** Dismissed as a scanner false-positive for this context, not
+     code-changed. The only route for hostile content into the panel is a
+     `text/html` output, and the CSP (`script-src 'nonce-…'`, `default-src
+     'none'` so no child frames) leaves it inert — there is no script and no
+     foreign frame able to post a message at all, and `entry.ts` already
+     shape-validates every message with `isResultPanelMessage`. VS Code's own
+     webview samples do not origin-check the receive side, and a naive
+     `event.origin` check risks silently blanking the panel given
+     sandboxed-webview origin semantics differ desktop vs `vscode.dev`.
+     `SECURITY.md`'s "reports produced solely by an automated scanner with no
+     demonstrated impact" clause covers it.
+  2. **LLM review bot — `style-src 'unsafe-inline'` called "blocking".** The
+     bot's stated rationale ("inline styles execute", "inline injection
+     surface") is wrong — `style-src` governs whether CSS *applies*, not code
+     execution, and `script-src` is nonce-only. Decision (Sean): keep
+     `'unsafe-inline'` for full pandas fidelity — `to_html()`'s inline
+     attribute and the Styler's generated `<style>` element both need it, and
+     the alternative (nonce our own `<style>`, drop the allowance) buys a
+     scanner-clean line at the cost of unformatted `DataFrame` output for a
+     threat (CSS-only restyle of a read-only panel, no exfil sink under
+     `default-src 'none'` + `data:`-only `img-src`) that does not justify it.
+     Made explicit rather than left to re-litigate: ADR-0021's
+     "Content-security policy" section now carries the full analysis and the
+     rejected alternative, `SECURITY.md`'s webview bullet points a reporter
+     there and scopes scanner-only reports out, and
+     `result-panel.test.ts` now asserts the `style-src` allowance *and* the
+     `script-src` non-allowance together so removing either trips a test that
+     names the ADR.
+
 ☐ **3e — ship the package list as a user-facing thing, not a capability record.**
 The person writing code in this editor is writing against an interpreter they
 cannot see, on a machine they cannot log into, whose package set someone else

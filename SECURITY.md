@@ -35,8 +35,15 @@ Anything in the **OAuth2 flow** — weak PKCE verifier generation, a missing or
 unchecked `state` parameter, a redirect that can be captured by another process,
 or a token that outlives its intended scope.
 
-Anything in a **webview** — content-security-policy gaps, `unsafe-inline`, remote
-script loading, or unvalidated messages crossing the extension/webview boundary.
+Anything in a **webview** — content-security-policy gaps, a script that runs
+outside the extension's own nonce (`script-src 'unsafe-inline'`, remote script
+loading, an injected `<script>` or event-handler attribute that executes), or
+unvalidated messages crossing the extension/webview boundary. One known
+exception: the result panel's CSP carries `style-src 'unsafe-inline'` on
+purpose, so pandas table output renders — the reasoning and its bounds are in
+ADR-0021's "Content-security policy" section, and a scanner-only report against
+that line with no demonstrated CSS-channel impact is covered by "Out of scope"
+below.
 
 **Dependency vulnerabilities** that are actually reachable from our code paths.
 

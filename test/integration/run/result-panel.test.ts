@@ -190,11 +190,23 @@ describe("ResultPanel", () => {
     assert.ok(cspNonce !== undefined && cspNonce.length > 0);
     assert.equal(scriptNonce, cspNonce);
 
-    // style-src legitimately carries 'unsafe-inline' (pandas' own inline
-    // table styling) — the guarantee this asserts is narrower and the one
-    // that actually matters: script-src's own directive never does.
+    // The guarantee that actually matters: script-src carries no inline
+    // allowance, so an injected <script> or onerror= in a text/html payload
+    // stays inert.
     const scriptSrcDirective = /script-src[^;]*/.exec(html)?.[0] ?? "";
     assert.doesNotMatch(scriptSrcDirective, /unsafe-inline/);
+
+    // style-src carries 'unsafe-inline' *on purpose* — pandas' to_html() and
+    // Styler output both need inline CSS, and the residual CSS-only exposure
+    // is bounded by default-src 'none' + a data:-only img-src (no exfil
+    // sink). This is a deliberate, recorded exception — ADR-0021's
+    // "Content-security policy" section and SECURITY.md both carry the
+    // analysis. Asserted here so that dropping it to satisfy a scanner trips
+    // a red test that points back at that decision rather than silently
+    // regressing pandas rendering.
+    const styleSrcDirective = /style-src[^;]*/.exec(html)?.[0] ?? "";
+    assert.match(styleSrcDirective, /unsafe-inline/);
+    assert.match(html, /default-src 'none'/);
   });
 
   it("buffers every message until the webview's ready handshake, then replays them in order", () => {

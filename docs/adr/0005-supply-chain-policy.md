@@ -14,6 +14,14 @@
   `overrides` entry pinning `vite ^6.4.3` clears the three vite advisories and
   the nested-esbuild one, and the allow-list is down to the three on the mocha
   path. See the amended entries under Context, Alternatives and Consequences.
+- **Amended 2026-08-27 (Phase 3 → 4 housekeeping):** the same correction, applied
+  to what the 2026-08-16 pass left behind. The two `serialize-javascript`
+  advisories were filed as unfixable on the "mocha pins `serialize-javascript
+  ^6.0.2`" reasoning — the parent again, not the child. `serialize-javascript`
+  7.0.5 fixes both; `overrides` now pins `^7.0.5` under mocha, GitHub's two
+  Dependabot alerts (`GHSA-5C6J-R48X-RMVQ` high, `GHSA-QJ8W-GFJ5-8C6V` moderate)
+  clear, and the allow-list is down to the one `low` `diff` advisory. See the
+  amended entries under Context and Consequences.
 
 ## Context
 
@@ -58,6 +66,25 @@ available, and a policy had to exist for the case where it is not.
 > available" when there is one.** The policy is unaffected: it exists for the
 > three that remain, and it is the reason the four that were fixed had to be
 > deleted from the allow-list in the same change rather than left to lapse.
+
+> **Amended 2026-08-27.** One remains now, not three. The lesson from 2026-08-16
+> was written down and then not applied to the other two entries on the same
+> list: both `serialize-javascript` advisories carried the same "mocha pins
+> `^6.0.2`, fixed line is 7.x" note — the parent-can't-move half of the escape
+> route, with the child-override half left unchecked. `serialize-javascript`
+> 7.0.5 fixes `GHSA-5C6J-R48X-RMVQ` and `GHSA-QJ8W-GFJ5-8C6V`; 7.x dropped its
+> one dependency (`randombytes`) and sets a `node >=20` floor, comfortably under
+> this project's 22.18.0. `overrides` pins it at `^7.0.5` under mocha — and
+> unlike the vite pin, this override contradicts nothing a package declared:
+> mocha's `^6.0.2` is the only constraint on it, so npm is choosing between two
+> versions rather than being overruled. mocha runs the suites here serially, so
+> `serialize-javascript` is not on the test path at all; the 1122-test unit
+> suite passes on 7.x regardless. The `low` `diff` advisory has the same
+> child-override route open — `diff@8.0.3` fixes it — and it is declined on
+> cost, not left unexamined: a two-major bump in the package mocha renders
+> assertion diffs with, for a denial of service Dependabot auto-dismissed. That
+> reasoning now lives in the allow-list entry, so the next reader does not
+> re-derive it.
 
 ## Decision
 
@@ -284,6 +311,15 @@ to re-read seven advisories, which is the deliberate trade but is not free.
 > carries an `overrides` block, which is a standing instruction to npm that
 > nothing revalidates. `npm run docs:build` is the only thing that would notice
 > if it went bad.
+
+> **Amended 2026-08-27.** One entry comes due on 2026-11-12 now, not three. The
+> `overrides` block has a second unvalidated pin in it — `serialize-javascript
+> ^7.0.5` under mocha — but this one has cheap live cover the vite pin lacks:
+> `npm run test:unit` exercises mocha itself on every pull request, so a 7.x
+> incompatibility surfaces as a red unit run rather than needing a dedicated
+> check. The maintenance mechanism worked the same way it did in August: the
+> Dependabot alerts were re-read between phases, not on the expiry date, and the
+> re-read is what found the fix.
 
 **Revisit trigger.** Move the whole policy into the normal jobs on the day
 `engines.node` moves to 22.22.2 or later, and delete the pinned npm install from

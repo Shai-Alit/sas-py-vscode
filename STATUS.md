@@ -7,8 +7,12 @@ into `docs/phases/phase-4.md`'s own Runbook, and ran the live check
 phase-3.md's own closing note called for: `probeRuntime()`'s full wire
 sequence (job, `SYSCC`, directory listing, content fetch, delete, cleanup),
 confirmed against `verde` — see `docs/phases/phase-3.md`'s Finding 71. The
-Dependabot alerts GitHub flagged on the PR #67 push are still unreviewed; see
-below. See `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
+two open Dependabot alerts (both `serialize-javascript`, `GHSA-5C6J-R48X-RMVQ`
+high and `GHSA-QJ8W-GFJ5-8C6V` moderate) were cleared 2026-08-27 by pinning
+`serialize-javascript ^7.0.5` in `package.json`'s `overrides` — the
+child-override route the August allow-list note said to check and then did not
+apply to these two; the allow-list is now down to the one `low` `diff` entry.
+See ADR-0005's 2026-08-27 amendments. See `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
 backend, plus the `resolveContext` no-such-context correction) and 3b (the log
 filter) are merged. 3c's own probe (step 1, findings 61–66) is also merged —
 the file-write-plus-Compute-files-API mechanism won outright over

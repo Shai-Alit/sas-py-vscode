@@ -611,6 +611,19 @@ with `12.0.0-rc.6` on `next`, so the fix that does not exist in the entry still
 does not exist. Nothing to change; the value of the exercise was turning an
 unexplained banner into a known one.
 
+☑ **Both `serialize-javascript` alerts cleared 2026-08-27 — the escape route the
+2026-08-18 entry re-measured on the wrong axis.** That re-measure checked whether
+`mocha` had moved and stopped there. It had not asked whether
+`serialize-javascript` itself had a fixed release: **7.0.5 shipped 2026-03-25**,
+five months before the reconciliation entry called the fix non-existent, and it
+closes both `GHSA-5C6J-R48X-RMVQ` and `GHSA-QJ8W-GFJ5-8C6V`. `overrides` in
+`package.json` now pins `serialize-javascript ^7.0.5` under mocha (npm resolves
+`7.1.0`); 7.x has no dependencies and a `node >=20` floor, `npm run test:unit`
+passes its 1122 cases on it, and `npm audit` drops to the single `low` `diff`
+advisory. Same shape as the vite correction on 2026-08-16, same lesson a second
+time: **checking the parent's version is not checking the child's.** See
+[ADR-0005](../adr/0005-supply-chain-policy.md)'s 2026-08-27 amendments.
+
 ☑ **Settled 2026-08-12: the gate is hard on production, allow-listed on dev.**
 `npm audit --omit=dev` fails at any severity — vacuous today, because the
 production tree is empty, but it is the real gate the day a runtime dependency

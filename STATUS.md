@@ -23,35 +23,24 @@ on a folder where it had never once been invoked before — not explainable as
 the run target's default to Local — an unconfigured workspace now
 contributes nothing to the editor, so this extension can only win the
 primary slot once a user has explicitly asked for Viya. See phase-3.md's
-findings write-up and ADR-0020 for the full record. **3d-ii (the result
-panel webview) is implemented, reviewed, and every check is green — ready
-to merge, pending only the commit/PR commands.** This repository's first
-webview: a singleton `WebviewPanel`,
-CSP-locked, fed by a buffered host↔webview message protocol, per
-[ADR-0021](docs/adr/0021-result-panel-webview.md). It only opens for a run
-that produces `text/html`, `image/png`, or a structured traceback — a
-plain-text-only run stays as quiet as it was in 3d-i. New build-tooling
-ground covered for the first time: `tsconfig.webview.json` (a DOM-typed
-directory the rest of the extension deliberately excludes), a second
-browser-target esbuild context (`dist/webview/resultPanel.js`), and a third
-`check-coverage-scope.mjs` exemption category (`isBrowserOnly`, alongside
-"imports vscode" and "types only") for the one genuinely browser-only file,
-`src/webview/entry.ts` — everything else the feature needs is ordinary,
-DOM-free, unit-tested logic. Two rounds of adversarial review (one over the
-whole slice, one scoped to a later fix) found and fixed three real defects,
-the most notable of which — a user closing the result panel mid-run
-permanently used up that run's one reveal — only `npm run test:integration`
-against the real VS Code host actually caught, since the mocked-`vscode`
-unit tier `.mocharc.json` runs never execute `test/integration/**` at all.
-A third round, run in Sean's own VS Code Claude Code window per this
-project's standing manual-adversarial-pass rule, found four more minor
-points (an l10n boundary hole in the traceback frame formatting, unbounded
-but bounded-per-run backlog retention left as a documented non-goal, a
-hardcoded `lang="en"`, and an imprecise tsconfig comment) — all fixed in
-the same diff, none of them behaviour regressions. See phase-3.md's
-Runbook for the full account, including two lint-message false starts
-along the way. **`npm run verify`, `npm run test:integration`, and
-`npm run check:docs` all pass clean on the finished diff.**
+findings write-up and ADR-0020 for the full record. **3d-ii is merged, as
+[PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65)** — this
+repository's first webview: a singleton `WebviewPanel`, CSP-locked, fed by a
+buffered host↔webview message protocol, per
+[ADR-0021](docs/adr/0021-result-panel-webview.md), opening only for a run
+that produces `text/html`, `image/png`, or a structured traceback. Two
+rounds of in-session adversarial review plus a third manual pass in Sean's
+own VS Code window found and fixed real defects before the PR opened —
+most notably a user closing the panel mid-run permanently using up that
+run's one reveal, caught only by `npm run test:integration` against the
+real VS Code host, since the mocked-`vscode` unit tier never executes
+`test/integration/**` at all. Two automated PR reviewers then raised a
+CodeQL origin-check finding (dismissed as a scanner false positive — the
+CSP already makes it unreachable) and an incorrect claim that
+`style-src 'unsafe-inline'` permits script execution (it does not; kept,
+for pandas fidelity, and turned into an explicit recorded exception in
+ADR-0021/`SECURITY.md`, pinned by a test). See phase-3.md's 3d-ii entry for
+the full account.
 
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
@@ -67,7 +56,7 @@ along the way. **`npm run verify`, `npm run test:integration`, and
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ▶ in progress (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63); 3d-ii implemented, `verify`/`test:integration`/`check:docs` all green, not yet merged) | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | ▶ in progress (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii merged [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65)) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

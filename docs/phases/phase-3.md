@@ -758,17 +758,14 @@ is the punch list for executing it.
   open item, and it closes when a default is picked or the decision is recorded
   as "none by default, deliberately".
 
-☐ **3d-ii — the result panel webview.** Drafted 2026-08-26, adversarial
-review done and its findings fixed in the same diff, `tsc --noEmit` (all
-three configs), `prettier --check` and the small `check-*.mjs` gates all
-pass. **Not yet run: ESLint, the unit/integration suites, or
-`npm run coverage`** (this session's sandbox cannot run those reliably), and
-**not yet merged**. See the handoff note at the end of this session for the
-exact commands. [ADR-0021](../adr/0021-result-panel-webview.md) settles the
+☑ **3d-ii — the result panel webview.** Merged as
+[PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 2026-08-27.
+[ADR-0021](../adr/0021-result-panel-webview.md) settles the
 mechanism (a singleton `WebviewPanel`, CSP-locked, a buffered host↔webview
 message protocol) and every wire-level decision (the reveal policy, the
 localisation boundary, how the browser-only bundle is tested); this is the
-punch list for what was actually written against it.
+punch list for what was actually written against it, including the review
+that happened before and after the PR opened.
 
 - **`src/run/resultPanelModel.ts` (new, pure).** Reduces one streamed
   `RichOutput` to a `RenderItem` — total over the mime union, unlike

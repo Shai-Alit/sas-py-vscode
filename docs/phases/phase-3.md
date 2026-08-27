@@ -1146,7 +1146,7 @@ editor is green and the run is a `ModuleNotFoundError`. `PRODUCTION_PLAN.md`
   transport rather than inventing a second one. This was independently
   re-verified live against `verde` before writing any code (a `print()` of
   300 non-whitespace characters wrapped 132+132+36; `LINESIZE=MAX` raised it
-  to 256+144, never removing the wrap) — the same numbers finding 62 already
+  to 256+44, never removing the wrap) — the same numbers finding 62 already
   recorded, so nothing new is added to the Probe findings section below.
 - **`src/backend/environment.ts` (new, pure — no `vscode`).** The probe's
   fixed Python source (`environmentProbeStatements`) and the parser for what

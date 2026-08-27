@@ -1083,21 +1083,11 @@ that happened before and after the PR opened.
      names the ADR.
 
 ☑ **3e — ship the package list as a user-facing thing, not a capability record.**
-Implemented 2026-08-27; **not yet committed or merged** — this entry, like the
-source it describes, is part of the same uncommitted change Sean's own review
-and `npm run verify`/`test:integration` still need to see, per this project's
-"Claude never runs tests or git operations that change state." The
-architecture-level design fork this project's standing policy requires be
-settled up front is recorded below. A scoped in-session adversarial-review
-subagent pass over the *finished* diff also ran, 2026-08-27, per this project's
-"adversarial self-review before the PR exists" — see the dedicated bullet below
-for what it found and the one fix it produced. **Sean's own manual pass, in his
-own VS Code window, has also now run** (this slice both adds source and widens
-a documented interface, so it did not qualify for the docs-only/dependency-bump
-exemption) — see the independent-senior-review bullet below for its four
-findings, all fixed in the same change, and the coverage-branches bullet for
-the gap that surfaced once those fixes landed. Only the commit and PR are
-still ahead.
+Merged as [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67),
+2026-08-27 — this is the punch list for what was actually written, including
+the review that happened before and after the PR opened: two in-session
+adversarial passes, an independent senior-review pass, and the automated PR
+reviewer, each with its own dedicated bullet below.
 
 The person writing code in this editor is writing against an interpreter they
 cannot see, on a machine they cannot log into, whose package set someone else

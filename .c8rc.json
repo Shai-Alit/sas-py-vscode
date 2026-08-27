@@ -19,6 +19,8 @@
     "src/profile/problems.ts",
     "src/profile/store.ts",
     "src/run/commands.ts",
+    "src/run/environmentPanel.ts",
+    "src/run/environmentStatusBar.ts",
     "src/run/outputChannel.ts",
     "src/run/resultPanel.ts",
     "src/run/statusBar.ts",

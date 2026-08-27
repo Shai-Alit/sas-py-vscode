@@ -144,6 +144,16 @@
         "command": "pythonOnViya.resetPythonState",
         "title": "%command.resetPythonState.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.showEnvironment",
+        "title": "%command.showEnvironment.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.refreshEnvironment",
+        "title": "%command.refreshEnvironment.title%",
+        "category": "%extension.category%"
       }
     ],
     "menus": {

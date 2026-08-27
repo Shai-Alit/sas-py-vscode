@@ -38,6 +38,12 @@ import type {
   ComputeSessionManager,
 } from "../compute/sessionManager";
 import type { ProfileStore } from "../profile/store";
+import {
+  ENVIRONMENT_SCHEME,
+  environmentDocumentUri,
+  EnvironmentDocumentProvider,
+} from "./environmentPanel";
+import type { EnvironmentStore } from "./environmentStore";
 import { RunOutputChannel } from "./outputChannel";
 import { ResultPanel } from "./resultPanel";
 import { runTargetPickEntries } from "./target";
@@ -62,6 +68,10 @@ export type RunCommandSessions = Pick<
   ComputeSessionManager,
   "connect" | "isBusy" | "startSubmission" | "endSubmission"
 >;
+
+/** What this module needs from `EnvironmentStore` — 3e's per-profile,
+ * explicitly-refreshed cache of a stage-2 probe. */
+export type RunCommandEnvironment = Pick<EnvironmentStore, "get" | "set">;
 
 /** One backend per profile, held for as long as the connection it was built
  * from is still the live one. */
@@ -111,6 +121,14 @@ export interface RunCommandDeps {
   /** Defaults to a fresh `ResultPanel`. Same lifecycle rule as
    * `outputChannel` above, for the same reason. */
   resultPanel?: ResultPanel | undefined;
+  /** Defaults to a fresh `EnvironmentDocumentProvider`. Same lifecycle rule as
+   * `outputChannel`/`resultPanel` above, for the same reason — and this one
+   * additionally needs `registerRunCommands` to be the thing that calls
+   * `vscode.workspace.registerTextDocumentContentProvider`, not this
+   * constructor, matching how command registration itself was pulled out
+   * after 3d-i's own `registerCommand` collision (this module's doc comment
+   * explains that split in full). */
+  environmentDocuments?: EnvironmentDocumentProvider | undefined;
 }
 
 /**
@@ -118,7 +136,7 @@ export interface RunCommandDeps {
  * `vscode.commands.registerCommand` call among them.
  *
  * Command ids are process-global for the whole test host, and the real
- * extension claims all five of this module's at activation (`onStartupFinished`
+ * extension claims all seven of this module's at activation (`onStartupFinished`
  * — see `extension.ts`'s own comment on that). Every other command module in
  * this codebase tests guard behaviour by exercising the underlying class
  * directly (`ComputeSessionManager`, `SessionStore`, …) rather than by trying
@@ -126,29 +144,42 @@ export interface RunCommandDeps {
  * `registerCommand` throws "command already exists" the moment it tries. This
  * function is `commands.ts`'s equivalent seam: a test builds handlers with its
  * own fakes and calls them directly, and `registerRunCommands` below is the
- * thin shell that wires the same handlers to the real registry exactly once,
- * at real activation.
+ * thin shell that wires the same handlers to the real registry — and, for 3e,
+ * the real `TextDocumentContentProvider` registry too, for the same reason —
+ * exactly once, at real activation.
  */
 export interface RunCommandHandlers extends vscode.Disposable {
   readonly outputChannel: RunOutputChannel;
   readonly resultPanel: ResultPanel;
+  readonly environmentDocuments: EnvironmentDocumentProvider;
   runFile(): Promise<void>;
   runSelection(): Promise<void>;
   cancelRun(): Promise<void>;
   resetPythonState(): Promise<void>;
   selectRunTarget(): Promise<void>;
+  /** Opens the environment document, probing first if this profile has never
+   * been probed. Uses the cache otherwise — see `PRODUCTION_PLAN.md` §2.3's
+   * "explicit refresh" and `backend.ts`'s corrected `capabilities()` doc. */
+  showEnvironment(): Promise<void>;
+  /** Same document, but always re-probes first, even when a cached answer
+   * already exists. */
+  refreshEnvironment(): Promise<void>;
 }
 
 export function createRunCommandHandlers(
   sessions: RunCommandSessions,
   profiles: RunCommandProfiles,
   targets: RunTargetStore,
+  environment: RunCommandEnvironment,
   log: vscode.LogOutputChannel,
   extensionUri: vscode.Uri,
   deps: RunCommandDeps = {},
 ): RunCommandHandlers {
   const outputChannel = deps.outputChannel ?? new RunOutputChannel();
   const resultPanel = deps.resultPanel ?? new ResultPanel(extensionUri);
+  const environmentDocuments =
+    deps.environmentDocuments ??
+    new EnvironmentDocumentProvider((profileId) => environment.get(profileId));
   const backends = new Map<string, CachedBackend>();
   /** The one run this window can have in flight, so the Cancel command can
    * find its handle without the progress notification being the only thing
@@ -521,6 +552,96 @@ export function createRunCommandHandlers(
     }
   };
 
+  /** Opens (creating if necessary) the environment document for the current
+   * connection. Not `async` on the caller's behalf beyond what
+   * `vscode.workspace.openTextDocument` itself awaits — this is the one place
+   * `showEnvironment`/`refreshEnvironment` share, so a fix to how the
+   * document is opened only has one call site to make it in. */
+  const openEnvironmentDocument = async (
+    profileId: string,
+    profileName: string,
+  ): Promise<void> => {
+    const document = await vscode.workspace.openTextDocument(
+      environmentDocumentUri(profileId, profileName),
+    );
+    await vscode.window.showTextDocument(document, { preview: false });
+  };
+
+  /**
+   * `showEnvironment`/`refreshEnvironment`'s shared body.
+   *
+   * `forceProbe` is the only difference between the two commands: `false`
+   * opens a cached answer straight away with no network call at all, and
+   * `true` always re-probes first — `PRODUCTION_PLAN.md` §2.3's "a slow
+   * answer that changes rarely" is exactly why the cheap path exists, and its
+   * own "explicit refresh" is exactly why the expensive one has to be
+   * reachable on demand rather than only the first time.
+   *
+   * No `pythonOnViya.running`/Cancel wiring, unlike `runNow`/`resetPythonState`:
+   * a probe shares their `busy`/serial contract (`ProcPythonBackend.probeRuntime`
+   * calls the same `SubmissionGuard`), so it still correctly refuses to
+   * overlap a run or a reset, but this project's Cancel command has nothing
+   * to interrupt it with — the same reason `resetPythonState`'s own progress
+   * is `ProgressLocation.Window`, not `Notification`, below.
+   */
+  const showEnvironmentImpl = async (forceProbe: boolean): Promise<void> => {
+    const readiness = targets.readiness();
+    if (!readiness.ok) {
+      reportNotReady(readiness.reason);
+      return;
+    }
+
+    // Checked from `profiles.get()` — never `backendFor()` — so that a cache
+    // hit really does cost nothing: `backendFor()` calls `sessions.connect()`,
+    // which for a profile this window has no live session for yet means a
+    // real network round trip (and possibly an interactive auth prompt), not
+    // the no-op this function's own doc comment promises for the cache-hit
+    // case. Caught on adversarial review of this slice's first draft, which
+    // connected unconditionally before ever consulting the cache.
+    if (!forceProbe) {
+      const profile = profiles.get(readiness.profileName);
+      if (profile !== undefined && environment.get(profile.id) !== undefined) {
+        await openEnvironmentDocument(profile.id, readiness.profileName);
+        return;
+      }
+    }
+
+    const built = await backendFor();
+    if (built === undefined) return;
+    const { backend, connection } = built;
+
+    if (backend.busy) {
+      reportProblem({ code: "busy", running: "a run in this window" });
+      return;
+    }
+
+    const probed = await showProgress(
+      vscode.ProgressLocation.Window,
+      vscode.l10n.t("Checking the Python environment on SAS Viya…"),
+      false,
+      async () => await backend.probeRuntime(),
+    );
+    if (!probed.ok) {
+      // `localiseBackendProblem`'s `runtime-unavailable`/`backend-failed` arms
+      // both end "See the Python on Viya log for details" — but the only
+      // deployment-specific sentence a failed probe carries (the `SYSERRORTEXT`
+      // behind `runtime-unavailable`, e.g. "PROC PYTHON is not licensed on this
+      // deployment") lives on `probed.reason`, which nothing else on this path
+      // writes anywhere. Log it so that instruction is true.
+      log.warn(probed.reason);
+      reportProblem(probed.problem);
+      return;
+    }
+
+    await environment.set(connection.profileId, probed.value);
+    // Makes an already-open tab for this profile pick up the fresh answer —
+    // a no-op if nothing has it open. `openEnvironmentDocument` below always
+    // renders live from `environment.get()` regardless, so this is only for
+    // the tab that is already showing the stale content right now.
+    environmentDocuments.refresh(connection.profileId, connection.profileName);
+    await openEnvironmentDocument(connection.profileId, connection.profileName);
+  };
+
   const selectRunTarget = async (): Promise<void> => {
     const entries = runTargetPickEntries(profiles.names(), targets.status());
     // Conditional spreads, not `description: maybeUndefined` — the same
@@ -563,15 +684,21 @@ export function createRunCommandHandlers(
   return {
     outputChannel,
     resultPanel,
+    environmentDocuments,
     runFile: () => runNow(true),
     runSelection: () => runNow(false),
     cancelRun,
     resetPythonState,
     selectRunTarget,
+    showEnvironment: () => showEnvironmentImpl(false),
+    refreshEnvironment: () => showEnvironmentImpl(true),
     dispose: () => {
       targetChangeSubscription.dispose();
       if (deps.outputChannel === undefined) outputChannel.dispose();
       if (deps.resultPanel === undefined) resultPanel.dispose();
+      if (deps.environmentDocuments === undefined) {
+        environmentDocuments.dispose();
+      }
       // Unlike `ComputeSessionManager.dispose()` — which has nothing worth
       // tearing down server-side, and says so — a busy `ProcPythonBackend`
       // has a real interrupt `close()` can send. Fired, not awaited: this
@@ -596,6 +723,7 @@ export function registerRunCommands(
   sessions: RunCommandSessions,
   profiles: RunCommandProfiles,
   targets: RunTargetStore,
+  environment: RunCommandEnvironment,
   log: vscode.LogOutputChannel,
   deps: RunCommandDeps = {},
 ): void {
@@ -603,6 +731,7 @@ export function registerRunCommands(
     sessions,
     profiles,
     targets,
+    environment,
     log,
     context.extensionUri,
     deps,
@@ -624,6 +753,19 @@ export function registerRunCommands(
     ),
     vscode.commands.registerCommand("pythonOnViya.resetPythonState", () =>
       handlers.resetPythonState(),
+    ),
+    vscode.commands.registerCommand("pythonOnViya.showEnvironment", () =>
+      handlers.showEnvironment(),
+    ),
+    vscode.commands.registerCommand("pythonOnViya.refreshEnvironment", () =>
+      handlers.refreshEnvironment(),
+    ),
+    // The one `TextDocumentContentProvider` this extension registers —
+    // `createRunCommandHandlers` only constructs it (see this module's own
+    // doc comment on why registration itself belongs here, not there).
+    vscode.workspace.registerTextDocumentContentProvider(
+      ENVIRONMENT_SCHEME,
+      handlers.environmentDocuments,
     ),
   );
 

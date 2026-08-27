@@ -31,6 +31,7 @@ import type {
   ExecutionOutcome,
   Program,
   RichOutput,
+  RuntimeCapabilities,
 } from "../../src/backend/backend";
 import {
   type BackendProblem,
@@ -67,6 +68,15 @@ export interface FakeBackendOptions {
    * `freshNamespace` with `unsupported` rather than quietly reuse a namespace.
    */
   freshNamespace?: boolean;
+  /**
+   * What {@link ExecutionBackend.probeRuntime} resolves with.
+   *
+   * Defaults to a trivial `"available"` result with no packages — enough for
+   * a caller exercising the plumbing (busy/serial refusal, `capabilities()`
+   * updating afterwards) without asserting on package contents. Set to a
+   * failure to model `runtime-unavailable` or any other seam failure.
+   */
+  runtimeProbeResult?: BackendResult<RuntimeCapabilities>;
 }
 
 export interface FakeBackend extends ExecutionBackend {
@@ -158,11 +168,15 @@ export function createFakeBackend(
   const freshNamespaceSupported = options.freshNamespace ?? true;
   const { dialect } = resolveDialect({ kind: "unknown" });
 
-  const capabilities: BackendCapabilities = {
+  // Mutable: a successful `probeRuntime()` updates what `capabilities()`
+  // subsequently returns, matching the real contract in `backend.ts`'s own
+  // doc — the only way `runtime` leaves `"unprobed"`.
+  let runtime: RuntimeCapabilities = { kind: "unprobed" };
+  const capabilities = (): BackendCapabilities => ({
     dialect: dialect.id,
     deployment: dialect.deployment,
-    runtime: "unprobed",
-  };
+    runtime,
+  });
 
   const startRun = (program: Program, opts: ExecuteOptions): FakeRun => {
     const stream = createStream();
@@ -205,7 +219,7 @@ export function createFakeBackend(
 
   return {
     id: "fake",
-    capabilities: () => capabilities,
+    capabilities,
 
     connect() {
       if (options.connectProblem !== undefined) {
@@ -294,6 +308,35 @@ export function createFakeBackend(
       connected = false;
       closed = true;
       return Promise.resolve();
+    },
+
+    probeRuntime() {
+      if (!connected) {
+        return Promise.resolve(
+          fail({ code: "not-connected" }, "probing the runtime"),
+        );
+      }
+      if (current !== undefined) {
+        return Promise.resolve(
+          fail(
+            { code: "busy", running: current.handle.id },
+            "probing the runtime",
+          ),
+        );
+      }
+
+      const result: BackendResult<RuntimeCapabilities> =
+        options.runtimeProbeResult ?? {
+          ok: true,
+          value: {
+            kind: "available",
+            version: "3.12.12 (fake)",
+            executable: "/usr/bin/python3",
+            packages: [],
+          },
+        };
+      if (result.ok) runtime = result.value;
+      return Promise.resolve(result);
     },
 
     get runs() {

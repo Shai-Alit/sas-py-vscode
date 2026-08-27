@@ -1082,20 +1082,309 @@ that happened before and after the PR opened.
      `script-src` non-allowance together so removing either trips a test that
      names the ADR.
 
-☐ **3e — ship the package list as a user-facing thing, not a capability record.**
+☑ **3e — ship the package list as a user-facing thing, not a capability record.**
+Implemented 2026-08-27; **not yet committed or merged** — this entry, like the
+source it describes, is part of the same uncommitted change Sean's own review
+and `npm run verify`/`test:integration` still need to see, per this project's
+"Claude never runs tests or git operations that change state." The
+architecture-level design fork this project's standing policy requires be
+settled up front is recorded below. A scoped in-session adversarial-review
+subagent pass over the *finished* diff also ran, 2026-08-27, per this project's
+"adversarial self-review before the PR exists" — see the dedicated bullet below
+for what it found and the one fix it produced. **Sean's own manual pass, in his
+own VS Code window, has also now run** (this slice both adds source and widens
+a documented interface, so it did not qualify for the docs-only/dependency-bump
+exemption) — see the independent-senior-review bullet below for its four
+findings, all fixed in the same change, and the coverage-branches bullet for
+the gap that surfaced once those fixes landed. Only the commit and PR are
+still ahead.
+
 The person writing code in this editor is writing against an interpreter they
 cannot see, on a machine they cannot log into, whose package set someone else
-chose and can change without telling them. Worse, the local environment lies with
-conviction: Pylance resolves `import polars` against the laptop, so the editor is
-green and the run is a `ModuleNotFoundError`. The minimum is a **`Python on Viya:
-Show environment`** command listing the interpreter version, path, and installed
-distributions with versions — read from `importlib.metadata`, not by shelling out
-to `pip`, which need not exist in a compute context — plus a status bar affordance
-that opens it and a per-profile cache with an explicit refresh, because it is a
-slow answer that rarely changes. Phase 4's traceback work should special-case
-`ModuleNotFoundError` and point at this list; Phase 10 feeds the set back to
-Pylance so completions describe the remote environment. `PRODUCTION_PLAN.md` §2.3
-and Phase 3e.
+chose and can change without telling them. Worse, the local environment lies
+with conviction: Pylance resolves `import polars` against the laptop, so the
+editor is green and the run is a `ModuleNotFoundError`. `PRODUCTION_PLAN.md`
+§2.3 and this phase's own plan text.
+
+- **A real design fork, settled before any code, per this project's own
+  "treat architecture-level changes as a deliberate event":** should the
+  stage-2 probe live on `ExecutionBackend` itself (widening
+  `BackendCapabilities.runtime` from the `"unprobed"`-only type 2b-i left it
+  as, and adding a new `probeRuntime()` method a future native backend would
+  also have to implement), or as a separate Viya-specific module that reaches
+  past the seam to `ComputeConnection`/`compute/files.ts` directly, the way
+  `commands.ts` already does for the run/reset backend cache? Settled on the
+  seam: `capabilities()` describing what a backend actually knows about
+  itself is the whole point of `BackendCapabilities`, and a parallel channel
+  for exactly the same kind of fact would be a second thing a future backend
+  has to satisfy on its own terms rather than one interface. This is the same
+  bar 3c-i's ADR-0019 and 3d-ii's ADR-0021 were held to; it does not get its
+  own ADR file, the same call 3c-ii made for a scope decision rather than a
+  competing design — but it is recorded here in full rather than only in a
+  commit message.
+- **`backend.ts`'s own `capabilities()` doc corrected.** It used to say
+  "probing happens in `connect()`" — written before 3e existed, and wrong for
+  what 3e actually needed: probing a full package list on every reconnect
+  would tax every run, and this phase's own plan text calls for an
+  **explicit** refresh precisely because the answer is slow and rarely
+  changes. `probeRuntime()` is now documented as the only way
+  `BackendCapabilities.runtime` ever leaves `"unprobed"`.
+- **The transport mechanism is not a new finding — it is finding 62,
+  applied.** A naive implementation would `print(json.dumps(info))` and
+  reassemble the answer from the log the way ordinary program output already
+  works. Finding 62 (2026-08-25, 3c-i's own probe) already measured that the
+  log hard-wraps any single `print()` line at `LINESIZE` (132 by default, 256
+  with `LINESIZE=MAX` — raised, never removed) with **no marker
+  distinguishing a wrapped continuation from a genuine new line**, and
+  concluded that conclusion holds for "any payload a naive implementation
+  prints and expects back as one unbroken string." A package list long enough
+  to matter (259 packages, ~6.9 KB of JSON, measured against `verde`) is
+  exactly that shape. So `src/backend/environment.ts`'s probe writes its
+  answer to a file in the session's working directory instead, fetched
+  byte-for-byte via the same `compute/files.ts` finding 61/65/67 already
+  built for 3c-i's matplotlib/pandas capture — reusing already-reviewed
+  transport rather than inventing a second one. This was independently
+  re-verified live against `verde` before writing any code (a `print()` of
+  300 non-whitespace characters wrapped 132+132+36; `LINESIZE=MAX` raised it
+  to 256+144, never removing the wrap) — the same numbers finding 62 already
+  recorded, so nothing new is added to the Probe findings section below.
+- **`src/backend/environment.ts` (new, pure — no `vscode`).** The probe's
+  fixed Python source (`environmentProbeStatements`) and the parser for what
+  it writes back (`parseEnvironmentProbeFile`). The whole probe is wrapped in
+  a single function, called from a `try`/`finally` that `del`s its name —
+  `import sys, json, importlib.metadata` included, since they are bound inside
+  the function body — because `ExecuteOptions.freshNamespace: true`
+  cannot be used here (it means `proc python restart;`, destroying the very
+  interpreter state a capability probe must not touch), so the probe runs in
+  the session's own long-lived namespace and would otherwise leave `sys`,
+  `json` and `importlib` bound there as a side effect of merely asking a
+  question; the `finally` means a probe that raises still cleans up after
+  itself. A distribution whose `METADATA` is too broken to yield a string
+  name and a string version is skipped rather than allowed to fail the whole
+  run (see the follow-up-review bullet below). `importlib.metadata.distributions()`,
+  never `pip` — `pip` need not exist in a compute context at all.
+- **`ProcPythonBackend.probeRuntime()` (new).** Submits the probe's fixed
+  statements directly via `createJob`, the same shape `reset()`'s
+  `RESTART_STATEMENT` already takes rather than `runProgram`'s fileref
+  upload — this text is entirely this project's own, never user input, so
+  ADR-0014's upload/`infile=` discipline has nothing to say about it. Drains
+  its own log (the answer is the file it wrote, not anything printed), reads
+  `SYSCC` the same way `execute()`/`reset()` do (ADR-0014/finding 33: a
+  terminal job is not proof anything ran), lists the working directory once
+  (not the before/after pair `captureRichOutput` needs, since there is only
+  ever one candidate name), fetches and deletes its own file via
+  `compute/files.ts`, and parses it. A non-zero `SYSCC` is reported as
+  `runtime-unavailable` — the one case `procPython.ts`'s own doc says this
+  backend does report it, since the probe is this project's own fixed,
+  already-verified-against-`verde` script and a failure is read as evidence
+  about the runtime rather than a bug to recover from (still not a
+  measurement of what an actually-missing `PROC PYTHON` looks like on the
+  wire; no such deployment has ever been available to this project). Shares
+  `execute()`/`reset()`'s serial contract via the same `SubmissionGuard`, and
+  is stopped by `close()` the same way a `reset()` is (a new
+  `probeController`, folded into `isCurrentRunAborted()`).
+- **`src/run/environmentStore.ts` (new).** The persisted, per-profile cache
+  `PRODUCTION_PLAN.md` §2.3 asks for — `globalState`, not `workspaceState`,
+  matching `profile/store.ts`'s own reasoning for `SECRETLESS_IDS_KEY`: a
+  profile's interpreter version is a fact about the profile, not the
+  workspace open right now. Keyed on profile id, never name. No automatic
+  expiry and no wiring to profile deletion yet (`forget()` exists and is
+  correct, but nothing calls it) — a small, deliberate, documented gap rather
+  than a cross-module change to `profile/commands.ts` this slice's own size
+  does not warrant.
+- **`src/run/environmentDocument.ts` (new, pure) and `src/run/environmentPanel.ts`
+  (new — the one `vscode`-importing module for this feature).** Same
+  l10n-boundary split `resultPanelDom.ts`/`resultPanel.ts` draw: the pure
+  module arranges already-translated labels into a plain-text body, and the
+  panel module supplies the translations and owns the
+  `vscode.TextDocumentContentProvider`. **Plain text, not Markdown** — a
+  read-only virtual document was chosen over a second webview specifically
+  for its editor affordances (search, split view) at a fraction of a
+  webview's cost, and Markdown buys nothing further on top of that choice for
+  a list, not prose. The provider looks up the store **live** on every
+  `provideTextDocumentContent` call, which is what lets `refresh()` make an
+  already-open tab show a freshly probed answer with the standard
+  `onDidChange` mechanism rather than a bespoke one.
+- **`src/run/commands.ts` wired to call it** — `showEnvironment`/
+  `refreshEnvironment` share one body (`forceProbe: boolean`) reusing the
+  existing `backendFor()`/`targets.readiness()`/`reportNotReady` machinery
+  `runNow`/`resetPythonState` already have. No `pythonOnViya.running`/Cancel
+  wiring: a probe shares the serial contract, so it still correctly refuses
+  to overlap a run or a reset, but there is nothing to cancel it *with* —
+  same reasoning `resetPythonState`'s own `ProgressLocation.Window` (not
+  `Notification`) already relies on. `createRunCommandHandlers` gained a
+  required `environment: RunCommandEnvironment` parameter, between `targets`
+  and `log`; `registerRunCommands` also now registers the one
+  `TextDocumentContentProvider` this extension has, in the same place (not
+  inside `createRunCommandHandlers`) that command registration itself was
+  moved to after 3d-i's own `registerCommand`-collision fix — the identical
+  class of hazard would otherwise repeat for `registerTextDocumentContentProvider`,
+  which also throws if a scheme is registered twice in one extension host.
+- **`src/run/environmentStatusBar.ts` (new)** — a second status bar item,
+  right of `pythonOnViya.activeProfile`, visible only once a Viya profile is
+  selected (an item that always resolves to "no profile" teaches people to
+  ignore it, the same reasoning ADR-0011 gives for contributing nothing to
+  the editor when the target is Local). No dedicated test, matching
+  `statusBar.ts`'s own precedent — a thin, mostly-`vscode`-API constructor
+  function this codebase has never written one for.
+- **A real, compile-breaking consequence of widening `ExecutionBackend`,
+  caught by `npx tsc --noEmit` before it reached anyone else:** both
+  `test/helpers/fake-backend.ts` and `test/helpers/recorded-proc-python.ts`
+  implement the interface and needed a `probeRuntime()` added — the fake
+  backend's is fully driveable (`FakeBackendOptions.runtimeProbeResult`); the
+  recorded-transport double's delegates straight to the real
+  `ProcPythonBackend.probeRuntime()` but is **not** exercised by
+  `backend-contract-suite.ts`, because that double's simulated
+  `getDirectoryMembers` always answers empty and nothing in the suite can
+  finish a probe's own job the way it drives an `execute()` run's — recorded
+  as a documented gap in that suite rather than silently left unnoted, and
+  covered directly instead by `proc-python-backend.test.ts`'s own
+  `probeRuntime` cases, which use the same purpose-built `router()` fixture
+  that already answers `getFiles`/`getDirectoryMembers`/`getFile`/
+  `getFileProperties`/`deleteFile` for 3c-i's own rich-output tests.
+- **Test plan actually written:** `test/unit/backend-environment.test.ts`
+  (the probe's statements and parser, accept/reject), `proc-python-backend.test.ts`'s
+  new `probeRuntime` describe block (success updates `capabilities()` and
+  deletes its own file; `busy`/`not-connected`; `runtime-unavailable` on a
+  failing `SYSCC`, with and without `SYSERRORTEXT`; `backend-failed` for a
+  missing or malformed answer file; stopped by `close()`),
+  `test/unit/environment-store.test.ts` (persists, isolates profiles, drops a
+  forgotten profile's key entirely, survives a fresh instance over the same
+  memento — `EnvironmentStore` imports `vscode` as a **type only**, so it is
+  unit-testable behind a `Map`-backed memento, the same call
+  `compute-binding-store.test.ts` makes; moved here from the integration tier
+  by the follow-up review below), `test/integration/run/environment-panel.test.ts`
+  (the provider's not-probed-yet fallback, rendering a real cached answer,
+  looking up by id rather than by name, and `refresh()`'s `onDidChange`),
+  and three cases in `test/integration/run/commands.test.ts`
+  (`showEnvironment`/`refreshEnvironment` refuse before connecting, the same
+  as `runFile`/`resetPythonState` already do; and — added by the follow-up
+  review below — `showEnvironment` serving a cached probe *without* reaching
+  `sessions.connect()`, the branch the earlier pass fixed but left
+  unguarded). `backend-environment.test.ts` also pins the probe script's
+  `try`/`finally` cleanup and its "name and version must both be non-empty
+  strings" filter, both added by that same review.
+- **Verification run this session** (per "Claude never runs tests," this is
+  the full extent of what this session could confirm itself): `npx tsc --noEmit`
+  against all three configs, `npx prettier --check` (one file needed
+  `--write`, reapplied clean), `check-copyright`, `check-secrets`,
+  `check-coverage-scope` (after settling which new files `.c8rc.json` excludes
+  — see the lint-and-scope bullet below), `check-contracts`, and
+  `check-package` all clean. **Then run by Sean, 2026-08-27:** `npm run verify`
+  (which added `npm run lint`) and `npm run test:integration` —
+  `test:integration` passes 207/207 (including the new
+  `showEnvironment serves a cached probe without connecting` case) and
+  `test:unit` 1111/1111; `npm run lint` reported two errors, both now fixed
+  (next bullet). Still ahead at that point: re-measuring coverage now that the
+  denominator had grown by `environmentStore.ts`, `npm run build` packaging,
+  Sean's own manual VS Code review pass, and the commit/PR.
+- **`npm run lint` — two errors, both fixed in the same change, and one of
+  them corrects a real tier misplacement.**
+  1. `environmentPanel.ts`'s not-probed-yet guard was
+     `stored === undefined || stored.capabilities.kind !== "available"`;
+     `@typescript-eslint/prefer-optional-chain` wants
+     `stored?.capabilities.kind !== "available"`, which is exactly equivalent
+     (an `undefined` left-hand side makes the chain `undefined`, which is
+     `!== "available"`). Applied.
+  2. `environmentStore.ts` imported `vscode` as `import * as vscode` but used
+     it only for `Pick<vscode.ExtensionContext, "globalState">` — a type.
+     `@typescript-eslint/consistent-type-imports` flagged it, and it was
+     right to: unlike `profile/store.ts` and `targetStore.ts` (which really
+     do `new vscode.EventEmitter()` / `vscode.workspace.…` at run time and so
+     belong in the excluded, integration-tested tier), `EnvironmentStore` is a
+     plain `Map`-over-`Memento` class that needs no host. Changed to
+     `import type * as vscode`, **removed from `.c8rc.json`'s exclude list**
+     (it is now in the unit-tier denominator, where `check-coverage-scope`'s
+     own doctrine says a unit-reachable module belongs), and its test moved
+     `test/integration/run/environment-store.test.ts` →
+     `test/unit/environment-store.test.ts` behind a local `Map`-backed
+     memento, the same shape `compute-binding-store.test.ts` uses. So
+     `.c8rc.json` now excludes only the two genuinely host-only new modules,
+     `environmentPanel.ts` and `environmentStatusBar.ts`.
+- **Re-measuring coverage after that tier move found a real branches gap, fixed
+  by adding tests rather than by touching the floor.** Sean's next `npm run
+  verify` (unit tier 1119/1119) reported `ERROR: Coverage for branches
+  (94.93%) does not meet global threshold (95%)` — the one metric among
+  `.c8rc.json`'s unchanged 93/93/92/95 floors this slice's own growth pushed
+  under, not any of the others. The report's per-file breakdown pointed at
+  `src/backend/environment.ts` (90.47% branches, lines 172 and 192) —
+  `environmentStore.ts` itself, newly in the denominator, was already 100%.
+  Both flagged lines are guard conditions no existing case actually forced
+  down every arm of: `parseEnvironmentProbeFile`'s `typeof parsed !== "object"
+  || parsed === null` (the existing "rejects a JSON value that is not an
+  object" case passes `[1, 2, 3]`, which is `typeof "object"` in JS — arrays
+  are — so it exercises neither arm; it happens to still return `undefined`,
+  but by falling through to the `version`/`executable` check further down),
+  and `readPackages`'s `if (!Array.isArray(value))`, which no case had ever
+  made false (every fixture's own `packages` field was always a real array).
+  Fixed by widening `test/unit/backend-environment.test.ts`, never by moving
+  the ratchet: one case with a JSON top-level string, one with a JSON `null`,
+  and one with a `packages` field that is a string rather than an array — the
+  three inputs that actually walk each missing arm. Not run by this session
+  (`npm run coverage`/`verify` are on the never-run list); `npx tsc --noEmit`
+  and `npx prettier --check` on the changed test file are clean. **Confirmed,
+  2026-08-27:** Sean's next `npm run verify` (1122 passing) measured branches
+  at 95.03% — clear of the floor again — with lines/statements/functions
+  unchanged at 93.87/93.87/93.48. `npm run build` then came back green.
+- **Scoped adversarial-review subagent pass over the finished diff, 2026-08-27
+  — one Major finding, fixed in the same diff.** `showEnvironmentImpl`'s
+  cache-hit branch (`forceProbe: false`) called `backendFor()` — which calls
+  `sessions.connect()`, a real network round trip and possibly an interactive
+  auth prompt for a profile this window has no live session for yet — *before*
+  ever checking whether a cached answer already existed. That directly
+  contradicted the function's own doc comment, which promises the cache-hit
+  path costs "no network call at all," and defeated a real point of having the
+  cache: helping a fresh or disconnected window open a previously-probed
+  profile's environment for free. Fixed by checking `profiles.get(readiness.profileName)`
+  (synchronous, no I/O) and `environment.get(profile.id)` first, and only
+  falling through to `backendFor()` when there is no cached answer to serve —
+  `commands.ts`'s `showEnvironmentImpl` and its inline comment record the fix
+  and why it was needed. The same pass checked, and found no defect in: the
+  `probeController`/`isCurrentRunAborted()` cancellation race, the `def`/`del`
+  probe script's Python correctness and flush-before-close ordering, the new
+  `pythonOnViyaEnvironment:` URI scheme's injection safety, `EnvironmentStore`/
+  `RuntimeCapabilities` typing consistency, the test doubles' faithfulness to
+  the widened interface, and the `TextDocumentContentProvider`
+  construct-vs-register split. Re-verified clean afterward: `npx tsc --noEmit`
+  (all three configs) and `npx prettier --check`.
+- **Independent senior-review pass over the finished diff, 2026-08-27 — four
+  fixes, all applied in the same change.** A second reviewer, working the
+  priority list (correctness/error handling, security, dialect confinement,
+  strict TS, VS Code integration, tests, licensing) rather than repeating the
+  adversarial pass, confirmed the design and the security posture (fixed
+  extension-authored probe within ADR-0014's carve-out; no secrets in code,
+  fixtures or logs; virtual document keeps the CSP surface at zero; no version
+  branching outside the dialect layer) and raised four defects:
+  1. *(medium)* `environment.ts`'s probe read `distribution.version` outside
+     the `try` that guarded `distribution.metadata['Name']`, and kept an entry
+     on `if name:` alone. One distribution with malformed `METADATA` — no
+     `Version:` — is realistic across hundreds of packages, and would either
+     crash `sorted(set(...))` on an unorderable `None` (surfaced as
+     `runtime-unavailable`, i.e. "Python does not work" when it does) or land a
+     `null` that `parseEnvironmentProbeFile` rejects whole (surfaced as
+     `backend-failed`). Fixed: both reads are inside one `try`, and an entry is
+     kept only when name and version are both non-empty strings — the
+     unnameable few are dropped, since they have nothing this view can show.
+  2. *(medium)* the adversarial pass's own cache-before-connect fix had no
+     regression test. Added one (see the test-plan bullet above).
+  3. *(low)* a failed probe's only deployment-specific sentence — the
+     `SYSERRORTEXT` behind `runtime-unavailable` — was never written anywhere,
+     while `localiseBackendProblem`'s message tells the user to "See the
+     Python on Viya log for details." `showEnvironmentImpl` now `log.warn`s
+     `probed.reason` before reporting.
+  4. *(low)* `del __pyvia_probe_environment` ran only on the success path, so a
+     probe that raised left the function name bound in the user's namespace,
+     against this module's own "leaves nothing behind" claim. The call is now
+     `try`/`finally`, `del` in the `finally`. `sys.version` is also newline-
+     flattened so a two-line build string cannot break the plain-text layout.
+- **The stray comment-only `test/unit/environment-store.test.ts`** left by the
+  first 3e draft is gone — and the path is now the real home of the store's
+  test suite (see the lint-and-scope bullet), not a placeholder.
+- **What is still open, deliberately not closed by this slice:** Phase 4's
+  traceback work special-casing `ModuleNotFoundError` against this list, and
+  Phase 10 feeding the package set back to Pylance, both per this phase's own
+  plan text; `EnvironmentStore.forget()` wired to profile deletion (noted
+  above); no keybinding (none of this phase's commands ship one).
 
 ☐ **After 3d-i — probe cancellation.** Run a deliberately long Python step and
 cancel it. Confirm whether the compute job cancel actually interrupts Python or

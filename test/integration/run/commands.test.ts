@@ -9,15 +9,25 @@ import { createProfile } from "../../../src/profile/model";
 import {
   createRunCommandHandlers,
   type RunCommandDeps,
+  type RunCommandEnvironment,
   type RunCommandProfiles,
   type RunCommandSessions,
 } from "../../../src/run/commands";
+import { EnvironmentStore } from "../../../src/run/environmentStore";
 import { RunOutputChannel } from "../../../src/run/outputChannel";
 import {
   RunTargetStore,
   type RunTargetProfileSource,
 } from "../../../src/run/targetStore";
 import { memoryMemento, testLogChannel } from "../../helpers/auth-host";
+
+/** Every guard test in this suite reaches its refusal before `environment`
+ * is ever touched — a real `EnvironmentStore` over an in-memory memento is
+ * cheaper than a second hand-rolled fake for something that is never
+ * exercised here. */
+function fakeEnvironment(): RunCommandEnvironment {
+  return new EnvironmentStore({ globalState: memoryMemento() });
+}
 
 /**
  * The commands' own guard logic — everything a run, a cancel or a reset
@@ -146,15 +156,20 @@ describe("run commands — guards", () => {
   function build(
     profiles: RunCommandProfiles & RunTargetProfileSource,
     deps: RunCommandDeps,
+    opts: {
+      environment?: RunCommandEnvironment;
+      sessions?: RunCommandSessions;
+    } = {},
   ) {
     const targets = new RunTargetStore(
       { workspaceState: memoryMemento() },
       profiles,
     );
     const handlers = createRunCommandHandlers(
-      sessionsThatMustNotConnect(),
+      opts.sessions ?? sessionsThatMustNotConnect(),
       profiles,
       targets,
+      opts.environment ?? fakeEnvironment(),
       log,
       // Never actually read: every test in this suite exercises a guard path
       // that returns before `ResultPanel.writeOutput` would ever be called,
@@ -207,6 +222,61 @@ describe("run commands — guards", () => {
 
     await handlers.resetPythonState();
     assert.equal(recorder.reported.length, 1);
+  });
+
+  it("refuses showEnvironment when the target is Local, without connecting", async () => {
+    const profiles = fakeProfiles([]);
+    const recorder = fakeRecorder();
+    const { targets, handlers } = build(profiles, { ...recorder.deps });
+    await targets.setKind("local");
+
+    await handlers.showEnvironment();
+    assert.equal(recorder.reported.length, 1);
+    assert.ok((recorder.reported[0] ?? "").includes("Local Python"));
+  });
+
+  it("refuses refreshEnvironment when viya has no active profile, without connecting", async () => {
+    const profiles = fakeProfiles([]);
+    const recorder = fakeRecorder();
+    const { targets, handlers } = build(profiles, { ...recorder.deps });
+    await targets.setKind("viya");
+
+    await handlers.refreshEnvironment();
+    assert.equal(recorder.reported.length, 1);
+    assert.ok(/profile/i.test(recorder.reported[0] ?? ""));
+  });
+
+  it("showEnvironment serves a cached probe without connecting", async () => {
+    // Regression test for the defect this slice's own adversarial pass found
+    // and fixed: `showEnvironmentImpl(false)` called `backendFor()` — hence
+    // `sessions.connect()`, a real round trip and possibly an auth prompt —
+    // before ever consulting the cache, defeating the point of caching for a
+    // fresh or disconnected window. `sessionsThatMustNotConnect()` throws the
+    // moment `connect()` is reached, so a cache hit that still opens the
+    // document proves the cheap path costs no network call.
+    const profiles = fakeProfiles(["verde"]);
+    const recorder = fakeRecorder();
+    const environment = new EnvironmentStore({ globalState: memoryMemento() });
+    await environment.set("p1", {
+      kind: "available",
+      version: "3.12.12",
+      executable: "/usr/bin/python3",
+      packages: [{ name: "numpy", version: "2.0.0" }],
+    });
+    const { targets, handlers } = build(
+      profiles,
+      { ...recorder.deps },
+      { environment },
+    );
+    await targets.setKind("viya");
+
+    await handlers.showEnvironment();
+
+    assert.equal(recorder.reported.length, 0);
+    assert.equal(
+      vscode.window.activeTextEditor?.document.uri.scheme,
+      "pythonOnViyaEnvironment",
+    );
   });
 
   it("tells the user to open a Python file when there is no suitable editor", async () => {

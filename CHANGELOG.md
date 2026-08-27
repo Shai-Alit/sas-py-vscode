@@ -60,6 +60,28 @@ called out under **Changed** with a migration note.
   profile, or a dead session, fails with an actionable message rather than
   silently falling back to Local.
 
+- **`Python on Viya: Show Environment` — the interpreter's version, path and
+  installed packages, on demand.** Slice 3e adds
+  `ExecutionBackend.probeRuntime()`, widening `BackendCapabilities.runtime`
+  from the `"unprobed"`-only type 2b-i left it as. The probe runs a fixed,
+  extension-authored script (never user code) that writes its answer to a
+  file in the session's working directory rather than printing it — finding
+  62 already established that the log wraps any sufficiently long `print()`
+  line at a hard character count with no way to tell a wrapped continuation
+  from a genuine new line, and a package list is exactly the shape of payload
+  that triggers it, so this reuses the byte-exact file-fetch mechanism 3c-i
+  built for matplotlib/pandas output instead of a second, log-based channel.
+  A distribution whose metadata is too broken to name or version is skipped,
+  so one bad package on the deployment cannot blank the whole list.
+  The result is cached per profile (`globalState`, since a profile is
+  user-global) with **no automatic refresh** — probing costs a real
+  `PROC PYTHON` round trip, so it only happens the first time a profile is
+  probed and whenever `Python on Viya: Refresh Environment Info` is run
+  explicitly. Both commands are reachable from the Command Palette and from a
+  new status bar item, visible only once a Viya profile is selected. The
+  answer opens as a read-only, plain-text virtual document — chosen over a
+  second webview for this slice's size, and over the output channel because a
+  package list is a reference to search, not a log line to scroll past.
 - Repository scaffold: hygiene files, contribution and security policy, issue and
   pull-request templates, Dependabot configuration, and the documentation skeleton.
 - `PROBE-FINDINGS.md`, recording behaviour confirmed against a live SAS Viya 4

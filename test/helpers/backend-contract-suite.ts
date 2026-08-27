@@ -401,9 +401,19 @@ export function describeExecutionBackendContract(
         const after = backend.capabilities();
 
         assert.deepEqual(before, after);
-        assert.equal(after.runtime, "unprobed");
+        assert.deepEqual(after.runtime, { kind: "unprobed" });
         assert.equal(after.dialect, "viya4");
       });
     });
+
+    // `probeRuntime` itself is not driven through this shared suite: 3a's
+    // recorded-transport double (`recorded-proc-python.ts`) calls straight
+    // into a real `ProcPythonBackend.probeRuntime()`, whose simulated
+    // `ComputeClient` has no scripted answer for the probe's own job — a
+    // generic case here would hang that factory rather than exercise it, the
+    // same class of gap this module's own doc names for `connectProblem` and
+    // a mid-flight `abort`. `proc-python-backend.test.ts`'s own `probeRuntime`
+    // describe block, and `fake-backend.ts`'s `runtimeProbeResult` control,
+    // cover the method directly instead.
   });
 }

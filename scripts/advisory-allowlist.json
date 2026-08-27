@@ -20,28 +20,25 @@
     "`overrides.vite` in package.json pins vite ^6.4.3 under vitepress, which",
     "carries esbuild ^0.25. The reasoning is in ADR-0005's amendment; the lesson",
     "is that a transitive advisory has two escape routes, and the first pass only",
-    "checked one of them."
+    "checked one of them.",
+    "",
+    "The two serialize-javascript entries went the same way on 2026-08-27. When",
+    "they were written the fixed line (7.x) was recorded as out of reach because",
+    "mocha pins serialize-javascript@^6.0.2 — the parent-can't-move argument the",
+    "vite amendment warns about. serialize-javascript 7.0.5 fixed both advisories",
+    "(GHSA-5C6J-R48X-RMVQ, GHSA-QJ8W-GFJ5-8C6V) and has no dependencies and a",
+    "node >=20 floor, so `overrides.serialize-javascript` pins ^7.0.5 under mocha",
+    "and both alerts clear. Normal CI does not exercise this pin (mocha loads",
+    "serialize-javascript only in --parallel mode, and every job runs serially);",
+    "cover is npm audit plus a one-time mocha --parallel run. See ADR-0005's",
+    "2026-08-27 amendments. That leaves one entry, the low diff advisory."
   ],
   "allowed": [
     {
       "id": "GHSA-73RR-HH4G-FPGX",
       "package": "diff",
       "severity": "low",
-      "why": "Reached only through mocha, which pins diff@^7 and has no fixed release: mocha@11.8.0 is the latest stable and mocha 12 is at rc.6. `npm audit fix --force` proposes mocha@11.3.0, which is a downgrade from what is installed and fixes nothing. A denial of service in patch parsing, in a test runner, on input that is our own test files.",
-      "expires": "2026-11-12"
-    },
-    {
-      "id": "GHSA-5C6J-R48X-RMVQ",
-      "package": "serialize-javascript",
-      "severity": "high",
-      "why": "Same dependency path and the same absence of a fix: mocha pins serialize-javascript@^6.0.2 and the fixed line is 7.x. RCE via crafted RegExp flags, exploitable only by whoever controls the values being serialised — here, mocha serialising our own test results. Rated high on the general case, not on this one.",
-      "expires": "2026-11-12"
-    },
-    {
-      "id": "GHSA-QJ8W-GFJ5-8C6V",
-      "package": "serialize-javascript",
-      "severity": "moderate",
-      "why": "Second advisory against the same package on the same unfixable mocha path. CPU exhaustion while serialising array-likes we author ourselves.",
+      "why": "Reached only through mocha, which pins diff@^7; the fixed line is diff@8.0.3 and latest is 9.0.0, so the child-override route that cleared serialize-javascript exists here too — a two-major jump in the package mocha uses to render assertion diffs, taken for a low-severity denial of service in patch parsing that Dependabot itself auto-dismissed, on input that is our own test files. Not worth the override; kept here and revisited when mocha 12 (currently rc) ships with diff@^8 on its own. `npm audit fix --force` still proposes mocha@11.3.0, a downgrade that fixes nothing.",
       "expires": "2026-11-12"
     }
   ]

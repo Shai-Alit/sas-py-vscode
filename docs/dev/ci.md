@@ -453,21 +453,32 @@ re-reads the advisory, which is the whole mechanism.
 
 **Before you write "no fix available", check both escape routes.** A transitive
 advisory can be cleared by moving the parent *or* by overriding the child, and
-the first version of this allow-list checked only the parent. Four of its seven
-entries — the three `vite` advisories and the nested `esbuild` one — were
-deleted on 2026-08-16 because they were **fixed**, not because they lapsed:
-`overrides: { "vite": "^6.4.3" }` in `package.json` pins a vite underneath
-vitepress that is out of every vulnerable range and brings `esbuild ^0.25` with
-it. Three remain, all on the `mocha` path, which is a genuine dead end.
+the first version of this allow-list checked only the parent. It got corrected
+twice. Four of its seven entries — the three `vite` advisories and the nested
+`esbuild` one — were deleted on 2026-08-16: `overrides: { "vite": "^6.4.3" }`
+pins a vite underneath vitepress that is out of every vulnerable range and brings
+`esbuild ^0.25` with it. The two `serialize-javascript` entries went on
+2026-08-27, the same way — `overrides` pins `serialize-javascript ^7.0.5` under
+mocha, clearing both `GHSA-5C6J-R48X-RMVQ` and `GHSA-QJ8W-GFJ5-8C6V`. One entry
+remains, the `low` `diff` advisory: it has the same child-override route
+(`diff@8.0.3`), declined because it is a two-major bump in mocha's diff renderer
+for an advisory Dependabot auto-dismissed.
 
-That `overrides` block is the one place this repository overrules a package's
-declared dependency range: `vitepress@1.6.4` asks for `vite ^5.4.14`. It is
-deliberate, [ADR-0005](../adr/0005-supply-chain-policy.md) records why, and the
-evidence that it is safe is that **`docs:build` passes** — VitePress is the only
-consumer of vite here, so the `docs` job is the test. Remove the block if that
-job ever goes red because of it, and restore the four allow-list entries in the
-same change; remove it for good when a stable vitepress depends on vite 6 by
-itself.
+That `overrides` block carries two pins, [ADR-0005](../adr/0005-supply-chain-policy.md)
+records why for both. Both overrule a declared range: `vitepress@1.6.4` asks for
+`vite ^5.4.14`, and `mocha@11.8.0` asks for `serialize-javascript ^6.0.2`. What
+differs is the cover. `docs:build` exercises the `vite` pin end to end — VitePress
+is the only consumer of vite here, so a red `docs` job is the alarm. The
+`serialize-javascript` pin has no equivalent: the package is loaded only by
+mocha's `--parallel` worker serializer, and `.mocharc.json` plus every job here
+run mocha serially, so `test:unit` never imports it and would stay green on a 7.x
+break. It rests on `npm audit`, an unchanged `serialize()` API across the major,
+and a one-time `mocha --parallel` run of the full unit suite (2026-08-27, 1122
+passing on 7.1.0); a standing `--parallel` smoke job is the noted follow-up if
+that bar is too low. Remove either pin if its check goes red, restoring the
+matching allow-list entries in the same change; remove the `vite` pin for good
+when a stable vitepress depends on vite 6 by itself, and the `serialize-javascript`
+pin when mocha ships depending on 7.x.
 
 As with `check:package`, exit codes are split — **1** means the policy was
 violated, **2** means the script or its input is wrong — and the classification

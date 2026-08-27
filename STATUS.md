@@ -1,6 +1,18 @@
 # Status
 
-**Current phase: 3** — see `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
+**Phase 3 is done; Phase 4 has not yet started.** Its between-phase
+housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
+ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
+into `docs/phases/phase-4.md`'s own Runbook, and ran the live check
+phase-3.md's own closing note called for: `probeRuntime()`'s full wire
+sequence (job, `SYSCC`, directory listing, content fetch, delete, cleanup),
+confirmed against `verde` — see `docs/phases/phase-3.md`'s Finding 71. The
+two open Dependabot alerts (both `serialize-javascript`, `GHSA-5C6J-R48X-RMVQ`
+high and `GHSA-QJ8W-GFJ5-8C6V` moderate) were cleared 2026-08-27 by pinning
+`serialize-javascript ^7.0.5` in `package.json`'s `overrides` — the
+child-override route the August allow-list note said to check and then did not
+apply to these two; the allow-list is now down to the one `low` `diff` entry.
+See ADR-0005's 2026-08-27 amendments. See `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
 backend, plus the `resolveContext` no-such-context correction) and 3b (the log
 filter) are merged. 3c's own probe (step 1, findings 61–66) is also merged —
 the file-write-plus-Compute-files-API mechanism won outright over
@@ -40,48 +52,24 @@ CSP already makes it unreachable) and an incorrect claim that
 `style-src 'unsafe-inline'` permits script execution (it does not; kept,
 for pandas fidelity, and turned into an explicit recorded exception in
 ADR-0021/`SECURITY.md`, pinned by a test). See phase-3.md's 3d-ii entry for
-the full account. **3e (the environment probe) is implemented, 2026-08-27 —
-not yet committed or merged.** `ExecutionBackend.probeRuntime()` (widening
-`BackendCapabilities.runtime`), `src/backend/environment.ts`,
-`src/run/environmentStore.ts`/`environmentDocument.ts`/`environmentPanel.ts`/
-`environmentStatusBar.ts`, and the new `Show environment`/`Refresh
-Environment Info` commands. The transport question (why the probe writes a
-file rather than printing) is finding 62 applied, not a new finding — see
-phase-3.md's 3e entry for the full design record, including the seam-vs.
--separate-module fork it settles and the compile-breaking test-double fix it
-required. The scoped in-session adversarial-review pass over the finished diff
-has now run too, and found one Major defect: `showEnvironment`'s cache-hit path
-was connecting before ever checking the cache, contradicting its own doc
-comment — fixed in `commands.ts`, see phase-3.md's 3e entry for the full
-finding. A subsequent independent senior-review pass over the finished diff
-then applied four more fixes, all in the same change: the probe now skips a
-distribution whose name or version is not a non-empty string (a broken
-`METADATA` would otherwise crash the probe and be misreported as
-`runtime-unavailable`); the cache-before-connect fix gained the regression
-test it had been missing; a failed probe's `SYSERRORTEXT` is now logged so
-"see the log for details" is true; and the probe's `del` moved into a
-`finally` so a raising probe still cleans up after itself. The stray
-comment-only `test/unit/environment-store.test.ts` is removed. Sean then ran
-`npm run verify` and `npm run test:integration`: `test:integration` passes
-207/207 (with the new cache-hit regression case) and `test:unit` 1111/1111,
-but `npm run lint` flagged two errors, now fixed in the same change —
-`environmentPanel.ts` switched to an optional chain, and `environmentStore.ts`
-switched to `import type * as vscode` (it uses `vscode` only for a type),
-which meant removing it from `.c8rc.json`'s exclude list and moving its test
-from the integration tier to `test/unit/environment-store.test.ts` behind a
-`Map`-backed memento — it is a plain store with no runtime `vscode` use, so
-the unit tier is where it belongs. That tier move then showed a real gap:
-Sean's next `npm run verify` reported branches coverage at 94.93%, just under
-`.c8rc.json`'s unchanged 95% floor — `environment.ts`'s own two guard
-conditions (`parseEnvironmentProbeFile`'s not-object-or-null check,
-`readPackages`'s not-an-array check) had never had every arm forced by a test.
-Fixed by adding three cases to `backend-environment.test.ts` that force each
-missing arm, not by moving the floor. **Confirmed, 2026-08-27:** Sean's next
-`npm run verify` (1122 passing) measured branches at 95.03%, clearing the
-floor again with every other metric unchanged (93.87/93.48/93.87). `npm run
-build` then came back green too. Still ahead: his own manual VS Code review
-pass over the final state (already done once, on a diff only a few small
-fixes lighter than this one), and the commit/PR.
+the full account. **3e is merged, as
+[PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)** —
+`ExecutionBackend.probeRuntime()` (widening `BackendCapabilities.runtime` from
+the seam's own `"unprobed"`-only type), a fixed, extension-authored Python
+probe that writes its answer to a file rather than printing it (finding 62
+applied, not a new finding), a per-profile `globalState` cache with explicit
+refresh, and the new `Show environment`/`Refresh Environment Info` commands
+opening a read-only virtual document. Two rounds of in-session adversarial
+review, an independent senior-review pass, and the automated PR reviewer
+between them found and fixed: a cache-hit path that connected before ever
+checking the cache, defeating the point of caching for a fresh window; a
+distribution with malformed `METADATA` that could crash or blank the whole
+probe; a `del` that only ran on the success path; a coverage-branches gap the
+eventual unit-tier move exposed (95.03% once fixed, floor unmoved); an
+implicit vs. explicit fetch cap on the probe's own file read; a stale-runtime-
+snapshot gap after a failed re-probe; and a transcription error in this
+slice's own citation of finding 62. See phase-3.md's 3e entry for the full
+account.
 
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
@@ -97,7 +85,7 @@ fixes lighter than this one), and the commit/PR.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ▶ in progress (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii merged [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e implemented 2026-08-27, not yet committed) | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | ✅ done (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii merged [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e merged [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

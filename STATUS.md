@@ -10,11 +10,16 @@ causes and the punch list are in `docs/phases/phase-3.md`'s new **3f** entry.
 Phase 4 (Diagnostics) does not start until 3f closes, since it would only
 compound on top of an already-broken diagnosability story. See
 `docs/dev/manual-test-pass.md` for the annotated checklist this pass
-produced. **3f's fixes are implemented (2026-08-28), not yet reviewed or
-merged** — see phase-3.md's own 3f entry for exactly what landed, what's
-still open (Sean's adversarial review, two hand-run retests, and a full
-re-run of the manual test pass), and why none of those three can happen in
-this session.
+produced. **3f's fixes are implemented (2026-08-28); a first independent
+review pass is also complete**, raising three findings — two fixed
+(`3d965d0`, `34a2987`), one left open and documented rather than closed
+(the untested `run/commands.ts` → `forgetProfile` wiring) — **not yet
+merged, no PR opened.** See phase-3.md's own 3f entry for exactly what
+landed and what each review finding was. Still open, in order: a second,
+final adversarial pass over the post-review diff, two hand-run retests,
+and a full re-run of the manual test pass — none of which this session can
+do itself (no live Viya deployment reachable here, and this project's own
+rule against Claude running the suite).
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -101,7 +106,7 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) implemented on `phase-3f-manual-test-regressions`, not yet reviewed or merged** | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) implemented + first review pass done on `phase-3f-manual-test-regressions`, not yet merged, no PR opened** | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started — blocked on Phase 3's 3f | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

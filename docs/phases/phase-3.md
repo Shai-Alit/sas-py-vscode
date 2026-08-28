@@ -1451,22 +1451,32 @@ regressions against invariants this phase already claimed as done; the rest
 are either latent bugs worth closing while in the neighborhood, or repro
 gaps needing one more hand-run before being written off.
 
-> **Implemented 2026-08-28, on `phase-3f-manual-test-regressions` — not yet
-> reviewed, not yet committed, not yet merged.** Touches
+> **Implemented 2026-08-28, on `phase-3f-manual-test-regressions`; first
+> independent review pass complete, not yet merged, no PR opened.** Touches
 > `src/compute/sessionManager.ts`, `src/compute/commands.ts`,
 > `src/auth/commands.ts`, `src/run/commands.ts`, `src/extension.ts`,
 > `src/backend/procPython.ts`, `src/backend/logFilter.ts`,
 > `docs/adr/0019-…md`, plus tests in
 > `test/integration/compute/session-manager.test.ts`,
 > `test/integration/run/commands.test.ts`,
-> `test/unit/proc-python-backend.test.ts` and
-> `test/unit/backend-log-filter.test.ts`. Per this project's own review
+> `test/unit/proc-python-backend.test.ts`,
+> `test/unit/backend-log-filter.test.ts`, and (from the review pass)
+> `test/integration/auth/commands.test.ts`. Per this project's own review
 > policy, the adversarial pass over the finished diff is Sean's to run in
-> his own VS Code window, not this session's — nothing below is "reviewed"
-> yet, only "landed." What's still open, in order: that review, the two
-> hand-run retests, and the full re-run of `manual-test-pass.md` — none of
-> which this session can do itself (no live Viya deployment reachable here,
-> and this project's own rule against Claude running the suite).
+> his own VS Code window, not this session's — that pass happened
+> 2026-08-28 and raised three findings, two fixed in commit `3d965d0` (the
+> sign-out ordering/quiet-mode/Accounts-menu fixes below) plus `34a2987`
+> (a pre-existing bug in this slice's own `forget()` test, surfaced only
+> once the integration harness could actually launch), and one — no
+> integration test drives a real `backend-gone` through `runNow`/
+> `resetPythonState` into `forgetProfile` — left open and documented at
+> `test/integration/run/commands.test.ts:64-66` rather than closed. What's
+> still open, in order: a second, final adversarial pass over the
+> post-review diff, the two hand-run retests, and the full re-run of
+> `manual-test-pass.md` — none of which this session can do itself (no live
+> Viya deployment reachable here, and this project's own rule against
+> Claude running the suite). No PR until all of that is done, to avoid
+> re-triggering CI and both reviewers more than once.
 
 - ☑ **Fix: the `connected` context key never clears itself outside an
   explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle

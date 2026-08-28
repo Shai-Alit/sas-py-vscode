@@ -479,7 +479,15 @@ describe("compute session manager", () => {
     // this: a caller has independently learned the session held here is
     // dead (an idle reap, a revoked token) and this manager's own belief
     // that `current()` still names a live one is simply wrong.
+    //
+    // `forget()` drops only the `live` entry, not the persisted binding —
+    // by design, per its own doc comment: the next `connect()` reattaches
+    // to the stored id, gets the `404` a genuinely dead session gives
+    // (`self: gone()`), and self-heals into a fresh `createSession`. That
+    // `404` is the precondition `forget()` is called under in the first
+    // place, so scripting it here is scripting the real path.
     const scripted = deployment({
+      self: gone(),
       contexts: ok(contextsBody()),
       createSession: ok(sessionBody(), 201),
     });

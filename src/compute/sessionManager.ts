@@ -400,8 +400,15 @@ export class ComputeSessionManager implements vscode.Disposable {
    * out from under a running job does not make that job's promise settle any
    * sooner, and the request it is mid-flight on will itself fail once the
    * session is gone, which is what actually ends the claim.
+   *
+   * `quiet` suppresses only the "there is no session to disconnect"
+   * information message — a real failure to end a session it *did* hold is
+   * still logged. Signing out (`src/auth/commands.ts`) sets it: a user who
+   * ran *Sign Out*, not *Disconnect*, and never opened a compute session in
+   * this window should get one confirmation toast, not a second one telling
+   * them a thing they did not ask about was already absent.
    */
-  async disconnect(): Promise<void> {
+  async disconnect(options?: { quiet?: boolean }): Promise<void> {
     // Swallowed rather than propagated: a connect that threw has already told
     // the user, and rethrowing it out of *disconnect* would report the wrong
     // command's failure. Read `active` twice, deliberately: once to key which
@@ -424,7 +431,11 @@ export class ComputeSessionManager implements vscode.Disposable {
       // The binding is cleared either way. A window that never attached can
       // still hold a pointer to a session another window started, and "forget
       // it" is what the user asked for.
-      this.inform(vscode.l10n.t("There is no SAS Viya session to disconnect."));
+      if (options?.quiet !== true) {
+        this.inform(
+          vscode.l10n.t("There is no SAS Viya session to disconnect."),
+        );
+      }
       return;
     }
 

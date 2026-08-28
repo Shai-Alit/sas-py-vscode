@@ -1492,6 +1492,22 @@ gaps needing one more hand-run before being written off.
   what makes that classification actually reach the session manager).
   Covers the **Cold-start Connect**, **Reload reconnects**, and **Idle
   reap** items in `manual-test-pass.md` §4, plus **Sign out** in §3 and §10.
+  **Review pass (2026-08-28), three refinements:** (1) `signOut` now runs
+  `disconnect` *before* `removeSession`, not after — reversed, the teardown
+  `DELETE` ran with a credential that had just been deleted, so every
+  sign-out orphaned its SAS session for the idle reaper and logged a
+  spurious "did not complete" warning; (2) that `disconnect` is bound to a
+  new `{ quiet: true }` mode (`ComputeSessionManager.disconnect`) that
+  suppresses the "there is no session to disconnect" info message, so a
+  sign-out with no session open stays one toast rather than two; (3)
+  `extension.ts` now also drives `forgetProfile` from the auth provider's
+  `onDidChangeSessions` `removed` event, so a sign-out through VS Code's
+  **Accounts menu** — which never reaches `pythonOnViya.signOut` — clears
+  the cached connection and re-syncs the key too. New tests:
+  `session-manager.test.ts` (quiet disconnect stays silent / still tears a
+  held session down), `auth/commands.test.ts` (a `signOut` direct-handler
+  suite: disconnect-before-removeSession ordering, one toast, the
+  credential-already-gone and real-failure paths).
 - ☑ **Fix: three failure paths in `src/run/commands.ts` never logged the
   underlying problem before showing the generic "could not be sent…see the
   log" message.** `runNow`'s execute-failure and post-run failure, and

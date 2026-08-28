@@ -5,8 +5,14 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import { NoSuchSessionError } from "../../../src/auth/authProvider";
 import { SignInCancelledError } from "../../../src/auth/cancellation";
-import { signIn, type SignInDeps } from "../../../src/auth/commands";
+import {
+  signIn,
+  signOut,
+  type SignInDeps,
+  type SignOutDeps,
+} from "../../../src/auth/commands";
 import { testLogChannel } from "../../helpers/auth-host";
 import { extensionId } from "../../helpers/manifest";
 
@@ -297,6 +303,124 @@ describe("cancelling a sign-in", () => {
     await signIn(h.deps);
 
     assert.match(h.reported[0] ?? "", /could not be reached/);
+  });
+});
+
+interface SignOutHarness {
+  readonly deps: SignOutDeps;
+  /** Every `provider`/`disconnect` call in call order, so ordering is
+   * assertable — `"disconnect"` must precede `"removeSession"`. */
+  readonly calls: string[];
+  readonly informed: string[];
+  readonly reported: string[];
+}
+
+function signOutHarness(init?: {
+  active?: boolean;
+  removeSession?: () => Promise<void>;
+  disconnect?: () => Promise<void>;
+}): SignOutHarness {
+  const calls: string[] = [];
+  const informed: string[] = [];
+  const reported: string[] = [];
+  const active =
+    init?.active === false
+      ? undefined
+      : {
+          name: PROFILE_NAME,
+          profile: {
+            version: 1 as const,
+            id: PROFILE_ID,
+            endpoint: "https://viya.example.com",
+          },
+        };
+
+  return {
+    calls,
+    informed,
+    reported,
+    deps: {
+      provider: {
+        removeSession: async (id) => {
+          calls.push("removeSession");
+          assert.equal(id, PROFILE_ID);
+          await (init?.removeSession?.() ?? Promise.resolve());
+        },
+      },
+      profiles: { active: () => active },
+      log: testLogChannel("auth commands"),
+      disconnect: async () => {
+        calls.push("disconnect");
+        await (init?.disconnect?.() ?? Promise.resolve());
+      },
+      inform: (message) => informed.push(message),
+      report: (message) => reported.push(message),
+    },
+  };
+}
+
+describe("signing out disconnects", () => {
+  it("ends the session before removing the credential, and says so once", async () => {
+    // Order is load-bearing: the DELETE that ends the SAS session needs the
+    // token `removeSession` is about to delete. Reversed, every sign-out
+    // orphans its session until the idle reaper and logs a spurious warning.
+    const h = signOutHarness();
+
+    await signOut(h.deps);
+
+    assert.deepEqual(h.calls, ["disconnect", "removeSession"]);
+    assert.equal(h.informed.length, 1, "one confirmation toast, not two");
+    assert.match(h.informed[0] ?? "", /Prod/);
+    assert.deepEqual(h.reported, []);
+  });
+
+  it("disconnects even when there is no session, without a second toast", async () => {
+    // `disconnect` is bound to its quiet mode in `extension.ts`; the fake
+    // here stands in for that. The command must still call it — the point
+    // is that it re-syncs `pythonOnViya.connected` — but a user who ran
+    // Sign Out gets one message, not a "nothing to disconnect" one too.
+    const h = signOutHarness();
+
+    await signOut(h.deps);
+
+    assert.ok(h.calls.includes("disconnect"), "sign-out did not disconnect");
+    assert.equal(h.informed.length, 1);
+  });
+
+  it("still disconnects when the credential was already gone", async () => {
+    // `removeSession` throwing `NoSuchSessionError` is the ordinary "nothing
+    // there to sign out of" case. The disconnect ran first regardless, so
+    // the context key is re-synced even on this path.
+    const h = signOutHarness({
+      removeSession: () => Promise.reject(new NoSuchSessionError("gone")),
+    });
+
+    await signOut(h.deps);
+
+    assert.deepEqual(h.calls, ["disconnect", "removeSession"]);
+    assert.match(h.informed[0] ?? "", /not signed in/);
+    assert.deepEqual(h.reported, []);
+  });
+
+  it("reports a real sign-out failure and does not claim success", async () => {
+    const h = signOutHarness({
+      removeSession: () =>
+        Promise.reject(new Error("the secret store would not delete")),
+    });
+
+    await signOut(h.deps);
+
+    assert.match(h.reported[0] ?? "", /would not delete/);
+    assert.doesNotMatch(h.informed.join(" "), /Signed out/);
+  });
+
+  it("does nothing when there is no profile to sign out of", async () => {
+    const h = signOutHarness({ active: false });
+
+    await signOut(h.deps);
+
+    assert.deepEqual(h.calls, [], "acted without a profile");
+    assert.match(h.informed[0] ?? "", /no connection profile/i);
   });
 });
 

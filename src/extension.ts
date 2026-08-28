@@ -121,8 +121,27 @@ export function activate(context: vscode.ExtensionContext): void {
   // open and end a session, and handing them one keeps the dependency
   // pointing from auth to compute in one place rather than giving the
   // provider — which VS Code's Accounts menu also calls — the ability to
-  // start or stop a SAS process.
-  registerAuthCommands(context, auth, profiles, output, connect, disconnect);
+  // start or stop a SAS process. The disconnect is bound to its quiet mode:
+  // a user who ran Sign Out and never opened a session should get one
+  // confirmation toast, not a second "nothing to disconnect" one.
+  registerAuthCommands(context, auth, profiles, output, connect, () =>
+    disconnect({ quiet: true }),
+  );
+
+  // The palette's Sign Out command re-syncs `pythonOnViya.connected` itself
+  // (via the disconnect above). A sign-out through VS Code's Accounts menu
+  // never reaches that command — it calls the provider directly — so without
+  // this listener it would leave the cached connection and the context key
+  // exactly as the palette bug did before 3f: Connect hidden, no way back.
+  // The provider issues one session per profile and its id *is* the profile
+  // id, so a removed session names the profile whose connection is now dead.
+  context.subscriptions.push(
+    auth.onDidChangeSessions((event) => {
+      for (const removed of event.removed ?? []) {
+        forgetProfile(removed.id);
+      }
+    }),
+  );
 
   // Slice 3d-i: the commands that actually run Python on Viya. `connect` is
   // the same wrapper `registerAuthCommands` above was given — reusing it,

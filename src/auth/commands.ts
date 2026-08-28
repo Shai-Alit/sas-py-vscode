@@ -53,6 +53,15 @@
  * takes `connect`, and for the same reason: neither this file nor the
  * provider gets to know what a compute session is, but both get to trigger
  * dropping one.
+ *
+ * **Order matters:** `disconnect` runs *before* `removeSession`, so the
+ * `DELETE` that ends the SAS session still has a live token behind it.
+ * Reversed — the shape this first landed in — `removeSession` clears the
+ * credential first, the teardown `DELETE` then fails auth, and the session
+ * is left for the 15-minute idle reaper with a spurious "did not complete"
+ * warning in the log on every sign-out. `disconnect` cannot throw (it
+ * swallows its own failures, by contract), so putting it first does not
+ * risk leaving the credential behind.
  */
 
 import * as vscode from "vscode";
@@ -107,11 +116,12 @@ export interface SignOutDeps extends AuthCommandDeps {
   readonly provider: Pick<ViyaAuthenticationProvider, "removeSession">;
   readonly profiles: Pick<ProfileStore, "active">;
   readonly log: vscode.LogOutputChannel;
-  /** `src/compute/commands.ts`'s `disconnect` — ends the active profile's
-   * session, if this window holds one, and re-syncs `pythonOnViya.connected`.
-   * Reports its own failures and stays silent on the ordinary "nothing was
-   * connected" case, the same contract `connect` already has in
-   * {@link SignInDeps}. */
+  /** `src/compute/commands.ts`'s `disconnect`, bound to its quiet mode in
+   * `extension.ts` — ends the active profile's session, if this window holds
+   * one, and re-syncs `pythonOnViya.connected`. Logs its own failures and
+   * shows nothing for the ordinary "nothing was connected" case, so signing
+   * out stays a single toast — the same "the caller owns the message"
+   * contract `connect` already has in {@link SignInDeps}. */
   readonly disconnect: () => Promise<void>;
 }
 
@@ -189,16 +199,18 @@ export async function signOut(deps: SignOutDeps): Promise<void> {
   }
 
   try {
-    // Only the session. The client secret is configuration the user entered, not
-    // something signing out should destroy — deleting a profile does that.
-    await deps.provider.removeSession(active.profile.id);
     // Signing in opens a session (ADR-0013); signing out is the mirror
     // image. Without this, `pythonOnViya.connected` and the session this
     // window holds both survive a sign-out — Connect stays hidden and the
     // next run fails against a session whose token was just revoked. See
     // this file's own top-of-module comment for the 2026-08-27 finding that
-    // caught it missing.
+    // caught it missing, and for why this runs *before* `removeSession`
+    // rather than after: the teardown request needs the token that
+    // `removeSession` is about to delete.
     await deps.disconnect();
+    // Only the session. The client secret is configuration the user entered, not
+    // something signing out should destroy — deleting a profile does that.
+    await deps.provider.removeSession(active.profile.id);
     inform(vscode.l10n.t('Signed out of "{0}".', active.name));
   } catch (error) {
     if (!(error instanceof NoSuchSessionError)) {

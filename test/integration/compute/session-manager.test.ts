@@ -1105,6 +1105,51 @@ describe("compute session manager", () => {
     assert.equal(shown.infos.length, 1);
   });
 
+  it("stays silent about nothing to disconnect when asked to be quiet", async () => {
+    // Added 2026-08-28 (Phase 3's 3f slice). Signing out reuses this method
+    // to end whatever session the window holds, but a user who ran *Sign
+    // Out* — not *Disconnect* — and never opened a session should get one
+    // confirmation toast, not a second one about a session that was already
+    // absent. `quiet` suppresses only that information message.
+    const scripted = deployment({});
+    const { manager, shown } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+    });
+
+    await manager.disconnect({ quiet: true });
+
+    assert.equal(scripted.requests.length, 0);
+    assert.deepEqual(shown.infos, []);
+  });
+
+  it("still ends a held session when asked to be quiet", async () => {
+    // `quiet` is not `skip`: a session the window actually holds is still
+    // torn down on the server, the binding still cleared. Only the
+    // "nothing to disconnect" message is silenced.
+    const state = memoryMemento();
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+      delete: {
+        ok: true,
+        value: { status: 204, notModified: false, text: "", body: undefined },
+      },
+    });
+    const { manager, bindings } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      state,
+    });
+    await manager.connect();
+
+    await manager.disconnect({ quiet: true });
+
+    assert.ok(scripted.hrefs.includes(SESSION_PATH));
+    assert.equal(bindings.read(PROFILE_ID), undefined);
+    assert.equal(manager.current(PROFILE_ID), undefined);
+  });
+
   it("waits for a connect in flight before deciding there is nothing to end", async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {

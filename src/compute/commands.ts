@@ -44,6 +44,12 @@
  * `forgetProfile` exists for a session that dies on its *own* terms — an
  * idle reap, mid-window — discovered independently by a run that tried to
  * use it; see `ComputeSessionManager.forget`'s own doc comment.
+ *
+ * `forgetProfile` is also what `extension.ts` calls from the provider's
+ * `onDidChangeSessions` event, so a sign-out through VS Code's **Accounts
+ * menu** — which talks to the provider directly and never reaches
+ * `pythonOnViya.signOut` — drops the dead connection and re-syncs the key
+ * too, rather than only the palette's own Sign Out command doing so.
  */
 
 import * as vscode from "vscode";
@@ -80,8 +86,10 @@ export type ConnectActiveProfile = () => Promise<ComputeConnection | undefined>;
 export interface ComputeCommandHandles {
   readonly connect: ConnectActiveProfile;
   /** Ends the active profile's session (if any) and re-syncs the context
-   * key. What `signOut` calls, mirroring `signIn`'s own `connect`. */
-  readonly disconnect: () => Promise<void>;
+   * key. What `signOut` calls, mirroring `signIn`'s own `connect` — passing
+   * `{ quiet: true }`, so a sign-out with no session open in this window
+   * stays a single confirmation toast rather than two. */
+  readonly disconnect: (options?: { quiet?: boolean }) => Promise<void>;
   /** Drops a profile's cached connection — `ComputeSessionManager.forget` —
    * and re-syncs the context key. What a run/reset/probe calls on
    * `BackendProblem` `backend-gone`, so Connect reappears immediately rather
@@ -105,8 +113,8 @@ export function registerComputeCommands(
     return connection;
   };
 
-  const disconnect = async (): Promise<void> => {
-    await sessions.disconnect();
+  const disconnect = async (options?: { quiet?: boolean }): Promise<void> => {
+    await sessions.disconnect(options);
     sync();
   };
 

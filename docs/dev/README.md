@@ -8,6 +8,9 @@ satisfy; these pages explain how the machinery works and why.
   constraints that bite silently
 - [**Testing**](testing.md) — the three tiers, the HTTP mocking layer, fixtures
   and how to sanitise them, and the coverage ratchet
+- [**Manual test pass**](manual-test-pass.md) — the human tier: a scripted
+  walkthrough of every user-visible behaviour, run by hand against a real
+  deployment with the packaged `.vsix`, before a release and when a phase closes
 - [**Continuous integration**](ci.md) — the six CI jobs, why the test matrix
   is shaped the way it is, and what `check:package` protects against
 

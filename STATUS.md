@@ -1,6 +1,18 @@
 # Status
 
-**Phase 3 is done; Phase 4 has not yet started.** Its between-phase
+**Phase 3's implementation is done; one more slice (3f) is queued before**
+**Phase 4 starts.** The first full run of `docs/dev/manual-test-pass.md`
+(2026-08-27, against live `verde`/`Innov` profiles) found three confirmed
+regressions against invariants Phase 3 already claimed as done — 3b's "no SAS
+NOTEs, no page-break banners" and the cross-cutting "failures are
+diagnosable" promise don't currently hold. Triaged 2026-08-28; full root
+causes and the punch list are in `docs/phases/phase-3.md`'s new **3f** entry.
+Phase 4 (Diagnostics) does not start until 3f closes, since it would only
+compound on top of an already-broken diagnosability story. See
+`docs/dev/manual-test-pass.md` for the annotated checklist this pass
+produced.
+
+Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
 into `docs/phases/phase-4.md`'s own Runbook, and ran the live check
@@ -85,8 +97,8 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ✅ done (3a, 3b, 3c-probe, 3c-i, 3c-ii, 3d-i merged [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii merged [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e merged [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)) | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | not started | `docs/phases/phase-4.md` |
+| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) queued, not started** | `docs/phases/phase-3.md` |
+| 4 — Diagnostics | not started — blocked on Phase 3's 3f | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

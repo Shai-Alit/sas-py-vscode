@@ -20,8 +20,9 @@ git push origin v0.1.0
 ☐ **D5.** Watch the release workflow; confirm the `.vsix` publishes to both the
 VS Marketplace and Open VSX.
 ☐ **D6.** Install the published extension from the marketplace in a clean VS Code
-profile and run one Python file end to end. Publishing green is not the same as
-working.
+profile and run the [manual test pass](dev/manual-test-pass.md) against a real
+deployment — at least its rich-output section end to end. Publishing green is not
+the same as working.
 ☐ **D7.** Bump to the next `0.1.1-dev` version and add a fresh empty
 `[Unreleased]` section.
 

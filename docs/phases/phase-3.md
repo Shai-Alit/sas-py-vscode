@@ -227,6 +227,11 @@ git commit -m "feat(python): add result panel webview with rich output renderers
 # 3e — runtime capability probe
 git checkout -b phase-3e-runtime-capabilities
 git commit -m "feat(backend): probe interpreter version and installed packages"
+
+# ⛔ BARRIER
+# 3f — manual test pass regressions (pre-Phase-4 hardening)
+git checkout -b phase-3f-manual-test-regressions
+git commit -m "fix(run): close manual-test-pass regressions (connect-state, silent failures, page-break banner)"
 ```
 
 ☑ **3c-i — matplotlib/pandas rich-output capture.** Scoped 2026-08-25, design
@@ -1434,6 +1439,99 @@ Runbook during Phase 3's between-phase housekeeping, 2026-08-27** — both had a
 stated reason to stay open (see that housekeeping's own record in `STATUS.md`),
 and both are naturally Phase 4's to pick up rather than lingering as Phase 3
 debt. See phase-4.md for the full carried-over text.
+
+☐ **3f — close the regressions the first full manual test pass found, before
+Phase 4 starts.** `docs/dev/manual-test-pass.md` was run by hand end to end
+for the first time since Phase 3 closed, 2026-08-27, against live `verde` and
+`Innov` profiles with the packaged `.vsix`. Findings triaged 2026-08-28
+(three parallel read-only investigations into the actual source, not
+guesswork) — the annotated checklist itself lives in
+`manual-test-pass.md`; this is the fix list. Three are confirmed P0
+regressions against invariants this phase already claimed as done; the rest
+are either latent bugs worth closing while in the neighborhood, or repro
+gaps needing one more hand-run before being written off.
+
+- ☐ **Fix: the `connected` context key never clears itself outside an
+  explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle
+  session reap, and "no clear way to reconnect" generally) all trace to one
+  mechanism: `pythonOnViya.connected` (`package.json:113,119`) is computed
+  from `ComputeSessionManager`'s in-memory `live` map
+  (`src/compute/sessionManager.ts`), synced only at activation,
+  `profiles.onDidChange`, and the explicit Connect/Disconnect handlers
+  (`src/compute/commands.ts:75-99,110-118`). Sign-out
+  (`src/auth/commands.ts:171`) revokes the token but never touches `live` or
+  re-syncs the key. A reap is never proactively detected either —
+  `connect()` (`sessionManager.ts:395-399`) short-circuits `if (held !==
+  undefined) return held` with no revalidation — so `live`/`connected` stay
+  stuck `true` until Disconnect unconditionally clears the entry
+  (`sessionManager.ts:352-353`). Sign-out and any detected-dead-session path
+  need to clear `live` and re-sync `connected` themselves, not rely on the
+  user finding Disconnect first. Covers the **Cold-start Connect**,
+  **Reload reconnects**, and **Idle reap** items in `manual-test-pass.md`
+  §4, plus **Sign out** in §3 and §10.
+- ☐ **Fix: three failure paths in `src/run/commands.ts` never log the
+  underlying problem before showing the generic "could not be sent…see the
+  log" message** (`src/backend/messages.ts:58-61`'s `transfer-failed` text).
+  `runNow`'s execute-failure (`commands.ts:435`) and post-run failure
+  (`commands.ts:468-469`), and `resetPythonState`'s failure path
+  (`commands.ts:545`) — none call `log.*` before reporting. Copy the
+  pattern `showEnvironmentImpl`'s probe-failure path already uses
+  (`commands.ts:631-632`, `log.warn(probed.reason)` before `reportProblem`),
+  which is why that one path was never reported as silent. Covers
+  **Failures are diagnosable** in §10 and the log-emptiness half of every
+  §3/§4 finding above.
+- ☐ **Fix: `isNoiseLine` still doesn't exclude `title`-typed log lines, and
+  `PAGESIZE=MAX` still isn't sent at session creation.** Both gaps were
+  already written down in `logFilter.ts`'s own doc comment
+  (`src/backend/logFilter.ts:43-58`) from the 2026-08-25 probe — Finding 63
+  confirmed the page-break banner arrives typed `title`, which
+  `isNoiseLine` (`logFilter.ts:102-104`) doesn't exclude — but neither was
+  picked up as a fix before 3b was marked done. Matches this pass exactly: a
+  stray banner line in 4 of the 14 submission-corpus runs, and one roughly
+  every 58 lines in the 5000-line **Large output stays clean** test (§6).
+  Add `"title"` to `isNoiseLine`, and pass `PAGESIZE=MAX` (or equivalent) in
+  `sessionManager.ts`'s `open()` → `createSession` call.
+- ☐ **Fix (latent, not yet reproduced by a QA symptom, found while
+  investigating the profile-switch report below):** `ComputeSessionManager
+  .connect()`'s single `this.connecting` field (`sessionManager.ts:312-315`)
+  is not keyed by profile — a second, unrelated `connect()` call arriving
+  while a first is still in flight for a *different* profile joins that
+  first promise and receives the wrong profile's connection, mislabeled.
+  Doesn't by itself explain the report below, but is real and sits in the
+  same code.
+- ☐ **Retest, narrated click by click: "ran a long program on profile A,
+  switched to profile B and signed in, B ran the same program
+  unprompted."** No queue/replay/resume code path exists anywhere in
+  `src/run` or `src/compute` — a program is captured synchronously at
+  invocation (`buildProgram`, before any `await`), and backends are cached
+  per profile. Most likely explanation is Run was in fact invoked again;
+  needs one clean repro before being closed either way.
+- ☐ **Retest: the deep-recursion script that crashed the Python subprocess**
+  ("terminated unexpectedly… trying to use more memory than the container
+  is configured to allow") **immediately after its own 5 unit tests had
+  already passed.** Not implicated in 3c-ii's frame-trimming logic itself —
+  plausibly a container memory/stack ceiling question — but needs one more
+  run to see if it reproduces before writing it off. Covers **Deep /
+  recursive stacks survive** in §7.
+- ☐ **Doc: state ADR-0019's cancelled-run-orphans-a-partial-figure-file
+  behavior explicitly.** Already correct by design, just implicit: a
+  cancelled run skips `captureRichOutput` entirely
+  (`procPython.ts:933-935,958-963`), so a figure file written before
+  cancellation is neither read back nor deleted. Not a defect — write it
+  into ADR-0019 as a stated trade-off rather than leaving a future reader to
+  re-derive it from the code.
+- ☐ **Reword pass, already applied to `manual-test-pass.md` itself
+  (2026-08-28), confirmed correct against the code rather than left as
+  found:** the **Cancel scoped to the active profile** regression check
+  (§11) used a two-*window* repro that cannot exercise what it claims —
+  each window is its own extension host with no shared `currentRun`/
+  `currentReset` state — reworded to a same-window profile switch, which
+  `cancelRun`'s tracking (`commands.ts:189,201,481,501`, the PR #63 fix)
+  already handles correctly. `defaultProfile` (§2a) is real
+  (`package.json:222-227`) and settings-only by design — reworded to say so.
+  Neither needed a code change.
+- ☐ **Full re-run of `manual-test-pass.md`** once the fixes above land, to
+  confirm them and pick up anything this first pass missed.
 
 > This is the first genuinely useful build. Install the `.vsix` locally and use
 > it for real work for a few days before starting Phase 4. Real use will

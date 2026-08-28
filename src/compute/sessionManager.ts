@@ -198,6 +198,21 @@ export interface ComputeSessionDeps {
   report?: ((message: string) => void) | undefined;
 }
 
+/**
+ * The SAS system option sent for every session this extension creates.
+ *
+ * Suppresses the periodic page-break banner ("The SAS System <date> <time>")
+ * a SAS log inserts every `PAGESIZE` lines. Added 2026-08-28 (Phase 3's 3f
+ * slice) — `logFilter.ts`'s own doc comment (finding 63) already named this
+ * as the other half of the banner-bleed defect the log filter alone cannot
+ * fully close, since a banner arrives as its own atomic, already-typed log
+ * line no filter decision changes the timing of. `MAX` rather than a
+ * specific number: a finite `PAGESIZE` just moves the banner further apart,
+ * and there is no value in it appearing at all for an interactive Python
+ * session with no pages to break.
+ */
+const SESSION_OPTIONS = ["PAGESIZE=MAX"];
+
 export class ComputeSessionManager implements vscode.Disposable {
   /** Keyed on profile id. Two profiles may hold sessions at the same time. */
   private readonly live = new Map<string, ComputeConnection>();
@@ -240,13 +255,28 @@ export class ComputeSessionManager implements vscode.Disposable {
   >();
 
   /**
-   * The connect currently running, so a second invocation joins it.
+   * The connect currently running for each profile, so a second invocation
+   * *for the same profile* joins it rather than starting a competing session.
+   *
+   * Keyed by profile id — unlike the single field this used to be. **Fixed
+   * 2026-08-28 (Phase 3's 3f slice):** an un-keyed field let an unrelated
+   * connect for profile B, arriving while profile A's own connect was still
+   * awaiting its interactive sign-in, join A's promise and receive A's
+   * connection back, mislabeled as B's. Found while investigating a
+   * 2026-08-27 manual-test-pass report of a run appearing to execute against
+   * the wrong profile after a mid-run profile switch; this fix does not
+   * itself establish that it explains that report, but it is a real defect
+   * in the same neighbourhood and worth closing regardless of whether it was
+   * the actual cause that day.
    *
    * Without this, double-clicking the status bar starts two sessions and the
    * second overwrites the first in `live` — leaving a SAS process running that
    * nothing holds a reference to, until the 900-second timeout reaps it.
    */
-  private connecting: Promise<ComputeConnection | undefined> | undefined;
+  private readonly connecting = new Map<
+    string,
+    Promise<ComputeConnection | undefined>
+  >();
 
   constructor(
     private readonly profiles: ComputeProfileSource,
@@ -258,6 +288,29 @@ export class ComputeSessionManager implements vscode.Disposable {
   /** The session this window holds for a profile, without opening one. */
   current(profileId: string): ComputeConnection | undefined {
     return this.live.get(profileId);
+  }
+
+  /**
+   * Drops a profile's cached connection without touching the server or the
+   * persisted binding — for when a caller has *independently* learned the
+   * session is actually gone (`procPython.ts`'s `translate()`, the
+   * `backend-gone` `BackendProblem`) and this window's own belief that it
+   * still holds one is simply wrong.
+   *
+   * Added 2026-08-28 (Phase 3's 3f slice). `open()`'s own reattach path
+   * already handles a dead session the *next* `connect()` discovers on its
+   * own (a clean `404`, read as `session-gone`, clears the binding and
+   * creates a fresh session). What that path cannot reach is `connect()`'s
+   * own fast path, above — `runConnect()`'s `held !== undefined` check — which
+   * trusts a `live` entry forever once one exists and never asks the server
+   * again on its own. A session that dies between two `connect()` calls (an
+   * idle reap, a sign-out that revoked the token underneath it) is invisible
+   * to that fast path, and to `pythonOnViya.connected`'s own reading of
+   * `live`, until something that actually tried to use the connection tells
+   * this manager to let it go. This is that call.
+   */
+  forget(profileId: string): void {
+    this.live.delete(profileId);
   }
 
   /** Whether a profile currently has a submission in flight. */
@@ -310,10 +363,18 @@ export class ComputeSessionManager implements vscode.Disposable {
    * `undefined` means it did not happen and the user has already been told why.
    */
   async connect(): Promise<ComputeConnection | undefined> {
-    this.connecting ??= this.runConnect().finally(() => {
-      this.connecting = undefined;
-    });
-    return await this.connecting;
+    const active = this.profiles.active();
+    if (active === undefined) return await this.runConnect();
+
+    const key = active.profile.id;
+    let pending = this.connecting.get(key);
+    if (pending === undefined) {
+      pending = this.runConnect().finally(() => {
+        this.connecting.delete(key);
+      });
+      this.connecting.set(key, pending);
+    }
+    return await pending;
   }
 
   /**
@@ -343,8 +404,14 @@ export class ComputeSessionManager implements vscode.Disposable {
   async disconnect(): Promise<void> {
     // Swallowed rather than propagated: a connect that threw has already told
     // the user, and rethrowing it out of *disconnect* would report the wrong
-    // command's failure.
-    await this.connecting?.catch(() => undefined);
+    // command's failure. Read `active` twice, deliberately: once to key which
+    // profile's connect to wait for, once again after the wait, in case the
+    // active profile changed in between — the same "re-read after a round
+    // trip" rule `rememberContext` applies to its own write-back below.
+    const waitingOn = this.profiles.active()?.profile.id;
+    if (waitingOn !== undefined) {
+      await this.connecting.get(waitingOn)?.catch(() => undefined);
+    }
 
     const active = this.profiles.active();
     if (active === undefined) return;
@@ -608,7 +675,10 @@ export class ComputeSessionManager implements vscode.Disposable {
       return undefined;
     }
 
-    const created = await createSession(client, resolved.value, { signal });
+    const created = await createSession(client, resolved.value, {
+      options: SESSION_OPTIONS,
+      signal,
+    });
     if (!created.ok) {
       this.reportFailure(created, token.isCancellationRequested);
       return undefined;

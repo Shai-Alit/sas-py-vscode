@@ -234,3 +234,32 @@ out not to be true until this slice made it true. See finding 69
 (`docs/phases/phase-3.md`) for the full account, including what this
 amendment does not settle (a distinguishable failure for a transport that
 predates `bytes()`, which no transport in this codebase is).
+
+## Amendment — 2026-08-28 (Phase 3's 3f slice): a cancelled run can orphan whatever it already wrote
+
+The 2026-08-27 manual test pass asked, correctly, whether a cancelled run
+leaves its own partially- or fully-written figure file sitting in the
+session's working directory forever. It can — and this was already this
+ADR's own decision (point 3 above, and the "Capture happens on both a
+successful and a failed run, never on a cancelled one" paragraph under
+Decision) — restated here explicitly because the question came from a
+reader outside this document rather than from someone who had just read it,
+which is itself worth a note: a decision recorded once, in one place, is
+easy to lose track of once several slices sit on top of it.
+
+A cancelled run skips the after-snapshot entirely — `procPython.ts`'s
+`captureRichOutput` is never called for a `cancelled` outcome — so nothing
+this backend wrote before cancellation is read back **or deleted**; point 9's
+cleanup only ever runs for a candidate this backend actually captured. The
+file is not lost — it is exactly where the user's own script put it, in the
+session's working directory, discoverable the same way any other file the
+script wrote would be — but it is not cleaned up by this mechanism, and a
+session used for many cancelled runs in one sitting can accumulate them.
+
+**Not fixed here.** Closing it would mean listing the directory even on a
+cancelled outcome — more I/O on the path a user is actively trying to stop
+— for a case ("some garbage files in a session nobody else can see, which
+ends within fifteen idle minutes anyway") this ADR already weighed as a
+smaller cost than either capturing an incomplete run's output or slowing
+cancellation down. If real usage says otherwise, that is a decision for
+whichever slice picks it up next, not a silent revision here.

@@ -109,19 +109,30 @@ export function activate(context: vscode.ExtensionContext): void {
     output,
   );
   context.subscriptions.push(sessions);
-  const connect = registerComputeCommands(context, sessions, profiles, output);
+  const { connect, disconnect, forgetProfile } = registerComputeCommands(
+    context,
+    sessions,
+    profiles,
+    output,
+  );
 
-  // Registered last, and only because signing in connects: the command needs a
-  // way to open a session, and handing it one keeps the dependency pointing from
-  // auth to compute in one place rather than giving the provider — which VS
-  // Code's Accounts menu also calls — the ability to start a SAS process.
-  registerAuthCommands(context, auth, profiles, output, connect);
+  // Registered last, and only because signing in connects (and signing out
+  // disconnects, added in Phase 3's 3f slice): the commands need a way to
+  // open and end a session, and handing them one keeps the dependency
+  // pointing from auth to compute in one place rather than giving the
+  // provider — which VS Code's Accounts menu also calls — the ability to
+  // start or stop a SAS process.
+  registerAuthCommands(context, auth, profiles, output, connect, disconnect);
 
   // Slice 3d-i: the commands that actually run Python on Viya. `connect` is
   // the same wrapper `registerAuthCommands` above was given — reusing it,
   // rather than `sessions.connect` directly, is what keeps
   // `pythonOnViya.connected` honest when a run auto-connects instead of the
-  // user pressing Connect first.
+  // user pressing Connect first. `forgetProfile` (3f) is the same idea for
+  // the opposite direction: when a run/reset/probe discovers its own
+  // connection is gone (`BackendProblem` `backend-gone`), it tells
+  // `src/compute` to drop it and re-sync the context key, rather than
+  // leaving Connect hidden until the user finds Disconnect on their own.
   registerRunCommands(
     context,
     {
@@ -131,6 +142,7 @@ export function activate(context: vscode.ExtensionContext): void {
       endSubmission: (profileId) => {
         sessions.endSubmission(profileId);
       },
+      forgetProfile,
     },
     profiles,
     runTargets,

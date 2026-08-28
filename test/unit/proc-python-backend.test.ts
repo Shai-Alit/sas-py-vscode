@@ -1520,6 +1520,38 @@ describe("ProcPythonBackend", () => {
       assert.ok(!requests.some((request) => request.link.rel === "execute"));
     });
 
+    it("reports a session gone during the upload as backend-gone, not transfer-failed", async () => {
+      // Phase 3's 3f slice, 2026-08-28: `translate()` used to pick
+      // `transfer-failed` unconditionally for the upload stage, even when
+      // the underlying `ComputeFailure` was already `session-gone` — the
+      // exact shape a dead or reaped session produces on the very first
+      // request of a run, since `fileref.ts` maps every one of its own
+      // failures through `asSessionGone`. Mirrors "reports a session gone
+      // while submitting as backend-gone" below, but for the transfer stage.
+      const { client } = router({
+        syscc: "0",
+        assignReply: {
+          ok: false,
+          reason: "the compute session is no longer available",
+          problem: { code: "session-gone", error: { status: 404 } },
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const result = await accepted.done;
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-gone");
+    });
+
     it("reports compute-unreachable while submitting as backend-gone too", async () => {
       // The existing "session gone" test below exercises one of the two
       // conditions `translate()`'s own doc comment names as recoverable

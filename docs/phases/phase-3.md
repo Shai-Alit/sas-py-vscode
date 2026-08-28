@@ -1451,76 +1451,125 @@ regressions against invariants this phase already claimed as done; the rest
 are either latent bugs worth closing while in the neighborhood, or repro
 gaps needing one more hand-run before being written off.
 
-- ☐ **Fix: the `connected` context key never clears itself outside an
+> **Implemented 2026-08-28, on `phase-3f-manual-test-regressions` — not yet
+> reviewed, not yet committed, not yet merged.** Touches
+> `src/compute/sessionManager.ts`, `src/compute/commands.ts`,
+> `src/auth/commands.ts`, `src/run/commands.ts`, `src/extension.ts`,
+> `src/backend/procPython.ts`, `src/backend/logFilter.ts`,
+> `docs/adr/0019-…md`, plus tests in
+> `test/integration/compute/session-manager.test.ts`,
+> `test/integration/run/commands.test.ts`,
+> `test/unit/proc-python-backend.test.ts` and
+> `test/unit/backend-log-filter.test.ts`. Per this project's own review
+> policy, the adversarial pass over the finished diff is Sean's to run in
+> his own VS Code window, not this session's — nothing below is "reviewed"
+> yet, only "landed." What's still open, in order: that review, the two
+> hand-run retests, and the full re-run of `manual-test-pass.md` — none of
+> which this session can do itself (no live Viya deployment reachable here,
+> and this project's own rule against Claude running the suite).
+
+- ☑ **Fix: the `connected` context key never clears itself outside an
   explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle
-  session reap, and "no clear way to reconnect" generally) all trace to one
+  session reap, and "no clear way to reconnect" generally) all traced to one
   mechanism: `pythonOnViya.connected` (`package.json:113,119`) is computed
   from `ComputeSessionManager`'s in-memory `live` map
   (`src/compute/sessionManager.ts`), synced only at activation,
   `profiles.onDidChange`, and the explicit Connect/Disconnect handlers
   (`src/compute/commands.ts:75-99,110-118`). Sign-out
-  (`src/auth/commands.ts:171`) revokes the token but never touches `live` or
-  re-syncs the key. A reap is never proactively detected either —
-  `connect()` (`sessionManager.ts:395-399`) short-circuits `if (held !==
-  undefined) return held` with no revalidation — so `live`/`connected` stay
-  stuck `true` until Disconnect unconditionally clears the entry
-  (`sessionManager.ts:352-353`). Sign-out and any detected-dead-session path
-  need to clear `live` and re-sync `connected` themselves, not rely on the
-  user finding Disconnect first. Covers the **Cold-start Connect**,
-  **Reload reconnects**, and **Idle reap** items in `manual-test-pass.md`
-  §4, plus **Sign out** in §3 and §10.
-- ☐ **Fix: three failure paths in `src/run/commands.ts` never log the
+  (`src/auth/commands.ts`) revoked the token but never touched `live` or
+  re-synced the key. A reap was never proactively detected either —
+  `connect()`'s fast path short-circuited on a cached `live` entry with no
+  revalidation — so `live`/`connected` stayed stuck `true` until Disconnect
+  unconditionally cleared the entry. **Landed:**
+  `ComputeSessionManager.forget(profileId)` (new) drops a stale cached
+  connection on request; `registerComputeCommands` now returns
+  `{ connect, disconnect, forgetProfile }` instead of just `connect`, each
+  wrapper re-syncing `pythonOnViya.connected` after acting; `signOut` (in
+  `src/auth/commands.ts`) now calls the new `disconnect` after
+  `removeSession` succeeds, mirroring how `signIn` already calls `connect`;
+  `run/commands.ts`'s failure paths call the new `forgetProfile` whenever a
+  `BackendProblem` comes back `backend-gone` (see the next bullet — this is
+  what makes that classification actually reach the session manager).
+  Covers the **Cold-start Connect**, **Reload reconnects**, and **Idle
+  reap** items in `manual-test-pass.md` §4, plus **Sign out** in §3 and §10.
+- ☑ **Fix: three failure paths in `src/run/commands.ts` never logged the
   underlying problem before showing the generic "could not be sent…see the
-  log" message** (`src/backend/messages.ts:58-61`'s `transfer-failed` text).
-  `runNow`'s execute-failure (`commands.ts:435`) and post-run failure
-  (`commands.ts:468-469`), and `resetPythonState`'s failure path
-  (`commands.ts:545`) — none call `log.*` before reporting. Copy the
-  pattern `showEnvironmentImpl`'s probe-failure path already uses
-  (`commands.ts:631-632`, `log.warn(probed.reason)` before `reportProblem`),
-  which is why that one path was never reported as silent. Covers
-  **Failures are diagnosable** in §10 and the log-emptiness half of every
-  §3/§4 finding above.
-- ☐ **Fix: `isNoiseLine` still doesn't exclude `title`-typed log lines, and
-  `PAGESIZE=MAX` still isn't sent at session creation.** Both gaps were
-  already written down in `logFilter.ts`'s own doc comment
-  (`src/backend/logFilter.ts:43-58`) from the 2026-08-25 probe — Finding 63
-  confirmed the page-break banner arrives typed `title`, which
-  `isNoiseLine` (`logFilter.ts:102-104`) doesn't exclude — but neither was
-  picked up as a fix before 3b was marked done. Matches this pass exactly: a
-  stray banner line in 4 of the 14 submission-corpus runs, and one roughly
-  every 58 lines in the 5000-line **Large output stays clean** test (§6).
-  Add `"title"` to `isNoiseLine`, and pass `PAGESIZE=MAX` (or equivalent) in
-  `sessionManager.ts`'s `open()` → `createSession` call.
-- ☐ **Fix (latent, not yet reproduced by a QA symptom, found while
+  log" message.** `runNow`'s execute-failure and post-run failure, and
+  `resetPythonState`'s failure path, none called `log.*` before reporting —
+  unlike `showEnvironmentImpl`'s probe-failure path, which already did.
+  **Landed:** all three now call `log.warn(<result>.reason)` first, the same
+  composed sentence `showEnvironmentImpl` already logged, and all four
+  (including `showEnvironmentImpl`'s pre-existing one) now also call the new
+  `forgetIfGone` helper. **A second, deeper defect surfaced while fixing
+  this:** `procPython.ts`'s `translate()` picked `transfer-failed`
+  unconditionally for the two upload calls, even when the underlying
+  failure was already `session-gone`/`compute-unreachable` — so a dead
+  session's *first* request of a run produced the least informative
+  message this union has, instead of `backend-gone`'s "The SAS Viya session
+  ended. Connect again and re-run." Fixed by checking `recoverable` before
+  `transferStage`, matching what already happened for every failure past
+  the upload stage; a new test
+  (`test/unit/proc-python-backend.test.ts`, "reports a session gone during
+  the upload as backend-gone, not transfer-failed") pins it — the existing
+  transfer-failed tests were checked and are unaffected (none of them
+  actually simulate a 404; the test helper's `status` parameter defaults to
+  500 regardless of what descriptive text is passed). Covers **Failures are
+  diagnosable** in §10 and the log-emptiness half of every §3/§4 finding
+  above.
+- ☑ **Fix: `isNoiseLine` didn't exclude `title`-typed log lines, and
+  `PAGESIZE=MAX` wasn't sent at session creation.** Both gaps were already
+  written down in `logFilter.ts`'s own doc comment from the 2026-08-25
+  probe — finding 63 confirmed the page-break banner arrives typed `title`,
+  which `isNoiseLine` didn't exclude — but neither was picked up as a fix
+  before 3b was marked done. Matched this pass exactly: a stray banner line
+  in 4 of the 14 submission-corpus runs, and one roughly every 58 lines in
+  the 5000-line **Large output stays clean** test (§6). **Landed:** `title`
+  added to `isNoiseLine` (`logFilter.ts`), plus a new `SESSION_OPTIONS =
+  ["PAGESIZE=MAX"]` passed to `createSession` in `sessionManager.ts`'s
+  `open()`; a new case in `test/unit/backend-log-filter.test.ts` pins the
+  `title` exclusion.
+- ☑ **Fix (latent, not yet reproduced by a QA symptom, found while
   investigating the profile-switch report below):** `ComputeSessionManager
-  .connect()`'s single `this.connecting` field (`sessionManager.ts:312-315`)
-  is not keyed by profile — a second, unrelated `connect()` call arriving
-  while a first is still in flight for a *different* profile joins that
-  first promise and receives the wrong profile's connection, mislabeled.
-  Doesn't by itself explain the report below, but is real and sits in the
-  same code.
+  .connect()`'s single `this.connecting` field was not keyed by profile — a
+  second, unrelated `connect()` call arriving while a first was still in
+  flight for a *different* profile would join that first promise and
+  receive the wrong profile's connection back, mislabeled. Doesn't by
+  itself explain the report below, but was real and sat in the same code.
+  **Landed:** `connecting` is now a `Map<string, Promise<…>>` keyed on
+  profile id; `disconnect()`'s own wait-for-a-connect-in-flight logic
+  updated to match, re-reading the active profile after the wait per this
+  file's own "re-read after a round trip" rule. A new
+  `test/integration/compute/session-manager.test.ts` case ("forget() drops
+  the cached connection…") pins `forget()`'s own behaviour; a dedicated
+  regression test proving two *different* profiles' connects never join
+  each other is **not yet written** — it needs a harness able to run two
+  independent connect flows concurrently and was judged too easy to get
+  subtly wrong without being able to run it this session, so it is called
+  out here rather than guessed at.
 - ☐ **Retest, narrated click by click: "ran a long program on profile A,
   switched to profile B and signed in, B ran the same program
   unprompted."** No queue/replay/resume code path exists anywhere in
   `src/run` or `src/compute` — a program is captured synchronously at
   invocation (`buildProgram`, before any `await`), and backends are cached
   per profile. Most likely explanation is Run was in fact invoked again;
-  needs one clean repro before being closed either way.
+  needs one clean repro before being closed either way. Unchanged by this
+  slice's fixes — still open.
 - ☐ **Retest: the deep-recursion script that crashed the Python subprocess**
   ("terminated unexpectedly… trying to use more memory than the container
   is configured to allow") **immediately after its own 5 unit tests had
   already passed.** Not implicated in 3c-ii's frame-trimming logic itself —
   plausibly a container memory/stack ceiling question — but needs one more
   run to see if it reproduces before writing it off. Covers **Deep /
-  recursive stacks survive** in §7.
-- ☐ **Doc: state ADR-0019's cancelled-run-orphans-a-partial-figure-file
+  recursive stacks survive** in §7. Unchanged by this slice's fixes — still
+  open.
+- ☑ **Doc: state ADR-0019's cancelled-run-orphans-a-partial-figure-file
   behavior explicitly.** Already correct by design, just implicit: a
-  cancelled run skips `captureRichOutput` entirely
-  (`procPython.ts:933-935,958-963`), so a figure file written before
-  cancellation is neither read back nor deleted. Not a defect — write it
-  into ADR-0019 as a stated trade-off rather than leaving a future reader to
-  re-derive it from the code.
-- ☐ **Reword pass, already applied to `manual-test-pass.md` itself
+  cancelled run skips `captureRichOutput` entirely, so a figure file
+  written before cancellation is neither read back nor deleted. **Landed:**
+  a new dated amendment section in ADR-0019 states this as a confirmed,
+  deliberate trade-off rather than something a future reader has to
+  re-derive from `procPython.ts`.
+- ☑ **Reword pass, already applied to `manual-test-pass.md` itself
   (2026-08-28), confirmed correct against the code rather than left as
   found:** the **Cancel scoped to the active profile** regression check
   (§11) used a two-*window* repro that cannot exercise what it claims —
@@ -1530,8 +1579,9 @@ gaps needing one more hand-run before being written off.
   already handles correctly. `defaultProfile` (§2a) is real
   (`package.json:222-227`) and settings-only by design — reworded to say so.
   Neither needed a code change.
-- ☐ **Full re-run of `manual-test-pass.md`** once the fixes above land, to
-  confirm them and pick up anything this first pass missed.
+- ☐ **Full re-run of `manual-test-pass.md`** once the fixes above are
+  reviewed and merged, to confirm them and pick up anything this first pass
+  missed.
 
 > This is the first genuinely useful build. Install the `.vsix` locally and use
 > it for real work for a few days before starting Phase 4. Real use will

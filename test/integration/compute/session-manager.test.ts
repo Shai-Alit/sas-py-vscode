@@ -474,6 +474,50 @@ describe("compute session manager", () => {
     assert.equal(scripted.requests.length, before);
   });
 
+  it("forget() drops the cached connection, so the next connect starts fresh rather than reusing it", async () => {
+    // Added 2026-08-28 (Phase 3's 3f slice). `forget()` exists for exactly
+    // this: a caller has independently learned the session held here is
+    // dead (an idle reap, a revoked token) and this manager's own belief
+    // that `current()` still names a live one is simply wrong.
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+    });
+
+    const first = await manager.connect();
+    assert.ok(first, "the first connect produced no session");
+    assert.equal(manager.current(PROFILE_ID), first);
+
+    manager.forget(PROFILE_ID);
+
+    assert.equal(
+      manager.current(PROFILE_ID),
+      undefined,
+      "forget() left the stale connection cached",
+    );
+
+    const before = scripted.requests.filter(
+      (r) => r.link.rel === "createSession",
+    ).length;
+    const second = await manager.connect();
+
+    assert.ok(second, "the connect after forget() produced no session");
+    assert.notEqual(
+      second,
+      first,
+      "the connect after forget() reused the forgotten connection",
+    );
+    assert.equal(
+      scripted.requests.filter((r) => r.link.rel === "createSession").length,
+      before + 1,
+      "forget() should make the next connect start a real session again",
+    );
+  });
+
   it("joins a connect that is already running rather than starting a second session", async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {

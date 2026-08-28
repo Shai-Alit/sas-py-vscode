@@ -36,9 +36,14 @@ function texts(outputs: readonly RichOutput[]): readonly string[] {
 
 describe("logFilter", () => {
   describe("isNoiseLine", () => {
-    it("treats note and source as noise", () => {
+    it("treats note, source and title as noise", () => {
       assert.equal(isNoiseLine("note"), true);
       assert.equal(isNoiseLine("source"), true);
+      // The page-break banner (finding 63) — added 2026-08-28 (Phase 3's 3f
+      // slice) after the 2026-08-27 manual test pass caught it bleeding into
+      // stdout, both as a stray line in 4 of the 14 submission-corpus runs
+      // and roughly every 58 lines in a 5000-line run.
+      assert.equal(isNoiseLine("title"), true);
     });
 
     it("treats normal and error as not noise", () => {

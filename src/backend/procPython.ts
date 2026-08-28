@@ -1154,13 +1154,26 @@ export class ProcPythonBackend implements ExecutionBackend {
    * Cancellation is asked about first, the same rule `logStream.ts`'s pump
    * follows for the same reason: an aborted request fails as
    * `compute-unreachable` or similar, which is accurate for a dropped
-   * connection and wrong for a user who pressed Cancel. `transferStage` picks
-   * `transfer-failed` for the two upload calls — where ADR-0015 promises the
-   * distinction between "the upload failed" and "the run failed" is drawn from
-   * the failure value — and `backend-gone` versus `backend-failed` for
-   * everything after: `session-gone` and `compute-unreachable` are the two
-   * conditions a caller can recover from by connecting again, so those alone
-   * become `backend-gone`.
+   * connection and wrong for a user who pressed Cancel. `session-gone` and
+   * `compute-unreachable` are the two conditions a caller can recover from by
+   * connecting again, so those alone become `backend-gone` — **checked before
+   * `transferStage`**, not after. `transferStage` only decides what a
+   * *non*-recoverable failure during the upload calls is named:
+   * `transfer-failed`, where ADR-0015 promises the distinction between "the
+   * upload failed" and "the run failed" is drawn from the failure value.
+   *
+   * **Fixed 2026-08-28 (Phase 3's 3f slice), a real regression from how this
+   * read until then.** `transferStage` used to be checked first, so a session
+   * that had already died — reaped, or signed out from underneath — turned
+   * its very first request of a run (creating the fileref) into a bare
+   * `transfer-failed`, the least informative member this union has, instead
+   * of `backend-gone`'s "The SAS Viya session ended. Connect again and
+   * re-run." The 2026-08-27 manual test pass hit exactly this: the message
+   * shown for a dead session and the message shown for a real upload defect
+   * (a `428`, a malformed body) were the same sentence, with no way to tell
+   * them apart from the log either. `fileref.ts` already maps every one of
+   * its own failures through `asSessionGone`, so `session-gone` was always
+   * reachable from the transfer stage — this method just never asked.
    */
   private translate(
     result: ComputeFailure,
@@ -1172,18 +1185,16 @@ export class ProcPythonBackend implements ExecutionBackend {
     }
 
     const detail = describeComputeProblem(result.problem);
-    if (transferStage) {
-      return fail({ code: "transfer-failed", detail }, context);
-    }
     const recoverable =
       result.problem.code === "session-gone" ||
       result.problem.code === "compute-unreachable";
-    return fail(
-      recoverable
-        ? { code: "backend-gone", detail }
-        : { code: "backend-failed", detail },
-      context,
-    );
+    if (recoverable) {
+      return fail({ code: "backend-gone", detail }, context);
+    }
+    if (transferStage) {
+      return fail({ code: "transfer-failed", detail }, context);
+    }
+    return fail({ code: "backend-failed", detail }, context);
   }
 
   /**

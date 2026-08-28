@@ -61,6 +61,12 @@ function sessionsThatMustNotConnect(): RunCommandSessions {
     endSubmission: () => {
       /* no-op */
     },
+    // Added 2026-08-28 (Phase 3's 3f slice) — every guard case this fake
+    // serves refuses before a backend call is ever made, so there is never a
+    // `backend-gone` problem for `forgetIfGone` to act on here.
+    forgetProfile: () => {
+      /* no-op */
+    },
   };
 }
 

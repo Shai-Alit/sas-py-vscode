@@ -143,6 +143,12 @@ comment-only) as well as a human. The bots are advisory and never block a merge,
 but a blocking finding from either should be addressed or explicitly argued with
 rather than ignored.
 
+The Claude reviewer posts as **`github-actions[bot]`**, not as a distinct
+"Claude" account: its workflow runs on the default `GITHUB_TOKEN` rather than the
+Claude GitHub App. On a PR its comments sit alongside any from other workflow
+steps under the same bot name — the review is the one with inline code comments
+and a single summary. See `.github/workflows/claude-review.yml` for why.
+
 To skip both bots on a trivial or meta change, put `[skip-review]` in the head
 commit message or add the `no-ai-review` label.
 

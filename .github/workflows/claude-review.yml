@@ -70,6 +70,15 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # claude_code_oauth_token authenticates the *model* only; the action
+          # still needs a *GitHub* token to read the PR and post comments. With
+          # no github_token input it tries to mint one by exchanging the
+          # workflow's GitHub OIDC token, which requires `id-token: write` in
+          # this job's permissions. We deliberately don't grant that (it was
+          # dropped with the Foundry/azure-login federation in #71), so pass the
+          # default workflow token instead — contents:read + pull-requests:write
+          # above cover inline review comments and `gh pr comment`.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}

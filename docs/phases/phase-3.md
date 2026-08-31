@@ -1516,6 +1516,12 @@ gaps needing one more hand-run before being written off.
 > item's own **Review pass** note below for the full account. **Still
 > outstanding before a PR opens: the profile-switch retest only.**
 
+> **PR opened, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77).**
+> The profile-switch retest closed (see that item below), the coverage
+> ratchet raised, and 3f's punch list is fully closed except Finding 74
+> (deliberately deferred). Up for review — CI and both automated
+> reviewers to run; not yet merged.
+
 - ☑ **Fix: the `connected` context key never clears itself outside an
   explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle
   session reap, and "no clear way to reconnect" generally) all traced to one

@@ -85,6 +85,19 @@ rather than fixes: the retry loop has no backoff between attempts, and
 configured. See phase-3.md's Finding 72 punch-list item for the full
 account. **Still open before a PR opens: the profile-switch retest only.**
 
+**Profile-switch retest closed, 2026-08-31, not reproduced.** Started a
+long-running program on profile A, switched the active profile to B
+mid-run, ran a new selection — B was not yet signed in, so it prompted for
+sign-in first, then ran only the selection just invoked. Repeated with B
+already signed in from that first pass: switching alone triggered no
+sign-in and, more to the point, ran nothing on its own. Confirms the code
+read (no queue/replay/resume path exists) in both the needs-auth and the
+already-authenticated case; the original report's likely explanation
+(Run was in fact invoked a second time) stands, uncontradicted by two
+clean passes. **3f's punch list is now fully closed** except Finding 74
+(the interpreter banner/`>>>` markers), which is deliberately deferred to
+a later slice, not a 3f blocker. **Nothing left before a PR opens.**
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -170,7 +183,7 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) implemented + both review passes done on `phase-3f-manual-test-regressions`, not yet merged, no PR opened; only the profile-switch retest remains** | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) fully implemented and closed on `phase-3f-manual-test-regressions` (both review passes, coverage ratchet, and the profile-switch retest all done); not yet merged, no PR opened — Finding 74 deliberately deferred, not a blocker** | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started — blocked on Phase 3's 3f | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

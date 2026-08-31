@@ -1610,14 +1610,25 @@ gaps needing one more hand-run before being written off.
   independent connect flows concurrently and was judged too easy to get
   subtly wrong without being able to run it this session, so it is called
   out here rather than guessed at.
-- ☐ **Retest, narrated click by click: "ran a long program on profile A,
+- ☑ **Retest, narrated click by click: "ran a long program on profile A,
   switched to profile B and signed in, B ran the same program
   unprompted."** No queue/replay/resume code path exists anywhere in
   `src/run` or `src/compute` — a program is captured synchronously at
   invocation (`buildProgram`, before any `await`), and backends are cached
   per profile. Most likely explanation is Run was in fact invoked again;
-  needs one clean repro before being closed either way. Unchanged by this
-  slice's fixes — still open.
+  needs one clean repro before being closed either way.
+  **Retested 2026-08-31, not reproduced — closed.** Started a long-running
+  program on profile A; switched the active profile to B mid-run; ran a
+  new selection. B was not yet signed in, so it prompted for sign-in first
+  — signing in, then the selection just invoked ran, not anything left
+  over from A. **Repeated with B already signed in from the first pass:**
+  switching to B alone triggered no sign-in prompt and, more to the
+  point, ran nothing on its own — a selection had to be explicitly invoked
+  again before anything executed. Confirms the code read: nothing runs
+  from a profile switch or a sign-in by itself, in either the
+  needs-auth or the already-authenticated case. The original report's
+  most likely explanation (Run was in fact invoked a second time) stands,
+  uncontradicted by two clean passes.
 - ☑ **Retest: the deep-recursion script that crashed the Python subprocess**
   ("terminated unexpectedly… trying to use more memory than the container
   is configured to allow") **immediately after its own 5 unit tests had

@@ -1516,11 +1516,16 @@ gaps needing one more hand-run before being written off.
 > item's own **Review pass** note below for the full account. **Still
 > outstanding before a PR opens: the profile-switch retest only.**
 
-> **PR opened, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77).**
-> The profile-switch retest closed (see that item below), the coverage
-> ratchet raised, and 3f's punch list is fully closed except Finding 74
-> (deliberately deferred). Up for review — CI and both automated
-> reviewers to run; not yet merged.
+> **Opened, then merged, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)**,
+> squashed as `b21317b` on `main` — confirmed via a local fast-forward
+> pull, not just report. The profile-switch retest closed (see that item
+> below), the coverage ratchet raised, and 3f's punch list is fully closed
+> except Finding 74 (deliberately deferred to Phase 4). **3f is done. Phase 3
+> (3a–3f) is done.** Between-phase housekeeping (ADRs, punch-list
+> completeness, RUNBOOK/PRODUCTION_PLAN currency, STATUS.md's phase
+> pointer, scratch-file reconciliation, manual-test completeness, and
+> Dependabot advisories) has not yet been run — that's this project's own
+> standing gate before Phase 4 starts.
 
 - ☑ **Fix: the `connected` context key never clears itself outside an
   explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle

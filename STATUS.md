@@ -98,7 +98,7 @@ clean passes. **3f's punch list is now fully closed** except Finding 74
 (the interpreter banner/`>>>` markers), which is deliberately deferred to
 a later slice, not a 3f blocker. **Nothing left before a PR opens.**
 
-**PR opened, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77).** Up for review — CI and both automated reviewers to run; not yet merged.
+**PR opened, then merged, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)**, squashed as `b21317b` on `main`. **Phase 3 (3a–3f) is now fully done.** Confirmed independently — local `main` fast-forwarded to `b21317b`, matching `origin/main`, working tree clean. **Phase 4 (Diagnostics) is no longer blocked** and can start next session. This PR's own merge is the trigger for this project's own between-phase-housekeeping checklist (ADRs, punch-list completeness, RUNBOOK/PRODUCTION_PLAN currency, this file's phase pointer, any scratch-file reconciliation, manual-test completeness, and Dependabot advisories) — not yet run; see chat for the proposal on scope and timing. The local `phase-3f-manual-test-regressions` branch is stale now (merged) — safe to `git branch -D` and `git fetch --prune` once ready.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -185,8 +185,8 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) fully implemented and closed, up for review as [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77), not yet merged — Finding 74 deliberately deferred, not a blocker** | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | not started — blocked on Phase 3's 3f | `docs/phases/phase-4.md` |
+| 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
+| 4 — Diagnostics | not started — **unblocked**, between-phase housekeeping not yet run | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

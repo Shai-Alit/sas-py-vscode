@@ -474,6 +474,58 @@ describe("compute session manager", () => {
     assert.equal(scripted.requests.length, before);
   });
 
+  it("forget() drops the cached connection, so the next connect starts fresh rather than reusing it", async () => {
+    // Added 2026-08-28 (Phase 3's 3f slice). `forget()` exists for exactly
+    // this: a caller has independently learned the session held here is
+    // dead (an idle reap, a revoked token) and this manager's own belief
+    // that `current()` still names a live one is simply wrong.
+    //
+    // `forget()` drops only the `live` entry, not the persisted binding —
+    // by design, per its own doc comment: the next `connect()` reattaches
+    // to the stored id, gets the `404` a genuinely dead session gives
+    // (`self: gone()`), and self-heals into a fresh `createSession`. That
+    // `404` is the precondition `forget()` is called under in the first
+    // place, so scripting it here is scripting the real path.
+    const scripted = deployment({
+      self: gone(),
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+    });
+    const { manager } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+    });
+
+    const first = await manager.connect();
+    assert.ok(first, "the first connect produced no session");
+    assert.equal(manager.current(PROFILE_ID), first);
+
+    manager.forget(PROFILE_ID);
+
+    assert.equal(
+      manager.current(PROFILE_ID),
+      undefined,
+      "forget() left the stale connection cached",
+    );
+
+    const before = scripted.requests.filter(
+      (r) => r.link.rel === "createSession",
+    ).length;
+    const second = await manager.connect();
+
+    assert.ok(second, "the connect after forget() produced no session");
+    assert.notEqual(
+      second,
+      first,
+      "the connect after forget() reused the forgotten connection",
+    );
+    assert.equal(
+      scripted.requests.filter((r) => r.link.rel === "createSession").length,
+      before + 1,
+      "forget() should make the next connect start a real session again",
+    );
+  });
+
   it("joins a connect that is already running rather than starting a second session", async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {
@@ -1059,6 +1111,51 @@ describe("compute session manager", () => {
 
     assert.equal(scripted.requests.length, 0);
     assert.equal(shown.infos.length, 1);
+  });
+
+  it("stays silent about nothing to disconnect when asked to be quiet", async () => {
+    // Added 2026-08-28 (Phase 3's 3f slice). Signing out reuses this method
+    // to end whatever session the window holds, but a user who ran *Sign
+    // Out* — not *Disconnect* — and never opened a session should get one
+    // confirmation toast, not a second one about a session that was already
+    // absent. `quiet` suppresses only that information message.
+    const scripted = deployment({});
+    const { manager, shown } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+    });
+
+    await manager.disconnect({ quiet: true });
+
+    assert.equal(scripted.requests.length, 0);
+    assert.deepEqual(shown.infos, []);
+  });
+
+  it("still ends a held session when asked to be quiet", async () => {
+    // `quiet` is not `skip`: a session the window actually holds is still
+    // torn down on the server, the binding still cleared. Only the
+    // "nothing to disconnect" message is silenced.
+    const state = memoryMemento();
+    const scripted = deployment({
+      contexts: ok(contextsBody()),
+      createSession: ok(sessionBody(), 201),
+      delete: {
+        ok: true,
+        value: { status: 204, notModified: false, text: "", body: undefined },
+      },
+    });
+    const { manager, bindings } = harness({
+      profiles: profileSource(profile({ context: CONTEXT })),
+      client: scripted.client,
+      state,
+    });
+    await manager.connect();
+
+    await manager.disconnect({ quiet: true });
+
+    assert.ok(scripted.hrefs.includes(SESSION_PATH));
+    assert.equal(bindings.read(PROFILE_ID), undefined);
+    assert.equal(manager.current(PROFILE_ID), undefined);
   });
 
   it("waits for a connect in flight before deciding there is nothing to end", async () => {

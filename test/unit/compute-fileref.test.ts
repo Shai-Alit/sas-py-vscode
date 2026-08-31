@@ -12,9 +12,11 @@ import {
 import {
   ASSIGN_REL,
   createFileref,
+  FILEREF_LIST_REL,
   FILEREF_SELF_REL,
   FILEREF_UPLOAD_REL,
   type Fileref,
+  listFilerefNames,
   writeFilerefContent,
 } from "../../src/compute/fileref";
 import { type Link } from "../../src/compute/links";
@@ -42,6 +44,12 @@ function sessionLinks(): readonly Link[] {
       href: `${SESSION_PATH}/filerefs`,
       type: "application/vnd.sas.compute.fileref.request",
       responseType: "application/vnd.sas.compute.fileref",
+    },
+    {
+      method: "GET",
+      rel: FILEREF_LIST_REL,
+      href: `${SESSION_PATH}/filerefs`,
+      type: "application/vnd.sas.collection",
     },
   ];
 }
@@ -338,6 +346,67 @@ describe("writeFilerefContent", () => {
     ]);
 
     const result = await writeFilerefContent(scripted.client, fileref(), bytes);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "session-gone");
+  });
+});
+
+describe("listFilerefNames", () => {
+  it("returns the ids, following the session's files relation", async () => {
+    const scripted = fake([
+      ok({
+        items: [
+          { id: "PY000001" },
+          { id: "PY000002" },
+          { id: "somethingElse" },
+        ],
+      }),
+    ]);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, ["PY000001", "PY000002", "somethingElse"]);
+    assert.equal(scripted.requests.length, 1);
+    assert.equal(scripted.requests[0]?.link.rel, FILEREF_LIST_REL);
+  });
+
+  it("treats a body with no items array as an empty list, not a failure", async () => {
+    const scripted = fake([ok({ count: 0 })]);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, []);
+  });
+
+  it("skips items that carry no string id", async () => {
+    const scripted = fake([
+      ok({ items: [{ id: "PY000001" }, { id: 7 }, {}, "not-an-object"] }),
+    ]);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, ["PY000001"]);
+  });
+
+  it("reports a session that carries no files relation", async () => {
+    const scripted = fake([]);
+
+    const result = await listFilerefNames(scripted.client, session([]));
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "link-missing");
+    assert.match(result.reason, /compute session/);
+    assert.equal(scripted.requests.length, 0);
+  });
+
+  it("propagates a 404 as the session being gone", async () => {
+    const scripted = fake([rejected(404)]);
+
+    const result = await listFilerefNames(scripted.client, session());
 
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "session-gone");

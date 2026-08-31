@@ -67,7 +67,23 @@ export type RunCommandProfiles = Pick<
 export type RunCommandSessions = Pick<
   ComputeSessionManager,
   "connect" | "isBusy" | "startSubmission" | "endSubmission"
->;
+> & {
+  /**
+   * Drops this window's cached connection for a profile whose session a
+   * run, reset or probe has just discovered is actually gone
+   * (`BackendProblem` `backend-gone`), and re-syncs `pythonOnViya.connected`
+   * — the same context key `src/compute/commands.ts`'s `connect`/
+   * `disconnect` keep honest.
+   *
+   * Added 2026-08-28 (Phase 3's 3f slice), threaded from
+   * `registerComputeCommands`'s own `forgetProfile` in `extension.ts`, so
+   * the palette's Connect command comes back immediately once a dead
+   * session is discovered, rather than staying hidden until the user finds
+   * Disconnect first — the dead end the 2026-08-27 manual test pass hit
+   * repeatedly.
+   */
+  forgetProfile: (profileId: string) => void;
+};
 
 /** What this module needs from `EnvironmentStore` — 3e's per-profile,
  * explicitly-refreshed cache of a stage-2 probe. */
@@ -341,6 +357,17 @@ export function createRunCommandHandlers(
     report(localiseBackendProblem(problem));
   };
 
+  /**
+   * When a call discovers the session itself is gone (`procPython.ts`'s
+   * `translate()`, `backend-gone`), tells `src/compute` to drop its own
+   * cached connection and re-sync `pythonOnViya.connected`. Added 2026-08-28
+   * (Phase 3's 3f slice) — see `RunCommandSessions.forgetProfile`'s own doc
+   * comment for why this exists.
+   */
+  const forgetIfGone = (problem: BackendProblem, profileId: string): void => {
+    if (problem.code === "backend-gone") sessions.forgetProfile(profileId);
+  };
+
   /** Builds a {@link Program} from the whole document, or from a non-empty
    * selection. `undefined` for an empty selection — there is nothing to run.
    *
@@ -432,6 +459,14 @@ export function createRunCommandHandlers(
         freshNamespace: whole,
       });
       if (!executed.ok) {
+        // Added 2026-08-28 (Phase 3's 3f slice): this call used to report the
+        // problem without ever logging it, so the "See the Python on Viya
+        // log for details" every one of these messages ends with was false
+        // — the 2026-08-27 manual test pass hit this on almost every silent
+        // failure it found. `executed.reason` is the same composed sentence
+        // `showEnvironmentImpl`'s own probe-failure path already logs below.
+        log.warn(executed.reason);
+        forgetIfGone(executed.problem, connection.profileId);
         reportProblem(executed.problem);
         return;
       }
@@ -465,6 +500,9 @@ export function createRunCommandHandlers(
 
       const settled = await handle.done;
       if (!settled.ok) {
+        // Same fix as `executed`'s failure above, and the same reason.
+        log.warn(settled.reason);
+        forgetIfGone(settled.problem, connection.profileId);
         outputChannel.writeFailure(settled.problem);
         resultPanel.writeFailure(settled.problem);
       } else {
@@ -542,6 +580,10 @@ export function createRunCommandHandlers(
         async () => await backend.reset(),
       );
       if (!result.ok) {
+        // Same fix as `runNow`'s two failure sites above, and the same
+        // reason (Phase 3's 3f slice, 2026-08-28).
+        log.warn(result.reason);
+        forgetIfGone(result.problem, connection.profileId);
         outputChannel.writeFailure(result.problem);
       } else {
         outputChannel.writeResetSucceeded();
@@ -629,6 +671,7 @@ export function createRunCommandHandlers(
       // deployment") lives on `probed.reason`, which nothing else on this path
       // writes anywhere. Log it so that instruction is true.
       log.warn(probed.reason);
+      forgetIfGone(probed.problem, connection.profileId);
       reportProblem(probed.problem);
       return;
     }

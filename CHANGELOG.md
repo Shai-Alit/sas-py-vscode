@@ -1052,6 +1052,49 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- Three regressions found by the first full run of the manual test pass
+  (2026-08-27), all closed in the same slice (Phase 3's 3f). **Signing out,
+  an idle session reap, or a window reload could all leave the `Connect to
+  SAS Viya` command hidden indefinitely** — `pythonOnViya.connected` was
+  computed from an in-memory cache that only ever cleared on an explicit
+  `Disconnect`, so a session that died on its own terms (or a sign-out that
+  never told the cache) left the palette showing `Disconnect` for a
+  connection that no longer worked, with no way back to `Connect` short of
+  running `Disconnect` first. Signing out now ends the session — before the
+  credential is dropped, so the teardown request still has a token — and
+  re-syncs the context key the same way `Connect`/`Disconnect` already do,
+  whether the sign-out came from the palette's `Sign Out` or from VS Code's
+  Accounts menu; and a run/reset/probe that discovers its session is
+  actually gone now tells the session manager to drop it immediately.
+  **Most failures at the run/reset
+  seam were reported with nothing written to the log**, despite every one of
+  their messages ending "See the Python on Viya log for details" — three
+  call sites in `runFile`/`runSelection`/`Reset Python State` never logged
+  the underlying detail before showing that sentence. Separately, and worse:
+  a session that had already died reported its very first request of a run
+  (uploading the program) as a generic transfer failure rather than "The SAS
+  Viya session ended. Connect again and re-run.", because that
+  classification was never checked during the upload stage. Both fixed
+  together, so a dead session is now both loggable and correctly named.
+  **The page-break banner ("The SAS System …") could bleed into a run's
+  output** — roughly once every 58 lines in a large run, and intermittently
+  in ordinary ones — because the log filter never excluded the banner's own
+  line type, and the session never asked the deployment to suppress page
+  breaks in the first place. Both are fixed now.
+- **The first program you run after reloading the window no longer fails
+  with a stale-fileref collision.** A reload builds a fresh backend, whose
+  per-run fileref counter (`PY000001`, `PY000002`, …) restarts at zero,
+  against a compute session it re-attaches to
+  ([ADR-0012](docs/adr/0012-compute-session-lifetime-and-storage.md)) that
+  still holds the names the pre-reload backend assigned — so `assign`
+  answered HTTP 400 ("the fileref … already exists") on every submission
+  for the 60–90 seconds it took repeated attempts to walk the counter past
+  them (Finding 72, surfaced by the 2026-08-30 re-run of the manual test
+  pass against the 3f build). The backend now reads the session's fileref
+  collection once on the first run after connecting and starts the counter
+  past whatever is already there; a bounded retry under the next name
+  covers the remaining case of two windows sharing one session and
+  counting independently.
 - Sign-in against a default Viya 4 deployment now works at all. The built-in
   `vscode` OAuth client registers exactly one redirect value —
   `urn:ietf:wg:oauth:2.0:oob`, "show the user a code" — and no custom-scheme URI,

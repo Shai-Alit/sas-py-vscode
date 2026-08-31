@@ -21,10 +21,34 @@ here, and the fix is whichever it is.
 
 **Last full pass: 2026-08-27**, against live `verde`/`Innov` profiles with the
 packaged `.vsix` — the first full run since Phase 3 closed. Findings triaged
-2026-08-28; the checkboxes below reflect that pass. Three confirmed
-regressions it found are tracked as Phase 3's **3f** slice in
-`docs/phases/phase-3.md` rather than repeated here — this page only records
-what to re-check and how, not the fix itself.
+2026-08-28; three confirmed regressions it found are tracked as Phase 3's
+**3f** slice in `docs/phases/phase-3.md` rather than repeated here — this
+page only records what to re-check and how, not the fix itself.
+
+**Second pass completed 2026-08-30**, against the same `verde`/`Innov`
+profiles with a `.vsix` built from `phase-3f-manual-test-regressions`
+(still unmerged) — the checkboxes below reflect it. Confirms that slice's
+fixes for Cold-start Connect, Idle reap, Sign Out (both places it's
+checked), Failures are diagnosable, Large output stays clean, and the
+reworded Cancel/`defaultProfile`/Shared-sessions items. It also surfaced
+three new findings — not carried over from the 2026-08-27 triage, and not
+covered by this slice's fixes as they then stood: Reload reconnects now
+fails a different way (§4), the deep-recursion container crash reproduces
+on retry (§7), and Oversize output kills the session instead of skipping
+cleanly (§8) — annotated inline below and added to Phase 3's **3f** slice
+(Findings 72–73 in `docs/phases/phase-3.md`).
+
+**Follow-up, 2026-08-31.** Findings 72 (§4), 73 (§8) and the
+deep-recursion crash (§7) are all resolved and **verified live** against a
+`.vsix` from `phase-3f-manual-test-regressions`: `print(k)` after a reload
+returns on the first attempt; the reworded oversize script returns the
+"could not retrieve rich output file …" note and the session survives;
+and a minimal recursion gives a clean `RecursionError` with the session
+unharmed — the earlier §7 crash was `test_deep_stack_trim.py`'s own
+`unittest` harness, not `PROC PYTHON`. One **new** open item came out of
+the §7 run: a failing run's output stream carries the Python interpreter
+banner and `>>>` prompt markers (§6 says it should not) — split into its
+own item in Phase 3's **3f** slice for later.
 
 ## How to use this
 
@@ -87,7 +111,7 @@ The profile _model_ is validated whether you use the commands or hand-edit
   endpoint in `settings.json`, then break another (drop the scheme).
   **Expect:** the valid edit takes effect; the broken one is ignored with a log
   line naming which and why, not a whole-setting failure.
-- [ ] **`defaultProfile` vs Switch** — `pythonOnViya.defaultProfile` is a
+- [x] **`defaultProfile` vs Switch** — `pythonOnViya.defaultProfile` is a
   **Settings UI / `settings.json` value, not a command** — it will never appear
   in the Command Palette by design (confirmed against `package.json`'s
   `contributes.configuration`; the 2026-08-27 pass looked for it in the
@@ -117,7 +141,7 @@ The profile _model_ is validated whether you use the commands or hand-edit
   **Expect:** the built-in `vscode` client on Viya 4 2022.11+. On 3.5 / older 4
   you are told, in those words, to supply an id and secret. _(Viya 3.5 is
   unverified — treat as untested.)_
-- [ ] **Sign out** — run **Sign Out**, then trigger a run.
+- [x] **Sign out** — run **Sign Out**, then trigger a run.
   **Expect:** you are taken back through authentication. **Failed, 2026-08-27**
   — clicking **Run File** after sign-out silently fails instead ("The program
   could not be sent to SAS Viya…", nothing in the log, no re-auth prompt).
@@ -133,7 +157,7 @@ The profile _model_ is validated whether you use the commands or hand-edit
 One session per folder, per profile ([ADR-0012](../adr/0012-compute-session-lifetime-and-storage.md)).
 Reload reconnects; it does not restart.
 
-- [ ] **(live) Cold-start Connect** — signed out, run **Connect to SAS Viya**.
+- [x] **(live) Cold-start Connect** — signed out, run **Connect to SAS Viya**.
   **Expect:** it signs you in first, shows a progress notification while the
   session opens, then an info message naming the profile. **Failed,
   2026-08-27** — while signed out, **Connect to SAS Viya** does not appear in
@@ -146,16 +170,28 @@ Reload reconnects; it does not restart.
   **Expect:** dismiss → connect cancels, nothing written. After a session
   actually starts, `context` is written back into the profile in
   `settings.json`.
-- [ ] **(live) Reload reconnects with state intact** — run selection `k = 99`
+- [x] **(live) Reload reconnects with state intact** — run selection `k = 99`
   (see §6). Reload the window. Run selection `print(k)`.
   **Expect:** `99` — you re-attached to the same interpreter. **Failed,
   2026-08-27** — a window reload lost the Viya connection and left **Connect**
   missing from the palette (same underlying cause as Cold-start Connect and
-  Idle reap below — see Phase 3's **3f** slice).
+  Idle reap below — see Phase 3's **3f** slice). **Retested 2026-08-30
+  against the 3f fix build: Connect no longer goes missing, but the first
+  submission after reload still failed** — a fileref collision ("`py000001`
+  already exists", error 5402), reproduced one fileref number later after
+  **Reset Python State**, clearing on its own after roughly 60–90 seconds
+  (Finding 72). **Root-caused and fixed 2026-08-31** on
+  `phase-3f-manual-test-regressions`: the backend now seeds its per-run
+  fileref counter from the session's own `filerefs` collection on the
+  first run after reconnecting, so it never re-issues a name the
+  reattached session already holds, with a bounded assign-retry as a
+  backstop. **Re-verified live 2026-08-31** against a `.vsix` from this
+  branch: `k = 99`, reload, `print(k)` returns `99` on the first attempt
+  with no delay.
 - [x] **(live) Disconnect ends it now** — run **Disconnect from SAS Viya**, then
   run selection `print(k)` again.
   **Expect:** a fresh interpreter opens and `k` is gone (`NameError`).
-- [ ] **(live) Shared vs independent sessions** — a plain **File → Open
+- [x] **(live) Shared vs independent sessions** — a plain **File → Open
   Folder** on an already-open folder just refocuses the existing window — VS
   Code's own behavior, not this extension's, and it is *not* a second window.
   To actually get two independent windows on the same folder, open a terminal
@@ -167,13 +203,17 @@ Reload reconnects; it does not restart.
   Open Folder and was correctly kicked back to the original window — not a
   defect, but not a real test of this item either. Re-run with `code -n`
   before ticking this box.)*
-- [ ] **(live) (slow) Idle reap** — connect, leave idle past the deployment
+- [x] **(live) (slow) Idle reap** — connect, leave idle past the deployment
   timeout (15 min default).
   **Expect:** the next connect silently opens a fresh interpreter — the stale
   session id is a hint, not a fact, and you are not prompted. **Failed,
   2026-08-27** — same as Cold-start Connect and Reload above: **Connect**
   doesn't reappear in the palette after the reap is detected; only running
   **Disconnect** first brings it back. Tracked in Phase 3's **3f** slice.
+  **Retested 2026-08-30 against the 3f fix build: passes** — the next
+  connect after a reap silently opens a fresh interpreter, and **Connect**
+  never goes missing from the palette. Confirms the connected-key fix for
+  this symptom; unlike Reload (above), no new defect turned up here.
 - [x] **(live) Error surfaces read sensibly** — reach what you can: Viya target
   with no active profile; a context you can see but cannot launch; Cancel
   mid-connect.
@@ -260,7 +300,13 @@ unconfigured workspace is Local and contributes nothing to the editor
 - [x] **(live) Failure is detected, not swallowed** — run a file whose top level
   raises (`raise RuntimeError("nope")`).
   **Expect:** reported as failed, not “Finished”; the error text is in the log.
-- [ ] **(live) Large output stays clean** — run `for i in range(5000): print(i)`.
+  **Open, 2026-08-31:** the §7 recursion run showed a *failing* run's
+  output stream also carrying the Python interpreter banner
+  (`Python 3.x … Type "help" …`) and `>>>` prompt markers — which the
+  "Hello world streams clean" item above says should never appear. Only
+  observed on the error path so far (successful runs stay clean). Split
+  out as its own item in Phase 3's **3f** slice.
+- [x] **(live) Large output stays clean** — run `for i in range(5000): print(i)`.
   **Expect:** all 5000 lines, in order, no pagination header bleeding into the
   stream. **Failed, 2026-08-27** — the "The SAS System …" page-break banner
   bled into the stream roughly every 58 lines. Root cause: `isNoiseLine`
@@ -301,17 +347,43 @@ unconfigured workspace is Local and contributes nothing to the editor
 
   **Expect:** a traceback showing `outer` then `inner` and `ValueError: boom`.
   The harness's leading `<stdin>` wrapper frames at the top are gone.
-- [ ] **(live) Deep / recursive stacks survive** — a function that recurses to
-  `RecursionError`.
-  **Expect:** the repeated frames are all there — only the _leading_ contiguous
-  run of harness frames is removed. **2026-08-27: the frame-trimming itself
-  passed** (a 5-case unit-test script run against a real recursion, all 5
-  green), but the Python subprocess then crashed ("terminated unexpectedly …
-  trying to use more memory than the container is configured to allow")
-  immediately after. Not implicated in the trimming logic — plausibly a
-  container memory/stack ceiling, not a code defect — but needs one retry to
-  see if it reproduces before writing it off. Tracked in Phase 3's **3f**
-  slice.
+- [x] **(live) Deep / recursive stacks survive** — run a bare recursion, no
+  test framework:
+
+  ```python
+  def recurse(n):
+      return recurse(n + 1)
+
+  recurse(0)
+  ```
+
+  **Expect:** a `RecursionError` traceback with the repeated `recurse`
+  frames all present — only the _leading_ contiguous run of harness frames
+  is removed — and the session still alive for the next submission.
+  **Passed 2026-08-31** against a `.vsix` from
+  `phase-3f-manual-test-regressions`: a clean
+  `RecursionError: maximum recursion depth exceeded`, "Finished with an
+  error.", session unharmed. The stream showed the `<stdin>` wrapper
+  frame, then `<string>` line 4 (`recurse(0)`), then ~998 `recurse`
+  frames collapsed by Python's own `[Previous line repeated 995 more
+  times]` — repeats preserved, nothing over-trimmed. (Confirm the leading
+  `<stdin>` frame is dropped in the **Result panel**'s structured
+  traceback, which is where 3c-ii does that — the output-channel stream
+  keeps it.)
+
+  *History.* Both earlier runs used a 5-case `unittest` script
+  (`test_deep_stack_trim.py`). **2026-08-27 and again 2026-08-30, same
+  script:** all 5 frame-trimming assertions passed, then the Python
+  subprocess crashed ("trying to use more memory than the container is
+  configured to allow") immediately after. That crash is **not** recursion
+  depth — the script caps `sys.setrecursionlimit(200)` — and did not
+  reproduce with the minimal script above, so it was the test harness
+  itself (`unittest.main()` calling `sys.exit()` inside `PROC PYTHON`,
+  five `setUp` calls re-running the capture), not this item's behaviour.
+  Resolved. **Separate observation from this run:** the failing run's
+  stream also carried the Python interpreter banner and `>>>` prompt
+  markers, which §6 says should never appear — split out as its own
+  open item in Phase 3's **3f** slice, not a blocker for this box.
 - [x] **(live) (known gap) `ModuleNotFoundError` shows as an ordinary
   traceback** — run `import polars` (or any absent package).
   **Expect:** a plain `ModuleNotFoundError` traceback. It is not yet
@@ -375,8 +447,9 @@ your script must actually write a `.png` or `.html` file; there is no implicit
   into the editor so it is unfocused; run another matplotlib script.
   **Expect:** the panel comes back to the front — not only for the run that
   first created it. _(Regression: this was a fixed bug.)_
-- [ ] **(live) Oversize output is skipped, not fatal** — write a `.png` bigger
-  than 10 MiB, e.g.:
+- [x] **(live) Oversize output is skipped, not fatal** — write a `.png` bigger
+  than 10 MiB without asking the session for gigabytes of render buffer to
+  do it:
 
   ```python
   import matplotlib
@@ -384,15 +457,41 @@ your script must actually write a `.png` or `.html` file; there is no implicit
   import matplotlib.pyplot as plt
   import numpy as np
 
-  fig, ax = plt.subplots(figsize=(40, 40))
-  ax.imshow(np.random.rand(4000, 4000, 3))
-  fig.savefig("oversize.png", dpi=300)
+  fig, ax = plt.subplots(figsize=(20, 20))
+  ax.imshow(np.random.rand(3000, 3000))
+  fig.savefig("oversize.png", dpi=200)
   print("wrote an oversize figure")
   ```
 
-  **Expect:** a “could not retrieve rich output file …” note instead of a
-  failed run. *(Not run 2026-08-27 — the previous wording gave no way to
-  produce a file this large; use the script above.)*
+  **Expect:** the run finishes and its stdout is shown; a “could not
+  retrieve rich output file …” note appears in place of the figure,
+  naming the file and the size cap; the session stays alive and the next
+  selection runs normally. **Passed 2026-08-31** against a `.vsix` from
+  `phase-3f-manual-test-regressions`: the run returned
+  `[could not retrieve rich output file "oversize.png": it is larger than
+  the 10485760-byte capture limit]` in place of the figure, and a
+  following `import matplotlib` selection ran normally on the same
+  session — the skip path (ADR-0019 point 8) works as designed once the
+  script does not OOM the container first.
+
+  *History.* The 2026-08-27 pass skipped this item — the wording then gave
+  no way to make a file this large. The 2026-08-30 pass ran it against a
+  **different** script (`figsize=(40, 40)`,
+  `imshow(np.random.rand(4000, 4000, 3))`, `dpi=300`) and it did not skip:
+  the run failed with an HTTP 500 on the job-log poll and the compute
+  session was gone afterward (Finding 73). Root cause is that script, not
+  the cap — it allocates ~384 MB for the array and renders a ~1.7 GB
+  canvas, so the container is out of memory inside `savefig` before any
+  file exists to skip. ADR-0019's cap guards the *transfer* of a written
+  file, never a script's own memory use during generation — see that
+  ADR's 2026-08-30 amendment. The script above is sized to exercise the
+  skip path the cap actually owns.
+
+  *Separate known limitation, tracked in Phase 3's **3f** slice:* a script
+  whose figure generation exhausts the session container kills the
+  session mid-run, surfacing as a job-log 500 then a session 404. That is
+  an out-of-memory kill like any other, outside this item's scope; a
+  friendlier message for it is an open question, not a decided fix.
 - [x] **(live) Cancelled run captures nothing** — a script that writes a figure
   then `time.sleep(60)`; cancel it.
   **Expect:** no image captured — the after-snapshot is skipped on a cancelled
@@ -440,7 +539,7 @@ global state, refreshed explicitly.
   a run is in flight.
   **Expect:** refused, as a second run would be — there is just nothing to
   cancel it with.
-- [ ] **(live) A big list renders whole** — on a stock Viya 4 the list can run
+- [x] **(live) A big list renders whole** — on a stock Viya 4 the list can run
   to a few hundred entries (~250+). To actually see this: run **Show
   Environment** against a profile with `numpy`/`pandas`/`matplotlib`/`scipy`
   installed (each pulls in a long dependency chain) — `verde` measured 259
@@ -467,13 +566,13 @@ global state, refreshed explicitly.
   sign-out/idle-reap/reload edge cases where Connect gets stuck hidden even
   though nothing is actually connected — see §3/§4 above and Phase 3's **3f**
   slice.
-- [ ] **(live) Sign out while connected** — with a live session, run **Sign
+- [x] **(live) Sign out while connected** — with a live session, run **Sign
   Out**.
   **Expect:** the session is dropped; the next run re-authenticates cleanly.
   **Failed, 2026-08-27** — same defect as §3's Sign Out item: re-authentication
   never happens automatically. Tracked in Phase 3's **3f** slice; don't
   double-count against §3.
-- [ ] **Failures are diagnosable** — on any error path, open **Show Log**.
+- [x] **Failures are diagnosable** — on any error path, open **Show Log**.
   **Expect:** it names the request, the deployment's own wording, a status code,
   and a correlation id. **Failed, 2026-08-27** — Python-level errors (a
   traceback) are diagnosable, but most *extension*-level failures ("could not
@@ -491,7 +590,7 @@ are set up.
   **Expect:** output appears. A run that reports success but shows nothing has
   regressed the `infile=` step-close fix (finding 70): the job can report
   `completed` with nothing flushed unless the step is closed.
-- [ ] **(live) Cancel is scoped to what it actually started, not to "the active
+- [x] **(live) Cancel is scoped to what it actually started, not to "the active
   profile"** — a *separate VS Code window* cannot reach another window's
   in-flight run at all (each window is its own extension host with no shared
   `currentRun`/`currentReset` state), so that repro can never exercise this

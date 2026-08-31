@@ -67,6 +67,27 @@ function session(): ComputeSession {
   };
 }
 
+/** {@link session} plus the `files` relation the fileref-collection `GET`
+ * follows — a session shaped like one an earlier extension host already used,
+ * so `seedFilerefCounter` has something to read (Finding 72). The plain
+ * {@link session} deliberately omits it, so every other test skips seeding
+ * with no extra scripted reply. */
+function sessionWithFilerefList(): ComputeSession {
+  const base = session();
+  return {
+    ...base,
+    links: [
+      ...base.links,
+      {
+        method: "GET",
+        rel: "files",
+        href: `${SESSION_PATH}/filerefs`,
+        type: "application/vnd.sas.collection",
+      },
+    ],
+  };
+}
+
 function dialect(): Dialect {
   return {
     id: "viya4",
@@ -170,6 +191,26 @@ interface RouterOptions {
   syserrortext?: string;
   logLines?: readonly unknown[];
   assignReply?: Reply;
+  /** The first N `assign` requests answer HTTP 400 "already exists" — the
+   * shape Finding 72's reattached session produces — and the rest behave
+   * normally. Models `seedFilerefCounter` having under-counted (or been
+   * skipped) so `createRunFileref`'s bounded retry walks past a few held
+   * names. */
+  assignConflicts?: number;
+  /** The `PYnnnnnn` (and other) fileref names the session's `files`
+   * collection reports, for `seedFilerefCounter`. Only consulted when the
+   * session actually carries a `files` link — see
+   * {@link sessionWithFilerefList}. */
+  filerefList?: readonly string[];
+  /** Overrides the `files` collection `GET` outright — a failed listing,
+   * exercising `seedFilerefCounter`'s best-effort "leave the counter alone"
+   * arm. */
+  filerefListReply?: Reply;
+  /** The first N `files` collection `GET`s fail (HTTP 500); later ones behave
+   * normally, returning {@link RouterOptions.filerefList}. Models a transient
+   * listing failure that must not disable seeding for the whole connection —
+   * the next run has to retry the `GET`. */
+  filerefListFailFirst?: number;
   selfReply?: Reply;
   uploadReply?: Reply;
   executeReply?: Reply;
@@ -271,6 +312,8 @@ function router(opts: RouterOptions): {
 } {
   let filerefName = "unknown";
   let logCalls = 0;
+  let filesCalls = 0;
+  let assignCalls = 0;
   let executeCalls = 0;
   let sysccCalls = 0;
   let syserrortextCalls = 0;
@@ -283,10 +326,40 @@ function router(opts: RouterOptions): {
     send: async (request) => {
       requests.push(request);
       switch (request.link.rel) {
+        case "files": {
+          if (opts.filerefListReply !== undefined) {
+            return opts.filerefListReply;
+          }
+          filesCalls += 1;
+          if (
+            opts.filerefListFailFirst !== undefined &&
+            filesCalls <= opts.filerefListFailFirst
+          ) {
+            return rejected("compute-rejected", "500 Internal Server Error");
+          }
+          return ok(
+            {
+              count: opts.filerefList?.length ?? 0,
+              items: (opts.filerefList ?? []).map((id) => ({ id })),
+            },
+            { contentType: "application/vnd.sas.collection+json" },
+          );
+        }
         case "assign": {
           if (opts.assignGate !== undefined) return await opts.assignGate;
           if (opts.assignReply !== undefined) return opts.assignReply;
+          assignCalls += 1;
           const body = request.body as { name: string };
+          if (
+            opts.assignConflicts !== undefined &&
+            assignCalls <= opts.assignConflicts
+          ) {
+            return rejected(
+              "compute-rejected",
+              `The fileref "${body.name}" already exists.`,
+              400,
+            );
+          }
           filerefName = body.name;
           return ok(
             {
@@ -1520,6 +1593,38 @@ describe("ProcPythonBackend", () => {
       assert.ok(!requests.some((request) => request.link.rel === "execute"));
     });
 
+    it("reports a session gone during the upload as backend-gone, not transfer-failed", async () => {
+      // Phase 3's 3f slice, 2026-08-28: `translate()` used to pick
+      // `transfer-failed` unconditionally for the upload stage, even when
+      // the underlying `ComputeFailure` was already `session-gone` — the
+      // exact shape a dead or reaped session produces on the very first
+      // request of a run, since `fileref.ts` maps every one of its own
+      // failures through `asSessionGone`. Mirrors "reports a session gone
+      // while submitting as backend-gone" below, but for the transfer stage.
+      const { client } = router({
+        syscc: "0",
+        assignReply: {
+          ok: false,
+          reason: "the compute session is no longer available",
+          problem: { code: "session-gone", error: { status: 404 } },
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const result = await accepted.done;
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-gone");
+    });
+
     it("reports compute-unreachable while submitting as backend-gone too", async () => {
       // The existing "session gone" test below exercises one of the two
       // conditions `translate()`'s own doc comment names as recoverable
@@ -1593,6 +1698,229 @@ describe("ProcPythonBackend", () => {
 
       assert.ok(!settled.ok);
       assert.equal(settled.problem.code, "backend-failed");
+    });
+  });
+
+  describe("fileref allocation across a reattached session (Finding 72)", () => {
+    const assignNames = (requests: readonly ComputeRequest[]): string[] =>
+      requests
+        .filter((request) => request.link.rel === "assign")
+        .map((request) => (request.body as { name: string }).name);
+
+    it("seeds the counter past the PYnnnnnn filerefs the session already holds", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        filerefList: ["PY000001", "PY000002", "PY000005"],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        sessionWithFilerefList(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const settled = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.ok(settled.ok);
+      // The `files` GET happens before the first `assign`, and the first name
+      // tried is one past the highest held — not `PY000001`.
+      const order = requests.map((request) => request.link.rel);
+      assert.ok(order.indexOf("files") < order.indexOf("assign"));
+      assert.deepEqual(assignNames(requests), ["PY000006"]);
+    });
+
+    it("reads the collection once, not before every run", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        filerefList: ["PY000004"],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        sessionWithFilerefList(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+      await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.equal(
+        requests.filter((request) => request.link.rel === "files").length,
+        1,
+      );
+      assert.deepEqual(assignNames(requests), ["PY000005", "PY000006"]);
+    });
+
+    it("ignores collection entries that are not PY + six digits", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        filerefList: ["scratch", "PY000003", "PYABCDEF", "PY0003", "PY0000012"],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        sessionWithFilerefList(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.deepEqual(assignNames(requests), ["PY000004"]);
+    });
+
+    it("does not fail the run when the collection listing fails", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        filerefListReply: rejected(
+          "compute-rejected",
+          "500 Internal Server Error",
+        ),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        sessionWithFilerefList(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const settled = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.ok(settled.ok);
+      // Counter untouched, so the bounded retry is the only thing standing
+      // between this and a collision — here nothing is actually held, so the
+      // first name works.
+      assert.deepEqual(assignNames(requests), ["PY000001"]);
+    });
+
+    it("retries the listing on the next run after a transient failure, rather than disabling the seed", async () => {
+      // A failed `files` GET must not stick the backend on the 16-attempt
+      // retry for the rest of the connection — that cannot walk past a
+      // reattached session holding more than 16 `PYnnnnnn` names. The flag is
+      // only set once a listing actually comes back.
+      const { client, requests } = router({
+        syscc: "0",
+        filerefListFailFirst: 1,
+        filerefList: ["PY000001", "PY000002", "PY000005"],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        sessionWithFilerefList(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+
+      // First run: the listing 500s, so the counter stays at zero.
+      const first = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+      assert.ok(first.ok);
+
+      // Second run: the listing is retried, succeeds, and seeds past the
+      // highest held name — so this run's fileref jumps to PY000006 rather
+      // than continuing from PY000002.
+      const second = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+      assert.ok(second.ok);
+
+      assert.equal(
+        requests.filter((request) => request.link.rel === "files").length,
+        2,
+        "the listing was not retried after its first failure",
+      );
+      assert.deepEqual(assignNames(requests), ["PY000001", "PY000006"]);
+    });
+
+    it("retries a name collision under the next name", async () => {
+      const { client, requests } = router({ syscc: "0", assignConflicts: 2 });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const settled = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.ok(settled.ok);
+      assert.deepEqual(assignNames(requests), [
+        "PY000001",
+        "PY000002",
+        "PY000003",
+      ]);
+    });
+
+    it("gives up after the attempt budget, reported as transfer-failed", async () => {
+      const { client, requests } = router({ syscc: "0", assignConflicts: 999 });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const settled = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "transfer-failed");
+      assert.equal(assignNames(requests).length, 16);
+    });
+
+    it("does not retry a non-4xx assign failure", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        assignReply: rejected("compute-rejected", "500 Internal Server Error"),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const settled = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "transfer-failed");
+      assert.equal(assignNames(requests).length, 1);
+    });
+
+    it("does not retry a session that is gone, and reports it as such", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        assignReply: rejected("compute-rejected", "no such session", 404),
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const settled = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "backend-gone");
+      assert.equal(assignNames(requests).length, 1);
     });
   });
 

@@ -28,6 +28,28 @@
  * command out of the Command Palette entirely, so the entry disappears rather
  * than dimming. It follows the active profile, so switching to a profile with
  * no session clears it while the first session stays alive.
+ *
+ * ## Keeping it honest from outside this module
+ *
+ * `connect` and `disconnect` below both re-sync the key after acting, which
+ * covers every path that goes through them — including `signIn`'s own
+ * `connect` call in `src/auth/commands.ts`. **Fixed 2026-08-28 (Phase 3's 3f
+ * slice): `signOut` did not.** It revoked the token but never told this
+ * module a session might need dropping, so `pythonOnViya.connected` (and the
+ * cached connection itself) stayed exactly as they were — Connect stayed
+ * hidden, and the next run failed against a session whose token had just
+ * been pulled out from under it, with `Disconnect` the only way back to a
+ * state Connect would even appear in. `signOut` now takes this module's
+ * `disconnect` the same way `signIn` already takes `connect`. Separately,
+ * `forgetProfile` exists for a session that dies on its *own* terms — an
+ * idle reap, mid-window — discovered independently by a run that tried to
+ * use it; see `ComputeSessionManager.forget`'s own doc comment.
+ *
+ * `forgetProfile` is also what `extension.ts` calls from the provider's
+ * `onDidChangeSessions` event, so a sign-out through VS Code's **Accounts
+ * menu** — which talks to the provider directly and never reaches
+ * `pythonOnViya.signOut` — drops the dead connection and re-syncs the key
+ * too, rather than only the palette's own Sign Out command doing so.
  */
 
 import * as vscode from "vscode";
@@ -57,12 +79,30 @@ export type ComputeCommandProfiles = Pick<
  */
 export type ConnectActiveProfile = () => Promise<ComputeConnection | undefined>;
 
+/** What `registerComputeCommands` hands other command modules, so they can
+ * keep `pythonOnViya.connected` honest for actions that live outside this
+ * file — `signIn`/`signOut` in `src/auth/commands.ts`, and a run/reset/probe
+ * in `src/run/commands.ts` that discovers its own connection is gone. */
+export interface ComputeCommandHandles {
+  readonly connect: ConnectActiveProfile;
+  /** Ends the active profile's session (if any) and re-syncs the context
+   * key. What `signOut` calls, mirroring `signIn`'s own `connect` — passing
+   * `{ quiet: true }`, so a sign-out with no session open in this window
+   * stays a single confirmation toast rather than two. */
+  readonly disconnect: (options?: { quiet?: boolean }) => Promise<void>;
+  /** Drops a profile's cached connection — `ComputeSessionManager.forget` —
+   * and re-syncs the context key. What a run/reset/probe calls on
+   * `BackendProblem` `backend-gone`, so Connect reappears immediately rather
+   * than staying hidden until the user finds Disconnect first. */
+  readonly forgetProfile: (profileId: string) => void;
+}
+
 export function registerComputeCommands(
   context: vscode.ExtensionContext,
   sessions: ComputeSessionManager,
   profiles: ComputeCommandProfiles,
   log: vscode.LogOutputChannel,
-): ConnectActiveProfile {
+): ComputeCommandHandles {
   const sync = () => {
     void syncConnectedContext(sessions, profiles);
   };
@@ -71,6 +111,16 @@ export function registerComputeCommands(
     const connection = await sessions.connect();
     sync();
     return connection;
+  };
+
+  const disconnect = async (options?: { quiet?: boolean }): Promise<void> => {
+    await sessions.disconnect(options);
+    sync();
+  };
+
+  const forgetProfile = (profileId: string): void => {
+    sessions.forget(profileId);
+    sync();
   };
 
   context.subscriptions.push(
@@ -84,10 +134,9 @@ export function registerComputeCommands(
         ),
       );
     }),
-    vscode.commands.registerCommand("pythonOnViya.disconnect", async () => {
-      await sessions.disconnect();
-      sync();
-    }),
+    vscode.commands.registerCommand("pythonOnViya.disconnect", () =>
+      disconnect(),
+    ),
     // The key follows the active profile, not just this window's own connects:
     // switching profile changes which session — if any — the commands would act
     // on, and an enablement that disagreed with that would offer Disconnect for
@@ -98,7 +147,7 @@ export function registerComputeCommands(
   log.debug("registered the compute session commands");
   sync();
 
-  return connect;
+  return { connect, disconnect, forgetProfile };
 }
 
 async function syncConnectedContext(

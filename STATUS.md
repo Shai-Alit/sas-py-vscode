@@ -10,7 +10,95 @@ causes and the punch list are in `docs/phases/phase-3.md`'s new **3f** entry.
 Phase 4 (Diagnostics) does not start until 3f closes, since it would only
 compound on top of an already-broken diagnosability story. See
 `docs/dev/manual-test-pass.md` for the annotated checklist this pass
-produced.
+produced. **3f's fixes are implemented (2026-08-28); a first independent
+review pass is also complete**, raising three findings — two fixed
+(`3d965d0`, `34a2987`), one left open and documented rather than closed
+(the untested `run/commands.ts` → `forgetProfile` wiring) — **not yet
+merged, no PR opened.** See phase-3.md's own 3f entry for exactly what
+landed and what each review finding was. Still open, in order: a second,
+final adversarial pass over the post-review diff, two hand-run retests,
+and a full re-run of the manual test pass — none of which this session can
+do itself (no live Viya deployment reachable here, and this project's own
+rule against Claude running the suite).
+
+**Full re-run of the manual test pass, complete 2026-08-30**, against a
+`.vsix` built from `phase-3f-manual-test-regressions` (still unmerged) —
+confirms the fixes above hold live for every item this slice targeted
+(Cold-start Connect, Idle reap, both Sign Out paths, Failures are
+diagnosable, the page-break banner, the big package list, and the reworded
+Cancel/`defaultProfile`/Shared-sessions items). It also surfaced three
+findings this slice's fixes don't cover, none of which it was written to
+fix: Reload reconnects now fails a different way (a stale-fileref collision
+that clears itself after 60–90 seconds, Finding 72), the deep-recursion
+container crash reproducing identically on retry (still unexplained), and
+an oversized rich output write taking the whole compute session down rather
+than skipping cleanly (Finding 73). `docs/dev/manual-test-pass.md` and
+phase-3.md's own **3f** entry (new open items, and Findings 72–73) both
+reflect this.
+
+**Work on those three, 2026-08-31.** **Finding 72 is root-caused and fixed**
+on `phase-3f-manual-test-regressions`: the per-run fileref counter is a
+per-backend value that restarts at zero on a window reload while the
+re-attached session still holds the names the old backend assigned. The
+backend now seeds that counter from the session's own `filerefs`
+collection on the first run after connecting, with a bounded assign-retry
+as a backstop for two windows sharing one session; unit-covered in
+`compute-fileref.test.ts` and `proc-python-backend.test.ts`, and
+**verified live** against a branch `.vsix` — `print(k)` after a reload
+returns on the first attempt. **Finding 73 is settled as not a size-cap
+defect** — a script whose figure *generation* exhausts the container is an
+OOM kill outside ADR-0019's transfer cap; ADR-0019 is amended and §8's
+test script reworded, and the reworded script's skip path is **verified
+live** (returns the "could not retrieve rich output file …" note, session
+survives). One small `translate()` message change for the rare OOM path
+is left as an optional, non-blocking follow-up. **The deep-recursion
+crash is resolved** — verified live 2026-08-31 that a minimal recursion
+gives a clean `RecursionError` with the session intact, so the earlier
+crash was `test_deep_stack_trim.py`'s own `unittest` harness
+(`sys.exit()` under `PROC PYTHON`), not `PROC PYTHON`; §7 is reworded and
+ticked. That run turned up **one new, deferred item** (Finding 74): a
+*failing* run's output stream carries the Python interpreter banner and
+`>>>` markers, which §6 says it should not — error-path only, output
+channel not the diagnostic log, line types not yet captured; its own
+item for a later slice, not a 3f blocker. Still open before a PR opens:
+the second, final adversarial pass and the profile-switch retest.
+
+**Second, final adversarial review pass, 2026-08-31** (Sean's own VS Code
+window, full branch diff against `main`, per this project's standing
+review policy): no P0/P1s, disciplined error handling, no secrets, clean
+strict-TypeScript throughout. One minor finding worth fixing: in the
+Finding 72 fix above, `ProcPythonBackend.seedFilerefCounter` set its
+`filerefCounterSeeded` flag before confirming the fileref listing actually
+succeeded, so a transient failure or a cancel mid-`GET` disabled seeding
+for the rest of the connection — dropping every later run in it back onto
+the 16-attempt retry, which cannot walk past a reattached session holding
+more than 16 `PYnnnnnn` names, reproducing Finding 72's own symptom in a
+narrower window. **Fixed the same day**: the flag now sets only after the
+listing reports `ok`, so a failed or cancelled attempt retries on the next
+run instead of sticking; re-seeding is safe since the counter only ever
+moves up. A new regression test pins the retry. Independently re-verified
+this session (traced the reorder, the doc-comment update, and the new
+test's arithmetic against the actual diff, not the review's word alone).
+Two other notes were left as documented, non-blocking judgment calls
+rather than fixes: the retry loop has no backoff between attempts, and
+`connect()` no longer de-duplicates concurrent calls when no profile is
+configured. See phase-3.md's Finding 72 punch-list item for the full
+account. **Still open before a PR opens: the profile-switch retest only.**
+
+**Profile-switch retest closed, 2026-08-31, not reproduced.** Started a
+long-running program on profile A, switched the active profile to B
+mid-run, ran a new selection — B was not yet signed in, so it prompted for
+sign-in first, then ran only the selection just invoked. Repeated with B
+already signed in from that first pass: switching alone triggered no
+sign-in and, more to the point, ran nothing on its own. Confirms the code
+read (no queue/replay/resume path exists) in both the needs-auth and the
+already-authenticated case; the original report's likely explanation
+(Run was in fact invoked a second time) stands, uncontradicted by two
+clean passes. **3f's punch list is now fully closed** except Finding 74
+(the interpreter banner/`>>>` markers), which is deliberately deferred to
+a later slice, not a 3f blocker. **Nothing left before a PR opens.**
+
+**PR opened, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77).** Up for review — CI and both automated reviewers to run; not yet merged.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -97,7 +185,7 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) queued, not started** | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) fully implemented and closed, up for review as [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77), not yet merged — Finding 74 deliberately deferred, not a blocker** | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started — blocked on Phase 3's 3f | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

@@ -44,28 +44,31 @@
  * `docs/phases/phase-3.md`'s findings) triggered one for real: it arrives as
  * its own log item typed `title` — not `note`, the guess this comment made
  * before any deployment had actually been asked to produce one.
- * `isNoiseLine` does not exclude `title` today, so a banner currently passes
- * through as visible output rather than being silently dropped; whether it
- * should join `note` and `source` as noise is an open question for whichever
- * 3c/3d slice next touches this filter, not settled here. PAGESIZE=MAX
- * (`docs/phases/phase-3.md`'s own note under 3a) is still not sent at session
- * creation (`sessionManager.ts`'s `open()` calls `createSession` with no
- * `options`), a real, separate gap. Neither changes this filter's design in
- * the way that matters: a banner still arrives as its own atomic,
+ * **Settled 2026-08-28 (Phase 3's 3f slice):** `title` joins `note` and
+ * `source` below. The 2026-08-27 manual test pass found exactly what an
+ * unexcluded `title` line looks like at scale — a stray banner in 4 of the
+ * submission corpus's 14 runs, and one roughly every 58 lines in a
+ * 5000-line run — and neither this filter nor the plain `error`/`normal`
+ * output a user actually wants has any legitimate reason to arrive typed
+ * `title`. `PAGESIZE=MAX` (`docs/phases/phase-3.md`'s own note under 3a) is
+ * now sent at session creation too, in the same slice
+ * (`sessionManager.ts`'s `open()`), so the banner is suppressed at the
+ * source and this filter's own exclusion is a second, independent line of
+ * defence rather than the only one. Neither change alters this filter's
+ * design in the way that matters: a banner still arrives as its own atomic,
  * already-typed log item, never as text spliced into a neighbouring line, so
  * "a page break splits the stdout region mid-stream" — the awkward case the
- * original plan text named — still cannot happen to it regardless of which
- * type wins the argument above.
+ * original plan text named — still cannot happen to it regardless.
  *
  * ## What counts as noise, and why the vocabulary stays open
  *
- * `note` and `source` are the only two types this filter excludes.
- * Everything else — `normal`, `error`, and any type this codebase has never
- * seen — is shown. `job.ts`'s own doc is explicit that the vocabulary is
- * "a floor, not a closed set," and a filter that hid an unrecognised type by
- * default would hide real output the day the vocabulary grows, with no
- * error and no way for a user to know it happened. Showing the unknown is
- * the only choice that fails safely.
+ * `note`, `source` and `title` are the only three types this filter
+ * excludes. Everything else — `normal`, `error`, and any type this codebase
+ * has never seen — is shown. `job.ts`'s own doc is explicit that the
+ * vocabulary is "a floor, not a closed set," and a filter that hid an
+ * unrecognised type by default would hide real output the day the
+ * vocabulary grows, with no error and no way for a user to know it
+ * happened. Showing the unknown is the only choice that fails safely.
  *
  * `note` is dropped in full, blanks and continuation lines included, not
  * matched against a `NOTE:` prefix — finding 52 measured a `note` line
@@ -95,12 +98,14 @@ import { type LogLine } from "../compute/job";
  * `source` should not occur at all with the `infile=` submission path 3a
  * uses (finding 35) and is excluded on the chance a deployment or a future
  * submission mechanism differs — never because a real run is expected to
- * produce one. Anything not named here, including a type nothing in this
- * codebase recognises, is not noise; see this module's own doc comment for
- * why an unrecognised type must never default to hidden.
+ * produce one. `title` is the page-break banner (finding 63) — always SAS's
+ * own boilerplate, never anything a user's program printed. Anything not
+ * named here, including a type nothing in this codebase recognises, is not
+ * noise; see this module's own doc comment for why an unrecognised type
+ * must never default to hidden.
  */
 export function isNoiseLine(type: string | undefined): boolean {
-  return type === "note" || type === "source";
+  return type === "note" || type === "source" || type === "title";
 }
 
 /**

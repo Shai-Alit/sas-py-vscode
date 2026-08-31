@@ -1451,76 +1451,341 @@ regressions against invariants this phase already claimed as done; the rest
 are either latent bugs worth closing while in the neighborhood, or repro
 gaps needing one more hand-run before being written off.
 
-- ☐ **Fix: the `connected` context key never clears itself outside an
+> **Implemented 2026-08-28, on `phase-3f-manual-test-regressions`; first
+> independent review pass complete, not yet merged, no PR opened.** Touches
+> `src/compute/sessionManager.ts`, `src/compute/commands.ts`,
+> `src/auth/commands.ts`, `src/run/commands.ts`, `src/extension.ts`,
+> `src/backend/procPython.ts`, `src/backend/logFilter.ts`,
+> `docs/adr/0019-…md`, plus tests in
+> `test/integration/compute/session-manager.test.ts`,
+> `test/integration/run/commands.test.ts`,
+> `test/unit/proc-python-backend.test.ts`,
+> `test/unit/backend-log-filter.test.ts`, and (from the review pass)
+> `test/integration/auth/commands.test.ts`. Per this project's own review
+> policy, the adversarial pass over the finished diff is Sean's to run in
+> his own VS Code window, not this session's — that pass happened
+> 2026-08-28 and raised three findings, two fixed in commit `3d965d0` (the
+> sign-out ordering/quiet-mode/Accounts-menu fixes below) plus `34a2987`
+> (a pre-existing bug in this slice's own `forget()` test, surfaced only
+> once the integration harness could actually launch), and one — no
+> integration test drives a real `backend-gone` through `runNow`/
+> `resetPythonState` into `forgetProfile` — left open and documented at
+> `test/integration/run/commands.test.ts:64-66` rather than closed. What's
+> still open, in order: a second, final adversarial pass over the
+> post-review diff, the two hand-run retests, and the full re-run of
+> `manual-test-pass.md` — none of which this session can do itself (no live
+> Viya deployment reachable here, and this project's own rule against
+> Claude running the suite). No PR until all of that is done, to avoid
+> re-triggering CI and both reviewers more than once.
+
+> **Full re-run complete, 2026-08-30, against a `.vsix` built from this
+> branch:** confirms the fixes above hold live — Cold-start Connect, Idle
+> reap, both Sign Out paths, Failures are diagnosable, Large output stays
+> clean (the banner), and the reworded Cancel/`defaultProfile`/
+> Shared-sessions items all now pass; `manual-test-pass.md`'s checkboxes
+> reflect it. It also surfaced three findings none of this slice's fixes
+> were written to cover: a new fileref-collision defect on **Reload
+> reconnects** (Finding 72), the deep-recursion container crash reproducing
+> identically on a retest (no longer just "needs one more run" — still
+> unexplained), and **Oversize output** taking the whole compute session
+> down instead of skipping cleanly (Finding 73).
+>
+> **Follow-up, 2026-08-31.** All three 2026-08-30 findings are resolved and
+> **verified live** against a branch `.vsix`. **Finding 72** — root-caused,
+> fixed (a per-connection seed of the fileref counter from the session's
+> own `filerefs` collection, plus a bounded assign-retry — see its item
+> below), unit-covered; `print(k)` after a reload now returns on the first
+> attempt. **Finding 73** — settled as *not* a cap defect (ADR-0019
+> amended, the §8 script reworded); the reworded script returns the skip
+> note and the session survives; one small `translate()` message change is
+> left as an optional, non-blocking follow-up. **The deep-recursion crash**
+> — isolated to `test_deep_stack_trim.py`'s own `unittest` harness, not
+> `PROC PYTHON`; a minimal recursion gives a clean `RecursionError` with
+> the session intact, and §7 is reworded and ticked. That run turned up
+> **one new item** — the Python interpreter banner and `>>>` markers
+> appearing in a *failing* run's output stream (§6 says they should not) —
+> deferred as its own item, not a 3f blocker. Still outstanding before a
+> PR opens: the second, final adversarial pass and the profile-switch
+> retest.
+
+> **Second, final adversarial review pass complete, 2026-08-31**, in
+> Sean's own VS Code window against the full branch diff (`git diff
+> main`) — no P0/P1s, disciplined error handling, no secrets, clean
+> strict TypeScript throughout, thorough HTTP-boundary test coverage. One
+> minor finding on the Finding 72 fix, fixed the same day; see that
+> item's own **Review pass** note below for the full account. **Still
+> outstanding before a PR opens: the profile-switch retest only.**
+
+> **PR opened, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77).**
+> The profile-switch retest closed (see that item below), the coverage
+> ratchet raised, and 3f's punch list is fully closed except Finding 74
+> (deliberately deferred). Up for review — CI and both automated
+> reviewers to run; not yet merged.
+
+- ☑ **Fix: the `connected` context key never clears itself outside an
   explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle
-  session reap, and "no clear way to reconnect" generally) all trace to one
+  session reap, and "no clear way to reconnect" generally) all traced to one
   mechanism: `pythonOnViya.connected` (`package.json:113,119`) is computed
   from `ComputeSessionManager`'s in-memory `live` map
   (`src/compute/sessionManager.ts`), synced only at activation,
   `profiles.onDidChange`, and the explicit Connect/Disconnect handlers
   (`src/compute/commands.ts:75-99,110-118`). Sign-out
-  (`src/auth/commands.ts:171`) revokes the token but never touches `live` or
-  re-syncs the key. A reap is never proactively detected either —
-  `connect()` (`sessionManager.ts:395-399`) short-circuits `if (held !==
-  undefined) return held` with no revalidation — so `live`/`connected` stay
-  stuck `true` until Disconnect unconditionally clears the entry
-  (`sessionManager.ts:352-353`). Sign-out and any detected-dead-session path
-  need to clear `live` and re-sync `connected` themselves, not rely on the
-  user finding Disconnect first. Covers the **Cold-start Connect**,
-  **Reload reconnects**, and **Idle reap** items in `manual-test-pass.md`
-  §4, plus **Sign out** in §3 and §10.
-- ☐ **Fix: three failure paths in `src/run/commands.ts` never log the
+  (`src/auth/commands.ts`) revoked the token but never touched `live` or
+  re-synced the key. A reap was never proactively detected either —
+  `connect()`'s fast path short-circuited on a cached `live` entry with no
+  revalidation — so `live`/`connected` stayed stuck `true` until Disconnect
+  unconditionally cleared the entry. **Landed:**
+  `ComputeSessionManager.forget(profileId)` (new) drops a stale cached
+  connection on request; `registerComputeCommands` now returns
+  `{ connect, disconnect, forgetProfile }` instead of just `connect`, each
+  wrapper re-syncing `pythonOnViya.connected` after acting; `signOut` (in
+  `src/auth/commands.ts`) now calls the new `disconnect` after
+  `removeSession` succeeds, mirroring how `signIn` already calls `connect`;
+  `run/commands.ts`'s failure paths call the new `forgetProfile` whenever a
+  `BackendProblem` comes back `backend-gone` (see the next bullet — this is
+  what makes that classification actually reach the session manager).
+  Covers the **Cold-start Connect**, **Reload reconnects**, and **Idle
+  reap** items in `manual-test-pass.md` §4, plus **Sign out** in §3 and §10.
+  **Review pass (2026-08-28), three refinements:** (1) `signOut` now runs
+  `disconnect` *before* `removeSession`, not after — reversed, the teardown
+  `DELETE` ran with a credential that had just been deleted, so every
+  sign-out orphaned its SAS session for the idle reaper and logged a
+  spurious "did not complete" warning; (2) that `disconnect` is bound to a
+  new `{ quiet: true }` mode (`ComputeSessionManager.disconnect`) that
+  suppresses the "there is no session to disconnect" info message, so a
+  sign-out with no session open stays one toast rather than two; (3)
+  `extension.ts` now also drives `forgetProfile` from the auth provider's
+  `onDidChangeSessions` `removed` event, so a sign-out through VS Code's
+  **Accounts menu** — which never reaches `pythonOnViya.signOut` — clears
+  the cached connection and re-syncs the key too. New tests:
+  `session-manager.test.ts` (quiet disconnect stays silent / still tears a
+  held session down), `auth/commands.test.ts` (a `signOut` direct-handler
+  suite: disconnect-before-removeSession ordering, one toast, the
+  credential-already-gone and real-failure paths).
+- ☑ **Fix: three failure paths in `src/run/commands.ts` never logged the
   underlying problem before showing the generic "could not be sent…see the
-  log" message** (`src/backend/messages.ts:58-61`'s `transfer-failed` text).
-  `runNow`'s execute-failure (`commands.ts:435`) and post-run failure
-  (`commands.ts:468-469`), and `resetPythonState`'s failure path
-  (`commands.ts:545`) — none call `log.*` before reporting. Copy the
-  pattern `showEnvironmentImpl`'s probe-failure path already uses
-  (`commands.ts:631-632`, `log.warn(probed.reason)` before `reportProblem`),
-  which is why that one path was never reported as silent. Covers
-  **Failures are diagnosable** in §10 and the log-emptiness half of every
-  §3/§4 finding above.
-- ☐ **Fix: `isNoiseLine` still doesn't exclude `title`-typed log lines, and
-  `PAGESIZE=MAX` still isn't sent at session creation.** Both gaps were
-  already written down in `logFilter.ts`'s own doc comment
-  (`src/backend/logFilter.ts:43-58`) from the 2026-08-25 probe — Finding 63
-  confirmed the page-break banner arrives typed `title`, which
-  `isNoiseLine` (`logFilter.ts:102-104`) doesn't exclude — but neither was
-  picked up as a fix before 3b was marked done. Matches this pass exactly: a
-  stray banner line in 4 of the 14 submission-corpus runs, and one roughly
-  every 58 lines in the 5000-line **Large output stays clean** test (§6).
-  Add `"title"` to `isNoiseLine`, and pass `PAGESIZE=MAX` (or equivalent) in
-  `sessionManager.ts`'s `open()` → `createSession` call.
-- ☐ **Fix (latent, not yet reproduced by a QA symptom, found while
+  log" message.** `runNow`'s execute-failure and post-run failure, and
+  `resetPythonState`'s failure path, none called `log.*` before reporting —
+  unlike `showEnvironmentImpl`'s probe-failure path, which already did.
+  **Landed:** all three now call `log.warn(<result>.reason)` first, the same
+  composed sentence `showEnvironmentImpl` already logged, and all four
+  (including `showEnvironmentImpl`'s pre-existing one) now also call the new
+  `forgetIfGone` helper. **A second, deeper defect surfaced while fixing
+  this:** `procPython.ts`'s `translate()` picked `transfer-failed`
+  unconditionally for the two upload calls, even when the underlying
+  failure was already `session-gone`/`compute-unreachable` — so a dead
+  session's *first* request of a run produced the least informative
+  message this union has, instead of `backend-gone`'s "The SAS Viya session
+  ended. Connect again and re-run." Fixed by checking `recoverable` before
+  `transferStage`, matching what already happened for every failure past
+  the upload stage; a new test
+  (`test/unit/proc-python-backend.test.ts`, "reports a session gone during
+  the upload as backend-gone, not transfer-failed") pins it — the existing
+  transfer-failed tests were checked and are unaffected (none of them
+  actually simulate a 404; the test helper's `status` parameter defaults to
+  500 regardless of what descriptive text is passed). Covers **Failures are
+  diagnosable** in §10 and the log-emptiness half of every §3/§4 finding
+  above.
+- ☑ **Fix: `isNoiseLine` didn't exclude `title`-typed log lines, and
+  `PAGESIZE=MAX` wasn't sent at session creation.** Both gaps were already
+  written down in `logFilter.ts`'s own doc comment from the 2026-08-25
+  probe — finding 63 confirmed the page-break banner arrives typed `title`,
+  which `isNoiseLine` didn't exclude — but neither was picked up as a fix
+  before 3b was marked done. Matched this pass exactly: a stray banner line
+  in 4 of the 14 submission-corpus runs, and one roughly every 58 lines in
+  the 5000-line **Large output stays clean** test (§6). **Landed:** `title`
+  added to `isNoiseLine` (`logFilter.ts`), plus a new `SESSION_OPTIONS =
+  ["PAGESIZE=MAX"]` passed to `createSession` in `sessionManager.ts`'s
+  `open()`; a new case in `test/unit/backend-log-filter.test.ts` pins the
+  `title` exclusion.
+- ☑ **Fix (latent, not yet reproduced by a QA symptom, found while
   investigating the profile-switch report below):** `ComputeSessionManager
-  .connect()`'s single `this.connecting` field (`sessionManager.ts:312-315`)
-  is not keyed by profile — a second, unrelated `connect()` call arriving
-  while a first is still in flight for a *different* profile joins that
-  first promise and receives the wrong profile's connection, mislabeled.
-  Doesn't by itself explain the report below, but is real and sits in the
-  same code.
-- ☐ **Retest, narrated click by click: "ran a long program on profile A,
+  .connect()`'s single `this.connecting` field was not keyed by profile — a
+  second, unrelated `connect()` call arriving while a first was still in
+  flight for a *different* profile would join that first promise and
+  receive the wrong profile's connection back, mislabeled. Doesn't by
+  itself explain the report below, but was real and sat in the same code.
+  **Landed:** `connecting` is now a `Map<string, Promise<…>>` keyed on
+  profile id; `disconnect()`'s own wait-for-a-connect-in-flight logic
+  updated to match, re-reading the active profile after the wait per this
+  file's own "re-read after a round trip" rule. A new
+  `test/integration/compute/session-manager.test.ts` case ("forget() drops
+  the cached connection…") pins `forget()`'s own behaviour; a dedicated
+  regression test proving two *different* profiles' connects never join
+  each other is **not yet written** — it needs a harness able to run two
+  independent connect flows concurrently and was judged too easy to get
+  subtly wrong without being able to run it this session, so it is called
+  out here rather than guessed at.
+- ☑ **Retest, narrated click by click: "ran a long program on profile A,
   switched to profile B and signed in, B ran the same program
   unprompted."** No queue/replay/resume code path exists anywhere in
   `src/run` or `src/compute` — a program is captured synchronously at
   invocation (`buildProgram`, before any `await`), and backends are cached
   per profile. Most likely explanation is Run was in fact invoked again;
   needs one clean repro before being closed either way.
-- ☐ **Retest: the deep-recursion script that crashed the Python subprocess**
+  **Retested 2026-08-31, not reproduced — closed.** Started a long-running
+  program on profile A; switched the active profile to B mid-run; ran a
+  new selection. B was not yet signed in, so it prompted for sign-in first
+  — signing in, then the selection just invoked ran, not anything left
+  over from A. **Repeated with B already signed in from the first pass:**
+  switching to B alone triggered no sign-in prompt and, more to the
+  point, ran nothing on its own — a selection had to be explicitly invoked
+  again before anything executed. Confirms the code read: nothing runs
+  from a profile switch or a sign-in by itself, in either the
+  needs-auth or the already-authenticated case. The original report's
+  most likely explanation (Run was in fact invoked a second time) stands,
+  uncontradicted by two clean passes.
+- ☑ **Retest: the deep-recursion script that crashed the Python subprocess**
   ("terminated unexpectedly… trying to use more memory than the container
   is configured to allow") **immediately after its own 5 unit tests had
-  already passed.** Not implicated in 3c-ii's frame-trimming logic itself —
-  plausibly a container memory/stack ceiling question — but needs one more
-  run to see if it reproduces before writing it off. Covers **Deep /
-  recursive stacks survive** in §7.
-- ☐ **Doc: state ADR-0019's cancelled-run-orphans-a-partial-figure-file
+  already passed.** Reproduced identically 2026-08-30, still no root cause
+  at that point. **Isolated 2026-08-31 with a minimal repro** — a bare
+  `def recurse(n): return recurse(n + 1)` / `recurse(0)`, no framework —
+  which gave a clean `RecursionError: maximum recursion depth exceeded`,
+  "Finished with an error.", and an unharmed session against `verde`. The
+  crash is **not** `PROC PYTHON` and **not** recursion depth (the old
+  script caps `sys.setrecursionlimit(200)`): it was
+  `test_deep_stack_trim.py`'s own harness — `unittest.main()` calling
+  `sys.exit()` inside `PROC PYTHON`, plus five `setUp` calls each
+  re-running the capture. Covers **Deep / recursive stacks survive** in §7,
+  now reworded to the minimal script and ticked. Frame structure held on
+  the run: leading `<stdin>` wrapper, then `<string>` line 4, then ~998
+  `recurse` frames collapsed by Python's own `[Previous line repeated N
+  more times]` — repeats preserved.
+- ☐ **New, 2026-08-31: a failing run's output stream carries the Python
+  interpreter banner and `>>>` prompt markers.** Seen on the §7 minimal
+  recursion run: the program transcript opened with
+  `Python 3.12.12 (main, …) [GCC …] on linux` / `Type "help", "copyright",
+  "credits" or "license" for more information.` followed by `>>>` prompt
+  lines, then `ERROR: Unhandled Python exception.` and the traceback; a
+  fragment of the traceback tail (`[Previous line repeated 995 more
+  times] RecursionError: … >>>`) was also re-emitted after "Finished with
+  an error." §6's **Hello world streams clean** asserts "no SAS NOTEs, no
+  page-break banners, no `>>>` markers", and the 2026-08-30 successful-run
+  checks (hello world, the 5000-line loop) held — so this is the error
+  path specifically, first looked at closely here. Nothing was written to
+  **Show Log** at error level, so the banner/prompt lines are reaching the
+  **output channel**, not the diagnostic log; their `type` (whether
+  `isNoiseLine` in `logFilter.ts` should have caught them, or `PROC
+  PYTHON` is emitting them as `normal`/`error` on the exception path) is
+  not yet captured. Not touched by 72's fix (that changes fileref
+  allocation, not the log path). Deferred — its own item for a later
+  slice, not a 3f blocker.
+- ☑ **New, 2026-08-30: a window reload's first submission collided with a
+  stale fileref for roughly 60–90 seconds, then cleared on its own.**
+  Surfaced retesting **Reload reconnects with state intact** (§4) against
+  this slice's fix build: the connected-key fix above made Connect and the
+  palette behave correctly, but the first submission after reload still
+  failed — `print(k)` got "The program could not be sent to SAS Viya…",
+  and **Show Log** named it HTTP 400, the fileref `"py000001"` already
+  exists (error code 5402). **Reset Python State**, then the same
+  selection, reproduced the identical collision one fileref number later
+  (`"py000002"`); repeated fresh reloads showed every submission failing
+  for roughly 60–90 seconds after the reload command, then succeeding on
+  their own. See Finding 72. A distinct defect from the connected-key one
+  this slice fixes.
+  **Root cause.** `procPython.ts`'s `filerefCounter` is per-`ProcPythonBackend`
+  and starts at 0; the backend cache is module scope in
+  `createRunCommandHandlers` and dies with the extension host on reload,
+  while the compute session survives (ADR-0012). So the post-reload backend
+  re-issued `PY000001…` into a session that already held those names, and
+  `assign` answered 400 on each. `nextFilerefName()` increments the counter
+  at the top of every run attempt, failed or not, so it climbed past the
+  held range after 60–90 s of repeated clicks — no SAS-side lease or
+  timeout, just a counter walking a range it forgot. The two log lines a
+  partial probe captured 2026-08-31 (`py000001` then `py000002`, both
+  "already exists") confirm the held range is more than one name, matching
+  the counting explanation; a full static-set watch of the `filerefs`
+  collection was not run and is not needed once the counter's own
+  behaviour settles it.
+  **Landed** on `phase-3f-manual-test-regressions`:
+  - `listFilerefNames` (new, `src/compute/fileref.ts`) — one read-only
+    `GET` of the session's `files` relation. Not keyed on `errorCode` 5402
+    anywhere: `problems.ts`'s rule against branching on an undocumented
+    error code holds.
+  - `ProcPythonBackend.seedFilerefCounter` — on the first run after
+    connecting, moves `filerefCounter` past the highest `PYnnnnnn` the
+    session already holds, in that one `GET`. Best-effort: a failed listing
+    leaves the counter alone.
+  - `ProcPythonBackend.createRunFileref` — a bounded retry
+    (`MAX_FILEREF_ASSIGN_ATTEMPTS = 16`) that advances to the next name on
+    a retriable `4xx` from `assign` and returns any other failure (or a
+    cancel) straight away. Covers the residual case a single seed cannot:
+    two windows sharing one session (ADR-0012), each counting on its own.
+    Exhaustion reports `transfer-failed` — nothing ran — same as a single
+    collision would.
+  - Tests: `test/unit/compute-fileref.test.ts` (+5, `listFilerefNames`'s
+    own contract) and `test/unit/proc-python-backend.test.ts` (+8, the
+    seed and the retry — seeding past a held set, one listing per
+    connection, non-`PYnnnnnn` entries ignored, a failed listing not
+    failing the run, retry-then-succeed, the attempt-budget cap, and that
+    a `5xx` and a gone session are *not* retried).
+  **Verified live 2026-08-31** against a `.vsix` from this branch: `k = 99`,
+  **Developer: Reload Window**, `print(k)` returns `99` on the first
+  attempt with no delay. §4's box is ticked on that run, not just the
+  unit tier.
+  **Review pass (2026-08-31), one refinement:** `seedFilerefCounter` set
+  `filerefCounterSeeded` before confirming `listFilerefNames` actually
+  succeeded, so a transient failure or a cancel mid-`GET` disabled seeding
+  for the rest of the connection — dropping every later run in it back
+  onto the 16-attempt retry, which cannot walk past a reattached session
+  holding more than 16 `PYnnnnnn` names (any session that ran more than 16
+  programs before the reload, since filerefs are never deassigned within
+  one), reproducing Finding 72's own symptom in a narrower window. Fixed
+  by moving the flag-set to after `listed.ok`, so a failed or cancelled
+  listing retries on the next run rather than sticking; re-seeding is
+  safe, since `filerefCounter` only ever moves up, including past names
+  the retry loop's own `assign` calls have since consumed. New test in
+  `proc-python-backend.test.ts` ("retries the listing on the next run
+  after a transient failure, rather than disabling the seed") pins it —
+  asserts two `files` requests across two runs and that the second run's
+  fileref jumps to the seeded name (`PY000006`) rather than continuing
+  the un-seeded counter (`PY000002`). Two other review notes were left as
+  documented, non-blocking judgment calls: the retry loop has no backoff
+  between attempts (bounded at 16, vanishingly unlikely to matter on
+  `assign`), and `connect()` no longer de-duplicates concurrent calls
+  when no profile is configured (a pre-existing, cosmetic double toast,
+  not introduced by this slice).
+- ☑ **New, 2026-08-30: an oversized rich-output write can take the whole
+  compute session down, not just fail to capture the file.** Surfaced
+  running **Oversize output is skipped, not fatal** (§8) for the first
+  time: instead of the "could not retrieve rich output file…" note
+  ADR-0019's design expects, the run itself failed with an HTTP 500
+  fetching the job log (a `dial tcp` failure reaching the session's own
+  pod, error code 5800), and the next, unrelated selection (`import
+  matplotlib` alone) got "The SAS Viya session ended. Connect again and
+  re-run." (session not found, error code 5837). See Finding 73.
+  **Not the cap failing.** `exceedsCaptureCap` filters the
+  after-snapshot's directory listing by `size` — it guards the *transfer*
+  of a written file, and only runs once the job has settled and the
+  session is still alive. The original §8 script (`figsize=(40, 40)`,
+  `imshow(np.random.rand(4000, 4000, 3))`, `dpi=300`) asks the container
+  for ~384 MB in the array and a ~1.7 GB canvas, so the pod is out of
+  memory inside `savefig` before any file exists to skip — an OOM kill
+  like any other, outside ADR-0019's scope.
+  **Done and verified.** **ADR-0019 amendment (2026-08-30)** states the
+  transfer/generation boundary; **§8's script is reworded** to
+  `imshow(np.random.rand(3000, 3000))` at `dpi=200`, which writes a
+  >10 MiB PNG without the giant buffer. **Live 2026-08-31** that script
+  returned `[could not retrieve rich output file "oversize.png": it is
+  larger than the 10485760-byte capture limit]` and a following `import
+  matplotlib` ran on the same session — the skip path (point 8) works as
+  designed. The container-OOM shape (a script that exhausts memory during
+  figure generation) stays a documented known limitation, not a cap bug.
+  **Optional follow-up, Sean's call, not blocking:** reclassifying a
+  mid-run job-log `5xx` from `backend-failed` to `backend-gone` in
+  `translate()` so that rare OOM path reads as "connect again and re-run"
+  rather than a generic failure. Low value now that the realistic case
+  works, and it needs one live observation that the job-log 500 reliably
+  precedes the session 404 before it could be keyed on safely.
+- ☑ **Doc: state ADR-0019's cancelled-run-orphans-a-partial-figure-file
   behavior explicitly.** Already correct by design, just implicit: a
-  cancelled run skips `captureRichOutput` entirely
-  (`procPython.ts:933-935,958-963`), so a figure file written before
-  cancellation is neither read back nor deleted. Not a defect — write it
-  into ADR-0019 as a stated trade-off rather than leaving a future reader to
-  re-derive it from the code.
-- ☐ **Reword pass, already applied to `manual-test-pass.md` itself
+  cancelled run skips `captureRichOutput` entirely, so a figure file
+  written before cancellation is neither read back nor deleted. **Landed:**
+  a new dated amendment section in ADR-0019 states this as a confirmed,
+  deliberate trade-off rather than something a future reader has to
+  re-derive from `procPython.ts`.
+- ☑ **Reword pass, already applied to `manual-test-pass.md` itself
   (2026-08-28), confirmed correct against the code rather than left as
   found:** the **Cancel scoped to the active profile** regression check
   (§11) used a two-*window* repro that cannot exercise what it claims —
@@ -1530,8 +1795,26 @@ gaps needing one more hand-run before being written off.
   already handles correctly. `defaultProfile` (§2a) is real
   (`package.json:222-227`) and settings-only by design — reworded to say so.
   Neither needed a code change.
-- ☐ **Full re-run of `manual-test-pass.md`** once the fixes above land, to
-  confirm them and pick up anything this first pass missed.
+- ☑ **Full re-run of `manual-test-pass.md`.** Done 2026-08-30 — see the
+  full-re-run note above and `manual-test-pass.md` itself — ahead of
+  merge, since this project re-runs the pass against a packaged `.vsix`,
+  not the automated suite. Confirms every item this slice's fixes
+  targeted, including **Idle reap**. Surfaced three defects outside this
+  slice's original scope (Findings 72–73, plus the deep-recursion
+  reproduction) — ticking this box closes the retest task itself, not
+  those three. Since then (2026-08-31), all three are closed and verified
+  live: Finding 72 fixed on this branch (§4), Finding 73 settled as a
+  doc/test matter with its skip path confirmed (§8), and the
+  deep-recursion crash isolated to the old `unittest` harness (§7,
+  reworded and ticked). The §7 run surfaced one new, deferred item — the
+  interpreter banner and `>>>` markers in a *failing* run's output — see
+  its own entry above.
+- ☑ **`npm run verify`, run by Sean 2026-08-31 against `b16c132`:** 1137
+  passing, coverage 93.97/95.04/93.55/93.97 (stmts/branch/funcs/lines).
+  Functions truncates to 93, one point above `.c8rc.json`'s then-current
+  `functions: 92` floor — the other three all still truncate to their
+  existing floors. **Ratchet raised the same way 3b's was**: `functions`
+  moved from 92 to 93 in `.c8rc.json`; no other floor changes.
 
 > This is the first genuinely useful build. Install the `.vsix` locally and use
 > it for real work for a few days before starting Phase 4. Real use will
@@ -2259,3 +2542,147 @@ path (a deployment where `PROC PYTHON` genuinely does not work) is still
 unmeasured — `verde` has `PROC PYTHON` licensed and working, so there was
 nothing to fail against — and Viya 3.5 remains entirely unprobed for this
 slice, same as the rest of Phase 3.
+
+## 2026-08-30 — Two new regressions surfaced re-running `manual-test-pass.md` against the 3f fix build (Viya 4)
+
+The 3f punch list's fixes (connected-key, log-emptiness, banner) all hold
+live — see that entry's own partial-re-run note. Retesting the items 3f
+hadn't touched, or hadn't fully closed, surfaced two findings neither of
+this slice's fixes addresses. Both against `verde`, packaged `.vsix` built
+from `phase-3f-manual-test-regressions`.
+
+### Finding 72 — A window reload's first submission collides with a stale fileref for roughly 60–90 seconds, then clears itself
+
+Retesting **Reload reconnects with state intact**
+(`docs/dev/manual-test-pass.md` §4): `Run Selection` sets `k = 99`;
+**Developer: Reload Window**; wait ~30 seconds; `Run Selection` on
+`print(k)`.
+
+- **The first attempt failed at the submission step, not at connect**: "The
+  program could not be sent to SAS Viya, so nothing ran." **Show Log**:
+  `running the program: the program could not be sent to the backend, so
+  nothing ran: the compute service returned HTTP 400 (The fileref
+  "py000001" already exists., error code 5402, correlator
+  38477a91-4c85-4ac0-809a-f2560d28a339)`.
+- **`Python on Viya: Reset Python State`, then the same selection, failed
+  the same way one fileref number later** — `"py000002"` already exists,
+  same error code.
+- **`Run File` (not `Run Selection`) then succeeded**, on the same session,
+  with no other action taken in between.
+- **Repeated across several fresh reloads**, running `Run File` in quick
+  succession each time: every attempt failed until somewhere between 60
+  and 90 seconds after the reload command, then subsequent runs succeeded
+  with no further intervention.
+
+**Reading:** the session itself survives the reload, consistent with
+ADR-0012 — the failure is not "no connection" but "a fileref this run
+wants to allocate is already held." Consistent with the extension's own
+per-run fileref counter restarting from `py000001` on the fresh extension
+host a reload creates, while the session it re-attaches to still holds
+filerefs allocated under those same names from before the reload.
+
+**Root-caused and fixed, 2026-08-31.** The "clears itself after 60–90 s"
+part had one more explanation than a SAS-side lease: `procPython.ts`'s
+`nextFilerefName()` increments the counter at the *top* of every run
+attempt, failed or not, so each colliding click walks it one name further
+— and once it passes the highest name the pre-reload backend had
+assigned, the next click succeeds. A partial probe on 2026-08-31 captured
+`py000001` then `py000002` both answering "already exists", confirming the
+held range is more than a single name and matching that counting
+explanation; nothing points to a server-side timeout. Fixed on
+`phase-3f-manual-test-regressions` — `seedFilerefCounter` reads the
+session's `filerefs` collection once on the first run after connecting and
+starts the counter past whatever it holds, and `createRunFileref` adds a
+bounded assign-retry for the two-windows-one-session case. See the 3f
+slice's own item for the full landing note and test list. **Verified live
+2026-08-31** against a branch `.vsix`: the first `print(k)` after a reload
+returns on the first attempt, no delay.
+
+### Finding 73 — An oversized rich-output write can kill the compute session, surfacing as a job-log HTTP 500 and then a session-gone 404
+
+Running **Oversize output is skipped, not fatal**
+(`docs/dev/manual-test-pass.md` §8) for the first time — a `matplotlib`
+script writing a 4000×4000 RGB image at 300 dpi via `imshow`/`savefig`
+(`figsize=(40, 40)`), well past ADR-0019's 10 MiB cap.
+
+- **The run itself failed**, not with the "could not retrieve rich output
+  file…" note ADR-0019's design expects, but with "Running on SAS Viya
+  failed. See the Python on Viya log for details." **Show Log**: `running
+  the program: the backend failed: the compute service returned HTTP 500
+  (Get "http://<pod-ip>/compute/sessions/<session-id>/jobs/<job-id>/log?limit=200&start=9&timeout=10":
+  dial tcp <pod-ip>: c…, error code 5800, correlator
+  2333b58d-da50-4983-96eb-ab8755242983)` — a `dial tcp` failure embedded in
+  the deployment's own error body, on the job-log long-poll, not the
+  initial submission.
+- **The next, unrelated selection on the same session** (`import
+  matplotlib` alone) got "The SAS Viya session ended. Connect again and
+  re-run." **Show Log**: `the backend went away: the compute session is no
+  longer available (A session with the ID "<session-id>" could not be
+  found., error code 5837, correlator d231c7e5-ccd3-470d-b2e1-1b90be1484a1)`
+  — a plain 404 on the session itself, not just the job.
+
+**Reading:** the sequence (job-log 500, then session-gone 404) reads as the
+session's own pod becoming unreachable while writing or holding the
+oversized figure in memory, consistent with an out-of-memory kill of the
+session container — but this probe did not inspect pod-level logs or
+events, only the two client-visible failures and their order, so that
+mechanism is not confirmed.
+
+**Resolved 2026-08-31.** This is not the cap failing — `exceedsCaptureCap`
+filters the *after*-listing by `size`, so it only runs once the job has
+settled and the session is alive; the script above OOM-kills the pod
+inside `savefig` before any file exists to skip (~384 MB array, ~1.7 GB
+canvas). ADR-0019 amended to state the transfer/generation boundary; §8's
+script reworded to `imshow(np.random.rand(3000, 3000))` at `dpi=200`,
+which writes a >10 MiB PNG without the giant buffer. **Verified live
+2026-08-31** against a branch `.vsix`: the reworded script returned
+`[could not retrieve rich output file "oversize.png": it is larger than
+the 10485760-byte capture limit]` in place of the figure and a following
+`import matplotlib` ran on the same session — the skip path works as
+designed. A script that OOM-kills the container during figure generation
+stays a documented known limitation, outside the cap's scope; a
+friendlier `translate()` message for that rare path is an optional,
+non-blocking follow-up.
+
+### Finding 74 — A failing run's output stream carries the Python interpreter banner and `>>>` prompt markers
+
+Seen 2026-08-31 running §7's minimal recursion script
+(`def recurse(n): return recurse(n + 1)` / `recurse(0)`) against `verde`
+with a branch `.vsix`. The program transcript (output channel, not the
+diagnostic log) was:
+
+```
+Running recurse.py on SAS Viya profile "verde"…
+Python 3.12.12 (main, Jul 28 2026, 21:13:39) [GCC 11.5.0 …] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>>
+>>>
+ERROR: Unhandled Python exception.
+>>>
+Traceback (most recent call last):
+  File "<stdin>", line 2, in <module>
+  File "<string>", line 4, in <module>
+  File "<string>", line 2, in recurse
+  [Previous line repeated 995 more times]
+RecursionError: maximum recursion depth exceeded
+>>>
+Finished with an error.
+```
+
+with the traceback tail (`[Previous line repeated 995 more times]
+RecursionError: … >>>`) re-emitted once more after "Finished with an
+error."
+
+**What this establishes.** §6's **Hello world streams clean** asserts "no
+SAS NOTEs, no page-break banners, no `>>>` markers", and the 2026-08-30
+successful-run checks (hello world, a 5000-line loop) held — so the
+banner / `>>>` bleed is specific to the **error path**, first examined
+closely here. **Nothing was written to Show Log at error level**, so
+these lines are reaching the output channel rather than the diagnostic
+log. Not captured this run: the `type` on the banner/`>>>` log lines —
+i.e. whether `logFilter.ts`'s `isNoiseLine` should have dropped them, or
+`PROC PYTHON` emits them as `normal`/`error` when the submitted file
+raises. That, and the duplicated traceback-tail push after the outcome
+line, are what a follow-up needs to pin down. Not implicated in Finding
+72's fix (fileref allocation, not the log path). Tracked as a deferred
+item in Phase 3's **3f** slice.

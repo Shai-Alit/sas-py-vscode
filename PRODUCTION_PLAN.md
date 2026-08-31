@@ -499,8 +499,11 @@ upward per phase. The ≥85% target this section originally set was written agai
 a source tree — `connection/`, `dialects/`, `python/` — that only ever came half
 true: the code landed under `src/{auth,backend,compute,dialects,profile}/`, and
 `connection/` and `python/` were never created. The gate is a single aggregate
-ratchet in `.c8rc.json` rather than a per-directory target, and as of 2026-08-18
-it stands at 92 / 92 / 91 / 95, so the original figure is long since passed.
+ratchet in `.c8rc.json` rather than a per-directory target; it has moved twice
+since this was written (3b, then the post-3f floor raise on functions), so
+the actual current numbers are whatever `.c8rc.json` says today rather than a
+figure copied here — as of 2026-08-31 that's lines 93 / statements 93 /
+functions 93 / branches 95. The original ≥85% figure is long since passed.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
 
@@ -658,11 +661,11 @@ get written.
 |---|---|---|
 | ~~Licensing — Apache-2.0 code shipped under MIT~~ | ~~High — legal~~ | **Retired.** Settled to Apache-2.0 (ADR-0000); executed in 0a. Residual risk is now only header/NOTICE discipline, enforced by the CI copyright check |
 | **`endsubmit;` / macro injection** in submitted Python | **High — correctness + security** | **Settled 2026-08-16 (findings 31–35).** Inlining *is* unsafe — `endsubmit;` in a string ends the block and the poisoned session then reports `completed` having run nothing. Mitigation is upload + `proc python infile=<fileref>;`, which tokenises none of the file; 3a's corpus tests upload fidelity rather than escaping |
-| Rich output has no clean return path | High — reshapes Phase 3 | Probe (3c) before writing rendering code; `print`-only is an acceptable v1 floor |
+| ~~Rich output has no clean return path~~ | ~~High — reshapes Phase 3~~ | **Retired.** Settled by 3c's probe (findings 61–67) and 3c-i (ADR-0019): write to the session's working directory, retrieve by diffing a before/after listing. `print`-only was the v1 floor; never needed |
 | ~~Namespace reset requires killing the session~~ | ~~Medium — degrades cancel *and* Run File~~ | **Retired 2026-08-16 (finding 38).** `proc python restart;` clears the interpreter in ~3.4 s with the compute session, its libraries and its filerefs untouched, and composes with `infile=` in one statement |
 | Session dies mid-run / state lost on reconnect | Medium | Explicit detection and messaging in 2a; fixture-driven tests |
 | `PROC PYTHON` absent on Viya 3.5 | Medium | Capability probe degrades gracefully; docs make no unverified claim |
-| Compute cancellation doesn't interrupt a running Python step | Medium — bad UX | Probe after 3d-i; fall back to session reset with a clear message |
+| Compute cancellation doesn't interrupt a running Python step | Medium — bad UX | Probe after 3d-i; fall back to session reset with a clear message. **Not yet probed** — relocated 2026-08-27 to `docs/phases/phase-4.md`'s own Runbook as the "Probe cancellation" item, since Phase 3 closed before this was reached |
 | ~~Phase 2a exceeds a reviewable PR~~ | ~~Medium~~ | **Retired 2026-08-14.** The pre-agreed boundary was the generated client, and ADR-0010 means there is no generated client to split at. 2a split three ways on a different seam — core / VS Code shell / one account, one command — and each part was reviewable on its own |
 | Large stdout volumes truncate or slow the log poll | Medium | High-volume fixtures in 3b |
 | Ported code arrives carrying upstream defects | **Medium, and repeatedly confirmed** | Audit-don't-transcribe rule (Phase 1b). No longer a hypothetical: reading `auth.ts` found five, `AuthProvider.ts` four, and `CAHelper.ts` two. Every ported file gets read before it is trusted, and the findings are recorded in the slice that ports it |

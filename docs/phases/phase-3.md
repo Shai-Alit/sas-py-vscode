@@ -1440,7 +1440,7 @@ stated reason to stay open (see that housekeeping's own record in `STATUS.md`),
 and both are naturally Phase 4's to pick up rather than lingering as Phase 3
 debt. See phase-4.md for the full carried-over text.
 
-☐ **3f — close the regressions the first full manual test pass found, before
+☑ **3f — close the regressions the first full manual test pass found, before
 Phase 4 starts.** `docs/dev/manual-test-pass.md` was run by hand end to end
 for the first time since Phase 3 closed, 2026-08-27, against live `verde` and
 `Innov` profiles with the packaged `.vsix`. Findings triaged 2026-08-28

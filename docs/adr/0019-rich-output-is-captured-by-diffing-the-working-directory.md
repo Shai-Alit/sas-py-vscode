@@ -263,3 +263,63 @@ ends within fifteen idle minutes anyway") this ADR already weighed as a
 smaller cost than either capturing an incomplete run's output or slowing
 cancellation down. If real usage says otherwise, that is a decision for
 whichever slice picks it up next, not a silent revision here.
+
+## Amendment — 2026-08-30 (Phase 3's 3f slice): the 10 MiB cap guards the transfer, not the generation
+
+The 2026-08-30 manual test pass ran §8's **Oversize output is skipped, not
+fatal** item for the first time — the 2026-08-27 pass had skipped it, the
+old wording gave no way to produce a file that large — and it did not
+behave the way point 8 promises. Instead of the "could not retrieve rich
+output file…" note, the run failed with an HTTP 500 on the job-log
+long-poll (a `dial tcp` failure reaching the session's own pod), and the
+next, unrelated submission got a plain 404 on the session itself. Full
+wire detail is Finding 73 in `docs/phases/phase-3.md`.
+
+**This is not the cap failing to fire. The cap never got the chance.**
+Point 7's `exceedsCaptureCap` (`src/backend/richOutput.ts`) is a filter
+over the **after-snapshot's directory listing**: it compares each new
+entry's `size` against `MAX_CAPTURE_BYTES` and declines to fetch anything
+over it, so a runaway file is never read into the extension host's memory
+and base64-inflated. That filter runs at point 4, which is reached only
+once the job has settled and the after-listing has come back — i.e. only
+while the session is still alive.
+
+The §8 script as it was first written (`figsize=(40, 40)`,
+`imshow(np.random.rand(4000, 4000, 3))`, `dpi=300`) never reaches that
+point. It asks Python for roughly 384 MB in the array alone and renders a
+canvas of about 1.7 GB — the session container runs out of memory *inside
+`savefig`*, before the job returns a file at all. `streamJobLog` then
+fails on the dead pod, `runProgram` returns before `captureRichOutput` is
+called, and the session is genuinely gone.
+
+**Nothing this ADR's mechanism does can prevent that, and it is not meant
+to.** The cap bounds what this extension will pull back over the wire and
+hold in memory; it says nothing about what a user's own code is allowed to
+allocate on a remote container it fully controls for the length of a run.
+That is the same boundary already drawn for `print()` — this backend does
+not stop a script from writing gigabytes to stdout or filling the
+session's disk either. A script whose figure *generation* exhausts the
+container is a fatal session loss, in the same class as any other
+out-of-memory kill, and outside the scope of a diff-and-fetch capture
+policy.
+
+**What changed here:**
+
+- **The §8 test script is reworded** (2026-08-30, in `manual-test-pass.md`
+  itself) to `imshow(np.random.rand(3000, 3000))` at `figsize=(20, 20)`,
+  `dpi=200` — a ~72 MB array and a PNG comfortably over the 10 MiB cap,
+  with no multi-gigabyte render buffer. That exercises the path point 8
+  actually describes: a written file the diff finds, declines to fetch on
+  size, and reports with a `text/plain` note while the run's own outcome
+  stands. The container-OOM shape stays recorded as its own known
+  limitation, not folded back into this item.
+- **A friendlier message for the OOM shape is under consideration, not
+  decided here.** When the job-log stream fails mid-run — after the job
+  was accepted — with a transport-level 5xx to the session's own pod,
+  `procPython.ts`'s `translate()` currently returns `backend-failed`
+  ("Running on SAS Viya failed. See the log."). Reclassifying that
+  specific case as `backend-gone` ("The SAS Viya session ended. Connect
+  again and re-run.") would point the user at the right recovery, but
+  risks misreading a transient gateway 5xx as a dead session. Tracked as
+  an open item in Phase 3's 3f slice, pending one more live observation of
+  whether the job-log 500 reliably precedes the session 404.

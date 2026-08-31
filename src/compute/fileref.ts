@@ -9,10 +9,25 @@
  * ADR-0014 settled that Python reaches the interpreter as an uploaded file run
  * with `proc python infile=<fileref>;`, never inlined, because inlining can
  * silently poison the session (finding 31). This module is the upload half of
- * that mechanism and nothing else: create a fileref, write its content. It does
- * not compose `infile=<fileref>;` or touch a job — that belongs to slice `3a`,
- * on top of exactly these two calls, the same boundary `job.ts` draws around
+ * that mechanism and nothing else: create a fileref, write its content, and —
+ * added for Finding 72 — list the names a session already holds. It does not
+ * compose `infile=<fileref>;` or touch a job — that belongs to slice `3a`,
+ * on top of exactly these calls, the same boundary `job.ts` draws around
  * `PROC PYTHON` itself.
+ *
+ * ## Listing what a session already holds
+ *
+ * {@link listFilerefNames} is a single read-only `GET` of the session's
+ * fileref collection, following the `files` relation (the wire name — not
+ * renamed here despite the near-clash with `files.ts`'s working-*directory*
+ * API, which follows a different relation, `getFiles`). It exists for one
+ * caller: `procPython.ts` seeds its per-run `PYnnnnnn` counter past whatever
+ * a *reattached* session already holds, so the first run after a window
+ * reload does not collide on `PY000001` (Finding 72 — a fresh extension
+ * host restarts that counter at zero while the session it reconnects to,
+ * ADR-0012, still holds the names an earlier host assigned). Being a read,
+ * it does not bear on the session-gone reading below: it neither `deassign`s
+ * nor `delete`s anything.
  *
  * ## Why this exists before 3a
  *
@@ -72,6 +87,13 @@ import { asSessionGone, type ComputeSession } from "./session";
 
 /** The relation on a session that creates a fileref in it. `POST`. */
 export const ASSIGN_REL = "assign";
+
+/** The relation on a session that lists the filerefs assigned in it. `GET`,
+ * a collection. The wire name is `files` (the recorded
+ * `compute-session-created` representation carries it under that name) —
+ * distinct from `files.ts`'s `getFiles`, which resolves to the session's
+ * working *directory*, not its filerefs. */
+export const FILEREF_LIST_REL = "files";
 
 /** The relation on a fileref that re-reads it, for a fresh `ETag`. `GET`. */
 export const FILEREF_SELF_REL = "self";
@@ -157,6 +179,52 @@ export async function createFileref(
     );
   }
   return { ok: true, value: fileref };
+}
+
+/**
+ * Lists the names of the filerefs currently assigned in a session.
+ *
+ * One `GET` of the session's `files` relation. The only reader is
+ * `procPython.ts`, seeding its per-run counter past a reattached session's
+ * existing `PYnnnnnn` filerefs — see this module's own doc comment and
+ * Finding 72.
+ *
+ * Only each item's `id` is read; finding 36 recorded a fileref's `id` equal
+ * to its assigned name. A body that is not a collection with an `items`
+ * array is returned as an **empty list, not a failure** — the caller's
+ * fallback is a bounded retry-on-collision, and failing the seed would turn
+ * a merely slow first run into a broken one. A transport failure still
+ * propagates (mapped through {@link asSessionGone}, as every call here is),
+ * so a genuinely dead session is not hidden behind an empty list.
+ */
+export async function listFilerefNames(
+  client: ComputeClient,
+  session: ComputeSession,
+  options?: { signal?: AbortSignal | undefined },
+): Promise<ComputeResult<readonly string[]>> {
+  const link = findLink(session.links, FILEREF_LIST_REL);
+  if (link === undefined) {
+    return linkMissing("compute session", session.id, FILEREF_LIST_REL);
+  }
+
+  const result = await client.send({ link, signal: options?.signal });
+  if (!result.ok) return asSessionGone(result);
+
+  const body: unknown = result.value.body;
+  const items =
+    typeof body === "object" &&
+    body !== null &&
+    Array.isArray((body as { items?: unknown }).items)
+      ? (body as { items: readonly unknown[] }).items
+      : [];
+
+  const names: string[] = [];
+  for (const item of items) {
+    if (typeof item !== "object" || item === null) continue;
+    const { id } = item as { id?: unknown };
+    if (typeof id === "string" && id !== "") names.push(id);
+  }
+  return { ok: true, value: names };
 }
 
 /**

@@ -28,6 +28,18 @@
  * `count: 0`, so nothing needs cleaning up first) and removes that hazard
  * structurally rather than by ordering writes carefully.
  *
+ * The names are a per-instance counter, `PY000001`, `PY000002`, … — which
+ * only starts at `count: 0` for a session this backend opened. A window
+ * reload builds a fresh backend against a session it *re-attaches* to
+ * (ADR-0012), so the counter restarts while the session still holds the
+ * names the previous backend assigned, and `assign` answers `400` on each
+ * until the counter climbs past them (Finding 72). {@link
+ * ProcPythonBackend.seedFilerefCounter} skips that whole range in one `GET`
+ * on the first run after connecting; {@link
+ * ProcPythonBackend.createRunFileref}'s bounded retry is the backstop for
+ * what a single seed cannot cover — two windows sharing one session, each
+ * counting on its own.
+ *
  * ## Why `busy` delegates to a guard rather than a private boolean
  *
  * `ExecutionBackend.busy` and `ComputeSessionManager.startSubmission` /
@@ -145,7 +157,12 @@ import {
   type ComputeFailure,
   type ComputeResult,
 } from "../compute/client";
-import { createFileref, writeFilerefContent } from "../compute/fileref";
+import {
+  createFileref,
+  type Fileref,
+  listFilerefNames,
+  writeFilerefContent,
+} from "../compute/fileref";
 import {
   deleteSessionFile,
   listSessionFiles,
@@ -199,6 +216,44 @@ const FRAME_PATTERN = /^ {2}File "(.*)", line (\d+), in (.+)$/;
  * `<stdin>` frames, stopping at the first frame that is not one, rather than
  * dropping every frame with this label wherever it appears. */
 const WRAPPER_FRAME_FILE = "<stdin>";
+
+/** `PY` and exactly six digits — what {@link ProcPythonBackend.nextFilerefName}
+ * produces. Matched the other way here to read an existing fileref's number
+ * back when seeding the counter from a reattached session (Finding 72). */
+const FILEREF_NAME_PATTERN = /^PY(\d{6})$/i;
+
+/** How many fileref names one run will try before giving up.
+ *
+ * {@link ProcPythonBackend.seedFilerefCounter} normally skips a reattached
+ * session's existing `PYnnnnnn` filerefs in a single request, so this bounded
+ * retry only ever engages for the residual case: two windows sharing one
+ * session (ADR-0012), each with its own counter, drifting onto the same name,
+ * or a seed request that failed. Sixteen is far more than that race can
+ * realistically need and still a hard stop, so a deployment that answers
+ * every `assign` with a `4xx` for some unrelated reason fails the run rather
+ * than looping. */
+const MAX_FILEREF_ASSIGN_ATTEMPTS = 16;
+
+/**
+ * Whether a failed `createFileref` is worth retrying under a different name.
+ *
+ * `createFileref`'s only per-call variable this backend does not fully
+ * control is the fileref `name` — the session link and the `{ name, path }`
+ * body shape are fixed — so a `4xx` from the `assign` `POST` (most often
+ * `400`, "the fileref … already exists") means *that name* is unusable, and
+ * advancing to the next one is the fix. A `404` is already remapped to
+ * `session-gone` by `fileref.ts`, `401`/`403` carry their own codes, and a
+ * `5xx` or a transport failure is not something a new name would change —
+ * none of those match here, so all of them fall through to `translate`.
+ */
+function isRetriableFilerefName(failure: ComputeFailure): boolean {
+  const { problem } = failure;
+  return (
+    problem.code === "compute-rejected" &&
+    problem.error.status >= 400 &&
+    problem.error.status < 500
+  );
+}
 
 /**
  * The three calls of `ComputeSessionManager`'s busy guard, narrowed and bound
@@ -422,6 +477,10 @@ export class ProcPythonBackend implements ExecutionBackend {
   private runtime: RuntimeCapabilities = { kind: "unprobed" };
   private runCounter = 0;
   private filerefCounter = 0;
+  /** Set once {@link seedFilerefCounter} has run for this backend, so the
+   * fileref-collection `GET` it makes happens at most once per connection
+   * rather than before every run. */
+  private filerefCounterSeeded = false;
 
   constructor(
     private readonly client: ComputeClient,
@@ -863,21 +922,13 @@ export class ProcPythonBackend implements ExecutionBackend {
     opts: ExecuteOptions,
   ): Promise<BackendResult<ExecutionOutcome>> {
     try {
-      const filerefName = this.nextFilerefName();
-      const fileref = await createFileref(
-        this.client,
-        this.session,
-        filerefName,
-        {
-          signal: run.controller.signal,
-        },
-      );
-      if (!fileref.ok)
-        return this.translate(fileref, "running the program", true);
+      const created = await this.createRunFileref(run);
+      if (!created.ok) return created;
+      const { fileref, name: filerefName } = created.value;
 
       const written = await writeFilerefContent(
         this.client,
-        fileref.value,
+        fileref,
         program.bytes,
         { signal: run.controller.signal },
       );
@@ -1211,6 +1262,89 @@ export class ProcPythonBackend implements ExecutionBackend {
       (this.resetController?.signal.aborted ?? false) ||
       (this.probeController?.signal.aborted ?? false)
     );
+  }
+
+  /**
+   * Assigns this run's fileref, working around a reattached session that
+   * still holds earlier `PYnnnnnn` names (Finding 72).
+   *
+   * {@link seedFilerefCounter} runs first, once per connection, moving the
+   * counter past whatever the session already holds in a single `GET`. The
+   * loop is the backstop for what that cannot cover — two windows sharing
+   * one session (ADR-0012), each counting independently — and for a seed
+   * request that failed: on a retriable `4xx` from `assign`
+   * ({@link isRetriableFilerefName}) it advances to the next name and tries
+   * again, up to {@link MAX_FILEREF_ASSIGN_ATTEMPTS} times. Any other
+   * failure, or a cancel, returns straight away.
+   */
+  private async createRunFileref(
+    run: ActiveRun,
+  ): Promise<BackendResult<{ fileref: Fileref; name: string }>> {
+    await this.seedFilerefCounter(run.controller.signal);
+
+    let lastCollision: ComputeFailure | undefined;
+    for (let attempt = 0; attempt < MAX_FILEREF_ASSIGN_ATTEMPTS; attempt += 1) {
+      const name = this.nextFilerefName();
+      const result = await createFileref(this.client, this.session, name, {
+        signal: run.controller.signal,
+      });
+      if (result.ok) {
+        return { ok: true, value: { fileref: result.value, name } };
+      }
+      if (this.isCurrentRunAborted()) {
+        return fail({ code: "cancelled" }, "running the program");
+      }
+      if (!isRetriableFilerefName(result)) {
+        return this.translate(result, "running the program", true);
+      }
+      lastCollision = result;
+    }
+
+    // Every attempt collided on the name. Report it the same way a single
+    // collision would be (`translate(..., true)` → `transfer-failed`,
+    // nothing ran), with the last attempt's detail.
+    const detail =
+      lastCollision === undefined
+        ? `${String(MAX_FILEREF_ASSIGN_ATTEMPTS)} fileref names were all already assigned in the session`
+        : `${describeComputeProblem(lastCollision.problem)} (${String(MAX_FILEREF_ASSIGN_ATTEMPTS)} names tried, all already assigned)`;
+    return fail({ code: "transfer-failed", detail }, "running the program");
+  }
+
+  /**
+   * Moves {@link filerefCounter} past any `PYnnnnnn` fileref the session
+   * already holds — once per connection.
+   *
+   * A fresh `ProcPythonBackend` starts the counter at zero. When the session
+   * it was built against is one an earlier extension host already used (a
+   * window reload re-attaches rather than restarts, ADR-0012), that session
+   * still holds `PY000001…`, and each `createFileref` would collide until the
+   * counter climbed past them by failing — Finding 72. One `GET` of the
+   * fileref collection moves it past the highest number in a single step.
+   *
+   * Best-effort: a failed or malformed listing leaves the counter untouched
+   * and {@link createRunFileref}'s bounded retry is the fallback. This never
+   * fails a run, and it runs at most once — a genuinely dead session is
+   * caught by the `assign` `POST` that follows.
+   */
+  private async seedFilerefCounter(signal: AbortSignal): Promise<void> {
+    if (this.filerefCounterSeeded) return;
+    this.filerefCounterSeeded = true;
+
+    const listed = await listFilerefNames(this.client, this.session, {
+      signal,
+    });
+    if (!listed.ok) return;
+
+    let highest = 0;
+    for (const filerefName of listed.value) {
+      const match = FILEREF_NAME_PATTERN.exec(filerefName);
+      if (match === null) continue;
+      const [, digits] = match;
+      highest = Math.max(highest, Number.parseInt(digits ?? "0", 10));
+    }
+    if (highest > this.filerefCounter) {
+      this.filerefCounter = highest;
+    }
   }
 
   private nextRunId(): string {

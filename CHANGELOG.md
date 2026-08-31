@@ -1081,6 +1081,20 @@ called out under **Changed** with a migration note.
   in ordinary ones — because the log filter never excluded the banner's own
   line type, and the session never asked the deployment to suppress page
   breaks in the first place. Both are fixed now.
+- **The first program you run after reloading the window no longer fails
+  with a stale-fileref collision.** A reload builds a fresh backend, whose
+  per-run fileref counter (`PY000001`, `PY000002`, …) restarts at zero,
+  against a compute session it re-attaches to
+  ([ADR-0012](docs/adr/0012-compute-session-lifetime-and-storage.md)) that
+  still holds the names the pre-reload backend assigned — so `assign`
+  answered HTTP 400 ("the fileref … already exists") on every submission
+  for the 60–90 seconds it took repeated attempts to walk the counter past
+  them (Finding 72, surfaced by the 2026-08-30 re-run of the manual test
+  pass against the 3f build). The backend now reads the session's fileref
+  collection once on the first run after connecting and starts the counter
+  past whatever is already there; a bounded retry under the next name
+  covers the remaining case of two windows sharing one session and
+  counting independently.
 - Sign-in against a default Viya 4 deployment now works at all. The built-in
   `vscode` OAuth client registers exactly one redirect value —
   `urn:ietf:wg:oauth:2.0:oob`, "show the user a code" — and no custom-scheme URI,

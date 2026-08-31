@@ -63,6 +63,28 @@ channel not the diagnostic log, line types not yet captured; its own
 item for a later slice, not a 3f blocker. Still open before a PR opens:
 the second, final adversarial pass and the profile-switch retest.
 
+**Second, final adversarial review pass, 2026-08-31** (Sean's own VS Code
+window, full branch diff against `main`, per this project's standing
+review policy): no P0/P1s, disciplined error handling, no secrets, clean
+strict-TypeScript throughout. One minor finding worth fixing: in the
+Finding 72 fix above, `ProcPythonBackend.seedFilerefCounter` set its
+`filerefCounterSeeded` flag before confirming the fileref listing actually
+succeeded, so a transient failure or a cancel mid-`GET` disabled seeding
+for the rest of the connection — dropping every later run in it back onto
+the 16-attempt retry, which cannot walk past a reattached session holding
+more than 16 `PYnnnnnn` names, reproducing Finding 72's own symptom in a
+narrower window. **Fixed the same day**: the flag now sets only after the
+listing reports `ok`, so a failed or cancelled attempt retries on the next
+run instead of sticking; re-seeding is safe since the counter only ever
+moves up. A new regression test pins the retry. Independently re-verified
+this session (traced the reorder, the doc-comment update, and the new
+test's arithmetic against the actual diff, not the review's word alone).
+Two other notes were left as documented, non-blocking judgment calls
+rather than fixes: the retry loop has no backoff between attempts, and
+`connect()` no longer de-duplicates concurrent calls when no profile is
+configured. See phase-3.md's Finding 72 punch-list item for the full
+account. **Still open before a PR opens: the profile-switch retest only.**
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -148,7 +170,7 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) implemented + first review pass done on `phase-3f-manual-test-regressions`, not yet merged, no PR opened** | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | 3a–3e done (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)); **3f (manual-test-pass regressions) implemented + both review passes done on `phase-3f-manual-test-regressions`, not yet merged, no PR opened; only the profile-switch retest remains** | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | not started — blocked on Phase 3's 3f | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

@@ -1508,6 +1508,14 @@ gaps needing one more hand-run before being written off.
 > PR opens: the second, final adversarial pass and the profile-switch
 > retest.
 
+> **Second, final adversarial review pass complete, 2026-08-31**, in
+> Sean's own VS Code window against the full branch diff (`git diff
+> main`) — no P0/P1s, disciplined error handling, no secrets, clean
+> strict TypeScript throughout, thorough HTTP-boundary test coverage. One
+> minor finding on the Finding 72 fix, fixed the same day; see that
+> item's own **Review pass** note below for the full account. **Still
+> outstanding before a PR opens: the profile-switch retest only.**
+
 - ☑ **Fix: the `connected` context key never clears itself outside an
   explicit Disconnect.** Three symptoms (Sign Out then Run File, an idle
   session reap, and "no clear way to reconnect" generally) all traced to one
@@ -1699,6 +1707,28 @@ gaps needing one more hand-run before being written off.
   **Developer: Reload Window**, `print(k)` returns `99` on the first
   attempt with no delay. §4's box is ticked on that run, not just the
   unit tier.
+  **Review pass (2026-08-31), one refinement:** `seedFilerefCounter` set
+  `filerefCounterSeeded` before confirming `listFilerefNames` actually
+  succeeded, so a transient failure or a cancel mid-`GET` disabled seeding
+  for the rest of the connection — dropping every later run in it back
+  onto the 16-attempt retry, which cannot walk past a reattached session
+  holding more than 16 `PYnnnnnn` names (any session that ran more than 16
+  programs before the reload, since filerefs are never deassigned within
+  one), reproducing Finding 72's own symptom in a narrower window. Fixed
+  by moving the flag-set to after `listed.ok`, so a failed or cancelled
+  listing retries on the next run rather than sticking; re-seeding is
+  safe, since `filerefCounter` only ever moves up, including past names
+  the retry loop's own `assign` calls have since consumed. New test in
+  `proc-python-backend.test.ts` ("retries the listing on the next run
+  after a transient failure, rather than disabling the seed") pins it —
+  asserts two `files` requests across two runs and that the second run's
+  fileref jumps to the seeded name (`PY000006`) rather than continuing
+  the un-seeded counter (`PY000002`). Two other review notes were left as
+  documented, non-blocking judgment calls: the retry loop has no backoff
+  between attempts (bounded at 16, vanishingly unlikely to matter on
+  `assign`), and `connect()` no longer de-duplicates concurrent calls
+  when no profile is configured (a pre-existing, cosmetic double toast,
+  not introduced by this slice).
 - ☑ **New, 2026-08-30: an oversized rich-output write can take the whole
   compute session down, not just fail to capture the file.** Surfaced
   running **Oversize output is skipped, not fatal** (§8) for the first

@@ -206,6 +206,11 @@ interface RouterOptions {
    * exercising `seedFilerefCounter`'s best-effort "leave the counter alone"
    * arm. */
   filerefListReply?: Reply;
+  /** The first N `files` collection `GET`s fail (HTTP 500); later ones behave
+   * normally, returning {@link RouterOptions.filerefList}. Models a transient
+   * listing failure that must not disable seeding for the whole connection —
+   * the next run has to retry the `GET`. */
+  filerefListFailFirst?: number;
   selfReply?: Reply;
   uploadReply?: Reply;
   executeReply?: Reply;
@@ -307,6 +312,7 @@ function router(opts: RouterOptions): {
 } {
   let filerefName = "unknown";
   let logCalls = 0;
+  let filesCalls = 0;
   let assignCalls = 0;
   let executeCalls = 0;
   let sysccCalls = 0;
@@ -323,6 +329,13 @@ function router(opts: RouterOptions): {
         case "files": {
           if (opts.filerefListReply !== undefined) {
             return opts.filerefListReply;
+          }
+          filesCalls += 1;
+          if (
+            opts.filerefListFailFirst !== undefined &&
+            filesCalls <= opts.filerefListFailFirst
+          ) {
+            return rejected("compute-rejected", "500 Internal Server Error");
           }
           return ok(
             {
@@ -1787,6 +1800,46 @@ describe("ProcPythonBackend", () => {
       // between this and a collision — here nothing is actually held, so the
       // first name works.
       assert.deepEqual(assignNames(requests), ["PY000001"]);
+    });
+
+    it("retries the listing on the next run after a transient failure, rather than disabling the seed", async () => {
+      // A failed `files` GET must not stick the backend on the 16-attempt
+      // retry for the rest of the connection — that cannot walk past a
+      // reattached session holding more than 16 `PYnnnnnn` names. The flag is
+      // only set once a listing actually comes back.
+      const { client, requests } = router({
+        syscc: "0",
+        filerefListFailFirst: 1,
+        filerefList: ["PY000001", "PY000002", "PY000005"],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        sessionWithFilerefList(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+
+      // First run: the listing 500s, so the counter stays at zero.
+      const first = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+      assert.ok(first.ok);
+
+      // Second run: the listing is retried, succeeds, and seeds past the
+      // highest held name — so this run's fileref jumps to PY000006 rather
+      // than continuing from PY000002.
+      const second = await accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      ).done;
+      assert.ok(second.ok);
+
+      assert.equal(
+        requests.filter((request) => request.link.rel === "files").length,
+        2,
+        "the listing was not retried after its first failure",
+      );
+      assert.deepEqual(assignNames(requests), ["PY000001", "PY000006"]);
     });
 
     it("retries a name collision under the next name", async () => {

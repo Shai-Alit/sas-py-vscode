@@ -477,9 +477,11 @@ export class ProcPythonBackend implements ExecutionBackend {
   private runtime: RuntimeCapabilities = { kind: "unprobed" };
   private runCounter = 0;
   private filerefCounter = 0;
-  /** Set once {@link seedFilerefCounter} has run for this backend, so the
-   * fileref-collection `GET` it makes happens at most once per connection
-   * rather than before every run. */
+  /** Set once {@link seedFilerefCounter} has read the session's fileref
+   * collection back successfully, so the `GET` it makes happens at most once
+   * per connection rather than before every run. A failed or cancelled
+   * listing leaves this `false` so the next run retries — see
+   * {@link seedFilerefCounter}. */
   private filerefCounterSeeded = false;
 
   constructor(
@@ -1321,19 +1323,26 @@ export class ProcPythonBackend implements ExecutionBackend {
    * counter climbed past them by failing — Finding 72. One `GET` of the
    * fileref collection moves it past the highest number in a single step.
    *
-   * Best-effort: a failed or malformed listing leaves the counter untouched
-   * and {@link createRunFileref}'s bounded retry is the fallback. This never
-   * fails a run, and it runs at most once — a genuinely dead session is
-   * caught by the `assign` `POST` that follows.
+   * Best-effort: a malformed listing (returned as an empty list by
+   * {@link listFilerefNames}) leaves the counter untouched and
+   * {@link createRunFileref}'s bounded retry is the fallback. This never fails
+   * a run. It seeds at most once per connection, but only *after* a listing
+   * actually comes back: a transient failure or a cancel during the `GET`
+   * leaves the flag unset so the next run tries again, rather than disabling
+   * the seed for the whole connection and falling back on a 16-attempt retry
+   * that cannot walk past a reattached session holding more than 16
+   * `PYnnnnnn` names. Re-seeding is safe — the counter only ever moves up
+   * ({@link filerefCounter} is raised, never lowered), including past names
+   * the retry loop's own `assign` calls have since consumed.
    */
   private async seedFilerefCounter(signal: AbortSignal): Promise<void> {
     if (this.filerefCounterSeeded) return;
-    this.filerefCounterSeeded = true;
 
     const listed = await listFilerefNames(this.client, this.session, {
       signal,
     });
     if (!listed.ok) return;
+    this.filerefCounterSeeded = true;
 
     let highest = 0;
     for (const filerefName of listed.value) {

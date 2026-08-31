@@ -1792,6 +1792,12 @@ gaps needing one more hand-run before being written off.
   reworded and ticked). The §7 run surfaced one new, deferred item — the
   interpreter banner and `>>>` markers in a *failing* run's output — see
   its own entry above.
+- ☑ **`npm run verify`, run by Sean 2026-08-31 against `b16c132`:** 1137
+  passing, coverage 93.97/95.04/93.55/93.97 (stmts/branch/funcs/lines).
+  Functions truncates to 93, one point above `.c8rc.json`'s then-current
+  `functions: 92` floor — the other three all still truncate to their
+  existing floors. **Ratchet raised the same way 3b's was**: `functions`
+  moved from 92 to 93 in `.c8rc.json`; no other floor changes.
 
 > This is the first genuinely useful build. Install the `.vsix` locally and use
 > it for real work for a few days before starting Phase 4. Real use will

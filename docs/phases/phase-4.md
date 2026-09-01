@@ -252,6 +252,8 @@ appended `Run "Python on Viya: Show Environment" …` sentence shows on the
 diagnostic exactly as specified, and `manual-test-pass.md` §7's row is
 rewritten from a `(known gap)` into a ticked assertion.
 
+**Merged 2026-09-01 as [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81).**
+
 Full account in `STATUS.md`'s 4c paragraph.
 
 ☐ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).**

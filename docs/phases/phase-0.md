@@ -448,7 +448,7 @@ gh pr create --base main --head phase-0d-i-a-core-ci --fill
 branch protection (deferred from A2 — they can only be selected once they have
 reported). **Nine** of them, not four: `verify`, `docs`, `package`, and all six
 legs of `test`, because the matrix job is named
-`test (${{ matrix.os }}, node ${{ matrix.node }})` and required checks are named
+`test ($&#123;&#123; matrix.os &#125;&#125;, node $&#123;&#123; matrix.node &#125;&#125;)` and required checks are named
 per reported check. Adding an OS or a Node version therefore creates a check that
 is **not** required until someone adds it here — re-run the `PUT` below after any
 matrix change.

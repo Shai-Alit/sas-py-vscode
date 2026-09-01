@@ -50,6 +50,15 @@ the §7 run: a failing run's output stream carries the Python interpreter
 banner and `>>>` prompt markers (§6 says it should not) — split into its
 own item in Phase 3's **3f** slice for later.
 
+**Targeted re-check, 2026-09-01** (not a full pass) — for phase 4c, against
+`verde` with a `.vsix` from `phase-4c-traceback-and-cancel-fix`: §6's
+"Cancel, both ways" re-verified for the reworded cancellation message and
+the now server-accepted (`If-Match`'d) job cancel, plus the queued-run
+behaviour Finding 76 predicts. §7's `ModuleNotFoundError` row is rewritten
+from a `(known gap)` into a real assertion — 4c implemented the Show
+Environment pointer, and it is verified live (the appended sentence shows on
+the diagnostic).
+
 ## How to use this
 
 - The lists are GitHub task lists. Tick them in a preview, or copy a section into
@@ -329,7 +338,19 @@ unconfigured workspace is Local and contributes nothing to the editor
   Cancel from the progress notification's **Cancel** button; repeat and cancel
   via the **Cancel** command in the palette.
   **Expect:** both stop the run; `done` never prints. The notification really
-  does show a Cancel button (Notification-location progress, not Window).
+  does show a Cancel button (Notification-location progress, not Window). The
+  output channel's cancellation line reads **"Cancelled. If a single step was
+  already running, SAS Viya may keep executing it until that step finishes on
+  its own."** (reworded in phase 4c per Finding 76), and **no error
+  notification** appears — a clean cancel means the server accepted the
+  `If-Match`'d state `PUT` rather than the `428` a bare request drew before
+  the 4c fix (Finding 75).
+  **Re-verified 2026-09-01** against `verde` with a `.vsix` from
+  `phase-4c-traceback-and-cancel-fix`: both cancel paths as above, reworded
+  message shown, no error toast. A run submitted ~15 s into the `sleep`
+  immediately after a cancel completed cleanly ~30–40 s later — the cancelled
+  step ran out its natural duration before the session freed (Finding 76),
+  with no corruption and no reconnect needed.
 
 ## 7. Tracebacks — phase 3c-ii
 
@@ -384,10 +405,17 @@ unconfigured workspace is Local and contributes nothing to the editor
   stream also carried the Python interpreter banner and `>>>` prompt
   markers, which §6 says should never appear — split out as its own
   open item in Phase 3's **3f** slice, not a blocker for this box.
-- [x] **(live) (known gap) `ModuleNotFoundError` shows as an ordinary
-  traceback** — run `import polars` (or any absent package).
-  **Expect:** a plain `ModuleNotFoundError` traceback. It is not yet
-  cross-linked to Show Environment — that is Phase 4.
+- [x] **(live) `ModuleNotFoundError` points at Show Environment** — run
+  `import polars` (or any absent package).
+  **Expect:** a `ModuleNotFoundError` traceback whose diagnostic message (the
+  line after "Finished with an error." in the output channel) has one
+  sentence appended: `Run "Python on Viya: Show Environment" to see what is
+  installed on this connection.` The structured traceback itself (Result
+  panel, once 4d wires it) keeps Python's own text unchanged.
+  **Implemented in phase 4c** (`src/backend/tracebackDiagnostics.ts`'s
+  `withModuleNotFoundGuidance`), unit-covered, and **verified live
+  2026-09-01** against `verde` with a branch `.vsix` — the appended sentence
+  appears on the diagnostic exactly as above.
 
 ## 8. Rich output: matplotlib and pandas — phases 3c-i, 3d-ii
 

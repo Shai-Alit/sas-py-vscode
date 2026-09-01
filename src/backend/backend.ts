@@ -165,10 +165,13 @@ export interface ExecutionResult extends ExecutionOutcome {
  * unhandled Python exception"` fallback and its `SAS reported an error
  * (SYSCC=…)` message, `logFilter.ts`'s dropped-lines marker, and
  * `richOutput.ts`'s `skippedCaptureOutput` (`"could not retrieve rich output
- * file …"`, slice 3c-i) are the four that exist today. None go through
- * `l10n.t()`, because neither `procPython.ts` nor `logFilter.ts` may import
- * `vscode` (ADR-0009's coverage-scope discipline), and ADR-0015 never
- * assigned this seam a localisation boundary at all.
+ * file …"`, slice 3c-i) are the four *fallback* strings, and Phase 4c added a
+ * fifth, `tracebackDiagnostics.ts`'s `withModuleNotFoundGuidance` (`Run
+ * "Python on Viya: Show Environment" …`, appended to a `ModuleNotFoundError`'s
+ * diagnostic — guidance rather than a fallback). None go through `l10n.t()`,
+ * because neither `procPython.ts`, `logFilter.ts` nor `tracebackDiagnostics.ts`
+ * may import `vscode` (ADR-0009's coverage-scope discipline), and ADR-0015
+ * never assigned this seam a localisation boundary at all.
  *
  * **3d-i decided the boundary for what it renders itself, without solving the
  * gap above.** `src/run/outputChannel.ts` — the first thing to render
@@ -177,13 +180,16 @@ export interface ExecutionResult extends ExecutionOutcome {
  * `text/html`/`image/png` deferred-output placeholder, and every
  * `BackendProblem` (via the new `src/backend/messages.ts`, the same
  * `problems.ts`/`messages.ts` split `compute` and `auth` already use). What it
- * does **not** do is translate the four strings named above: they are already
+ * does **not** do is translate the five strings named above: they are already
  * plain English by the time they reach `RichOutput.data` or
  * `PythonDiagnostic.message`, and `outputChannel.ts` writes them verbatim, the
  * same as `logLineOutput`'s own output always was. Closing that part of the
- * gap would need `vscode` threaded down into `procPython.ts`/`logFilter.ts`,
- * which is the exact cost this comment always warned against paying "one
- * string at a time" — still not worth it for four fallback messages.
+ * gap would need `vscode` threaded down into
+ * `procPython.ts`/`logFilter.ts`/`tracebackDiagnostics.ts`, which is the exact
+ * cost this comment always warned against paying "one string at a time" —
+ * still not worth it for five short messages, but the count only moves one
+ * way, and a sixth should prompt reopening ADR-0015's boundary rather than
+ * extending this list again.
  * 3d-ii's result panel inherits the same split when it renders `text/html` and
  * `image/png` for real.
  */

@@ -398,6 +398,12 @@ function router(opts: RouterOptions): {
               id: JOB_ID,
               state: "pending",
               links: [
+                // Finding 75: `cancelJob` now reads this relation for a fresh
+                // ETag immediately before its `PUT`, routing through the
+                // same generic `case "self"` below (keyed on `rel` alone,
+                // same as the fileref's own self link) — hence the shared
+                // `'"v1"'` ETag rather than a job-specific one.
+                { rel: "self", method: "GET", href: JOB_PATH },
                 { rel: "state", method: "GET", href: `${JOB_PATH}/state` },
                 {
                   rel: "log",
@@ -810,6 +816,56 @@ describe("ProcPythonBackend", () => {
       assert.deepEqual(traceback.data.frames, [
         { file: "<string>", line: 2, name: "<module>" },
       ]);
+    });
+
+    it("appends Show Environment guidance to a ModuleNotFoundError's diagnostic message, leaving the forwarded traceback's own message untouched (phase-3.md 3e, phase-4.md 4c)", async () => {
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<stdin>", line 5, in <module>'),
+          line('  File "<stdin>", line 2, in <module>'),
+          line('  File "<string>", line 1, in <module>'),
+          line("ModuleNotFoundError: No module named 'polars'"),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "ModuleNotFoundError: No module named 'polars' Run \"Python on Viya: " +
+          'Show Environment" to see what is installed on this connection.',
+      );
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      // The forwarded traceback's own message is 4d's result-panel payload
+      // and must read exactly as Python printed it — no guidance appended.
+      assert.equal(
+        traceback.data.message,
+        "ModuleNotFoundError: No module named 'polars'",
+      );
     });
 
     it("keeps every <string> frame when the user's own code recurses, dropping only the harness's leading <stdin> frames", async () => {

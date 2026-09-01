@@ -266,12 +266,20 @@ function variableName(href: string): string | undefined {
  * comment on `createRecordedProcPythonBackend`). `recorded-connection.ts`
  * passes `false`: Phase 4's 4a slice needs a reset that stays running until
  * something — a test, or a real cancellation — ends it, the same way an
- * ordinary `execute()` job already does in both callers. */
+ * ordinary `execute()` job already does in both callers.
+ *
+ * `failCancel` (default `false`) makes the job `cancel` PUT answer a `412`
+ * instead of `204`, standing in for the residual stale-`ETag` race the
+ * Finding 75 fix cannot close (another writer touching the job between
+ * `cancelJob`'s fresh self-`GET` and its `PUT`). `commands-backend.test.ts`
+ * uses it to pin that `cancelRun` surfaces a failed backend `cancel()`
+ * rather than discarding it, the way it used to. */
 export function buildClient(
   slot: JobSlot,
-  options: { autoFinishReset?: boolean } = {},
+  options: { autoFinishReset?: boolean; failCancel?: boolean } = {},
 ): ComputeClient {
   const autoFinishReset = options.autoFinishReset ?? true;
+  const failCancel = options.failCancel ?? false;
   let filerefName = "unknown";
 
   return {
@@ -328,6 +336,15 @@ export function buildClient(
               id: "recorded-job",
               state: "pending",
               links: [
+                // Finding 75 (Phase 4c): `cancelJob` now reads this relation
+                // for a fresh ETag immediately before its `PUT`, routing
+                // through the same generic `case "self"` below the fileref's
+                // own self-check already uses.
+                {
+                  rel: "self",
+                  method: "GET",
+                  href: "/jobs/recorded-job",
+                },
                 {
                   rel: "state",
                   method: "GET",
@@ -373,7 +390,23 @@ export function buildClient(
           });
         case "cancel":
           // `logStream.ts`'s own pump stops itself on the caller's signal;
-          // this reply only has to be one the client accepts.
+          // this reply only has to be one the client accepts — unless
+          // `failCancel` is set, in which case it is the one thing that can
+          // still legitimately go wrong now that `cancelJob` sends a real
+          // `If-Match`'d request: a `412` from an ETag that went stale
+          // between the self-`GET` and this `PUT`. `asSessionGone` leaves a
+          // non-404 `compute-rejected` untouched, so this surfaces through
+          // `cancelActive` as `backend-failed`.
+          if (failCancel) {
+            return {
+              ok: false,
+              reason: "the compute service rejected the cancel (HTTP 412)",
+              problem: {
+                code: "compute-rejected",
+                error: { status: 412, message: "Precondition Failed" },
+              },
+            };
+          }
           return ok(undefined, { status: 204 });
         case "variables": {
           const job = slot.current();

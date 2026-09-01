@@ -2679,6 +2679,39 @@ with the traceback tail (`[Previous line repeated 995 more times]
 RecursionError: … >>>`) re-emitted once more after "Finished with an
 error."
 
+**Triaged 2026-09-01 (Phase 4c), per that phase's own Runbook item asking
+whether this corrupts what `parseTraceback` sees.** It does not. Both
+open questions below are now settled, by reading `logFilter.ts` and
+`outputChannel.ts` together with Phase 4b's own live probe (2026-09-01,
+`verde`), which happened to capture the exact line types this finding
+left uncaptured: the interpreter banner and `>>>` prompt lines
+(`"Python 3.12.12 …"`, `'Type "help" …'`, `">>> "`) all arrive typed
+**`normal`** — confirmed live, not inferred — so `isNoiseLine` (which
+excludes only `note`, `source` and `title`) correctly does **not** filter
+them; they were never noise by this filter's own, deliberate design
+(`logFilter.ts`'s own doc: "the vocabulary is a floor, not a closed set" —
+but `normal` was never a candidate for exclusion regardless). The
+duplicated tail has a precise, different cause, nothing to do with
+`parseTraceback`: `RunOutputChannel.writeOutcome` (`outputChannel.ts`)
+prints `"Finished with an error."` and then `outcome.diagnostics[].message`
+verbatim — and for a parsed traceback, that message *is*
+`traceback.message`, the same text that already streamed live as the raw
+log's own `normal`-typed lines moments earlier. So the log shows the
+traceback once, in real time, and the outcome summary echoes its tail a
+second time; `parseTraceback` itself parsed correctly both times, `lines`
+was never corrupted, and 4c's own frame-mapping work needed no
+adjustment on account of this. **Two adjacent, real gaps this triage
+found and did not fix, left for a decision rather than silently patched:**
+the interpreter banner/`>>>` prompt reads as line noise to a person even
+though it is correctly *not* log noise by this filter's own definition
+(a UX gap, not a parsing one), and `writeOutcome`'s tail echo is
+genuinely redundant for the traceback case specifically (though not for
+a plain SAS-error message, which never streamed anywhere first — the two
+diagnostic sources are not interchangeable here). Both are `outputChannel.ts`
+presentation concerns outside 4c's own scope (traceback→editor mapping,
+not output-channel rendering); see `phase-4.md`'s 4c entry for the
+pointer forward.
+
 **What this establishes.** §6's **Hello world streams clean** asserts "no
 SAS NOTEs, no page-break banners, no `>>>` markers", and the 2026-08-30
 successful-run checks (hello world, a 5000-line loop) held — so the

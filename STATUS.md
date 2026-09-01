@@ -164,8 +164,92 @@ are gone (`gh pr merge --delete-branch` on each); the stale local
 `phase-4a-backend-path-regression-tests` and the two stale
 `remotes/origin/*` refs for the deleted branches are cosmetic only — `git
 branch -D phase-4a-backend-path-regression-tests && git fetch --prune`
-whenever convenient, not urgent. **4b (probe cancellation, live against
-`verde`/`Innov`) is next.**
+whenever convenient, not urgent.
+
+**4b (probe cancellation) run and closed, 2026-09-01** — a live probe against
+`verde`, no code touched. Two findings, both in `docs/phases/phase-4.md`'s own
+4b entry and Probe findings section: **Finding 75** — the deployment requires
+`If-Match` on a job cancel; `cancelJob()` (`job.ts:508-521`) doesn't send one,
+so every cancel this extension issues against this deployment is rejected
+outright with `428` today, and `cancelRun()` (`commands.ts:518-522`) discards
+that failure without ever inspecting it — the "Cancelled." message users see
+comes entirely from a local abort in `LogStream`, independent of whether the
+paired server request succeeded. **Finding 76** — even a correctly-`If-Match`'d
+cancel doesn't preempt a running Python statement: a 60-second loop cancelled
+~6s in still ran its full 60.01s before SAS tore the interpreter down, so
+`cancelRun`'s existing "busy" messaging has no fallback for a run or reset
+queued behind a still-executing cancelled job (checked directly, not
+assumed — `backend.busy` clears on the local abort well before the session is
+actually free, so the "busy" message never fires; the user just gets a
+silently slow Run/Reset). **Decided with Sean the same day: fold both fixes
+into 4c** rather than open a separate slice — 4c is now traceback parsing
+*plus* the `cancelJob` `If-Match` fix and a decision on `cancelRun`'s
+messaging gap, raised from *Medium* to reflect the added scope.
+
+**4c implemented, 2026-09-01; not yet verified or reviewed.** All of it in
+one pass: `src/backend/tracebackDiagnostics.ts` (new — the `<string>`-frame
+offset mapping plus `primaryFrame`/`primaryPosition` for 4d, none of it
+wired into anything user-visible yet), the `ModuleNotFoundError` → `Show
+Environment` pointer in `procPython.ts`'s diagnostic message, `cancelJob`'s
+`If-Match` fix (a fresh `ETag` read off the job's own `self` relation right
+before the cancel `PUT` — Finding 75), `cancelRun` no longer discarding a
+cancel failure, and the "Cancelled." message reworded rather than papering
+over Finding 76's queued-run gap with new background-tracking machinery
+(considered and rejected as disproportionate for this slice — see
+`phase-4.md`'s own 4c entry for the reasoning). Finding 74's triage is also
+closed: not a `parseTraceback` defect — see `phase-3.md`'s own Finding 74
+entry — with two adjacent, smaller gaps found and deliberately left open
+rather than fixed here. Unit tests updated throughout, including two test
+fixtures (`proc-python-backend.test.ts`'s router, and
+`test/helpers/recorded-proc-python.ts`'s simulated wire) that needed a
+`self` relation added to their job payloads, without which `cancelJob`'s new
+code fails `link-missing` before ever reaching the server.
+
+**Verified and independently reviewed, 2026-09-01.** Sean's own
+`tsc`/`prettier`/`test`/`lint` run first (all green), then a senior-review
+pass over the full branch diff against `main`: no P0/P1s — the `cancelJob`
+`If-Match` fix mirrors `fileref.ts`/`files.ts`'s existing fresh-`ETag`
+pattern exactly, error handling is disciplined (no swallowed failures, every
+new call timeout- and abort-bounded), the new `self` relation is confirmed
+present on a live job payload (finding 46) so its `link-missing` arm is a
+real guard rather than a new failure mode, and the tests are HTTP-boundary
+mocks covering every new branch. Three review notes were folded in the same
+day: (1) `primaryFrame` reworked from an index walk to a `for…of` over a
+reversed shallow copy, removing an unreachable `noUncheckedIndexedAccess`
+guard branch — `tracebackDiagnostics.ts` is now 100% branch-covered and the
+suite's 95% floor is unmoved; (2) a new `primaryFrame` test for the
+non-empty "no `<string>` frame anywhere" case; (3) `backend.ts`'s
+`RichOutput` doc comment, which enumerated "the four" un-`l10n`'d
+extension-authored strings, corrected to five (this slice's
+`withModuleNotFoundGuidance` is the fifth) with a note that a sixth should
+reopen ADR-0015's localisation boundary rather than extend the list again.
+Also caught: the branch's `compute-job.test.ts` edits were not
+`prettier`-clean (`format:check` now passes). Two review observations left
+as non-blocking: the failed-server-cancel path now shows both the reworded
+"Cancelled…" outcome and a `backend-failed` toast (intentional per Finding
+75, mildly noisy), and `tracebackDiagnostics.ts`'s `primaryFrame`/
+`primaryPosition`/`mapFrameToOrigin` ship unwired until 4d (disclosed in the
+CHANGELOG and this phase's 4c entry).
+
+**Fully verified, 2026-09-01.** `npm run verify` and `npm run
+test:integration` both green (Sean's own run). Then the cancel fix —
+Findings 75/76, the part with real wire-behaviour risk — **live-verified**
+against `verde` (Viya 4) with a branch `.vsix`: Cancel from both the
+progress-notification button and the palette command stops the run with
+`done` never printing, the output channel shows the reworded "Cancelled. If
+a single step was already running…" line, and **no error toast** — meaning
+the server accepted the `If-Match`'d `PUT` rather than answering the `428` a
+bare request drew before. A run submitted ~15 s into the 60 s `sleep`,
+right after cancelling, completed cleanly ~30–40 s later — the cancelled
+step running out its natural duration before the session freed, exactly
+Finding 76, no corruption and no reconnect needed. `docs/dev/manual-test-
+pass.md` §6's "Cancel, both ways" item is updated for the reworded message
+and this run. The `ModuleNotFoundError` → Show Environment message addition
+was live-verified in the same session (`import polars` against `verde`) —
+the appended `Run "Python on Viya: Show Environment" …` sentence shows on
+the diagnostic as specified, and `manual-test-pass.md` §7's row is rewritten
+from a `(known gap)` into a ticked assertion. **Nothing outstanding before
+the PR opens.**
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -253,7 +337,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b–4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (traceback-mapping groundwork + the Findings 75/76 cancel fix) implemented, reviewed, verified (incl. live) 2026-09-01 — PR pending; 4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

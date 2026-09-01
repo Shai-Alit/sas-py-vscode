@@ -271,7 +271,11 @@ describe("run commands — backend paths (4a)", () => {
     // until the idle reaper takes it.
     await orphaned;
     assert.ok(
-      lines.includes("Cancelled."),
+      // Reworded, Phase 4c's Finding 76: the full sentence now also caveats
+      // that a step already in flight may keep running on Viya — matching
+      // on the leading "Cancelled." is what survives that wording changing
+      // again without this test caring what the caveat itself says.
+      lines.some((line) => line.startsWith("Cancelled.")),
       `expected the orphaned run's own output to record its cancellation; got: ${JSON.stringify(lines)}`,
     );
   });
@@ -306,7 +310,11 @@ describe("run commands — backend paths (4a)", () => {
 
     await resetting;
     assert.ok(
-      lines.includes("Cancelled."),
+      // Reworded, Phase 4c's Finding 76: the full sentence now also caveats
+      // that a step already in flight may keep running on Viya — matching
+      // on the leading "Cancelled." is what survives that wording changing
+      // again without this test caring what the caveat itself says.
+      lines.some((line) => line.startsWith("Cancelled.")),
       `expected the interrupted reset to record its own cancellation; got: ${JSON.stringify(lines)}`,
     );
   });
@@ -361,9 +369,68 @@ describe("run commands — backend paths (4a)", () => {
 
     await first;
     assert.ok(
-      lines.includes("Cancelled."),
+      // Reworded, Phase 4c's Finding 76: the full sentence now also caveats
+      // that a step already in flight may keep running on Viya — matching
+      // on the leading "Cancelled." is what survives that wording changing
+      // again without this test caring what the caveat itself says.
+      lines.some((line) => line.startsWith("Cancelled.")),
       `expected the first run to have been reachable — and cancellable — through ` +
         `the second invocation's refusal; got: ${JSON.stringify(lines)}`,
     );
+  });
+
+  it("surfaces a failed backend cancel() instead of discarding it (Finding 75)", async () => {
+    // An earlier version of `cancelRun` awaited `backend.cancel()` and threw
+    // the result away unread — a server-side cancel failure (measured live:
+    // a `428` before the `If-Match` fix; `412` from a stale `ETag` is the
+    // residual race the fix cannot close) reached nobody. `failCancel` makes
+    // the simulated job's `cancel` PUT answer that `412`.
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+      failCancel: true,
+    });
+    const sessions = recordedSessions(recorded);
+    const { lines, channel } = recordingOutputChannel();
+    const editor = await pythonEditor();
+    const recorder = { reported: [] as string[] };
+    const { targets, handlers } = build(
+      sessions,
+      {
+        activeTextEditor: () => editor,
+        report: (message) => recorder.reported.push(message),
+      },
+      channel,
+    );
+    await targets.setKind("viya");
+
+    const run = handlers.runFile();
+    await flush();
+    assert.ok(
+      recorded.currentJob() !== undefined,
+      "the run should have created its own job before this test proceeds",
+    );
+
+    await handlers.cancelRun();
+    await run;
+
+    // The local run still stops regardless of the server-side outcome —
+    // `LogStream`'s own abort settles `handle.done`, not `cancelJob`'s
+    // reply (see that function's own doc comment) — so the output channel
+    // still records the cancellation.
+    assert.ok(
+      lines.some((line) => line.startsWith("Cancelled.")),
+      `expected the local run to still record its cancellation despite the ` +
+        `failed server-side cancel; got: ${JSON.stringify(lines)}`,
+    );
+    // The regression this case pins: the failed `BackendResult` from
+    // `backend.cancel()` must reach `reportProblem`, not be discarded.
+    assert.equal(
+      recorder.reported.length,
+      1,
+      `expected the failed server-side cancel to be reported exactly once; ` +
+        `got: ${JSON.stringify(recorder.reported)}`,
+    );
+    assert.match(recorder.reported[0] ?? "", /Running on SAS Viya failed/);
   });
 });

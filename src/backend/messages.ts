@@ -68,7 +68,15 @@ export function localiseBackendProblem(problem: BackendProblem): string {
         "The SAS Viya session ended. Connect again and re-run.",
       );
     case "cancelled":
-      return vscode.l10n.t("Cancelled.");
+      // Phase 4c, Finding 76: a cancel stops this window's own view of the
+      // run immediately, but measured live against Viya 4, it does not
+      // preempt a Python statement already in flight — the SAS session can
+      // keep running the cancelled program for up to its own natural
+      // duration regardless. "Cancelled." alone claimed more than that, so
+      // this now says only what is true unconditionally.
+      return vscode.l10n.t(
+        "Cancelled. If a single step was already running, SAS Viya may keep executing it until that step finishes on its own.",
+      );
     case "backend-failed":
       return vscode.l10n.t(
         "Running on SAS Viya failed. See the Python on Viya log for details.",

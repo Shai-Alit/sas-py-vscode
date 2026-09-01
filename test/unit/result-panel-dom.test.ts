@@ -15,27 +15,29 @@ interface FakeElement {
   text: string | undefined;
   markup: string | undefined;
   readonly children: FakeElement[];
+  /** Handlers registered via `DomPort.onActivate` — a test fires them by
+   * hand to stand in for a click / Enter / Space. */
+  readonly activateHandlers: (() => void)[];
 }
 
-function fakeRoot(): FakeElement {
+function fakeElement(tag: string): FakeElement {
   return {
-    tag: "root",
+    tag,
     attrs: {},
     text: undefined,
     markup: undefined,
     children: [],
+    activateHandlers: [],
   };
+}
+
+function fakeRoot(): FakeElement {
+  return fakeElement("root");
 }
 
 function fakePort(): DomPort<FakeElement> {
   return {
-    createElement: (tag) => ({
-      tag,
-      attrs: {},
-      text: undefined,
-      markup: undefined,
-      children: [],
-    }),
+    createElement: (tag) => fakeElement(tag),
     setAttribute: (element, name, value) => {
       element.attrs[name] = value;
     },
@@ -51,6 +53,9 @@ function fakePort(): DomPort<FakeElement> {
     clear: (element) => {
       element.children.length = 0;
     },
+    onActivate: (element, handler) => {
+      element.activateHandlers.push(handler);
+    },
   };
 }
 
@@ -58,13 +63,9 @@ describe("run/resultPanelDom", () => {
   describe("applyMessage", () => {
     it("reset clears every existing child, and nothing else", () => {
       const root = fakeRoot();
-      root.children.push({
-        tag: "pre",
-        attrs: {},
-        text: "leftover",
-        markup: undefined,
-        children: [],
-      });
+      const leftover = fakeElement("pre");
+      leftover.text = "leftover";
+      root.children.push(leftover);
       applyMessage(fakePort(), root, { type: "reset" });
       assert.deepEqual(root.children, []);
     });
@@ -142,6 +143,10 @@ describe("run/resultPanelDom", () => {
             "app.py, line 3, in <module>",
             "app.py, line 7, in divide",
           ],
+          frames: [
+            { file: "app.py", line: 3, name: "<module>" },
+            { file: "app.py", line: 7, name: "divide" },
+          ],
         },
       };
       applyMessage(fakePort(), root, message);
@@ -177,12 +182,106 @@ describe("run/resultPanelDom", () => {
           heading: "Traceback",
           message: "boom",
           frameLines: [],
+          frames: [],
         },
       };
       applyMessage(fakePort(), root, message);
       const container = root.children[0];
       assert.ok(container);
       assert.equal(container.children.length, 2, "heading and message only");
+    });
+
+    it("makes a <string> frame's <li> a keyboard-reachable button wired to onFrameActivate, and leaves other frames inert", () => {
+      const root = fakeRoot();
+      const activated: number[] = [];
+      const message: ResultPanelMessage = {
+        type: "output",
+        item: {
+          kind: "traceback",
+          heading: "Traceback",
+          message: "ZeroDivisionError: division by zero",
+          frameLines: [
+            "<string>, line 3, in <module>",
+            "numpy/core.py, line 9, in divide",
+          ],
+          frames: [
+            { file: "<string>", line: 3, name: "<module>" },
+            { file: "/x/numpy/core.py", line: 9, name: "divide" },
+          ],
+        },
+      };
+      applyMessage(fakePort(), root, message, (index) => activated.push(index));
+
+      const list = root.children[0]?.children[2];
+      assert.ok(list);
+      const clickable = list.children[0];
+      const inert = list.children[1];
+      assert.ok(clickable);
+      assert.ok(inert);
+
+      assert.equal(clickable.attrs.role, "button");
+      assert.equal(clickable.attrs.tabindex, "0");
+      assert.match(
+        clickable.attrs.class ?? "",
+        /python-on-viya-traceback-frame-clickable/,
+      );
+      assert.equal(clickable.activateHandlers.length, 1);
+      clickable.activateHandlers[0]?.();
+      assert.deepEqual(
+        activated,
+        [0],
+        "the frame's own index in traceback order",
+      );
+
+      assert.equal(inert.attrs.role, undefined);
+      assert.equal(inert.attrs.tabindex, undefined);
+      assert.equal(inert.activateHandlers.length, 0);
+    });
+
+    it("leaves every frame inert when no onFrameActivate is supplied", () => {
+      const root = fakeRoot();
+      const message: ResultPanelMessage = {
+        type: "output",
+        item: {
+          kind: "traceback",
+          heading: "Traceback",
+          message: "boom",
+          frameLines: ["<string>, line 1, in <module>"],
+          frames: [{ file: "<string>", line: 1, name: "<module>" }],
+        },
+      };
+      applyMessage(fakePort(), root, message);
+      const li = root.children[0]?.children[2]?.children[0];
+      assert.ok(li);
+      assert.equal(li.attrs.role, undefined);
+      assert.equal(li.activateHandlers.length, 0);
+      assert.equal(li.text, "<string>, line 1, in <module>");
+    });
+
+    it("renders a frame line with no matching structured frame as inert text", () => {
+      // `frameLines` and `frames` come from `resultPanelModel.ts` the same
+      // length, but the DOM layer must not throw if a hand-built message
+      // makes them differ — the extra line is just text.
+      const root = fakeRoot();
+      const message: ResultPanelMessage = {
+        type: "output",
+        item: {
+          kind: "traceback",
+          heading: "Traceback",
+          message: "boom",
+          frameLines: ["<string>, line 1, in <module>", "orphan line"],
+          frames: [{ file: "<string>", line: 1, name: "<module>" }],
+        },
+      };
+      applyMessage(fakePort(), root, message, () => undefined);
+      const list = root.children[0]?.children[2];
+      assert.ok(list);
+      assert.equal(list.children.length, 2);
+      const orphan = list.children[1];
+      assert.ok(orphan);
+      assert.equal(orphan.text, "orphan line");
+      assert.equal(orphan.attrs.role, undefined);
+      assert.equal(orphan.activateHandlers.length, 0);
     });
 
     it("a successful outcome carries its summary and no diagnostics list", () => {

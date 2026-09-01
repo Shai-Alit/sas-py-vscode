@@ -29,7 +29,7 @@
 
 import * as vscode from "vscode";
 
-import type { ExecutionHandle, Program } from "../backend/backend";
+import type { ExecutionHandle, Program, Traceback } from "../backend/backend";
 import { localiseBackendProblem } from "../backend/messages";
 import type { BackendProblem } from "../backend/problems";
 import { ProcPythonBackend, type SubmissionGuard } from "../backend/procPython";
@@ -38,6 +38,7 @@ import type {
   ComputeSessionManager,
 } from "../compute/sessionManager";
 import type { ProfileStore } from "../profile/store";
+import { RunDiagnostics } from "./diagnostics";
 import {
   ENVIRONMENT_SCHEME,
   environmentDocumentUri,
@@ -137,6 +138,10 @@ export interface RunCommandDeps {
   /** Defaults to a fresh `ResultPanel`. Same lifecycle rule as
    * `outputChannel` above, for the same reason. */
   resultPanel?: ResultPanel | undefined;
+  /** Defaults to a fresh `RunDiagnostics` (Phase 4d — the Problems-panel
+   * collection). Same lifecycle rule as `outputChannel`/`resultPanel`
+   * above. */
+  diagnostics?: RunDiagnostics | undefined;
   /** Defaults to a fresh `EnvironmentDocumentProvider`. Same lifecycle rule as
    * `outputChannel`/`resultPanel` above, for the same reason — and this one
    * additionally needs `registerRunCommands` to be the thing that calls
@@ -167,6 +172,7 @@ export interface RunCommandDeps {
 export interface RunCommandHandlers extends vscode.Disposable {
   readonly outputChannel: RunOutputChannel;
   readonly resultPanel: ResultPanel;
+  readonly diagnostics: RunDiagnostics;
   readonly environmentDocuments: EnvironmentDocumentProvider;
   runFile(): Promise<void>;
   runSelection(): Promise<void>;
@@ -193,6 +199,7 @@ export function createRunCommandHandlers(
 ): RunCommandHandlers {
   const outputChannel = deps.outputChannel ?? new RunOutputChannel();
   const resultPanel = deps.resultPanel ?? new ResultPanel(extensionUri);
+  const diagnostics = deps.diagnostics ?? new RunDiagnostics();
   const environmentDocuments =
     deps.environmentDocuments ??
     new EnvironmentDocumentProvider((profileId) => environment.get(profileId));
@@ -426,6 +433,11 @@ export function createRunCommandHandlers(
       return;
     }
 
+    // Phase 4d: clear this file's prior Problems entry before the run, so a
+    // run that now passes — or fails before producing a traceback — leaves
+    // nothing stale. Keyed on the origin URI, the same key `publish` sets.
+    diagnostics.clearFor(program.origin.uri);
+
     const built = await backendFor();
     if (built === undefined) return;
     const { backend, connection } = built;
@@ -473,7 +485,7 @@ export function createRunCommandHandlers(
 
       outputChannel.reveal();
       outputChannel.writeRunHeader(connection.profileName, description);
-      resultPanel.startRun();
+      resultPanel.startRun(program.origin);
       const handle = executed.value;
       currentRun = { backend, handle };
 
@@ -482,7 +494,7 @@ export function createRunCommandHandlers(
       // `Window`-located `cancellable: true` renders no button at all, so the
       // token below would never fire from the UI (only the Command Palette's
       // own Cancel command would ever reach it). Found on review.
-      await showProgress(
+      const traceback = await showProgress(
         vscode.ProgressLocation.Notification,
         vscode.l10n.t("Running {0} on SAS Viya…", description),
         true,
@@ -491,7 +503,7 @@ export function createRunCommandHandlers(
             void backend.cancel(handle);
           });
           try {
-            await drainOutputs(handle, outputChannel, resultPanel);
+            return await drainOutputs(handle, outputChannel, resultPanel);
           } finally {
             subscription.dispose();
           }
@@ -508,6 +520,19 @@ export function createRunCommandHandlers(
       } else {
         outputChannel.writeOutcome(settled.value);
         resultPanel.writeOutcome(settled.value);
+        // Phase 4d: a run that raised, with a structured traceback to
+        // position it by, gets one Problems-panel entry at the innermost
+        // user frame. `diagnostics.publish` is a no-op when no frame maps
+        // (a SAS-side error, or an all-library stack) — see its own doc.
+        // The message is the outcome's own diagnostic text, which already
+        // carries 4c's `ModuleNotFoundError` → Show Environment pointer.
+        if (!settled.value.succeeded && traceback !== undefined) {
+          diagnostics.publish(
+            program.origin,
+            traceback,
+            settled.value.diagnostics[0]?.message ?? traceback.message,
+          );
+        }
       }
     } finally {
       currentRun = undefined;
@@ -741,6 +766,7 @@ export function createRunCommandHandlers(
   return {
     outputChannel,
     resultPanel,
+    diagnostics,
     environmentDocuments,
     runFile: () => runNow(true),
     runSelection: () => runNow(false),
@@ -753,6 +779,7 @@ export function createRunCommandHandlers(
       targetChangeSubscription.dispose();
       if (deps.outputChannel === undefined) outputChannel.dispose();
       if (deps.resultPanel === undefined) resultPanel.dispose();
+      if (deps.diagnostics === undefined) diagnostics.dispose();
       if (deps.environmentDocuments === undefined) {
         environmentDocuments.dispose();
       }
@@ -832,14 +859,25 @@ export function registerRunCommands(
 /** Streams a handle's outputs into the channel and the result panel until it
  * ends. Separate function so `runNow`'s `withProgress` callback reads as
  * "drain, then wait for the outcome" rather than a loop buried inside a
- * bigger one. */
+ * bigger one.
+ *
+ * Returns the structured {@link Traceback} the run streamed, if any —
+ * `procPython.ts` pushes exactly one, as its trailing `RichOutput`, before
+ * `handle.done` settles (last-writer-wins here regardless). `runNow` needs it
+ * for the Problems panel (Phase 4d); the channel and panel have already
+ * rendered it by the time this returns. */
 async function drainOutputs(
   handle: ExecutionHandle,
   outputChannel: RunOutputChannel,
   resultPanel: ResultPanel,
-): Promise<void> {
+): Promise<Traceback | undefined> {
+  let traceback: Traceback | undefined;
   for await (const output of handle.outputs) {
+    if (output.mime === "application/vnd.python.traceback") {
+      traceback = output.data;
+    }
     outputChannel.writeOutput(output);
     resultPanel.writeOutput(output);
   }
+  return traceback;
 }

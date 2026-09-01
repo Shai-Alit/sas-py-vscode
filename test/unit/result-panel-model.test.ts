@@ -8,6 +8,7 @@ import {
   isAlreadyVisibleAsText,
   isRenderItem,
   isResultPanelMessage,
+  isRevealFrameMessage,
   outcomeMessage,
   toRenderItem,
   type RenderItemLabels,
@@ -68,6 +69,12 @@ describe("run/resultPanelModel", () => {
         frameLines: [
           "app.py, line 3, in <module>",
           "app.py, line 7, in divide",
+        ],
+        // Phase 4d: the same frames, raw, in the same order — the DOM layer
+        // keys on `file` for clickability and the host maps by index.
+        frames: [
+          { file: "app.py", line: 3, name: "<module>" },
+          { file: "app.py", line: 7, name: "divide" },
         ],
       });
     });
@@ -148,6 +155,7 @@ describe("run/resultPanelModel", () => {
           heading: "Traceback",
           message: "boom",
           frameLines: ["a.py, line 1, in <module>"],
+          frames: [{ file: "<string>", line: 1, name: "<module>" }],
         }),
         true,
       );
@@ -172,8 +180,39 @@ describe("run/resultPanelModel", () => {
           heading: "h",
           message: "m",
           frameLines: ["ok", 2],
+          frames: [{ file: "<string>", line: 1, name: "<module>" }],
         }),
         false,
+      );
+    });
+
+    it("rejects a traceback whose structured frames are missing or malformed", () => {
+      const base = {
+        kind: "traceback",
+        heading: "h",
+        message: "m",
+        frameLines: ["a.py, line 1, in <module>"],
+      };
+      assert.equal(isRenderItem(base), false, "frames absent");
+      assert.equal(isRenderItem({ ...base, frames: "nope" }), false);
+      assert.equal(isRenderItem({ ...base, frames: [null] }), false);
+      assert.equal(
+        isRenderItem({ ...base, frames: [{ line: 1, name: "<module>" }] }),
+        false,
+        "frame missing file",
+      );
+      assert.equal(
+        isRenderItem({ ...base, frames: [{ file: "<string>", line: 1 }] }),
+        false,
+        "frame missing name",
+      );
+      assert.equal(
+        isRenderItem({
+          ...base,
+          frames: [{ file: "<string>", line: "1", name: "<module>" }],
+        }),
+        false,
+        "frame line not a number",
       );
     });
   });
@@ -226,6 +265,38 @@ describe("run/resultPanelModel", () => {
       assert.equal(isResultPanelMessage({ type: "unknown" }), false);
       assert.equal(isResultPanelMessage(undefined), false);
       assert.equal(isResultPanelMessage(42), false);
+    });
+  });
+
+  describe("isRevealFrameMessage", () => {
+    it("accepts a well-formed revealFrame message", () => {
+      assert.equal(
+        isRevealFrameMessage({ type: "revealFrame", frameIndex: 0 }),
+        true,
+      );
+      assert.equal(
+        isRevealFrameMessage({ type: "revealFrame", frameIndex: 3 }),
+        true,
+      );
+    });
+
+    it("rejects a wrong type, a missing/negative/non-integer index, and a non-object", () => {
+      assert.equal(isRevealFrameMessage({ type: "ready" }), false);
+      assert.equal(isRevealFrameMessage({ type: "revealFrame" }), false);
+      assert.equal(
+        isRevealFrameMessage({ type: "revealFrame", frameIndex: -1 }),
+        false,
+      );
+      assert.equal(
+        isRevealFrameMessage({ type: "revealFrame", frameIndex: 1.5 }),
+        false,
+      );
+      assert.equal(
+        isRevealFrameMessage({ type: "revealFrame", frameIndex: "0" }),
+        false,
+      );
+      assert.equal(isRevealFrameMessage(null), false);
+      assert.equal(isRevealFrameMessage("revealFrame"), false);
     });
   });
 

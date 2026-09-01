@@ -17,17 +17,33 @@
  * webview carries English text this class did not already localise. See this
  * feature's own localisation-boundary note on `backend.ts`'s `RichOutput` doc
  * comment, extended here the same way `outputChannel.ts` already extended it.
+ *
+ * **Phase 4d — click-to-jump.** A traceback frame the webview rendered as
+ * clickable (one whose `file` is `<string>`) posts a `revealFrame` message
+ * back; this class holds the current run's structured frames and its
+ * {@link ProgramOrigin}, maps the activated frame through 4c's
+ * `mapFrameToOrigin`, and opens the editor at that position via the
+ * injectable {@link ResultPanelDeps.revealPosition}. The Problems-panel half
+ * of 4d lives in `src/run/diagnostics.ts`, not here — this class only owns
+ * the panel.
  */
 
 import * as vscode from "vscode";
 
-import type { ExecutionOutcome, RichOutput } from "../backend/backend";
+import type {
+  ExecutionOutcome,
+  ProgramOrigin,
+  RichOutput,
+} from "../backend/backend";
 import { localiseBackendProblem } from "../backend/messages";
 import type { BackendProblem } from "../backend/problems";
+import { mapFrameToOrigin } from "../backend/tracebackDiagnostics";
 import {
   isAlreadyVisibleAsText,
+  isRevealFrameMessage,
   outcomeMessage,
   toRenderItem,
+  type RenderTracebackFrame,
   type ResultPanelMessage,
 } from "./resultPanelModel";
 
@@ -62,11 +78,23 @@ export interface ResultWebviewPanel extends vscode.Disposable {
  */
 export interface ResultPanelDeps {
   createPanel?: (() => ResultWebviewPanel) | undefined;
+  /** Reveals `uri` in an editor with the cursor at `position` — Phase 4d's
+   * click-to-jump. Defaults to `vscode.window.showTextDocument`. Injectable
+   * for the same reason `createPanel` is: an integration test cannot assert
+   * on a real editor being focused, but can assert this port was asked to
+   * focus the right place. */
+  revealPosition?:
+    | ((uri: vscode.Uri, position: { line: number; character: number }) => void)
+    | undefined;
 }
 
 export class ResultPanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly createPanel: () => ResultWebviewPanel;
+  private readonly revealPosition: (
+    uri: vscode.Uri,
+    position: { line: number; character: number },
+  ) => void;
 
   private panel: ResultWebviewPanel | undefined;
   private panelSubscriptions: vscode.Disposable[] = [];
@@ -107,18 +135,44 @@ export class ResultPanel implements vscode.Disposable {
    * further rich output later in the same run would never bring a panel back
    * at all. */
   private revealedThisRun = false;
+  /** The origin of the program this run is executing — set by
+   * {@link startRun}, consumed by {@link revealFrame} to map an activated
+   * traceback frame's line back into the editor. `undefined` before the
+   * first run, or when a caller (a test) drove the panel without one. */
+  private currentOrigin: ProgramOrigin | undefined;
+  /** This run's traceback frames, structured, in the order Python printed
+   * them — retained from the streamed traceback output so
+   * {@link revealFrame} can look one up by the index the webview sends
+   * back. Reset at the start of every run. */
+  private currentFrames: readonly RenderTracebackFrame[] = [];
 
   constructor(extensionUri: vscode.Uri, deps: ResultPanelDeps = {}) {
     this.extensionUri = extensionUri;
     this.createPanel = deps.createPanel ?? (() => this.createRealPanel());
+    this.revealPosition =
+      deps.revealPosition ??
+      ((uri, position) => {
+        const target = new vscode.Position(position.line, position.character);
+        void vscode.window.showTextDocument(uri, {
+          selection: new vscode.Range(target, target),
+          preserveFocus: false,
+        });
+      });
   }
 
   /** A new run starting. Clears the panel's prior content immediately if a
    * panel already exists; creates nothing by itself — this run's own outputs
-   * decide whether a panel is worth having at all. */
-  startRun(): void {
+   * decide whether a panel is worth having at all.
+   *
+   * `origin` (Phase 4d) is this run's program origin, kept so a later
+   * `revealFrame` message can be mapped back to an editor position. Optional
+   * only so tests that never exercise click-to-jump can keep calling
+   * `startRun()` bare; `src/run/commands.ts` always passes it. */
+  startRun(origin?: ProgramOrigin): void {
     this.imageCount = 0;
     this.revealedThisRun = false;
+    this.currentOrigin = origin;
+    this.currentFrames = [];
     this.emit({ type: "reset" });
   }
 
@@ -145,6 +199,12 @@ export class ResultPanel implements vscode.Disposable {
       },
       this.imageCount,
     );
+
+    // Phase 4d: keep this run's structured frames so a `revealFrame` message
+    // for one of them can be resolved. A run only ever streams one
+    // traceback output (`procPython.ts`'s single trailing `RichOutput`), but
+    // a last-writer-wins assignment is correct even if that ever changes.
+    if (item.kind === "traceback") this.currentFrames = item.frames;
 
     if (!this.revealedThisRun && !isAlreadyVisibleAsText(output)) {
       this.revealedThisRun = true;
@@ -190,6 +250,23 @@ export class ResultPanel implements vscode.Disposable {
     }
   }
 
+  /** Resolves a `revealFrame` message: look the frame up by the index the
+   * webview sent, map it through 4c's `mapFrameToOrigin` against this run's
+   * origin, and ask {@link ResultPanelDeps.revealPosition} to open the
+   * editor there. Every step can legitimately produce nothing — no origin
+   * (the panel was driven without a run), a stale or out-of-range index, or
+   * a frame that is not a mappable `<string>` frame after all — and each is
+   * a silent no-op rather than a wrong jump. */
+  private revealFrame(frameIndex: number): void {
+    const origin = this.currentOrigin;
+    if (origin === undefined) return;
+    const frame = this.currentFrames[frameIndex];
+    if (frame === undefined) return;
+    const position = mapFrameToOrigin(frame, origin);
+    if (position === undefined) return;
+    this.revealPosition(origin.uri, position);
+  }
+
   /** Creates the panel (if one does not already exist) and reveals it. */
   private open(): void {
     const panel = this.createPanel();
@@ -199,12 +276,12 @@ export class ResultPanel implements vscode.Disposable {
     panel.webview.html = this.buildHtml(panel.webview);
 
     this.panelSubscriptions.push(
-      // The webview sends exactly one message kind, ever, in this slice: the
-      // `"ready"` handshake `src/webview/entry.ts` posts once its own
-      // listener is attached (ADR-0021). Anything else received here is
-      // ignored rather than validated against `ResultPanelMessage` — that
-      // union describes the *other* direction (host to webview), and this
-      // feature has no webview-to-host vocabulary beyond this one signal.
+      // The webview sends two message kinds, both host-validated here rather
+      // than trusted: the `"ready"` handshake `src/webview/entry.ts` posts
+      // once its listener is attached (ADR-0021), and — from Phase 4d — a
+      // `revealFrame` for a clicked traceback frame. Neither is a
+      // `ResultPanelMessage`; that union is the *other* direction (host to
+      // webview). Anything that is neither is ignored.
       //
       // Replays the *whole* backlog, unconditionally, on every `"ready"` —
       // deliberately not guarded on `this.ready` already being `true`. A
@@ -219,6 +296,10 @@ export class ResultPanel implements vscode.Disposable {
       // review: this reasoning was previously implicit rather than written
       // down anywhere a future change to `retainContextWhenHidden` would see it.
       panel.webview.onDidReceiveMessage((message) => {
+        if (isRevealFrameMessage(message)) {
+          this.revealFrame(message.frameIndex);
+          return;
+        }
         if (!isReady(message)) return;
         this.ready = true;
         for (const backlogged of this.backlog) {
@@ -343,6 +424,17 @@ export class ResultPanel implements vscode.Disposable {
   }
   .python-on-viya-outcome-success {
     color: var(--vscode-terminal-ansiGreen, var(--vscode-foreground));
+  }
+  .python-on-viya-traceback-frame-clickable {
+    cursor: pointer;
+    text-decoration: underline;
+    color: var(--vscode-textLink-foreground);
+  }
+  .python-on-viya-traceback-frame-clickable:hover {
+    color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  }
+  .python-on-viya-traceback-frame-clickable:focus-visible {
+    outline: 1px solid var(--vscode-focusBorder);
   }
 </style>
 </head>

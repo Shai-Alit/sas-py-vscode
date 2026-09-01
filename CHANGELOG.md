@@ -1091,6 +1091,23 @@ called out under **Changed** with a migration note.
   `ProgramOrigin.lineOffset` (ADR-0014's identity mapping — a `<string>`
   frame's own line number needs no adjustment beyond the offset a Run
   Selection call already carries).
+- **A failed Python run now lands in the Problems panel, and its traceback
+  frames jump to the editor.** Phase 4d wires 4c's mapping to its two
+  consumers. A run that raises publishes one `Diagnostic`
+  (`languages.createDiagnosticCollection("pythonOnViya")`) at the innermost
+  frame in the user's own file — `severity: Error`, `source: "Python on
+  Viya"`, the rest of the `<string>` call stack as `relatedInformation` —
+  cleared at the start of every run. Nothing is published when no frame maps
+  into the file (a SAS-side error, an all-library stack): a diagnostic
+  planted at line 0 would point at code that is not the problem, and the
+  output channel and result panel already carry the message. In the result
+  panel, a traceback frame from the user's file (`<string>`) is now a
+  keyboard-reachable button — activating it reveals that line in the editor,
+  resolved host-side through the same 4c mapping via a new `revealFrame`
+  message on ADR-0021's existing protocol. No new command, setting, webview
+  surface or CSP change. `src/run/diagnostics.ts` is new; `resultPanelModel.ts`
+  / `resultPanelDom.ts` / `resultPanel.ts` / `webview/entry.ts` /
+  `commands.ts` gained the wiring.
 
 ### Fixed
 

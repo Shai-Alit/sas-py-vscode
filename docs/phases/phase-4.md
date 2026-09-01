@@ -101,6 +101,19 @@ this diff warrants** — test-infrastructure and fixture code only, no change
 to `src/` production logic; the full verify chain (which this session does
 not run — see `RUNBOOK.md`) is still the right call before merge, since a
 typecheck alone would not catch a test that passes for the wrong reason.
+**`npm run test:unit`, `npm run test:integration` and `npm run lint` all came
+back green** once Sean ran them, and the adversarial review pass (verdict
+"looks good, merge-ready") found one real, non-blocking issue — the same
+`SimulatedJob.nextPage` cleanup closure left a stale `AbortSignal` listener
+attached when a poll settled via `push`/`finish` rather than abort, fixed the
+same day and re-verified against both test tiers. CI then caught a second,
+unrelated `prefer-const` violation in that same closure after the PR opened;
+fixed by restructuring `onAbort`/`settle` to both stay `const` (`settle`
+alone now owns removing the listener, on every settling path, not just
+abort's), re-verified again. **Merged 2026-08-31 as
+[PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78), squashed as
+`8b1bc7c`.** See `STATUS.md` for the full account, including the independent,
+same-day `.gitignore` fix (PR #79).
 
 ☐ **4b — Probe cancellation.** Run a deliberately long Python step and cancel
 it, via the `viya-api-probe` skill against `creds.json`'s `verde`/`Innov`

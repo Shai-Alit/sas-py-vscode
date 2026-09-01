@@ -131,32 +131,41 @@ item to the next between-phase checkpoint, by which point Dependabot will
 have run again regardless. Manual-test completeness is covered by the record
 above through 2026-08-31.
 
-**Phase 4 started, 2026-08-31: 4a implemented, tested, reviewed — ready for a
-PR.** `docs/phases/phase-4.md`'s own 4a entry — a regression suite for three
-`commands.ts` paths that only exist once a real backend is running
-(`backendFor()`'s reconnect-orphan `close()`, `cancelRun`'s `currentReset`
-fallback, and the `busy` serialisation guard `runNow`/`resetPythonState`
-share) — is implemented, in `test/integration/run/commands-backend.test.ts`
-plus a new `test/helpers/recorded-connection.ts`. Test-infrastructure only,
-no `src/` behaviour change; see phase-4.md's own 4a entry for the two small
-additions made to `recorded-proc-python.ts`'s shared simulated wire and why.
-Committed on `phase-4a-backend-path-regression-tests` (`91f28e9`, amended
-once to fix an `exactOptionalPropertyTypes` typecheck error `npm run
+**Phase 4 started, 2026-08-31. 4a is merged, as
+[PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78), squashed as
+`8b1bc7c` on `main`.** `docs/phases/phase-4.md`'s own 4a entry — a regression
+suite for three `commands.ts` paths that only exist once a real backend is
+running (`backendFor()`'s reconnect-orphan `close()`, `cancelRun`'s
+`currentReset` fallback, and the `busy` serialisation guard
+`runNow`/`resetPythonState` share) — is implemented, in
+`test/integration/run/commands-backend.test.ts` plus a new
+`test/helpers/recorded-connection.ts`. Test-infrastructure only, no `src/`
+behaviour change; see phase-4.md's own 4a entry for the two small additions
+made to `recorded-proc-python.ts`'s shared simulated wire and why. Before the
+PR opened: an `exactOptionalPropertyTypes` typecheck error `npm run
 typecheck`'s `tsconfig.test.json` step caught that a bare `tsc --noEmit`
-against the app's own config did not). `npm run test:unit`,
-`npm run test:integration` and `npm run lint` are all green. **The
-adversarial review pass is done, 2026-08-31 — verdict "looks good,
-merge-ready."** Two non-blocking findings, both closed same-day rather than
-left open: a stale `AbortSignal` listener on `SimulatedJob.nextPage` when a
-poll settles via `push`/`finish` rather than abort (latent today — this
-module's own consumers never stream enough lines to trip Node's
-`maxListeners` warning — fixed anyway, since `recorded-connection.ts`'s own
-tests are exactly the kind of consumer that could); the `bypassProgress()`
-`CancellationTokenSource` in the new test file left undisposed, matching an
-existing pattern in `session-manager.test.ts`, left as-is rather than
-diverging from that precedent. **Nothing left before a PR opens** except
-pushing the branch and running `gh pr create`, both handed to Sean. 4b (probe
-cancellation, live against `verde`/`Innov`) is next once 4a merges.
+against the app's own config did not, fixed with a conditional spread; and an
+adversarial review pass (2026-08-31, verdict "looks good, merge-ready") whose
+one real finding — a stale `AbortSignal` listener on `SimulatedJob.nextPage`
+left attached when a poll settles via `push`/`finish` rather than abort,
+latent today only because this module's own consumers stream few enough
+lines to never trip Node's `maxListeners` warning — was fixed the same day.
+A second, smaller lint fix (`prefer-const` on that same cleanup closure)
+landed after CI caught it on the open PR, restructured so both `onAbort` and
+`settle` stay `const` and `settle` alone owns the listener's removal on every
+path, not just the abort one. `npm run test:unit`, `npm run test:integration`
+and `npm run lint` were re-confirmed green after each of those two fixes, not
+assumed from the first pass. **Also merged the same day, independent of 4a:
+[PR #79](https://github.com/Shai-Alit/sas-py-vscode/pull/79)** (squashed as
+`9f8540d`) — a one-line `.gitignore` addition for `docs/.vitepress/.temp/`
+(VitePress's own build cache, noticed sitting untracked in this session's
+mount); docs-only, no adversarial review pass needed. Local branches for both
+are gone (`gh pr merge --delete-branch` on each); the stale local
+`phase-4a-backend-path-regression-tests` and the two stale
+`remotes/origin/*` refs for the deleted branches are cosmetic only — `git
+branch -D phase-4a-backend-path-regression-tests && git fetch --prune`
+whenever convenient, not urgent. **4b (probe cancellation, live against
+`verde`/`Innov`) is next.**
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -244,7 +253,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | not started — **unblocked**, between-phase housekeeping run 2026-08-31 (`3b658a7`); Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b–4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

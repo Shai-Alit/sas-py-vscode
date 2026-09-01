@@ -256,7 +256,8 @@ rewritten from a `(known gap)` into a ticked assertion.
 
 Full account in `STATUS.md`'s 4c paragraph.
 
-☐ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).**
+☑ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).
+Implemented 2026-09-01; verification and review pending (see below).**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya
 ')`), cleared for a `Program`'s origin URI at the start of every run (success
 or failure) and populated on failure with one `Diagnostic` at the innermost
@@ -273,6 +274,63 @@ ADR-0021 explicitly flagged this as unscoped-but-Phase-4's-job rather than
 leaving it a further-deferred follow-up. No new webview surface or CSP change
 expected, just a new message type on the existing protocol. "Optional quick
 actions" stays genuinely optional/time-boxed, not committed to now.
+
+**What landed, 2026-09-01.** New `src/run/diagnostics.ts` (`RunDiagnostics`)
+— a thin `vscode` shell around one `DiagnosticCollection`, the same shape
+`outputChannel.ts`/`resultPanel.ts` take, on `.c8rc.json`'s exclude list and
+integration-tested (`test/integration/run/diagnostics.test.ts`). `commands.ts`
+calls `clearFor(program.origin.uri)` as soon as it has a program and
+`publish(origin, traceback, message)` on a `!succeeded` outcome that streamed
+a structured traceback — `drainOutputs` now captures the trailing
+`application/vnd.python.traceback` `RichOutput` and hands it back through the
+`withProgress` callback. The `Diagnostic` sits at `primaryPosition` (4c),
+`source: "Python on Viya"`, message taken from the outcome's own
+`diagnostics[0].message` (so it already carries 4c's `ModuleNotFoundError` →
+Show Environment suffix), `relatedInformation` = every `<string>` frame as a
+`Location` in the origin URI, omitted for a single-frame error.
+
+**Decision — publish only when a frame maps.** `primaryPosition` is
+`undefined` for a SAS-side failure (`SYSCC=3000`, no Python frames) or a
+stack with no `<string>` frame anywhere; in that case `publish` is a no-op
+rather than planting a `Diagnostic` at line 0. The output channel and result
+panel already carry the message, and "accurately-positioned" (this phase's
+own exit criterion) rules out a guessed one — the same rule
+`tracebackDiagnostics.ts`'s own doc states for the frame it will not map.
+
+**Click-to-jump.** `RenderItem`'s traceback arm gained a structured
+`frames: RenderTracebackFrame[]` alongside the pre-formatted `frameLines`;
+`resultPanelDom.ts` marks a frame `<li>` a `role="button"`, `tabindex="0"`
+button (and wires `DomPort.onActivate`, new) exactly when its `file` is
+`<string>` **and** `applyMessage` was given an `onFrameActivate` callback.
+`webview/entry.ts` supplies one that posts `{ type: "revealFrame",
+frameIndex }` — the one webview→host message beyond `"ready"`, with its own
+`isRevealFrameMessage` guard in `resultPanelModel.ts` (kept out of
+`ResultPanelMessage`, which stays host→webview). `resultPanel.ts` retains the
+run's `ProgramOrigin` (via `startRun(origin?)`) and the streamed frames,
+resolves the activated index through `mapFrameToOrigin`, and opens the editor
+via a new injectable `revealPosition` dep (defaults to
+`window.showTextDocument`). A stale/out-of-range index, a non-`<string>`
+frame, or no origin is a silent no-op. Frame styling is one inline
+`.python-on-viya-traceback-frame-clickable` rule — already inside ADR-0021's
+`style-src 'unsafe-inline'`, no CSP change.
+
+**Checks run this session:** `npm run typecheck` (all three projects),
+`npm run lint`, `npm run format:check`, `npm run check:coverage-scope`, and
+`npm run test:unit` (1160 specs) all green. The build and `compile:test`
+steps of `npm run test:integration` also pass; the VS Code-host tier itself
+could not launch in this sandbox (a known limitation — see `RUNBOOK.md`).
+
+**Still open before merge (Sean):** `npm run verify` + `npm run
+test:integration` green, including the new
+`test/integration/run/{diagnostics,commands-diagnostics}.test.ts` and the
+extended `result-panel.test.ts`; the coverage ratchet re-measured and bumped
+in `.c8rc.json` (`resultPanelModel.ts`/`resultPanelDom.ts` gained code — up
+only); the standing adversarial review pass; and live verification against
+`verde` (`1/0` at a known line → one accurately-positioned Problems entry;
+re-run clean → it clears; Run Selection mid-file → the entry lands at the
+editor line; click a `<string>` frame in the result panel → the editor
+jumps; a library-frame line is not clickable). `docs/dev/manual-test-pass.md`
+§7/§8 carry the new manual assertions.
 
 ---
 

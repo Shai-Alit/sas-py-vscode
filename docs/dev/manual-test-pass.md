@@ -55,8 +55,9 @@ own item in Phase 3's **3f** slice for later.
 "Cancel, both ways" re-verified for the reworded cancellation message and
 the now server-accepted (`If-Match`'d) job cancel, plus the queued-run
 behaviour Finding 76 predicts. §7's `ModuleNotFoundError` row is rewritten
-from a `(known gap)` into a real assertion (4c implemented it) but left
-unticked — pending a live `import polars` run.
+from a `(known gap)` into a real assertion — 4c implemented the Show
+Environment pointer, and it is verified live (the appended sentence shows on
+the diagnostic).
 
 ## How to use this
 
@@ -404,7 +405,7 @@ unconfigured workspace is Local and contributes nothing to the editor
   stream also carried the Python interpreter banner and `>>>` prompt
   markers, which §6 says should never appear — split out as its own
   open item in Phase 3's **3f** slice, not a blocker for this box.
-- [ ] **(live) `ModuleNotFoundError` points at Show Environment** — run
+- [x] **(live) `ModuleNotFoundError` points at Show Environment** — run
   `import polars` (or any absent package).
   **Expect:** a `ModuleNotFoundError` traceback whose diagnostic message (the
   line after "Finished with an error." in the output channel) has one
@@ -412,9 +413,9 @@ unconfigured workspace is Local and contributes nothing to the editor
   installed on this connection.` The structured traceback itself (Result
   panel, once 4d wires it) keeps Python's own text unchanged.
   **Implemented in phase 4c** (`src/backend/tracebackDiagnostics.ts`'s
-  `withModuleNotFoundGuidance`), unit-covered; **not yet re-run live** — a
-  pure string append with no wire behaviour, left as a quick follow-up rather
-  than a 4c PR blocker.
+  `withModuleNotFoundGuidance`), unit-covered, and **verified live
+  2026-09-01** against `verde` with a branch `.vsix` — the appended sentence
+  appears on the diagnostic exactly as above.
 
 ## 8. Rich output: matplotlib and pandas — phases 3c-i, 3d-ii
 

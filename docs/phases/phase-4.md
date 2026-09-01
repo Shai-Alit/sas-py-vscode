@@ -246,12 +246,13 @@ behaviour risk (Findings 75/76):
 - `docs/dev/manual-test-pass.md` §6's "Cancel, both ways" item updated for
   the reworded message and this re-verification.
 
-Full account in `STATUS.md`'s 4c paragraph. **One item deliberately not
-live-verified:** the `ModuleNotFoundError` → Show Environment message
-addition (a pure string append in a unit-covered pure function, no wire
-behaviour) — `manual-test-pass.md` §7's `(known gap)` row is updated to name
-4c as its implementation but left unticked pending a live `import polars`
-check.
+The `ModuleNotFoundError` → Show Environment message addition was
+live-verified in the same session (`import polars` against `verde`): the
+appended `Run "Python on Viya: Show Environment" …` sentence shows on the
+diagnostic exactly as specified, and `manual-test-pass.md` §7's row is
+rewritten from a `(known gap)` into a ticked assertion.
+
+Full account in `STATUS.md`'s 4c paragraph.
 
 ☐ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya

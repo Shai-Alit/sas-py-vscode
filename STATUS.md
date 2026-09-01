@@ -244,12 +244,12 @@ right after cancelling, completed cleanly ~30–40 s later — the cancelled
 step running out its natural duration before the session freed, exactly
 Finding 76, no corruption and no reconnect needed. `docs/dev/manual-test-
 pass.md` §6's "Cancel, both ways" item is updated for the reworded message
-and this run. **Not live-verified, by decision:** the `ModuleNotFoundError`
-→ Show Environment message addition (a pure string append in a unit-covered
-pure function, no wire behaviour) — `manual-test-pass.md` §7's `(known gap)`
-row names 4c as its implementation but stays unticked pending a one-minute
-live `import polars` check; not treated as a PR blocker. **Nothing else
-outstanding before the PR opens.**
+and this run. The `ModuleNotFoundError` → Show Environment message addition
+was live-verified in the same session (`import polars` against `verde`) —
+the appended `Run "Python on Viya: Show Environment" …` sentence shows on
+the diagnostic as specified, and `manual-test-pass.md` §7's row is rewritten
+from a `(known gap)` into a ticked assertion. **Nothing outstanding before
+the PR opens.**
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

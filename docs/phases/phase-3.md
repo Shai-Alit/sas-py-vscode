@@ -1827,13 +1827,14 @@ gaps needing one more hand-run before being written off.
 
 ### Phase 4 — Diagnostics
 
-```bash
-git checkout -b phase-4a-traceback-parsing
-git commit -m "feat(python): parse Python tracebacks and map frames to editor positions"
-# ⛔ BARRIER
-git checkout -b phase-4b-diagnostics
-git commit -m "feat(python): publish diagnostics to the Problems panel"
-```
+Moved to `docs/phases/phase-4.md`'s own Runbook, which is now the actual
+source of truth (scoped and lettered 4a–4d, 2026-08-31) — this stub was
+orphaned leftover from before the docs were split per-phase and its branch
+names (`phase-4a-traceback-parsing`/`phase-4b-diagnostics`) went stale the
+moment Phase 4 was relettered, so it's removed here rather than corrected in
+place. Phase 5's and Phases 6–12's equivalent stubs immediately below are the
+same kind of leftover and were not touched in this pass — noticed, not fixed,
+since they're outside what changed here.
 
 ### Phase 5 — Hardening and release
 

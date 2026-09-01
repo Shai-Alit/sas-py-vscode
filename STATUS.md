@@ -100,6 +100,37 @@ a later slice, not a 3f blocker. **Nothing left before a PR opens.**
 
 **PR opened, then merged, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)**, squashed as `b21317b` on `main`. **Phase 3 (3a–3f) is now fully done.** Confirmed independently — local `main` fast-forwarded to `b21317b`, matching `origin/main`, working tree clean. **Phase 4 (Diagnostics) is no longer blocked** and can start next session. This PR's own merge is the trigger for this project's own between-phase-housekeeping checklist (ADRs, punch-list completeness, RUNBOOK/PRODUCTION_PLAN currency, this file's phase pointer, any scratch-file reconciliation, manual-test completeness, and Dependabot advisories) — not yet run; see chat for the proposal on scope and timing. The local `phase-3f-manual-test-regressions` branch is stale now (merged) — safe to `git branch -D` and `git fetch --prune` once ready.
 
+**Between-phase housekeeping for the Phase 3→4 boundary ran twice**, with 3f's
+own rework landing in between: a first pass around 2026-08-27 (before the
+manual-test pass surfaced the regressions that became 3f — see
+`b53d3e9`/`80293a5` for that day's Dependabot clearance, and
+`phase-3-runbook-pending.md` in the project folder for that pass's
+scratch-file reconciliation), then a second, final pass on 2026-08-31 that
+re-verified the first pass's items were still accurate after 3f's changes
+and closed out the rest — landed as `3b658a7`** (docs-only, `[skip-review]`,
+plus the project-folder-only scratch-file re-verification that leaves no git
+diff of its own): ticked 3f's own header in `phase-3.md` now that its punch
+list is closed (Finding 74 excepted, same carried-over pattern 3d-i used),
+retired the "rich output has no clean return path" risk row in
+`PRODUCTION_PLAN.md` §6 (settled by 3c-i/ADR-0019), and replaced a
+hard-coded, twice-stale coverage figure there with a pointer at `.c8rc.json`
+instead. That closes the checklist's punch-list-completeness, plan-currency,
+and scratch-file-reconciliation items. This paragraph itself closes the
+phase-pointer item — the previous paragraph's "not yet run" was accurate when
+written but went stale the moment `3b658a7` landed without this file being
+updated in the same commit; caught and fixed 2026-08-31 rather than left to
+misdirect the next session. **One item is genuinely open, not silently
+assumed done: today's (2026-08-31) Dependabot run hasn't been looked at.**
+Last Monday's (2026-08-24) findings were addressed the same week
+(`b53d3e9`/`80293a5`, 2026-08-27) and `scripts/advisory-allowlist.json`
+reflects that review accurately (one low-severity `diff` entry, expires
+2026-11-12). But Dependabot runs on its own schedule and has almost certainly
+produced a fresh batch today, unreviewed. **Sean's call, 2026-08-31: don't
+spend pre-first-release time chasing that churn now** — carry it as an open
+item to the next between-phase checkpoint, by which point Dependabot will
+have run again regardless. Manual-test completeness is covered by the record
+above through 2026-08-31.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -186,7 +217,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | not started — **unblocked**, between-phase housekeeping not yet run | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | not started — **unblocked**, between-phase housekeeping run 2026-08-31 (`3b658a7`); Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

@@ -22,4 +22,8 @@ Planned pages, each written with the slice that introduces the thing it describe
 
 - **Log to output** — turning a SAS log into clean Python stdout (3b)
 - **Traceback mapping** — `<string>` frames to editor positions, and the wrapper
-  offset that makes it non-trivial (4a)
+  offset that makes it non-trivial (4c, relettered 2026-08-31 — was "4a" in the
+  original plan)
+- **Diagnostics surface** — the Problems panel `DiagnosticCollection` and the
+  result panel's click-to-jump, both consumers of the traceback mapping above
+  (4d, relettered 2026-08-31 — was "4b")

@@ -154,21 +154,18 @@ export class SimulatedJob {
    * without this, a poll parked here never notices — nothing else in this
    * class observes an `AbortSignal` at all.
    *
-   * The listener is removed as soon as the wait settles, however it settles —
-   * not only on the abort path `{ once: true }` covers on its own. Without
-   * that, a wait resolved by `push`/`finish` (the ordinary case: most polls
-   * end because a line arrived or the job finished, not because of a
-   * cancellation) leaves its listener attached to `signal` for the rest of
-   * that `AbortSignal`'s life, since `{ once: true }` only ever fires the
-   * listener it is attached to — one call this method never makes when abort
-   * is not how the wait ended. `streamJobLog` chains one long-lived signal
-   * across every poll of a single run, so a run whose log streams more than a
-   * handful of lines would otherwise accumulate one stale listener per line
-   * on it, eventually past Node's default `maxListeners` warning threshold.
-   * Found on review before this shipped — this module's own consumers stream
-   * few enough lines that the leak was latent rather than triggered, which is
-   * exactly the kind of finding "it hasn't tripped yet" would have let slip
-   * through. */
+   * The wait always settles through `settle`, which removes the listener
+   * first — so a wait resolved by `push`/`finish` (the ordinary case: most
+   * polls end because a line arrived or the job finished, not because of a
+   * cancellation) does not leave its listener attached. `{ once: true }` would
+   * only cover the abort path, since it fires the listener rather than the
+   * settle. `streamJobLog` chains one long-lived signal across every poll of a
+   * single run, so without this a run whose log streams more than a handful of
+   * lines would accumulate one stale listener per line on it, eventually past
+   * Node's default `maxListeners` warning threshold. Found on review before
+   * this shipped — this module's own consumers stream few enough lines that
+   * the leak was latent rather than triggered, which is exactly the kind of
+   * finding "it hasn't tripped yet" would have let slip through. */
   async nextPage(signal?: AbortSignal): Promise<readonly string[]> {
     if (this.queued.length > 0) {
       const page = this.queued;
@@ -177,25 +174,29 @@ export class SimulatedJob {
     }
     if (this.state === "completed") return [];
     return await new Promise<readonly string[]>((resolve) => {
-      let onAbort: (() => void) | undefined;
-      const settle = (lines: readonly string[]): void => {
-        if (onAbort !== undefined) {
-          signal?.removeEventListener("abort", onAbort);
-        }
-        resolve(lines);
-      };
-      this.waiting = settle;
-      if (signal === undefined) return;
-      onAbort = (): void => {
+      if (signal === undefined) {
+        this.waiting = resolve;
+        return;
+      }
+      // `onAbort` and `settle` reference each other, so one is named before the
+      // other is declared — safe because neither is *called* until both
+      // declarations have run (the `signal.aborted` branch and the listener
+      // callback are both below this point).
+      const onAbort = (): void => {
         if (this.waiting !== settle) return;
         this.waiting = undefined;
         settle([]);
       };
+      const settle = (lines: readonly string[]): void => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(lines);
+      };
+      this.waiting = settle;
       if (signal.aborted) {
         onAbort();
         return;
       }
-      signal.addEventListener("abort", onAbort, { once: true });
+      signal.addEventListener("abort", onAbort);
     });
   }
 }

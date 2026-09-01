@@ -104,7 +104,12 @@ function job(links?: readonly Link[]): ComputeJob {
 
 function ok(
   body: unknown,
-  init?: { status?: number; contentType?: string; location?: string },
+  init?: {
+    status?: number;
+    contentType?: string;
+    location?: string;
+    etag?: string;
+  },
 ): ComputeResult<ComputeResponse> {
   return {
     ok: true,
@@ -112,6 +117,7 @@ function ok(
       status: init?.status ?? 200,
       notModified: false,
       ...(init?.location === undefined ? {} : { location: init.location }),
+      ...(init?.etag === undefined ? {} : { etag: init.etag }),
       contentType: init?.contentType ?? "application/vnd.sas.compute.job+json",
       text: JSON.stringify(body),
       body,
@@ -397,9 +403,10 @@ describe("createJob", () => {
 
 describe("isTerminal", () => {
   it("keeps all five states a job does not come back from", () => {
-    // Membership, pinned. `done`, `canceled` and `warning` have never been
-    // observed (finding 53) and are kept on trust: an extra member costs
-    // nothing, a missing one is a poll loop with no exit.
+    // Membership, pinned. `canceled` is now observed live too (Phase 4's
+    // Finding 76 — `cancelJob` reaching a fresh ETag in time reads it back,
+    // lower-case). `done` and `warning` alone remain kept on trust: an extra
+    // member costs nothing, a missing one is a poll loop with no exit.
     assert.deepEqual(
       new Set(TERMINAL_STATES),
       new Set(["done", "canceled", "error", "warning", "completed"]),
@@ -784,8 +791,15 @@ describe("cancelJob", () => {
     type: null,
   };
 
-  it("follows the link with its query intact and sends no validator", async () => {
-    const scripted = fake([plain("")]);
+  /** The fresh self-GET `cancelJob` now makes before its `PUT` (Finding 75) —
+   * a job's own representation, carrying whatever `ETag` this reply names.
+   * The body's content is never read for it; only `.etag` is. */
+  function selfWithEtag(etag: string): ComputeResult<ComputeResponse> {
+    return ok({ id: JOB_ID, state: "running", links: jobLinks() }, { etag });
+  }
+
+  it("reads a fresh ETag off the self relation and sends it as If-Match on the cancel PUT (Finding 75)", async () => {
+    const scripted = fake([selfWithEtag('"kprhurecyg"'), plain("canceled")]);
     const controller = new AbortController();
 
     const result = await cancelJob(
@@ -795,22 +809,31 @@ describe("cancelJob", () => {
     );
 
     assert.ok(result.ok, "an accepted cancel was reported as a failure");
-    const request = only(scripted.requests);
-    // The deployment composed `?value=canceled`; nothing here rebuilds it, and
-    // nothing appends to it — which is the trap, since this is one of only two
-    // job hrefs that arrive with a query already on them.
-    assert.equal(request.link.href, `${JOB_PATH}/state?value=canceled`);
-    assert.equal(request.link.method, "PUT");
-    // No `If-Match`, so there is no `412` to recover from. Upstream sends the
-    // ETag it happens to hold and answers the `412` by recursing into itself
-    // without a bound, on the path that is by definition already going wrong.
-    assert.equal(request.etag, undefined);
+    assert.equal(scripted.requests.length, 2);
+    const [selfRequest, cancelRequest] = scripted.requests;
+    assert.ok(selfRequest !== undefined && cancelRequest !== undefined);
+
+    // The self GET, first — measured (Finding 75) to answer a different ETag
+    // than the job's own create response carried a second earlier, so this
+    // is read fresh rather than trusted from anywhere the caller might have
+    // held one.
+    assert.equal(selfRequest.link.href, JOB_PATH);
+    assert.equal(selfRequest.link.method, "GET");
+    assert.equal(selfRequest.signal, controller.signal);
+
+    // Then the cancel, with the query the deployment composed left intact —
+    // nothing here rebuilds it, and nothing appends to it, since this is one
+    // of only two job hrefs that arrive with a query already on them — and
+    // the fresh ETag from the self GET as `If-Match`.
+    assert.equal(cancelRequest.link.href, `${JOB_PATH}/state?value=canceled`);
+    assert.equal(cancelRequest.link.method, "PUT");
+    assert.equal(cancelRequest.etag, '"kprhurecyg"');
     // A `PUT` whose entire payload is in the query carries no representation.
-    assert.equal(request.body, undefined);
-    assert.equal(request.signal, controller.signal);
+    assert.equal(cancelRequest.body, undefined);
+    assert.equal(cancelRequest.signal, controller.signal);
   });
 
-  it("reads a 404 as the session having gone", async () => {
+  it("reads a 404 on the self GET as the session having gone, without ever sending the cancel", async () => {
     // Finding 53: a `404` on a job resource cannot be told apart from a `404`
     // on a dead session by status alone, and the reading is only sound because
     // nothing in this extension deletes a job.
@@ -823,12 +846,50 @@ describe("cancelJob", () => {
 
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "session-gone");
+    assert.equal(scripted.requests.length, 1, "the cancel PUT must not fire");
   });
 
-  it("says which relation was missing rather than which job", async () => {
+  it("reads a 404 on the cancel PUT itself as the session having gone", async () => {
+    const scripted = fake([selfWithEtag('"kprhurecyg"'), rejected(404)]);
+
+    const result = await cancelJob(
+      scripted.client,
+      job([...jobLinks(), cancel]),
+    );
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "session-gone");
+  });
+
+  it("reports a malformed response when the self GET carries no ETag to cancel with", async () => {
+    const scripted = fake([
+      ok({ id: JOB_ID, state: "running", links: jobLinks() }),
+    ]);
+
+    const result = await cancelJob(
+      scripted.client,
+      job([...jobLinks(), cancel]),
+    );
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "response-malformed");
+    assert.equal(scripted.requests.length, 1, "the cancel PUT must not fire");
+  });
+
+  it("says which relation was missing rather than which job, for a missing cancel relation", async () => {
     const scripted = fake([]);
 
     const result = await cancelJob(scripted.client, job());
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "link-missing");
+    assert.equal(scripted.requests.length, 0);
+  });
+
+  it("says which relation was missing for a missing self relation too", async () => {
+    const scripted = fake([]);
+
+    const result = await cancelJob(scripted.client, job([cancel]));
 
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "link-missing");

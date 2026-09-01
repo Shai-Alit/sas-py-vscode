@@ -171,20 +171,61 @@ error path actually corrupt what `parseTraceback` sees, before finalizing this
 slice's parsing assumptions rather than discovering it mid-4d.
 
 **Folded in 2026-09-01, decided with Sean right after 4b closed:** Findings
-75 and 76 from this phase's own Probe findings section. Two pieces of work,
-neither yet started: (1) give `cancelJob()` (`job.ts:508-521`) the `If-Match`
-this deployment requires — Finding 75 measured every cancel failing outright
-with `428` without it, and a fresh `ETag` has to come from a `GET` on the job
-made right before the `PUT`, since the create response's own `ETag` is
-already stale by then; `cancelRun()` (`commands.ts:518-522`) also needs to
-stop discarding `cancel()`'s result unread, now that a real failure can
-reach it. (2) Revisit `cancelRun`'s messaging per Finding 76: a cancel
-cannot preempt a running Python statement either way, so a run or reset
-queued behind one that's merely reported `cancelled` locally can sit for up
-to the remainder of the original step's natural duration with no "busy"
-message and no other explanation — decide what, if anything, to tell the
-user in that window (the "Cancelled." wording itself, a note on the queued
-run/reset, or something in the log) rather than leaving it silent.
+75 and 76 from this phase's own Probe findings section. (1) `cancelJob()`
+(`job.ts:508-521`) now reads a fresh `ETag` off the job's own `self`
+relation immediately before the `PUT` and sends it as `If-Match` — Finding
+75 measured every cancel failing outright with `428` without it, and the
+create response's own `ETag` is already stale by the time a caller would
+have held one; `cancelRun()` (`commands.ts:518-522`) now inspects
+`cancel()`'s result instead of discarding it, logging and reporting a
+failure there. (2) `cancelRun`'s messaging, per Finding 76: rather than add
+new tracking machinery for "is the session still finishing the previous
+step" (a background poll of an already-cancelled job, kept alive purely to
+know when it truly ends — considered and rejected as disproportionate for
+this slice), the "Cancelled." message itself (`messages.ts`) is reworded to
+say only what is true unconditionally: that this window's own view of the
+run has stopped, and that Viya may keep executing a step already in
+flight. That covers the same ground the missing "busy" fallback would have
+— set the right expectation at cancel time, rather than explain a delay
+reactively — without a new failure mode. Implemented 2026-09-01: source in
+`src/compute/job.ts`, `src/run/commands.ts`, `src/backend/messages.ts`;
+unit coverage in `compute-job.test.ts` (the fresh-ETag sequence and its four
+new failure/link-missing arms), `compute-log-stream.test.ts` (every
+`cancel()` scenario updated for the extra self-GET this now sends first),
+`proc-python-backend.test.ts` and `test/helpers/recorded-proc-python.ts`
+(both gained a `self` relation on the simulated job, without which the new
+code fails `link-missing` immediately); `commands-backend.test.ts`'s three
+existing "Cancelled." assertions now match on the reworded sentence's
+leading clause rather than the old exact string.
+
+Also implemented 2026-09-01, the plan's own traceback-mapping and
+`ModuleNotFoundError` work: new `src/backend/tracebackDiagnostics.ts`
+(`mapFrameToOrigin`, `primaryFrame`, `primaryPosition`,
+`withModuleNotFoundGuidance`) plus its own unit tests
+(`backend-traceback-diagnostics.test.ts`), and `procPython.ts`'s
+`buildFailureOutcome` now appends the `Show Environment` pointer to a
+`ModuleNotFoundError`'s diagnostic message (a new `proc-python-backend.test.ts`
+case pins it, and that the forwarded `Traceback.message` 4d will consume
+stays unmodified). **Finding 74's triage is also done** — see `phase-3.md`'s
+own Finding 74 entry for the full account: not a `parseTraceback` defect,
+and its own two adjacent findings (the banner/`>>>` reading as noise to a
+person despite correctly not being log noise, and `writeOutcome`'s
+traceback-tail echo being genuinely redundant) are left as open,
+undecided follow-ups rather than fixed here — outside this slice's own
+scope of traceback→editor mapping.
+
+**Verified 2026-09-01:** `tsc --noEmit` (all three projects), `format:check`,
+`npm run test:unit` (1155 passing), `npm run coverage` (95% branch floor
+held, `tracebackDiagnostics.ts` at 100%), `lint`, `check:coverage-scope`,
+`check:copyright` and `check:contracts` all green; `test:integration`
+unaffected by this session's review fixes (comment- and test-only, plus a
+behaviour-preserving `primaryFrame` refactor) and already green on Sean's
+own earlier run. The standing adversarial review pass was also done — three
+notes folded in (a `primaryFrame` branch-coverage refactor, an added test,
+and a stale count in `backend.ts`'s `RichOutput` doc comment), a
+`prettier` miss on the branch's `compute-job.test.ts` edits fixed, two
+observations recorded as non-blocking. Full account in `STATUS.md`'s 4c
+paragraph.
 
 ☐ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya

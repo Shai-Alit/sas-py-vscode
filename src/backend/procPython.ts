@@ -144,6 +144,7 @@ import {
 } from "./environment";
 import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
 import { type BackendFailure, type BackendResult, fail } from "./problems";
+import { withModuleNotFoundGuidance } from "./tracebackDiagnostics";
 import {
   decodeRichOutput,
   exceedsCaptureCap,
@@ -424,7 +425,12 @@ function buildFailureOutcome(
     if (traceback !== undefined) {
       const diagnostic: PythonDiagnostic = {
         severity: "error",
-        message: traceback.message,
+        // Phase 4c, `phase-3.md`'s 3e entry: point a `ModuleNotFoundError`
+        // at `probeRuntime()`'s cached package list. Only the diagnostic
+        // gets the appended guidance — `trailingOutput.data` below stays
+        // `traceback` unmodified, since that structured value is 4d's
+        // result-panel payload and must read exactly as Python printed it.
+        message: withModuleNotFoundGuidance(traceback.message),
       };
       return {
         outcome: { succeeded: false, diagnostics: [diagnostic] },

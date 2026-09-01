@@ -146,6 +146,23 @@ const ACCEPTED: Reply = {
   value: { status: 204, notModified: false, text: "", body: undefined },
 };
 
+/** The fresh self-GET `cancelJob` now makes before its `PUT` (Finding 75) —
+ * a job's own representation, carrying whatever `ETag` this reply names.
+ * Body content is never read for it here; only `.etag` is. */
+function selfEtag(etag: string): Reply {
+  return {
+    ok: true,
+    value: {
+      status: 200,
+      notModified: false,
+      contentType: "application/vnd.sas.compute.job+json",
+      text: "{}",
+      body: {},
+      etag,
+    },
+  };
+}
+
 function rejected(status: number): Reply {
   return {
     ok: false,
@@ -713,25 +730,36 @@ describe("streamJobLog", () => {
   });
 
   describe("cancelling", () => {
-    it("settles done as cancelled and tells the deployment", async () => {
-      const script = scripted([{ reply: EMPTY, hold: true }, fast(ACCEPTED)]);
+    it("settles done as cancelled and tells the deployment, after first reading a fresh ETag to cancel with (Finding 75)", async () => {
+      const script = scripted([
+        { reply: EMPTY, hold: true },
+        fast(selfEtag('"abc"')),
+        fast(ACCEPTED),
+      ]);
 
       const stream = streamJobLog(script.client, job(), { now: script.now });
       const cancelling = stream.cancel();
 
-      // The cancel went out while the poll was still open — the second request
-      // exists before the first has answered.
+      // The self GET went out while the poll was still open — the second
+      // request exists before the first has answered. It reads a fresh ETag
+      // before anything is sent to actually stop the job: the job's own
+      // ETag goes stale within about a second (Finding 75), so this is read
+      // right before the `PUT` rather than carried from anywhere earlier.
       assert.equal(script.requests.length, 2);
-      const sent = at(script.requests, 1);
-      assert.equal(sent.link.rel, "cancel");
-      // Query intact, no validator, nothing in the body. The validator matters:
-      // upstream sends one and answers the resulting `412` by recursing into
-      // itself without a bound, on the path that is already going wrong.
-      assert.equal(sent.link.href, `${JOB_PATH}/state?value=canceled`);
-      assert.equal(sent.etag, undefined);
-      assert.equal(sent.body, undefined);
+      const selfRequest = at(script.requests, 1);
+      assert.equal(selfRequest.link.rel, "self");
+      assert.equal(selfRequest.signal, undefined);
 
       assert.ok((await cancelling).ok);
+
+      // Now the cancel itself, sent once the self GET answered. Query
+      // intact, the fresh ETag as `If-Match`, nothing in the body.
+      assert.equal(script.requests.length, 3);
+      const sent = at(script.requests, 2);
+      assert.equal(sent.link.rel, "cancel");
+      assert.equal(sent.link.href, `${JOB_PATH}/state?value=canceled`);
+      assert.equal(sent.etag, '"abc"');
+      assert.equal(sent.body, undefined);
 
       // The aborted poll fails, and how it fails is exactly what must not reach
       // the caller: a dropped connection reads as an unreachable deployment.
@@ -742,8 +770,12 @@ describe("streamJobLog", () => {
       assert.equal(result.value.outcome, "cancelled");
     });
 
-    it("sends one request however many times it is called", async () => {
-      const script = scripted([{ reply: EMPTY, hold: true }, fast(ACCEPTED)]);
+    it("sends one cancellation sequence however many times it is called", async () => {
+      const script = scripted([
+        { reply: EMPTY, hold: true },
+        fast(selfEtag('"abc"')),
+        fast(ACCEPTED),
+      ]);
 
       const stream = streamJobLog(script.client, job(), { now: script.now });
       const [first, second] = await Promise.all([
@@ -753,14 +785,20 @@ describe("streamJobLog", () => {
 
       assert.ok(first.ok);
       assert.ok(second.ok);
-      assert.equal(script.requests.length, 2);
+      // The held poll, plus one self GET and one cancel PUT — not two of
+      // either, despite `cancel()` being called twice concurrently.
+      assert.equal(script.requests.length, 3);
 
       script.release(rejected(404));
       await stream.done;
     });
 
-    it("aborts the poll but puts no signal on the message that stops the job", async () => {
-      const script = scripted([{ reply: EMPTY, hold: true }, fast(ACCEPTED)]);
+    it("aborts the poll but puts no signal on the self GET or the message that stops the job", async () => {
+      const script = scripted([
+        { reply: EMPTY, hold: true },
+        fast(selfEtag('"abc"')),
+        fast(ACCEPTED),
+      ]);
 
       const stream = streamJobLog(script.client, job(), { now: script.now });
       await stream.cancel();
@@ -772,11 +810,12 @@ describe("streamJobLog", () => {
         true,
         "the in-flight poll was left running",
       );
-      // And the cancel itself carries none. Passing the pump's — the obvious
-      // tidy-up, since every other call in the module takes it — would abort the
-      // one request whose entire purpose is to stop the job, leaving the program
-      // to run to completion unattended.
+      // Neither the self GET (Finding 75) nor the cancel itself carries one.
+      // Passing the pump's — the obvious tidy-up, since every other call in the
+      // module takes it — would abort the one request whose entire purpose is
+      // to stop the job, leaving the program to run to completion unattended.
       assert.equal(at(script.requests, 1).signal, undefined);
+      assert.equal(at(script.requests, 2).signal, undefined);
 
       script.release(rejected(404));
       await stream.done;
@@ -816,6 +855,7 @@ describe("streamJobLog", () => {
       // since concurrent callers share the one memoised promise.
       const script = scripted([
         { reply: EMPTY, hold: true },
+        fast(selfEtag('"abc"')),
         fast(unreachable()),
       ]);
 
@@ -842,6 +882,7 @@ describe("streamJobLog", () => {
       const script = scripted([
         { reply: EMPTY, elapsedMs: FAST_MS },
         { reply: EMPTY, hold: true },
+        fast(selfEtag('"abc"')),
         fast(ACCEPTED),
       ]);
 
@@ -855,7 +896,7 @@ describe("streamJobLog", () => {
 
       assert.ok(result.ok);
       assert.equal(result.value.outcome, "cancelled");
-      assert.equal(script.requests.length, 3, "a cancelled run drained anyway");
+      assert.equal(script.requests.length, 4, "a cancelled run drained anyway");
     });
 
     it("does nothing once the job is terminal, drain or no drain", async () => {
@@ -905,7 +946,11 @@ describe("streamJobLog", () => {
     });
 
     it("ends the events iteration too", async () => {
-      const script = scripted([{ reply: EMPTY, hold: true }, fast(ACCEPTED)]);
+      const script = scripted([
+        { reply: EMPTY, hold: true },
+        fast(selfEtag('"abc"')),
+        fast(ACCEPTED),
+      ]);
 
       const stream = streamJobLog(script.client, job(), { now: script.now });
       const collecting = collect(stream.events);

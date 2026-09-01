@@ -328,6 +328,15 @@ export function buildClient(
               id: "recorded-job",
               state: "pending",
               links: [
+                // Finding 75 (Phase 4c): `cancelJob` now reads this relation
+                // for a fresh ETag immediately before its `PUT`, routing
+                // through the same generic `case "self"` below the fileref's
+                // own self-check already uses.
+                {
+                  rel: "self",
+                  method: "GET",
+                  href: "/jobs/recorded-job",
+                },
                 {
                   rel: "state",
                   method: "GET",

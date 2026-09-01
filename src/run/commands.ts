@@ -517,7 +517,21 @@ export function createRunCommandHandlers(
 
   const cancelRun = async (): Promise<void> => {
     if (currentRun !== undefined) {
-      await currentRun.backend.cancel(currentRun.handle);
+      // Finding 75 (Phase 4b): the server-side half of a cancel can fail —
+      // measured live, a missing or already-stale ETag answers `428` — and
+      // this used to be discarded unread. The *local* run still stops
+      // regardless (`handle.done` settles from `LogStream`'s own abort, not
+      // from this reply — see `cancelJob`'s own doc comment), so a failure
+      // here does not mean the program kept running locally; it means the
+      // request that was supposed to tell Viya to stop it did not land, and
+      // per Finding 76, the SAS session may keep executing the cancelled
+      // program for up to its own natural duration regardless of whether
+      // this succeeds. Logged and surfaced, not silently dropped.
+      const cancelled = await currentRun.backend.cancel(currentRun.handle);
+      if (!cancelled.ok) {
+        log.warn(cancelled.reason);
+        reportProblem(cancelled.problem);
+      }
       return;
     }
     // No `execute()` handle in flight, but a `reset()` might be — it

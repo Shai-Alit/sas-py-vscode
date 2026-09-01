@@ -1075,6 +1075,22 @@ called out under **Changed** with a migration note.
   `buildClient`'s new `autoFinishReset` option (default `true`, unchanged for
   every existing caller) lets a test hold a reset open long enough for Cancel
   to interrupt it.
+- **A `ModuleNotFoundError` now points at `Show Environment`.** Phase 4c,
+  the ask `phase-3.md`'s 3e entry left for this phase: an unhandled Python
+  exception whose message starts `ModuleNotFoundError:` now gets one
+  sentence appended — `Run "Python on Viya: Show Environment" to see what
+  is installed on this connection.` — pointing at 3e's own cached
+  installed-package list rather than leaving the user to guess whether a
+  missing import is a typo or a genuinely absent package. Only the
+  diagnostic message carries the addition; the structured traceback the
+  result panel will eventually consume keeps the exception's own text
+  unmodified. Also new, greenfield groundwork for 4d rather than anything
+  user-visible yet: `src/backend/tracebackDiagnostics.ts`'s
+  `mapFrameToOrigin`/`primaryFrame`/`primaryPosition`, mapping a `<string>`
+  traceback frame back to a zero-based editor position through
+  `ProgramOrigin.lineOffset` (ADR-0014's identity mapping — a `<string>`
+  frame's own line number needs no adjustment beyond the offset a Run
+  Selection call already carries).
 
 ### Fixed
 
@@ -1381,6 +1397,23 @@ called out under **Changed** with a migration note.
   `TracebackFrame.file` doc is corrected to match: wrapper-frame dropping is
   done here, and mapping a frame's line number to an editor position is
   Phase 4's job, not this slice's.
+- **Cancel now actually sends a validator the deployment requires, and a
+  failure to reach the server is no longer silently discarded** (Phase 4b's
+  Findings 75/76, fixed in 4c). `cancelJob()` used to send a job's `PUT
+  …/state?value=canceled` with no `If-Match` at all, on the strength of a
+  comment claiming none was needed — measured wrong against a live Viya 4
+  deployment: every such request answered `428 Precondition Required`, and
+  `cancelRun()` awaited the failure without ever inspecting it, so a user
+  who pressed Cancel saw "Cancelled." regardless of whether Viya was ever
+  actually asked to stop anything. `cancelJob` now reads a fresh `ETag` off
+  the job's own `self` relation immediately before the `PUT` — the create
+  response's own `ETag` is already stale a second later — and `cancelRun`
+  now logs and reports a failure here instead of discarding it. Separately,
+  live probing also found that even an *accepted* cancel does not preempt a
+  Python statement already running — a 60-second loop cancelled ~6s in
+  still ran its full 60.01s before SAS tore the interpreter down — so the
+  "Cancelled." message is reworded to say only what is true
+  unconditionally, rather than implying an immediate stop it cannot promise.
 
 ### Changed
 

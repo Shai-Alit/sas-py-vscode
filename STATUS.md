@@ -184,8 +184,52 @@ actually free, so the "busy" message never fires; the user just gets a
 silently slow Run/Reset). **Decided with Sean the same day: fold both fixes
 into 4c** rather than open a separate slice — 4c is now traceback parsing
 *plus* the `cancelJob` `If-Match` fix and a decision on `cancelRun`'s
-messaging gap, raised from *Medium* to reflect the added scope. **4c is
-next.**
+messaging gap, raised from *Medium* to reflect the added scope.
+
+**4c implemented, 2026-09-01; not yet verified or reviewed.** All of it in
+one pass: `src/backend/tracebackDiagnostics.ts` (new — the `<string>`-frame
+offset mapping plus `primaryFrame`/`primaryPosition` for 4d, none of it
+wired into anything user-visible yet), the `ModuleNotFoundError` → `Show
+Environment` pointer in `procPython.ts`'s diagnostic message, `cancelJob`'s
+`If-Match` fix (a fresh `ETag` read off the job's own `self` relation right
+before the cancel `PUT` — Finding 75), `cancelRun` no longer discarding a
+cancel failure, and the "Cancelled." message reworded rather than papering
+over Finding 76's queued-run gap with new background-tracking machinery
+(considered and rejected as disproportionate for this slice — see
+`phase-4.md`'s own 4c entry for the reasoning). Finding 74's triage is also
+closed: not a `parseTraceback` defect — see `phase-3.md`'s own Finding 74
+entry — with two adjacent, smaller gaps found and deliberately left open
+rather than fixed here. Unit tests updated throughout, including two test
+fixtures (`proc-python-backend.test.ts`'s router, and
+`test/helpers/recorded-proc-python.ts`'s simulated wire) that needed a
+`self` relation added to their job payloads, without which `cancelJob`'s new
+code fails `link-missing` before ever reaching the server.
+
+**Verified and independently reviewed, 2026-09-01.** Sean's own
+`tsc`/`prettier`/`test`/`lint` run first (all green), then a senior-review
+pass over the full branch diff against `main`: no P0/P1s — the `cancelJob`
+`If-Match` fix mirrors `fileref.ts`/`files.ts`'s existing fresh-`ETag`
+pattern exactly, error handling is disciplined (no swallowed failures, every
+new call timeout- and abort-bounded), the new `self` relation is confirmed
+present on a live job payload (finding 46) so its `link-missing` arm is a
+real guard rather than a new failure mode, and the tests are HTTP-boundary
+mocks covering every new branch. Three review notes were folded in the same
+day: (1) `primaryFrame` reworked from an index walk to a `for…of` over a
+reversed shallow copy, removing an unreachable `noUncheckedIndexedAccess`
+guard branch — `tracebackDiagnostics.ts` is now 100% branch-covered and the
+suite's 95% floor is unmoved; (2) a new `primaryFrame` test for the
+non-empty "no `<string>` frame anywhere" case; (3) `backend.ts`'s
+`RichOutput` doc comment, which enumerated "the four" un-`l10n`'d
+extension-authored strings, corrected to five (this slice's
+`withModuleNotFoundGuidance` is the fifth) with a note that a sixth should
+reopen ADR-0015's localisation boundary rather than extend the list again.
+Also caught: the branch's `compute-job.test.ts` edits were not
+`prettier`-clean (`format:check` now passes). Two review observations left
+as non-blocking: the failed-server-cancel path now shows both the reworded
+"Cancelled…" outcome and a `backend-failed` toast (intentional per Finding
+75, mildly noisy), and `tracebackDiagnostics.ts`'s `primaryFrame`/
+`primaryPosition`/`mapFrameToOrigin` ship unwired until 4d (disclosed in the
+CHANGELOG and this phase's 4c entry).
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

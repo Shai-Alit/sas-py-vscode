@@ -271,7 +271,11 @@ describe("run commands — backend paths (4a)", () => {
     // until the idle reaper takes it.
     await orphaned;
     assert.ok(
-      lines.includes("Cancelled."),
+      // Reworded, Phase 4c's Finding 76: the full sentence now also caveats
+      // that a step already in flight may keep running on Viya — matching
+      // on the leading "Cancelled." is what survives that wording changing
+      // again without this test caring what the caveat itself says.
+      lines.some((line) => line.startsWith("Cancelled.")),
       `expected the orphaned run's own output to record its cancellation; got: ${JSON.stringify(lines)}`,
     );
   });
@@ -306,7 +310,11 @@ describe("run commands — backend paths (4a)", () => {
 
     await resetting;
     assert.ok(
-      lines.includes("Cancelled."),
+      // Reworded, Phase 4c's Finding 76: the full sentence now also caveats
+      // that a step already in flight may keep running on Viya — matching
+      // on the leading "Cancelled." is what survives that wording changing
+      // again without this test caring what the caveat itself says.
+      lines.some((line) => line.startsWith("Cancelled.")),
       `expected the interrupted reset to record its own cancellation; got: ${JSON.stringify(lines)}`,
     );
   });
@@ -361,7 +369,11 @@ describe("run commands — backend paths (4a)", () => {
 
     await first;
     assert.ok(
-      lines.includes("Cancelled."),
+      // Reworded, Phase 4c's Finding 76: the full sentence now also caveats
+      // that a step already in flight may keep running on Viya — matching
+      // on the leading "Cancelled." is what survives that wording changing
+      // again without this test caring what the caveat itself says.
+      lines.some((line) => line.startsWith("Cancelled.")),
       `expected the first run to have been reachable — and cancellable — through ` +
         `the second invocation's refusal; got: ${JSON.stringify(lines)}`,
     );

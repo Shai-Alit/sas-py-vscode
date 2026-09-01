@@ -98,6 +98,12 @@ export const EXECUTE_REL = "execute";
 /** The relation on a job that reads its state. `GET`, `text/plain`. */
 export const JOB_STATE_REL = "state";
 
+/** The relation on a job that reads its own representation, `ETag` included.
+ * `cancelJob` (Finding 75) follows this immediately before its `PUT`, since a
+ * job's `ETag` is stale within a second of the create response that carried
+ * one. */
+export const JOB_SELF_REL = "self";
+
 /**
  * The relation on a job that reads its log as a collection of typed lines.
  *
@@ -128,12 +134,15 @@ export const JOB_CANCEL_REL = "cancel";
 /**
  * The states a job does not come back from.
  *
- * Upstream's list, kept whole. Only `error` and `completed` have been seen on a
- * live deployment — a SAS `ERROR:` gives `error` while the session it ran in
- * still settles to `idle` (finding 53) — and `done`, `canceled` and `warning`
- * are inherited on trust. Trust is the right call here: the cost of an extra
- * member nothing ever emits is nil, and the cost of a missing one is a poll loop
- * that runs until something else stops it.
+ * Upstream's list, kept whole. `error`, `completed` and, as of Phase 4's
+ * Finding 76, `canceled` have all now been seen on a live deployment — a SAS
+ * `ERROR:` gives `error` while the session it ran in still settles to `idle`
+ * (finding 53), and a `cancelJob` that reached a fresh `ETag` in time reads
+ * back `canceled`, lower-case, matching the comparison below. `done` and
+ * `warning` alone remain inherited on trust. Trust is the right call for
+ * those two: the cost of an extra member nothing ever emits is nil, and the
+ * cost of a missing one is a poll loop that runs until something else stops
+ * it.
  */
 export const TERMINAL_STATES: readonly string[] = [
   "done",
@@ -483,19 +492,28 @@ export async function followLogPage(
 /**
  * Asks the deployment to stop the job.
  *
- * Follows the `cancel` link exactly as sent, query string included, and sends no
- * `If-Match` — the same three decisions `cancelSession` documents, made for the
- * same reasons. Upstream builds this call by hand with an ETag and answers the
- * `412` that produces by recursing into itself without a bound, on the path that
- * is by definition already going wrong; sending no validator means there is no
- * `412` to recover from.
+ * **Sends `If-Match`, read fresh immediately before the `PUT`.** An earlier
+ * version of this comment claimed the deployment needed no validator here,
+ * reasoning from `cancelSession`'s own three decisions — measured wrong,
+ * Phase 4's Finding 75 (`docs/phases/phase-4.md`): a bare `PUT
+ * …/state?value=canceled` answers **`428 Precondition Required`** on a live
+ * Viya 4 deployment, every time, not the succeed-or-412 shape the old
+ * comment assumed. The fix is not "carry the `ETag` from wherever the job
+ * came from" — the same finding measured a job's `ETag` already stale one
+ * second after its own `201` create response, so this function reads its
+ * own fresh one off the `self` relation immediately before sending the
+ * `PUT`, rather than trusting anything a caller might be holding.
  *
- * **Whether the job stops promptly is unmeasured.** Whether a long-running Python
- * step responds to job cancellation, or runs to the end of the step first, is a
- * question the probes explicitly left open. So this reports whether the *request*
- * was accepted and nothing more: a caller must not read a success here as the
- * program having stopped, and `logStream.ts` does not — it settles its own stream
- * on the user's intent rather than on this reply.
+ * **Whether the job stops promptly is no longer unmeasured either.** Finding
+ * 76 (same probe): the deployment accepts and echoes `canceled` as the
+ * job's own state promptly, but that is not the same as preempting the
+ * Python statement in flight — a 60-second loop cancelled ~6s in still ran
+ * its full 60.01s before SAS tore the interpreter down. So this still
+ * reports only whether the *request* was accepted, and a caller must still
+ * not read a success here as the program having actually stopped —
+ * `logStream.ts` does not; it settles its own stream on the user's intent
+ * rather than on this reply, which is the only sound reading now that a
+ * prompt stop is measured **not** to happen either.
  *
  * **There is no `deleteJob`, and its absence is load-bearing.** The job carries a
  * `delete` relation (finding 46) and nothing in this extension follows it. That
@@ -515,7 +533,30 @@ export async function cancelJob(
     return linkMissing("compute job", job.id, JOB_CANCEL_REL);
   }
 
-  const result = await client.send({ link, signal: options?.signal });
+  const selfLink = findLink(job.links, JOB_SELF_REL);
+  if (selfLink === undefined) {
+    return linkMissing("compute job", job.id, JOB_SELF_REL);
+  }
+  // Finding 75: a fresh `ETag`, read right before the `PUT` rather than
+  // carried from the job's own create response — that one is already stale
+  // by the time a caller gets here (measured: it had changed within a
+  // second). Any failure reading it is reported the same way any other
+  // failure to reach the job is.
+  const fresh = await client.send({ link: selfLink, signal: options?.signal });
+  if (!fresh.ok) return asSessionGone(fresh);
+  if (fresh.value.etag === undefined) {
+    return malformed(
+      fresh.value,
+      "a job representation",
+      "and it carried no ETag to cancel with",
+    );
+  }
+
+  const result = await client.send({
+    link,
+    etag: fresh.value.etag,
+    signal: options?.signal,
+  });
   if (!result.ok) return asSessionGone(result);
   return { ok: true, value: undefined };
 }

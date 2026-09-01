@@ -145,7 +145,8 @@ the same day: fold the fix into 4c** rather than open a separate slice —
 4c's own entry above and its Runbook item below now carry that work. 4b
 itself stays probe-only, as scoped: no source changed in this slice.
 
-☐ **4c — Traceback parsing.** Smaller than a fresh read of the plan suggests,
+☑ **4c — Traceback parsing + the Findings 75/76 cancel fix. Done
+2026-09-01.** Smaller than a fresh read of the plan suggests,
 because the offset-mapping groundwork already exists:
 `ProgramOrigin.lineOffset` (`backend.ts:58-78`) is already populated per run in `buildProgram`
 (`commands.ts:383-400` — 0 for whole-file, `selection.start.line` for Run
@@ -214,18 +215,43 @@ traceback-tail echo being genuinely redundant) are left as open,
 undecided follow-ups rather than fixed here — outside this slice's own
 scope of traceback→editor mapping.
 
-**Verified 2026-09-01:** `tsc --noEmit` (all three projects), `format:check`,
-`npm run test:unit` (1155 passing), `npm run coverage` (95% branch floor
-held, `tracebackDiagnostics.ts` at 100%), `lint`, `check:coverage-scope`,
-`check:copyright` and `check:contracts` all green; `test:integration`
-unaffected by this session's review fixes (comment- and test-only, plus a
-behaviour-preserving `primaryFrame` refactor) and already green on Sean's
-own earlier run. The standing adversarial review pass was also done — three
-notes folded in (a `primaryFrame` branch-coverage refactor, an added test,
-and a stale count in `backend.ts`'s `RichOutput` doc comment), a
-`prettier` miss on the branch's `compute-job.test.ts` edits fixed, two
-observations recorded as non-blocking. Full account in `STATUS.md`'s 4c
-paragraph.
+**Verified 2026-09-01.** Automated: `npm run verify` and `npm run
+test:integration` both green — that covers `tsc --noEmit` (all three
+projects), `format:check`, `lint`, `check:copyright`/`check:secrets`/
+`check:coverage-scope`/`check:contracts`, `build`, `npm run coverage` (1155
+unit specs, 95% branch floor held, `tracebackDiagnostics.ts` at 100%), and
+the VS Code-host integration tier (which includes the reworded
+`commands-backend.test.ts` "Cancelled." assertions). The standing
+adversarial review pass was also done — three notes folded in (a
+`primaryFrame` branch-coverage refactor, an added test, and a stale count in
+`backend.ts`'s `RichOutput` doc comment), a `prettier` miss on the branch's
+`compute-job.test.ts` edits fixed, two observations recorded as
+non-blocking.
+
+**Live-verified 2026-09-01** against `verde` (Viya 4) with a `.vsix` built
+from this branch — the cancel fix, which is the part with real wire-
+behaviour risk (Findings 75/76):
+
+- Cancel from the progress-notification button, and again via the palette
+  `Cancel` command: both stop the run, `done` never prints, the output
+  channel shows the reworded "Cancelled. If a single step was already
+  running…" line, and **no error notification** — i.e. the server-side
+  `PUT …/state?value=canceled` was accepted (the `If-Match` landed), not
+  the `428` a bare request drew before this fix.
+- Session is not wedged afterward: a run submitted right after a cancel
+  (~15 s into the 60 s `sleep`) completed cleanly, ~30–40 s later — the
+  cancelled step running out its natural duration before the session frees,
+  exactly Finding 76's measured behaviour, and no corruption or
+  reconnect/reset needed.
+- `docs/dev/manual-test-pass.md` §6's "Cancel, both ways" item updated for
+  the reworded message and this re-verification.
+
+Full account in `STATUS.md`'s 4c paragraph. **One item deliberately not
+live-verified:** the `ModuleNotFoundError` → Show Environment message
+addition (a pure string append in a unit-covered pure function, no wire
+behaviour) — `manual-test-pass.md` §7's `(known gap)` row is updated to name
+4c as its implementation but left unticked pending a live `import polars`
+check.
 
 ☐ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya

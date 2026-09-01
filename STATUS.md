@@ -231,6 +231,26 @@ as non-blocking: the failed-server-cancel path now shows both the reworded
 `primaryPosition`/`mapFrameToOrigin` ship unwired until 4d (disclosed in the
 CHANGELOG and this phase's 4c entry).
 
+**Fully verified, 2026-09-01.** `npm run verify` and `npm run
+test:integration` both green (Sean's own run). Then the cancel fix —
+Findings 75/76, the part with real wire-behaviour risk — **live-verified**
+against `verde` (Viya 4) with a branch `.vsix`: Cancel from both the
+progress-notification button and the palette command stops the run with
+`done` never printing, the output channel shows the reworded "Cancelled. If
+a single step was already running…" line, and **no error toast** — meaning
+the server accepted the `If-Match`'d `PUT` rather than answering the `428` a
+bare request drew before. A run submitted ~15 s into the 60 s `sleep`,
+right after cancelling, completed cleanly ~30–40 s later — the cancelled
+step running out its natural duration before the session freed, exactly
+Finding 76, no corruption and no reconnect needed. `docs/dev/manual-test-
+pass.md` §6's "Cancel, both ways" item is updated for the reworded message
+and this run. **Not live-verified, by decision:** the `ModuleNotFoundError`
+→ Show Environment message addition (a pure string append in a unit-covered
+pure function, no wire behaviour) — `manual-test-pass.md` §7's `(known gap)`
+row names 4c as its implementation but stays unticked pending a one-minute
+live `import polars` check; not treated as a PR blocker. **Nothing else
+outstanding before the PR opens.**
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -317,7 +337,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (now also the Findings 75/76 fix) –4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (traceback-mapping groundwork + the Findings 75/76 cancel fix) implemented, reviewed, verified (incl. live) 2026-09-01 — PR pending; 4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

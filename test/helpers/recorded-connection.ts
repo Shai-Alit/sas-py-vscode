@@ -50,6 +50,10 @@ export interface RecordedConnectionOptions {
    * Defaults to `true`, matching `recorded-proc-python.ts`'s own default;
    * a test driving `resetPythonState()`'s timing by hand passes `false`. */
   readonly autoFinishReset?: boolean;
+  /** Forwarded to `buildClient` — makes the job `cancel` PUT answer a `412`.
+   * `commands-backend.test.ts` uses it to pin that `cancelRun` surfaces a
+   * failed backend `cancel()` (Finding 75) rather than discarding it. */
+  readonly failCancel?: boolean;
 }
 
 /** One recorded connection, and the one thing a test needs back out of it
@@ -85,6 +89,9 @@ export function createRecordedConnection(
     ...(options.autoFinishReset === undefined
       ? {}
       : { autoFinishReset: options.autoFinishReset }),
+    ...(options.failCancel === undefined
+      ? {}
+      : { failCancel: options.failCancel }),
   });
   const generation: DialectResolution = {
     dialect: dialect(),

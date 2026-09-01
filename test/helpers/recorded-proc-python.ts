@@ -43,6 +43,35 @@
  * fail either one for real, and the suite's own point in offering those
  * options is that the *contract* can express the failure, not that every
  * implementation can be made to produce it artificially.
+ *
+ * ## What is exported for the layer above this one
+ *
+ * Phase 4's 4a slice needs a `ComputeConnection`-shaped fixture, not a
+ * `FakeBackend`-shaped one — `commands.ts`'s own `backendFor()` constructs its
+ * `ProcPythonBackend` itself, from a `client`/`session`/`generation` triple,
+ * and nothing above that seam can inject a backend instance the way this
+ * module's own `createRecordedProcPythonBackend` does. `test/helpers/
+ * recorded-connection.ts` is that one layer up, and it is built from exactly
+ * the same simulated wire as this module — {@link SimulatedJob},
+ * {@link JobSlot}, {@link buildClient}, {@link session} and {@link dialect}
+ * are exported for it to reuse rather than fork. Two differences it needs
+ * that this module's own consumer never has:
+ *
+ * - **A way to interrupt a stuck poll.** `close()`'s cancellation path aborts
+ *   a signal that this simulated wire used to ignore entirely — `execute()`'s
+ *   own `run.abort` no-op above was true only because nothing exercised that
+ *   path for real. {@link SimulatedJob.nextPage} now takes the request's
+ *   `AbortSignal` and resolves an in-flight wait with an empty page the
+ *   moment it fires, which is what lets `logStream.ts`'s pump notice the
+ *   cancellation on its very next loop iteration — the same shape a dropped
+ *   connection would produce, not a new log line invented to signal it.
+ * - **A reset that does not finish itself.** {@link buildClient}'s
+ *   `autoFinishReset` option (default `true`, unchanged for every existing
+ *   caller of this module) lets `recorded-connection.ts` leave a
+ *   `RESTART_STATEMENT` job running exactly like an ordinary `execute()` job,
+ *   so a test can hold it open long enough for a Cancel to interrupt it —
+ *   this module's own `reset()` case never needed that, since nothing here
+ *   drives `reset()`'s timing at all (see this comment's own header for why).
  */
 
 import {
@@ -67,8 +96,10 @@ import {
 
 const SESSION_ID = "recorded-proc-python-session";
 
-/** An in-memory stand-in for one `PROC PYTHON` job's log and outcome. */
-class SimulatedJob {
+/** An in-memory stand-in for one `PROC PYTHON` job's log and outcome.
+ * Exported for `test/helpers/recorded-connection.ts` — see this module's own
+ * doc comment ("What is exported for the layer above this one"). */
+export class SimulatedJob {
   state: "running" | "completed" = "running";
   syscc = "0";
   syserrortext: string | undefined;
@@ -113,8 +144,32 @@ class SimulatedJob {
 
   /** One page for `streamJobLog`'s poll: whatever is queued, or a hold until
    * `push` or `finish` produces something. Terminal and empty answers `[]`
-   * immediately — the expiry shape finding 49 measured. */
-  async nextPage(): Promise<readonly string[]> {
+   * immediately — the expiry shape finding 49 measured.
+   *
+   * `signal`, when given, resolves an in-flight hold with an empty page the
+   * moment it aborts — the shape a dropped connection produces, not a new
+   * kind of answer this simulated wire invents. Added for
+   * `recorded-connection.ts` (Phase 4's 4a slice): `close()`'s cancellation
+   * path aborts the same signal `streamJobLog` chained into this request, and
+   * without this, a poll parked here never notices — nothing else in this
+   * class observes an `AbortSignal` at all.
+   *
+   * The listener is removed as soon as the wait settles, however it settles —
+   * not only on the abort path `{ once: true }` covers on its own. Without
+   * that, a wait resolved by `push`/`finish` (the ordinary case: most polls
+   * end because a line arrived or the job finished, not because of a
+   * cancellation) leaves its listener attached to `signal` for the rest of
+   * that `AbortSignal`'s life, since `{ once: true }` only ever fires the
+   * listener it is attached to — one call this method never makes when abort
+   * is not how the wait ended. `streamJobLog` chains one long-lived signal
+   * across every poll of a single run, so a run whose log streams more than a
+   * handful of lines would otherwise accumulate one stale listener per line
+   * on it, eventually past Node's default `maxListeners` warning threshold.
+   * Found on review before this shipped — this module's own consumers stream
+   * few enough lines that the leak was latent rather than triggered, which is
+   * exactly the kind of finding "it hasn't tripped yet" would have let slip
+   * through. */
+  async nextPage(signal?: AbortSignal): Promise<readonly string[]> {
     if (this.queued.length > 0) {
       const page = this.queued;
       this.queued = [];
@@ -122,14 +177,33 @@ class SimulatedJob {
     }
     if (this.state === "completed") return [];
     return await new Promise<readonly string[]>((resolve) => {
-      this.waiting = resolve;
+      let onAbort: (() => void) | undefined;
+      const settle = (lines: readonly string[]): void => {
+        if (onAbort !== undefined) {
+          signal?.removeEventListener("abort", onAbort);
+        }
+        resolve(lines);
+      };
+      this.waiting = settle;
+      if (signal === undefined) return;
+      onAbort = (): void => {
+        if (this.waiting !== settle) return;
+        this.waiting = undefined;
+        settle([]);
+      };
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
     });
   }
 }
 
 /** Queues an operation until a job exists to receive it. See this module's
- * own doc comment for why `execute` cannot bind one synchronously. */
-class JobSlot {
+ * own doc comment for why `execute` cannot bind one synchronously. Exported
+ * for `recorded-connection.ts` — see this module's own doc comment. */
+export class JobSlot {
   private job: SimulatedJob | undefined;
   private queue: ((job: SimulatedJob) => void)[] = [];
 
@@ -182,8 +256,21 @@ function variableName(href: string): string | undefined {
 /** The `ComputeClient` `ProcPythonBackend` talks to. Every request is
  * answered from `slot`'s current job, or from nothing worth naming — there is
  * exactly one run in flight at a time, matching `ProcPythonBackend`'s own
- * serial contract, so one slot is all a test ever needs. */
-function buildClient(slot: JobSlot): ComputeClient {
+ * serial contract, so one slot is all a test ever needs.
+ *
+ * `autoFinishReset` (default `true`, matching every existing caller in this
+ * module unchanged) controls whether a `RESTART_STATEMENT` job finishes
+ * itself the instant it is created — this module's own consumer needs that,
+ * since nothing here ever drives `reset()`'s timing (see the class doc
+ * comment on `createRecordedProcPythonBackend`). `recorded-connection.ts`
+ * passes `false`: Phase 4's 4a slice needs a reset that stays running until
+ * something — a test, or a real cancellation — ends it, the same way an
+ * ordinary `execute()` job already does in both callers. */
+export function buildClient(
+  slot: JobSlot,
+  options: { autoFinishReset?: boolean } = {},
+): ComputeClient {
+  const autoFinishReset = options.autoFinishReset ?? true;
   let filerefName = "unknown";
 
   return {
@@ -223,12 +310,15 @@ function buildClient(slot: JobSlot): ComputeClient {
           // `ExecutionHandle` for a test to drive with `emit`/`finish` —
           // nothing production-side calls those for it either, since
           // `ProcPythonBackend.reset()` just waits for the job to actually
-          // finish. A real deployment does that on its own; this stands in
-          // for it so `reset()` does not hang forever waiting on a run
-          // nobody can complete.
+          // finish. A real deployment does that on its own; when
+          // `autoFinishReset` is left at its default, this stands in for it
+          // so `reset()` does not hang forever waiting on a run nobody can
+          // complete. `recorded-connection.ts` turns this off on purpose —
+          // see this function's own doc comment.
           if (
+            autoFinishReset &&
             (request.body as { code?: string[] }).code?.[0] ===
-            RESTART_STATEMENT
+              RESTART_STATEMENT
           ) {
             job.finish(true, undefined);
           }
@@ -260,7 +350,8 @@ function buildClient(slot: JobSlot): ComputeClient {
         }
         case "log": {
           const job = slot.current();
-          const lines = job === undefined ? [] : await job.nextPage();
+          const lines =
+            job === undefined ? [] : await job.nextPage(request.signal);
           return ok(
             {
               count: 0,
@@ -348,7 +439,9 @@ function fixedGuard(): SubmissionGuard {
   };
 }
 
-function session(): ComputeSession {
+/** Exported for `recorded-connection.ts` — see this module's own doc
+ * comment. */
+export function session(): ComputeSession {
   return {
     id: SESSION_ID,
     state: "idle",
@@ -371,7 +464,9 @@ function session(): ComputeSession {
   };
 }
 
-function dialect(): Dialect {
+/** Exported for `recorded-connection.ts` — see this module's own doc
+ * comment. */
+export function dialect(): Dialect {
   return {
     id: "viya4",
     deployment: { kind: "viya4", release: "2026.03" },

@@ -131,6 +131,33 @@ item to the next between-phase checkpoint, by which point Dependabot will
 have run again regardless. Manual-test completeness is covered by the record
 above through 2026-08-31.
 
+**Phase 4 started, 2026-08-31: 4a implemented, tested, reviewed — ready for a
+PR.** `docs/phases/phase-4.md`'s own 4a entry — a regression suite for three
+`commands.ts` paths that only exist once a real backend is running
+(`backendFor()`'s reconnect-orphan `close()`, `cancelRun`'s `currentReset`
+fallback, and the `busy` serialisation guard `runNow`/`resetPythonState`
+share) — is implemented, in `test/integration/run/commands-backend.test.ts`
+plus a new `test/helpers/recorded-connection.ts`. Test-infrastructure only,
+no `src/` behaviour change; see phase-4.md's own 4a entry for the two small
+additions made to `recorded-proc-python.ts`'s shared simulated wire and why.
+Committed on `phase-4a-backend-path-regression-tests` (`91f28e9`, amended
+once to fix an `exactOptionalPropertyTypes` typecheck error `npm run
+typecheck`'s `tsconfig.test.json` step caught that a bare `tsc --noEmit`
+against the app's own config did not). `npm run test:unit`,
+`npm run test:integration` and `npm run lint` are all green. **The
+adversarial review pass is done, 2026-08-31 — verdict "looks good,
+merge-ready."** Two non-blocking findings, both closed same-day rather than
+left open: a stale `AbortSignal` listener on `SimulatedJob.nextPage` when a
+poll settles via `push`/`finish` rather than abort (latent today — this
+module's own consumers never stream enough lines to trip Node's
+`maxListeners` warning — fixed anyway, since `recorded-connection.ts`'s own
+tests are exactly the kind of consumer that could); the `bypassProgress()`
+`CancellationTokenSource` in the new test file left undisposed, matching an
+existing pattern in `session-manager.test.ts`, left as-is rather than
+diverging from that precedent. **Nothing left before a PR opens** except
+pushing the branch and running `gh pr create`, both handed to Sean. 4b (probe
+cancellation, live against `verde`/`Innov`) is next once 4a merges.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items

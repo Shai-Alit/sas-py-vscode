@@ -1049,6 +1049,32 @@ called out under **Changed** with a migration note.
   shipped this, #59, merged without one, a gap CONTRIBUTING.md's "every pull
   request updates `CHANGELOG.md`" rule should have caught at the time; see
   the matching note on the `### Fixed` entry below.)*
+- **Test-infrastructure only, no behaviour change (Phase 4's 4a slice).**
+  `test/integration/run/commands-backend.test.ts` covers three
+  `src/run/commands.ts` paths that only exist once a real backend is running
+  against a session, and that `commands.test.ts`'s own guard suite cannot
+  reach (`sessionsThatMustNotConnect()` throws before `backendFor()` ever
+  calls `connect()`): `backendFor()`'s reconnect-orphan `close()` (a
+  still-busy cached backend closed before being overwritten, when a new
+  `ComputeConnection` arrives for the same profile), `cancelRun`'s
+  `currentReset` fallback (interrupting an in-flight `reset()` via `close()`,
+  since a reset produces no `ExecutionHandle`), and the `backend.busy`
+  serialisation guard in `runNow`/`resetPythonState` (stopping a second
+  invocation's own `finally` from clobbering `currentRun`/`currentReset` while
+  the first is still running) — the gap Claude Bot's review on PR #63 named,
+  and `phase-3.md`'s own 3d-i Runbook entry named before that review. New
+  `test/helpers/recorded-connection.ts` builds a real `ComputeConnection`
+  over `recorded-proc-python.ts`'s same simulated wire, so `backendFor()`'s
+  real, hardcoded `new ProcPythonBackend(...)` construction
+  (`commands.ts:326` — there is no injectable backend factory) runs against
+  it rather than being bypassed. That wire gained two small, backward-
+  compatible additions for this: `SimulatedJob.nextPage` now resolves an
+  in-flight poll early when the request's `AbortSignal` fires (so a
+  `close()`-driven cancellation is actually observable, rather than hanging
+  forever against a wire that used to ignore signals entirely), and
+  `buildClient`'s new `autoFinishReset` option (default `true`, unchanged for
+  every existing caller) lets a test hold a reset open long enough for Cancel
+  to interrupt it.
 
 ### Fixed
 

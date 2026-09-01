@@ -66,32 +66,41 @@ the same session; see each item below for what it found. Execution order is
 `commands.ts` wiring gets real regression coverage from the start rather than
 adding to the untested surface 4a is closing._
 
-☐ **4a — A fake-transport regression test for `commands.ts`'s post-`connect()`
-paths.** Raised by Claude Bot's review on PR #63, and the same gap
-`commands.ts`'s own 3d-i Runbook entry in `phase-3.md` already named before
-that review — every test in `test/integration/run/commands.test.ts` uses
-`sessionsThatMustNotConnect()`, so the suite only ever exercises the
+☑ **4a — A fake-transport regression test for `commands.ts`'s post-`connect()`
+paths. Done 2026-08-31.** Raised by Claude Bot's review on PR #63, and the
+same gap `commands.ts`'s own 3d-i Runbook entry in `phase-3.md` already named
+before that review — every test in `test/integration/run/commands.test.ts`
+uses `sessionsThatMustNotConnect()`, so that suite only ever exercised the
 pre-`connect()` guards (readiness, the editor/selection checks,
-`selectRunTarget`). None of the following are pinned by an automated test
-anywhere in the tree, despite each one having needed a second review pass to
-get right during 3d-i itself: `backendFor()`'s reconnect-orphan close (a
-still-busy cached backend closed before being overwritten, when a new
-`ComputeConnection` arrives for the same profile), `cancelRun`'s
+`selectRunTarget`). New `test/integration/run/commands-backend.test.ts` pins
+the three paths named here previously: `backendFor()`'s reconnect-orphan
+close (a still-busy cached backend closed before being overwritten, when a
+new `ComputeConnection` arrives for the same profile), `cancelRun`'s
 `currentReset` fallback (interrupting an in-flight `reset()` via `close()`),
 and the `backend.busy` serialisation guard in `runNow`/`resetPythonState`
 (stopping a second invocation from clobbering `currentRun`/`currentReset` in
-the shared `finally`). Closing this needs a `RunCommandSessions.connect()`
-fake that actually resolves to a `ComputeConnection`-shaped value (real-enough
-`client`/`session`/`generation` fields per `sessionManager.ts:123-146`), so
-that `backendFor()`'s real `new ProcPythonBackend(...)` construction (there is
-no injectable backend factory — `commands.ts:326` hardcodes the constructor)
-runs against a simulated wire. `test/helpers/recorded-proc-python.ts` is the
-precedent one layer down (a real `ProcPythonBackend` fed a simulated
-`ComputeClient`); this needs the same shape one layer up. `test/helpers/
-backend-contract-suite.ts`'s `BackendFactory` type already generalizes over
-this pattern. Real test-infrastructure work, not a quick addition, which is
-why it stayed a named follow-up through 3d-ii and 3e rather than being folded
-into either.
+the shared `finally`). New `test/helpers/recorded-connection.ts` builds the
+`RunCommandSessions.connect()` fake this needed — a real `ComputeConnection`
+(real-enough `client`/`session`/`generation` fields per
+`sessionManager.ts:123-146`) over `recorded-proc-python.ts`'s same simulated
+wire, so `backendFor()`'s real `new ProcPythonBackend(...)` construction
+(`commands.ts:326` hardcodes the constructor — there is no injectable backend
+factory) runs against it unmodified, rather than being bypassed by a
+`FakeBackend`-shaped double the way `test/helpers/backend-contract-suite.ts`'s
+`BackendFactory` pattern is built for one layer down. Two small, backward-
+compatible additions to that shared wire made the three cases reachable:
+`SimulatedJob.nextPage` now resolves an in-flight poll early when the
+request's `AbortSignal` fires — nothing in this simulated wire observed a
+signal at all before this, so a `close()`-driven cancellation used to hang
+forever rather than being observable — and `buildClient`'s new
+`autoFinishReset` option (default `true`, every existing caller unchanged)
+lets a test hold a `reset()` open long enough for Cancel to interrupt it,
+where `recorded-proc-python.ts`'s own consumer never needed to drive that
+timing at all. **`npx tsc --noEmit` and `npx prettier --check` are the checks
+this diff warrants** — test-infrastructure and fixture code only, no change
+to `src/` production logic; the full verify chain (which this session does
+not run — see `RUNBOOK.md`) is still the right call before merge, since a
+typecheck alone would not catch a test that passes for the wrong reason.
 
 ☐ **4b — Probe cancellation.** Run a deliberately long Python step and cancel
 it, via the `viya-api-probe` skill against `creds.json`'s `verde`/`Innov`

@@ -164,8 +164,28 @@ are gone (`gh pr merge --delete-branch` on each); the stale local
 `phase-4a-backend-path-regression-tests` and the two stale
 `remotes/origin/*` refs for the deleted branches are cosmetic only — `git
 branch -D phase-4a-backend-path-regression-tests && git fetch --prune`
-whenever convenient, not urgent. **4b (probe cancellation, live against
-`verde`/`Innov`) is next.**
+whenever convenient, not urgent.
+
+**4b (probe cancellation) run and closed, 2026-09-01** — a live probe against
+`verde`, no code touched. Two findings, both in `docs/phases/phase-4.md`'s own
+4b entry and Probe findings section: **Finding 75** — the deployment requires
+`If-Match` on a job cancel; `cancelJob()` (`job.ts:508-521`) doesn't send one,
+so every cancel this extension issues against this deployment is rejected
+outright with `428` today, and `cancelRun()` (`commands.ts:518-522`) discards
+that failure without ever inspecting it — the "Cancelled." message users see
+comes entirely from a local abort in `LogStream`, independent of whether the
+paired server request succeeded. **Finding 76** — even a correctly-`If-Match`'d
+cancel doesn't preempt a running Python statement: a 60-second loop cancelled
+~6s in still ran its full 60.01s before SAS tore the interpreter down, so
+`cancelRun`'s existing "busy" messaging has no fallback for a run or reset
+queued behind a still-executing cancelled job (checked directly, not
+assumed — `backend.busy` clears on the local abort well before the session is
+actually free, so the "busy" message never fires; the user just gets a
+silently slow Run/Reset). **Decided with Sean the same day: fold both fixes
+into 4c** rather than open a separate slice — 4c is now traceback parsing
+*plus* the `cancelJob` `If-Match` fix and a decision on `cancelRun`'s
+messaging gap, raised from *Medium* to reflect the added scope. **4c is
+next.**
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -253,7 +273,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b–4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (now also the Findings 75/76 fix) –4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

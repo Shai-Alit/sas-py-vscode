@@ -49,6 +49,7 @@ creds.json
 
 # VitePress build cache
 docs/.vitepress/cache/
+docs/.vitepress/.temp/
 
 # Transient files written by scripts/check-docs-samples.mjs
 __docs-sample-*.ts

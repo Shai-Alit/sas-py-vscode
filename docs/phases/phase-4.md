@@ -257,8 +257,8 @@ rewritten from a `(known gap)` into a ticked assertion.
 Full account in `STATUS.md`'s 4c paragraph.
 
 ☑ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).
-Implemented 2026-09-01; reviewed and verified (incl. live) 2026-09-02;
-ready to merge.**
+Merged 2026-09-02 as [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83),
+squashed as `f3a4bb2`.**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya
 ')`), cleared for a `Program`'s origin URI at the start of every run (success
 or failure) and populated on failure with one `Diagnostic` at the innermost
@@ -355,7 +355,12 @@ entry at the true editor line; clicking a `<string>` frame in the result
 panel jumps the editor there and a library-frame line is not clickable.
 `docs/dev/manual-test-pass.md` §7/§8 carry the ticked assertions.
 
-**Nothing outstanding before the PR opens.**
+**Merged 2026-09-02 as [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)**
+(squashed as `f3a4bb2`). The two CI-reviewer nits on that PR — a bare
+`Diagnostic.source` literal vs. `l10n.t()`, and the missing per-run token on
+`RevealFrameMessage` — were folded in as comment/doc only (`3a8de68`); the
+per-run token itself is a Phase 5 item (see the deferred note below). **This
+merge closes Phase 4 (4a–4d).**
 
 **Adversarial review pass, 2026-09-01 — findings folded in.** (1)
 `revealPosition`'s default targeted `ViewColumn.Active`, which from a

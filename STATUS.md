@@ -384,7 +384,25 @@ paragraph also closes this file's own phase-index-table item — the previous
 Phase 4 row's "housekeeping not yet run" note was accurate when `baacf3c`
 landed but should have been corrected in that same commit; fixed here rather
 than left to misdirect the next session, per this project's own precedent for
-exactly this mistake three paragraphs above.
+exactly this mistake three paragraphs above. **Merged 2026-09-02 as
+[PR #86](https://github.com/Shai-Alit/sas-py-vscode/pull/86)**, squashed as
+`043d7dd`.
+
+**Finding 77 probed 2026-09-02, same day**, against `verde` — de-risking 5d's
+BOM-fixture item before it's written rather than after: a UTF-8 BOM
+(`EF BB BF`) immediately followed by `print("bom-ok")` was uploaded through
+the exact `assign`/`self`/`upload` fileref path `procPython.ts` uses and run
+via `proc python infile=...;`. It ran clean — job `completed`, `SYSCC` `0`,
+`bom-ok` printed with nothing garbled around it, no `SyntaxError` anywhere in
+the log — so ADR-0014's byte-for-byte upload discipline is not put in a bind
+by a BOM. One incidental correction recorded in the same finding: a link's
+wire `type` (e.g. `application/vnd.sas.compute.session.request`) needs
+`computeMediaType`'s `+json` suffix restored before it's sent as a real
+`Content-Type` header (finding 14) — copying `contracts/viya4.yaml`'s
+`via.type` value verbatim into a hand-run probe draws a `415`. Full account
+in `docs/phases/phase-5.md`'s own Finding 77 entry; the throwaway session was
+deleted and confirmed gone by a `404` read-back. Not yet committed — landing
+alongside this paragraph in a small follow-up PR.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

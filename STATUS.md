@@ -523,6 +523,18 @@ Windows at all (the `npm.cmd` `EINVAL` above), despite `CLAUDE.md` listing the
 `check-*.mjs` gates as locally runnable — worth a `shell`/`execPath` fix in the
 same PR.
 
+**All three landed in a follow-up build-script PR, 2026-09-02** (branch
+`chore/build-script-hardening`, off `main` after #89's squash-merge): the
+`cell()` escaper now escapes backslashes before pipes (output byte-identical —
+no manifest string carries a backslash, `docs:reference:check` unchanged);
+`check-package.mjs` reads the `.vsix` once and takes the size from the buffer,
+dropping the `statSync`; `check-audit.mjs` passes `shell: true` only when the
+resolved command is a `.cmd`/`.bat` shim, with all-literal args. `prettier
+--check`, `docs:reference --check`, and two `check-package.mjs` smoke runs
+(missing file, non-zip file) pass locally; the `codeql` context on the PR is
+what confirms the two `main` alerts close. CHANGELOG `### Changed` entry added;
+PR number lands here on merge.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items

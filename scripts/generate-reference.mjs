@@ -78,9 +78,17 @@ function makeResolver(nls) {
  * Escapes a value for a markdown table cell. Pipes end the cell and newlines
  * end the row, so a description containing either would silently corrupt the
  * table rather than fail.
+ *
+ * Backslashes are escaped *first*: `"\\|"` would otherwise become `"\\\\|"` —
+ * an escaped backslash followed by a bare pipe — and the pipe would still end
+ * the cell. No manifest string carries one today; this is the pattern being
+ * correct rather than a bug being fixed (CodeQL `js/incomplete-sanitization`).
  */
 function cell(text) {
-  return String(text).replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+  return String(text)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ");
 }
 
 function code(text) {

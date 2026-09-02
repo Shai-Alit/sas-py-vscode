@@ -235,6 +235,11 @@ export function runAudit(
   // Named in every failure message, so a report always says what was actually
   // run rather than what the reader assumes was run.
   const ran = `${command} ${args.join(" ")}`;
+  // `npm` on Windows is `npm.cmd`, and Node >= 18.20.2 refuses to execFile a
+  // `.cmd`/`.bat` without a shell (CVE-2024-27980) — it throws `EINVAL` before
+  // the process starts. Every arg here is a fixed literal, so a shell is safe;
+  // a POSIX `npm` or the `process.execPath` the tests pass runs without one.
+  const needsShell = /\.(cmd|bat)$/i.test(command);
   let stdout;
   try {
     stdout = execFileSync(command, args, {
@@ -243,6 +248,7 @@ export function runAudit(
       stdio: ["ignore", "pipe", "pipe"],
       timeout: timeoutMs,
       killSignal: AUDIT_KILL_SIGNAL,
+      shell: needsShell,
     });
   } catch (error) {
     if (error?.code === "ETIMEDOUT") {

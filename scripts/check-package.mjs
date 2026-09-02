@@ -32,7 +32,7 @@
  * that no longer classify their own examples.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 
 const DEFAULT_VSIX = "dist/python-on-viya.vsix";
 
@@ -251,19 +251,25 @@ function main() {
 
   const vsix = process.argv[2] ?? DEFAULT_VSIX;
 
-  let size;
+  // One read, not a `statSync` for the size and a `readFileSync` for the bytes:
+  // the file could change between the two, and the size is just `bytes.length`
+  // anyway (CodeQL `js/file-system-race`).
+  let bytes;
   try {
-    size = statSync(vsix).size;
-  } catch {
+    bytes = readFileSync(vsix);
+  } catch (error) {
     console.error(
-      `check-package: ${vsix} does not exist. Run \`npm run package\` first.`,
+      error.code === "ENOENT"
+        ? `check-package: ${vsix} does not exist. Run \`npm run package\` first.`
+        : `check-package: ${vsix} could not be read — ${error.message}`,
     );
     process.exit(2);
   }
+  const size = bytes.length;
 
   let names;
   try {
-    names = readZipEntryNames(readFileSync(vsix));
+    names = readZipEntryNames(bytes);
   } catch (error) {
     // Deliberately not re-thrown. A stack trace here would read as a crash in
     // the checker, when what it means is that the thing being checked is not

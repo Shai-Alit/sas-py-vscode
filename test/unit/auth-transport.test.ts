@@ -9,8 +9,13 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { Agent } from "node:https";
+
+import sinon from "sinon";
+
 import {
   collectHeaders,
+  createNodeHttpTransport,
   MAX_BODY_BYTES,
   nodeHttpTransport,
   type TransportRequest,
@@ -436,6 +441,94 @@ describe("nodeHttpTransport", () => {
         body: "",
       }),
     );
+  });
+});
+
+describe("createNodeHttpTransport", () => {
+  let server: Server;
+  let base: string;
+
+  before(async () => {
+    server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("ok");
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    assert.ok(address !== null && typeof address === "object");
+    base = `http://127.0.0.1:${String(address.port)}`;
+  });
+
+  after(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it("with no agent, behaves like the default transport", async () => {
+    const transport = createNodeHttpTransport();
+
+    const response = await transport(`${base}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "grant_type=refresh_token",
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "ok");
+  });
+
+  it("hands an https request to the agent it was given", async () => {
+    const agent = new Agent();
+    const createConnection = sinon.spy(agent, "createConnection");
+    const transport = createNodeHttpTransport({ agent });
+
+    // The loopback server speaks plaintext, so the TLS handshake cannot
+    // complete and this rejects — but the agent being asked to open the
+    // connection is the point, and that happens before the failure.
+    await assert.rejects(
+      transport(`${base.replace("http://", "https://")}/token`, {
+        method: "POST",
+        headers: {},
+        body: "",
+      }),
+    );
+
+    // This asserts *our* code: `createNodeHttpTransport` puts the agent on the
+    // request options for an `https:` target. It is not evidence the agent
+    // instance opens the socket in the VS Code host — `@vscode/proxy-agent`
+    // can replace it with its own `PacProxyAgent` and carry only the agent's
+    // `ca` forward. Trust still works there (via that hoist); the instance
+    // may not. See `src/auth/caAgent.ts`'s "What this agent trusts" note.
+    assert.equal(createConnection.callCount, 1);
+  });
+
+  it("ignores the agent for a loopback http request", async () => {
+    const agent = new Agent();
+    const createConnection = sinon.spy(agent, "createConnection");
+    const transport = createNodeHttpTransport({ agent });
+
+    const response = await transport(`${base}/token`, {
+      method: "GET",
+      headers: {},
+      body: undefined,
+    });
+
+    assert.equal(response.status, 200);
+    // An https.Agent on an http request is a mismatch; the transport attaches
+    // it only for `https:` targets.
+    assert.equal(createConnection.callCount, 0);
   });
 });
 

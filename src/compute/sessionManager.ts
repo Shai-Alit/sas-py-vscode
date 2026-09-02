@@ -66,6 +66,7 @@ import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import { isSignInCancelled } from "../auth/cancellation";
 import { accountForEndpoint } from "../auth/identity";
 import { getSessionOptions, type AuthRequest } from "../auth/sessionRequest";
+import type { HttpTransport } from "../auth/transport";
 import { probeCadence } from "../dialects/probe";
 import {
   deploymentFromSignal,
@@ -178,6 +179,15 @@ export interface ComputeSessionDeps {
     | undefined;
   /** Defaults to {@link createComputeClient}. */
   createClient?: ((config: ComputeClientConfig) => ComputeClient) | undefined;
+  /**
+   * The HTTP transport every compute client this manager builds should use.
+   * Defaults, via {@link ComputeClientConfig.transport}, to
+   * {@link nodeHttpTransport}. `src/extension.ts` passes one carrying the
+   * `pythonOnViya.userProvidedCertificates` CA agent (slice 5d-i) so a
+   * deployment behind a private certificate authority is reachable for running
+   * Python, not only for signing in.
+   */
+  transport?: HttpTransport | undefined;
   /** Defaults to `vscode.window.withProgress`. */
   withProgress?:
     | (<T>(
@@ -904,6 +914,9 @@ export class ComputeSessionManager implements vscode.Disposable {
     const create = this.deps.createClient ?? createComputeClient;
     return create({
       root: profile.endpoint,
+      ...(this.deps.transport === undefined
+        ? {}
+        : { transport: this.deps.transport }),
       token: async () => {
         const session = await this.authSession({
           kind: "silent",

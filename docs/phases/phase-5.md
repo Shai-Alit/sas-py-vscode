@@ -116,13 +116,52 @@ preceding it. Nothing here is a hard technical dependency — this is a
 recommendation, not a barrier._
 
 ☐ **5d — Deferred hardening carried over from Phase 3/4.** Four independent
-items, each small enough to land in one PR, or grouped as one if the diffs
-don't collide:
+items. Being taken as three PRs (Sean's call, 2026-09-02): **5d-i** (item 1)
+alone, then item 2, then item 3, then item 4 — item 1 turned out to be a real
+`src/` change rather than the docs decision the Plan anticipated, so it does not
+group with the test-only BOM fixture.
 
-1. **Certificate escape hatch.** Decide whether an incomplete certificate
+1. ~~**Certificate escape hatch.** Decide whether an incomplete certificate
    chain needs a user-facing workaround (compare the SAS extension's own
    handling), and implement it if so; otherwise document explicitly why none
-   is needed, so this doesn't come back a third time as an open question.
+   is needed.~~ **Done — slice 5d-i, 2026-09-02 (implemented; not yet
+   reviewed or merged).** The Plan's premise was wrong on inspection: the SAS
+   extension *does* ship a user-facing escape hatch — `SAS.userProvidedCertificates`
+   (`client/src/components/CAHelper.ts`'s `installCAs()`) plus a documented FAQ
+   procedure — so "the way the SAS extension needs none" does not hold, and an
+   incomplete chain / private-root deployment is genuinely unreachable here
+   today. This slice is the scoped implementation of the long-deferred **1c-ii**
+   (`docs/phases/phase-1.md`): a `machine`-scoped `pythonOnViya.userProvidedCertificates`
+   array, `src/auth/caAgent.ts`'s `buildCaAgent` building **one dedicated
+   `https.Agent`** (Node's bundled roots + the user's PEMs) — never
+   `https.globalAgent`, upstream's process-global write — `src/auth/transport.ts`
+   gaining `createNodeHttpTransport({ agent })` with `nodeHttpTransport`
+   unchanged as its zero-config form, and `src/extension.ts` threading the
+   resulting transport through both the auth provider and the compute session
+   manager. Unreadable paths are logged (not swallowed — upstream `console.log`s
+   them). `caAgent.ts` is the fourth entry on `eslint.config.mjs`'s
+   Node-built-in allow-list — the "certificate module" ADR-0003's hedge always
+   named; ADR-0003 and ADR-0008 both amended 2026-09-02. `docs/signing-in.md`
+   gains a "Private certificate authorities" section; `manual-test-pass.md` §3
+   gains a live row (unrun — needs a deployment whose chain the OS does not
+   already trust).
+
+   **Evidence for two host-behaviour claims the code comments and user docs
+   make** (`microsoft/vscode-proxy-agent` `src/index.ts`, read 2026-09-02):
+   `createHttpPatch` computes `addCertificatesV1 = !optionsPatched &&
+   params.addCertificatesV1() && isHttps && !originalCa` — so the moment a
+   request carries a `ca` (from our agent), VS Code stops merging the OS
+   certificate store into it; the user docs say the list must therefore be
+   complete. And under the default `http.proxySupport: "override"`, for a
+   non-localhost host, the patch installs its own `PacProxyAgent` with
+   `originalAgent: undefined` and does `options.ca = originalCa` — hoisting our
+   agent's `ca` while discarding the agent instance. So the CA trust is
+   honoured but the `Agent` object may not open the socket; `keepAlive` and any
+   future non-`ca` option on it take effect only when no patch runs
+   (`proxySupport: "off"`, or a loopback target). The unit test
+   "hands an https request to the agent it was given" is a boundary test of our
+   own code, not of that host path; the live `manual-test-pass.md` §3 row is
+   what would confirm end to end, and it is unrun.
 2. **BOM fixture.** Add an `EF BB BF`-prefixed case to the submission-fidelity
    corpus (3a's fixtures under `test/fixtures/`). De-risked by Finding 77
    (below): a live probe already confirmed the upload + `infile=` path runs

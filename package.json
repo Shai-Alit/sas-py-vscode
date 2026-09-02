@@ -224,6 +224,15 @@
           "default": "",
           "scope": "window",
           "markdownDescription": "%configuration.defaultProfile.description%"
+        },
+        "pythonOnViya.userProvidedCertificates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "machine",
+          "markdownDescription": "%configuration.userProvidedCertificates.description%"
         }
       }
     }

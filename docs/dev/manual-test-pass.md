@@ -170,6 +170,18 @@ The profile _model_ is validated whether you use the commands or hand-edit
   normal.
   **Expect:** it completes; proxy and OS/internal certificate trust are
   inherited from the extension host.
+- [ ] **(live) User-provided CA certificate — phase 5d-i** — only on a
+  deployment whose chain the OS does *not* already trust (an incomplete chain,
+  or a private root not installed locally). First sign in with
+  `pythonOnViya.userProvidedCertificates` unset.
+  **Expect:** sign-in fails before authentication with a TLS error
+  (`UNABLE_TO_VERIFY_LEAF_SIGNATURE` / `unable to verify the first
+  certificate`) in the **Python on Viya** log. Then set the setting to the PEM
+  path for the missing authority, reload the window, and sign in again.
+  **Expect:** sign-in completes and a run works — the same dedicated agent is
+  on both paths. Add a second, bogus path to the array and reload.
+  **Expect:** a single **Could not read the CA certificate at …** warning in
+  the log, naming that path, and sign-in still works on the good one.
 
 ## 4. Connect and the compute session — phase 2a
 

@@ -7,8 +7,10 @@ import {
   registerAuthProvider,
   ViyaAuthenticationProvider,
 } from "./auth/authProvider";
+import { buildCaAgent, certificatePathsFrom } from "./auth/caAgent";
 import { registerAuthCommands } from "./auth/commands";
 import { SessionStore } from "./auth/sessionStore";
+import { createNodeHttpTransport } from "./auth/transport";
 import { registerAuthUriHandler } from "./auth/uriHandler";
 import { SessionBindingStore } from "./compute/bindingStore";
 import { registerComputeCommands } from "./compute/commands";
@@ -58,6 +60,47 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Slice 5d-i (the deferred 1c-ii): a deployment behind a private certificate
+  // authority — or one that serves an incomplete chain — is unreachable until
+  // its CA is trusted. `pythonOnViya.userProvidedCertificates` names PEM files
+  // to add to a dedicated HTTPS agent used only by this extension's requests,
+  // never `https.globalAgent` (which upstream's CAHelper.ts mutates, changing
+  // what every other extension trusts). Read once, here: a change takes effect
+  // on the next window reload. An unreadable path is logged and the rest are
+  // still used. Read as `unknown` and coerced in `caAgent.ts` (as
+  // `connectionProfiles` is) so a mistyped machine-scoped value cannot throw
+  // out of activation; `caAgent.ts` owns the `node:fs` read so this file stays
+  // free of Node built-ins (ADR-0003).
+  const certificatePaths = certificatePathsFrom(
+    vscode.workspace
+      .getConfiguration("pythonOnViya")
+      .get<unknown>("userProvidedCertificates"),
+  );
+  const { agent: caAgent, failures: caFailures } =
+    buildCaAgent(certificatePaths);
+  for (const failure of caFailures) {
+    output.warn(
+      vscode.l10n.t(
+        "Could not read the CA certificate at {0}: {1}",
+        failure.path,
+        failure.reason,
+      ),
+    );
+  }
+  if (caAgent !== undefined) {
+    // Only reached when the setting named at least one readable cert. Closes
+    // idle keep-alive sockets on window teardown; a no-op when the proxy patch
+    // replaced the agent, harmless when it did not.
+    context.subscriptions.push({
+      dispose: () => {
+        caAgent.destroy();
+      },
+    });
+  }
+  const transport = createNodeHttpTransport(
+    caAgent === undefined ? {} : { agent: caAgent },
+  );
+
   // Profiles are read on demand rather than cached at activation, so nothing
   // here touches the settings file or the secret store. Constructing the store
   // only registers a configuration listener.
@@ -96,6 +139,7 @@ export function activate(context: vscode.ExtensionContext): void {
     new SessionStore(context.secrets, output),
     authCallbacks,
     output,
+    { token: { transport }, identity: { transport } },
   );
   registerAuthProvider(context, auth);
 
@@ -107,6 +151,7 @@ export function activate(context: vscode.ExtensionContext): void {
     profiles,
     new SessionBindingStore(context.workspaceState, output),
     output,
+    { transport },
   );
   context.subscriptions.push(sessions);
   const { connect, disconnect, forgetProfile } = registerComputeCommands(

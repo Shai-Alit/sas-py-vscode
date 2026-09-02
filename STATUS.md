@@ -457,8 +457,9 @@ passed on the PR. Recording the merge here is the first thing after it merged,
 per this project's plan/runbook policy — the paragraph above was accurate up to
 "Open before a PR" and stopped there.
 
-**5d-ii (BOM fixture) implemented, reviewed and verified 2026-09-02; PR
-opening.** This is 5d's item 2, taken as its own PR per the 5d plan. New
+**5d-ii (BOM fixture) merged 2026-09-02 as
+[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), squashed as
+`e08e55f`.** This is 5d's item 2, taken as its own PR per the 5d plan. New
 `test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes then
 `print("byte-order mark before this line")\n` (45 bytes), BOM-then-ASCII, the
 simplest shape Finding 77 said the fixture needs. Added to `EXPECTED_CASES` in
@@ -490,10 +491,11 @@ assertion did not pin that anything follows the BOM — added a check that
 (`commands.ts:396`/`:404`) and `getText()` has already consumed any BOM — so
 the fixture pins the transport seam (the corpus's actual charter), not the
 editor path. **Verified green 2026-09-02 (Sean's run): `npm run verify`, `npm
-run check:docs`, and `npm run test:integration` all pass.** Opened as
-[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89).
+run check:docs`, and `npm run test:integration` all pass.** Merged as
+[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89) (`e08e55f`); local
+`main` fast-forwarded, matches `origin/main`.
 
-**PR #89's `supply-chain` job then failed on six dev-tree advisories that have
+**PR #89's `supply-chain` job first failed on six dev-tree advisories that have
 nothing to do with 5d-ii** — pre-existing on `main`, transitive under
 `@vscode/vsce`, and not shown by GitHub's Dependabot UI (dev-tree; `npm audit` /
 `check:audit` is deliberately stricter). `qs` 6.15.3 carried two moderate DoS
@@ -538,8 +540,18 @@ for the backslash-before-pipe escape, `audit-gate.test.ts` for `needsShell`'s
 two arms) and the third (`check-package.mjs`'s errno branch) was declined with a
 reply — the module runs `main()` unconditionally so it is not importable for a
 test, and its pure logic is already runtime-checked by `runSelfTest()`; making
-it importable is its own small change. CHANGELOG `### Changed` entry added; PR
-number lands here on merge.
+it importable is its own small change. **Merged 2026-09-02 as
+[PR #90](https://github.com/Shai-Alit/sas-py-vscode/pull/90), squashed as
+`c72e6a8`.** The two CodeQL *High* alerts on `main` should drop on the next
+code-scanning run against `main`; confirm in the GitHub Code scanning UI (no
+`gh`/token in this sandbox to check directly). Making `check-package.mjs`
+importable + its own test file is the one carried-forward item from this
+detour — small, unscheduled, not on any phase punch list.
+
+**Next: 5d item 3** — Finding 74's two sub-findings (interpreter banner / `>>>`
+noise on the error path; `writeOutcome`'s redundant traceback-tail echo for the
+traceback case). Then 5d item 4 (diagnostics-lifecycle gaps), then 5a → 5b →
+5c. See `docs/phases/phase-5.md`'s Runbook.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -628,7 +640,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d-i merged ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)); 5d-ii implemented, not yet merged; 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d-i ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)) and 5d-ii ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)) merged; 5d items 3–4 and 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

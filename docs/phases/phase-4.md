@@ -257,7 +257,8 @@ rewritten from a `(known gap)` into a ticked assertion.
 Full account in `STATUS.md`'s 4c paragraph.
 
 ☑ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).
-Implemented 2026-09-01; verification and review pending (see below).**
+Implemented 2026-09-01; reviewed and verified (incl. live) 2026-09-02;
+ready to merge.**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya
 ')`), cleared for a `Program`'s origin URI at the start of every run (success
 or failure) and populated on failure with one `Diagnostic` at the innermost
@@ -337,18 +338,24 @@ an env limit, not a timeout). **Coverage ratchet bumped in `.c8rc.json`:**
 (`diagnostics.ts` excluded; `resultPanelModel.ts`/`resultPanelDom.ts` at
 100%) pulled the aggregate up, `tracebackDiagnostics.ts` still 100%.
 
-**Still open before merge (Sean):** `npm run test:integration` green
-(the VS Code-host tier — includes the new
+**Verified 2026-09-02 (Sean).** `npm run test:integration` green in the VS
+Code-host tier — the new
 `test/integration/run/{diagnostics,commands-diagnostics}.test.ts` and the
-extended `result-panel.test.ts`, none of which ran here); a final adversarial
-pass over the post-review diff if warranted (the first pass's findings are
-folded in — see below); and live verification against `verde` (`1/0` at a
-known line → one accurately-positioned Problems
-entry that opens in the editor column, not over the panel; re-run clean → it
-clears; Run Selection mid-file → the entry lands at the editor line; click a
-`<string>` frame in the result panel → the editor jumps; a library-frame
-line is not clickable). `docs/dev/manual-test-pass.md` §7/§8 carry the new
-manual assertions.
+extended `result-panel.test.ts` included. One test failed on the first run:
+`diagnostics.test.ts`'s "dispose() tears the collection down" read a
+`DiagnosticCollection.get()` *after* `dispose()`, which throws
+`illegal state - object is disposed` rather than returning empty; the
+assertion was moved onto `languages.getDiagnostics()` (usable across a
+disposed collection) with the pre-dispose check kept on `collection.get()`
+(`657c2cc`), and the re-run was green. **Live-verified against `verde`**
+(Viya 4) with a `.vsix` from this branch: a failing run's error lands in
+Problems at the mapped line and opens in the editor column, not over the
+panel; a clean re-run clears it; a Run Selection mid-file positions the
+entry at the true editor line; clicking a `<string>` frame in the result
+panel jumps the editor there and a library-frame line is not clickable.
+`docs/dev/manual-test-pass.md` §7/§8 carry the ticked assertions.
+
+**Nothing outstanding before the PR opens.**
 
 **Adversarial review pass, 2026-09-01 — findings folded in.** (1)
 `revealPosition`'s default targeted `ViewColumn.Active`, which from a

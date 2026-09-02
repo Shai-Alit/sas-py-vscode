@@ -182,12 +182,15 @@ export default tseslint.config(
   // `randomUUID`. A checkpoint nobody can run is exactly the aspiration the ADR
   // disclaimed, so it is a rule now.
   //
-  // The allow-list is three files and no globs. Widening it is a visible diff
+  // The allow-list is four files and no globs. Widening it is a visible diff
   // here, which is the whole mechanism: the cost of a web build is Node APIs
-  // arriving one reasonable-looking import at a time.
+  // arriving one reasonable-looking import at a time. `src/auth/caAgent.ts`
+  // (`node:fs`, `node:https`, `node:tls`) is the certificate module ADR-0003's
+  // hedge always named; see its 2026-09-02 amendment.
   {
     files: ["src/**/*.ts"],
     ignores: [
+      "src/auth/caAgent.ts",
       "src/auth/pkce.ts",
       "src/auth/transport.ts",
       "src/profile/commands.ts",

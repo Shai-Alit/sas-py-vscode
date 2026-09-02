@@ -1,15 +1,13 @@
 // Copyright © 2026, Sean Ford and the Python on Viya contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import { readFileSync } from "node:fs";
-
 import * as vscode from "vscode";
 
 import {
   registerAuthProvider,
   ViyaAuthenticationProvider,
 } from "./auth/authProvider";
-import { buildCaAgent } from "./auth/caAgent";
+import { buildCaAgent, certificatePathsFrom } from "./auth/caAgent";
 import { registerAuthCommands } from "./auth/commands";
 import { SessionStore } from "./auth/sessionStore";
 import { createNodeHttpTransport } from "./auth/transport";
@@ -69,13 +67,18 @@ export function activate(context: vscode.ExtensionContext): void {
   // never `https.globalAgent` (which upstream's CAHelper.ts mutates, changing
   // what every other extension trusts). Read once, here: a change takes effect
   // on the next window reload. An unreadable path is logged and the rest are
-  // still used. `buildCaAgent` reads no files when the setting is unset, which
-  // is the overwhelming common case.
-  const certificatePaths = vscode.workspace
-    .getConfiguration("pythonOnViya")
-    .get<string[]>("userProvidedCertificates", []);
-  const caAgent = buildCaAgent(certificatePaths, (path) => readFileSync(path));
-  for (const failure of caAgent.failures) {
+  // still used. Read as `unknown` and coerced in `caAgent.ts` (as
+  // `connectionProfiles` is) so a mistyped machine-scoped value cannot throw
+  // out of activation; `caAgent.ts` owns the `node:fs` read so this file stays
+  // free of Node built-ins (ADR-0003).
+  const certificatePaths = certificatePathsFrom(
+    vscode.workspace
+      .getConfiguration("pythonOnViya")
+      .get<unknown>("userProvidedCertificates"),
+  );
+  const { agent: caAgent, failures: caFailures } =
+    buildCaAgent(certificatePaths);
+  for (const failure of caFailures) {
     output.warn(
       vscode.l10n.t(
         "Could not read the CA certificate at {0}: {1}",
@@ -84,8 +87,18 @@ export function activate(context: vscode.ExtensionContext): void {
       ),
     );
   }
+  if (caAgent !== undefined) {
+    // Only reached when the setting named at least one readable cert. Closes
+    // idle keep-alive sockets on window teardown; a no-op when the proxy patch
+    // replaced the agent, harmless when it did not.
+    context.subscriptions.push({
+      dispose: () => {
+        caAgent.destroy();
+      },
+    });
+  }
   const transport = createNodeHttpTransport(
-    caAgent.agent === undefined ? {} : { agent: caAgent.agent },
+    caAgent === undefined ? {} : { agent: caAgent },
   );
 
   // Profiles are read on demand rather than cached at activation, so nothing

@@ -119,3 +119,25 @@ recorded as the cheapest first step whenever the revisit trigger in
 The revisit trigger is unchanged, and this amendment does not reopen the
 Node-only decision — it only makes the cost of reversing it measurable, which was
 the hedge's whole purpose.
+
+## Amendment — 2026-09-02 (slice 5d-i): the certificate module now exists
+
+The 2026-08-18 amendment noted that one of the two homes this ADR named for Node
+built-ins — a certificate module — "has never existed in the tree", because
+`CAHelper.ts` was deliberately not ported.
+
+Slice 5d-i ports the *scoped* version of that job (the long-deferred 1c-ii; see
+[ADR-0008](0008-auth-core-transport-and-security-deltas.md)'s 2026-09-02
+amendment). `src/auth/caAgent.ts` reads the paths in
+`pythonOnViya.userProvidedCertificates` and builds one dedicated `https.Agent`
+trusting them. It uses `node:fs`, `node:https` and `node:tls` — the same three
+built-ins upstream's `CAHelper.ts` used — and is the **fourth** entry on
+`eslint.config.mjs`'s allow-list. `src/extension.ts` reads the setting through
+the `vscode` API and calls `buildCaAgent` with no file reader, so it stays free
+of Node built-ins; the module owns the `node:fs` read behind an injectable
+parameter its tests substitute.
+
+This is the module the hedge always named. It does not widen the Node surface
+beyond what this ADR anticipated — a browser build has no custom-CA-trust story
+to port anyway (the web host forbids `tls` outright), so `caAgent.ts` is a file
+a future web build omits rather than reimplements.

@@ -10,6 +10,9 @@ import {
   type ServerResponse,
 } from "node:http";
 import { Agent } from "node:https";
+
+import sinon from "sinon";
+
 import {
   collectHeaders,
   createNodeHttpTransport,
@@ -461,25 +464,16 @@ describe("createNodeHttpTransport", () => {
   after(async () => {
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
     });
   });
 
-  /** An `https.Agent` that counts how many times the transport asked it to
-   * open a connection, delegating to the real implementation after. */
-  function countingAgent(): { agent: Agent; connections: () => number } {
-    const agent = new Agent();
-    let connections = 0;
-    const real = agent.createConnection.bind(agent);
-    agent.createConnection = ((
-      options: Parameters<typeof real>[0],
-      callback: Parameters<typeof real>[1],
-    ) => {
-      connections += 1;
-      return real(options, callback);
-    }) as typeof agent.createConnection;
-    return { agent, connections: () => connections };
-  }
+  afterEach(() => {
+    sinon.restore();
+  });
 
   it("with no agent, behaves like the default transport", async () => {
     const transport = createNodeHttpTransport();
@@ -495,8 +489,9 @@ describe("createNodeHttpTransport", () => {
     assert.equal(await response.text(), "ok");
   });
 
-  it("routes an https request through the agent it was given", async () => {
-    const { agent, connections } = countingAgent();
+  it("hands an https request to the agent it was given", async () => {
+    const agent = new Agent();
+    const createConnection = sinon.spy(agent, "createConnection");
     const transport = createNodeHttpTransport({ agent });
 
     // The loopback server speaks plaintext, so the TLS handshake cannot
@@ -510,11 +505,18 @@ describe("createNodeHttpTransport", () => {
       }),
     );
 
-    assert.equal(connections(), 1);
+    // This asserts *our* code: `createNodeHttpTransport` puts the agent on the
+    // request options for an `https:` target. It is not evidence the agent
+    // instance opens the socket in the VS Code host — `@vscode/proxy-agent`
+    // can replace it with its own `PacProxyAgent` and carry only the agent's
+    // `ca` forward. Trust still works there (via that hoist); the instance
+    // may not. See `src/auth/caAgent.ts`'s "What this agent trusts" note.
+    assert.equal(createConnection.callCount, 1);
   });
 
   it("ignores the agent for a loopback http request", async () => {
-    const { agent, connections } = countingAgent();
+    const agent = new Agent();
+    const createConnection = sinon.spy(agent, "createConnection");
     const transport = createNodeHttpTransport({ agent });
 
     const response = await transport(`${base}/token`, {
@@ -526,7 +528,7 @@ describe("createNodeHttpTransport", () => {
     assert.equal(response.status, 200);
     // An https.Agent on an http request is a mismatch; the transport attaches
     // it only for `https:` targets.
-    assert.equal(connections(), 0);
+    assert.equal(createConnection.callCount, 0);
   });
 });
 

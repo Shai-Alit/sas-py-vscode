@@ -1120,9 +1120,14 @@ called out under **Changed** with a migration note.
   session path. The setting is `machine`-scoped so a checked-in workspace
   settings file cannot widen TLS trust, read once at window load (a change
   applies on reload), and an unreadable path is reported in the **Python on
-  Viya** log while the rest are still used. `src/auth/caAgent.ts` is new;
-  `src/auth/transport.ts` gained `createNodeHttpTransport({ agent })` with
-  `nodeHttpTransport` unchanged as its zero-config form.
+  Viya** log while the rest are still used. Once set, the list replaces the
+  operating-system certificate store for the extension's Viya requests, so it
+  must name every authority the chain needs. The raw setting value is validated
+  before use, so a mistyped `machine`-scoped entry cannot fail activation.
+  `src/auth/caAgent.ts` is new; `src/auth/transport.ts` gained
+  `createNodeHttpTransport({ agent })` with `nodeHttpTransport` unchanged as its
+  zero-config form. Not yet exercised against a real private-CA deployment — the
+  manual-test row for it is pending.
 
 ### Fixed
 

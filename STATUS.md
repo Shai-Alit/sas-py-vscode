@@ -415,7 +415,9 @@ FAQ), so the premise was wrong and a deployment with an incomplete chain or an
 uninstalled private root is genuinely unreachable here today. 5d-i is therefore
 the scoped implementation of the long-deferred **1c-ii**: a `machine`-scoped
 `pythonOnViya.userProvidedCertificates` array; `src/auth/caAgent.ts` (new,
-pure, unit-tested) building **one dedicated `https.Agent`** from Node's bundled
+unit-tested, and the fourth entry on `eslint.config.mjs`'s Node-built-in
+allow-list — the "certificate module" ADR-0003's hedge always named, amended
+2026-09-02) building **one dedicated `https.Agent`** from Node's bundled
 roots plus the user's PEMs — never `https.globalAgent`, which is what upstream's
 `installCAs()` mutates process-wide; `src/auth/transport.ts` gaining
 `createNodeHttpTransport({ agent })` with `nodeHttpTransport` unchanged as its
@@ -427,10 +429,25 @@ are logged, not swallowed. ADR-0008 amended (2026-09-02) — the `agent` seam it
 left unset is now filled, and its "upstream has no TLS code" claim is corrected.
 `docs/signing-in.md` gains a "Private certificate authorities" section;
 `manual-test-pass.md` §3 gains an unrun live row (needs a deployment whose chain
-the OS does not already trust). **Open before a PR:** Sean's local
-`verify`/`test:integration` run, the adversarial review pass (this adds `src/`
-and changes a documented invariant), and a coverage-ratchet check —
-`.c8rc.json` is untouched pending Sean's `npm run coverage` number.
+the OS does not already trust). **`verify` + `test:integration` green
+2026-09-02** (1171 unit passing; coverage 94.16/95.15/93.46/94.16, all flooring
+to the current `.c8rc.json` thresholds — no ratchet bump). **Adversarial review
+pass done 2026-09-02** (Sean's own window, full branch diff): overall sound —
+threading complete, no secrets, ADR upstream claims verified against live
+`CAHelper.ts`, `machine` scope correct. Five findings, all verified here and
+fixed on the branch: (1, P1) a mistyped `machine`-scoped setting value could
+throw out of `activate()` — the raw value is now read as `unknown` and coerced
+by a new tested `certificatePathsFrom` (the `connectionProfiles` discipline);
+(2–3, P2) `@vscode/proxy-agent` stops merging the OS cert store once a request
+carries `ca`, and under default `proxySupport` replaces the agent instance
+while hoisting only its `ca` — so the CA trust works but by hoist, not by the
+agent; documented in `caAgent.ts`, `signing-in.md`, the setting description and
+phase-5.md with the `microsoft/vscode-proxy-agent` citation, and the boundary
+test reworded; (4, P3) `keepAlive: true` added to match Node 19+'s global-agent
+default for the no-proxy-patch path, with `agent.destroy()` on teardown; (5,
+P3) a test now exercises the default `node:fs` reader so the one filesystem
+line is covered. **Open before a PR:** re-run `verify`/`test:integration`/`docs:build`
+on the fix commit.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

@@ -139,9 +139,29 @@ group with the test-only BOM fixture.
    unchanged as its zero-config form, and `src/extension.ts` threading the
    resulting transport through both the auth provider and the compute session
    manager. Unreadable paths are logged (not swallowed — upstream `console.log`s
-   them). ADR-0008 amended (2026-09-02); `docs/signing-in.md` gains a "Private
-   certificate authorities" section; `manual-test-pass.md` §3 gains a live row
-   (unrun — needs a deployment whose chain the OS does not already trust).
+   them). `caAgent.ts` is the fourth entry on `eslint.config.mjs`'s
+   Node-built-in allow-list — the "certificate module" ADR-0003's hedge always
+   named; ADR-0003 and ADR-0008 both amended 2026-09-02. `docs/signing-in.md`
+   gains a "Private certificate authorities" section; `manual-test-pass.md` §3
+   gains a live row (unrun — needs a deployment whose chain the OS does not
+   already trust).
+
+   **Evidence for two host-behaviour claims the code comments and user docs
+   make** (`microsoft/vscode-proxy-agent` `src/index.ts`, read 2026-09-02):
+   `createHttpPatch` computes `addCertificatesV1 = !optionsPatched &&
+   params.addCertificatesV1() && isHttps && !originalCa` — so the moment a
+   request carries a `ca` (from our agent), VS Code stops merging the OS
+   certificate store into it; the user docs say the list must therefore be
+   complete. And under the default `http.proxySupport: "override"`, for a
+   non-localhost host, the patch installs its own `PacProxyAgent` with
+   `originalAgent: undefined` and does `options.ca = originalCa` — hoisting our
+   agent's `ca` while discarding the agent instance. So the CA trust is
+   honoured but the `Agent` object may not open the socket; `keepAlive` and any
+   future non-`ca` option on it take effect only when no patch runs
+   (`proxySupport: "off"`, or a loopback target). The unit test
+   "hands an https request to the agent it was given" is a boundary test of our
+   own code, not of that host path; the live `manual-test-pass.md` §3 row is
+   what would confirm end to end, and it is unrun.
 2. **BOM fixture.** Add an `EF BB BF`-prefixed case to the submission-fidelity
    corpus (3a's fixtures under `test/fixtures/`). De-risked by Finding 77
    (below): a live probe already confirmed the upload + `infile=` path runs

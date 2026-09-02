@@ -5,7 +5,36 @@ import assert from "node:assert/strict";
 import { Agent, globalAgent } from "node:https";
 import { rootCertificates } from "node:tls";
 
-import { buildCaAgent } from "../../src/auth/caAgent";
+import { buildCaAgent, certificatePathsFrom } from "../../src/auth/caAgent";
+
+/**
+ * `certificatePathsFrom` — coercing the raw `userProvidedCertificates` setting.
+ *
+ * The point of the function is that `WorkspaceConfiguration.get` does not
+ * enforce the contributed schema, so a mistyped `machine`-scoped value reaches
+ * the code verbatim and must not be allowed to throw out of `activate()`.
+ */
+describe("certificatePathsFrom", () => {
+  it("passes a string array through unchanged", () => {
+    assert.deepEqual(certificatePathsFrom(["/a.pem", "/b.pem"]), [
+      "/a.pem",
+      "/b.pem",
+    ]);
+  });
+
+  it("returns [] for any non-array, a bare string included", () => {
+    for (const value of ["/a.pem", 3, {}, true, null, undefined]) {
+      assert.deepEqual(certificatePathsFrom(value), []);
+    }
+  });
+
+  it("keeps the string elements of a mixed array and drops the rest", () => {
+    assert.deepEqual(
+      certificatePathsFrom(["/a.pem", 1, null, "/b.pem", {}, ["/c.pem"]]),
+      ["/a.pem", "/b.pem"],
+    );
+  });
+});
 
 /**
  * `buildCaAgent` — the pure half of slice 5d-i (the deferred 1c-ii).
@@ -30,6 +59,15 @@ describe("buildCaAgent", () => {
   beforeEach(assertGlobalAgentUntouched);
   afterEach(assertGlobalAgentUntouched);
 
+  /**
+   * `agent.options.ca` as the array `buildCaAgent` always sets it to. A cast:
+   * Node types the option as a `string | Buffer | Array<…>` union, and this
+   * suite has narrowed it by construction (it only asserts on results that
+   * built an agent from at least one cert).
+   */
+  const trustedCerts = (agent: Agent): readonly (string | Buffer)[] =>
+    agent.options.ca as readonly (string | Buffer)[];
+
   it("returns no agent and reads nothing when the list is empty", () => {
     let reads = 0;
     const result = buildCaAgent([], (path) => {
@@ -52,8 +90,7 @@ describe("buildCaAgent", () => {
       globalAgent,
       "the agent must be a fresh instance, not https.globalAgent",
     );
-    const ca = result.agent.options.ca;
-    assert.ok(Array.isArray(ca));
+    const ca = trustedCerts(result.agent);
     // Node's `ca` option replaces the default trust store, so the bundled roots
     // have to be carried across or ordinary TLS stops verifying.
     assert.equal(ca.length, rootCertificates.length + 1);
@@ -62,10 +99,14 @@ describe("buildCaAgent", () => {
     assert.deepEqual(result.failures, []);
   });
 
-  it("skips blank and whitespace-only entries without reporting them", () => {
-    const read = (): Buffer => Buffer.from("cert");
-    const result = buildCaAgent(["", "   ", "\t"], read);
+  it("skips blank and whitespace-only entries without reading or reporting them", () => {
+    let reads = 0;
+    const result = buildCaAgent(["", "   ", "\t"], () => {
+      reads += 1;
+      return Buffer.from("cert");
+    });
 
+    assert.equal(reads, 0);
     assert.equal(result.agent, undefined);
     assert.deepEqual(result.failures, []);
   });
@@ -79,7 +120,10 @@ describe("buildCaAgent", () => {
 
     assert.deepEqual(paths, ["/ca.pem"]);
     assert.ok(result.agent instanceof Agent);
-    assert.equal(result.agent.options.ca?.length, rootCertificates.length + 1);
+    assert.equal(
+      trustedCerts(result.agent).length,
+      rootCertificates.length + 1,
+    );
   });
 
   it("records an unreadable path and still trusts the ones that read", () => {
@@ -100,8 +144,7 @@ describe("buildCaAgent", () => {
       },
     ]);
     assert.ok(result.agent instanceof Agent);
-    const ca = result.agent.options.ca;
-    assert.ok(Array.isArray(ca));
+    const ca = trustedCerts(result.agent);
     assert.equal(ca[ca.length - 1], good);
     assert.equal(ca.length, rootCertificates.length + 1);
   });
@@ -119,13 +162,36 @@ describe("buildCaAgent", () => {
   });
 
   it("stringifies a non-Error throw rather than letting it surface raw", () => {
+    // `fs` throws an `Error`, but the reader is injectable and its contract is
+    // only "throws" — a non-Error rejection must still produce a usable reason.
+    const notAnError: unknown = "permission denied";
     const result = buildCaAgent(["/x.pem"], () => {
-      throw "permission denied";
+      throw notAnError;
     });
 
     assert.deepEqual(result.failures, [
       { path: "/x.pem", reason: "permission denied" },
     ]);
     assert.equal(result.agent, undefined);
+  });
+
+  it("uses a real node:fs read when given no reader", () => {
+    // Exercises the default `readCertificate` parameter, the `catch`, and
+    // `reasonFor`'s Error arm together, with no fixture: the path is chosen so
+    // it cannot exist. Every other test injects a reader, so without this one
+    // the line that actually touches the filesystem is never run.
+    const result = buildCaAgent([
+      "/pyviya-nonexistent/definitely-not-a-real-ca.pem",
+    ]);
+
+    assert.equal(result.agent, undefined);
+    assert.equal(result.failures.length, 1);
+    assert.equal(
+      result.failures[0]?.path,
+      "/pyviya-nonexistent/definitely-not-a-real-ca.pem",
+    );
+    // The exact text is Node's and platform-dependent; that it is a non-empty
+    // diagnostic is the contract.
+    assert.ok((result.failures[0]?.reason ?? "").length > 0);
   });
 });

@@ -189,6 +189,13 @@ The setting is read once when the window loads, so reload the window after
 changing it. A path that cannot be read is reported in the **Python on Viya**
 log and the remaining paths are still used.
 
+Once this setting has any value, the extension stops consulting the operating
+system certificate store for its Viya requests — the list you give it becomes
+the whole trust store for those requests. So it has to name **every** authority
+the connection needs, including any corporate proxy or traffic-inspection root
+your machine currently relies on. If the deployment worked before you touched
+this setting, add that root to the list too.
+
 ## When it does not work
 
 **"Select a SAS Viya connection profile before signing in."** No profile is

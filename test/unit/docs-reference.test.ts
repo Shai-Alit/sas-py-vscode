@@ -211,6 +211,38 @@ describe("docs reference generator", () => {
     assert.match(rows[0] ?? "", /Second line\./);
   });
 
+  it("escapes a backslash before it escapes a pipe", () => {
+    // The CodeQL js/incomplete-sanitization case: escaping `|` -> `\|` without
+    // first escaping `\` means a value ending in `\` right before a `|` still
+    // breaks the cell (`\` + `\|` renders as an escaped backslash, then a bare
+    // pipe). A `\|` in the source must come out as `\\\|` — escaped backslash,
+    // then escaped pipe.
+    const { settings } = generate({
+      contributes: {
+        ...pkg.contributes,
+        configuration: {
+          title: "Python on Viya",
+          properties: {
+            "pythonOnViya.hostile": {
+              type: "string",
+              default: "",
+              description: "a\\|b",
+            },
+          },
+        },
+      },
+    });
+
+    const rows = settings
+      .split("\n")
+      .filter((line) => line.includes("pythonOnViya.hostile"));
+    assert.equal(rows.length, 1, "the backslash-pipe broke the row in two.");
+    assert.ok(
+      (rows[0] ?? "").includes("a\\\\\\|b"),
+      "the backslash was not escaped before the pipe.",
+    );
+  });
+
   it("renders defaults the way settings.json would be written", () => {
     const { settings } = generate();
     const rows = settings.split("\n");

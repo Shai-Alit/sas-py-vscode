@@ -528,12 +528,18 @@ same PR.
 `cell()` escaper now escapes backslashes before pipes (output byte-identical —
 no manifest string carries a backslash, `docs:reference:check` unchanged);
 `check-package.mjs` reads the `.vsix` once and takes the size from the buffer,
-dropping the `statSync`; `check-audit.mjs` passes `shell: true` only when the
-resolved command is a `.cmd`/`.bat` shim, with all-literal args. `prettier
---check`, `docs:reference --check`, and two `check-package.mjs` smoke runs
-(missing file, non-zip file) pass locally; the `codeql` context on the PR is
-what confirms the two `main` alerts close. CHANGELOG `### Changed` entry added;
-PR number lands here on merge.
+dropping the `statSync`; `check-audit.mjs` passes `shell: needsShell(command)`
+(new exported predicate, true only for a `.cmd`/`.bat` shim), all-literal args.
+`prettier --check`, `docs:reference --check`, and two `check-package.mjs` smoke
+runs (missing file, non-zip file) pass locally; the `codeql` context on the PR
+is what confirms the two `main` alerts close. The `github-actions` reviewer
+asked for regression tests on all three; two were added (`docs-reference.test.ts`
+for the backslash-before-pipe escape, `audit-gate.test.ts` for `needsShell`'s
+two arms) and the third (`check-package.mjs`'s errno branch) was declined with a
+reply — the module runs `main()` unconditionally so it is not importable for a
+test, and its pure logic is already runtime-checked by `runSelfTest()`; making
+it importable is its own small change. CHANGELOG `### Changed` entry added; PR
+number lands here on merge.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

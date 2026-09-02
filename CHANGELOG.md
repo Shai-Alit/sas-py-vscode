@@ -1475,9 +1475,11 @@ called out under **Changed** with a migration note.
   reads the `.vsix` once and takes the size from the buffer. `check-audit.mjs`
   could not run on Windows at all — Node ≥ 18.20.2 throws `EINVAL` on
   `execFile` of a `.cmd`, and `npm` there is `npm.cmd` (CVE-2024-27980); it now
-  passes `shell: true` only when the resolved command is a `.cmd`/`.bat` shim,
-  with all-literal arguments. CI runs these on Linux, where none of the three
-  changed observable behaviour.
+  passes `shell: needsShell(command)`, an exported predicate true only for a
+  `.cmd`/`.bat` shim, with all-literal arguments. CI runs these on Linux, where
+  none of the three changed observable behaviour. New regression cases cover the
+  backslash-before-pipe escape (`docs-reference.test.ts`) and `needsShell`'s two
+  arms (`audit-gate.test.ts`).
 
 ### Changed
 

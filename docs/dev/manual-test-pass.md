@@ -59,6 +59,16 @@ from a `(known gap)` into a real assertion — 4c implemented the Show
 Environment pointer, and it is verified live (the appended sentence shows on
 the diagnostic).
 
+**Targeted re-check, 2026-09-02** (not a full pass) — for phase 4d, against
+`verde` with a `.vsix` from `phase-4d-diagnostics-surface`: §7's new
+"failed run lands in the Problems panel" and §8's "traceback frames jump to
+the editor" both verified live — the Problems entry lands on the mapped
+line, clears on a clean re-run, follows a selection's `lineOffset`, and is
+absent for a SAS-side failure with no Python traceback; a `<string>`
+traceback frame in the Result panel is a keyboard-reachable button that
+reveals its line in the editor column, and a library-path frame is not
+interactive.
+
 ## How to use this
 
 - The lists are GitHub task lists. Tick them in a preview, or copy a section into
@@ -416,6 +426,22 @@ unconfigured workspace is Local and contributes nothing to the editor
   `withModuleNotFoundGuidance`), unit-covered, and **verified live
   2026-09-01** against `verde` with a branch `.vsix` — the appended sentence
   appears on the diagnostic exactly as above.
+- [x] **(live) A failed run lands in the Problems panel — phase 4d** — run a
+  file whose last line is `c = 1 / 0`.
+  **Expect:** after "Finished with an error.", the **Problems** panel
+  (View → Problems) shows exactly one entry for this file — `Error`, source
+  "Python on Viya", its message the same `ZeroDivisionError: division by
+  zero` line the output channel shows — positioned on the `1 / 0` line.
+  Expanding it walks the rest of the call stack (`relatedInformation`).
+  Re-run the file with the error fixed → the Problems entry clears at the
+  **start** of the run. Run Selection starting partway down the file → the
+  entry still lands on the true editor line (`lineOffset` is added). A
+  SAS-side failure with no Python traceback (e.g. `PROC PYTHON` not licensed)
+  produces **no** Problems entry — only the output-channel message.
+  Implemented in phase 4d (`src/run/diagnostics.ts`); **verified live
+  2026-09-02** against `verde` with a branch `.vsix` — the entry lands on
+  the `1 / 0` line, clears on a clean re-run, and follows the selection's
+  `lineOffset`.
 
 ## 8. Rich output: matplotlib and pandas — phases 3c-i, 3d-ii
 
@@ -538,6 +564,17 @@ your script must actually write a `.png` or `.html` file; there is no implicit
   **Expect:** image alt text; the table is a navigable table; a traceback is a
   heading, a message, and a genuine ordered list of frames. Legible in every
   theme; loads nothing from the network (CSP-locked).
+- [x] **(live) Traceback frames jump to the editor — phase 4d** — run the
+  `outer()`/`inner()` script from §7 and let it raise, so the Result panel
+  shows its structured traceback.
+  **Expect:** each frame from your own file (`<string>`) is underlined and
+  focusable — click it, or Tab to it and press Enter/Space, and the editor
+  reveals that line (adding the `lineOffset` for a Run Selection). A frame
+  with an absolute library path is plain text, not interactive. No CSP
+  change — the panel still loads nothing from the network. **Verified live
+  2026-09-02** against `verde` with a branch `.vsix` — clicking a `<string>`
+  frame reveals it in the editor column (not over the panel); a library
+  frame is not clickable.
 
 ## 9. Environment and package list — phase 3e
 

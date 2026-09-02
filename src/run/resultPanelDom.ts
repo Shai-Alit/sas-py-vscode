@@ -24,6 +24,7 @@
  * frames, not a wall of concatenated text.
  */
 
+import { STRING_FRAME_FILE } from "../backend/tracebackDiagnostics";
 import type { RenderItem, ResultPanelMessage } from "./resultPanelModel";
 
 /**
@@ -49,23 +50,37 @@ export interface DomPort<El> {
   appendChild(parent: El, child: El): void;
   /** Removes every child of `element`, for `"reset"`. */
   clear(element: El): void;
+  /** Registers a "the user activated this element" handler — a pointer
+   * click, or Enter/Space while it is focused. Added in Phase 4d for
+   * clickable traceback frames; the real implementation
+   * (`src/webview/entry.ts`) wires both a `click` and a `keydown` listener,
+   * a test fake just records the handler. Only ever called on an element
+   * this module has already given `role="button"` and `tabindex="0"`. */
+  onActivate(element: El, handler: () => void): void;
 }
 
 /** Applies one message to `root` through `port`. Stateless beyond what is
  * already in the document: `"reset"` clears `root`, everything else appends
  * one more node to it. Safe to call repeatedly as messages stream in — it
- * never re-reads or replaces what an earlier call already built. */
+ * never re-reads or replaces what an earlier call already built.
+ *
+ * `onFrameActivate` (Phase 4d) is called with a traceback frame's index when
+ * the user activates its `<li>`. Optional: a caller that does not supply it
+ * (or a run whose frames are none of them mappable) renders every frame as
+ * plain, non-interactive text — the pre-4d behaviour. `src/webview/entry.ts`
+ * supplies one that posts a `revealFrame` message to the host. */
 export function applyMessage<El>(
   port: DomPort<El>,
   root: El,
   message: ResultPanelMessage,
+  onFrameActivate?: (frameIndex: number) => void,
 ): void {
   switch (message.type) {
     case "reset":
       port.clear(root);
       return;
     case "output":
-      port.appendChild(root, buildItem(port, message.item));
+      port.appendChild(root, buildItem(port, message.item, onFrameActivate));
       return;
     case "outcome":
       port.appendChild(
@@ -84,7 +99,11 @@ export function applyMessage<El>(
   }
 }
 
-function buildItem<El>(port: DomPort<El>, item: RenderItem): El {
+function buildItem<El>(
+  port: DomPort<El>,
+  item: RenderItem,
+  onFrameActivate?: (frameIndex: number) => void,
+): El {
   switch (item.kind) {
     case "text": {
       const pre = port.createElement("pre");
@@ -106,13 +125,14 @@ function buildItem<El>(port: DomPort<El>, item: RenderItem): El {
       return container;
     }
     case "traceback":
-      return buildTraceback(port, item);
+      return buildTraceback(port, item, onFrameActivate);
   }
 }
 
 function buildTraceback<El>(
   port: DomPort<El>,
   item: Extract<RenderItem, { kind: "traceback" }>,
+  onFrameActivate?: (frameIndex: number) => void,
 ): El {
   const container = port.createElement("div");
   port.setAttribute(container, "class", "python-on-viya-traceback");
@@ -131,12 +151,37 @@ function buildTraceback<El>(
     port.setAttribute(list, "class", "python-on-viya-traceback-frames");
     // Each line arrives already formatted and already localised by
     // `resultPanelModel.ts`'s caller (ADR-0021's host-side localisation
-    // boundary) — this layer only ever puts it in an `<li>` as text.
-    for (const line of item.frameLines) {
+    // boundary). Phase 4d: when the matching `frames` entry is a mappable
+    // `<string>` frame, the line goes into an inner `<span role="button">`
+    // rather than onto the `<li>` itself — a `role` override on the `<li>`
+    // would take it out of the `<ol>` and break a screen reader's "N of M"
+    // frame count. `frameLines` and `frames` are the same frames in the
+    // same order (`resultPanelModel.ts`), so the index is shared with the
+    // host.
+    item.frameLines.forEach((line, index) => {
       const entry = port.createElement("li");
-      port.setText(entry, line);
+      if (
+        onFrameActivate !== undefined &&
+        item.frames[index]?.file === STRING_FRAME_FILE
+      ) {
+        const button = port.createElement("span");
+        port.setAttribute(
+          button,
+          "class",
+          "python-on-viya-traceback-frame-clickable",
+        );
+        port.setAttribute(button, "role", "button");
+        port.setAttribute(button, "tabindex", "0");
+        port.setText(button, line);
+        port.onActivate(button, () => {
+          onFrameActivate(index);
+        });
+        port.appendChild(entry, button);
+      } else {
+        port.setText(entry, line);
+      }
       port.appendChild(list, entry);
-    }
+    });
     port.appendChild(container, list);
   }
 

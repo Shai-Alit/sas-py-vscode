@@ -256,7 +256,9 @@ rewritten from a `(known gap)` into a ticked assertion.
 
 Full account in `STATUS.md`'s 4c paragraph.
 
-☐ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).**
+☑ **4d — Diagnostics surface (Problems panel + result-panel click-to-jump).
+Implemented 2026-09-01; reviewed and verified (incl. live) 2026-09-02;
+ready to merge.**
 A `DiagnosticCollection` (`languages.createDiagnosticCollection('pythonOnViya
 ')`), cleared for a `Program`'s origin URI at the start of every run (success
 or failure) and populated on failure with one `Diagnostic` at the innermost
@@ -273,6 +275,119 @@ ADR-0021 explicitly flagged this as unscoped-but-Phase-4's-job rather than
 leaving it a further-deferred follow-up. No new webview surface or CSP change
 expected, just a new message type on the existing protocol. "Optional quick
 actions" stays genuinely optional/time-boxed, not committed to now.
+
+**What landed, 2026-09-01.** New `src/run/diagnostics.ts` (`RunDiagnostics`)
+— a thin `vscode` shell around one `DiagnosticCollection`, the same shape
+`outputChannel.ts`/`resultPanel.ts` take, on `.c8rc.json`'s exclude list and
+integration-tested (`test/integration/run/diagnostics.test.ts`). `commands.ts`
+calls `clearFor(program.origin.uri)` as soon as it has a program and
+`publish(origin, traceback, message)` on a `!succeeded` outcome that streamed
+a structured traceback — `drainOutputs` now captures the trailing
+`application/vnd.python.traceback` `RichOutput` and hands it back through the
+`withProgress` callback. The `Diagnostic` sits at `primaryPosition` (4c),
+`source: "Python on Viya"`, message taken from the outcome's own
+`diagnostics[0].message` (so it already carries 4c's `ModuleNotFoundError` →
+Show Environment suffix), `relatedInformation` = every `<string>` frame as a
+`Location` in the origin URI, omitted for a single-frame error.
+
+**Decision — publish only when a frame maps.** `primaryPosition` is
+`undefined` for a SAS-side failure (`SYSCC=3000`, no Python frames) or a
+stack with no `<string>` frame anywhere; in that case `publish` is a no-op
+rather than planting a `Diagnostic` at line 0. The output channel and result
+panel already carry the message, and "accurately-positioned" (this phase's
+own exit criterion) rules out a guessed one — the same rule
+`tracebackDiagnostics.ts`'s own doc states for the frame it will not map.
+
+**Click-to-jump.** `RenderItem`'s traceback arm gained a structured
+`frames: RenderTracebackFrame[]` alongside the pre-formatted `frameLines`;
+`resultPanelDom.ts` wraps a frame's line in an inner
+`<span role="button" tabindex="0">` (and wires `DomPort.onActivate`, new)
+exactly when its `file` is `<string>` **and** `applyMessage` was given an
+`onFrameActivate` callback — the `<li>` stays a plain listitem so the
+`<ol>`'s screen-reader semantics survive. `webview/entry.ts` supplies a
+callback that posts `{ type: "revealFrame", frameIndex }` — the one
+webview→host message beyond `"ready"`, with its own `isRevealFrameMessage`
+guard in `resultPanelModel.ts` (kept out of `ResultPanelMessage`, which stays
+host→webview). `resultPanel.ts` retains the run's `ProgramOrigin` (via
+`startRun(origin)`, now required) and the streamed frames, resolves the
+activated index through `mapFrameToOrigin`, and opens the editor via a new
+injectable `revealPosition` dep. The default reuses the column of an editor
+already showing the file, else `ViewColumn.One` — never `Active`, which from
+a webview-panel click is the panel's own column — and swallows a
+rejected `showTextDocument` (file renamed/deleted since the run) the same way
+`procPython.ts` swallows `done`. A stale/out-of-range index or a
+non-`<string>` frame is a silent no-op. Frame styling is one inline
+`.python-on-viya-traceback-frame-clickable` rule — already inside ADR-0021's
+`style-src 'unsafe-inline'`, no CSP change.
+
+**Checks run this session** (VS Code Claude Code — no sandbox timeout, so the
+unit tier and lint are available here, unlike the cowork sandbox `CLAUDE.md`
+was written for): `npm run typecheck` (tsc `--noEmit` ×3), `npm run lint`,
+`npx prettier --check`, `npm run check:coverage-scope`, `check:copyright`,
+`check:secrets`, `npm run check:docs` (incl. the VitePress build), and
+`npm run test:unit` — **1161 specs passing** (one unrelated flake,
+`prepared-vscode.test.ts`'s Windows drive-letter-casing assertion, passes on
+re-run). `npm run verify` also passes end to end here (exit 0 — `format:check`,
+`lint`, `typecheck`, `check:copyright`/`check:secrets`/`check:coverage-scope`/
+`check:contracts`, `build`, `coverage`). `npm run test:integration`'s
+`build`/`compile:test` steps pass; the VS Code-host tier itself will not
+launch in this environment (`Code.exe: bad option: --disable-extensions` —
+an env limit, not a timeout). **Coverage ratchet bumped in `.c8rc.json`:**
+`lines`/`statements` 93 → 94 (measured 94.09 / 94.09), `functions` stays 93
+(93.68), `branches` stays 95 (95.12) — the new modules
+(`diagnostics.ts` excluded; `resultPanelModel.ts`/`resultPanelDom.ts` at
+100%) pulled the aggregate up, `tracebackDiagnostics.ts` still 100%.
+
+**Verified 2026-09-02 (Sean).** `npm run test:integration` green in the VS
+Code-host tier — the new
+`test/integration/run/{diagnostics,commands-diagnostics}.test.ts` and the
+extended `result-panel.test.ts` included. One test failed on the first run:
+`diagnostics.test.ts`'s "dispose() tears the collection down" read a
+`DiagnosticCollection.get()` *after* `dispose()`, which throws
+`illegal state - object is disposed` rather than returning empty; the
+assertion was moved onto `languages.getDiagnostics()` (usable across a
+disposed collection) with the pre-dispose check kept on `collection.get()`
+(`657c2cc`), and the re-run was green. **Live-verified against `verde`**
+(Viya 4) with a `.vsix` from this branch: a failing run's error lands in
+Problems at the mapped line and opens in the editor column, not over the
+panel; a clean re-run clears it; a Run Selection mid-file positions the
+entry at the true editor line; clicking a `<string>` frame in the result
+panel jumps the editor there and a library-frame line is not clickable.
+`docs/dev/manual-test-pass.md` §7/§8 carry the ticked assertions.
+
+**Nothing outstanding before the PR opens.**
+
+**Adversarial review pass, 2026-09-01 — findings folded in.** (1)
+`revealPosition`'s default targeted `ViewColumn.Active`, which from a
+webview-panel click is the panel's own column — it now reuses the column of
+an editor already showing the file, else `ViewColumn.One`. (2) The same
+default's `void showTextDocument(…)` had no rejection handler; it now
+swallows a renamed/deleted-file rejection the way `procPython.ts` swallows
+`done`. (3) `role="button"` sat on the `<li>`, taking it out of the `<ol>`
+for a screen reader — moved to an inner `<span>`. (4) `clearFor` ran before
+`backendFor()`, so a connect failure or `busy` refusal wiped the Problems
+entry while the output channel and result panel still showed the last run —
+moved to sit with `startRun`. (5) `startRun(origin)` made required rather
+than optional. Plus comment/record corrections. Two nits left as noted, not
+fixed: the Problems entry is only ever cleared by the *next run* of the same
+file (below), and `?? traceback.message` is an unreachable belt-and-braces
+fallback (commented as such).
+
+**Deferred to Phase 5 — diagnostics-lifecycle hardening.** Two low-stakes
+gaps, both flagged in review (`PR #83`) and left as documented rather than
+fixed here. (a) The `DiagnosticCollection` is only ever cleared by the *next
+run* of the same file — nothing wipes it when the document closes, the
+profile signs out, or the run target flips to Local, so a stale Viya-run
+diagnostic can outlive the connection that produced it (the position is
+still where the last run raised). (b) `RevealFrameMessage` carries only a
+frame index, no per-run token: a `revealFrame` for a previous run's frame,
+delayed in the host queue until the next run has both `startRun`'d and
+streamed its own traceback, resolves against the new run's data — a
+wrong-line jump rather than `revealFrame`'s "silent no-op" contract. The
+window needs the host event loop stalled across a whole run and the outcome
+is harmless (a line in a file); `resultPanel.ts`'s `currentFrames` doc
+comment carries the detail. A per-run token on `RevealFrameMessage` closes
+(b) and the "two `<ol>`s in one run" case together.
 
 ---
 

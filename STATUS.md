@@ -251,6 +251,73 @@ the diagnostic as specified, and `manual-test-pass.md` §7's row is rewritten
 from a `(known gap)` into a ticked assertion. **Nothing outstanding before
 the PR opens.** Merged as [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81).
 
+**4d (diagnostics surface) implemented 2026-09-01; reviewed and verified
+(incl. live) 2026-09-02; ready to merge, PR not yet opened.** Branch
+`phase-4d-diagnostics-surface`. Wires 4c's
+`tracebackDiagnostics.ts` mapping to its two consumers. **Problems panel:**
+new `src/run/diagnostics.ts` (`RunDiagnostics` — a `vscode` shell around one
+`languages.createDiagnosticCollection("pythonOnViya")`, on `.c8rc.json`'s
+exclude list, integration-tested); `commands.ts`'s `runNow` clears it for the
+program's origin URI at the start of every run and, on a `!succeeded` outcome
+that streamed a structured traceback (`drainOutputs` now captures the trailing
+`application/vnd.python.traceback` output and hands it back), publishes one
+`Error` at `primaryPosition`, `source "Python on Viya"`, the `<string>` stack
+as `relatedInformation`. **Publishes nothing when no frame maps** — a SAS-side
+failure or an all-library stack gets no Problems entry rather than one planted
+at line 0 (the phase's exit criterion is an *accurately*-positioned error;
+`tracebackDiagnostics.ts`'s own "don't guess a position" rule, applied at the
+surface). **Result panel:** the traceback `RenderItem` gained structured
+`frames`; `resultPanelDom.ts` wraps a `<string>`-frame's line in an inner
+`<span role="button">` (new `DomPort.onActivate`) when `applyMessage` is
+given an `onFrameActivate` — the `<li>` stays a listitem so the `<ol>`'s
+screen-reader semantics hold; `webview/entry.ts` posts `{ type:
+"revealFrame", frameIndex }` — the one webview→host message beyond `"ready"`,
+its own `isRevealFrameMessage` guard, kept out of `ResultPanelMessage`;
+`resultPanel.ts` retains the run's `ProgramOrigin` (`startRun(origin)`, now
+required) and frames, maps the activated index via `mapFrameToOrigin`, opens
+the editor via a new injectable `revealPosition` dep (default reuses an
+existing editor's column, else `ViewColumn.One` — never the panel's; swallows
+a rejected `showTextDocument`). No new command, setting, webview surface or
+CSP change. New page `docs/architecture/diagnostics-surface.md` covers both
+4c and 4d (4c never wrote its reserved page). **An adversarial review pass
+has been done** (2026-09-01) and its findings folded in: `revealPosition`
+now reuses an existing editor's column (never `Active`/the panel's) and
+swallows a rejected `showTextDocument`; the clickable frame is an inner
+`<span role="button">` so the `<ol>` keeps its screen-reader semantics;
+`clearFor` moved to sit with `startRun` at the "a run began" point;
+`startRun(origin)` made required; comment/record corrections. Nits left as
+documented, not fixed: `?? traceback.message` is an unreachable
+belt-and-braces fallback; and two diagnostics-lifecycle gaps carried to
+Phase 5 (also flagged by the CI reviewer on PR #83) — the Problems entry is
+only cleared by the next run of the same file, and `RevealFrameMessage`
+carries no per-run token so a stale `revealFrame` that outraces the host
+queue can resolve against the wrong run. The CI reviewer also asked why
+`Diagnostic.source` is a bare literal rather than `l10n.t()` — kept bare
+(a per-locale source string fragments Problems-panel filtering) with the
+comment expanded to say so. **Checks run this session** (VS
+Code Claude Code — the sandbox-timeout reason `CLAUDE.md` bars lint/tests
+for does not apply here): `typecheck` ×3, `npm run lint`, `prettier
+--check`, `check:coverage-scope`/`check:copyright`/`check:secrets`,
+`check:docs`, `npm run test:unit` (**1161 passing**; one unrelated Windows
+drive-letter flake that passes on re-run), and **`npm run verify` end to end
+(exit 0)** — all green. Coverage ratchet bumped in `.c8rc.json`:
+`lines`/`statements` 93 → 94 (measured 94.09), `functions`/`branches`
+unchanged; `resultPanelModel.ts`/`resultPanelDom.ts`/`tracebackDiagnostics.ts`
+all 100%. Coverage ratchet bumped in `.c8rc.json`: `lines`/`statements`
+93 → 94, `functions`/`branches` unchanged. **Verified 2026-09-02 (Sean):**
+`npm run test:integration` green in the VS Code host tier — one test failed
+first (`diagnostics.test.ts` read `DiagnosticCollection.get()` after
+`dispose()`, which throws; moved onto `languages.getDiagnostics()`,
+`657c2cc`), re-run green. **Live-verified against `verde`** with a branch
+`.vsix`: failing run → positioned Problems entry that opens in the editor
+column not over the panel; clean re-run clears it; Run Selection mid-file
+lands on the true line; clicking a `<string>` frame jumps the editor, a
+library-frame line does not. `manual-test-pass.md` §7/§8 ticked. **Nothing
+outstanding before the PR opens.** The `phase-4d-diagnostics-surface` branch
+was cut from `main` at `64b7d38` (PR #82 — the 4c merge-record doc commit —
+had already landed there); it carries five commits (feat, docs, review
+fixes, coverage bump, the test fix), squash-merged.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -337,7 +404,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (traceback-mapping groundwork + the Findings 75/76 cancel fix) implemented, reviewed, verified (incl. live), merged 2026-09-01 ([PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81)); 4d not started; Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (traceback-mapping groundwork + the Findings 75/76 cancel fix) merged 2026-09-01 ([PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81)); 4d (Problems panel + result-panel click-to-jump) implemented 2026-09-01, reviewed + verified (incl. live) 2026-09-02 on `phase-4d-diagnostics-surface`, ready to merge (PR not yet opened); Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import type { ProgramOrigin, RichOutput } from "../../../src/backend/backend";
 import {
   ResultPanel,
   type ResultWebviewPanel,
@@ -43,6 +44,9 @@ function fakePanel(): {
   readonly disposed: boolean[];
   /** Simulates the webview's own bootstrap script sending its handshake. */
   sendReady(): void;
+  /** Simulates the webview posting a clicked-frame message back to the host
+   * (Phase 4d). */
+  sendRevealFrame(frameIndex: number): void;
 } {
   const posted: unknown[] = [];
   const revealed: { column: vscode.ViewColumn; preserveFocus: boolean }[] = [];
@@ -90,10 +94,19 @@ function fakePanel(): {
     revealed,
     disposed,
     sendReady: () => messageListener?.({ type: "ready" }),
+    sendRevealFrame: (frameIndex) =>
+      messageListener?.({ type: "revealFrame", frameIndex }),
   };
 }
 
 const extensionUri = vscode.Uri.file("/fake-extension");
+
+/** A stand-in origin for the tests that only care that a run started, not
+ * where from — `startRun` now requires one. */
+const runOrigin: ProgramOrigin = {
+  uri: vscode.Uri.file("/workspace/run.py"),
+  lineOffset: 0,
+};
 
 describe("ResultPanel", () => {
   it("creates no panel for a run that produces only text/plain output", () => {
@@ -104,7 +117,7 @@ describe("ResultPanel", () => {
         return fakePanel().panel;
       },
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "text/plain", data: "hello\n" });
     panel.writeOutput({ mime: "text/plain", data: "world\n" });
     assert.equal(created, 0);
@@ -115,7 +128,7 @@ describe("ResultPanel", () => {
     const panel = new ResultPanel(extensionUri, {
       createPanel: () => fake.panel,
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "image/png", data: "aGVsbG8=" });
     assert.deepEqual(fake.revealed, [
       { column: vscode.ViewColumn.Beside, preserveFocus: true },
@@ -131,11 +144,11 @@ describe("ResultPanel", () => {
     const panel = new ResultPanel(extensionUri, {
       createPanel: () => fake.panel,
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "image/png", data: "AA==" });
     assert.equal(fake.revealed.length, 1);
 
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "text/plain", data: "no reveal yet\n" });
     assert.equal(fake.revealed.length, 1, "text/plain alone reveals nothing");
     panel.writeOutput({ mime: "image/png", data: "BB==" });
@@ -169,7 +182,7 @@ describe("ResultPanel", () => {
         return fakePanel().panel;
       },
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutcome({ succeeded: true, diagnostics: [] });
     panel.writeFailure({ code: "cancelled" });
     assert.equal(created, 0);
@@ -214,7 +227,7 @@ describe("ResultPanel", () => {
     const panel = new ResultPanel(extensionUri, {
       createPanel: () => fake.panel,
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "image/png", data: "AA==" });
     // Nothing posted yet — the panel exists (it was just created), but has
     // not sent "ready".
@@ -296,5 +309,103 @@ describe("ResultPanel", () => {
 
     panel.writeOutput({ mime: "image/png", data: "BB==" });
     assert.equal(second.revealed.length, 1);
+  });
+
+  describe("click-to-jump (Phase 4d)", () => {
+    const origin: ProgramOrigin = {
+      uri: vscode.Uri.file("/workspace/app.py"),
+      lineOffset: 0,
+    };
+    const tracebackOutput: RichOutput = {
+      mime: "application/vnd.python.traceback",
+      data: {
+        message: "ZeroDivisionError: division by zero",
+        frames: [
+          { file: "<string>", line: 3, name: "<module>" },
+          { file: "/x/lib/helpers.py", line: 9, name: "divide" },
+        ],
+      },
+    };
+
+    function panelWithRevealSpy(fake: ReturnType<typeof fakePanel>): {
+      panel: ResultPanel;
+      revealed: {
+        uri: vscode.Uri;
+        position: { line: number; character: number };
+      }[];
+    } {
+      const revealed: {
+        uri: vscode.Uri;
+        position: { line: number; character: number };
+      }[] = [];
+      const panel = new ResultPanel(extensionUri, {
+        createPanel: () => fake.panel,
+        revealPosition: (uri, position) => {
+          revealed.push({ uri, position });
+        },
+      });
+      return { panel, revealed };
+    }
+
+    it("maps a clicked <string> frame through the run origin and reveals it", () => {
+      const fake = fakePanel();
+      const { panel, revealed } = panelWithRevealSpy(fake);
+      panel.startRun(origin);
+      panel.writeOutput(tracebackOutput);
+      fake.sendReady();
+
+      fake.sendRevealFrame(0);
+      assert.equal(revealed.length, 1);
+      const jump = revealed[0];
+      assert.ok(jump);
+      assert.equal(jump.uri.toString(), origin.uri.toString());
+      // frame line 3 (one-based) + lineOffset 0, less 1 => editor line 2.
+      assert.deepEqual(jump.position, { line: 2, character: 0 });
+    });
+
+    it("adds the run's lineOffset, for a Run Selection origin", () => {
+      const fake = fakePanel();
+      const { panel, revealed } = panelWithRevealSpy(fake);
+      panel.startRun({ uri: origin.uri, lineOffset: 10 });
+      panel.writeOutput(tracebackOutput);
+
+      fake.sendRevealFrame(0);
+      const jump = revealed[0];
+      assert.ok(jump);
+      assert.deepEqual(jump.position, { line: 12, character: 0 });
+    });
+
+    it("does nothing for an out-of-range index, a non-<string> frame, or before any traceback", () => {
+      const fake = fakePanel();
+      const { panel, revealed } = panelWithRevealSpy(fake);
+      panel.startRun(origin);
+      // An image opens the panel (wiring the inbound listener) before any
+      // traceback has streamed, so there are no frames retained yet.
+      panel.writeOutput({ mime: "image/png", data: "AA==" });
+      fake.sendRevealFrame(0);
+      assert.equal(revealed.length, 0, "no frames retained yet");
+
+      panel.writeOutput(tracebackOutput);
+      fake.sendRevealFrame(99);
+      assert.equal(revealed.length, 0, "index past the end of the stack");
+      fake.sendRevealFrame(1);
+      assert.equal(
+        revealed.length,
+        0,
+        "frame 1 is a library frame — mapFrameToOrigin returns undefined",
+      );
+    });
+
+    it("does nothing when a revealFrame arrives before any run has started", () => {
+      // `commands.ts` always calls `startRun` before `writeOutput`, but the
+      // guard on `currentOrigin` is still load-bearing: drive `writeOutput`
+      // straight, with no `startRun`, and the inbound message is a no-op.
+      const fake = fakePanel();
+      const { panel, revealed } = panelWithRevealSpy(fake);
+      panel.writeOutput(tracebackOutput);
+
+      fake.sendRevealFrame(0);
+      assert.equal(revealed.length, 0);
+    });
   });
 });

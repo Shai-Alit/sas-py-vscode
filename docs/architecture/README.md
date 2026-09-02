@@ -17,13 +17,12 @@ Written so far:
 - [**API contracts**](contracts.md) — the REST footprint written down per
   generation, how an absence is recorded, and what the gate does and does not
   assert (2b-ii)
+- [**Traceback mapping and the diagnostics surface**](diagnostics-surface.md) —
+  `<string>` frames to editor positions and the offset that makes it
+  non-trivial (4c), then its two consumers: the Problems-panel
+  `DiagnosticCollection` and the result panel's click-to-jump (4d). One page —
+  neither half is legible without the other.
 
 Planned pages, each written with the slice that introduces the thing it describes:
 
 - **Log to output** — turning a SAS log into clean Python stdout (3b)
-- **Traceback mapping** — `<string>` frames to editor positions, and the wrapper
-  offset that makes it non-trivial (4c, relettered 2026-08-31 — was "4a" in the
-  original plan)
-- **Diagnostics surface** — the Problems panel `DiagnosticCollection` and the
-  result panel's click-to-jump, both consumers of the traceback mapping above
-  (4d, relettered 2026-08-31 — was "4b")

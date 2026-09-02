@@ -47,6 +47,18 @@ const realPort: DomPort<HTMLElement> = {
   clear: (element) => {
     element.replaceChildren();
   },
+  onActivate: (element, handler) => {
+    element.addEventListener("click", handler);
+    element.addEventListener("keydown", (event) => {
+      // Enter or Space activates a `role="button"` element, matching how a
+      // real `<button>` behaves; Space is also the page-scroll key, so it
+      // is prevented from doing both.
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        handler();
+      }
+    });
+  },
 };
 
 const root = document.getElementById("root");
@@ -55,7 +67,13 @@ const vscodeApi = acquireVsCodeApi();
 if (root !== null) {
   window.addEventListener("message", (event: MessageEvent<unknown>) => {
     if (isResultPanelMessage(event.data)) {
-      applyMessage(realPort, root, event.data);
+      applyMessage(realPort, root, event.data, (frameIndex) => {
+        // Webview → host, Phase 4d: the user activated a traceback frame.
+        // The host holds the structured frames and the run's origin and
+        // does the mapping — see `src/run/resultPanelModel.ts`'s
+        // `RevealFrameMessage`.
+        vscodeApi.postMessage({ type: "revealFrame", frameIndex });
+      });
     }
   });
 }

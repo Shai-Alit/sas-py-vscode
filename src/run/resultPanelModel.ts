@@ -61,15 +61,23 @@ export type RenderItem =
       readonly message: string;
       /** Each frame already formatted into one localised line (e.g.
        * "app.py, line 3, in <module>") by
-       * {@link RenderItemLabels.tracebackFrame}. The DOM layer only ever
-       * renders a frame as a single `<li>` of text, and structured
-       * file/line/name has no consumer until Phase 4's traceback-to-editor
-       * mapping (ADR-0021, `backend.ts`'s own `TracebackFrame.file` doc),
-       * which will define its own richer message shape then — keeping this a
-       * string array now is what keeps the connectives ("line", "in") on the
-       * host side of the localisation boundary rather than hardcoded English
-       * in `resultPanelDom.ts`. */
+       * {@link RenderItemLabels.tracebackFrame}. The DOM layer renders a
+       * frame as a single `<li>` of this text — and, from Phase 4d, makes
+       * the `<li>` clickable when the matching {@link frames} entry is a
+       * mappable `<string>` frame. Keeping the display text a pre-formatted
+       * string array is still what keeps the connectives ("line", "in") on
+       * the host side of the localisation boundary rather than hardcoded
+       * English in `resultPanelDom.ts`. */
       readonly frameLines: readonly string[];
+      /** The same frames as {@link frameLines}, in the same order, but as
+       * raw `file`/`line`/`name` rather than a formatted line. Added in
+       * Phase 4d: the DOM layer keys on `file === STRING_FRAME_FILE` to
+       * decide which `<li>`s are clickable, and the host
+       * (`src/run/resultPanel.ts`) maps the activated frame's index back
+       * through 4c's `mapFrameToOrigin` to reveal it in the editor. Not
+       * itself user-facing text — nothing here is localised or displayed
+       * directly. */
+      readonly frames: readonly RenderTracebackFrame[];
     };
 
 /** Already-localised strings {@link toRenderItem} needs but must not invent
@@ -128,6 +136,7 @@ export function toRenderItem(
         frameLines: output.data.frames.map((frame) =>
           labels.tracebackFrame(toRenderFrame(frame)),
         ),
+        frames: output.data.frames.map(toRenderFrame),
       };
   }
 }
@@ -169,6 +178,46 @@ export type ResultPanelMessage =
    * is already localised, via `localiseBackendProblem` in `resultPanel.ts`. */
   | { readonly type: "failure"; readonly message: string };
 
+/**
+ * The one message that travels **webview → host** beyond ADR-0021's `"ready"`
+ * handshake, added in Phase 4d: the user activated a traceback frame in the
+ * result panel and wants the editor to jump to it.
+ *
+ * `frameIndex` indexes the activated frame's position in the traceback's own
+ * `frames` array (outermost first, as Python prints) — the host
+ * (`src/run/resultPanel.ts`) retains that array plus the run's
+ * `ProgramOrigin` and resolves the pair through 4c's `mapFrameToOrigin`. The
+ * webview only ever sends an index for a frame it rendered as clickable,
+ * i.e. one whose `file` is `STRING_FRAME_FILE`; the host re-checks anyway
+ * (`mapFrameToOrigin` returns `undefined` for anything else), so a
+ * malformed or stale index is a no-op rather than a wrong jump.
+ *
+ * Kept out of {@link ResultPanelMessage} deliberately: that union is the
+ * host-authored, host → webview protocol (its own doc comment says so), and
+ * `resultPanel.ts` validates this direction with {@link isRevealFrameMessage}
+ * the same way it validates `"ready"` with its own narrow guard.
+ */
+export interface RevealFrameMessage {
+  readonly type: "revealFrame";
+  readonly frameIndex: number;
+}
+
+/** Structural validation for a value received over
+ * `webview.onDidReceiveMessage` that claims to be a {@link RevealFrameMessage}.
+ * `frameIndex` must be a non-negative integer — anything else cannot be a
+ * real array index and is rejected here rather than reaching the lookup. */
+export function isRevealFrameMessage(
+  value: unknown,
+): value is RevealFrameMessage {
+  return (
+    isRecord(value) &&
+    value.type === "revealFrame" &&
+    typeof value.frameIndex === "number" &&
+    Number.isInteger(value.frameIndex) &&
+    value.frameIndex >= 0
+  );
+}
+
 /** Reduces a run's conclusion to the message {@link ResultPanelMessage}'s
  * `"outcome"` arm carries. `summary` is supplied by the caller, already
  * localised — this module invents no English text, the same rule
@@ -195,6 +244,21 @@ function isStringArray(value: unknown): value is string[] {
   );
 }
 
+function isRenderTracebackFrame(value: unknown): value is RenderTracebackFrame {
+  return (
+    isRecord(value) &&
+    typeof value.file === "string" &&
+    typeof value.line === "number" &&
+    typeof value.name === "string"
+  );
+}
+
+function isRenderTracebackFrameArray(
+  value: unknown,
+): value is RenderTracebackFrame[] {
+  return Array.isArray(value) && value.every(isRenderTracebackFrame);
+}
+
 /** Structural validation for a value that claims to be a {@link RenderItem} —
  * used by {@link isResultPanelMessage} below, which is what
  * `src/webview/entry.ts` actually calls on every message it receives. Between
@@ -217,7 +281,8 @@ export function isRenderItem(value: unknown): value is RenderItem {
       return (
         typeof value.heading === "string" &&
         typeof value.message === "string" &&
-        isStringArray(value.frameLines)
+        isStringArray(value.frameLines) &&
+        isRenderTracebackFrameArray(value.frames)
       );
     default:
       return false;

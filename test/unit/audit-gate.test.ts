@@ -40,6 +40,7 @@ interface CheckAudit {
     extraArgs?: string[],
     options?: { command?: string; baseArgs?: string[]; timeoutMs?: number },
   ) => unknown;
+  needsShell: (command: string) => boolean;
   assertUsableReport: (report: unknown, ran?: string) => unknown;
 }
 
@@ -396,6 +397,38 @@ describe("audit timeout", () => {
       () => runAudit([], hang),
       /not a verdict about the dependency tree/,
     );
+  });
+});
+
+/**
+ * `npm` on Windows is `npm.cmd`, and Node >= 18.20.2 throws `EINVAL` on
+ * `execFile` of a `.cmd`/`.bat` without a shell (CVE-2024-27980) — which made
+ * `check-audit.mjs` un-runnable there. `runAudit` passes `shell: needsShell(command)`.
+ *
+ * This pins the decision, not its effect. An integration test cannot tell the
+ * arms apart on the Linux CI leg: the `EINVAL` only fires on Windows, and
+ * `shell: true` here expands to `sh -c "<command> <args>"`, which needs the same
+ * executable, valid command a bare `execFile` does — so no fixture runs one way
+ * and not the other. The regression risk the test guards is someone editing the
+ * suffix set or the call site, and that lives in `needsShell`.
+ */
+describe("audit command shell selection", () => {
+  let needsShell: CheckAudit["needsShell"];
+
+  before(async () => {
+    ({ needsShell } = await loadScript<CheckAudit>("check-audit.mjs"));
+  });
+
+  it("shells out for a Windows `.cmd`/`.bat` shim, wherever it resolved from", () => {
+    assert.equal(needsShell("npm.cmd"), true);
+    assert.equal(needsShell("C:\\Program Files\\nodejs\\npm.cmd"), true);
+    assert.equal(needsShell("setup.BAT"), true);
+  });
+
+  it("does not shell out for a POSIX command or the tests' node override", () => {
+    assert.equal(needsShell("npm"), false);
+    assert.equal(needsShell("/usr/local/bin/npm"), false);
+    assert.equal(needsShell(process.execPath), false);
   });
 });
 

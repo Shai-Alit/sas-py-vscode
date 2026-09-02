@@ -1465,6 +1465,22 @@ called out under **Changed** with a migration note.
   "Cancelled." message is reworded to say only what is true
   unconditionally, rather than implying an immediate stop it cannot promise.
 
+- Three latent defects in the build-check scripts, two of them long-standing
+  CodeQL *High* findings against `main`. `generate-reference.mjs`'s
+  markdown-table-cell escaper replaced `|` with `\|` without first escaping
+  backslashes, so a value ending in `\` immediately before a `|` would still
+  break the row — no manifest string carries one today, so the generated
+  `docs/reference/` output is byte-identical. `check-package.mjs` called
+  `statSync` then `readFileSync` on the same path, a check-then-use race; it now
+  reads the `.vsix` once and takes the size from the buffer. `check-audit.mjs`
+  could not run on Windows at all — Node ≥ 18.20.2 throws `EINVAL` on
+  `execFile` of a `.cmd`, and `npm` there is `npm.cmd` (CVE-2024-27980); it now
+  passes `shell: needsShell(command)`, an exported predicate true only for a
+  `.cmd`/`.bat` shim, with all-literal arguments. CI runs these on Linux, where
+  none of the three changed observable behaviour. New regression cases cover the
+  backslash-before-pipe escape (`docs-reference.test.ts`) and `needsShell`'s two
+  arms (`audit-gate.test.ts`).
+
 ### Changed
 
 - The copyright check now scans `contracts/`, and its header extractor

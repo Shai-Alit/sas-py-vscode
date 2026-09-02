@@ -202,6 +202,22 @@ export function parseAllowlist(text) {
 }
 
 /**
+ * Whether a resolved command has to be started through a shell.
+ *
+ * `npm` on Windows is `npm.cmd`, and Node >= 18.20.2 throws `EINVAL` on
+ * `execFile` of a `.cmd`/`.bat` without one (CVE-2024-27980) — which made this
+ * gate un-runnable there. The arguments this module passes are all fixed
+ * literals, so the shell carries no injection surface. Exported so the decision
+ * has a regression test of its own: an integration test cannot tell the two
+ * arms apart on Linux, where the `EINVAL` this works around does not occur and
+ * `shell: true` still means `sh -c "<command> <args>"` — the same executability
+ * a bare `execFile` needs.
+ */
+export function needsShell(command) {
+  return /\.(cmd|bat)$/i.test(String(command));
+}
+
+/**
  * Runs `npm audit --json` and returns the parsed report.
  *
  * npm exits non-zero *because* it found vulnerabilities, which is the normal
@@ -242,7 +258,13 @@ export function runAudit(
       maxBuffer: 32 * 1024 * 1024,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: timeoutMs,
+      // On the `shell: true` (Windows) path this kills `cmd.exe`, not
+      // necessarily the `npm.cmd` grandchild — a wedged `npm audit` could
+      // outlive the timeout as an orphan. Accepted: this is a local/CI dev
+      // gate, and the job-level timeout is the backstop.
       killSignal: AUDIT_KILL_SIGNAL,
+      // `npm` on Windows is `npm.cmd`; see `needsShell`.
+      shell: needsShell(command),
     });
   } catch (error) {
     if (error?.code === "ETIMEDOUT") {

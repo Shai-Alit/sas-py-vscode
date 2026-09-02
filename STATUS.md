@@ -361,6 +361,31 @@ untouched; its Runbook stays "not yet reached" until Phase 5's own scoping
 session, which is when the four scratch-file items above should get folded
 into a real punch list.
 
+**Phase 5 scoped 2026-09-02**, same day as the housekeeping pass above. A
+codebase survey found 5a (drift gate) and 5b (live test tier) both further
+along than the plan text assumed — `scripts/check-contracts.mjs` already
+exists and is already wired into `npm run verify`/CI, and `test/live/`
+already has three viya4 suites plus a fully working `viya35`-capable gate in
+`test/helpers/live-gate.ts` with no viya35 test file yet written. Both are
+downgraded to *Small* and rescoped as audits/scaffolding rather than
+build-from-scratch work. 5c (docs publishing) holds up as planned and is now
+the largest slice — the docs site has no user-facing pages at all yet for
+Phase 3/4's shipped feature set (running Python, diagnostics, cancel,
+environment info), and `docs/release-checklist.md` names a publish workflow
+that doesn't exist. **New 5d slice** carries the four scratch-file items
+above (certificate escape hatch, BOM fixture, Finding 74's two sub-findings,
+the two 4d-deferred diagnostics-lifecycle gaps) — `phase-3-runbook-pending.md`
+is reconciled and its holding role retired again now that all four have a
+real home. Recommended order: 5d → 5a → 5b → 5c. Full Plan and Runbook detail
+in `docs/phases/phase-5.md`; the stale Phase 5 bash-stub in `phase-3.md`
+(orphaned branch names predating this scoping) was removed in the same pass,
+the same way the Phase 4 stub was retired at its own scoping session. This
+paragraph also closes this file's own phase-index-table item — the previous
+Phase 4 row's "housekeeping not yet run" note was accurate when `baacf3c`
+landed but should have been corrected in that same commit; fixed here rather
+than left to misdirect the next session, per this project's own precedent for
+exactly this mistake three paragraphs above.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -447,8 +472,8 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping (incl. the carried-over Dependabot re-check) not yet run | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
+| 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
+| 5 — Hardening & first release | **scoped, 2026-09-02** (5a–5d — see phase-5.md's own Plan/Runbook) | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

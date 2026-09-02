@@ -224,7 +224,12 @@ group with the test-only BOM fixture.
 
    **Verified green 2026-09-02 (Sean's run):** `npm run verify`, `npm run
    check:docs` and `npm run test:integration` all pass on the post-review
-   branch. PR number lands here on merge.
+   branch. **Merged 2026-09-02 as
+   [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), squashed as
+   `e08e55f`.** Its `supply-chain` CI job surfaced six unrelated dev-tree
+   advisories (`qs`, `fast-uri`, transitive under `@vscode/vsce`); cleared in
+   the same PR by `overrides.qs ^6.16.0` / `overrides.fast-uri ^3.1.6` — see
+   `STATUS.md` for the full account.
 3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`

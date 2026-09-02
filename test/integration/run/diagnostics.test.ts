@@ -41,7 +41,15 @@ function frame(file: string, line: number, name = "<module>") {
 
 describe("RunDiagnostics", () => {
   afterEach(() => {
-    for (const collection of created.splice(0)) collection.dispose();
+    for (const collection of created.splice(0)) {
+      // A test that disposes its own collection leaves this a second call —
+      // `DiagnosticCollection.dispose()` is idempotent, but guard anyway.
+      try {
+        collection.dispose();
+      } catch {
+        /* already disposed by the test body */
+      }
+    }
   });
 
   it("publishes one Error at the innermost <string> frame, the rest of the <string> stack as related info", () => {
@@ -153,16 +161,22 @@ describe("RunDiagnostics", () => {
     diagnostics.clearFor(vscode.Uri.file("/workspace/never-published.py"));
   });
 
-  it("dispose() tears the collection down", () => {
+  it("dispose() removes what it published", () => {
     const { diagnostics, collection } = build();
-    const target = origin(0);
+    // A URI no other test in this file touches, so the aggregate read below
+    // reflects only this collection.
+    const target = vscode.Uri.file("/workspace/dispose-test.py");
     diagnostics.publish(
-      target,
+      { uri: target, lineOffset: 0 },
       { message: "ValueError: x", frames: [frame("<string>", 1, "<module>")] },
       "ValueError: x",
     );
+    assert.equal((collection.get(target) ?? []).length, 1);
+
     diagnostics.dispose();
-    // A disposed collection reports nothing for any URI.
-    assert.deepEqual([...(collection.get(target.uri) ?? [])], []);
+    // `languages.getDiagnostics` reads across every collection and stays
+    // usable once one is disposed — `collection.get` itself throws
+    // "object is disposed". A torn-down collection contributes nothing.
+    assert.deepEqual([...vscode.languages.getDiagnostics(target)], []);
   });
 });

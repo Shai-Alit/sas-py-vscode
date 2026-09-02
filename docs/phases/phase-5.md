@@ -230,12 +230,164 @@ group with the test-only BOM fixture.
    advisories (`qs`, `fast-uri`, transitive under `@vscode/vsce`); cleared in
    the same PR by `overrides.qs ^6.16.0` / `overrides.fast-uri ^3.1.6` — see
    `STATUS.md` for the full account.
-3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
+3. ~~**Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`
    markers on the error path and (b) trimming `writeOutcome`'s redundant
    traceback-tail echo for the traceback case specifically actually gets
-   fixed here, since 4c left both as undecided rather than rejected.
+   fixed here, since 4c left both as undecided rather than rejected.~~
+   **Done — slice 5d-iii, 2026-09-02.**
+
+   **Module confirmed:** the Plan's `src/backend/outputChannel.ts` path does
+   not exist. The real module is `src/run/outputChannel.ts` (test-visible
+   through `test/integration/run/output-channel.test.ts`, a hand-rolled
+   `vscode.OutputChannel` double). Sub-finding (b) also has a root-cause site
+   one layer down, in `src/backend/procPython.ts`'s `parseTraceback`.
+
+   **Decision: (b) is fixed on both outcome surfaces; (a)'s live-transcript
+   half is deliberately not.**
+
+   - **(b) — the echo.** A shared pure helper
+     `alreadyStreamedAsTraceback(message, streamedTraceback)`
+     (`src/backend/tracebackDiagnostics.ts`) answers "did the user already see
+     this text stream?" — true only when the diagnostic's message equals the
+     streamed `Traceback`'s own message. Both `RunOutputChannel.writeOutcome`
+     (`src/run/outputChannel.ts`) and `ResultPanel.writeOutcome`
+     (`src/run/resultPanel.ts`) now take the streamed `Traceback` (captured by
+     `commands.ts`'s `drainOutputs`, in scope at the call site) and drop a
+     matching diagnostic before rendering the outcome. Value-equality, not a
+     blanket failure-path suppression, and the helper returns **false** — so
+     the line still prints — for three cases that never streamed: a SAS-side
+     error (`SYSCC=3000`, from `SYSERRORTEXT`); the synthesized
+     `SYNTHESIZED_TRACEBACK_MESSAGE` ("an unhandled Python exception")
+     stand-in `parseTraceback` uses when a header and frames are followed by
+     no exception line (`buildFailureOutcome` puts that one string on both
+     sides, so a plain equality check alone would wrongly suppress it — the
+     carve-out is why the helper exists rather than an inline `===`); and a
+     `ModuleNotFoundError`, whose diagnostic is a strict superset of the
+     streamed message (`withModuleNotFoundGuidance`'s "Show Environment"
+     pointer appended). That last one prints in full — one repeated tail then
+     the pointer; slicing off the known prefix was considered and left out
+     because the equality check fails safe where a prefix-slice would emit a
+     fragment, noted as a possible follow-up.
+   - **The result panel mattered more than first scoped.** For a failing run
+     the panel already holds the traceback text *twice* — as the raw log's
+     `text/plain` items and as the structured, clickable traceback item — so
+     the outcome's own diagnostics list was a third copy. An earlier draft
+     deferred this as "out of scope"; the adversarial pass (below) showed it
+     was the same one-line fix and a measurable triple-render, so it is closed
+     here too.
+   - **Paired backend cleanup.** `parseTraceback` was sweeping the
+     interpreter's bare `>>>` / `...` prompt lines — which `PROC PYTHON`
+     brackets a failing run's traceback with, typed `normal`, so `logFilter.ts`
+     correctly forwards them — into `traceback.message`. It now trims a run of
+     them from **each end** of the message tail, never the interior (a real
+     exception message can embed a REPL or doctest transcript; a numpy
+     row-elision line trims to exactly `...`). Matched as a whole trimmed line,
+     never a substring, so `raise Exception(">>>")` → `Exception: >>>` is
+     untouched. Cleans the message for every consumer — the echo comparison,
+     the diagnostic, the Problems-panel entry, the panel.
+   - **(a) — banner + `>>>` in the live transcript: not fixed, by design.**
+     These lines arrive typed `normal`; `logFilter.ts`'s whole documented
+     rationale (findings 52, 63) is "trust the type, never reconstruct
+     classification by text-scanning, show the unknown — hiding-by-default
+     fails unsafe." A client-side regex scrub of `normal` output contradicts
+     that, and bare `>>>` genuinely collides with legitimate program output
+     (a REPL transcript, doctests, a tutorial). The banner/`>>>` appear *only*
+     on the error path — successful runs are already clean — which points at a
+     `PROC PYTHON` invocation-mode question that needs a live deployment to
+     investigate, not a papered-over client hack. Left open as a **probe
+     follow-up**; `phase-3.md`'s Finding 74 entry carries the same note.
+
+   **Landed:** `src/backend/tracebackDiagnostics.ts`
+   (`SYNTHESIZED_TRACEBACK_MESSAGE` + `alreadyStreamedAsTraceback`),
+   `src/backend/procPython.ts` (`PROMPT_LINES` end-trim, uses the constant),
+   `src/run/outputChannel.ts` and `src/run/resultPanel.ts` (`writeOutcome`
+   gains the streamed-`Traceback` arg + the guard), `src/run/commands.ts` (one
+   line — passes `traceback` to both). Tests: four `RunOutputChannel` cases,
+   two `ResultPanel` cases, four `alreadyStreamedAsTraceback` cases, and four
+   `proc-python-backend.test.ts` cases (end-trim; interior prompt kept; `>>>`
+   inside a real message kept; synthesized fallback produced). `npm run
+   verify` green (exit 0, coverage ratchet held — `tracebackDiagnostics.ts`
+   100%, `src/run` 100%); `npm run test:integration` green (237 passing).
+
+   **Review:** one full adversarial pass, 2026-09-02, in the separate review
+   window this project's standing policy names. No P0/P1. Findings folded into
+   a follow-up commit on the branch: (P2) the synthesized-fallback string was
+   suppressible by the echo guard — fixed with the `SYNTHESIZED_TRACEBACK_MESSAGE`
+   carve-out in the shared helper; (P2) `PROMPT_LINES` filtered interior lines
+   where the defect is strictly at the tail's ends — restricted to leading/
+   trailing runs, with a test for an interior prompt; (P2) the result-panel
+   triple-render was hedged as "(if any)" — measured, confirmed, and closed
+   with the same guard rather than deferred; (P3) superseded pointers in
+   `phase-4.md`'s 4c entry, `STATUS.md`'s phase index, and
+   `manual-test-pass.md` swept in this same commit; (P3) CHANGELOG wording and
+   doc-comment precision nits. The reviewer's "checked and sound" list
+   confirmed fail-open on every branch, no false-positive dedup, and that the
+   `lastIndexOf`/leading-`<stdin>`-trim/`FRAME_PATTERN` logic is untouched by
+   the tail-only change.
+
+   **PR bot review (non-blocking):** the `github-actions` reviewer flagged
+   that the end-trim's doc comment overstated boundary safety — a multi-line
+   exception message whose *own* first or last physical line is exactly
+   `>>>` / `...` (e.g. `raise ValueError("x\n...")`) loses that line, the
+   same ambiguity the comment only called out for the interior. The unbounded
+   trim is kept — `PROC PYTHON`'s error-path prompt emission is irregular
+   (runs of `>>>`, not always one), and a marker left glued to the message is
+   the defect being closed — but the comment now owns the tradeoff and a new
+   `proc-python-backend.test.ts` case pins the accepted loss.
+
+   **Verified live 2026-09-02** against `verde` with a `.vsix` from the branch
+   (Sean's run) — **ten runs**, five scripts × **Run Selection** and **Run
+   File**:
+
+   - bare recursion — output channel ends at `Finished with an error.` with
+     **nothing after it**; structured message `[Previous line repeated 995
+     more times] RecursionError: maximum recursion depth exceeded`, no
+     trailing `>>>`, no third copy in an outcome line;
+   - `raise ValueError("boom")` — full dedup, **no outcome bullet**;
+   - `import nosuchpkg` — the superset case: `ModuleNotFoundError: … Run
+     "Python on Viya: Show Environment" …` still prints after the outcome
+     line (helper returns `false`), structured message is Python's own text
+     with no pointer and no `>>>`;
+   - `print(">>> …")` / `print("...")` then `raise` — **no over-reach**: both
+     `print` lines survive verbatim in the stream, message is `RuntimeError:
+     done` only;
+   - figure written then `raise` — rich-output capture still runs on the
+     failure path; panel = raw log + structured traceback + PNG +
+     `Finished with an error.` with no bullet;
+   - successful run — `Finished.` alone.
+
+   Run Selection and Run File matched on every case. The
+   synthesized-fallback and SAS-side-`SYSERRORTEXT` sub-cases stay unit- and
+   integration-covered (not hand-forceable).
+
+   The `[Previous line repeated N more times]` prefix on the structured
+   message is **pre-existing** `parseTraceback` behaviour (any post-frame
+   line that is not itself a frame joins the message) — not touched or
+   regressed here, arguably wanted since it is real traceback content; a
+   follow-up could move it out of `message` if it ever reads as noise.
+
+   **Sub-finding (a), refined by this pass:** the noise has two distinct
+   triggers, and **neither is "the error path"** as Finding 74 first
+   recorded. The interpreter banner (`Python 3.12.12 … / Type "help" …`)
+   tracks the **`restart`** the Run File path issues — it shows on a
+   *successful* Run File run too (run 6, Run File). Bare `>>>` markers show
+   on **every** run of either launch mode, success or failure. Consequence:
+   §6's "Hello world streams clean" (`no page-break banners, no >>> markers`)
+   **does not currently hold for Run File** — `manual-test-pass.md` §6's
+   box carries the contradiction note. All of this is stream content 5d-iii
+   never touches; it is the live-Viya probe's to resolve source-side (the
+   way `PAGESIZE=MAX` resolved the `title` page-break banner), not a
+   client-side scrub of `normal`-typed lines.
+
+   **Environment note (not a code change):** `npm run test:integration` fails
+   at VS Code launch (`Code.exe: bad option: --disable-extensions`) when run
+   from a shell spawned inside the VS Code extension host, because the host
+   exports `ELECTRON_RUN_AS_NODE=1` (plus other `VSCODE_*` vars) into every
+   child, so `@vscode/test-electron` launches `Code.exe` as bare Node. Ran
+   green here by stripping those vars for the one command. Worth a harness fix
+   (unset them in `runTest.js`) in a later infra slice.
 4. **Diagnostics-lifecycle gaps.** Clear `RunDiagnostics`'
    `DiagnosticCollection` (`src/run/diagnostics.ts`) on document close, on
    profile sign-out, and on a run-target flip to Local — not only on the next

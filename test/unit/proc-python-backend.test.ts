@@ -912,6 +912,193 @@ describe("ProcPythonBackend", () => {
       ]);
     });
 
+    it("does not sweep the interpreter's bare >>> / ... prompt lines into the exception message (Finding 74, 5d-iii)", async () => {
+      // On the error path `PROC PYTHON` interleaves prompt markers with the
+      // log, typed `normal`, so `logFilter.ts` forwards them — and a run of
+      // them sits right after the frame lines, where the message tail is read.
+      // They are dropped from the message only; the live transcript still
+      // shows them (that half of Finding 74 is deliberately not fixed here).
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line(">>>"),
+          line("Traceback (most recent call last):"),
+          line('  File "<string>", line 4, in <module>'),
+          line('  File "<string>", line 2, in recurse'),
+          line("  [Previous line repeated 995 more times]"),
+          line("RecursionError: maximum recursion depth exceeded"),
+          line(">>>"),
+          line(">>> "),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(
+        traceback.data.message,
+        "[Previous line repeated 995 more times] RecursionError: maximum recursion depth exceeded",
+      );
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "[Previous line repeated 995 more times] RecursionError: maximum recursion depth exceeded",
+      );
+    });
+
+    it("leaves a >>> that is part of a real exception message alone — only bare prompt lines are dropped", async () => {
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<string>", line 1, in <module>'),
+          line("SyntaxError: invalid syntax (>>> is not a statement)"),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(
+        traceback.data.message,
+        "SyntaxError: invalid syntax (>>> is not a statement)",
+      );
+      const settled = await accepted.done;
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "SyntaxError: invalid syntax (>>> is not a statement)",
+      );
+    });
+
+    it("keeps a bare prompt line that falls between two real message lines — only the ends of the tail are trimmed", async () => {
+      // A contrived but real shape: an exception message that itself embeds a
+      // REPL transcript, so a bare `>>>` sits *inside* the tail. Trimming runs
+      // from each end must not touch it.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line(">>>"),
+          line("Traceback (most recent call last):"),
+          line('  File "<string>", line 1, in <module>'),
+          line("AssertionError: expected the session to echo"),
+          line(">>>"),
+          line("the prompt back before continuing"),
+          line(">>>"),
+          line("..."),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(
+        traceback.data.message,
+        "AssertionError: expected the session to echo >>> the prompt back before continuing",
+      );
+    });
+
+    it("accepted edge: a multi-line message whose own last line is exactly `...` loses it", async () => {
+      // The known cost of trimming a run of prompt markers from the end of the
+      // tail (see `PROMPT_LINES`' doc): `raise ValueError("boom\n...")` renders
+      // its message across two lines, the second being exactly `...`, which is
+      // indistinguishable from the continuation prompt and gets trimmed. This
+      // pins the behaviour so a future smarter trim is a deliberate change,
+      // not a surprise.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<string>", line 1, in <module>'),
+          line("ValueError: boom"),
+          line("..."),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(traceback.data.message, "ValueError: boom");
+    });
+
     it("keeps a user-generated <stdin> frame that appears below a real frame, blocking finding from PR #61's review", async () => {
       // Regression test for a real bug an automated reviewer caught before
       // merge: a first version of this filter dropped every frame labelled
@@ -1004,6 +1191,54 @@ describe("ProcPythonBackend", () => {
         "RuntimeError: harness-only-failure",
       );
       assert.deepEqual(traceback.data.frames, []);
+    });
+
+    it("synthesizes a message when frames are followed only by bare prompt lines (Finding 74, 5d-iii)", async () => {
+      // Header + a real user frame, but every line after it is a bare `>>>` —
+      // so the tail trims to empty and `parseTraceback` makes the message up.
+      // `outputChannel.ts` must still print this: it never streamed.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<string>", line 2, in <module>'),
+          line(">>>"),
+          line(">>> "),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(traceback.data.message, "an unhandled Python exception");
+      assert.deepEqual(traceback.data.frames, [
+        { file: "<string>", line: 2, name: "<module>" },
+      ]);
+      assert.ok(settled.ok);
+      assert.ok(!settled.value.succeeded);
+      assert.equal(
+        settled.value.diagnostics[0]?.message,
+        "an unhandled Python exception",
+      );
     });
 
     it("falls back to a plain message for SYSCC=1012 with no traceback header at all", async () => {

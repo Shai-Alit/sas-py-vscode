@@ -2719,3 +2719,43 @@ raises. That, and the duplicated traceback-tail push after the outcome
 line, are what a follow-up needs to pin down. Not implicated in Finding
 72's fix (fileref allocation, not the log path). Tracked as a deferred
 item in Phase 3's **3f** slice.
+
+**Resolved 2026-09-02 (Phase 5's 5d-iii slice) — split, not fixed whole.**
+Full account in `phase-5.md`'s Runbook item 3.
+
+- **The echo (the redundant sub-finding) is fixed, on both outcome
+  surfaces.** A shared helper `alreadyStreamedAsTraceback`
+  (`src/backend/tracebackDiagnostics.ts`) recognises a diagnostic whose
+  message equals the streamed `Traceback`'s own; `RunOutputChannel.writeOutcome`
+  (`src/run/outputChannel.ts` — the 4c triage and this entry both mis-cited
+  `src/backend/outputChannel.ts`, which does not exist) **and**
+  `ResultPanel.writeOutcome` now drop it before rendering. Value-equality,
+  not blanket suppression: a SAS-side error (`SYSCC=3000`, never streamed),
+  the synthesized "an unhandled Python exception" stand-in (frames but no
+  exception line — `buildFailureOutcome` puts it on both sides, so the helper
+  carves it out explicitly), and a `ModuleNotFoundError` (message a superset
+  of the streamed one, "Show Environment" pointer appended) all still print.
+  The result panel was worse than the channel — it held the traceback text
+  three times (raw log items, structured item, outcome list) — so closing it
+  there was in scope after all. Paired backend cleanup: `parseTraceback`
+  (`procPython.ts`) no longer sweeps the bare `>>>` / `...` prompt lines that
+  bracket the traceback into `traceback.message` — trimmed from each end of
+  the message tail, never the interior.
+- **The banner / `>>>` in the live transcript (the UX sub-finding) is
+  deliberately *not* fixed**, and is downgraded from "output-channel
+  presentation concern" to a **live-Viya probe follow-up**. The lines arrive
+  typed `normal`; `logFilter.ts`'s documented design (findings 52, 63) is to
+  trust the type and never text-scan to reclassify, and a client-side scrub
+  of `normal` output both contradicts that and risks eating real program
+  output (`>>>` in a REPL transcript, doctests, a tutorial — the 5d-iii
+  live pass confirmed a user's own `print(">>> …")` reaching the stream).
+
+  **Refined by the 5d-iii live pass (2026-09-02, `verde`, 10 runs across
+  both launch modes):** this is not "error-path noise" as originally
+  recorded. The interpreter **banner** tracks the `restart` the **Run File**
+  path issues — it shows on a *successful* Run File run too. Bare `>>>`
+  markers show on **every** run, Run File or Run Selection, success or
+  failure. So §6's "Hello world streams clean" no longer holds for Run File
+  (`manual-test-pass.md` §6 carries the contradiction). The probe's job is a
+  source-side answer — a `PROC PYTHON` option or invocation change — the way
+  `PAGESIZE=MAX` answered the `title` page-break banner.

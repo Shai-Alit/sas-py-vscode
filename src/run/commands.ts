@@ -520,8 +520,13 @@ export function createRunCommandHandlers(
         outputChannel.writeFailure(settled.problem);
         resultPanel.writeFailure(settled.problem);
       } else {
-        outputChannel.writeOutcome(settled.value);
-        resultPanel.writeOutcome(settled.value);
+        // `traceback` (from `drainOutputs`) lets both surfaces skip re-echoing,
+        // under the outcome line, an exception message that already reached
+        // them as the raw streamed traceback — Finding 74, Phase 5d-iii. The
+        // channel had it once (as text); the panel had it twice (raw text plus
+        // the structured, clickable item), so this matters more there.
+        outputChannel.writeOutcome(settled.value, traceback);
+        resultPanel.writeOutcome(settled.value, traceback);
         // Phase 4d: a run that raised, with a structured traceback to
         // position it by, gets one Problems-panel entry at the innermost
         // user frame. `diagnostics.publish` is a no-op when no frame maps

@@ -548,10 +548,11 @@ code-scanning run against `main`; confirm in the GitHub Code scanning UI (no
 importable + its own test file is the one carried-forward item from this
 detour — small, unscheduled, not on any phase punch list.
 
-**5d-iii (Finding 74) implemented and reviewed 2026-09-02; not yet merged.**
-Branch `phase-5d-iii-finding-74`, off `main` after #90. Module confirmed: the
-Runbook's `src/backend/outputChannel.ts` path is stale — the real target is
-`src/run/outputChannel.ts`. **Sub-finding (b) fixed on both outcome surfaces:**
+**5d-iii (Finding 74) merged 2026-09-02 as
+[PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), squashed as
+`b9b18ef`.** Local `main` fast-forwarded, matches `origin/main`. Module
+confirmed: the Runbook's `src/backend/outputChannel.ts` path was stale — the
+real target is `src/run/outputChannel.ts`. **Sub-finding (b) fixed on both outcome surfaces:**
 a shared helper `alreadyStreamedAsTraceback` (`tracebackDiagnostics.ts`) lets
 `RunOutputChannel.writeOutcome` **and** `ResultPanel.writeOutcome` drop a
 diagnostic whose message already streamed as the raw traceback — value-equality,
@@ -567,7 +568,11 @@ question for a live probe. **Adversarial pass done (separate review window):**
 no P0/P1; three P2s folded into a follow-up commit — the synthesized-fallback
 string was suppressible (carve-out added), `PROMPT_LINES` filtered interior
 lines (restricted to the ends), and the result-panel triple-render was hedged
-rather than closed (now closed). `npm run verify` green (coverage ratchet held;
+rather than closed (now closed). A non-blocking PR bot comment on the
+end-trim's doc comment (it overstated boundary safety — a message whose own
+first/last line is exactly `>>>`/`...` loses it) was answered with a comment
+tightening plus a pinning test (`d4da928`), the unbounded trim kept.
+`npm run verify` green (coverage ratchet held;
 `tracebackDiagnostics.ts` 100%); `npm run test:integration` green (237 passing,
 after stripping the extension host's `ELECTRON_RUN_AS_NODE=1` — see phase-5.md's
 5d-iii entry for that harness gotcha). **Verified live 2026-09-02** against
@@ -673,7 +678,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d-i ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)) and 5d-ii ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)) merged; 5d-iii (Finding 74) implemented on `phase-5d-iii-finding-74`, unmerged; 5d item 4 and 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d-i ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)), 5d-ii ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)) and 5d-iii ([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), Finding 74) merged; 5d item 4 and 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

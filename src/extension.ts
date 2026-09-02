@@ -1,14 +1,18 @@
 // Copyright © 2026, Sean Ford and the Python on Viya contributors
 // SPDX-License-Identifier: Apache-2.0
 
+import { readFileSync } from "node:fs";
+
 import * as vscode from "vscode";
 
 import {
   registerAuthProvider,
   ViyaAuthenticationProvider,
 } from "./auth/authProvider";
+import { buildCaAgent } from "./auth/caAgent";
 import { registerAuthCommands } from "./auth/commands";
 import { SessionStore } from "./auth/sessionStore";
+import { createNodeHttpTransport } from "./auth/transport";
 import { registerAuthUriHandler } from "./auth/uriHandler";
 import { SessionBindingStore } from "./compute/bindingStore";
 import { registerComputeCommands } from "./compute/commands";
@@ -58,6 +62,32 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // Slice 5d-i (the deferred 1c-ii): a deployment behind a private certificate
+  // authority — or one that serves an incomplete chain — is unreachable until
+  // its CA is trusted. `pythonOnViya.userProvidedCertificates` names PEM files
+  // to add to a dedicated HTTPS agent used only by this extension's requests,
+  // never `https.globalAgent` (which upstream's CAHelper.ts mutates, changing
+  // what every other extension trusts). Read once, here: a change takes effect
+  // on the next window reload. An unreadable path is logged and the rest are
+  // still used. `buildCaAgent` reads no files when the setting is unset, which
+  // is the overwhelming common case.
+  const certificatePaths = vscode.workspace
+    .getConfiguration("pythonOnViya")
+    .get<string[]>("userProvidedCertificates", []);
+  const caAgent = buildCaAgent(certificatePaths, (path) => readFileSync(path));
+  for (const failure of caAgent.failures) {
+    output.warn(
+      vscode.l10n.t(
+        "Could not read the CA certificate at {0}: {1}",
+        failure.path,
+        failure.reason,
+      ),
+    );
+  }
+  const transport = createNodeHttpTransport(
+    caAgent.agent === undefined ? {} : { agent: caAgent.agent },
+  );
+
   // Profiles are read on demand rather than cached at activation, so nothing
   // here touches the settings file or the secret store. Constructing the store
   // only registers a configuration listener.
@@ -96,6 +126,7 @@ export function activate(context: vscode.ExtensionContext): void {
     new SessionStore(context.secrets, output),
     authCallbacks,
     output,
+    { token: { transport }, identity: { transport } },
   );
   registerAuthProvider(context, auth);
 
@@ -107,6 +138,7 @@ export function activate(context: vscode.ExtensionContext): void {
     profiles,
     new SessionBindingStore(context.workspaceState, output),
     output,
+    { transport },
   );
   context.subscriptions.push(sessions);
   const { connect, disconnect, forgetProfile } = registerComputeCommands(

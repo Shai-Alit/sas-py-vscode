@@ -13,6 +13,20 @@
   support — is closed by a fourth answer it did not consider, and none of the
   three is taken. See the amended entries under Alternatives and Consequences;
   the type is now named `HttpTransport` rather than `FetchLike`.
+- **Amended in slice 5d-i, 2026-09-02:** the `agent` seam this ADR left unset
+  is now used. `src/auth/caAgent.ts`'s `buildCaAgent` reads
+  `pythonOnViya.userProvidedCertificates`, builds **one dedicated
+  `https.Agent`** from Node's bundled roots plus those certificates, and
+  `src/extension.ts` threads a transport carrying it through the auth provider
+  (`token`/`identity` deps) and the compute session manager (`transport` dep).
+  Two corrections to the reasoning below come with it: upstream is not
+  TLS-code-free — `client/src/components/CAHelper.ts`'s `installCAs()` sets
+  `https.globalAgent.options.ca` at activation — and that process-global write
+  is exactly what the dedicated agent is *not*, since `https.globalAgent` is
+  shared with every other installed extension and a test of ours could never
+  catch a change to it. This is the scoped version of the job slice 1c-ii
+  ([phase-1.md](../phases/phase-1.md)) specified and deferred. `machine`
+  config scope, so a checked-in workspace settings file cannot widen TLS trust.
 
 ## Context
 
@@ -187,14 +201,18 @@ the port's default changes from `globalThis.fetch` to that. No dependency, no
 tunnel, no narrowing.
 
 **The evidence is a consequence, not a mechanism, and that distinction is
-load-bearing here.** Upstream `vscode-sas-extension` contains no proxy code and
-no TLS code of any kind — `axios.create({ baseURL })` and nothing else — and it
-works inside enterprises behind proxies and behind internal certificate
+load-bearing here.** Upstream `vscode-sas-extension`'s REST client is
+`axios.create({ baseURL })` and nothing else — no proxy code, no TLS code — and
+it works inside enterprises behind proxies and behind internal certificate
 authorities. `axios` issues its requests through `http`/`https`. Extensions that
 call `fetch` are a recurring proxy complaint; extensions that go through the
 `http` modules are not. That asymmetry is observable and reproducible. The
 *mechanism* by which the host arranges it — which settings patch what, and when —
 was not verified against documentation and is deliberately not asserted here.
+(Upstream does carry one piece of TLS code outside the client:
+`CAHelper.ts`'s `installCAs()`, run at activation, sets
+`https.globalAgent.options.ca` — the process-global write the 2026-09-02
+amendment above replaces with a dedicated agent.)
 
 **The certificate half matters more than the proxy half, and it is why this is
 not merely a cheaper way to reach the same place.** A corporate proxy is the case
@@ -209,10 +227,10 @@ Two smaller consequences follow. Redirects are no longer followed, which is the
 safer default rather than a gap: the request body carries a client secret and
 either an authorization code or a refresh token, and a 3xx now reaches the caller
 as a diagnosable non-`ok` response instead of being replayed at a location the
-server named. And an `agent` option now exists on the request and is deliberately
-left unset — the seam for an explicitly configured proxy or CA bundle, should one
-ever be needed, which the `fetch` path could not have offered without the
-dependency this rejects.
+server named. And an `agent` option now exists on the request and was left unset
+— the seam for an explicitly configured proxy or CA bundle, which the `fetch`
+path could not have offered without the dependency this rejects. Slice 5d-i
+(2026-09-02 amendment above) fills it for the CA-bundle case.
 
 The port is a structural type, not an interface anyone implements, so this
 change — the one it was built for — touched one seam plus its test doubles.

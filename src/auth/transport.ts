@@ -21,11 +21,13 @@
  * host has arranged there; requests made through `fetch` inherit nothing.
  *
  * The observable consequence is what matters, and it is established
- * independently of the mechanism: upstream `vscode-sas-extension` contains no
- * proxy code and no TLS code whatsoever — `axios.create({ baseURL })` and nothing
- * else — yet it works inside enterprises behind proxies and behind internal
- * certificate authorities. `axios` uses `http`/`https`. That is the entire
- * explanation.
+ * independently of the mechanism: upstream `vscode-sas-extension`'s REST client
+ * is `axios.create({ baseURL })` and nothing else — no proxy code, no TLS code —
+ * yet it works inside enterprises behind proxies and behind internal certificate
+ * authorities. `axios` uses `http`/`https`. That is the entire explanation. (The
+ * one piece of TLS code upstream does carry, `CAHelper.ts`, lives in activation
+ * rather than the client and mutates `https.globalAgent` process-wide; slice
+ * 5d-i does the scoped version of that job — see below.)
  *
  * ## The certificate half is the important half
  *
@@ -36,13 +38,19 @@
  * logic in this directory runs. There is no proxy anywhere in that picture. It
  * would have been reported as "the extension cannot connect to my Viya".
  *
- * ## What is deliberately not here
+ * ## The `agent` seam
  *
- * There is no `agent` option set on the request. That is the point rather than an
- * omission: passing an agent would replace whatever the host arranged, which is
- * the thing being inherited. The parameter stays available for the day an
- * explicit proxy or CA has to be attached — which `fetch` could not have offered
- * without a dependency.
+ * The zero-config default ({@link nodeHttpTransport}) sets no `agent` on the
+ * request, and that is the point rather than an omission: passing an agent
+ * replaces whatever the host arranged, which is the thing being inherited.
+ *
+ * {@link createNodeHttpTransport} is the seam for the day an explicit CA bundle
+ * has to be attached — which `fetch` could not have offered without a
+ * dependency. Slice 5d-i (the deferred 1c-ii) uses it: `src/auth/caAgent.ts`
+ * builds a dedicated `https.Agent` from `pythonOnViya.userProvidedCertificates`
+ * and `src/extension.ts` threads the resulting transport through the auth
+ * provider and the compute session manager. The agent is attached only to
+ * `https:` requests; a loopback `http:` request ignores it.
  *
  * **Redirects are not followed.** `fetch` follows them; `https.request` does not,
  * and here that is the safer default rather than a gap to fill in. The body of
@@ -54,7 +62,7 @@
  */
 
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { type Agent, request as httpsRequest } from "node:https";
 
 /**
  * How much of a response body to read before giving up on it, absent a
@@ -244,124 +252,157 @@ export function collectHeaders(
   return Object.fromEntries(collected);
 }
 
+/** Options for {@link createNodeHttpTransport}. */
+export interface NodeHttpTransportOptions {
+  /**
+   * An {@link https.Agent} to use for `https:` requests, in place of Node's
+   * default global agent. `src/auth/caAgent.ts` builds one from the
+   * `pythonOnViya.userProvidedCertificates` setting; slice 5d-i (the deferred
+   * 1c-ii) is the reason this seam exists.
+   *
+   * A loopback `http:` request ignores it — an `https.Agent` on an `http`
+   * request is a type and behaviour mismatch, and the only `http:` endpoint
+   * this project reaches is a dev-time loopback the profile validator permits.
+   */
+  agent?: Agent | undefined;
+}
+
 /**
- * The default transport, over `node:https` (or `node:http` for a loopback
- * endpoint, which the profile validator permits and nothing else).
+ * Builds a transport over `node:https` (or `node:http` for a loopback endpoint,
+ * which the profile validator permits and nothing else).
  *
  * The whole body is read before the promise settles. Token responses are small,
  * the caller reads the body in every branch it has, and buffering here means a
  * response can never be left half-read on a socket that then leaks.
+ *
+ * {@link nodeHttpTransport} is `createNodeHttpTransport()` with no options — the
+ * zero-config default every caller had before 5d-i, unchanged.
  */
-export const nodeHttpTransport: HttpTransport = (url, init) =>
-  new Promise<TransportResponse>((resolve, reject) => {
-    let target: URL;
-    try {
-      target = new URL(url);
-    } catch {
-      reject(new Error(`not a valid URL: ${url}`));
-      return;
-    }
+export function createNodeHttpTransport(
+  options: NodeHttpTransportOptions = {},
+): HttpTransport {
+  return (url, init) =>
+    new Promise<TransportResponse>((resolve, reject) => {
+      let target: URL;
+      try {
+        target = new URL(url);
+      } catch {
+        reject(new Error(`not a valid URL: ${url}`));
+        return;
+      }
 
-    const send = target.protocol === "http:" ? httpRequest : httpsRequest;
-    const signal = init.signal;
+      const send = target.protocol === "http:" ? httpRequest : httpsRequest;
+      const signal = init.signal;
 
-    if (signal?.aborted === true) {
-      reject(new Error("the request was cancelled before it was sent"));
-      return;
-    }
+      if (signal?.aborted === true) {
+        reject(new Error("the request was cancelled before it was sent"));
+        return;
+      }
 
-    const request = send(target, {
-      method: init.method,
-      headers:
-        init.body === undefined
-          ? init.headers
-          : {
-              ...init.headers,
-              "content-length": String(Buffer.byteLength(init.body)),
-            },
-    });
-
-    /** Runs exactly once, however the request ends. */
-    let done = false;
-    const finish = (act: () => void): void => {
-      if (done) return;
-      done = true;
-      if (signal !== undefined) signal.removeEventListener("abort", onAbort);
-      act();
-    };
-
-    function onAbort(): void {
-      finish(() => {
-        request.destroy();
-        reject(new Error("the request was cancelled"));
-      });
-    }
-
-    signal?.addEventListener("abort", onAbort, { once: true });
-
-    request.on("error", (error: unknown) => {
-      finish(() => {
-        reject(transportError(error));
-      });
-    });
-
-    const cap = init.maxBodyBytes ?? MAX_BODY_BYTES;
-
-    request.on("response", (response) => {
-      const status = response.statusCode ?? 0;
-      const headers = collectHeaders(response.headers);
-      const chunks: Buffer[] = [];
-      let length = 0;
-      let overflowed = false;
-
-      response.on("data", (chunk: Buffer) => {
-        if (overflowed) return;
-        length += chunk.length;
-        if (length > cap) {
-          overflowed = true;
-          // Stop reading rather than accumulate a body we have already decided
-          // not to trust. `destroy` here ends the response, not the process.
-          response.destroy();
-          finish(() => {
-            reject(
-              new Error(`the response body exceeded ${String(cap)} bytes`),
-            );
-          });
-          return;
-        }
-        chunks.push(chunk);
+      const request = send(target, {
+        method: init.method,
+        ...(options.agent !== undefined && target.protocol === "https:"
+          ? { agent: options.agent }
+          : {}),
+        headers:
+          init.body === undefined
+            ? init.headers
+            : {
+                ...init.headers,
+                "content-length": String(Buffer.byteLength(init.body)),
+              },
       });
 
-      response.on("error", (error: unknown) => {
+      /** Runs exactly once, however the request ends. */
+      let done = false;
+      const finish = (act: () => void): void => {
+        if (done) return;
+        done = true;
+        if (signal !== undefined) signal.removeEventListener("abort", onAbort);
+        act();
+      };
+
+      function onAbort(): void {
+        finish(() => {
+          request.destroy();
+          reject(new Error("the request was cancelled"));
+        });
+      }
+
+      signal?.addEventListener("abort", onAbort, { once: true });
+
+      request.on("error", (error: unknown) => {
         finish(() => {
           reject(transportError(error));
         });
       });
 
-      response.on("end", () => {
-        // Buffered once, read both ways from the same bytes: `text()` decodes
-        // it as UTF-8 (fine for every caller before 3c-i — a token, a Compute
-        // JSON representation), and `bytes()` hands back a copy of the same
-        // buffer undecoded, for the one caller (`src/compute/files.ts`) that
-        // cannot afford `text()`'s lossy round trip. See `bytes`'s own doc
-        // comment on `TransportResponse`.
-        const raw = Buffer.concat(chunks);
-        const body = raw.toString("utf8");
-        finish(() => {
-          resolve({
-            ok: status >= 200 && status < 300,
-            status,
-            headers,
-            text: () => Promise.resolve(body),
-            bytes: () => Promise.resolve(new Uint8Array(raw)),
+      const cap = init.maxBodyBytes ?? MAX_BODY_BYTES;
+
+      request.on("response", (response) => {
+        const status = response.statusCode ?? 0;
+        const headers = collectHeaders(response.headers);
+        const chunks: Buffer[] = [];
+        let length = 0;
+        let overflowed = false;
+
+        response.on("data", (chunk: Buffer) => {
+          if (overflowed) return;
+          length += chunk.length;
+          if (length > cap) {
+            overflowed = true;
+            // Stop reading rather than accumulate a body we have already decided
+            // not to trust. `destroy` here ends the response, not the process.
+            response.destroy();
+            finish(() => {
+              reject(
+                new Error(`the response body exceeded ${String(cap)} bytes`),
+              );
+            });
+            return;
+          }
+          chunks.push(chunk);
+        });
+
+        response.on("error", (error: unknown) => {
+          finish(() => {
+            reject(transportError(error));
+          });
+        });
+
+        response.on("end", () => {
+          // Buffered once, read both ways from the same bytes: `text()` decodes
+          // it as UTF-8 (fine for every caller before 3c-i — a token, a Compute
+          // JSON representation), and `bytes()` hands back a copy of the same
+          // buffer undecoded, for the one caller (`src/compute/files.ts`) that
+          // cannot afford `text()`'s lossy round trip. See `bytes`'s own doc
+          // comment on `TransportResponse`.
+          const raw = Buffer.concat(chunks);
+          const body = raw.toString("utf8");
+          finish(() => {
+            resolve({
+              ok: status >= 200 && status < 300,
+              status,
+              headers,
+              text: () => Promise.resolve(body),
+              bytes: () => Promise.resolve(new Uint8Array(raw)),
+            });
           });
         });
       });
-    });
 
-    if (init.body === undefined) {
-      request.end();
-    } else {
-      request.end(init.body);
-    }
-  });
+      if (init.body === undefined) {
+        request.end();
+      } else {
+        request.end(init.body);
+      }
+    });
+}
+
+/**
+ * The zero-config default transport: Node's default agent, and so the operating
+ * system trust store the extension host has arranged. Every caller before slice
+ * 5d-i used this and still does when `pythonOnViya.userProvidedCertificates` is
+ * unset.
+ */
+export const nodeHttpTransport: HttpTransport = createNodeHttpTransport();

@@ -1108,6 +1108,21 @@ called out under **Changed** with a migration note.
   surface or CSP change. `src/run/diagnostics.ts` is new; `resultPanelModel.ts`
   / `resultPanelDom.ts` / `resultPanel.ts` / `webview/entry.ts` /
   `commands.ts` gained the wiring.
+- **A deployment behind a private certificate authority, or one that serves an
+  incomplete chain, can now be reached** by setting
+  `pythonOnViya.userProvidedCertificates` to the PEM file paths for the missing
+  authority (slice 5d-i, the deferred 1c-ii;
+  [ADR-0008](docs/adr/0008-auth-core-transport-and-security-deltas.md)'s
+  2026-09-02 amendment). The certificates are added to a dedicated
+  `https.Agent` used only by this extension's own requests — never
+  `https.globalAgent`, which is shared with every other installed extension —
+  and that agent is threaded through both the sign-in path and the compute
+  session path. The setting is `machine`-scoped so a checked-in workspace
+  settings file cannot widen TLS trust, read once at window load (a change
+  applies on reload), and an unreadable path is reported in the **Python on
+  Viya** log while the rest are still used. `src/auth/caAgent.ts` is new;
+  `src/auth/transport.ts` gained `createNodeHttpTransport({ agent })` with
+  `nodeHttpTransport` unchanged as its zero-config form.
 
 ### Fixed
 

@@ -169,6 +169,26 @@ prompt empty is a real answer — plenty of registered clients are public — an
 is recorded as "this client has none" rather than thrown away, so you are not
 asked again at every sign-in.
 
+## Private certificate authorities
+
+The extension trusts what your operating system trusts. That covers a public
+certificate, and — because VS Code loads the system certificate store into the
+extension host — a private CA whose root you have already installed on your
+machine.
+
+It is not enough for a deployment that serves an **incomplete chain** (a leaf
+certificate with no intermediate), or one whose private CA is not installed
+where the OS can see it. Both fail before sign-in with a TLS error such as
+`UNABLE_TO_VERIFY_LEAF_SIGNATURE` or `unable to verify the first certificate`.
+
+To fix it, set **`pythonOnViya.userProvidedCertificates`** to the absolute
+path(s) of the PEM file(s) for the missing authority — the full chain exported
+from your browser works well. The certificates are added to an HTTPS agent used
+only by this extension, so nothing else on your machine changes what it trusts.
+The setting is read once when the window loads, so reload the window after
+changing it. A path that cannot be read is reported in the **Python on Viya**
+log and the remaining paths are still used.
+
 ## When it does not work
 
 **"Select a SAS Viya connection profile before signing in."** No profile is
@@ -195,6 +215,11 @@ a token the deployment actively rejected from a request that carried no
 credentials at all, because both arrive as a `401` with an empty body and only
 the first is fixed by signing in again. The log says which one happened.
 
+**"UNABLE_TO_VERIFY_LEAF_SIGNATURE" / "unable to verify the first certificate".**
+A TLS failure, before authentication — the deployment's certificate does not
+chain to anything your machine trusts. See [Private certificate
+authorities](#private-certificate-authorities) above.
+
 **Nothing works in an untrusted workspace.** Signing in requires a trusted
 folder, because it reads a stored credential and runs code on a remote server
 under your identity — and because the folder is what names the endpoint the
@@ -212,7 +237,3 @@ comes back without a reload. Profile management still works without trust. See
 Viya 3.5 is unverified rather than supported: nothing here has been run against a
 3.5 deployment, and the places where that matters are called out above rather
 than papered over.
-
-Deployments behind a private certificate authority are the next slice. Until it
-lands, the extension trusts what your operating system trusts, which is enough
-for a public certificate and not enough for an internal one.

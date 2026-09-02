@@ -9,8 +9,10 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
+import { Agent } from "node:https";
 import {
   collectHeaders,
+  createNodeHttpTransport,
   MAX_BODY_BYTES,
   nodeHttpTransport,
   type TransportRequest,
@@ -436,6 +438,95 @@ describe("nodeHttpTransport", () => {
         body: "",
       }),
     );
+  });
+});
+
+describe("createNodeHttpTransport", () => {
+  let server: Server;
+  let base: string;
+
+  before(async () => {
+    server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("ok");
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    assert.ok(address !== null && typeof address === "object");
+    base = `http://127.0.0.1:${String(address.port)}`;
+  });
+
+  after(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+  });
+
+  /** An `https.Agent` that counts how many times the transport asked it to
+   * open a connection, delegating to the real implementation after. */
+  function countingAgent(): { agent: Agent; connections: () => number } {
+    const agent = new Agent();
+    let connections = 0;
+    const real = agent.createConnection.bind(agent);
+    agent.createConnection = ((
+      options: Parameters<typeof real>[0],
+      callback: Parameters<typeof real>[1],
+    ) => {
+      connections += 1;
+      return real(options, callback);
+    }) as typeof agent.createConnection;
+    return { agent, connections: () => connections };
+  }
+
+  it("with no agent, behaves like the default transport", async () => {
+    const transport = createNodeHttpTransport();
+
+    const response = await transport(`${base}/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: "grant_type=refresh_token",
+    });
+
+    assert.equal(response.ok, true);
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), "ok");
+  });
+
+  it("routes an https request through the agent it was given", async () => {
+    const { agent, connections } = countingAgent();
+    const transport = createNodeHttpTransport({ agent });
+
+    // The loopback server speaks plaintext, so the TLS handshake cannot
+    // complete and this rejects — but the agent being asked to open the
+    // connection is the point, and that happens before the failure.
+    await assert.rejects(
+      transport(`${base.replace("http://", "https://")}/token`, {
+        method: "POST",
+        headers: {},
+        body: "",
+      }),
+    );
+
+    assert.equal(connections(), 1);
+  });
+
+  it("ignores the agent for a loopback http request", async () => {
+    const { agent, connections } = countingAgent();
+    const transport = createNodeHttpTransport({ agent });
+
+    const response = await transport(`${base}/token`, {
+      method: "GET",
+      headers: {},
+      body: undefined,
+    });
+
+    assert.equal(response.status, 200);
+    // An https.Agent on an http request is a mismatch; the transport attaches
+    // it only for `https:` targets.
+    assert.equal(connections(), 0);
   });
 });
 

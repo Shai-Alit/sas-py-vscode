@@ -373,12 +373,21 @@ fixed: the Problems entry is only ever cleared by the *next run* of the same
 file (below), and `?? traceback.message` is an unreachable belt-and-braces
 fallback (commented as such).
 
-**Deferred, not this slice:** the `DiagnosticCollection` is only ever
-cleared by the *next run* of the same file — nothing wipes it when the
-document closes, the profile signs out, or the run target flips to Local, so
-a stale Viya-run diagnostic can outlive the connection that produced it.
-Low-stakes (the position is still where the last run raised) and a natural
-Phase 5 hardening item rather than 4d scope.
+**Deferred to Phase 5 — diagnostics-lifecycle hardening.** Two low-stakes
+gaps, both flagged in review (`PR #83`) and left as documented rather than
+fixed here. (a) The `DiagnosticCollection` is only ever cleared by the *next
+run* of the same file — nothing wipes it when the document closes, the
+profile signs out, or the run target flips to Local, so a stale Viya-run
+diagnostic can outlive the connection that produced it (the position is
+still where the last run raised). (b) `RevealFrameMessage` carries only a
+frame index, no per-run token: a `revealFrame` for a previous run's frame,
+delayed in the host queue until the next run has both `startRun`'d and
+streamed its own traceback, resolves against the new run's data — a
+wrong-line jump rather than `revealFrame`'s "silent no-op" contract. The
+window needs the host event loop stalled across a whole run and the outcome
+is harmless (a line in a file); `resultPanel.ts`'s `currentFrames` doc
+comment carries the detail. A per-run token on `RevealFrameMessage` closes
+(b) and the "two `<ol>`s in one run" case together.
 
 ---
 

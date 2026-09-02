@@ -285,10 +285,16 @@ now reuses an existing editor's column (never `Active`/the panel's) and
 swallows a rejected `showTextDocument`; the clickable frame is an inner
 `<span role="button">` so the `<ol>` keeps its screen-reader semantics;
 `clearFor` moved to sit with `startRun` at the "a run began" point;
-`startRun(origin)` made required; comment/record corrections. Two nits left
-as documented, not fixed — the Problems entry is only cleared by the next
-run of the same file (a Phase 5 hardening item), and `?? traceback.message`
-is an unreachable belt-and-braces fallback. **Checks run this session** (VS
+`startRun(origin)` made required; comment/record corrections. Nits left as
+documented, not fixed: `?? traceback.message` is an unreachable
+belt-and-braces fallback; and two diagnostics-lifecycle gaps carried to
+Phase 5 (also flagged by the CI reviewer on PR #83) — the Problems entry is
+only cleared by the next run of the same file, and `RevealFrameMessage`
+carries no per-run token so a stale `revealFrame` that outraces the host
+queue can resolve against the wrong run. The CI reviewer also asked why
+`Diagnostic.source` is a bare literal rather than `l10n.t()` — kept bare
+(a per-locale source string fragments Problems-panel filtering) with the
+comment expanded to say so. **Checks run this session** (VS
 Code Claude Code — the sandbox-timeout reason `CLAUDE.md` bars lint/tests
 for does not apply here): `typecheck` ×3, `npm run lint`, `prettier
 --check`, `check:coverage-scope`/`check:copyright`/`check:secrets`,

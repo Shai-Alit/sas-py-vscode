@@ -42,8 +42,17 @@ import {
   STRING_FRAME_FILE,
 } from "../backend/tracebackDiagnostics";
 
-/** Shown in the Problems panel's "source" column. A stable product name, not
- * localised — the same call `tsserver` ("ts"), ESLint and Pylance make. */
+/**
+ * The Problems panel's "source" column. A fixed tool identifier — the role
+ * `tsserver` ("ts"), ESLint and Pylance all fill with a stable brand string.
+ *
+ * Deliberately **not** `vscode.l10n.t()`, and so deliberately outside what
+ * `l10n:extract` sees — unlike the feature's other `"Python on Viya"`
+ * literals (`extension.ts`, `statusBar.ts`), which are prose the user reads.
+ * A `Diagnostic.source` that varied by locale would split Problems-panel
+ * filtering, which keys on this exact text; a per-locale identifier there is
+ * a bug, not a missing translation.
+ */
 const SOURCE = "Python on Viya";
 
 /** `languages.createDiagnosticCollection`'s name — `phase-4.md`'s 4d entry

@@ -135,3 +135,12 @@ for `ModuleNotFoundError`, say) stayed time-boxed and uncommitted for 4d.
 Column information — a `Diagnostic` range that highlights the offending
 expression rather than the whole line — would need `PROC PYTHON` to report a
 column, which finding 39 says it does not.
+
+Two lifecycle gaps are deferred to Phase 5 (see `phase-4.md`'s 4d entry):
+the `DiagnosticCollection` is only cleared by the next run of the same file,
+never on document close / sign-out / a switch to Local; and
+`RevealFrameMessage` carries no per-run token, so a `revealFrame` for a
+stale run's frame that outraces the host queue past the next run's own
+traceback resolves against the wrong run's origin. Both are low-stakes (a
+diagnostic left where the last run raised; a jump to a line in the same
+file) and a per-run token closes the second one.

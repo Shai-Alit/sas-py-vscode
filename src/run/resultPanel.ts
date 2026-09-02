@@ -150,8 +150,19 @@ export class ResultPanel implements vscode.Disposable {
    * `frameIndex` is scoped to a single rendered `<ol>`, and this array is
    * scoped to the run, so the two line up only while there is one `<ol>`. A
    * run that ever streamed two would render two 0-indexed lists, and an
-   * index from the first would resolve against the second — carry a
-   * per-item id in `RevealFrameMessage` before that becomes possible. */
+   * index from the first would resolve against the second.
+   *
+   * The same index-only keying has a small cross-run window: a `revealFrame`
+   * for a *previous* run's frame, still in the host's message queue when the
+   * next run has both `startRun`'d **and** streamed its own traceback, would
+   * resolve against the new run's `currentOrigin`/`currentFrames` — a jump to
+   * a plausible-but-wrong line rather than the no-op {@link revealFrame}
+   * otherwise guarantees. `startRun`'s `{ type: "reset" }` clears the old
+   * `<ol>` from the DOM, so triggering it needs the host event loop stalled
+   * across a whole run; harmless when it does (a line in a file). A per-run
+   * token on `RevealFrameMessage` would close both this and the two-`<ol>`
+   * case — deferred to Phase 5 with the rest of the diagnostics-lifecycle
+   * hardening (see `phase-4.md`'s 4d entry). */
   private currentFrames: readonly RenderTracebackFrame[] = [];
 
   constructor(extensionUri: vscode.Uri, deps: ResultPanelDeps = {}) {

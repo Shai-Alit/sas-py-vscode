@@ -413,10 +413,6 @@ unconfigured workspace is Local and contributes nothing to the editor
   **Expect:** a `RecursionError` traceback with the repeated `recurse`
   frames all present — only the _leading_ contiguous run of harness frames
   is removed — and the session still alive for the next submission.
-  **Also (5d-iii):** the `RecursionError:` line appears in the transcript
-  exactly once — "Finished with an error." is _not_ followed by a repeat
-  of it — and no bare `>>>` is glued onto the end of the exception message
-  in the Problems panel or the Result panel.
   **Passed 2026-08-31** against a `.vsix` from
   `phase-3f-manual-test-regressions`: a clean
   `RecursionError: maximum recursion depth exceeded`, "Finished with an
@@ -442,9 +438,53 @@ unconfigured workspace is Local and contributes nothing to the editor
   markers, which §6 says should never appear — split out as its own
   open item in Phase 3's **3f** slice, not a blocker for this box.
   **Update (5d-iii, 2026-09-02):** the redundant traceback-tail echo this
-  run also showed is fixed; the banner/`>>>` transcript noise stays open
-  as a live-Viya probe follow-up (see §6's "Failure is detected" note and
-  `phase-5.md`'s Runbook item 3).
+  run also showed is fixed; verify it with the dedicated row below. The
+  banner/`>>>` transcript noise stays open as a live-Viya probe follow-up
+  (see §6's "Failure is detected" note and `phase-5.md`'s Runbook item 3).
+- [ ] **(live) Traceback is not echoed or mangled after the outcome — phase 5d-iii** —
+  re-run the bare recursion from the row above; it is the shape that first
+  showed this (Finding 74).
+
+  ```python
+  def recurse(n):
+      return recurse(n + 1)
+
+  recurse(0)
+  ```
+
+  **Expect — output channel:** the raw traceback streams once while the run
+  executes; then `Finished with an error.` on its own line with **nothing after
+  it**. The `RecursionError: maximum recursion depth exceeded` line is **not**
+  repeated below the outcome. (Before 5d-iii it was printed a second time, with
+  a stray `>>>` glued onto its end.)
+
+  **Expect — Problems panel and Result panel:** the exception message reads
+  `RecursionError: maximum recursion depth exceeded` with **no trailing `>>>`
+  or `...`**.
+
+  **Then confirm the lines that must still print** (they never streamed, so the
+  dedupe must leave them alone):
+
+  - `import nosuchpkg` → after `Finished with an error.` the output channel
+    still shows the `ModuleNotFoundError: …` line **with** the
+    `Run "Python on Viya: Show Environment" …` sentence appended. One repeat of
+    the exception tail here is expected and accepted.
+  - Any SAS-side failure with no Python traceback (`SYSCC` non-zero and not
+    `1012` — e.g. `PROC PYTHON` unavailable, or a dead session): its
+    `SYSERRORTEXT` message still prints on the line after `Finished with an
+    error.`
+  - A traceback header with frames but no exception line (hard to force by
+    hand; unit-covered): the output channel still shows a final
+    `an unhandled Python exception` line.
+
+  **Not this box:** the interpreter banner (`Python 3.x … / Type "help" …`) and
+  bare `>>>` markers still appearing in the *live transcript* of a failing run
+  are Finding 74's other half, deliberately deferred to a live-Viya probe
+  (`phase-5.md` Runbook item 3). Note whether you see them; do not fail this
+  item for it.
+
+  **Unrun** — needs a deployment. Implemented, unit- and integration-covered on
+  `phase-5d-iii-finding-74` (PR #92).
 - [x] **(live) `ModuleNotFoundError` points at Show Environment** — run
   `import polars` (or any absent package).
   **Expect:** a `ModuleNotFoundError` traceback whose diagnostic message (the

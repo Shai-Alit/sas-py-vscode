@@ -328,21 +328,48 @@ group with the test-only BOM fixture.
    the tail-only change.
 
    **Verified live 2026-09-02** against `verde` with a `.vsix` from the branch
-   (Sean's run, `Untitled-1` buffer, the bare-recursion script). Output
-   channel: the streamed traceback, then `Finished with an error.` with
-   **nothing after it** — the doubled tail Finding 74 recorded is gone.
-   Result panel: the structured message is
-   `[Previous line repeated 995 more times] RecursionError: maximum recursion
-   depth exceeded` — **no trailing `>>>`**, and the outcome no longer adds a
-   third copy of it. The interpreter banner and `>>>` markers were still in
-   the streamed transcript, exactly as the deferred (a) half predicts. The
-   `[Previous line repeated N more times]` prefix on the structured message is
-   **pre-existing** `parseTraceback` behaviour (any post-frame line that is
-   not itself a frame joins the message) — not touched or regressed here, and
-   arguably wanted since it is real traceback content; a follow-up could move
-   it out of `message` if it ever reads as noise. The `ModuleNotFoundError` /
-   SAS-side / synthesized-fallback sub-cases stay unit- and
-   integration-covered rather than re-checked live this pass.
+   (Sean's run) — **ten runs**, five scripts × **Run Selection** and **Run
+   File**:
+
+   - bare recursion — output channel ends at `Finished with an error.` with
+     **nothing after it**; structured message `[Previous line repeated 995
+     more times] RecursionError: maximum recursion depth exceeded`, no
+     trailing `>>>`, no third copy in an outcome line;
+   - `raise ValueError("boom")` — full dedup, **no outcome bullet**;
+   - `import nosuchpkg` — the superset case: `ModuleNotFoundError: … Run
+     "Python on Viya: Show Environment" …` still prints after the outcome
+     line (helper returns `false`), structured message is Python's own text
+     with no pointer and no `>>>`;
+   - `print(">>> …")` / `print("...")` then `raise` — **no over-reach**: both
+     `print` lines survive verbatim in the stream, message is `RuntimeError:
+     done` only;
+   - figure written then `raise` — rich-output capture still runs on the
+     failure path; panel = raw log + structured traceback + PNG +
+     `Finished with an error.` with no bullet;
+   - successful run — `Finished.` alone.
+
+   Run Selection and Run File matched on every case. The
+   synthesized-fallback and SAS-side-`SYSERRORTEXT` sub-cases stay unit- and
+   integration-covered (not hand-forceable).
+
+   The `[Previous line repeated N more times]` prefix on the structured
+   message is **pre-existing** `parseTraceback` behaviour (any post-frame
+   line that is not itself a frame joins the message) — not touched or
+   regressed here, arguably wanted since it is real traceback content; a
+   follow-up could move it out of `message` if it ever reads as noise.
+
+   **Sub-finding (a), refined by this pass:** the noise has two distinct
+   triggers, and **neither is "the error path"** as Finding 74 first
+   recorded. The interpreter banner (`Python 3.12.12 … / Type "help" …`)
+   tracks the **`restart`** the Run File path issues — it shows on a
+   *successful* Run File run too (run 6, Run File). Bare `>>>` markers show
+   on **every** run of either launch mode, success or failure. Consequence:
+   §6's "Hello world streams clean" (`no page-break banners, no >>> markers`)
+   **does not currently hold for Run File** — `manual-test-pass.md` §6's
+   box carries the contradiction note. All of this is stream content 5d-iii
+   never touches; it is the live-Viya probe's to resolve source-side (the
+   way `PAGESIZE=MAX` resolved the `title` page-break banner), not a
+   client-side scrub of `normal`-typed lines.
 
    **Environment note (not a code change):** `npm run test:integration` fails
    at VS Code launch (`Code.exe: bad option: --disable-extensions`) when run

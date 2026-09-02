@@ -2747,8 +2747,15 @@ Full account in `phase-5.md`'s Runbook item 3.
   typed `normal`; `logFilter.ts`'s documented design (findings 52, 63) is to
   trust the type and never text-scan to reclassify, and a client-side scrub
   of `normal` output both contradicts that and risks eating real program
-  output (`>>>` in a REPL transcript, doctests, a tutorial). The
-  success-path-clean / error-path-noisy asymmetry points at how `PROC
-  PYTHON` invokes the interpreter on a raising script — a question that
-  needs a deployment to answer, the same way `PAGESIZE=MAX` was the
-  source-side answer for the `title` page-break banner.
+  output (`>>>` in a REPL transcript, doctests, a tutorial — the 5d-iii
+  live pass confirmed a user's own `print(">>> …")` reaching the stream).
+
+  **Refined by the 5d-iii live pass (2026-09-02, `verde`, 10 runs across
+  both launch modes):** this is not "error-path noise" as originally
+  recorded. The interpreter **banner** tracks the `restart` the **Run File**
+  path issues — it shows on a *successful* Run File run too. Bare `>>>`
+  markers show on **every** run, Run File or Run Selection, success or
+  failure. So §6's "Hello world streams clean" no longer holds for Run File
+  (`manual-test-pass.md` §6 carries the contradiction). The probe's job is a
+  source-side answer — a `PROC PYTHON` option or invocation change — the way
+  `PAGESIZE=MAX` answered the `title` page-break banner.

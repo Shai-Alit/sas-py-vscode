@@ -72,12 +72,20 @@ interactive.
 **Targeted re-check, 2026-09-02** (not a full pass) — for phase 5d-iii
 (Finding 74), against `verde` with a `.vsix` from `phase-5d-iii-finding-74`:
 §7's new "Traceback is not echoed or mangled after the outcome" row verified
-live for the recursion case — the output channel now ends at "Finished with
-an error." with no repeated exception line, and the Result panel's structured
-message carries no trailing `>>>`. The interpreter banner and `>>>` markers
-are still in the streamed transcript (Finding 74's deferred half, a probe
-follow-up). The `ModuleNotFoundError` / SAS-side / synthesized-fallback
-sub-cases were not re-checked live.
+live across **ten runs** — five scripts (recursion, `raise ValueError`,
+`import nosuchpkg`, own-`>>>`-output-then-raise, figure-then-raise) plus a
+successful run, each under **Run Selection** and **Run File**. The output
+channel ends at "Finished with an error." with no repeated exception line
+(the `ModuleNotFoundError` superset line still prints, by design); the
+Result panel shows no third copy of the message and no trailing `>>>` on
+the structured message; a program's own `>>>`/`...` stdout is untouched.
+The synthesized-fallback and SAS-side-`SYSERRORTEXT` sub-cases were left to
+unit/integration coverage. **Sub-finding (a) — refined:** the interpreter
+banner appears on every **Run File** run (it tracks the `restart`, success
+or failure), and bare `>>>` markers appear on **every** run of either mode —
+so §6's "Hello world streams clean" no longer holds for Run File. Not a
+5d-iii regression (the stream is untouched); folded into that §6 box's note
+and the live-Viya probe.
 
 ## How to use this
 
@@ -307,6 +315,18 @@ unconfigured workspace is Local and contributes nothing to the editor
   `print("hello from viya")` → **Run File**.
   **Expect:** a run header, then `hello from viya` as plain stdout, then a
   “Finished” line. No SAS NOTEs, no page-break banners, no `>>>` markers.
+  **Contradicted 2026-09-02 (5d-iii live pass, against `verde`):** a
+  successful **Run File** run now shows the interpreter startup banner
+  (`Python 3.12.12 … / Type "help" …`) **and** bare `>>>` prompt markers in
+  the stream. The banner tracks the `restart` the Run File path issues
+  (`proc python restart infile=`); `>>>` appears on every run, Run File or
+  Run Selection, success or failure. This is Finding 74's sub-finding (a) —
+  it is **not** error-path-specific as first recorded, and **not** touched
+  by 5d-iii (which changes only the parsed-traceback message and the
+  outcome echo, never the stream). Deferred to the live-Viya probe; a
+  client-side scrub of `normal`-typed lines is the wrong fix. Re-verify
+  this box's "no banner / no `>>>`" claim once that probe lands a
+  source-side answer (as `PAGESIZE=MAX` was for the `title` banner).
 - [x] **(live) Submission fidelity — run the whole corpus.** Open each file under
   `test/fixtures/submission-corpus/` and **Run File**:
 
@@ -496,15 +516,34 @@ unconfigured workspace is Local and contributes nothing to the editor
   item for it.
 
   **Verified live 2026-09-02** against `verde` with a `.vsix` from
-  `phase-5d-iii-finding-74` (PR #92), the recursion case: the output channel
-  ends at `Finished with an error.` with nothing after it, and the Result
-  panel's structured message reads
-  `[Previous line repeated 995 more times] RecursionError: maximum recursion
-  depth exceeded` — no trailing `>>>`, and no third copy of it in an outcome
-  diagnostics line. The interpreter banner and `>>>` markers were still present
-  in the streamed transcript, as expected (deferred half). The three
-  "must still print" sub-cases above were **not** re-checked live this pass;
-  they are unit- and integration-covered.
+  `phase-5d-iii-finding-74` (PR #92). Ten runs — five scripts × **Run
+  Selection** and **Run File**:
+
+  1. bare recursion → output channel ends at `Finished with an error.`;
+     structured message `[Previous line repeated 995 more times]
+     RecursionError: maximum recursion depth exceeded` — no trailing `>>>`,
+     no third copy in an outcome line.
+  2. `raise ValueError("boom")` → full dedup: `Finished with an error.` on
+     its own, structured message `ValueError: boom`, **no outcome bullet**.
+  3. `import nosuchpkg` → the superset case: after `Finished with an
+     error.` the channel still prints `ModuleNotFoundError: No module named
+     'nosuchpkg' Run "Python on Viya: Show Environment" …`; the structured
+     message is Python's own text with no pointer and no `>>>`.
+  4. `print(">>> …")` / `print("...")` then `raise` → no over-reach: both
+     `print` lines survive verbatim in the stream, message is `RuntimeError:
+     done` only.
+  5. figure written then `raise` → rich-output capture still runs on the
+     failure path; panel shows raw log + structured traceback + PNG +
+     `Finished with an error.` with no outcome bullet.
+  6. successful run (`print(f"the answer is {x}")`) → `Finished.` alone; no
+     traceback block; panel does not reveal for text-only.
+
+  Run Selection and Run File matched on every case. The
+  synthesized-fallback / SAS-side-`SYSERRORTEXT` sub-cases were left to unit
+  and integration coverage (not hand-forceable). **Sub-finding (a) noise**
+  (banner on Run File, `>>>` on every run) was present throughout, as
+  expected — see §6's "Hello world streams clean" note for the refined
+  characterisation.
 - [x] **(live) `ModuleNotFoundError` points at Show Environment** — run
   `import polars` (or any absent package).
   **Expect:** a `ModuleNotFoundError` traceback whose diagnostic message (the

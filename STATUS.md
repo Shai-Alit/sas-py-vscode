@@ -571,11 +571,16 @@ rather than closed (now closed). `npm run verify` green (coverage ratchet held;
 `tracebackDiagnostics.ts` 100%); `npm run test:integration` green (237 passing,
 after stripping the extension host's `ELECTRON_RUN_AS_NODE=1` — see phase-5.md's
 5d-iii entry for that harness gotcha). **Verified live 2026-09-02** against
-`verde` with a branch `.vsix` (recursion case): the output channel ends at
-"Finished with an error." with no repeated exception line, and the Result
-panel's structured message has no trailing `>>>`; the banner/`>>>` transcript
-noise is still present, as the deferred (a) half predicts. See
-`docs/phases/phase-5.md`'s Runbook item 3.
+`verde` with a branch `.vsix` — 10 runs, five scripts × Run Selection and Run
+File: the output channel ends at "Finished with an error." with no repeated
+exception line (the `ModuleNotFoundError` superset line still prints, by
+design), the Result panel shows no third copy of the message and no trailing
+`>>>` on the structured message, and a program's own `>>>`/`...` stdout is
+untouched. **Sub-finding (a) refined:** the banner tracks the Run File
+`restart` (shows on a successful Run File too), and `>>>` shows on every run
+of either mode — so §6's "Hello world streams clean" no longer holds for Run
+File; not a 5d-iii regression (the stream is untouched), folded into that box
+and the probe. See `docs/phases/phase-5.md`'s Runbook item 3.
 
 **Next: 5d item 4** (diagnostics-lifecycle gaps — clear `RunDiagnostics`'
 collection on document close / sign-out / run-target flip; per-run token on

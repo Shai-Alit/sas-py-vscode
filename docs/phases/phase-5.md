@@ -124,9 +124,10 @@ don't collide:
    handling), and implement it if so; otherwise document explicitly why none
    is needed, so this doesn't come back a third time as an open question.
 2. **BOM fixture.** Add an `EF BB BF`-prefixed case to the submission-fidelity
-   corpus (3a's fixtures under `test/fixtures/`), confirming upload +
-   `infile=` handles a BOM'd file correctly — or documents the gap if it
-   doesn't.
+   corpus (3a's fixtures under `test/fixtures/`). De-risked by Finding 77
+   (below): a live probe already confirmed the upload + `infile=` path runs
+   a BOM-prefixed file cleanly, so this is "add the case, assert success",
+   not an open investigation.
 3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`
@@ -187,4 +188,57 @@ test:live` usage for a maintainer with real credentials, either in
 
 ## Probe findings
 
-_No live-Viya probes recorded for this phase yet._
+Probed 2026-09-02 against `verde` (Viya 4), SAS Studio compute context, via
+the `viya-api-probe` skill against `creds.json`. Continues the numbering from
+`phase-4.md` (last was Finding 76).
+
+### Finding 77 — A UTF-8 BOM in the uploaded file does not break `PROC PYTHON infile=`
+
+Run to de-risk 5d's BOM-fixture item before writing it, since no prior probe
+in any phase file had ever actually put a byte-order mark through the
+upload path. A throwaway session was created on the SAS Studio compute
+context and deleted at the end, confirmed gone by a `404` read-back;
+nothing else was touched.
+
+Reproduced the exact path `procPython.ts` composes: a fileref (`bomtest1`)
+created via `assign`, a fresh `self` `GET` for an `ETag` (`fileref.ts`'s own
+two-request discipline), then its `upload` `PUT` with that `ETag` as
+`If-Match` and `Content-Type: application/octet-stream` — carrying the
+three-byte UTF-8 BOM (`EF BB BF`) immediately followed by
+`print("bom-ok")\n`, confirmed byte-for-byte on the wire before sending. Ran
+`proc python infile=bomtest1;` + `run;`, exactly as `procPython.ts:947-948`
+and `:965-969` compose it.
+
+**Measured: it runs clean.** The job reached `completed`, `SYSCC` read back
+`0`, and the job log shows the ordinary interpreter banner, `bom-ok` on its
+own line with nothing garbled before or after it, and no `SyntaxError` or
+traceback anywhere in the log. Whatever this deployment's `PROC PYTHON` (or
+the CPython 3.12.12 it embeds) does with a leading BOM, it tolerates it the
+same way CPython's own source-encoding detection tolerates one when reading
+a `.py` file directly — ADR-0014's byte-for-byte upload discipline is not
+put in a bind by a BOM the way it is by, say, `endsubmit;` appearing in a
+string.
+
+**One correction to the session's own `POST` recipe, found in the course of
+this probe and worth recording since it will bite the next person who
+copies `contracts/viya4.yaml` literally:** the `createSession`/`assign`/etc.
+link's `type` field arrives on the wire *without* its `+json` suffix
+(finding 14), and `computeMediaType` in `src/compute/links.ts` puts it back
+before ever sending a request — `src/compute/client.ts:293/296` calls it for
+every `Content-Type` header this codebase sends. A first attempt at this
+probe sent the bare `application/vnd.sas.compute.session.request` (copied
+straight from the link and from `contracts/viya4.yaml`'s own `via.type`
+field) and drew a `415` naming the missing "representation suffix" in as
+many words. Not a new finding about the deployment — `computeMediaType`
+already existed for exactly this reason — but a reminder for anyone probing
+by hand that the contract file's `type:` values are the *wire* value, not
+the header value, and the two are only the same for `session_cancel`/
+`session_delete`/`job_cancel` because those are `null`.
+
+**Not settled by this probe:** whether a BOM combined with an explicit
+`# -*- coding: ... -*-` declaration, or a BOM appearing mid-file rather than
+at byte 0, behaves the same — this probe used the simplest case a BOM
+fixture needs (BOM immediately followed by ASCII). Good enough to write
+5d's fixture as "add the case, assert success" rather than "add the case,
+investigate what happens" — the fixture itself, once it exists, is what
+keeps this true across whatever the deployment upgrades to next.

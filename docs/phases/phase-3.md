@@ -1832,24 +1832,18 @@ source of truth (scoped and lettered 4a–4d, 2026-08-31) — this stub was
 orphaned leftover from before the docs were split per-phase and its branch
 names (`phase-4a-traceback-parsing`/`phase-4b-diagnostics`) went stale the
 moment Phase 4 was relettered, so it's removed here rather than corrected in
-place. Phase 5's and Phases 6–12's equivalent stubs immediately below are the
-same kind of leftover and were not touched in this pass — noticed, not fixed,
-since they're outside what changed here.
+place. Phases 6–12's equivalent stub below is the same kind of leftover and
+was not touched in this pass — noticed, not fixed, since it's outside what
+changed here.
 
 ### Phase 5 — Hardening and release
 
-```bash
-git checkout -b phase-5a-drift-gate
-git commit -m "test(dialects): complete REST contracts and harden the drift gate"
-# ⛔ BARRIER
-git checkout -b phase-5b-live-tests
-git commit -m "test: add opt-in live Viya test tier with Viya 3.5 scaffold"
-# ⛔ BARRIER
-git checkout -b phase-5c-docs-release
-git commit -m "docs: add user documentation and release workflow"
-```
-
-Then follow **Section D** to cut v0.1.0.
+Moved to `docs/phases/phase-5.md`'s own Runbook, which is now the actual
+source of truth (scoped and lettered 5a–5d, 2026-09-02) — the same reason
+the Phase 4 stub above was removed rather than corrected: this stub's branch
+names (`phase-5a-drift-gate`/`phase-5b-live-tests`/`phase-5c-docs-release`)
+predate the scoping session and never accounted for 5d, the carried-over
+hardening slice. See `docs/phases/phase-5.md` for what actually landed there.
 
 ### Phases 6–12 — Breadth toward parity
 

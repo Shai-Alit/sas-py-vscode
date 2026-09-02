@@ -449,6 +449,80 @@ P3) a test now exercises the default `node:fs` reader so the one filesystem
 line is covered. **Open before a PR:** re-run `verify`/`test:integration`/`docs:build`
 on the fix commit.
 
+**5d-i merged 2026-09-02 as
+[PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)**, squashed as
+`331bcf3` on `main` (local `main` fast-forwarded, matches `origin/main`,
+working tree clean). The pre-PR checks above were run and CI + both reviewers
+passed on the PR. Recording the merge here is the first thing after it merged,
+per this project's plan/runbook policy — the paragraph above was accurate up to
+"Open before a PR" and stopped there.
+
+**5d-ii (BOM fixture) implemented, reviewed and verified 2026-09-02; PR
+opening.** This is 5d's item 2, taken as its own PR per the 5d plan. New
+`test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes then
+`print("byte-order mark before this line")\n` (45 bytes), BOM-then-ASCII, the
+simplest shape Finding 77 said the fixture needs. Added to `EXPECTED_CASES` in
+`test/unit/submission-corpus.test.ts` so the existing "what reaches the
+transport" loop drives it byte-for-byte with the other fourteen; a new "the
+fixtures themselves" assertion pins the leading three bytes and the absence of a
+second BOM later in the file. `.editorconfig`'s corpus block gains
+`charset = unset` so an editor honouring the repo-wide `charset = utf-8` ("no
+BOM", per the EditorConfig spec) cannot strip the mark on save — the same
+failure class `.gitattributes` `-text` already guards for the CRLF and
+no-trailing-newline cases. Enumerations updated in `PRODUCTION_PLAN.md` §4,
+`test/fixtures/README.md`, `docs/dev/manual-test-pass.md` §6's grid, and
+`CHANGELOG.md`. De-risked by Finding 77 (live BOM probe already ran clean), so
+this is "add the case, assert success". **`test/live/submission-corpus.test.ts`'s
+`CURATED_CASES` left unchanged** — deliberate: that tier is capped at five
+maximally-distinct cases and Finding 77 already exercised the live BOM path;
+the unit tier is the permanent guard the runbook item called for. Test-only, no
+`src/` change. **One adversarial review pass, 2026-09-02, ran in this session —
+not the separate VS Code Claude Code window the standing policy names; the
+record should say so, and Sean's call whether the window pass is still wanted
+for a test-only slice.** It read the full `a852504` diff plus the surrounding
+files whose invariants it touches. No P0/P1. Three findings, all verified
+independently and folded into a follow-up commit on the branch: (1, P2) the
+live suite's doc comment still said "not all fourteen" — corrected to fifteen
+in the same PR, per this project's evidence-sweep rule; (2, P3) the new fixture
+assertion did not pin that anything follows the BOM — added a check that
+`print(` source does; (3, P3, claim accuracy) a scope note in phase-5.md's
+5d-ii entry, since `program.bytes` is `TextEncoder().encode(document.getText())`
+(`commands.ts:396`/`:404`) and `getText()` has already consumed any BOM — so
+the fixture pins the transport seam (the corpus's actual charter), not the
+editor path. **Verified green 2026-09-02 (Sean's run): `npm run verify`, `npm
+run check:docs`, and `npm run test:integration` all pass.** Opened as
+[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89).
+
+**PR #89's `supply-chain` job then failed on six dev-tree advisories that have
+nothing to do with 5d-ii** — pre-existing on `main`, transitive under
+`@vscode/vsce`, and not shown by GitHub's Dependabot UI (dev-tree; `npm audit` /
+`check:audit` is deliberately stricter). `qs` 6.15.3 carried two moderate DoS
+advisories (fixed in 6.16.0), `fast-uri` 3.1.5 four high host-confusion / SSRF
+advisories (fixed in 3.1.6). Both fixed lines are in range for their parents, so
+they clear via the child-override route (`overrides.qs ^6.16.0`,
+`overrides.fast-uri ^3.1.6`) the `vite` / `serialize-javascript` pins already
+use — no allow-list entry. `npm install` resolved `qs@6.16.0` / `fast-uri@3.1.7`
+(18 packages changed) and dropped `npm audit` from 1 moderate + 1 high to just
+the pre-existing lows. **Folded into #89** rather than a separate PR, since the
+`check:audit` gate blocks every PR until the tree is clean and a separate PR
+would only add a round trip. `check:audit` could not be re-run locally to
+confirm — it spawns `npm.cmd` and current Node throws `EINVAL` doing that on
+Windows (the CVE-2024-27980 `.cmd`-spawn hardening); CI runs it on Linux, where
+that does not apply, so #89's own re-run is the confirmation. CHANGELOG (under
+`### Changed`, beside the `vite` entry) and `advisory-allowlist.json`'s `$comment`
+narrative both updated.
+
+**Two more pre-existing `main` issues surfaced in the same look, neither
+touched here and neither blocking #89 — their own follow-up PR:** (a) two CodeQL
+*High* findings open ~3 weeks — `scripts/generate-reference.mjs:83` (a
+markdown-cell escaper that adds `\|` without escaping backslashes first) and
+`scripts/check-package.mjs:266` (`statSync` then `readFileSync` on the same path
+— a check-then-use TOCTOU); both in build scripts over fully trusted input, so
+low real risk but real patterns. (b) `scripts/check-audit.mjs` cannot run on
+Windows at all (the `npm.cmd` `EINVAL` above), despite `CLAUDE.md` listing the
+`check-*.mjs` gates as locally runnable — worth a `shell`/`execPath` fix in the
+same PR.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -536,7 +610,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **scoped, 2026-09-02** (5a–5d — see phase-5.md's own Plan/Runbook) | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d-i merged ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)); 5d-ii implemented, not yet merged; 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

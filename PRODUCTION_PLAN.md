@@ -515,8 +515,9 @@ number of quotes in a line, triple-quoted strings containing both quote styles,
 f-strings with nested quotes and braces, raw and byte strings, `&` and `%` in
 string literals, the literal token `endsubmit;` inside a comment and inside a
 string, a `;`-heavy one-liner, CRLF line endings, a tab-indented file, non-ASCII
-identifiers and string content, an empty file, and a file with no trailing
-newline. Each one is asserted **byte for byte** at the far end.
+identifiers and string content, an empty file, a file with no trailing newline,
+and a file that opens with a UTF-8 byte-order mark. Each one is asserted **byte
+for byte** at the far end.
 
 > **Corrected 2026-08-25** (raised in `phase-3-runbook-pending.md`, applied
 > here rather than held further — this is an amendments-log-style correction

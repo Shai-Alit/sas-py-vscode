@@ -40,7 +40,7 @@ const CORPUS_DIR = "submission-corpus";
  * the ones that were recorded. Findings 35, 36 and 57 are what is being
  * re-checked.
  *
- * **Five cases, not all fourteen**, because each one costs a fileref create, a
+ * **Five cases, not all fifteen**, because each one costs a fileref create, a
  * `GET` for its `ETag`, a content `PUT`, and a content `GET` — four requests
  * against a real deployment per case. The five here were picked to be maximally
  * distinct rather than maximally numerous: CRLF line endings, non-ASCII content,

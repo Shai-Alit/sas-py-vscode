@@ -73,8 +73,9 @@ tokeniser — an apostrophe in a docstring, mixed triple-quote styles, an
 f-string with nested quotes and braces, raw and byte strings, `&`/`%` in string
 literals, the literal token `endsubmit;` inside a comment and inside a string, a
 `;`-heavy one-liner, CRLF line endings, a tab-indented file, non-ASCII
-identifiers and content, an empty file, and a file with no trailing newline —
-see `PRODUCTION_PLAN.md` §4 for why each one is here.
+identifiers and content, an empty file, a file with no trailing newline, and a
+file that opens with a UTF-8 byte-order mark — see `PRODUCTION_PLAN.md` §4 for
+why each one is here.
 
 Read every file with no encoding argument (`fs.readFileSync(path)`, not
 `readFileSync(path, "utf8")`), so a test asserts on the real bytes rather than a
@@ -88,7 +89,9 @@ either with an editor that adds one on save.
 into a commit — measured: the filtered blob is 51 bytes against the raw 56, so
 the only property that fixture has would be deleted on every fresh clone,
 including CI, and nowhere else. `.editorconfig` carries the matching exemption
-for editors: `end_of_line`, `insert_final_newline` and `trim_trailing_whitespace`
-are each a way to destroy a different case on save. If a corpus assertion starts
-failing in CI but not locally, or locally but not in CI, look at those two files
-before looking at the test.
+for editors: `end_of_line`, `insert_final_newline`, `trim_trailing_whitespace`
+and `charset` (the repo-wide `charset = utf-8` means "no BOM" to the EditorConfig
+spec, so an editor honouring it strips `utf8-bom.py`'s leading bytes) are each a
+way to destroy a different case on save. If a corpus assertion starts failing in
+CI but not locally, or locally but not in CI, look at those two files before
+looking at the test.

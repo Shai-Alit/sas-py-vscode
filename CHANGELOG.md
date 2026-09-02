@@ -1128,6 +1128,19 @@ called out under **Changed** with a migration note.
   `createNodeHttpTransport({ agent })` with `nodeHttpTransport` unchanged as its
   zero-config form. Not yet exercised against a real private-CA deployment — the
   manual-test row for it is pending.
+- **Test-only, no behaviour change (Phase 5's 5d-ii slice).** The
+  submission-fidelity corpus gains a fifteenth case,
+  `test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes ahead
+  of an ASCII `print()` — so the upload path is now pinned against a file that
+  opens with a UTF-8 byte-order mark. `test/unit/submission-corpus.test.ts`
+  asserts the leading bytes and drives the case through the recording transport
+  with the other fourteen; a live probe (Finding 77, `docs/phases/phase-5.md`)
+  had already confirmed `proc python infile=` runs a BOM-prefixed upload
+  cleanly, so this fixture keeps that true rather than re-opening it.
+  `.editorconfig` unsets `charset` for the corpus directory so an editor
+  honouring the repo-wide `charset = utf-8` ("no BOM", per the EditorConfig
+  spec) cannot strip the mark on save — the same class of guard `.gitattributes`
+  `-text` already provides.
 
 ### Fixed
 
@@ -1494,6 +1507,19 @@ called out under **Changed** with a migration note.
   `vite ^5.4.14`, so the pin overrules it deliberately; `npm run docs:build` is
   the evidence it holds. Three advisories remain, all reached only through
   `mocha`, which has no fixed release.
+
+- `qs` and `fast-uri` are pinned through the same `overrides` block — `qs`
+  `^6.16.0`, `fast-uri` `^3.1.6` — clearing six dev-tree advisories that
+  surfaced on 2026-09-02, all transitive under `@vscode/vsce`: two moderate
+  `qs` denial-of-service advisories (GHSA-4MJR-XMP4-GH2G, GHSA-X5FP-WJ9C-MXMX)
+  and four high `fast-uri` host-confusion / SSRF advisories
+  (GHSA-5JGF-P345-68V8, GHSA-F65P-4M7J-42XC, GHSA-FPH4-WMHF-6FWF,
+  GHSA-JQFF-G426-HQXP). Both fixed lines are already in range for their parents
+  (`typed-rest-client` wants `qs ^6.9.1`; `ajv` wants `fast-uri ^3.0.1`), so
+  this is the child-override route the `vite` and `serialize-javascript` pins
+  already use rather than a forced upgrade — no `advisory-allowlist.json` entry
+  needed. Carried in the 5d-ii pull request because `check:audit` blocks every
+  PR until the dev tree is clean.
 
 - The authentication provider's label goes through `vscode.l10n.t()` like every
   other string the editor shows. It is a product name and will usually come back

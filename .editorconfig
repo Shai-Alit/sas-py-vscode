@@ -14,15 +14,18 @@ trim_trailing_whitespace = false
 [*.{bat,cmd,ps1}]
 end_of_line = crlf
 
-# The submission-fidelity corpus. Every rule above is a way to destroy one of
-# these fixtures on save, and all five are unset here rather than the three that
-# are obvious: `end_of_line = lf` flattens the CRLF case, `insert_final_newline`
-# defeats both the empty file and the no-trailing-newline one,
-# `trim_trailing_whitespace` would edit any case that grows deliberate trailing
-# space, and `indent_style = space` retabs `tab-indented.py` in any editor that
-# reindents on save — which is the only property that fixture has.
+# The submission-fidelity corpus. Every rule in `[*]` above is a way to destroy
+# one of these fixtures on save, so all six are unset or overridden here rather
+# than only the obvious ones: `end_of_line = lf` flattens the CRLF case,
+# `insert_final_newline` defeats both the empty file and the no-trailing-newline
+# one, `trim_trailing_whitespace` would edit any case that grows deliberate
+# trailing space, `indent_style = space` retabs `tab-indented.py` in any editor
+# that reindents on save (the only property that fixture has), and `charset =
+# utf-8` means "no BOM" to the EditorConfig spec — so an editor honouring it
+# strips the leading byte-order mark that is the only property of `utf8-bom.py`.
 # `.gitattributes` carries the matching `-text`.
 [test/fixtures/submission-corpus/*.py]
+charset = unset
 end_of_line = unset
 insert_final_newline = false
 trim_trailing_whitespace = false

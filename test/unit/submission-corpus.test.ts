@@ -174,6 +174,7 @@ const EXPECTED_CASES: readonly string[] = [
   "semicolon-heavy-oneliner.py",
   "tab-indented.py",
   "triple-quote-mixed-styles.py",
+  "utf8-bom.py",
 ];
 
 describe("submission-fidelity corpus", () => {
@@ -217,6 +218,30 @@ describe("submission-fidelity corpus", () => {
       assert.ok(
         bytes.some((byte) => byte > 0x7f),
         "expected at least one byte outside ASCII",
+      );
+    });
+
+    it("starts with a UTF-8 BOM, and carries no other, in the bom case", () => {
+      // The one property this fixture has. `.gitattributes` marks the corpus
+      // `-text` so nothing rewrites it on the way into a commit, and
+      // `.editorconfig` unsets `charset` for the directory so an editor
+      // honouring the repo-wide `charset = utf-8` ("no BOM", per the spec)
+      // does not strip the leading bytes on save. A "these look like mojibake,
+      // let me clean them up" edit would leave a file that reads like every
+      // other case and proves nothing. Finding 77 (phase-5.md) put exactly
+      // these three bytes through the live upload + `infile=` path.
+      const bytes = readFixtureBytes(CORPUS_DIR, "utf8-bom.py");
+      assert.deepEqual(
+        [...bytes.slice(0, 3)],
+        [0xef, 0xbb, 0xbf],
+        "expected a leading UTF-8 BOM (EF BB BF)",
+      );
+      // A BOM anywhere but byte 0 is a different case Finding 77 explicitly did
+      // not settle; keep this fixture to the one it did.
+      assert.equal(
+        Buffer.from(bytes.slice(3)).includes(Buffer.from([0xef, 0xbb, 0xbf])),
+        false,
+        "found a second BOM sequence past byte 0",
       );
     });
 

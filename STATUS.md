@@ -449,6 +449,38 @@ P3) a test now exercises the default `node:fs` reader so the one filesystem
 line is covered. **Open before a PR:** re-run `verify`/`test:integration`/`docs:build`
 on the fix commit.
 
+**5d-i merged 2026-09-02 as
+[PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)**, squashed as
+`331bcf3` on `main` (local `main` fast-forwarded, matches `origin/main`,
+working tree clean). The pre-PR checks above were run and CI + both reviewers
+passed on the PR. Recording the merge here is the first thing after it merged,
+per this project's plan/runbook policy — the paragraph above was accurate up to
+"Open before a PR" and stopped there.
+
+**5d-ii (BOM fixture) implemented 2026-09-02; not yet verified, reviewed, or
+merged.** This is 5d's item 2, taken as its own PR per the 5d plan. New
+`test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes then
+`print("byte-order mark before this line")\n` (45 bytes), BOM-then-ASCII, the
+simplest shape Finding 77 said the fixture needs. Added to `EXPECTED_CASES` in
+`test/unit/submission-corpus.test.ts` so the existing "what reaches the
+transport" loop drives it byte-for-byte with the other fourteen; a new "the
+fixtures themselves" assertion pins the leading three bytes and the absence of a
+second BOM later in the file. `.editorconfig`'s corpus block gains
+`charset = unset` so an editor honouring the repo-wide `charset = utf-8` ("no
+BOM", per the EditorConfig spec) cannot strip the mark on save — the same
+failure class `.gitattributes` `-text` already guards for the CRLF and
+no-trailing-newline cases. Enumerations updated in `PRODUCTION_PLAN.md` §4,
+`test/fixtures/README.md`, `docs/dev/manual-test-pass.md` §6's grid, and
+`CHANGELOG.md`. De-risked by Finding 77 (live BOM probe already ran clean), so
+this is "add the case, assert success". **`test/live/submission-corpus.test.ts`'s
+`CURATED_CASES` left unchanged** — deliberate: that tier is capped at five
+maximally-distinct cases and Finding 77 already exercised the live BOM path;
+the unit tier is the permanent guard the runbook item called for. Test-only, no
+`src/` change. Still open before a PR: an adversarial review pass over the
+finished diff (test-only, but it touches the corpus-membership invariant and a
+load-bearing config file), and `npm run verify` + `npm run test:integration` —
+none of which this session runs itself.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -536,7 +568,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **scoped, 2026-09-02** (5a–5d — see phase-5.md's own Plan/Runbook) | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d-i merged ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)); 5d-ii implemented, not yet merged; 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

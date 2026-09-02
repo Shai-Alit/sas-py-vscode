@@ -308,6 +308,7 @@ unconfigured workspace is Local and contributes nothing to the editor
   triple-quote-mixed-styles.py       raw-and-byte-strings.py
   semicolon-heavy-oneliner.py        endsubmit-in-string.py
   endsubmit-in-comment.py            empty.py
+  utf8-bom.py
   ```
 
   **Expect:** every file runs and does exactly what the code means — no quoting
@@ -317,6 +318,10 @@ unconfigured workspace is Local and contributes nothing to the editor
   defects. A stray "The SAS System …" banner line did bleed into 4 of the 14
   runs' output — the same root cause as "Large output stays clean" below, not
   a separate corpus defect; tracked once there, not twice.
+  `utf8-bom.py` was added with slice 5d-ii (2026-09-02) and is **not** covered
+  by the 2026-08-27 run; its live upload + `infile=` behaviour is separately
+  established by Finding 77 (`docs/phases/phase-5.md`), and it should be folded
+  into the next full corpus run here.
 - [x] **(live) Run File starts a fresh namespace each time** — **Run File** a
   file that is just `a = 41`; then **Run File** a file that is just `print(a)`.
   **Expect:** `NameError` — every _Run File_ runs with `freshNamespace: true`.

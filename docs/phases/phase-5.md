@@ -124,8 +124,9 @@ group with the test-only BOM fixture.
 1. ~~**Certificate escape hatch.** Decide whether an incomplete certificate
    chain needs a user-facing workaround (compare the SAS extension's own
    handling), and implement it if so; otherwise document explicitly why none
-   is needed.~~ **Done — slice 5d-i, 2026-09-02 (implemented; not yet
-   reviewed or merged).** The Plan's premise was wrong on inspection: the SAS
+   is needed.~~ **Done — slice 5d-i, merged 2026-09-02 as
+   [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), squashed as
+   `331bcf3`.** The Plan's premise was wrong on inspection: the SAS
    extension *does* ship a user-facing escape hatch — `SAS.userProvidedCertificates`
    (`client/src/components/CAHelper.ts`'s `installCAs()`) plus a documented FAQ
    procedure — so "the way the SAS extension needs none" does not hold, and an
@@ -162,11 +163,32 @@ group with the test-only BOM fixture.
    "hands an https request to the agent it was given" is a boundary test of our
    own code, not of that host path; the live `manual-test-pass.md` §3 row is
    what would confirm end to end, and it is unrun.
-2. **BOM fixture.** Add an `EF BB BF`-prefixed case to the submission-fidelity
+2. ~~**BOM fixture.** Add an `EF BB BF`-prefixed case to the submission-fidelity
    corpus (3a's fixtures under `test/fixtures/`). De-risked by Finding 77
    (below): a live probe already confirmed the upload + `infile=` path runs
    a BOM-prefixed file cleanly, so this is "add the case, assert success",
-   not an open investigation.
+   not an open investigation.~~ **Done — slice 5d-ii, 2026-09-02 (implemented;
+   not yet reviewed or merged).** New `test/fixtures/submission-corpus/utf8-bom.py`
+   (three `EF BB BF` bytes + `print("byte-order mark before this line")\n`, 45
+   bytes) — BOM immediately followed by ASCII, the simplest case Finding 77 said
+   a fixture needs. Added to `EXPECTED_CASES` in
+   `test/unit/submission-corpus.test.ts`, so the existing "what reaches the
+   transport" loop drives it byte-for-byte for free; a new "the fixtures
+   themselves" assertion pins the leading three bytes and that there is no
+   second BOM later in the file. `.editorconfig`'s corpus block gains
+   `charset = unset` — the repo-wide `charset = utf-8` means "no BOM" to the
+   EditorConfig spec, so an editor honouring it would strip the mark on save,
+   the same failure class `.gitattributes` `-text` already guards against for
+   the CRLF and no-trailing-newline cases. Enumerations updated in
+   `PRODUCTION_PLAN.md` §4, `test/fixtures/README.md`, and
+   `docs/dev/manual-test-pass.md` §6's corpus grid (with a note that the
+   2026-08-27 run predates this case and Finding 77 covers its live
+   behaviour). **`test/live/submission-corpus.test.ts`'s `CURATED_CASES` left
+   unchanged** — a deliberate call: that tier is deliberately capped at five
+   maximally-distinct cases, four requests each against a real deployment, and
+   Finding 77 already exercised the live BOM path directly; the unit tier is
+   the permanent regression guard the runbook item asked for. Test-only, no
+   `src/` change.
 3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`

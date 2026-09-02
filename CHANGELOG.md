@@ -1128,6 +1128,19 @@ called out under **Changed** with a migration note.
   `createNodeHttpTransport({ agent })` with `nodeHttpTransport` unchanged as its
   zero-config form. Not yet exercised against a real private-CA deployment — the
   manual-test row for it is pending.
+- **Test-only, no behaviour change (Phase 5's 5d-ii slice).** The
+  submission-fidelity corpus gains a fifteenth case,
+  `test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes ahead
+  of an ASCII `print()` — so the upload path is now pinned against a file that
+  opens with a UTF-8 byte-order mark. `test/unit/submission-corpus.test.ts`
+  asserts the leading bytes and drives the case through the recording transport
+  with the other fourteen; a live probe (Finding 77, `docs/phases/phase-5.md`)
+  had already confirmed `proc python infile=` runs a BOM-prefixed upload
+  cleanly, so this fixture keeps that true rather than re-opening it.
+  `.editorconfig` unsets `charset` for the corpus directory so an editor
+  honouring the repo-wide `charset = utf-8` ("no BOM", per the EditorConfig
+  spec) cannot strip the mark on save — the same class of guard `.gitattributes`
+  `-text` already provides.
 
 ### Fixed
 

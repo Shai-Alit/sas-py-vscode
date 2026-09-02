@@ -251,9 +251,9 @@ the diagnostic as specified, and `manual-test-pass.md` §7's row is rewritten
 from a `(known gap)` into a ticked assertion. **Nothing outstanding before
 the PR opens.** Merged as [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81).
 
-**4d (diagnostics surface) implemented 2026-09-01; reviewed and verified
-(incl. live) 2026-09-02; ready to merge, PR not yet opened.** Branch
-`phase-4d-diagnostics-surface`. Wires 4c's
+**4d (diagnostics surface) merged 2026-09-02 as
+[PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83), squashed as
+`f3a4bb2` on `main`. This closes Phase 4 (4a–4d).** Wires 4c's
 `tracebackDiagnostics.ts` mapping to its two consumers. **Problems panel:**
 new `src/run/diagnostics.ts` (`RunDiagnostics` — a `vscode` shell around one
 `languages.createDiagnosticCollection("pythonOnViya")`, on `.c8rc.json`'s
@@ -303,20 +303,27 @@ drive-letter flake that passes on re-run), and **`npm run verify` end to end
 (exit 0)** — all green. Coverage ratchet bumped in `.c8rc.json`:
 `lines`/`statements` 93 → 94 (measured 94.09), `functions`/`branches`
 unchanged; `resultPanelModel.ts`/`resultPanelDom.ts`/`tracebackDiagnostics.ts`
-all 100%. Coverage ratchet bumped in `.c8rc.json`: `lines`/`statements`
-93 → 94, `functions`/`branches` unchanged. **Verified 2026-09-02 (Sean):**
-`npm run test:integration` green in the VS Code host tier — one test failed
-first (`diagnostics.test.ts` read `DiagnosticCollection.get()` after
-`dispose()`, which throws; moved onto `languages.getDiagnostics()`,
-`657c2cc`), re-run green. **Live-verified against `verde`** with a branch
-`.vsix`: failing run → positioned Problems entry that opens in the editor
-column not over the panel; clean re-run clears it; Run Selection mid-file
-lands on the true line; clicking a `<string>` frame jumps the editor, a
-library-frame line does not. `manual-test-pass.md` §7/§8 ticked. **Nothing
-outstanding before the PR opens.** The `phase-4d-diagnostics-surface` branch
-was cut from `main` at `64b7d38` (PR #82 — the 4c merge-record doc commit —
-had already landed there); it carries five commits (feat, docs, review
-fixes, coverage bump, the test fix), squash-merged.
+all 100%. **Verified 2026-09-02 (Sean):** `npm run test:integration` green in
+the VS Code host tier — one test failed first (`diagnostics.test.ts` read
+`DiagnosticCollection.get()` after `dispose()`, which throws; moved onto
+`languages.getDiagnostics()`), re-run green. **Live-verified against `verde`**
+with a branch `.vsix`: failing run → positioned Problems entry that opens in
+the editor column not over the panel; clean re-run clears it; Run Selection
+mid-file lands on the true line; clicking a `<string>` frame jumps the
+editor, a library-frame line does not. `manual-test-pass.md` §7/§8 ticked.
+The two CI-reviewer nits (above) were folded in as comments/docs only
+(`3a8de68`, in the PR).
+
+**Phase 4 (Diagnostics) is fully done — 4a–4d all merged. Phase 5
+(Hardening & first release) is next; `docs/phases/phase-5.md`.** PR #83's
+merge is the trigger for the Phase 4→5 between-phase-housekeeping checklist
+(ADRs, punch-list completeness, RUNBOOK/PRODUCTION_PLAN currency, this file's
+phase pointer, scratch-file reconciliation, manual-test completeness, and
+Dependabot advisories — the last already carried forward from the Phase 3→4
+pass, still unreviewed). Not yet run. This docs PR only records the merge;
+the housekeeping is its own pass. The local `phase-4d-diagnostics-surface`
+branch is stale now (merged) — `git branch -D` and `git fetch --prune` when
+convenient.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -404,7 +411,7 @@ account.
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
-| 4 — Diagnostics | in progress — 4a merged ([PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78)); 4b probed and closed 2026-09-01 (no code change; Findings 75–76 folded into 4c); 4c (traceback-mapping groundwork + the Findings 75/76 cancel fix) merged 2026-09-01 ([PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81)); 4d (Problems panel + result-panel click-to-jump) implemented 2026-09-01, reviewed + verified (incl. live) 2026-09-02 on `phase-4d-diagnostics-surface`, ready to merge (PR not yet opened); Dependabot re-check deliberately deferred to next housekeeping pass | `docs/phases/phase-4.md` |
+| 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping (incl. the carried-over Dependabot re-check) not yet run | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | not started | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |

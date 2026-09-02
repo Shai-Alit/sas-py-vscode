@@ -31,7 +31,19 @@
     "and both alerts clear. Normal CI does not exercise this pin (mocha loads",
     "serialize-javascript only in --parallel mode, and every job runs serially);",
     "cover is npm audit plus a one-time mocha --parallel run. See ADR-0005's",
-    "2026-08-27 amendments. That leaves one entry, the low diff advisory."
+    "2026-08-27 amendments.",
+    "",
+    "On 2026-09-02 six more dev-tree advisories appeared, all transitive under",
+    "@vscode/vsce (the packaging tool, never shipped): qs 6.15.3 carried",
+    "GHSA-4MJR-XMP4-GH2G and GHSA-X5FP-WJ9C-MXMX (moderate, denial of service),",
+    "fixed in 6.16.0; fast-uri 3.1.5 carried GHSA-5JGF-P345-68V8,",
+    "GHSA-F65P-4M7J-42XC, GHSA-FPH4-WMHF-6FWF and GHSA-JQFF-G426-HQXP (high, host",
+    "confusion / SSRF), fixed in 3.1.6. Both fixed lines are in range for their",
+    "parents (typed-rest-client wants qs ^6.9.1; ajv wants fast-uri ^3.0.1), so",
+    "`overrides.qs` ^6.16.0 and `overrides.fast-uri` ^3.1.6 clear all six via the",
+    "child-override route with no entry here. Landed in the 5d-ii PR (#89).",
+    "",
+    "That leaves one entry, the low diff advisory."
   ],
   "allowed": [
     {

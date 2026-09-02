@@ -490,8 +490,38 @@ assertion did not pin that anything follows the BOM — added a check that
 (`commands.ts:396`/`:404`) and `getText()` has already consumed any BOM — so
 the fixture pins the transport seam (the corpus's actual charter), not the
 editor path. **Verified green 2026-09-02 (Sean's run): `npm run verify`, `npm
-run check:docs`, and `npm run test:integration` all pass.** Nothing outstanding;
-the PR is opening.
+run check:docs`, and `npm run test:integration` all pass.** Opened as
+[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89).
+
+**PR #89's `supply-chain` job then failed on six dev-tree advisories that have
+nothing to do with 5d-ii** — pre-existing on `main`, transitive under
+`@vscode/vsce`, and not shown by GitHub's Dependabot UI (dev-tree; `npm audit` /
+`check:audit` is deliberately stricter). `qs` 6.15.3 carried two moderate DoS
+advisories (fixed in 6.16.0), `fast-uri` 3.1.5 four high host-confusion / SSRF
+advisories (fixed in 3.1.6). Both fixed lines are in range for their parents, so
+they clear via the child-override route (`overrides.qs ^6.16.0`,
+`overrides.fast-uri ^3.1.6`) the `vite` / `serialize-javascript` pins already
+use — no allow-list entry. `npm install` resolved `qs@6.16.0` / `fast-uri@3.1.7`
+(18 packages changed) and dropped `npm audit` from 1 moderate + 1 high to just
+the pre-existing lows. **Folded into #89** rather than a separate PR, since the
+`check:audit` gate blocks every PR until the tree is clean and a separate PR
+would only add a round trip. `check:audit` could not be re-run locally to
+confirm — it spawns `npm.cmd` and current Node throws `EINVAL` doing that on
+Windows (the CVE-2024-27980 `.cmd`-spawn hardening); CI runs it on Linux, where
+that does not apply, so #89's own re-run is the confirmation. CHANGELOG (under
+`### Changed`, beside the `vite` entry) and `advisory-allowlist.json`'s `$comment`
+narrative both updated.
+
+**Two more pre-existing `main` issues surfaced in the same look, neither
+touched here and neither blocking #89 — their own follow-up PR:** (a) two CodeQL
+*High* findings open ~3 weeks — `scripts/generate-reference.mjs:83` (a
+markdown-cell escaper that adds `\|` without escaping backslashes first) and
+`scripts/check-package.mjs:266` (`statSync` then `readFileSync` on the same path
+— a check-then-use TOCTOU); both in build scripts over fully trusted input, so
+low real risk but real patterns. (b) `scripts/check-audit.mjs` cannot run on
+Windows at all (the `npm.cmd` `EINVAL` above), despite `CLAUDE.md` listing the
+`check-*.mjs` gates as locally runnable — worth a `shell`/`execPath` fix in the
+same PR.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

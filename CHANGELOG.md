@@ -1508,6 +1508,19 @@ called out under **Changed** with a migration note.
   the evidence it holds. Three advisories remain, all reached only through
   `mocha`, which has no fixed release.
 
+- `qs` and `fast-uri` are pinned through the same `overrides` block — `qs`
+  `^6.16.0`, `fast-uri` `^3.1.6` — clearing six dev-tree advisories that
+  surfaced on 2026-09-02, all transitive under `@vscode/vsce`: two moderate
+  `qs` denial-of-service advisories (GHSA-4MJR-XMP4-GH2G, GHSA-X5FP-WJ9C-MXMX)
+  and four high `fast-uri` host-confusion / SSRF advisories
+  (GHSA-5JGF-P345-68V8, GHSA-F65P-4M7J-42XC, GHSA-FPH4-WMHF-6FWF,
+  GHSA-JQFF-G426-HQXP). Both fixed lines are already in range for their parents
+  (`typed-rest-client` wants `qs ^6.9.1`; `ajv` wants `fast-uri ^3.0.1`), so
+  this is the child-override route the `vite` and `serialize-javascript` pins
+  already use rather than a forced upgrade — no `advisory-allowlist.json` entry
+  needed. Carried in the 5d-ii pull request because `check:audit` blocks every
+  PR until the dev tree is clean.
+
 - The authentication provider's label goes through `vscode.l10n.t()` like every
   other string the editor shows. It is a product name and will usually come back
   unchanged, but the manifest already contributes it as `%authentication.label%`,

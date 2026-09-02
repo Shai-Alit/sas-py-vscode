@@ -151,29 +151,34 @@ function buildTraceback<El>(
     port.setAttribute(list, "class", "python-on-viya-traceback-frames");
     // Each line arrives already formatted and already localised by
     // `resultPanelModel.ts`'s caller (ADR-0021's host-side localisation
-    // boundary) — this layer only ever puts it in an `<li>` as text. Phase
-    // 4d: an `<li>` whose matching `frames` entry is a mappable `<string>`
-    // frame also becomes a button — `role`/`tabindex` so a keyboard reaches
-    // it, an activation handler that hands the frame's index back to the
-    // host. `frameLines` and `frames` are the same frames in the same
-    // order (`resultPanelModel.ts`), so the index is shared.
+    // boundary). Phase 4d: when the matching `frames` entry is a mappable
+    // `<string>` frame, the line goes into an inner `<span role="button">`
+    // rather than onto the `<li>` itself — a `role` override on the `<li>`
+    // would take it out of the `<ol>` and break a screen reader's "N of M"
+    // frame count. `frameLines` and `frames` are the same frames in the
+    // same order (`resultPanelModel.ts`), so the index is shared with the
+    // host.
     item.frameLines.forEach((line, index) => {
       const entry = port.createElement("li");
-      port.setText(entry, line);
       if (
         onFrameActivate !== undefined &&
         item.frames[index]?.file === STRING_FRAME_FILE
       ) {
+        const button = port.createElement("span");
         port.setAttribute(
-          entry,
+          button,
           "class",
-          "python-on-viya-traceback-frame python-on-viya-traceback-frame-clickable",
+          "python-on-viya-traceback-frame-clickable",
         );
-        port.setAttribute(entry, "role", "button");
-        port.setAttribute(entry, "tabindex", "0");
-        port.onActivate(entry, () => {
+        port.setAttribute(button, "role", "button");
+        port.setAttribute(button, "tabindex", "0");
+        port.setText(button, line);
+        port.onActivate(button, () => {
           onFrameActivate(index);
         });
+        port.appendChild(entry, button);
+      } else {
+        port.setText(entry, line);
       }
       port.appendChild(list, entry);
     });

@@ -137,13 +137,21 @@ export class ResultPanel implements vscode.Disposable {
   private revealedThisRun = false;
   /** The origin of the program this run is executing — set by
    * {@link startRun}, consumed by {@link revealFrame} to map an activated
-   * traceback frame's line back into the editor. `undefined` before the
-   * first run, or when a caller (a test) drove the panel without one. */
+   * traceback frame's line back into the editor. `undefined` only before the
+   * first `startRun` of the session. */
   private currentOrigin: ProgramOrigin | undefined;
   /** This run's traceback frames, structured, in the order Python printed
    * them — retained from the streamed traceback output so
-   * {@link revealFrame} can look one up by the index the webview sends
-   * back. Reset at the start of every run. */
+   * {@link revealFrame} can look one up by the index the webview sends back.
+   * Reset at the start of every run.
+   *
+   * Correct *because* a run streams exactly one traceback
+   * (`procPython.ts`'s `buildFailureOutcome` emits one, once): the webview's
+   * `frameIndex` is scoped to a single rendered `<ol>`, and this array is
+   * scoped to the run, so the two line up only while there is one `<ol>`. A
+   * run that ever streamed two would render two 0-indexed lists, and an
+   * index from the first would resolve against the second — carry a
+   * per-item id in `RevealFrameMessage` before that becomes possible. */
   private currentFrames: readonly RenderTracebackFrame[] = [];
 
   constructor(extensionUri: vscode.Uri, deps: ResultPanelDeps = {}) {
@@ -153,10 +161,26 @@ export class ResultPanel implements vscode.Disposable {
       deps.revealPosition ??
       ((uri, position) => {
         const target = new vscode.Position(position.line, position.character);
-        void vscode.window.showTextDocument(uri, {
-          selection: new vscode.Range(target, target),
-          preserveFocus: false,
-        });
+        // The activation that got here originated inside the webview panel,
+        // so `ViewColumn.Active` is the *panel's* column — opening the
+        // document there would cover the panel the user just clicked. Reuse
+        // the column of an editor already showing this file, else land in
+        // the first column, never `Active`.
+        const shown = vscode.window.visibleTextEditors.find(
+          (editor) => editor.document.uri.toString() === uri.toString(),
+        );
+        void vscode.window
+          .showTextDocument(uri, {
+            selection: new vscode.Range(target, target),
+            preserveFocus: false,
+            viewColumn: shown?.viewColumn ?? vscode.ViewColumn.One,
+          })
+          // A file renamed or deleted since the run rejects here; the same
+          // unhandled-rejection hazard `procPython.ts`'s `void done.catch(…)`
+          // names. Nothing to do — the line the user asked for is gone —
+          // and `revealFrame`'s contract is already "a silent no-op rather
+          // than a wrong jump".
+          .then(undefined, () => undefined);
       });
   }
 
@@ -165,10 +189,10 @@ export class ResultPanel implements vscode.Disposable {
    * decide whether a panel is worth having at all.
    *
    * `origin` (Phase 4d) is this run's program origin, kept so a later
-   * `revealFrame` message can be mapped back to an editor position. Optional
-   * only so tests that never exercise click-to-jump can keep calling
-   * `startRun()` bare; `src/run/commands.ts` always passes it. */
-  startRun(origin?: ProgramOrigin): void {
+   * `revealFrame` message can be mapped back to an editor position. Required
+   * rather than optional — "click-to-jump silently does nothing" should not
+   * be reachable by a caller forgetting an argument. */
+  startRun(origin: ProgramOrigin): void {
     this.imageCount = 0;
     this.revealedThisRun = false;
     this.currentOrigin = origin;

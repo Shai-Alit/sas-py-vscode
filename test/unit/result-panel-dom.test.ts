@@ -191,7 +191,7 @@ describe("run/resultPanelDom", () => {
       assert.equal(container.children.length, 2, "heading and message only");
     });
 
-    it("makes a <string> frame's <li> a keyboard-reachable button wired to onFrameActivate, and leaves other frames inert", () => {
+    it("wraps a <string> frame's line in an inner role=button span wired to onFrameActivate, and leaves the <li> itself a listitem", () => {
       const root = fakeRoot();
       const activated: number[] = [];
       const message: ResultPanelMessage = {
@@ -214,31 +214,40 @@ describe("run/resultPanelDom", () => {
 
       const list = root.children[0]?.children[2];
       assert.ok(list);
-      const clickable = list.children[0];
-      const inert = list.children[1];
-      assert.ok(clickable);
-      assert.ok(inert);
+      const clickableLi = list.children[0];
+      const inertLi = list.children[1];
+      assert.ok(clickableLi);
+      assert.ok(inertLi);
 
-      assert.equal(clickable.attrs.role, "button");
-      assert.equal(clickable.attrs.tabindex, "0");
+      // The <li> stays a plain listitem — no role override that would pull
+      // it out of the <ol>.
+      assert.equal(clickableLi.tag, "li");
+      assert.equal(clickableLi.attrs.role, undefined);
+      const button = clickableLi.children[0];
+      assert.ok(button);
+      assert.equal(button.tag, "span");
+      assert.equal(button.attrs.role, "button");
+      assert.equal(button.attrs.tabindex, "0");
       assert.match(
-        clickable.attrs.class ?? "",
+        button.attrs.class ?? "",
         /python-on-viya-traceback-frame-clickable/,
       );
-      assert.equal(clickable.activateHandlers.length, 1);
-      clickable.activateHandlers[0]?.();
+      assert.equal(button.text, "<string>, line 3, in <module>");
+      assert.equal(button.activateHandlers.length, 1);
+      button.activateHandlers[0]?.();
       assert.deepEqual(
         activated,
         [0],
         "the frame's own index in traceback order",
       );
 
-      assert.equal(inert.attrs.role, undefined);
-      assert.equal(inert.attrs.tabindex, undefined);
-      assert.equal(inert.activateHandlers.length, 0);
+      // The library frame is plain text on the <li>, no inner span.
+      assert.equal(inertLi.text, "numpy/core.py, line 9, in divide");
+      assert.equal(inertLi.children.length, 0);
+      assert.equal(inertLi.activateHandlers.length, 0);
     });
 
-    it("leaves every frame inert when no onFrameActivate is supplied", () => {
+    it("leaves every frame as plain <li> text when no onFrameActivate is supplied", () => {
       const root = fakeRoot();
       const message: ResultPanelMessage = {
         type: "output",
@@ -253,6 +262,7 @@ describe("run/resultPanelDom", () => {
       applyMessage(fakePort(), root, message);
       const li = root.children[0]?.children[2]?.children[0];
       assert.ok(li);
+      assert.equal(li.children.length, 0, "no inner button span");
       assert.equal(li.attrs.role, undefined);
       assert.equal(li.activateHandlers.length, 0);
       assert.equal(li.text, "<string>, line 1, in <module>");

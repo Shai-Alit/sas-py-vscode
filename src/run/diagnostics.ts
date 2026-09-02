@@ -108,8 +108,12 @@ export class RunDiagnostics implements vscode.Disposable {
     diagnostic.source = SOURCE;
 
     const related = relatedFrames(origin, traceback);
-    // Only when there is a *stack* to walk. A single-frame error's one
-    // related entry would just repeat the diagnostic's own location.
+    // Every `<string>` frame, the innermost (the diagnostic's own line)
+    // included — for a recursion, that repeated ladder *is* the useful
+    // information, and VS Code rendering one related child on the same line
+    // as the diagnostic is the accepted cost of it. Attached only when there
+    // is more than one: a lone `<string>` frame's single related entry would
+    // add nothing but a duplicate of the diagnostic's location.
     if (related.length > 1) diagnostic.relatedInformation = related;
 
     this.collection.set(origin.uri, [diagnostic]);

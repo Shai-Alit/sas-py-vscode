@@ -433,11 +433,6 @@ export function createRunCommandHandlers(
       return;
     }
 
-    // Phase 4d: clear this file's prior Problems entry before the run, so a
-    // run that now passes — or fails before producing a traceback — leaves
-    // nothing stale. Keyed on the origin URI, the same key `publish` sets.
-    diagnostics.clearFor(program.origin.uri);
-
     const built = await backendFor();
     if (built === undefined) return;
     const { backend, connection } = built;
@@ -486,6 +481,13 @@ export function createRunCommandHandlers(
       outputChannel.reveal();
       outputChannel.writeRunHeader(connection.profileName, description);
       resultPanel.startRun(program.origin);
+      // Phase 4d: reset the Problems entry alongside the other two surfaces,
+      // at the point a run actually begins — not before `backendFor()`,
+      // where a connect failure or a `busy` refusal would clear Problems
+      // while the output channel and result panel still showed the previous
+      // run. A run that now passes, or fails before producing a traceback,
+      // leaves nothing stale; keyed on the origin URI, the key `publish` sets.
+      diagnostics.clearFor(program.origin.uri);
       const handle = executed.value;
       currentRun = { backend, handle };
 
@@ -525,7 +527,10 @@ export function createRunCommandHandlers(
         // user frame. `diagnostics.publish` is a no-op when no frame maps
         // (a SAS-side error, or an all-library stack) — see its own doc.
         // The message is the outcome's own diagnostic text, which already
-        // carries 4c's `ModuleNotFoundError` → Show Environment pointer.
+        // carries 4c's `ModuleNotFoundError` → Show Environment pointer;
+        // `?? traceback.message` is belt-and-braces — `buildFailureOutcome`
+        // only ever emits the traceback output together with exactly one
+        // diagnostic, so `diagnostics[0]` is present whenever `traceback` is.
         if (!settled.value.succeeded && traceback !== undefined) {
           diagnostics.publish(
             program.origin,

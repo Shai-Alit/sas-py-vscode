@@ -299,38 +299,73 @@ own exit criterion) rules out a guessed one — the same rule
 
 **Click-to-jump.** `RenderItem`'s traceback arm gained a structured
 `frames: RenderTracebackFrame[]` alongside the pre-formatted `frameLines`;
-`resultPanelDom.ts` marks a frame `<li>` a `role="button"`, `tabindex="0"`
-button (and wires `DomPort.onActivate`, new) exactly when its `file` is
-`<string>` **and** `applyMessage` was given an `onFrameActivate` callback.
-`webview/entry.ts` supplies one that posts `{ type: "revealFrame",
-frameIndex }` — the one webview→host message beyond `"ready"`, with its own
-`isRevealFrameMessage` guard in `resultPanelModel.ts` (kept out of
-`ResultPanelMessage`, which stays host→webview). `resultPanel.ts` retains the
-run's `ProgramOrigin` (via `startRun(origin?)`) and the streamed frames,
-resolves the activated index through `mapFrameToOrigin`, and opens the editor
-via a new injectable `revealPosition` dep (defaults to
-`window.showTextDocument`). A stale/out-of-range index, a non-`<string>`
-frame, or no origin is a silent no-op. Frame styling is one inline
+`resultPanelDom.ts` wraps a frame's line in an inner
+`<span role="button" tabindex="0">` (and wires `DomPort.onActivate`, new)
+exactly when its `file` is `<string>` **and** `applyMessage` was given an
+`onFrameActivate` callback — the `<li>` stays a plain listitem so the
+`<ol>`'s screen-reader semantics survive. `webview/entry.ts` supplies a
+callback that posts `{ type: "revealFrame", frameIndex }` — the one
+webview→host message beyond `"ready"`, with its own `isRevealFrameMessage`
+guard in `resultPanelModel.ts` (kept out of `ResultPanelMessage`, which stays
+host→webview). `resultPanel.ts` retains the run's `ProgramOrigin` (via
+`startRun(origin)`, now required) and the streamed frames, resolves the
+activated index through `mapFrameToOrigin`, and opens the editor via a new
+injectable `revealPosition` dep. The default reuses the column of an editor
+already showing the file, else `ViewColumn.One` — never `Active`, which from
+a webview-panel click is the panel's own column — and swallows a
+rejected `showTextDocument` (file renamed/deleted since the run) the same way
+`procPython.ts` swallows `done`. A stale/out-of-range index or a
+non-`<string>` frame is a silent no-op. Frame styling is one inline
 `.python-on-viya-traceback-frame-clickable` rule — already inside ADR-0021's
 `style-src 'unsafe-inline'`, no CSP change.
 
-**Checks run this session:** `npm run typecheck` (all three projects),
-`npm run lint`, `npm run format:check`, `npm run check:coverage-scope`, and
-`npm run test:unit` (1160 specs) all green. The build and `compile:test`
-steps of `npm run test:integration` also pass; the VS Code-host tier itself
-could not launch in this sandbox (a known limitation — see `RUNBOOK.md`).
+**Checks run this session** (VS Code Claude Code — no sandbox timeout, so the
+unit tier and lint are available here, unlike the cowork sandbox `CLAUDE.md`
+was written for): `npm run typecheck` (tsc `--noEmit` ×3), `npm run lint`,
+`npx prettier --check`, `npm run check:coverage-scope`, `check:copyright`,
+`check:secrets`, `npm run check:docs` (incl. the VitePress build), and
+`npm run test:unit` — **1161 specs passing** (one unrelated flake,
+`prepared-vscode.test.ts`'s Windows drive-letter-casing assertion, passes on
+re-run). `npm run test:integration`'s `build`/`compile:test` steps pass; the
+VS Code-host tier itself will not launch in this environment
+(`Code.exe: bad option: --disable-extensions` — an env limit, not a timeout).
 
-**Still open before merge (Sean):** `npm run verify` + `npm run
+**Still open before merge (Sean):** `npm run verify` and `npm run
 test:integration` green, including the new
 `test/integration/run/{diagnostics,commands-diagnostics}.test.ts` and the
 extended `result-panel.test.ts`; the coverage ratchet re-measured and bumped
 in `.c8rc.json` (`resultPanelModel.ts`/`resultPanelDom.ts` gained code — up
-only); the standing adversarial review pass; and live verification against
-`verde` (`1/0` at a known line → one accurately-positioned Problems entry;
-re-run clean → it clears; Run Selection mid-file → the entry lands at the
-editor line; click a `<string>` frame in the result panel → the editor
-jumps; a library-frame line is not clickable). `docs/dev/manual-test-pass.md`
-§7/§8 carry the new manual assertions.
+only); a final adversarial pass over the post-review diff if warranted (the
+first pass's findings are folded in — see below); and live verification
+against `verde` (`1/0` at a known line → one accurately-positioned Problems
+entry that opens in the editor column, not over the panel; re-run clean → it
+clears; Run Selection mid-file → the entry lands at the editor line; click a
+`<string>` frame in the result panel → the editor jumps; a library-frame
+line is not clickable). `docs/dev/manual-test-pass.md` §7/§8 carry the new
+manual assertions.
+
+**Adversarial review pass, 2026-09-01 — findings folded in.** (1)
+`revealPosition`'s default targeted `ViewColumn.Active`, which from a
+webview-panel click is the panel's own column — it now reuses the column of
+an editor already showing the file, else `ViewColumn.One`. (2) The same
+default's `void showTextDocument(…)` had no rejection handler; it now
+swallows a renamed/deleted-file rejection the way `procPython.ts` swallows
+`done`. (3) `role="button"` sat on the `<li>`, taking it out of the `<ol>`
+for a screen reader — moved to an inner `<span>`. (4) `clearFor` ran before
+`backendFor()`, so a connect failure or `busy` refusal wiped the Problems
+entry while the output channel and result panel still showed the last run —
+moved to sit with `startRun`. (5) `startRun(origin)` made required rather
+than optional. Plus comment/record corrections. Two nits left as noted, not
+fixed: the Problems entry is only ever cleared by the *next run* of the same
+file (below), and `?? traceback.message` is an unreachable belt-and-braces
+fallback (commented as such).
+
+**Deferred, not this slice:** the `DiagnosticCollection` is only ever
+cleared by the *next run* of the same file — nothing wipes it when the
+document closes, the profile signs out, or the run target flips to Local, so
+a stale Viya-run diagnostic can outlive the connection that produced it.
+Low-stakes (the position is still where the last run raised) and a natural
+Phase 5 hardening item rather than 4d scope.
 
 ---
 

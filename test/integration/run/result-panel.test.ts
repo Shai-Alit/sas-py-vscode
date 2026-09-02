@@ -101,6 +101,13 @@ function fakePanel(): {
 
 const extensionUri = vscode.Uri.file("/fake-extension");
 
+/** A stand-in origin for the tests that only care that a run started, not
+ * where from — `startRun` now requires one. */
+const runOrigin: ProgramOrigin = {
+  uri: vscode.Uri.file("/workspace/run.py"),
+  lineOffset: 0,
+};
+
 describe("ResultPanel", () => {
   it("creates no panel for a run that produces only text/plain output", () => {
     let created = 0;
@@ -110,7 +117,7 @@ describe("ResultPanel", () => {
         return fakePanel().panel;
       },
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "text/plain", data: "hello\n" });
     panel.writeOutput({ mime: "text/plain", data: "world\n" });
     assert.equal(created, 0);
@@ -121,7 +128,7 @@ describe("ResultPanel", () => {
     const panel = new ResultPanel(extensionUri, {
       createPanel: () => fake.panel,
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "image/png", data: "aGVsbG8=" });
     assert.deepEqual(fake.revealed, [
       { column: vscode.ViewColumn.Beside, preserveFocus: true },
@@ -137,11 +144,11 @@ describe("ResultPanel", () => {
     const panel = new ResultPanel(extensionUri, {
       createPanel: () => fake.panel,
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "image/png", data: "AA==" });
     assert.equal(fake.revealed.length, 1);
 
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "text/plain", data: "no reveal yet\n" });
     assert.equal(fake.revealed.length, 1, "text/plain alone reveals nothing");
     panel.writeOutput({ mime: "image/png", data: "BB==" });
@@ -175,7 +182,7 @@ describe("ResultPanel", () => {
         return fakePanel().panel;
       },
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutcome({ succeeded: true, diagnostics: [] });
     panel.writeFailure({ code: "cancelled" });
     assert.equal(created, 0);
@@ -220,7 +227,7 @@ describe("ResultPanel", () => {
     const panel = new ResultPanel(extensionUri, {
       createPanel: () => fake.panel,
     });
-    panel.startRun();
+    panel.startRun(runOrigin);
     panel.writeOutput({ mime: "image/png", data: "AA==" });
     // Nothing posted yet — the panel exists (it was just created), but has
     // not sent "ready".
@@ -389,10 +396,12 @@ describe("ResultPanel", () => {
       );
     });
 
-    it("does nothing when the run was started without an origin", () => {
+    it("does nothing when a revealFrame arrives before any run has started", () => {
+      // `commands.ts` always calls `startRun` before `writeOutput`, but the
+      // guard on `currentOrigin` is still load-bearing: drive `writeOutput`
+      // straight, with no `startRun`, and the inbound message is a no-op.
       const fake = fakePanel();
       const { panel, revealed } = panelWithRevealSpy(fake);
-      panel.startRun();
       panel.writeOutput(tracebackOutput);
 
       fake.sendRevealFrame(0);

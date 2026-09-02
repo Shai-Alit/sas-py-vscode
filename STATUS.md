@@ -266,24 +266,41 @@ failure or an all-library stack gets no Problems entry rather than one planted
 at line 0 (the phase's exit criterion is an *accurately*-positioned error;
 `tracebackDiagnostics.ts`'s own "don't guess a position" rule, applied at the
 surface). **Result panel:** the traceback `RenderItem` gained structured
-`frames`; `resultPanelDom.ts` makes a `<string>`-frame `<li>` a
-`role="button"` (new `DomPort.onActivate`) when `applyMessage` is given an
-`onFrameActivate`; `webview/entry.ts` posts `{ type: "revealFrame",
-frameIndex }` — the one webview→host message beyond `"ready"`, its own
-`isRevealFrameMessage` guard, kept out of `ResultPanelMessage`;
-`resultPanel.ts` retains the run's `ProgramOrigin` (`startRun(origin?)`) and
-frames, maps the activated index via `mapFrameToOrigin`, opens the editor via
-a new injectable `revealPosition` dep. No new command, setting, webview
-surface or CSP change. New page `docs/architecture/diagnostics-surface.md`
-covers both 4c and 4d (4c never wrote its reserved page). **Checks green this
-session:** `typecheck` (×3), `lint`, `format:check`, `check:coverage-scope`,
-`test:unit` (1160). `test:integration`'s build/compile steps pass; the VS
-Code-host tier could not launch in this sandbox. **Open before merge (Sean):**
-`npm run verify` + `test:integration`; coverage ratchet re-measured and
-bumped in `.c8rc.json` (`resultPanelModel.ts`/`resultPanelDom.ts` gained
-code); the adversarial review pass; live verification against `verde`. The
-`phase-4d-diagnostics-surface` branch was cut from `main` at `64b7d38`
-(PR #82 — the 4c merge-record doc commit — had already landed there).
+`frames`; `resultPanelDom.ts` wraps a `<string>`-frame's line in an inner
+`<span role="button">` (new `DomPort.onActivate`) when `applyMessage` is
+given an `onFrameActivate` — the `<li>` stays a listitem so the `<ol>`'s
+screen-reader semantics hold; `webview/entry.ts` posts `{ type:
+"revealFrame", frameIndex }` — the one webview→host message beyond `"ready"`,
+its own `isRevealFrameMessage` guard, kept out of `ResultPanelMessage`;
+`resultPanel.ts` retains the run's `ProgramOrigin` (`startRun(origin)`, now
+required) and frames, maps the activated index via `mapFrameToOrigin`, opens
+the editor via a new injectable `revealPosition` dep (default reuses an
+existing editor's column, else `ViewColumn.One` — never the panel's; swallows
+a rejected `showTextDocument`). No new command, setting, webview surface or
+CSP change. New page `docs/architecture/diagnostics-surface.md` covers both
+4c and 4d (4c never wrote its reserved page). **An adversarial review pass
+has been done** (2026-09-01) and its findings folded in: `revealPosition`
+now reuses an existing editor's column (never `Active`/the panel's) and
+swallows a rejected `showTextDocument`; the clickable frame is an inner
+`<span role="button">` so the `<ol>` keeps its screen-reader semantics;
+`clearFor` moved to sit with `startRun` at the "a run began" point;
+`startRun(origin)` made required; comment/record corrections. Two nits left
+as documented, not fixed — the Problems entry is only cleared by the next
+run of the same file (a Phase 5 hardening item), and `?? traceback.message`
+is an unreachable belt-and-braces fallback. **Checks run this session** (VS
+Code Claude Code — the sandbox-timeout reason `CLAUDE.md` bars lint/tests
+for does not apply here): `typecheck` ×3, `npm run lint`, `prettier
+--check`, `check:coverage-scope`/`check:copyright`/`check:secrets`,
+`check:docs`, and `npm run test:unit` (**1161 passing**; one unrelated
+Windows drive-letter flake that passes on re-run) — all green.
+`test:integration`'s build/compile pass; its VS Code host tier will not
+launch in this environment. **Open before merge (Sean):** `npm run verify` +
+`npm run test:integration`; coverage ratchet re-measured and bumped in
+`.c8rc.json` (`resultPanelModel.ts`/`resultPanelDom.ts` gained code); a final
+adversarial pass over the post-review diff if warranted; live verification
+against `verde`. The `phase-4d-diagnostics-surface` branch was cut from
+`main` at `64b7d38` (PR #82 — the 4c merge-record doc commit — had already
+landed there).
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

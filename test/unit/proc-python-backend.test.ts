@@ -1057,6 +1057,48 @@ describe("ProcPythonBackend", () => {
       );
     });
 
+    it("accepted edge: a multi-line message whose own last line is exactly `...` loses it", async () => {
+      // The known cost of trimming a run of prompt markers from the end of the
+      // tail (see `PROMPT_LINES`' doc): `raise ValueError("boom\n...")` renders
+      // its message across two lines, the second being exactly `...`, which is
+      // indistinguishable from the continuation prompt and gets trimmed. This
+      // pins the behaviour so a future smarter trim is a deliberate change,
+      // not a surprise.
+      const { client } = router({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        logLines: [
+          line("Traceback (most recent call last):"),
+          line('  File "<string>", line 1, in <module>'),
+          line("ValueError: boom"),
+          line("..."),
+        ],
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      await accepted.done;
+
+      const traceback = outputs.find(
+        (
+          output,
+        ): output is Extract<
+          RichOutput,
+          { mime: "application/vnd.python.traceback" }
+        > => output.mime === "application/vnd.python.traceback",
+      );
+      assert.ok(traceback !== undefined, "no traceback was forwarded");
+      assert.equal(traceback.data.message, "ValueError: boom");
+    });
+
     it("keeps a user-generated <stdin> frame that appears below a real frame, blocking finding from PR #61's review", async () => {
       // Regression test for a real bug an automated reviewer caught before
       // merge: a first version of this filter dropped every frame labelled

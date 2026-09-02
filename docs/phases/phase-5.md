@@ -327,6 +327,16 @@ group with the test-only BOM fixture.
    `lastIndexOf`/leading-`<stdin>`-trim/`FRAME_PATTERN` logic is untouched by
    the tail-only change.
 
+   **PR bot review (non-blocking):** the `github-actions` reviewer flagged
+   that the end-trim's doc comment overstated boundary safety — a multi-line
+   exception message whose *own* first or last physical line is exactly
+   `>>>` / `...` (e.g. `raise ValueError("x\n...")`) loses that line, the
+   same ambiguity the comment only called out for the interior. The unbounded
+   trim is kept — `PROC PYTHON`'s error-path prompt emission is irregular
+   (runs of `>>>`, not always one), and a marker left glued to the message is
+   the defect being closed — but the comment now owns the tradeoff and a new
+   `proc-python-backend.test.ts` case pins the accepted loss.
+
    **Verified live 2026-09-02** against `verde` with a `.vsix` from the branch
    (Sean's run) — **ten runs**, five scripts × **Run Selection** and **Run
    File**:

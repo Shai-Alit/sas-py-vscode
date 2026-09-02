@@ -208,11 +208,21 @@ const TRACEBACK_HEADER = "Traceback (most recent call last):";
  * brackets the traceback — right where {@link parseTraceback} would otherwise
  * sweep them into the exception message.
  *
- * Stripped from **each end** of the message tail, never the interior: a real
- * exception message can embed a REPL or doctest transcript, and a numpy
- * row-elision line trims to exactly `...`. Matched as a whole trimmed line
- * (`">>> "` trims to `">>>"`, `"..."` is the continuation prompt), never as a
- * substring, so `raise Exception(">>>")` → `Exception: >>>` is untouched.
+ * A run of them is stripped from **each end** of the message tail; the
+ * interior is never touched, so a real exception message that embeds a REPL
+ * or doctest transcript (or a numpy row-elision line that trims to exactly
+ * `...`) keeps every line between its first and last. Matched as a whole
+ * trimmed line (`">>> "` trims to `">>>"`, `"..."` is the continuation
+ * prompt), never as a substring, so `raise Exception(">>>")` →
+ * `Exception: >>>` survives.
+ *
+ * The ends are not risk-free — a multi-line exception message whose *own*
+ * first or last physical line is exactly `>>>` / `...` (e.g.
+ * `raise ValueError("x\n...")`) loses that line here. Accepted: such messages
+ * are near-nonexistent, `PROC PYTHON`'s error-path prompt emission is
+ * demonstrably irregular (runs of `>>>`, not always one), and the alternative
+ * — leaving a bare prompt marker glued to the exception message — is the
+ * exact defect Finding 74 is closing.
  *
  * Not a general output filter — the live transcript still shows these; this is
  * scoped to the one place already parsing a known traceback shape.

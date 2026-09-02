@@ -1159,14 +1159,17 @@ called out under **Changed** with a migration note.
   `ModuleNotFoundError`'s appended "Show Environment" pointer (a superset of
   the streamed message, so it prints in full — one repeated tail plus the
   pointer). Separately, `parseTraceback` no longer sweeps the interpreter's
-  bare `>>>` / `...` prompt markers — which `PROC PYTHON` brackets a failing
-  run's traceback with — into the exception message it extracts; a run of them
-  is trimmed from each _end_ of the message tail, never the interior, so a
-  message that embeds a REPL or doctest transcript is untouched. *(The prompt
-  markers and interpreter banner still appear in the live transcript itself;
-  that half of Finding 74 is a deployment-side question — successful runs are
-  already clean — and is left for a live-Viya probe rather than a fragile
-  client-side scrub of `normal`-typed output.)*
+  bare `>>>` / `...` prompt markers — which `PROC PYTHON` brackets the
+  traceback with — into the exception message it extracts; a run of them is
+  trimmed from each _end_ of the message tail, never the interior, so a
+  message that embeds a REPL or doctest transcript keeps its inner lines (the
+  accepted cost is that a message whose own first or last line is itself
+  exactly `>>>` / `...` loses it — vanishingly rare, and better than a prompt
+  marker glued to the exception text). *(The prompt markers, and — on the Run
+  File path — the interpreter startup banner, still appear in the live
+  transcript itself; that half of Finding 74 is a deployment-side question,
+  left for a live-Viya probe rather than a fragile client-side scrub of
+  `normal`-typed output.)*
 - Three regressions found by the first full run of the manual test pass
   (2026-08-27), all closed in the same slice (Phase 3's 3f). **Signing out,
   an idle session reap, or a window reload could all leave the `Connect to

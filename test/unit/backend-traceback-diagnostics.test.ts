@@ -11,10 +11,12 @@ import {
   type TracebackFrame,
 } from "../../src/backend/backend";
 import {
+  alreadyStreamedAsTraceback,
   mapFrameToOrigin,
   primaryFrame,
   primaryPosition,
   STRING_FRAME_FILE,
+  SYNTHESIZED_TRACEBACK_MESSAGE,
   withModuleNotFoundGuidance,
 } from "../../src/backend/tracebackDiagnostics";
 
@@ -182,6 +184,51 @@ describe("tracebackDiagnostics", () => {
       assert.equal(
         withModuleNotFoundGuidance("ModuleNotFoundErrorWrapper: boom"),
         "ModuleNotFoundErrorWrapper: boom",
+      );
+    });
+  });
+
+  describe("alreadyStreamedAsTraceback", () => {
+    const tb = (message: string): Traceback => ({ message, frames: [] });
+
+    it("is true when the diagnostic message equals the streamed traceback's", () => {
+      assert.equal(
+        alreadyStreamedAsTraceback(
+          "RecursionError: maximum recursion depth exceeded",
+          tb("RecursionError: maximum recursion depth exceeded"),
+        ),
+        true,
+      );
+    });
+
+    it("is false when nothing structured streamed (a SAS-side error)", () => {
+      assert.equal(
+        alreadyStreamedAsTraceback("ERROR: The SAS System stopped.", undefined),
+        false,
+      );
+    });
+
+    it("is false for the synthesized stand-in, even when both sides carry it", () => {
+      // A header + frames but no exception line: `parseTraceback` makes the
+      // message up and `buildFailureOutcome` puts the same string on both
+      // sides. It never streamed, so it must still print.
+      assert.equal(
+        alreadyStreamedAsTraceback(
+          SYNTHESIZED_TRACEBACK_MESSAGE,
+          tb(SYNTHESIZED_TRACEBACK_MESSAGE),
+        ),
+        false,
+      );
+    });
+
+    it("is false when the diagnostic only extends the streamed message (ModuleNotFoundError)", () => {
+      const streamed = "ModuleNotFoundError: No module named 'polars'";
+      assert.equal(
+        alreadyStreamedAsTraceback(
+          withModuleNotFoundGuidance(streamed),
+          tb(streamed),
+        ),
+        false,
       );
     });
   });

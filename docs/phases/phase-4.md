@@ -213,7 +213,11 @@ and its own two adjacent findings (the banner/`>>>` reading as noise to a
 person despite correctly not being log noise, and `writeOutcome`'s
 traceback-tail echo being genuinely redundant) are left as open,
 undecided follow-ups rather than fixed here — outside this slice's own
-scope of traceback→editor mapping.
+scope of traceback→editor mapping. **Both were taken up in Phase 5's
+5d-iii slice (2026-09-02):** the redundant echo is fixed (on the output
+channel and the result panel), and the banner/`>>>` UX gap is sent to a
+live-Viya probe rather than papered over client-side. See `phase-5.md`'s
+Runbook item 3.
 
 **Verified 2026-09-01.** Automated: `npm run verify` and `npm run
 test:integration` both green — that covers `tsc --noEmit` (all three

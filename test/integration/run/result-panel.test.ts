@@ -296,6 +296,57 @@ describe("ResultPanel", () => {
     assert.notEqual(message.summary, "Finished.");
   });
 
+  it("drops an outcome diagnostic that repeats the streamed traceback's message (Finding 74, 5d-iii)", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    const tracebackMessage = "RecursionError: maximum recursion depth exceeded";
+    panel.writeOutcome(
+      {
+        succeeded: false,
+        diagnostics: [{ severity: "error", message: tracebackMessage }],
+      },
+      { message: tracebackMessage, frames: [] },
+    );
+
+    const message = fake.posted
+      .filter(isResultPanelMessage)
+      .find(isOutcomeMessage);
+    assert.ok(message !== undefined);
+    assert.equal(message.succeeded, false);
+    // The panel already holds this text as the raw log items and the
+    // structured traceback item — the outcome must not carry it a third time.
+    assert.deepEqual(message.diagnostics, []);
+  });
+
+  it("keeps an outcome diagnostic that never streamed (a SAS-side error)", () => {
+    const fake = fakePanel();
+    const panel = new ResultPanel(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    panel.writeOutput({ mime: "image/png", data: "AA==" });
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    panel.writeOutcome({
+      succeeded: false,
+      diagnostics: [
+        { severity: "error", message: "ERROR: The SAS System stopped." },
+      ],
+    });
+
+    const message = fake.posted
+      .filter(isResultPanelMessage)
+      .find(isOutcomeMessage);
+    assert.ok(message !== undefined);
+    assert.deepEqual(message.diagnostics, ["ERROR: The SAS System stopped."]);
+  });
+
   it("disposes the underlying panel, and a run after disposal opens a new one", () => {
     const first = fakePanel();
     const second = fakePanel();

@@ -34,10 +34,14 @@ import type {
   ExecutionOutcome,
   ProgramOrigin,
   RichOutput,
+  Traceback,
 } from "../backend/backend";
 import { localiseBackendProblem } from "../backend/messages";
 import type { BackendProblem } from "../backend/problems";
-import { mapFrameToOrigin } from "../backend/tracebackDiagnostics";
+import {
+  alreadyStreamedAsTraceback,
+  mapFrameToOrigin,
+} from "../backend/tracebackDiagnostics";
 import {
   isAlreadyVisibleAsText,
   isRevealFrameMessage,
@@ -254,12 +258,34 @@ export class ResultPanel implements vscode.Disposable {
 
   /** The run's own conclusion. Never opens the panel by itself — the output
    * channel already shows this in full, so an outcome-only run stays quiet,
-   * per the reveal policy. */
-  writeOutcome(outcome: ExecutionOutcome): void {
+   * per the reveal policy.
+   *
+   * `streamedTraceback` (Phase 5d-iii): for a failing run the panel already
+   * holds this traceback twice — as the raw log's `text/plain` items and as
+   * the structured, clickable traceback item — so echoing its message a third
+   * time in the outcome's own diagnostics list is pure noise. A diagnostic
+   * {@link alreadyStreamedAsTraceback} recognises is dropped before
+   * {@link outcomeMessage}, the same rule `RunOutputChannel.writeOutcome`
+   * applies to the channel; the synthesized-message and `ModuleNotFoundError`
+   * carve-outs live in that shared helper. */
+  writeOutcome(outcome: ExecutionOutcome, streamedTraceback?: Traceback): void {
     const summary = outcome.succeeded
       ? vscode.l10n.t("Finished.")
       : vscode.l10n.t("Finished with an error.");
-    this.emit(outcomeMessage(outcome, summary));
+    const shown =
+      streamedTraceback === undefined
+        ? outcome
+        : {
+            ...outcome,
+            diagnostics: outcome.diagnostics.filter(
+              (diagnostic) =>
+                !alreadyStreamedAsTraceback(
+                  diagnostic.message,
+                  streamedTraceback,
+                ),
+            ),
+          };
+    this.emit(outcomeMessage(shown, summary));
   }
 
   /** A run, cancel or reset that never reached an outcome. Same non-opening

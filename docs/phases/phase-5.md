@@ -244,30 +244,49 @@ group with the test-only BOM fixture.
    `vscode.OutputChannel` double). Sub-finding (b) also has a root-cause site
    one layer down, in `src/backend/procPython.ts`'s `parseTraceback`.
 
-   **Decision: (b) is fixed; (a)'s live-transcript half is deliberately not.**
+   **Decision: (b) is fixed on both outcome surfaces; (a)'s live-transcript
+   half is deliberately not.**
 
-   - **(b) — the echo.** `RunOutputChannel.writeOutcome` now takes the
-     structured `Traceback` this run streamed (already captured by
-     `commands.ts`'s `drainOutputs` and in scope at the call site — a
-     one-argument wiring change) and skips any diagnostic whose `message` is
-     *exactly* that traceback's message: it already streamed live as the raw
-     log's own `normal`-typed lines. An equality check, not a blanket
-     failure-path suppression, so the two cases that genuinely need the line
-     keep it — a SAS-side error (`SYSCC=3000`, from `SYSERRORTEXT`, never
-     streamed anywhere) and a `ModuleNotFoundError` (its message carries
-     `withModuleNotFoundGuidance`'s appended "Show Environment" pointer, so
-     `message !== traceback.message`).
+   - **(b) — the echo.** A shared pure helper
+     `alreadyStreamedAsTraceback(message, streamedTraceback)`
+     (`src/backend/tracebackDiagnostics.ts`) answers "did the user already see
+     this text stream?" — true only when the diagnostic's message equals the
+     streamed `Traceback`'s own message. Both `RunOutputChannel.writeOutcome`
+     (`src/run/outputChannel.ts`) and `ResultPanel.writeOutcome`
+     (`src/run/resultPanel.ts`) now take the streamed `Traceback` (captured by
+     `commands.ts`'s `drainOutputs`, in scope at the call site) and drop a
+     matching diagnostic before rendering the outcome. Value-equality, not a
+     blanket failure-path suppression, and the helper returns **false** — so
+     the line still prints — for three cases that never streamed: a SAS-side
+     error (`SYSCC=3000`, from `SYSERRORTEXT`); the synthesized
+     `SYNTHESIZED_TRACEBACK_MESSAGE` ("an unhandled Python exception")
+     stand-in `parseTraceback` uses when a header and frames are followed by
+     no exception line (`buildFailureOutcome` puts that one string on both
+     sides, so a plain equality check alone would wrongly suppress it — the
+     carve-out is why the helper exists rather than an inline `===`); and a
+     `ModuleNotFoundError`, whose diagnostic is a strict superset of the
+     streamed message (`withModuleNotFoundGuidance`'s "Show Environment"
+     pointer appended). That last one prints in full — one repeated tail then
+     the pointer; slicing off the known prefix was considered and left out
+     because the equality check fails safe where a prefix-slice would emit a
+     fragment, noted as a possible follow-up.
+   - **The result panel mattered more than first scoped.** For a failing run
+     the panel already holds the traceback text *twice* — as the raw log's
+     `text/plain` items and as the structured, clickable traceback item — so
+     the outcome's own diagnostics list was a third copy. An earlier draft
+     deferred this as "out of scope"; the adversarial pass (below) showed it
+     was the same one-line fix and a measurable triple-render, so it is closed
+     here too.
    - **Paired backend cleanup.** `parseTraceback` was sweeping the
      interpreter's bare `>>>` / `...` prompt lines — which `PROC PYTHON`
-     interleaves into a failing run's log, typed `normal`, so `logFilter.ts`
-     correctly forwards them, and which land right after the frame lines where
-     the message tail is read — into `traceback.message`. It now drops a line
-     that is *exactly* a bare prompt marker (matched after `trim()`, never as a
-     substring, so `raise Exception(">>>")` → `Exception: >>>` is untouched).
-     This is scoped to the one place already parsing a known traceback shape,
-     not a general output filter; it cleans the message for all four consumers
-     (the echo comparison, the diagnostic, the Problems-panel entry, the
-     result panel).
+     brackets a failing run's traceback with, typed `normal`, so `logFilter.ts`
+     correctly forwards them — into `traceback.message`. It now trims a run of
+     them from **each end** of the message tail, never the interior (a real
+     exception message can embed a REPL or doctest transcript; a numpy
+     row-elision line trims to exactly `...`). Matched as a whole trimmed line,
+     never a substring, so `raise Exception(">>>")` → `Exception: >>>` is
+     untouched. Cleans the message for every consumer — the echo comparison,
+     the diagnostic, the Problems-panel entry, the panel.
    - **(a) — banner + `>>>` in the live transcript: not fixed, by design.**
      These lines arrive typed `normal`; `logFilter.ts`'s whole documented
      rationale (findings 52, 63) is "trust the type, never reconstruct
@@ -280,19 +299,33 @@ group with the test-only BOM fixture.
      investigate, not a papered-over client hack. Left open as a **probe
      follow-up**; `phase-3.md`'s Finding 74 entry carries the same note.
 
-   **Landed:** `src/run/outputChannel.ts` (`writeOutcome` signature + echo
-   guard), `src/run/commands.ts` (one line, passes `traceback` through),
-   `src/backend/procPython.ts` (`PROMPT_LINES` set + the `parseTraceback`
-   filter). Tests: three new `RunOutputChannel` cases (echo suppressed when
-   the traceback streamed; SAS-side error still printed; `ModuleNotFoundError`
-   guidance still printed) and two new `proc-python-backend.test.ts` cases
-   (prompt lines dropped from the message tail; a `>>>` *inside* a real
-   exception message left alone). `npm run verify` green (exit 0, coverage
-   ratchet held — `src/run` stays 100%); `npm run test:integration` green
-   (234 passing).
+   **Landed:** `src/backend/tracebackDiagnostics.ts`
+   (`SYNTHESIZED_TRACEBACK_MESSAGE` + `alreadyStreamedAsTraceback`),
+   `src/backend/procPython.ts` (`PROMPT_LINES` end-trim, uses the constant),
+   `src/run/outputChannel.ts` and `src/run/resultPanel.ts` (`writeOutcome`
+   gains the streamed-`Traceback` arg + the guard), `src/run/commands.ts` (one
+   line — passes `traceback` to both). Tests: four `RunOutputChannel` cases,
+   two `ResultPanel` cases, four `alreadyStreamedAsTraceback` cases, and four
+   `proc-python-backend.test.ts` cases (end-trim; interior prompt kept; `>>>`
+   inside a real message kept; synthesized fallback produced). `npm run
+   verify` green (exit 0, coverage ratchet held — `tracebackDiagnostics.ts`
+   100%, `src/run` 100%); `npm run test:integration` green (237 passing).
 
-   **Review:** full adversarial pass owed before the PR opens — this slice
-   touches `src/`.
+   **Review:** one full adversarial pass, 2026-09-02, in the separate review
+   window this project's standing policy names. No P0/P1. Findings folded into
+   a follow-up commit on the branch: (P2) the synthesized-fallback string was
+   suppressible by the echo guard — fixed with the `SYNTHESIZED_TRACEBACK_MESSAGE`
+   carve-out in the shared helper; (P2) `PROMPT_LINES` filtered interior lines
+   where the defect is strictly at the tail's ends — restricted to leading/
+   trailing runs, with a test for an interior prompt; (P2) the result-panel
+   triple-render was hedged as "(if any)" — measured, confirmed, and closed
+   with the same guard rather than deferred; (P3) superseded pointers in
+   `phase-4.md`'s 4c entry, `STATUS.md`'s phase index, and
+   `manual-test-pass.md` swept in this same commit; (P3) CHANGELOG wording and
+   doc-comment precision nits. The reviewer's "checked and sound" list
+   confirmed fail-open on every branch, no false-positive dedup, and that the
+   `lastIndexOf`/leading-`<stdin>`-trim/`FRAME_PATTERN` logic is untouched by
+   the tail-only change.
 
    **Environment note (not a code change):** `npm run test:integration` fails
    at VS Code launch (`Code.exe: bad option: --disable-extensions`) when run

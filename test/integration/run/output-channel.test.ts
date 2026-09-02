@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import type * as vscode from "vscode";
 
 import { RunOutputChannel } from "../../../src/run/outputChannel";
+import { SYNTHESIZED_TRACEBACK_MESSAGE } from "../../../src/backend/tracebackDiagnostics";
 
 /** A channel double that keeps everything written to it, in order. */
 function fakeChannel(): {
@@ -136,6 +137,27 @@ describe("RunOutputChannel", () => {
     });
     assert.ok(
       fake.lines.some((line) => line.includes("The SAS System stopped")),
+    );
+  });
+
+  it("still prints the synthesized fallback message even though the streamed traceback carries it too", () => {
+    const fake = fakeChannel();
+    const output = new RunOutputChannel({ createChannel: () => fake.channel });
+    // Header + frames but no exception line: `parseTraceback` synthesizes this
+    // string and `buildFailureOutcome` puts it on both the diagnostic and the
+    // streamed traceback. It never appeared in the log, so it must still show.
+    output.writeOutcome(
+      {
+        succeeded: false,
+        diagnostics: [
+          { severity: "error", message: SYNTHESIZED_TRACEBACK_MESSAGE },
+        ],
+      },
+      { message: SYNTHESIZED_TRACEBACK_MESSAGE, frames: [] },
+    );
+    assert.ok(
+      fake.lines.some((line) => line.includes(SYNTHESIZED_TRACEBACK_MESSAGE)),
+      "the synthesized fallback is the only text the transcript has here",
     );
   });
 

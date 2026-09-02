@@ -2723,18 +2723,24 @@ item in Phase 3's **3f** slice.
 **Resolved 2026-09-02 (Phase 5's 5d-iii slice) — split, not fixed whole.**
 Full account in `phase-5.md`'s Runbook item 3.
 
-- **The echo (the redundant sub-finding) is fixed.**
-  `RunOutputChannel.writeOutcome` (`src/run/outputChannel.ts` — the 4c
-  triage and this entry both mis-cited `src/backend/outputChannel.ts`, which
-  does not exist) now receives the structured `Traceback` the run streamed
-  and skips a diagnostic whose `message` is exactly that traceback's
-  message. Equality-checked, not blanket-suppressed: a SAS-side error
-  (`SYSCC=3000`, from `SYSERRORTEXT`, never streamed) and a
-  `ModuleNotFoundError` (message augmented with the "Show Environment"
-  pointer, so `!==`) both still print. Paired backend cleanup:
-  `parseTraceback` (`procPython.ts`) no longer sweeps the bare `>>>` / `...`
-  prompt lines that sit after the frames into `traceback.message`, so the
-  diagnostic, the Problems entry and the result panel all read cleanly too.
+- **The echo (the redundant sub-finding) is fixed, on both outcome
+  surfaces.** A shared helper `alreadyStreamedAsTraceback`
+  (`src/backend/tracebackDiagnostics.ts`) recognises a diagnostic whose
+  message equals the streamed `Traceback`'s own; `RunOutputChannel.writeOutcome`
+  (`src/run/outputChannel.ts` — the 4c triage and this entry both mis-cited
+  `src/backend/outputChannel.ts`, which does not exist) **and**
+  `ResultPanel.writeOutcome` now drop it before rendering. Value-equality,
+  not blanket suppression: a SAS-side error (`SYSCC=3000`, never streamed),
+  the synthesized "an unhandled Python exception" stand-in (frames but no
+  exception line — `buildFailureOutcome` puts it on both sides, so the helper
+  carves it out explicitly), and a `ModuleNotFoundError` (message a superset
+  of the streamed one, "Show Environment" pointer appended) all still print.
+  The result panel was worse than the channel — it held the traceback text
+  three times (raw log items, structured item, outcome list) — so closing it
+  there was in scope after all. Paired backend cleanup: `parseTraceback`
+  (`procPython.ts`) no longer sweeps the bare `>>>` / `...` prompt lines that
+  bracket the traceback into `traceback.message` — trimmed from each end of
+  the message tail, never the interior.
 - **The banner / `>>>` in the live transcript (the UX sub-finding) is
   deliberately *not* fixed**, and is downgraded from "output-channel
   presentation concern" to a **live-Viya probe follow-up**. The lines arrive

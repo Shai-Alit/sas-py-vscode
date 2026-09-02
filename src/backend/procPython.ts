@@ -144,7 +144,10 @@ import {
 } from "./environment";
 import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
 import { type BackendFailure, type BackendResult, fail } from "./problems";
-import { withModuleNotFoundGuidance } from "./tracebackDiagnostics";
+import {
+  SYNTHESIZED_TRACEBACK_MESSAGE,
+  withModuleNotFoundGuidance,
+} from "./tracebackDiagnostics";
 import {
   decodeRichOutput,
   exceedsCaptureCap,
@@ -201,15 +204,18 @@ const TRACEBACK_HEADER = "Traceback (most recent call last):";
 /**
  * The interpreter's own prompt markers, as bare lines. On the error path
  * `PROC PYTHON` interleaves these with the log (Finding 74): they arrive typed
- * `normal`, so `logFilter.ts` correctly forwards them, and a run of them sits
- * *after* the traceback's frame lines — right where {@link parseTraceback}
- * would otherwise sweep them into the exception message. Dropped from the
- * message tail only: matched as an exact bare line (`">>> "` trims to `">>>"`,
- * `"..."` is the continuation prompt), never as a substring, so a real
- * exception message that merely contains `>>>` (`raise Exception(">>>")` →
- * `Exception: >>>`) is untouched. This is not a general output filter — the
- * live transcript still shows these; it is scoped to the one place that is
- * already parsing a known traceback shape.
+ * `normal`, so `logFilter.ts` correctly forwards them, and a run of them
+ * brackets the traceback — right where {@link parseTraceback} would otherwise
+ * sweep them into the exception message.
+ *
+ * Stripped from **each end** of the message tail, never the interior: a real
+ * exception message can embed a REPL or doctest transcript, and a numpy
+ * row-elision line trims to exactly `...`. Matched as a whole trimmed line
+ * (`">>> "` trims to `">>>"`, `"..."` is the continuation prompt), never as a
+ * substring, so `raise Exception(">>>")` → `Exception: >>>` is untouched.
+ *
+ * Not a general output filter — the live transcript still shows these; this is
+ * scoped to the one place already parsing a known traceback shape.
  */
 const PROMPT_LINES: ReadonlySet<string> = new Set([">>>", "..."]);
 
@@ -409,14 +415,21 @@ function parseTraceback(lines: readonly string[]): Traceback | undefined {
   }
   const frames = rawFrames.slice(wrapperCount);
 
-  const messageLines = lines
+  const tailLines = lines
     .slice(cursor)
     .map((line) => line.trim())
-    .filter((line) => line !== "" && !PROMPT_LINES.has(line));
+    .filter((line) => line !== "");
+  // Strip a run of bare `>>>` / `...` prompt markers from each end of the
+  // tail — see {@link PROMPT_LINES} for why only the ends.
+  let first = 0;
+  let last = tailLines.length;
+  while (first < last && PROMPT_LINES.has(tailLines[first] ?? "")) first += 1;
+  while (last > first && PROMPT_LINES.has(tailLines[last - 1] ?? "")) last -= 1;
+  const messageLines = tailLines.slice(first, last);
   const message =
     messageLines.length > 0
       ? messageLines.join(" ")
-      : "an unhandled Python exception";
+      : SYNTHESIZED_TRACEBACK_MESSAGE;
 
   return { message, frames };
 }

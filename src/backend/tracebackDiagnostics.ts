@@ -161,3 +161,42 @@ export function withModuleNotFoundGuidance(message: string): string {
   if (!message.startsWith(`${MODULE_NOT_FOUND}:`)) return message;
   return `${message}${SHOW_ENVIRONMENT_GUIDANCE}`;
 }
+
+/**
+ * The value `procPython.ts`'s `parseTraceback` puts in {@link Traceback.message}
+ * when the runtime printed a traceback header and frames but no exception line
+ * after them (the harness itself failing, or every message line filtered away).
+ *
+ * A synthesized human stand-in — **it never appeared in the log**. Anything
+ * that dedupes a diagnostic message against what actually streamed
+ * ({@link alreadyStreamedAsTraceback}) has to treat it as "nothing streamed",
+ * because `buildFailureOutcome` puts this same string into both the diagnostic
+ * and the streamed `Traceback`, and a plain equality check cannot otherwise
+ * tell "the user already saw this" from "we made it up".
+ */
+export const SYNTHESIZED_TRACEBACK_MESSAGE = "an unhandled Python exception";
+
+/**
+ * Whether `message` is text the user has already seen because it streamed live
+ * as the raw traceback this run produced — i.e. equal to `streamedTraceback`'s
+ * own message, and not the {@link SYNTHESIZED_TRACEBACK_MESSAGE} stand-in.
+ *
+ * Both `RunOutputChannel.writeOutcome` and `ResultPanel.writeOutcome` call this
+ * to drop a diagnostic that would otherwise repeat, under the run's outcome
+ * line, an exception message that already scrolled past. Kept here rather than
+ * in either `vscode`-importing module so the two cannot drift, and so the
+ * synthesized-message carve-out lives next to the constant it guards.
+ *
+ * Returns `false` when there is no streamed traceback (a SAS-side error, which
+ * never streamed anywhere) and when the messages merely share a prefix (a
+ * `ModuleNotFoundError` whose diagnostic has {@link withModuleNotFoundGuidance}
+ * appended) — both of those still print in full.
+ */
+export function alreadyStreamedAsTraceback(
+  message: string,
+  streamedTraceback: Traceback | undefined,
+): boolean {
+  if (streamedTraceback === undefined) return false;
+  if (message === SYNTHESIZED_TRACEBACK_MESSAGE) return false;
+  return message === streamedTraceback.message;
+}

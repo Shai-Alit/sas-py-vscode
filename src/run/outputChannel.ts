@@ -33,6 +33,7 @@ import type {
   Traceback,
 } from "../backend/backend";
 import type { BackendProblem } from "../backend/problems";
+import { alreadyStreamedAsTraceback } from "../backend/tracebackDiagnostics";
 import { renderRichOutput } from "./render";
 
 /**
@@ -120,23 +121,29 @@ export class RunOutputChannel implements vscode.Disposable {
    *
    * `streamedTraceback` is the structured `Traceback` this run streamed as its
    * trailing `RichOutput`, if any (`commands.ts`'s `drainOutputs` captures it).
-   * When present, a diagnostic whose `message` is *exactly* that traceback's
-   * message is not echoed again here: its text — the exception line and tail —
-   * already scrolled past live moments ago as the raw log's own `normal`-typed
-   * lines, and repeating it verbatim under "Finished with an error." is the
-   * redundancy Finding 74 named (Phase 5d-iii).
+   * A diagnostic whose message {@link alreadyStreamedAsTraceback} recognises as
+   * that traceback's own is not echoed again here: its content already reached
+   * this channel line by line as the raw log's `normal`-typed output (a
+   * multi-line message as its separate lines, not the single joined string a
+   * `PythonDiagnostic` carries), and repeating it under "Finished with an
+   * error." is the redundancy Finding 74 named (Phase 5d-iii).
    *
-   * Deliberately an equality check, not a blanket "suppress on failure":
+   * What still prints, because the helper returns `false` for it:
    *
-   * - A SAS-side error (`SYSCC=3000`, message from `SYSERRORTEXT`) produces a
-   *   diagnostic but **no** structured traceback and never streamed anywhere,
-   *   so `streamedTraceback` is `undefined` and its one line still prints —
-   *   this is the only place the user sees it.
-   * - A `ModuleNotFoundError` has `withModuleNotFoundGuidance` appended to its
-   *   diagnostic message (`procPython.ts`), so `message !== traceback.message`
-   *   and the line still prints — carrying the "Show Environment" pointer,
-   *   which belongs in the transcript. It repeats the tail once; that is
-   *   accepted rather than special-cased here.
+   * - A SAS-side error (`SYSCC=3000`, message from `SYSERRORTEXT`): no
+   *   structured traceback, `streamedTraceback` is `undefined`, and this line
+   *   is the only place the user sees it.
+   * - The synthesized `SYNTHESIZED_TRACEBACK_MESSAGE` stand-in: a header and
+   *   frames but no exception line followed them, so `parseTraceback` made the
+   *   message up — it never streamed, so it must still show.
+   * - A `ModuleNotFoundError`, whose diagnostic has `withModuleNotFoundGuidance`
+   *   appended, so it is a strict superset of the streamed message. The whole
+   *   line prints — one repeated tail, then the "Show Environment" pointer.
+   *   Printing only the un-streamed suffix was considered and left out: the
+   *   equality check fails safe (a future change to how the message is built
+   *   can only ever cause an unwanted echo, never a truncated fragment), and
+   *   the pointer is the part that matters. Tightening this one common case is
+   *   a possible follow-up.
    */
   writeOutcome(outcome: ExecutionOutcome, streamedTraceback?: Traceback): void {
     if (outcome.succeeded) {
@@ -144,7 +151,9 @@ export class RunOutputChannel implements vscode.Disposable {
     } else {
       this.channel.appendLine(vscode.l10n.t("Finished with an error."));
       for (const diagnostic of outcome.diagnostics) {
-        if (diagnostic.message === streamedTraceback?.message) continue;
+        if (alreadyStreamedAsTraceback(diagnostic.message, streamedTraceback)) {
+          continue;
+        }
         this.channel.appendLine(diagnostic.message);
       }
     }

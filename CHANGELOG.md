@@ -1147,17 +1147,22 @@ called out under **Changed** with a migration note.
 - **A failing run no longer prints its exception line twice** (Finding 74,
   Phase 5d-iii). On the error path the raw Python traceback streams to the
   **Python on Viya: Output** channel live, line by line, as the program runs;
-  the run's own "Finished with an error." summary then used to echo the same
-  exception message a second time, right below it.
-  `RunOutputChannel.writeOutcome` now suppresses that echo when the
-  diagnostic's message is exactly the structured traceback that already
-  streamed — while still printing a SAS-side
-  error message (`SYSCC=3000`), which never streamed anywhere, and still
-  printing a `ModuleNotFoundError`'s appended "Show Environment" pointer.
-  Separately, `parseTraceback` no longer sweeps the interpreter's bare `>>>` /
-  `...` prompt markers — which `PROC PYTHON` interleaves into a failing run's
-  log — into the exception message it extracts, so the diagnostic, the
-  Problems-panel entry and the result panel all read cleanly. *(The prompt
+  the run's own "Finished with an error." summary then echoed the same
+  exception message a second time right below it — and the result panel showed
+  it a _third_ time, alongside the raw log and the structured, clickable
+  traceback it already renders. Both surfaces now drop an outcome diagnostic
+  whose message is exactly the traceback's own message, which already reached
+  them by streaming (shared check: `alreadyStreamedAsTraceback`). Still
+  printed, because they never streamed: a SAS-side error message
+  (`SYSCC=3000`), the synthesized "an unhandled Python exception" stand-in
+  used when a traceback has frames but no exception line, and a
+  `ModuleNotFoundError`'s appended "Show Environment" pointer (a superset of
+  the streamed message, so it prints in full — one repeated tail plus the
+  pointer). Separately, `parseTraceback` no longer sweeps the interpreter's
+  bare `>>>` / `...` prompt markers — which `PROC PYTHON` brackets a failing
+  run's traceback with — into the exception message it extracts; a run of them
+  is trimmed from each _end_ of the message tail, never the interior, so a
+  message that embeds a REPL or doctest transcript is untouched. *(The prompt
   markers and interpreter banner still appear in the live transcript itself;
   that half of Finding 74 is a deployment-side question — successful runs are
   already clean — and is left for a live-Viya probe rather than a fragile

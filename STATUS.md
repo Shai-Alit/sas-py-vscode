@@ -548,23 +548,30 @@ code-scanning run against `main`; confirm in the GitHub Code scanning UI (no
 importable + its own test file is the one carried-forward item from this
 detour — small, unscheduled, not on any phase punch list.
 
-**5d-iii (Finding 74) implemented 2026-09-02; not yet reviewed or merged.**
+**5d-iii (Finding 74) implemented and reviewed 2026-09-02; not yet merged.**
 Branch `phase-5d-iii-finding-74`, off `main` after #90. Module confirmed: the
 Runbook's `src/backend/outputChannel.ts` path is stale — the real target is
-`src/run/outputChannel.ts`. **Sub-finding (b) fixed** (`writeOutcome` no longer
-re-echoes an exception message that already streamed live as the raw traceback;
-an equality check, so a SAS-side `SYSCC=3000` message and a `ModuleNotFoundError`'s
-"Show Environment" pointer both still print), plus a paired backend cleanup
-(`parseTraceback` stops sweeping the interpreter's bare `>>>`/`...` prompt
-markers into `traceback.message`). **Sub-finding (a)'s live-transcript half
-deliberately not fixed** — scrubbing `normal`-typed output client-side
-contradicts `logFilter.ts`'s documented rationale and `>>>` collides with real
-program output; the success/error-path asymmetry points at a `PROC PYTHON`
-invocation question for a live probe. `npm run verify` green (coverage ratchet
-held, `src/run` still 100%); `npm run test:integration` green (234 passing,
+`src/run/outputChannel.ts`. **Sub-finding (b) fixed on both outcome surfaces:**
+a shared helper `alreadyStreamedAsTraceback` (`tracebackDiagnostics.ts`) lets
+`RunOutputChannel.writeOutcome` **and** `ResultPanel.writeOutcome` drop a
+diagnostic whose message already streamed as the raw traceback — value-equality,
+so a SAS-side `SYSCC=3000` message, the synthesized "an unhandled Python
+exception" stand-in, and a `ModuleNotFoundError`'s "Show Environment" pointer
+all still print. Paired backend cleanup: `parseTraceback` trims the
+interpreter's bare `>>>`/`...` prompt markers from each end of the message tail
+(not the interior). **Sub-finding (a)'s live-transcript half deliberately not
+fixed** — scrubbing `normal`-typed output client-side contradicts
+`logFilter.ts`'s documented rationale and `>>>` collides with real program
+output; the success/error-path asymmetry points at a `PROC PYTHON` invocation
+question for a live probe. **Adversarial pass done (separate review window):**
+no P0/P1; three P2s folded into a follow-up commit — the synthesized-fallback
+string was suppressible (carve-out added), `PROMPT_LINES` filtered interior
+lines (restricted to the ends), and the result-panel triple-render was hedged
+rather than closed (now closed). `npm run verify` green (coverage ratchet held;
+`tracebackDiagnostics.ts` 100%); `npm run test:integration` green (237 passing,
 after stripping the extension host's `ELECTRON_RUN_AS_NODE=1` — see phase-5.md's
-5d-iii entry for that harness gotcha). Full adversarial pass still owed before
-the PR (touches `src/`). See `docs/phases/phase-5.md`'s Runbook item 3.
+5d-iii entry for that harness gotcha). See `docs/phases/phase-5.md`'s Runbook
+item 3.
 
 **Next: 5d item 4** (diagnostics-lifecycle gaps — clear `RunDiagnostics`'
 collection on document close / sign-out / run-target flip; per-run token on
@@ -655,7 +662,7 @@ account.
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deliberately deferred to Phase 4, not a blocker | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | **in progress** — 5d-i ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)) and 5d-ii ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)) merged; 5d-iii (Finding 74) implemented on `phase-5d-iii-finding-74`, unmerged; 5d item 4 and 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |

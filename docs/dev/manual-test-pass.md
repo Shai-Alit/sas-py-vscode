@@ -341,7 +341,12 @@ unconfigured workspace is Local and contributes nothing to the editor
   (`Python 3.x … Type "help" …`) and `>>>` prompt markers — which the
   "Hello world streams clean" item above says should never appear. Only
   observed on the error path so far (successful runs stay clean). Split
-  out as its own item in Phase 3's **3f** slice.
+  out as its own item in Phase 3's **3f** slice; carried through 4c's
+  triage (Finding 74) and into Phase 5's **5d-iii**, which fixed the
+  *redundant-echo* half and left this *transcript-noise* half open as a
+  live-Viya probe follow-up (a client-side scrub of `normal`-typed output
+  is the wrong fix; the success/error asymmetry points at `PROC PYTHON`
+  itself).
 - [x] **(live) Large output stays clean** — run `for i in range(5000): print(i)`.
   **Expect:** all 5000 lines, in order, no pagination header bleeding into the
   stream. **Failed, 2026-08-27** — the "The SAS System …" page-break banner
@@ -408,6 +413,10 @@ unconfigured workspace is Local and contributes nothing to the editor
   **Expect:** a `RecursionError` traceback with the repeated `recurse`
   frames all present — only the _leading_ contiguous run of harness frames
   is removed — and the session still alive for the next submission.
+  **Also (5d-iii):** the `RecursionError:` line appears in the transcript
+  exactly once — "Finished with an error." is _not_ followed by a repeat
+  of it — and no bare `>>>` is glued onto the end of the exception message
+  in the Problems panel or the Result panel.
   **Passed 2026-08-31** against a `.vsix` from
   `phase-3f-manual-test-regressions`: a clean
   `RecursionError: maximum recursion depth exceeded`, "Finished with an
@@ -432,6 +441,10 @@ unconfigured workspace is Local and contributes nothing to the editor
   stream also carried the Python interpreter banner and `>>>` prompt
   markers, which §6 says should never appear — split out as its own
   open item in Phase 3's **3f** slice, not a blocker for this box.
+  **Update (5d-iii, 2026-09-02):** the redundant traceback-tail echo this
+  run also showed is fixed; the banner/`>>>` transcript noise stays open
+  as a live-Viya probe follow-up (see §6's "Failure is detected" note and
+  `phase-5.md`'s Runbook item 3).
 - [x] **(live) `ModuleNotFoundError` points at Show Environment** — run
   `import polars` (or any absent package).
   **Expect:** a `ModuleNotFoundError` traceback whose diagnostic message (the

@@ -457,8 +457,8 @@ passed on the PR. Recording the merge here is the first thing after it merged,
 per this project's plan/runbook policy — the paragraph above was accurate up to
 "Open before a PR" and stopped there.
 
-**5d-ii (BOM fixture) implemented and reviewed 2026-09-02; not yet verified or
-merged.** This is 5d's item 2, taken as its own PR per the 5d plan. New
+**5d-ii (BOM fixture) implemented, reviewed and verified 2026-09-02; PR
+opening.** This is 5d's item 2, taken as its own PR per the 5d plan. New
 `test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes then
 `print("byte-order mark before this line")\n` (45 bytes), BOM-then-ASCII, the
 simplest shape Finding 77 said the fixture needs. Added to `EXPECTED_CASES` in
@@ -489,10 +489,9 @@ assertion did not pin that anything follows the BOM — added a check that
 5d-ii entry, since `program.bytes` is `TextEncoder().encode(document.getText())`
 (`commands.ts:396`/`:404`) and `getText()` has already consumed any BOM — so
 the fixture pins the transport seam (the corpus's actual charter), not the
-editor path. Still open before a PR: `npm run verify` + `npm run check:docs`
-(the proportionate chain for tests + one config file + four markdown files;
-`test:integration` isn't reachable from this diff) — this session does not run
-them.
+editor path. **Verified green 2026-09-02 (Sean's run): `npm run verify`, `npm
+run check:docs`, and `npm run test:integration` all pass.** Nothing outstanding;
+the PR is opening.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

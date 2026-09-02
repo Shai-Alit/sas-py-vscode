@@ -221,6 +221,10 @@ group with the test-only BOM fixture.
    on all fifteen files and destroyed `empty.py`), the licence-header omission
    (`check-copyright.mjs` only scans `.ts` under `test/`), and the
    `CURATED_CASES` decision.
+
+   **Verified green 2026-09-02 (Sean's run):** `npm run verify`, `npm run
+   check:docs` and `npm run test:integration` all pass on the post-review
+   branch. PR number lands here on merge.
 3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`

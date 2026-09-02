@@ -116,10 +116,12 @@ preceding it. Nothing here is a hard technical dependency — this is a
 recommendation, not a barrier._
 
 ☐ **5d — Deferred hardening carried over from Phase 3/4.** Four independent
-items. Being taken as three PRs (Sean's call, 2026-09-02): **5d-i** (item 1)
-alone, then item 2, then item 3, then item 4 — item 1 turned out to be a real
-`src/` change rather than the docs decision the Plan anticipated, so it does not
-group with the test-only BOM fixture.
+items, one PR each (Sean's call, 2026-09-02): **5d-i** ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)),
+**5d-ii** ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)),
+**5d-iii** ([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92)) all
+merged; **item 4** (diagnostics-lifecycle gaps) is the last. Item 1 turned out
+to be a real `src/` change rather than the docs decision the Plan anticipated,
+so it did not group with the test-only BOM fixture.
 
 1. ~~**Certificate escape hatch.** Decide whether an incomplete certificate
    chain needs a user-facing workaround (compare the SAS extension's own
@@ -236,7 +238,9 @@ group with the test-only BOM fixture.
    markers on the error path and (b) trimming `writeOutcome`'s redundant
    traceback-tail echo for the traceback case specifically actually gets
    fixed here, since 4c left both as undecided rather than rejected.~~
-   **Done — slice 5d-iii, 2026-09-02.**
+   **Done — slice 5d-iii. Merged 2026-09-02 as
+   [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), squashed as
+   `b9b18ef`.**
 
    **Module confirmed:** the Plan's `src/backend/outputChannel.ts` path does
    not exist. The real module is `src/run/outputChannel.ts` (test-visible

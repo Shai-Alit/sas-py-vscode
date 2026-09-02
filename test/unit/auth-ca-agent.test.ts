@@ -186,12 +186,14 @@ describe("buildCaAgent", () => {
 
     assert.equal(result.agent, undefined);
     assert.equal(result.failures.length, 1);
+    const [failure] = result.failures;
+    assert.ok(failure !== undefined);
     assert.equal(
-      result.failures[0]?.path,
+      failure.path,
       "/pyviya-nonexistent/definitely-not-a-real-ca.pem",
     );
     // The exact text is Node's and platform-dependent; that it is a non-empty
     // diagnostic is the contract.
-    assert.ok((result.failures[0]?.reason ?? "").length > 0);
+    assert.ok(failure.reason.length > 0);
   });
 });

@@ -350,3 +350,14 @@ should persist across a window reload (`WebviewPanelSerializer`) is likewise
 untouched; today a reload loses the panel exactly as it loses the output
 channel's scrollback, and that parity is treated as acceptable rather than
 decided against revisiting.
+
+> **Amended 2026-09-02.** The traceback-to-editor jump named above as
+> unscoped was delivered in Phase 4's own 4d slice — see
+> `docs/phases/phase-4.md`'s 4d entry and
+> [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83). A frame's
+> line is wrapped in an inner `<span role="button">` (kept out of the `<li>`
+> so the `<ol>`'s screen-reader semantics survive) and posts a
+> `revealFrame` message — the one webview → host message beyond `"ready"`
+> this record describes, added rather than contradicting it. Copying an
+> image and `WebviewPanelSerializer` persistence remain unscoped, as
+> written above.

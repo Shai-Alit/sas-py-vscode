@@ -499,11 +499,12 @@ upward per phase. The ≥85% target this section originally set was written agai
 a source tree — `connection/`, `dialects/`, `python/` — that only ever came half
 true: the code landed under `src/{auth,backend,compute,dialects,profile}/`, and
 `connection/` and `python/` were never created. The gate is a single aggregate
-ratchet in `.c8rc.json` rather than a per-directory target; it has moved twice
-since this was written (3b, then the post-3f floor raise on functions), so
-the actual current numbers are whatever `.c8rc.json` says today rather than a
-figure copied here — as of 2026-08-31 that's lines 93 / statements 93 /
-functions 93 / branches 95. The original ≥85% figure is long since passed.
+ratchet in `.c8rc.json` rather than a per-directory target; it has moved
+several times since this was written (3b, the post-3f floor raise on
+functions, then 4d's raise on lines/statements), so the actual current
+numbers are whatever `.c8rc.json` says today rather than a figure copied
+here — as of 2026-09-02 that's lines 94 / statements 94 / functions 93 /
+branches 95. The original ≥85% figure is long since passed.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
 
@@ -665,7 +666,7 @@ get written.
 | ~~Namespace reset requires killing the session~~ | ~~Medium — degrades cancel *and* Run File~~ | **Retired 2026-08-16 (finding 38).** `proc python restart;` clears the interpreter in ~3.4 s with the compute session, its libraries and its filerefs untouched, and composes with `infile=` in one statement |
 | Session dies mid-run / state lost on reconnect | Medium | Explicit detection and messaging in 2a; fixture-driven tests |
 | `PROC PYTHON` absent on Viya 3.5 | Medium | Capability probe degrades gracefully; docs make no unverified claim |
-| Compute cancellation doesn't interrupt a running Python step | Medium — bad UX | Probe after 3d-i; fall back to session reset with a clear message. **Not yet probed** — relocated 2026-08-27 to `docs/phases/phase-4.md`'s own Runbook as the "Probe cancellation" item, since Phase 3 closed before this was reached |
+| ~~Compute cancellation doesn't interrupt a running Python step~~ | ~~Medium — bad UX~~ | **Settled the pessimistic way, 2026-09-01 (Phase 4's 4b probe, Findings 75/76).** It does not preempt: a cancelled statement runs to its natural end regardless. Fixed what was fixable — `cancelJob()` was also silently failing outright on this deployment (missing `If-Match`, Finding 75), corrected in 4c and live-verified; the "Cancelled." message was reworded to say only what's true (this window's view has stopped; Viya may keep executing the in-flight step) rather than add background tracking machinery. No fallback "busy" message for a run/reset queued behind a still-executing cancelled job — considered and left as a documented gap, not a defect, since nothing is corrupted, only unexplained-slow |
 | ~~Phase 2a exceeds a reviewable PR~~ | ~~Medium~~ | **Retired 2026-08-14.** The pre-agreed boundary was the generated client, and ADR-0010 means there is no generated client to split at. 2a split three ways on a different seam — core / VS Code shell / one account, one command — and each part was reviewable on its own |
 | Large stdout volumes truncate or slow the log poll | Medium | High-volume fixtures in 3b |
 | Ported code arrives carrying upstream defects | **Medium, and repeatedly confirmed** | Audit-don't-transcribe rule (Phase 1b). No longer a hypothetical: reading `auth.ts` found five, `AuthProvider.ts` four, and `CAHelper.ts` two. Every ported file gets read before it is trusted, and the findings are recorded in the slice that ports it |

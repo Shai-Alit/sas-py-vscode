@@ -326,18 +326,24 @@ was written for): `npm run typecheck` (tsc `--noEmit` ×3), `npm run lint`,
 `check:secrets`, `npm run check:docs` (incl. the VitePress build), and
 `npm run test:unit` — **1161 specs passing** (one unrelated flake,
 `prepared-vscode.test.ts`'s Windows drive-letter-casing assertion, passes on
-re-run). `npm run test:integration`'s `build`/`compile:test` steps pass; the
-VS Code-host tier itself will not launch in this environment
-(`Code.exe: bad option: --disable-extensions` — an env limit, not a timeout).
+re-run). `npm run verify` also passes end to end here (exit 0 — `format:check`,
+`lint`, `typecheck`, `check:copyright`/`check:secrets`/`check:coverage-scope`/
+`check:contracts`, `build`, `coverage`). `npm run test:integration`'s
+`build`/`compile:test` steps pass; the VS Code-host tier itself will not
+launch in this environment (`Code.exe: bad option: --disable-extensions` —
+an env limit, not a timeout). **Coverage ratchet bumped in `.c8rc.json`:**
+`lines`/`statements` 93 → 94 (measured 94.09 / 94.09), `functions` stays 93
+(93.68), `branches` stays 95 (95.12) — the new modules
+(`diagnostics.ts` excluded; `resultPanelModel.ts`/`resultPanelDom.ts` at
+100%) pulled the aggregate up, `tracebackDiagnostics.ts` still 100%.
 
-**Still open before merge (Sean):** `npm run verify` and `npm run
-test:integration` green, including the new
+**Still open before merge (Sean):** `npm run test:integration` green
+(the VS Code-host tier — includes the new
 `test/integration/run/{diagnostics,commands-diagnostics}.test.ts` and the
-extended `result-panel.test.ts`; the coverage ratchet re-measured and bumped
-in `.c8rc.json` (`resultPanelModel.ts`/`resultPanelDom.ts` gained code — up
-only); a final adversarial pass over the post-review diff if warranted (the
-first pass's findings are folded in — see below); and live verification
-against `verde` (`1/0` at a known line → one accurately-positioned Problems
+extended `result-panel.test.ts`, none of which ran here); a final adversarial
+pass over the post-review diff if warranted (the first pass's findings are
+folded in — see below); and live verification against `verde` (`1/0` at a
+known line → one accurately-positioned Problems
 entry that opens in the editor column, not over the panel; re-run clean → it
 clears; Run Selection mid-file → the entry lands at the editor line; click a
 `<string>` frame in the result panel → the editor jumps; a library-frame

@@ -291,14 +291,15 @@ is an unreachable belt-and-braces fallback. **Checks run this session** (VS
 Code Claude Code — the sandbox-timeout reason `CLAUDE.md` bars lint/tests
 for does not apply here): `typecheck` ×3, `npm run lint`, `prettier
 --check`, `check:coverage-scope`/`check:copyright`/`check:secrets`,
-`check:docs`, and `npm run test:unit` (**1161 passing**; one unrelated
-Windows drive-letter flake that passes on re-run) — all green.
-`test:integration`'s build/compile pass; its VS Code host tier will not
-launch in this environment. **Open before merge (Sean):** `npm run verify` +
-`npm run test:integration`; coverage ratchet re-measured and bumped in
-`.c8rc.json` (`resultPanelModel.ts`/`resultPanelDom.ts` gained code); a final
-adversarial pass over the post-review diff if warranted; live verification
-against `verde`. The `phase-4d-diagnostics-surface` branch was cut from
+`check:docs`, `npm run test:unit` (**1161 passing**; one unrelated Windows
+drive-letter flake that passes on re-run), and **`npm run verify` end to end
+(exit 0)** — all green. Coverage ratchet bumped in `.c8rc.json`:
+`lines`/`statements` 93 → 94 (measured 94.09), `functions`/`branches`
+unchanged; `resultPanelModel.ts`/`resultPanelDom.ts`/`tracebackDiagnostics.ts`
+all 100%. `test:integration`'s build/compile pass; its VS Code host tier will
+not launch in this environment. **Open before merge (Sean):** `npm run
+test:integration` (VS Code host tier); a final adversarial pass over the
+post-review diff if warranted; live verification against `verde`. The `phase-4d-diagnostics-surface` branch was cut from
 `main` at `64b7d38` (PR #82 — the 4c merge-record doc commit — had already
 landed there).
 

@@ -33,8 +33,8 @@
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 93,
-  "statements": 93,
+  "lines": 94,
+  "statements": 94,
   "functions": 93,
   "branches": 95
 }

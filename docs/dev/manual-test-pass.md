@@ -69,6 +69,16 @@ traceback frame in the Result panel is a keyboard-reachable button that
 reveals its line in the editor column, and a library-path frame is not
 interactive.
 
+**Targeted re-check, 2026-09-02** (not a full pass) — for phase 5d-iii
+(Finding 74), against `verde` with a `.vsix` from `phase-5d-iii-finding-74`:
+§7's new "Traceback is not echoed or mangled after the outcome" row verified
+live for the recursion case — the output channel now ends at "Finished with
+an error." with no repeated exception line, and the Result panel's structured
+message carries no trailing `>>>`. The interpreter banner and `>>>` markers
+are still in the streamed transcript (Finding 74's deferred half, a probe
+follow-up). The `ModuleNotFoundError` / SAS-side / synthesized-fallback
+sub-cases were not re-checked live.
+
 ## How to use this
 
 - The lists are GitHub task lists. Tick them in a preview, or copy a section into
@@ -438,10 +448,10 @@ unconfigured workspace is Local and contributes nothing to the editor
   markers, which §6 says should never appear — split out as its own
   open item in Phase 3's **3f** slice, not a blocker for this box.
   **Update (5d-iii, 2026-09-02):** the redundant traceback-tail echo this
-  run also showed is fixed; verify it with the dedicated row below. The
+  run also showed is fixed — verified live, see the dedicated row below. The
   banner/`>>>` transcript noise stays open as a live-Viya probe follow-up
   (see §6's "Failure is detected" note and `phase-5.md`'s Runbook item 3).
-- [ ] **(live) Traceback is not echoed or mangled after the outcome — phase 5d-iii** —
+- [x] **(live) Traceback is not echoed or mangled after the outcome — phase 5d-iii** —
   re-run the bare recursion from the row above; it is the shape that first
   showed this (Finding 74).
 
@@ -458,9 +468,11 @@ unconfigured workspace is Local and contributes nothing to the editor
   repeated below the outcome. (Before 5d-iii it was printed a second time, with
   a stray `>>>` glued onto its end.)
 
-  **Expect — Problems panel and Result panel:** the exception message reads
+  **Expect — Problems panel and Result panel:** the exception message ends at
   `RecursionError: maximum recursion depth exceeded` with **no trailing `>>>`
-  or `...`**.
+  or `...`**. (It may still be _prefixed_ by `[Previous line repeated N more
+  times]` — that is pre-existing `parseTraceback` behaviour, not this slice,
+  and is genuine traceback content rather than a prompt marker.)
 
   **Then confirm the lines that must still print** (they never streamed, so the
   dedupe must leave them alone):
@@ -483,8 +495,16 @@ unconfigured workspace is Local and contributes nothing to the editor
   (`phase-5.md` Runbook item 3). Note whether you see them; do not fail this
   item for it.
 
-  **Unrun** — needs a deployment. Implemented, unit- and integration-covered on
-  `phase-5d-iii-finding-74` (PR #92).
+  **Verified live 2026-09-02** against `verde` with a `.vsix` from
+  `phase-5d-iii-finding-74` (PR #92), the recursion case: the output channel
+  ends at `Finished with an error.` with nothing after it, and the Result
+  panel's structured message reads
+  `[Previous line repeated 995 more times] RecursionError: maximum recursion
+  depth exceeded` — no trailing `>>>`, and no third copy of it in an outcome
+  diagnostics line. The interpreter banner and `>>>` markers were still present
+  in the streamed transcript, as expected (deferred half). The three
+  "must still print" sub-cases above were **not** re-checked live this pass;
+  they are unit- and integration-covered.
 - [x] **(live) `ModuleNotFoundError` points at Show Environment** — run
   `import polars` (or any absent package).
   **Expect:** a `ModuleNotFoundError` traceback whose diagnostic message (the

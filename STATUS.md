@@ -570,8 +570,12 @@ lines (restricted to the ends), and the result-panel triple-render was hedged
 rather than closed (now closed). `npm run verify` green (coverage ratchet held;
 `tracebackDiagnostics.ts` 100%); `npm run test:integration` green (237 passing,
 after stripping the extension host's `ELECTRON_RUN_AS_NODE=1` — see phase-5.md's
-5d-iii entry for that harness gotcha). See `docs/phases/phase-5.md`'s Runbook
-item 3.
+5d-iii entry for that harness gotcha). **Verified live 2026-09-02** against
+`verde` with a branch `.vsix` (recursion case): the output channel ends at
+"Finished with an error." with no repeated exception line, and the Result
+panel's structured message has no trailing `>>>`; the banner/`>>>` transcript
+noise is still present, as the deferred (a) half predicts. See
+`docs/phases/phase-5.md`'s Runbook item 3.
 
 **Next: 5d item 4** (diagnostics-lifecycle gaps — clear `RunDiagnostics`'
 collection on document close / sign-out / run-target flip; per-run token on

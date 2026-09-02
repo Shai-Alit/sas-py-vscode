@@ -327,6 +327,23 @@ group with the test-only BOM fixture.
    `lastIndexOf`/leading-`<stdin>`-trim/`FRAME_PATTERN` logic is untouched by
    the tail-only change.
 
+   **Verified live 2026-09-02** against `verde` with a `.vsix` from the branch
+   (Sean's run, `Untitled-1` buffer, the bare-recursion script). Output
+   channel: the streamed traceback, then `Finished with an error.` with
+   **nothing after it** — the doubled tail Finding 74 recorded is gone.
+   Result panel: the structured message is
+   `[Previous line repeated 995 more times] RecursionError: maximum recursion
+   depth exceeded` — **no trailing `>>>`**, and the outcome no longer adds a
+   third copy of it. The interpreter banner and `>>>` markers were still in
+   the streamed transcript, exactly as the deferred (a) half predicts. The
+   `[Previous line repeated N more times]` prefix on the structured message is
+   **pre-existing** `parseTraceback` behaviour (any post-frame line that is
+   not itself a frame joins the message) — not touched or regressed here, and
+   arguably wanted since it is real traceback content; a follow-up could move
+   it out of `message` if it ever reads as noise. The `ModuleNotFoundError` /
+   SAS-side / synthesized-fallback sub-cases stay unit- and
+   integration-covered rather than re-checked live this pass.
+
    **Environment note (not a code change):** `npm run test:integration` fails
    at VS Code launch (`Code.exe: bad option: --disable-extensions`) when run
    from a shell spawned inside the VS Code extension host, because the host

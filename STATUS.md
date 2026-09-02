@@ -457,7 +457,7 @@ passed on the PR. Recording the merge here is the first thing after it merged,
 per this project's plan/runbook policy — the paragraph above was accurate up to
 "Open before a PR" and stopped there.
 
-**5d-ii (BOM fixture) implemented 2026-09-02; not yet verified, reviewed, or
+**5d-ii (BOM fixture) implemented and reviewed 2026-09-02; not yet verified or
 merged.** This is 5d's item 2, taken as its own PR per the 5d plan. New
 `test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes then
 `print("byte-order mark before this line")\n` (45 bytes), BOM-then-ASCII, the
@@ -476,10 +476,23 @@ this is "add the case, assert success". **`test/live/submission-corpus.test.ts`'
 `CURATED_CASES` left unchanged** — deliberate: that tier is capped at five
 maximally-distinct cases and Finding 77 already exercised the live BOM path;
 the unit tier is the permanent guard the runbook item called for. Test-only, no
-`src/` change. Still open before a PR: an adversarial review pass over the
-finished diff (test-only, but it touches the corpus-membership invariant and a
-load-bearing config file), and `npm run verify` + `npm run test:integration` —
-none of which this session runs itself.
+`src/` change. **One adversarial review pass, 2026-09-02, ran in this session —
+not the separate VS Code Claude Code window the standing policy names; the
+record should say so, and Sean's call whether the window pass is still wanted
+for a test-only slice.** It read the full `a852504` diff plus the surrounding
+files whose invariants it touches. No P0/P1. Three findings, all verified
+independently and folded into a follow-up commit on the branch: (1, P2) the
+live suite's doc comment still said "not all fourteen" — corrected to fifteen
+in the same PR, per this project's evidence-sweep rule; (2, P3) the new fixture
+assertion did not pin that anything follows the BOM — added a check that
+`print(` source does; (3, P3, claim accuracy) a scope note in phase-5.md's
+5d-ii entry, since `program.bytes` is `TextEncoder().encode(document.getText())`
+(`commands.ts:396`/`:404`) and `getText()` has already consumed any BOM — so
+the fixture pins the transport seam (the corpus's actual charter), not the
+editor path. Still open before a PR: `npm run verify` + `npm run check:docs`
+(the proportionate chain for tests + one config file + four markdown files;
+`test:integration` isn't reachable from this diff) — this session does not run
+them.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

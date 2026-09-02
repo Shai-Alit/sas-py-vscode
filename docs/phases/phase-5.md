@@ -167,15 +167,17 @@ group with the test-only BOM fixture.
    corpus (3a's fixtures under `test/fixtures/`). De-risked by Finding 77
    (below): a live probe already confirmed the upload + `infile=` path runs
    a BOM-prefixed file cleanly, so this is "add the case, assert success",
-   not an open investigation.~~ **Done — slice 5d-ii, 2026-09-02 (implemented;
-   not yet reviewed or merged).** New `test/fixtures/submission-corpus/utf8-bom.py`
+   not an open investigation.~~ **Done — slice 5d-ii, 2026-09-02.** New
+   `test/fixtures/submission-corpus/utf8-bom.py`
    (three `EF BB BF` bytes + `print("byte-order mark before this line")\n`, 45
    bytes) — BOM immediately followed by ASCII, the simplest case Finding 77 said
    a fixture needs. Added to `EXPECTED_CASES` in
    `test/unit/submission-corpus.test.ts`, so the existing "what reaches the
    transport" loop drives it byte-for-byte for free; a new "the fixtures
-   themselves" assertion pins the leading three bytes and that there is no
-   second BOM later in the file. `.editorconfig`'s corpus block gains
+   themselves" assertion pins the leading three bytes, that there is no
+   second BOM later in the file, and that real `print(` source follows the mark
+   (so a file truncated to just its three BOM bytes cannot pass silently).
+   `.editorconfig`'s corpus block gains
    `charset = unset` — the repo-wide `charset = utf-8` means "no BOM" to the
    EditorConfig spec, so an editor honouring it would strip the mark on save,
    the same failure class `.gitattributes` `-text` already guards against for
@@ -189,6 +191,36 @@ group with the test-only BOM fixture.
    Finding 77 already exercised the live BOM path directly; the unit tier is
    the permanent regression guard the runbook item asked for. Test-only, no
    `src/` change.
+
+   **Scope note — what this fixture pins.** It pins the *transport* seam
+   (`PRODUCTION_PLAN.md` §4's charter for the corpus: every byte reaches
+   `HttpTransport` unchanged), not the editor→bytes seam. On the real Run File
+   path `program.bytes` is `new TextEncoder().encode(document.getText())`
+   (`src/run/commands.ts:396`/`:404`), and VS Code's `getText()` has already
+   consumed any BOM as encoding metadata — so a BOM'd file *opened in the
+   editor* most likely never produces a leading BOM in `program.bytes` at all.
+   This fixture and Finding 77 together establish that the fileref upload path
+   and this deployment both tolerate a leading BOM *if one is ever sent*; they
+   do not claim the editor sends one. `procPython.ts:937` uploads
+   `program.bytes` verbatim with no wrapping or prologue, so the fixture is
+   testing the seam it claims.
+
+   **Review:** one adversarial pass, 2026-09-02, **in this session** — not the
+   separate VS Code Claude Code window this project's standing review policy
+   names. It read the full `a852504` diff plus `.gitattributes`,
+   `test/helpers/fixtures.ts`, the live corpus suite, `procPython.ts`'s upload
+   path and `scripts/check-copyright.mjs`. No P0/P1. Three findings, all
+   verified independently here and folded into a follow-up commit on the
+   branch: (1, P2) the live suite's doc comment still said "not all fourteen" —
+   corrected to fifteen, the sweep this project's evidence rule requires in the
+   same PR; (2, P3) the new fixture assertion did not pin that anything follows
+   the BOM — the `print(` check above was added; (3, P3, claim accuracy) the
+   scope note above, so the next reader does not over-read the fixture as
+   modelling the editor path. Several deliberate choices were checked and
+   stand: `charset = unset` (not `utf-8-bom`, which would have demanded a mark
+   on all fifteen files and destroyed `empty.py`), the licence-header omission
+   (`check-copyright.mjs` only scans `.ts` under `test/`), and the
+   `CURATED_CASES` decision.
 3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`

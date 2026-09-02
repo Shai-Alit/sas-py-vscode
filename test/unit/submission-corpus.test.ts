@@ -243,6 +243,16 @@ describe("submission-fidelity corpus", () => {
         false,
         "found a second BOM sequence past byte 0",
       );
+      // ...and real Python source follows the mark. A file truncated to just
+      // its three BOM bytes would satisfy every assertion above, the membership
+      // check, and the byte-for-byte transport loop below, while no longer
+      // testing a BOM *ahead of* source — the only thing it is for. This is the
+      // staleness class the non-ascii.py comment above names explicitly.
+      assert.equal(
+        Buffer.from(bytes.slice(3)).toString("utf8").startsWith("print("),
+        true,
+        "expected Python source immediately after the BOM",
+      );
     });
 
     it("has CRLF, not LF, in the crlf case", () => {

@@ -1144,6 +1144,24 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **A failing run no longer prints its exception line twice** (Finding 74,
+  Phase 5d-iii). On the error path the raw Python traceback streams to the
+  **Python on Viya: Output** channel live, line by line, as the program runs;
+  the run's own "Finished with an error." summary then used to echo the same
+  exception message a second time, right below it.
+  `RunOutputChannel.writeOutcome` now suppresses that echo when the
+  diagnostic's message is exactly the structured traceback that already
+  streamed — while still printing a SAS-side
+  error message (`SYSCC=3000`), which never streamed anywhere, and still
+  printing a `ModuleNotFoundError`'s appended "Show Environment" pointer.
+  Separately, `parseTraceback` no longer sweeps the interpreter's bare `>>>` /
+  `...` prompt markers — which `PROC PYTHON` interleaves into a failing run's
+  log — into the exception message it extracts, so the diagnostic, the
+  Problems-panel entry and the result panel all read cleanly. *(The prompt
+  markers and interpreter banner still appear in the live transcript itself;
+  that half of Finding 74 is a deployment-side question — successful runs are
+  already clean — and is left for a live-Viya probe rather than a fragile
+  client-side scrub of `normal`-typed output.)*
 - Three regressions found by the first full run of the manual test pass
   (2026-08-27), all closed in the same slice (Phase 3's 3f). **Signing out,
   an idle session reap, or a window reload could all leave the `Connect to

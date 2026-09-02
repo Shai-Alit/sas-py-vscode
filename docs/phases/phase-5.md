@@ -230,12 +230,77 @@ group with the test-only BOM fixture.
    advisories (`qs`, `fast-uri`, transitive under `@vscode/vsce`); cleared in
    the same PR by `overrides.qs ^6.16.0` / `overrides.fast-uri ^3.1.6` — see
    `STATUS.md` for the full account.
-3. **Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
+3. ~~**Finding 74's two sub-findings** (`src/backend/outputChannel.ts` or its
    test-visible surface — confirm the exact module before starting): decide
    which of (a) suppressing/relabelling the interpreter banner and `>>>`
    markers on the error path and (b) trimming `writeOutcome`'s redundant
    traceback-tail echo for the traceback case specifically actually gets
-   fixed here, since 4c left both as undecided rather than rejected.
+   fixed here, since 4c left both as undecided rather than rejected.~~
+   **Done — slice 5d-iii, 2026-09-02.**
+
+   **Module confirmed:** the Plan's `src/backend/outputChannel.ts` path does
+   not exist. The real module is `src/run/outputChannel.ts` (test-visible
+   through `test/integration/run/output-channel.test.ts`, a hand-rolled
+   `vscode.OutputChannel` double). Sub-finding (b) also has a root-cause site
+   one layer down, in `src/backend/procPython.ts`'s `parseTraceback`.
+
+   **Decision: (b) is fixed; (a)'s live-transcript half is deliberately not.**
+
+   - **(b) — the echo.** `RunOutputChannel.writeOutcome` now takes the
+     structured `Traceback` this run streamed (already captured by
+     `commands.ts`'s `drainOutputs` and in scope at the call site — a
+     one-argument wiring change) and skips any diagnostic whose `message` is
+     *exactly* that traceback's message: it already streamed live as the raw
+     log's own `normal`-typed lines. An equality check, not a blanket
+     failure-path suppression, so the two cases that genuinely need the line
+     keep it — a SAS-side error (`SYSCC=3000`, from `SYSERRORTEXT`, never
+     streamed anywhere) and a `ModuleNotFoundError` (its message carries
+     `withModuleNotFoundGuidance`'s appended "Show Environment" pointer, so
+     `message !== traceback.message`).
+   - **Paired backend cleanup.** `parseTraceback` was sweeping the
+     interpreter's bare `>>>` / `...` prompt lines — which `PROC PYTHON`
+     interleaves into a failing run's log, typed `normal`, so `logFilter.ts`
+     correctly forwards them, and which land right after the frame lines where
+     the message tail is read — into `traceback.message`. It now drops a line
+     that is *exactly* a bare prompt marker (matched after `trim()`, never as a
+     substring, so `raise Exception(">>>")` → `Exception: >>>` is untouched).
+     This is scoped to the one place already parsing a known traceback shape,
+     not a general output filter; it cleans the message for all four consumers
+     (the echo comparison, the diagnostic, the Problems-panel entry, the
+     result panel).
+   - **(a) — banner + `>>>` in the live transcript: not fixed, by design.**
+     These lines arrive typed `normal`; `logFilter.ts`'s whole documented
+     rationale (findings 52, 63) is "trust the type, never reconstruct
+     classification by text-scanning, show the unknown — hiding-by-default
+     fails unsafe." A client-side regex scrub of `normal` output contradicts
+     that, and bare `>>>` genuinely collides with legitimate program output
+     (a REPL transcript, doctests, a tutorial). The banner/`>>>` appear *only*
+     on the error path — successful runs are already clean — which points at a
+     `PROC PYTHON` invocation-mode question that needs a live deployment to
+     investigate, not a papered-over client hack. Left open as a **probe
+     follow-up**; `phase-3.md`'s Finding 74 entry carries the same note.
+
+   **Landed:** `src/run/outputChannel.ts` (`writeOutcome` signature + echo
+   guard), `src/run/commands.ts` (one line, passes `traceback` through),
+   `src/backend/procPython.ts` (`PROMPT_LINES` set + the `parseTraceback`
+   filter). Tests: three new `RunOutputChannel` cases (echo suppressed when
+   the traceback streamed; SAS-side error still printed; `ModuleNotFoundError`
+   guidance still printed) and two new `proc-python-backend.test.ts` cases
+   (prompt lines dropped from the message tail; a `>>>` *inside* a real
+   exception message left alone). `npm run verify` green (exit 0, coverage
+   ratchet held — `src/run` stays 100%); `npm run test:integration` green
+   (234 passing).
+
+   **Review:** full adversarial pass owed before the PR opens — this slice
+   touches `src/`.
+
+   **Environment note (not a code change):** `npm run test:integration` fails
+   at VS Code launch (`Code.exe: bad option: --disable-extensions`) when run
+   from a shell spawned inside the VS Code extension host, because the host
+   exports `ELECTRON_RUN_AS_NODE=1` (plus other `VSCODE_*` vars) into every
+   child, so `@vscode/test-electron` launches `Code.exe` as bare Node. Ran
+   green here by stripping those vars for the one command. Worth a harness fix
+   (unset them in `runTest.js`) in a later infra slice.
 4. **Diagnostics-lifecycle gaps.** Clear `RunDiagnostics`'
    `DiagnosticCollection` (`src/run/diagnostics.ts`) on document close, on
    profile sign-out, and on a run-target flip to Local — not only on the next

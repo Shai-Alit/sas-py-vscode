@@ -105,6 +105,62 @@ describe("RunOutputChannel", () => {
     assert.ok(fake.lines.some((line) => line.includes("ZeroDivisionError")));
   });
 
+  it("does not re-echo a diagnostic whose message already streamed as a traceback", () => {
+    const fake = fakeChannel();
+    const output = new RunOutputChannel({ createChannel: () => fake.channel });
+    const message = "RecursionError: maximum recursion depth exceeded";
+    output.writeOutcome(
+      { succeeded: false, diagnostics: [{ severity: "error", message }] },
+      { message, frames: [] },
+    );
+    assert.ok(
+      fake.lines.some((line) => line.includes("error")),
+      "still announces the failure",
+    );
+    assert.ok(
+      !fake.lines.some((line) => line.includes("RecursionError")),
+      "the tail that already streamed is not repeated",
+    );
+  });
+
+  it("still prints a SAS-side error message — it never streamed anywhere", () => {
+    const fake = fakeChannel();
+    const output = new RunOutputChannel({ createChannel: () => fake.channel });
+    // No `streamedTraceback` argument: a `SYSCC=3000` failure has no structured
+    // traceback and this line is the only place the user sees it.
+    output.writeOutcome({
+      succeeded: false,
+      diagnostics: [
+        { severity: "error", message: "ERROR: The SAS System stopped." },
+      ],
+    });
+    assert.ok(
+      fake.lines.some((line) => line.includes("The SAS System stopped")),
+    );
+  });
+
+  it("still prints a diagnostic that augmented the streamed traceback message", () => {
+    const fake = fakeChannel();
+    const output = new RunOutputChannel({ createChannel: () => fake.channel });
+    const streamed = "ModuleNotFoundError: No module named 'polars'";
+    output.writeOutcome(
+      {
+        succeeded: false,
+        diagnostics: [
+          {
+            severity: "error",
+            message: `${streamed} Run "Python on Viya: Show Environment" to see what is installed on this connection.`,
+          },
+        ],
+      },
+      { message: streamed, frames: [] },
+    );
+    assert.ok(
+      fake.lines.some((line) => line.includes("Show Environment")),
+      "the appended guidance still reaches the transcript",
+    );
+  });
+
   it("reports a successful reset", () => {
     const fake = fakeChannel();
     const output = new RunOutputChannel({ createChannel: () => fake.channel });

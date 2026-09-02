@@ -198,6 +198,21 @@ export const RESTART_STATEMENT = "proc python restart;";
 
 const TRACEBACK_HEADER = "Traceback (most recent call last):";
 
+/**
+ * The interpreter's own prompt markers, as bare lines. On the error path
+ * `PROC PYTHON` interleaves these with the log (Finding 74): they arrive typed
+ * `normal`, so `logFilter.ts` correctly forwards them, and a run of them sits
+ * *after* the traceback's frame lines — right where {@link parseTraceback}
+ * would otherwise sweep them into the exception message. Dropped from the
+ * message tail only: matched as an exact bare line (`">>> "` trims to `">>>"`,
+ * `"..."` is the continuation prompt), never as a substring, so a real
+ * exception message that merely contains `>>>` (`raise Exception(">>>")` →
+ * `Exception: >>>`) is untouched. This is not a general output filter — the
+ * live transcript still shows these; it is scoped to the one place that is
+ * already parsing a known traceback shape.
+ */
+const PROMPT_LINES: ReadonlySet<string> = new Set([">>>", "..."]);
+
 /** `  File "<name>", line <n>, in <name>` — the one shape finding 39 measured. */
 const FRAME_PATTERN = /^ {2}File "(.*)", line (\d+), in (.+)$/;
 
@@ -397,7 +412,7 @@ function parseTraceback(lines: readonly string[]): Traceback | undefined {
   const messageLines = lines
     .slice(cursor)
     .map((line) => line.trim())
-    .filter((line) => line !== "");
+    .filter((line) => line !== "" && !PROMPT_LINES.has(line));
   const message =
     messageLines.length > 0
       ? messageLines.join(" ")

@@ -2719,3 +2719,30 @@ raises. That, and the duplicated traceback-tail push after the outcome
 line, are what a follow-up needs to pin down. Not implicated in Finding
 72's fix (fileref allocation, not the log path). Tracked as a deferred
 item in Phase 3's **3f** slice.
+
+**Resolved 2026-09-02 (Phase 5's 5d-iii slice) — split, not fixed whole.**
+Full account in `phase-5.md`'s Runbook item 3.
+
+- **The echo (the redundant sub-finding) is fixed.**
+  `RunOutputChannel.writeOutcome` (`src/run/outputChannel.ts` — the 4c
+  triage and this entry both mis-cited `src/backend/outputChannel.ts`, which
+  does not exist) now receives the structured `Traceback` the run streamed
+  and skips a diagnostic whose `message` is exactly that traceback's
+  message. Equality-checked, not blanket-suppressed: a SAS-side error
+  (`SYSCC=3000`, from `SYSERRORTEXT`, never streamed) and a
+  `ModuleNotFoundError` (message augmented with the "Show Environment"
+  pointer, so `!==`) both still print. Paired backend cleanup:
+  `parseTraceback` (`procPython.ts`) no longer sweeps the bare `>>>` / `...`
+  prompt lines that sit after the frames into `traceback.message`, so the
+  diagnostic, the Problems entry and the result panel all read cleanly too.
+- **The banner / `>>>` in the live transcript (the UX sub-finding) is
+  deliberately *not* fixed**, and is downgraded from "output-channel
+  presentation concern" to a **live-Viya probe follow-up**. The lines arrive
+  typed `normal`; `logFilter.ts`'s documented design (findings 52, 63) is to
+  trust the type and never text-scan to reclassify, and a client-side scrub
+  of `normal` output both contradicts that and risks eating real program
+  output (`>>>` in a REPL transcript, doctests, a tutorial). The
+  success-path-clean / error-path-noisy asymmetry points at how `PROC
+  PYTHON` invokes the interpreter on a raising script — a question that
+  needs a deployment to answer, the same way `PAGESIZE=MAX` was the
+  source-side answer for the `title` page-break banner.

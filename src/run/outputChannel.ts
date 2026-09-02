@@ -27,7 +27,11 @@
 import * as vscode from "vscode";
 
 import { localiseBackendProblem } from "../backend/messages";
-import type { ExecutionOutcome, RichOutput } from "../backend/backend";
+import type {
+  ExecutionOutcome,
+  RichOutput,
+  Traceback,
+} from "../backend/backend";
 import type { BackendProblem } from "../backend/problems";
 import { renderRichOutput } from "./render";
 
@@ -111,13 +115,36 @@ export class RunOutputChannel implements vscode.Disposable {
     }
   }
 
-  /** The run's own conclusion — succeeded, or raised with diagnostics. */
-  writeOutcome(outcome: ExecutionOutcome): void {
+  /**
+   * The run's own conclusion — succeeded, or raised with diagnostics.
+   *
+   * `streamedTraceback` is the structured `Traceback` this run streamed as its
+   * trailing `RichOutput`, if any (`commands.ts`'s `drainOutputs` captures it).
+   * When present, a diagnostic whose `message` is *exactly* that traceback's
+   * message is not echoed again here: its text — the exception line and tail —
+   * already scrolled past live moments ago as the raw log's own `normal`-typed
+   * lines, and repeating it verbatim under "Finished with an error." is the
+   * redundancy Finding 74 named (Phase 5d-iii).
+   *
+   * Deliberately an equality check, not a blanket "suppress on failure":
+   *
+   * - A SAS-side error (`SYSCC=3000`, message from `SYSERRORTEXT`) produces a
+   *   diagnostic but **no** structured traceback and never streamed anywhere,
+   *   so `streamedTraceback` is `undefined` and its one line still prints —
+   *   this is the only place the user sees it.
+   * - A `ModuleNotFoundError` has `withModuleNotFoundGuidance` appended to its
+   *   diagnostic message (`procPython.ts`), so `message !== traceback.message`
+   *   and the line still prints — carrying the "Show Environment" pointer,
+   *   which belongs in the transcript. It repeats the tail once; that is
+   *   accepted rather than special-cased here.
+   */
+  writeOutcome(outcome: ExecutionOutcome, streamedTraceback?: Traceback): void {
     if (outcome.succeeded) {
       this.channel.appendLine(vscode.l10n.t("Finished."));
     } else {
       this.channel.appendLine(vscode.l10n.t("Finished with an error."));
       for (const diagnostic of outcome.diagnostics) {
+        if (diagnostic.message === streamedTraceback?.message) continue;
         this.channel.appendLine(diagnostic.message);
       }
     }

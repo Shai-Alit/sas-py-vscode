@@ -520,7 +520,13 @@ export function createRunCommandHandlers(
         outputChannel.writeFailure(settled.problem);
         resultPanel.writeFailure(settled.problem);
       } else {
-        outputChannel.writeOutcome(settled.value);
+        // `traceback` (from `drainOutputs`) lets the channel skip re-echoing a
+        // structured traceback's message that already streamed live into it —
+        // Finding 74, Phase 5d-iii. Only the output channel takes this: it is
+        // the terminal-style transcript where the raw traceback text already
+        // scrolled past. The result panel's redundancy (if any) is a separate
+        // question, out of 5d-iii's scope.
+        outputChannel.writeOutcome(settled.value, traceback);
         resultPanel.writeOutcome(settled.value);
         // Phase 4d: a run that raised, with a structured traceback to
         // position it by, gets one Problems-panel entry at the innermost

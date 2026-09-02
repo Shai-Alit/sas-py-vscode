@@ -325,6 +325,42 @@ the housekeeping is its own pass. The local `phase-4d-diagnostics-surface`
 branch is stale now (merged) — `git branch -D` and `git fetch --prune` when
 convenient.
 
+**Phase 4→5 between-phase housekeeping run 2026-09-02.** ADRs: ADR-0021
+still read the traceback-to-editor jump as unscoped future work after 4d
+actually shipped it — amended with a dated note pointing at phase-4.md's 4d
+entry and PR #83; ADR-0011/0019/0020/README all confirmed correct, no
+change needed. `PRODUCTION_PLAN.md`: the coverage figure was stale (still
+93/93/93/95; `.c8rc.json` moved to 94/94/93/95 in 4d) — corrected; the
+"Compute cancellation doesn't interrupt" risk row still said "Not yet
+probed" though 4b/4c settled and partly fixed it (Findings 75/76) — struck
+through and retired with the actual outcome. `RUNBOOK.md` and this file's
+own phase pointer/index table were both already current, no edit needed.
+Punch-list completeness (`phase-4.md`, 4a–4d) and manual-test completeness
+(`docs/dev/manual-test-pass.md` §6/§7/§8, all live-verified and ticked) were
+both confirmed clean. Dependency advisories: `npm audit` shows exactly the
+one entry `scripts/advisory-allowlist.json` already allows (`diff`,
+GHSA-73RR-HH4G-FPGX, low, dev-only via mocha), expiring 2026-11-12 — no
+open Dependabot items found this pass, though this sandbox has no `gh` CLI
+or token, so GitHub's own Dependabot UI (e.g. any Actions-workflow
+advisories) couldn't be checked directly; `npm audit` is a proxy for the
+npm ecosystem only, not a full substitute. **Scratch-file reconciliation:**
+`phase-3-runbook-pending.md`'s two pre-existing items (certificate escape
+hatch, BOM fixture) were re-confirmed still genuinely untracked elsewhere;
+two more were added rather than written into `phase-5.md` ahead of its own
+scoping session — Finding 74's two adjacent sub-findings (the interpreter
+banner/`>>>` noise and `writeOutcome`'s redundant traceback-tail echo,
+`phase-3.md`'s Finding 74 entry) and phase-4.md's two "Deferred to Phase 5"
+diagnostics-lifecycle gaps (`DiagnosticCollection` not cleared on
+doc-close/sign-out/target-flip; `RevealFrameMessage`'s missing per-run
+token) — both previously named as Phase-5-bound with no phase-file home.
+**Left deliberately unswept, Sean's call:** `phase-3.md`'s orphaned
+bash-stub branch names for "Phase 5"/"Phases 6–12" (flagged when the
+Phase-4 stub was removed as "worth a sweep whenever Phase 5 starts") —
+noted, not actioned this pass. `docs/phases/phase-5.md` itself is
+untouched; its Runbook stays "not yet reached" until Phase 5's own scoping
+session, which is when the four scratch-file items above should get folded
+into a real punch list.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items

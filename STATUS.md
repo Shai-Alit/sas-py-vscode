@@ -587,9 +587,36 @@ of either mode — so §6's "Hello world streams clean" no longer holds for Run
 File; not a 5d-iii regression (the stream is untouched), folded into that box
 and the probe. See `docs/phases/phase-5.md`'s Runbook item 3.
 
-**Next: 5d item 4** (diagnostics-lifecycle gaps — clear `RunDiagnostics`'
-collection on document close / sign-out / run-target flip; per-run token on
-`RevealFrameMessage`), then 5a → 5b → 5c. See `docs/phases/phase-5.md`'s Runbook.
+**5d-iv (diagnostics-lifecycle gaps) implemented 2026-09-02 on branch
+`5d-iv-diagnostics-lifecycle`; not yet verified, reviewed, or merged.** This is
+the last of 5d's four items. **(a) Clearing the Problems collection:**
+`RunDiagnostics` gains `clearAll()`; `createRunCommandHandlers`
+(`src/run/commands.ts`) wires three triggers, all in that one place — a
+run-target flip to Local (existing `targets.onDidChange` sub, gated
+`kind() === "local"`; a viya→viya profile switch is deliberately left alone), a
+document close (`vscode.workspace.onDidCloseTextDocument`, injectable as
+`RunCommandDeps.onDidCloseTextDocument`), and a profile sign-out (new
+`RunCommandDeps.onDidSignOut`, fed by an `EventEmitter` `extension.ts` fires
+from the `auth.onDidChangeSessions` listener it already runs). **(b) Per-run
+token:** `resultPanel.ts` gains a monotonic `currentRunToken` bumped in
+`startRun`, stamped onto the traceback `RenderItem` (`toRenderItem` gains the
+param) so it survives the panel's hide/show rebuild + backlog replay; the
+webview echoes it in `revealFrame`; `RevealFrameMessage`/`isRevealFrameMessage`
+gain `runToken` (non-negative integer, like `frameIndex`);
+`ResultPanel.revealFrame` drops a message whose token isn't the current run's.
+**Correction to phase-4.md's 4d note:** the token closes (b), not the
+"two-`<ol>`s-in-one-run" alias it also named — that stays structurally
+impossible (`buildFailureOutcome` emits one traceback per run); the note and
+`resultPanel.ts`'s `currentFrames` comment are both updated. Tests across
+`result-panel-model`/`-dom`/`result-panel`/`commands-diagnostics`/`diagnostics`.
+Docs: `diagnostics-surface.md` (new Lifecycle section), phase-4.md pointer,
+CHANGELOG, `manual-test-pass.md` §7 (new unrun live row) / §8. **Checks run
+here:** `npm run typecheck` (all three projects), `prettier --check`,
+`check:copyright`/`check:secrets`/`check:coverage-scope`, `docs:build` — all
+green; no coverage-ratchet move expected. **Open before a PR:** `npm run
+verify` + `npm run test:integration` (Sean's), the adversarial review pass, and
+the live pass (§7's new row). Then 5a → 5b → 5c. See `docs/phases/phase-5.md`'s
+Runbook item 4.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -678,7 +705,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d-i ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)), 5d-ii ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)) and 5d-iii ([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), Finding 74) merged; 5d item 4 and 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d-i ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)), 5d-ii ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)) and 5d-iii ([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), Finding 74) merged; 5d-iv (item 4, diagnostics-lifecycle) implemented on branch, not merged; 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

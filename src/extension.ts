@@ -180,11 +180,21 @@ export function activate(context: vscode.ExtensionContext): void {
   // exactly as the palette bug did before 3f: Connect hidden, no way back.
   // The provider issues one session per profile and its id *is* the profile
   // id, so a removed session names the profile whose connection is now dead.
+  //
+  // The same listener is the sign-out signal Phase 5d-iv's run commands need:
+  // it fires `signedOut` once per event that removed at least one session, and
+  // `registerRunCommands` below clears the Problems collection off it. Kept as
+  // a bridge here rather than handed the auth provider itself — the run
+  // commands have no other reason to know auth exists.
+  const signedOut = new vscode.EventEmitter<void>();
   context.subscriptions.push(
+    signedOut,
     auth.onDidChangeSessions((event) => {
-      for (const removed of event.removed ?? []) {
-        forgetProfile(removed.id);
+      const removed = event.removed ?? [];
+      for (const session of removed) {
+        forgetProfile(session.id);
       }
+      if (removed.length > 0) signedOut.fire();
     }),
   );
 
@@ -212,6 +222,7 @@ export function activate(context: vscode.ExtensionContext): void {
     runTargets,
     environment,
     output,
+    { onDidSignOut: signedOut.event },
   );
 }
 

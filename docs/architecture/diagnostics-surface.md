@@ -136,11 +136,30 @@ Column information — a `Diagnostic` range that highlights the offending
 expression rather than the whole line — would need `PROC PYTHON` to report a
 column, which finding 39 says it does not.
 
-Two lifecycle gaps are deferred to Phase 5 (see `phase-4.md`'s 4d entry):
-the `DiagnosticCollection` is only cleared by the next run of the same file,
-never on document close / sign-out / a switch to Local; and
-`RevealFrameMessage` carries no per-run token, so a `revealFrame` for a
-stale run's frame that outraces the host queue past the next run's own
-traceback resolves against the wrong run's origin. Both are low-stakes (a
-diagnostic left where the last run raised; a jump to a line in the same
-file) and a per-run token closes the second one.
+## Lifecycle — what clears each surface (Phase 5d-iv)
+
+The Problems entry was, through 4d, only ever cleared by the *next run of the
+same file*. `commands.ts` now also clears it on the three events that strand
+one with no such run coming:
+
+- **document close** — `onDidCloseTextDocument` → `clearFor(document.uri)`
+  (injectable as `RunCommandDeps.onDidCloseTextDocument`; a no-op on a URI
+  with no entry, so no scheme/language filter);
+- **profile sign-out** — an `EventEmitter` `extension.ts` fires from its
+  existing `auth.onDidChangeSessions` listener, passed as
+  `RunCommandDeps.onDidSignOut` → `clearAll()`;
+- **run target flipped to Local** — the existing `targets.onDidChange`
+  subscription, gated on `targets.kind() === "local"` → `clearAll()`. A
+  viya→viya profile switch fires the same event and is deliberately left
+  alone.
+
+`RevealFrameMessage` now carries a `runToken` — `resultPanel.ts`'s monotonic
+per-run counter, bumped in `startRun` and stamped onto the traceback
+`RenderItem` so the webview echoes it back. `revealFrame` drops a message
+whose token is not the current run's, closing the cross-run race 4d left
+open (a delayed click resolving against a later run's frames). The token
+rides on the item, not on webview state, so it survives the panel's
+hide/show rebuild and backlog replay. The "two `<ol>`s in one run" alias
+`phase-4.md`'s note also mentions is not closed by the token — one run is
+one token — but it stays structurally impossible: `buildFailureOutcome`
+emits exactly one traceback per run.

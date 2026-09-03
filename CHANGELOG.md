@@ -1144,6 +1144,15 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **A Problems-panel entry from a failed Viya run no longer lingers after the
+  run that produced it is out of reach** (Phase 5d-iv). It was previously
+  cleared only by the next run of the _same file_; it is now also cleared when
+  that document is closed, when the Viya profile signs out, and when the run
+  target is switched to Local Python. A profile switch that stays on Viya
+  leaves it alone. Separately, a click on a traceback frame in the result
+  panel can no longer jump to the wrong line: `revealFrame` messages now carry
+  a per-run token, so one delayed past the start of a later run is dropped
+  rather than resolved against that run's traceback.
 - **A failing run no longer prints its exception line twice** (Finding 74,
   Phase 5d-iii). On the error path the raw Python traceback streams to the
   **Python on Viya: Output** channel live, line by line, as the program runs;

@@ -156,18 +156,25 @@ export class ResultPanel implements vscode.Disposable {
    * run that ever streamed two would render two 0-indexed lists, and an
    * index from the first would resolve against the second.
    *
-   * The same index-only keying has a small cross-run window: a `revealFrame`
-   * for a *previous* run's frame, still in the host's message queue when the
-   * next run has both `startRun`'d **and** streamed its own traceback, would
-   * resolve against the new run's `currentOrigin`/`currentFrames` — a jump to
-   * a plausible-but-wrong line rather than the no-op {@link revealFrame}
-   * otherwise guarantees. `startRun`'s `{ type: "reset" }` clears the old
-   * `<ol>` from the DOM, so triggering it needs the host event loop stalled
-   * across a whole run; harmless when it does (a line in a file). A per-run
-   * token on `RevealFrameMessage` would close both this and the two-`<ol>`
-   * case — deferred to Phase 5 with the rest of the diagnostics-lifecycle
-   * hardening (see `phase-4.md`'s 4d entry). */
+   * Phase 5d-iv closed the cross-run race this keying used to leave open: a
+   * `revealFrame` for a *previous* run's frame, still in the host's message
+   * queue when the next run has both `startRun`'d **and** streamed its own
+   * traceback, would resolve against the new run's
+   * `currentOrigin`/`currentFrames`. {@link currentRunToken} now scopes every
+   * `revealFrame` to the run whose traceback it was rendered from, and
+   * {@link revealFrame} drops a message that does not match. The "two `<ol>`s
+   * in one run" alias `phase-4.md`'s 4d note also mentions is *not* closed by
+   * the token — one run is one token — but it stays structurally impossible
+   * upstream: `procPython.ts`'s `buildFailureOutcome` emits exactly one
+   * traceback per run. */
   private currentFrames: readonly RenderTracebackFrame[] = [];
+  /** A monotonic per-run counter, bumped by {@link startRun}. Stamped onto
+   * each run's traceback {@link RenderItem} so the webview echoes it back in
+   * a `RevealFrameMessage`; {@link revealFrame} honours a message only while
+   * its token is still the current one. Starts at 0 and is 1 for the first
+   * run — a `revealFrame` claiming token 0 (no run has started) never
+   * matches. */
+  private currentRunToken = 0;
 
   constructor(extensionUri: vscode.Uri, deps: ResultPanelDeps = {}) {
     this.extensionUri = extensionUri;
@@ -212,6 +219,9 @@ export class ResultPanel implements vscode.Disposable {
     this.revealedThisRun = false;
     this.currentOrigin = origin;
     this.currentFrames = [];
+    // Phase 5d-iv: a fresh token per run. Any `revealFrame` still in flight
+    // from the previous run no longer matches and is dropped.
+    this.currentRunToken += 1;
     this.emit({ type: "reset" });
   }
 
@@ -237,6 +247,7 @@ export class ResultPanel implements vscode.Disposable {
           ),
       },
       this.imageCount,
+      this.currentRunToken,
     );
 
     // Phase 4d: keep this run's structured frames so a `revealFrame` message
@@ -311,14 +322,16 @@ export class ResultPanel implements vscode.Disposable {
     }
   }
 
-  /** Resolves a `revealFrame` message: look the frame up by the index the
-   * webview sent, map it through 4c's `mapFrameToOrigin` against this run's
-   * origin, and ask {@link ResultPanelDeps.revealPosition} to open the
-   * editor there. Every step can legitimately produce nothing — no origin
-   * (the panel was driven without a run), a stale or out-of-range index, or
-   * a frame that is not a mappable `<string>` frame after all — and each is
-   * a silent no-op rather than a wrong jump. */
-  private revealFrame(frameIndex: number): void {
+  /** Resolves a `revealFrame` message: check its `runToken` is still this
+   * run's, look the frame up by the index the webview sent, map it through
+   * 4c's `mapFrameToOrigin` against this run's origin, and ask {@link
+   * ResultPanelDeps.revealPosition} to open the editor there. Every step can
+   * legitimately produce nothing — a token from a superseded run (Phase
+   * 5d-iv), no origin (the panel was driven without a run), a stale or
+   * out-of-range index, or a frame that is not a mappable `<string>` frame
+   * after all — and each is a silent no-op rather than a wrong jump. */
+  private revealFrame(frameIndex: number, runToken: number): void {
+    if (runToken !== this.currentRunToken) return;
     const origin = this.currentOrigin;
     if (origin === undefined) return;
     const frame = this.currentFrames[frameIndex];
@@ -358,7 +371,7 @@ export class ResultPanel implements vscode.Disposable {
       // down anywhere a future change to `retainContextWhenHidden` would see it.
       panel.webview.onDidReceiveMessage((message) => {
         if (isRevealFrameMessage(message)) {
-          this.revealFrame(message.frameIndex);
+          this.revealFrame(message.frameIndex, message.runToken);
           return;
         }
         if (!isReady(message)) return;

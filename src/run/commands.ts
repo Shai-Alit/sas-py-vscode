@@ -150,6 +150,20 @@ export interface RunCommandDeps {
    * after 3d-i's own `registerCommand` collision (this module's doc comment
    * explains that split in full). */
   environmentDocuments?: EnvironmentDocumentProvider | undefined;
+  /** Defaults to `vscode.workspace.onDidCloseTextDocument`. Phase 5d-iv: a
+   * closed document's Problems entry (`src/run/diagnostics.ts`) is cleared
+   * here. Injectable so an integration test fires it synchronously rather
+   * than closing a real editor. */
+  onDidCloseTextDocument?: vscode.Event<vscode.TextDocument> | undefined;
+  /** Phase 5d-iv: fires when a profile signs out, at which point the whole
+   * Problems collection is cleared — `clearAll`, not a per-profile delete: an
+   * entry is not tagged with the profile whose run produced it, and a run
+   * only ever targets the active one, so "signed out of anything ⇒ clear the
+   * lot" is the proportionate move. Supplied by `extension.ts` from the
+   * `auth.onDidChangeSessions` listener it already runs; absent in tests that
+   * do not exercise sign-out. No default — there is no `vscode` namespace
+   * event for "a Viya profile signed out". */
+  onDidSignOut?: vscode.Event<void> | undefined;
 }
 
 /**
@@ -237,9 +251,31 @@ export function createRunCommandHandlers(
       value,
     );
   };
-  const targetChangeSubscription = targets.onDidChange(syncTargetContext);
+  const targetChangeSubscription = targets.onDidChange(() => {
+    syncTargetContext();
+    // Phase 5d-iv: a Problems entry is only ever published for a Viya run, so
+    // flipping the target to Local strands every existing one — nothing that
+    // target can do will re-run the file and clear it. A viya→viya profile
+    // switch fires this too and is deliberately left alone: a run against the
+    // new profile could still be about the same code.
+    if (targets.kind() === "local") diagnostics.clearAll();
+  });
   syncTargetContext();
   syncRunningContext(false);
+
+  // Phase 5d-iv: the two lifecycle events besides a target flip that leave a
+  // Viya-run diagnostic with no next run of its file to clear it. `commands.ts`
+  // owns the "when to clear"; `RunDiagnostics` owns the "how".
+  const onDidCloseTextDocument =
+    deps.onDidCloseTextDocument ?? vscode.workspace.onDidCloseTextDocument;
+  const documentCloseSubscription = onDidCloseTextDocument((document) => {
+    // `clearFor` on a URI with no entry is a documented safe no-op, so this
+    // needs no languageId/scheme filter — every close just checks and moves on.
+    diagnostics.clearFor(document.uri);
+  });
+  const signOutSubscription = deps.onDidSignOut?.(() => {
+    diagnostics.clearAll();
+  });
 
   const activeEditor = (): vscode.TextEditor | undefined =>
     (deps.activeTextEditor ?? (() => vscode.window.activeTextEditor))();
@@ -787,6 +823,8 @@ export function createRunCommandHandlers(
     refreshEnvironment: () => showEnvironmentImpl(true),
     dispose: () => {
       targetChangeSubscription.dispose();
+      documentCloseSubscription.dispose();
+      signOutSubscription?.dispose();
       if (deps.outputChannel === undefined) outputChannel.dispose();
       if (deps.resultPanel === undefined) resultPanel.dispose();
       if (deps.diagnostics === undefined) diagnostics.dispose();

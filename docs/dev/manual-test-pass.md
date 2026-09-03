@@ -571,6 +571,15 @@ unconfigured workspace is Local and contributes nothing to the editor
   2026-09-02** against `verde` with a branch `.vsix` — the entry lands on
   the `1 / 0` line, clears on a clean re-run, and follows the selection's
   `lineOffset`.
+- [ ] **(live) A stranded Problems entry clears on the lifecycle events, not
+  only a re-run — phase 5d-iv** — produce a Problems entry as above, then, one
+  at a time from a fresh entry each: **(a)** close the file's editor tab →
+  entry gone; reopen the file → still gone (no run has happened). **(b)** run
+  **Sign Out** → entry gone. **(c)** **Select Run Target → Local Python** →
+  entry gone; switch back to the Viya profile → still gone. A profile-to-
+  profile switch that stays on Viya (two profiles configured) leaves the
+  entry in place. Implemented in 5d-iv (`src/run/commands.ts` wiring,
+  `RunDiagnostics.clearAll`); **not yet run live.**
 
 ## 8. Rich output: matplotlib and pandas — phases 3c-i, 3d-ii
 
@@ -703,7 +712,12 @@ your script must actually write a `.png` or `.html` file; there is no implicit
   change — the panel still loads nothing from the network. **Verified live
   2026-09-02** against `verde` with a branch `.vsix` — clicking a `<string>`
   frame reveals it in the editor column (not over the panel); a library
-  frame is not clickable.
+  frame is not clickable. **Phase 5d-iv** adds a per-run token to the
+  `revealFrame` message so a click delayed past the start of a later run is
+  dropped, not resolved against the new run's traceback — a race that needs
+  the host event loop stalled across a whole run to hit, so it is
+  unit/integration-covered (`result-panel.test.ts`) rather than a hand-run
+  step here.
 
 ## 9. Environment and package list — phase 3e
 

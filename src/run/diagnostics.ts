@@ -21,6 +21,16 @@
  * on, not one `Diagnostic` per frame — with the rest of the `<string>` stack
  * carried as `relatedInformation` so a reader can still walk it.
  *
+ * ## What clears it (Phase 5d-iv)
+ *
+ * `clearFor(uri)` on the next run of the same file is no longer the only
+ * thing that wipes an entry. `commands.ts` also calls {@link
+ * RunDiagnostics.clearFor} when a document closes and {@link
+ * RunDiagnostics.clearAll} when the profile signs out or the run target flips
+ * to Local — the three ways the context that produced a Viya-run error can go
+ * away without another run of that file ever happening. Without them a stale
+ * diagnostic sat at the line the last run raised, outliving its connection.
+ *
  * ## Why nothing is published when no frame maps
  *
  * `primaryPosition` returns `undefined` for a SAS-side failure with no
@@ -87,6 +97,18 @@ export class RunDiagnostics implements vscode.Disposable {
    */
   clearFor(uri: vscode.Uri): void {
     this.collection.delete(uri);
+  }
+
+  /**
+   * Drops every published diagnostic at once.
+   *
+   * Phase 5d-iv: for when the context that could have produced them goes away
+   * wholesale rather than one file re-running — a profile sign-out, or the run
+   * target flipping to Local. `commands.ts` owns the "when"; this is just the
+   * "how", the collection-wide counterpart to {@link clearFor}.
+   */
+  clearAll(): void {
+    this.collection.clear();
   }
 
   /**

@@ -820,8 +820,30 @@ wording, contradicted by the `clearAll()` directly below it — is folded into
 the carried `fix(run):` follow-up, which is now **two** items: that comment
 plus the `outputChannel.ts` "ships in a later slice" string. Both live in
 `phase-5.md`'s 5c Runbook entry. The `phase-5c-i-feature-docs` local branch is
-stale now (merged). **Next: 5c-ii — the troubleshooting guide** (docs-only;
-cut its branch from this `main` so it builds on 5c-i's three pages).
+stale now (merged).
+
+**5c-ii (troubleshooting guide) implemented 2026-09-03; not yet reviewed or
+merged, no PR.** Branch `phase-5c-ii-troubleshooting`, cut from `main` after
+5c-i's merge. Docs-only, so no adversarial pass per this project's own rule (the
+diff is its own evidence); `check:docs` (incl. `docs:build`) and `check:secrets`
+are the checks it can plausibly fail. One new top-level page
+`docs/troubleshooting.md` — symptom-indexed, assembled from failures actually
+hit in Phases 1–4 rather than a generic FAQ: the sign-in paste-code route and
+redirect/`401`/certificate failures (Findings 6/9/10), the per-response
+context-links message and the no-Python-context case (`connecting.md`, phase-2b),
+session reaping (Finding 18) and the post-reload stale-fileref collision and its
+seed-the-counter fix (Finding 72), the measured cancel caveat (Findings 75–76),
+the interpreter banner / `>>>` noise (Finding 74, still a probe follow-up),
+rich-output capture and the OOM-during-generation kill vs the 10 MiB skip
+(ADR-0019 + Finding 73), why Reset Python State is for a wedged namespace not a
+submission problem (ADR-0014 + Findings 33/64), and a short
+reset-vs-reconnect-vs-reload guide. Registered in `.vitepress/config.mjs`'s
+"Using the extension" sidebar; `docs/README.md` page list extended;
+`CHANGELOG.md` `[Unreleased]` entry added. **No new probe opened** — every entry
+rests on a finding already recorded, and Finding 74's source-side resolution
+stays its own tracked follow-up, not this slice's. **After this: 5c-iii —
+release engineering** (`release.yml`, `package.json` marketplace metadata, icon
+asset, `release-checklist.md` rewrite); see phase-5.md's own 5c Runbook entry.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -910,7 +932,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) next — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) implemented 2026-09-03, not yet merged; 5c-iii (release engineering) next — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

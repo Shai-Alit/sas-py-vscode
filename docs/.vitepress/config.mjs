@@ -67,6 +67,7 @@ export default defineConfig({
           { text: "Running Python", link: "/running-python" },
           { text: "Diagnostics", link: "/diagnostics" },
           { text: "The Python environment", link: "/python-environment" },
+          { text: "Troubleshooting", link: "/troubleshooting" },
         ],
       },
       {

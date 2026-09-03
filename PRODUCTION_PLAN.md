@@ -23,14 +23,18 @@ to be installed side by side).
   local dependency proves unavoidable, it must be the bare minimum and must be
   justified in writing here before it lands.
 - Full suite of software tests, built alongside the code, not retrofitted.
-- Viya 3.5 and Viya 4 both handled, with version differences absorbed at a seam
-  rather than branched inline.
+- Targets Viya 4 only. Version differences within Viya 4 are absorbed at a
+  seam rather than branched inline — the seam this constraint asks for is the
+  same one a real second generation would need, and stays that shape.
 
 > **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
-> Architectural Viya 3.5 support is dropped — too few customers, no deployment
-> ever reachable to verify any of it against, and no path in sight to getting
-> one. The seam this constraint asked for is unaffected and stays exactly the
-> shape a real second generation would need; see §1.4 for the fuller record.
+> This bullet originally read "Viya 3.5 and Viya 4 both handled"; architectural
+> Viya 3.5 support is dropped — too few customers, no deployment ever reachable
+> to verify any of it against, and no path in sight to getting one. Edited in
+> place, rather than left as a superseded original with a note below, because
+> an AI reviewer instructed to enforce this file's constraints verbatim has no
+> way to weigh a trailing amendment against the bullet it amends — see §1.4 for
+> the fuller record.
 
 ---
 
@@ -119,23 +123,27 @@ language server, syntaxes, themes, snippets.
 
 ### 1.4 Supported Viya versions — the honest position
 
-Viya 3.5 is a frozen on-prem generation in Standard Support to 2027-10-01; Viya 4
-is date-versioned and continuously moving. The brief requires both.
+Viya 4 is date-versioned and continuously moving; this project targets it
+exclusively.
 
-**Decision: architectural first-class support, empirically unverified.** We build
-a dialect/capability seam so 3.5 is properly represented in the design and a
-retrofit is never needed, and we ship a 3.5 test tier as a **permanently-skipped
-scaffold** until an instance exists — exactly the viyapy pattern. What we will
-**not** do is claim verified 3.5 support in user-facing docs. It is unknown
-whether `PROC PYTHON` exists on 3.5 at all; that is logged as a risk (§6), and
-the capability probe (§2.3) is designed to degrade gracefully and tell the user
-plainly if the runtime is absent.
+**Decision: Viya 4 only, with release differences absorbed at a
+dialect/capability seam rather than branched inline.** The seam exists for
+differences within Viya 4 — an old release with no built-in `vscode` client
+versus a modern one, for example — not for a second generation, since none is
+supported. The capability probe (§2.3) is designed to degrade gracefully and
+tell the user plainly if a capability the extension needs is absent.
 
 > **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
-> The scaffold never got filled — no Viya 3.5 deployment was ever reachable by
-> this project, across every phase from 0 through 5b — and very few Viya 3.5
-> customers remain in the target audience. Rather than continue carrying a
-> permanently-unverified generation indefinitely, 3.5 support is dropped:
+> This section originally described Viya 3.5 as in scope: "Viya 3.5 is a frozen
+> on-prem generation in Standard Support to 2027-10-01 ... The brief requires
+> both," with a decision recorded as "architectural first-class support,
+> empirically unverified" — a dialect/capability seam so 3.5 was properly
+> represented in the design, and a 3.5 test tier as a permanently-skipped
+> scaffold until an instance existed. The scaffold never got filled — no Viya
+> 3.5 deployment was ever reachable by this project, across every phase from 0
+> through 5b — and very few Viya 3.5 customers remain in the target audience.
+> Rather than continue carrying a permanently-unverified generation
+> indefinitely, 3.5 support is dropped:
 > `DialectId` is `"viya4"` alone, `src/dialects/viya35.ts` and
 > `contracts/viya35.yaml` are removed, and the "considered absence of a cadence
 > version" signal that used to identify Viya 3.5 (§2.3 below) now resolves to
@@ -395,8 +403,8 @@ Capabilities split by *how they are discovered*, and conflating the two creates 
 circular dependency (you cannot ask Python its version before you can run Python).
 
 **Stage 1 — HTTP-derived (Phase 2b).** Viya generation via
-`/deploymentData/cadenceVersion` (absent ⇒ likely 3.5), endpoint presence, and
-dialect resolution. Requires no execution, so it can ship with the seam itself.
+`/deploymentData/cadenceVersion`, endpoint presence, and dialect resolution.
+Requires no execution, so it can ship with the seam itself.
 
 **Stage 2 — runtime-derived (Phase 3e, after execution and log parsing exist).**
 Whether `PROC PYTHON` actually works, the interpreter version and path, and the

@@ -1273,9 +1273,11 @@ describe("compute session manager", () => {
         createSession: ok(sessionBody(), 201),
         deploymentData: ok(deploymentDataBody([])),
       });
+      const log = recordingLog("session manager absent cadence");
       const { manager } = harness({
         profiles: profileSource(profile({ context: CONTEXT })),
         client: scripted.client,
+        log: log.channel,
       });
 
       const connection = await manager.connect();
@@ -1285,6 +1287,15 @@ describe("compute session manager", () => {
       assert.ok(!connection.generation.certain);
       // Nothing followed: there was no relation to follow.
       assert.ok(!scripted.hrefs.includes(CADENCE_PATH));
+
+      // Pins asideFor's `absent` string (src/compute/sessionManager.ts), which
+      // nothing else here checks — a typo would otherwise pass silently.
+      const line = log.lines.find(({ message }) =>
+        message.includes("SAS Viya version"),
+      );
+      assert.ok(line, "the assumption was not logged");
+      assert.equal(line.level, "warn");
+      assert.match(line.message, /did not report a cadence version/);
     });
 
     it("assumes Viya 4 without claiming it when the version cannot be read", async () => {

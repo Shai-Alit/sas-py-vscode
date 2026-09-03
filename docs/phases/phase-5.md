@@ -757,9 +757,16 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    an unregistered page builds without complaint per `docs/README.md`'s own
    warning.
 
-   **5c-i implemented 2026-09-03; not yet reviewed or merged, no PR.**
-   Docs-only, so no adversarial pass per this project's own rule (the diff is
-   its own evidence). Three new top-level pages rather than one big one or
+   **5c-i merged 2026-09-03 as
+   [PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), squashed as
+   `bce3dc3`.** Docs-only, so no adversarial pass per this project's own rule
+   (the diff is its own evidence); `check:docs` (incl. `docs:build`) and
+   `check:secrets` green. The `github-actions` reviewer raised one blocking
+   finding — `diagnostics.md` said flipping the run target to Local *strands*
+   Viya Problems entries, where the code clears the whole collection
+   (`targets.onDidChange` → `clearAll()`, pinned by
+   `commands-diagnostics.test.ts`) — verified and fixed on the branch
+   (`e6a061f`). Three new top-level pages rather than one big one or
    four small ones: **`docs/running-python.md`** (run target prerequisite,
    Run File `freshNamespace: true` vs Run Selection's notebook-cell semantics,
    the **Python on Viya: Output** transcript channel and how it differs from

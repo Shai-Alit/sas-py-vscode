@@ -638,10 +638,38 @@ switch-back leave it gone; a viya→viya profile switch leaves it in place.
 `phase-4.md` deferral note contradicted itself after the "resolved" prepend —
 reworded to past tense). **Merged as `b03a92d`; nothing carried over.**
 
-**Next: 5a — drift-gate hardening** (audit `scripts/check-contracts.mjs`
-against the three gaps in phase-5.md's Runbook item 5a; it is a *Small*
-audit/harden, not a build-from-scratch — the CI wiring already exists). Then
-5b → 5c. See `docs/phases/phase-5.md`'s Runbook.
+**5a (drift-gate hardening) implemented and reviewed 2026-09-03; verified
+green; not yet merged, no PR opened.** An audit of `scripts/check-contracts.mjs`
+against the three gaps in phase-5.md's Runbook item 5a, then harden. Outcome:
+**(1) empty fixture dir** — real, fixed: `readScope` now derives
+`emptyFixtureDirs` (exists but holds nothing but dotfiles) and `check` gains an
+`emptyFixtureDirs` param so the rule is a pure-function case the unit tier can
+state; an empty dir gets its own message, distinct from "does not exist"
+(`test/fixtures/viya35/`, one README, still passes). **(1) stale fixture dir** —
+left unaddressed by design: staleness is drift, which only a probe settles, not
+a structural gate (recorded so the ticked box isn't misread). **(2) orphan
+fixture dir** — real, no general form (`harness/`, `submission-corpus/`,
+`rich-output/` are contract-less by design); added a narrow reverse check for a
+`test/fixtures/<id>/` named for a `DialectId` whose generation's contract points
+`fixtures` elsewhere (the rename-orphan), scoped so a missing contract or a
+missing `fixtures` key doesn't double-report. **(3) path/via XOR negative
+tests** — found already present for both arms; added the one adjacent positive
+(`accepts a via with no path`). One adversarial review pass in the separate VS
+Code Claude Code window (2026-09-03): nine P2/P3 findings, all verified
+independently and folded in — the emptiness rule moved into pure `check` for
+testability, the new dir read guarded (`listFixtureDirs` replaces
+`listDirectories`), dotfiles excluded from "content", the reverse check
+tightened against the double-report, `run()` in the test given optional
+`fixtureDirs`/`emptyFixtureDirs`, `docs/architecture/contracts.md` +
+`test/fixtures/README.md` (missing `rich-output/` row) + `test/fixtures/viya35/
+README.md` (stale `PROBE-FINDINGS.md` pointer) all updated. `npm run verify`
+green (exit 0; coverage unmoved — `scripts/` is outside the `out/src`
+denominator); unit tier 1191 → 1196; no `src/` change, so `test:integration`
+not warranted. Nothing outstanding before a PR opens.
+
+**Next: 5b — live test tier** (a `viya35` scaffold under `test/live/` plus an
+audit of the three viya4 suites' coverage of Phase 3/4's shipped behaviour;
+*Small*). Then 5c. See `docs/phases/phase-5.md`'s Runbook.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -730,7 +758,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a implemented + reviewed, not yet merged; 5b–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

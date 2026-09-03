@@ -115,7 +115,7 @@ asserts three agreements, **in both directions**:
 |---|---|---|
 | **dialect** | every `generation` is a `DialectId` | every `DialectId` has a contract |
 | **code** | every `dialect` names an exported factory | — |
-| **fixtures** | every `fixtures` names a real directory | — |
+| **fixtures** | every `fixtures` names a real directory with something in it | a `test/fixtures/<id>/` named for a generation is pointed at by a contract |
 
 The reverse half of the first row is the one that earns the phrase. A one-way
 check catches a contract naming a generation nobody supports, which is a mistake
@@ -123,6 +123,24 @@ people make while deleting things. It does not catch the mistake people actually
 make: adding a generation to the union and never writing its contract. That
 failure is invisible by construction — its evidence is a file nobody created — so
 the check has to go looking for the absence.
+
+The fixtures row's reverse half is narrower on purpose. `harness/`,
+`submission-corpus/` and `rich-output/` are fixture directories with no contract
+by design, so the check cannot demand that *every* directory is referenced. It
+demands only that a directory whose name is a `DialectId` is pointed at by *that
+generation's* contract — the one case where a renamed `fixtures:` key strands a
+directory full of recorded payloads on disk with nothing checking it. It follows
+that a leftover renamed *away from* a generation's name (`viya4-old/`) keeps no
+toehold and is not caught, and that a generation with no contract at all, or one
+whose `fixtures` key is missing, is left to the direction-1 and forward-fixtures
+rules rather than drawing a second complaint here.
+
+The forward half fails an empty directory with a message of its own, separate
+from the one for a directory that is not there: naming a directory that exists
+but holds nothing (dotfiles such as `.gitkeep` do not count) satisfies the
+letter of the rule while recording no wire shape at all. A README saying why the
+directory is empty is the minimum that passes — which is what
+`test/fixtures/viya35/` is.
 
 Two more rules are worth knowing before a failure surprises you.
 

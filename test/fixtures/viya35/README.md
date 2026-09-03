@@ -11,5 +11,6 @@ Filling this directory from the Viya 3.5 documentation would be worse than
 leaving it empty: the suite would go green against a shape nobody has observed,
 and the gap would be invisible. When a 3.5 deployment becomes available, capture
 the same endpoints already recorded under `viya4/`, sanitise them the same way
-(see [../README.md](../README.md)), and record the comparison in
-`PROBE-FINDINGS.md`.
+(see [../README.md](../README.md)), and record the comparison as a dated finding
+in the current phase file's **Probe findings** section (`docs/phases/phase-N.md`,
+per `STATUS.md`).

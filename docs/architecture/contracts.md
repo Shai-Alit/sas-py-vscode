@@ -131,9 +131,10 @@ demands only that a directory whose name is a `DialectId` is pointed at by *that
 generation's* contract — the one case where a renamed `fixtures:` key strands a
 directory full of recorded payloads on disk with nothing checking it. It follows
 that a leftover renamed *away from* a generation's name (`viya4-old/`) keeps no
-toehold and is not caught, and that a generation with no contract at all, or one
-whose `fixtures` key is missing, is left to the direction-1 and forward-fixtures
-rules rather than drawing a second complaint here.
+toehold and is not caught, and that a generation with no contract at all, or a
+contract whose `fixtures:` is missing or points at a directory that does not
+itself exist (an ordinary typo), is left to the direction-1 and forward-fixtures
+rules rather than drawing a second, misworded complaint here.
 
 The forward half fails an empty directory with a message of its own, separate
 from the one for a directory that is not there: naming a directory that exists

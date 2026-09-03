@@ -559,11 +559,14 @@ unchanged — no new CI wiring is expected, since that half is already done.
   contract" would wrongly flag `harness/`, `submission-corpus/` and
   `rich-output/` — contract-less fixtures by design. Added a narrow reverse
   check: a `test/fixtures/<id>/` whose name is a `DialectId` while *that
-  generation's* contract points `fixtures` elsewhere (the rename-orphan). Scoped
-  so a generation with no contract stays direction 2's report and a contract
-  with a missing/mistyped `fixtures` stays `checkOne`'s — no double complaint. A
-  leftover renamed *away from* a generation name keeps no toehold and is not
-  caught; accepted and documented.
+  generation's* contract points `fixtures` at *another directory that itself
+  exists* (the rename-orphan). Scoped so a generation with no contract stays
+  direction 2's report, and a contract whose `fixtures` is missing, empty, or a
+  plain typo pointing nowhere real stays `checkOne`'s single complaint — no
+  double report (the `fixtureDirs.includes(declared)` guard was tightened in
+  response to a PR #97 review comment; the first cut only excluded the
+  non-string case). A leftover renamed *away from* a generation name keeps no
+  toehold and is not caught; accepted and documented.
 - **Gap (3):** found already closed. Both negative arms in
   `test/unit/contracts.test.ts` — `refuses both a path and a via` and
   `refuses neither a path nor a via` — predate this slice and assert their
@@ -583,10 +586,16 @@ stopped pointing at the retired `PROBE-FINDINGS.md`.
 
 **Checks:** `npm run verify` green (exit 0; coverage unmoved at the `.c8rc.json`
 floors — `scripts/` is outside the `out/src` denominator anyway). Test-tier
-count 1191 → 1196. No `src/` change; `test:integration` not warranted (this is a
+count 1191 → 1197. No `src/` change; `test:integration` not warranted (this is a
 build-time gate). Reviewed: one adversarial pass in the separate VS Code Claude
 Code window (2026-09-03), nine P2/P3 findings, all verified independently and
-folded in as above.
+folded in as above. On PR #97 the two AI reviewers then found two more, both
+folded on the branch: Codex — `listFixtureDirs` recorded a directory in `all`
+before its own `readdirSync` succeeded, so a mid-run read failure left it
+listed as present (fixed: read first, push after); the Claude reviewer — the
+reverse orphan check's typo carve-out only covered a non-string `fixtures`, so
+a `fixtures:` typo pointing at a nonexistent directory still drew a second,
+misworded complaint (fixed: `fixtureDirs.includes(declared)`).
 
 ☐ **5b — Live test tier.** Add a `viya35` scaffold under `test/live/`: one
 file establishing the pattern (a minimal read-only probe, gated on

@@ -503,9 +503,11 @@ export function check({
   //     `submission-corpus/`, `rich-output/` are fixtures with no contract by
   //     design, and cannot be held to a reverse rule;
   //   - only when a contract *for that generation* exists and points its
-  //     `fixtures` elsewhere — no contract at all is direction 2's report, and
-  //     a contract whose `fixtures` is missing or mistyped is `checkOne`'s, so
-  //     neither should draw a second complaint here;
+  //     `fixtures` at another directory *that itself exists* — a contract with
+  //     no `fixtures`, or one pointing at a directory that is missing or empty,
+  //     is `checkOne`'s single, correctly-worded complaint, and this check
+  //     firing too would just add misleading advice ("move its payloads into
+  //     <the typo>") for the same root cause;
   //   - and so a leftover renamed *away from* a generation's name
   //     (`viya4-old/`) keeps no toehold and goes uncaught. Accepted: the
   //     generation name is the only signal this check has.
@@ -518,7 +520,11 @@ export function check({
   for (const dir of fixtureDirs) {
     if (!dialectIds.includes(dir)) continue;
     const declared = declaredFixturesFor.get(dir);
-    if (typeof declared === "string" && declared !== dir) {
+    if (
+      typeof declared === "string" &&
+      declared !== dir &&
+      fixtureDirs.includes(declared)
+    ) {
       problems.push(
         `${FIXTURE_DIR}/${dir}/\n    is named for the "${dir}" generation, but ${CONTRACT_DIR}/${dir}.yaml points its "fixtures" at "${declared}". This directory is the leftover from that rename — move its payloads into "${declared}" or delete it.`,
       );

@@ -197,13 +197,18 @@ describe("check-contracts", () => {
     });
 
     it("catches a fixture directory that does not exist", () => {
-      // `fixtureDirs` passed explicitly so "viya4" is not among the directories
-      // on disk: repointing that contract's `fixtures` while `test/fixtures/
-      // viya4/` still existed would also trip the reverse orphan check, and
-      // this case is about the forward "not there at all" branch alone.
-      const problems = run(both({ fixtures: "viya4-payloads" }), DIALECTS, [
-        "viya35",
-      ]);
+      const problems = run(both({ fixtures: "viya4-payloads" }));
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /does not exist under test\/fixtures/);
+    });
+
+    it("does not also flag the directory when a contract's fixtures points nowhere real", () => {
+      // Review finding on PR #97: the ordinary shape of a typo is a `fixtures:`
+      // value that names a directory which does not exist, while the correctly
+      // named one is still on disk untouched. That is `checkOne`'s single "does
+      // not exist" complaint — the reverse orphan check must not pile a second,
+      // misleadingly worded one on top for the same root cause.
+      const problems = run(both({ fixtures: "viya4-typo" }));
       assert.equal(problems.length, 1);
       assert.match(problems[0] ?? "", /does not exist under test\/fixtures/);
     });

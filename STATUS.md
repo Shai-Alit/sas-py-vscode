@@ -664,8 +664,15 @@ tightened against the double-report, `run()` in the test given optional
 `test/fixtures/README.md` (missing `rich-output/` row) + `test/fixtures/viya35/
 README.md` (stale `PROBE-FINDINGS.md` pointer) all updated. `npm run verify`
 green (exit 0; coverage unmoved — `scripts/` is outside the `out/src`
-denominator); unit tier 1191 → 1196; no `src/` change, so `test:integration`
-not warranted. Nothing outstanding before a PR opens.
+denominator); unit tier 1191 → 1197; no `src/` change, so `test:integration`
+not warranted. **Opened as
+[PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97)** (`98fa14d`); the
+two AI reviewers then each found one more, both folded on the branch — Codex:
+`listFixtureDirs` recorded a directory as present before its own `readdirSync`
+succeeded (`7aab792`, read-then-push); the Claude reviewer: the reverse orphan
+check's typo carve-out only covered a non-string `fixtures`, so a `fixtures:`
+typo pointing nowhere real still drew a second misworded complaint
+(`fixtureDirs.includes(declared)` added). Awaiting CI + the reviewers' re-run.
 
 **Next: 5b — live test tier** (a `viya35` scaffold under `test/live/` plus an
 audit of the three viya4 suites' coverage of Phase 3/4's shipped behaviour;

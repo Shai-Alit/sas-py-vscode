@@ -1141,6 +1141,25 @@ called out under **Changed** with a migration note.
   honouring the repo-wide `charset = utf-8` ("no BOM", per the EditorConfig
   spec) cannot strip the mark on save — the same class of guard `.gitattributes`
   `-text` already provides.
+- **The working agreements Claude follows now live in the repository.**
+  `CLAUDE.md` and `HOUSEKEEPING.md` were previously kept outside it, in a Claude
+  Desktop project folder, so Claude Code running in VS Code never loaded them
+  and the two agents worked from different rules. A repository-root `CLAUDE.md`
+  is read at session start, which gives both a single source. The
+  sandbox-motivated rules — never run the suite, ESLint, `npm install`, or a
+  recursive `grep` across the mount — are now explicitly scoped to the Desktop
+  agent, since they exist because of that agent's ~178-second execution cap and
+  slow shared mount and say nothing about the VS Code window, where the same
+  commands finish in seconds. An unscoped version of those rules would have
+  disabled checks that are cheap and wanted locally. `HOUSEKEEPING.md` is the
+  between-phase checkpoint, renamed off a filename containing spaces. A new
+  section routes any question about live Viya wire behaviour to the
+  `viya-api-probe` skill rather than to inference from SAS documentation or
+  upstream source, and to the current phase file's **Probe findings** section
+  before either — an unprobed guess that reaches a fixture becomes a test that
+  passes against behaviour the server never had. `.gitignore` gains
+  `.claude/settings.local.json`, which is per-checkout tool configuration;
+  `.claude/skills/` stays tracked.
 
 ### Fixed
 

@@ -33,6 +33,14 @@ Thumbs.db
 *~
 .idea/
 
+# Machine-local Claude Code configuration. The working agreements themselves —
+# CLAUDE.md, HOUSEKEEPING.md and .claude/skills/ — are tracked deliberately,
+# because both the Desktop agent and the VS Code window must read the same
+# rules. settings.local.json is the exception: it holds one checkout's tool
+# permissions and additional directories, which are specific to a machine and
+# would fight between contributors.
+.claude/settings.local.json
+
 # Python bytecode (the Codex reviewer script is stdlib Python)
 __pycache__/
 *.py[cod]

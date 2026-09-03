@@ -1537,6 +1537,23 @@ called out under **Changed** with a migration note.
 
 ### Changed
 
+- **The contract drift gate (`npm run check:contracts`) rejects two cases it
+  used to pass** (Phase 5's 5a slice — an audit and harden, no new CI wiring).
+  A contract whose `fixtures:` names a directory that *exists but is empty* now
+  fails with its own message, distinct from one that names a missing directory
+  — an empty directory records no wire shape, and the checker previously only
+  tested existence (a directory holding just a README, like
+  `test/fixtures/viya35/`, still passes; `.gitkeep`-style dotfiles do not count
+  as content). And a `test/fixtures/<id>/` whose name is a generation id, while
+  that generation's contract points `fixtures:` at a different directory, is now
+  flagged as the leftover of a rename. The emptiness check runs through a
+  guarded directory read, so a directory that disappears mid-run reports a
+  sentence rather than a stack trace. `docs/architecture/contracts.md`'s
+  assertion table gains the fixtures row's reverse half; the audit also
+  confirmed the `path`/`via` XOR rule's negative cases were already covered
+  (one positive case added) and that "stale fixture" detection stays out of
+  scope — that is a job for a probe, not a structural gate.
+
 - The copyright check now scans `contracts/`, and its header extractor
   understands `#` comments alongside `//`. YAML has no other comment form, so a
   header there is a run of `#` lines ended by the first key — the same shape as

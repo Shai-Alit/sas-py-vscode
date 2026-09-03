@@ -18,8 +18,15 @@
  *      exported from `src/dialects/`. A renamed factory otherwise leaves a
  *      contract pointing at nothing, which reads as authoritative and is not.
  *   3. **Contract ↔ fixtures.** Every contract's `fixtures` names a directory
- *      under `test/fixtures/`. The fixtures are the recorded wire shape; a
- *      contract that cannot say where they are cannot be checked against them.
+ *      under `test/fixtures/` that holds something — recorded payloads, or at
+ *      least a README. An empty directory (dotfiles like `.gitkeep` do not
+ *      count) satisfies "names a directory" while recording nothing, and gets
+ *      its own message, distinct from a directory that is not there at all.
+ *      The reverse half catches one shape of leftover: a `test/fixtures/<id>/`
+ *      whose name is a `DialectId` while that generation's contract points its
+ *      `fixtures` at a *different* directory — payloads stranded on disk,
+ *      checked by nothing. A leftover renamed away from a generation's name
+ *      keeps no toehold and is not caught.
  *
  * ## Why `generation` must be canonical rather than merely resolvable
  *
@@ -181,7 +188,14 @@ function isPlainObject(value) {
  * Cross-file rules — the union covering every contract, an `absent` id being
  * present somewhere — need the whole set and live in {@link check}.
  */
-function checkOne({ name, contract, dialectIds, factories, fixtureDirs }) {
+function checkOne({
+  name,
+  contract,
+  dialectIds,
+  factories,
+  fixtureDirs,
+  emptyFixtureDirs,
+}) {
   const problems = [];
   const say = (message) => problems.push(`${name}\n    ${message}`);
 
@@ -230,6 +244,10 @@ function checkOne({ name, contract, dialectIds, factories, fixtureDirs }) {
   if (typeof contract.fixtures !== "string") {
     say(
       'has no "fixtures". It names the directory the recorded wire shape lives in.',
+    );
+  } else if (emptyFixtureDirs.includes(contract.fixtures)) {
+    say(
+      `names fixture directory "${contract.fixtures}", which exists under ${FIXTURE_DIR}/ but has nothing in it. The recorded wire shape is what a contract is checked against, and there is none here — add this generation's payloads, or a README recording that there is nothing there yet.`,
     );
   } else if (!fixtureDirs.includes(contract.fixtures)) {
     say(
@@ -424,7 +442,13 @@ function checkOne({ name, contract, dialectIds, factories, fixtureDirs }) {
  * Pure, so the unit tier can state the interesting failures as cases rather than
  * arranging them on disk.
  */
-export function check({ contracts, dialectIds, factories, fixtureDirs }) {
+export function check({
+  contracts,
+  dialectIds,
+  factories,
+  fixtureDirs,
+  emptyFixtureDirs = [],
+}) {
   const problems = [];
 
   if (dialectIds === undefined) {
@@ -442,7 +466,14 @@ export function check({ contracts, dialectIds, factories, fixtureDirs }) {
 
   for (const { name, contract } of contracts) {
     problems.push(
-      ...checkOne({ name, contract, dialectIds, factories, fixtureDirs }),
+      ...checkOne({
+        name,
+        contract,
+        dialectIds,
+        factories,
+        fixtureDirs,
+        emptyFixtureDirs,
+      }),
     );
   }
 
@@ -457,6 +488,45 @@ export function check({ contracts, dialectIds, factories, fixtureDirs }) {
     if (!declared.has(id)) {
       problems.push(
         `${CONTRACT_DIR}/${id}.yaml\n    does not exist, but "${id}" is a ${DIALECT_ID_TYPE}. Every generation the code can resolve has a recorded footprint, even when that footprint is empty — an empty contract that says why is the answer, not a missing file.`,
+      );
+    }
+  }
+
+  // Direction 3, reverse. The forward half in `checkOne` catches a contract
+  // naming a fixtures directory that is missing or empty. This half catches the
+  // leftover a renamed `fixtures:` key leaves behind: `contracts/viya4.yaml`
+  // repointed to `viya4-recorded/` while `test/fixtures/viya4/` stays on disk,
+  // still full of recorded payloads and checked by nothing.
+  //
+  // Scoped narrow on purpose, and each narrowing matters:
+  //   - only a directory whose name is a `DialectId` — `harness/`,
+  //     `submission-corpus/`, `rich-output/` are fixtures with no contract by
+  //     design, and cannot be held to a reverse rule;
+  //   - only when a contract *for that generation* exists and points its
+  //     `fixtures` at another directory *that itself exists* — a contract with
+  //     no `fixtures`, or one pointing at a directory that is missing or empty,
+  //     is `checkOne`'s single, correctly-worded complaint, and this check
+  //     firing too would just add misleading advice ("move its payloads into
+  //     <the typo>") for the same root cause;
+  //   - and so a leftover renamed *away from* a generation's name
+  //     (`viya4-old/`) keeps no toehold and goes uncaught. Accepted: the
+  //     generation name is the only signal this check has.
+  const declaredFixturesFor = new Map();
+  for (const { contract } of contracts) {
+    if (isPlainObject(contract) && typeof contract.generation === "string") {
+      declaredFixturesFor.set(contract.generation, contract.fixtures);
+    }
+  }
+  for (const dir of fixtureDirs) {
+    if (!dialectIds.includes(dir)) continue;
+    const declared = declaredFixturesFor.get(dir);
+    if (
+      typeof declared === "string" &&
+      declared !== dir &&
+      fixtureDirs.includes(declared)
+    ) {
+      problems.push(
+        `${FIXTURE_DIR}/${dir}/\n    is named for the "${dir}" generation, but ${CONTRACT_DIR}/${dir}.yaml points its "fixtures" at "${declared}". This directory is the leftover from that rename — move its payloads into "${declared}" or delete it.`,
       );
     }
   }
@@ -492,14 +562,47 @@ export function check({ contracts, dialectIds, factories, fixtureDirs }) {
   return problems;
 }
 
-function listDirectories(root, dir) {
+/**
+ * The directory names under `test/fixtures/`, and which of them hold nothing
+ * that counts as recorded wire shape.
+ *
+ * A dotfile does not count as content — a lone `.gitkeep` is how an empty
+ * directory gets committed at all — so a directory holding only dotfiles is
+ * "empty" here. It is shallow past that: a directory whose one entry is an
+ * empty subdirectory reads as non-empty, which is a degenerate enough shape to
+ * leave alone.
+ *
+ * Every read is guarded. A directory that vanishes between the listing and the
+ * stat, or one this process cannot enter, drops out of both lists rather than
+ * throwing a stack trace out of the gate — `check-contracts` states its
+ * problems in sentences, and a gate whose failure mode is a stack trace gets
+ * read as a broken gate.
+ */
+function listFixtureDirs(root) {
+  let entries;
   try {
-    return readdirSync(join(root, dir)).filter((entry) =>
-      statSync(join(root, dir, entry)).isDirectory(),
-    );
+    entries = readdirSync(join(root, FIXTURE_DIR));
   } catch {
-    return [];
+    return { all: [], empty: [] };
   }
+  const all = [];
+  const empty = [];
+  for (const entry of entries) {
+    const full = join(root, FIXTURE_DIR, entry);
+    try {
+      if (!statSync(full).isDirectory()) continue;
+      // Read the contents before recording the directory as present, so a
+      // directory that vanishes or turns unreadable between the listing and
+      // now drops out of *both* lists rather than landing in `all` with the
+      // failure swallowed underneath it.
+      const content = readdirSync(full).filter((name) => !name.startsWith("."));
+      all.push(entry);
+      if (content.length === 0) empty.push(entry);
+    } catch {
+      // Vanished or unreadable between the listing and now: leave it out.
+    }
+  }
+  return { all, empty };
 }
 
 /** Reads a real working tree into the shape `check` wants. */
@@ -523,6 +626,8 @@ function readScope(root) {
     ),
   );
 
+  const fixtures = listFixtureDirs(root);
+
   return {
     contracts,
     dialectIds: unionMembers(
@@ -531,7 +636,8 @@ function readScope(root) {
       DIALECT_ID_SOURCE,
     ),
     factories,
-    fixtureDirs: listDirectories(root, FIXTURE_DIR),
+    fixtureDirs: fixtures.all,
+    emptyFixtureDirs: fixtures.empty,
   };
 }
 

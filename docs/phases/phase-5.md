@@ -527,7 +527,7 @@ fixture.
    [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94), squashed as
    `b03a92d`.**
 
-☐ **5a — Drift gate hardening.** Audit `scripts/check-contracts.mjs` against
+☑ **5a — Drift gate hardening.** Audit `scripts/check-contracts.mjs` against
 three specific gaps found in this session's grounding survey, rather than a
 general re-read: (1) does the checker notice a contract pointing at a fixture
 directory that exists but is empty or stale; (2) does it flag a fixture
@@ -537,6 +537,65 @@ neither — actually exercised by negative-case tests for both the "declares
 both" and "declares neither" arms. Harden the checker for whatever this audit
 finds, then confirm `npm run verify`'s existing CI wiring still passes
 unchanged — no new CI wiring is expected, since that half is already done.
+
+**Audit outcome (2026-09-03):**
+
+- **Gap (1) — empty:** real, and now fixed. `checkOne` only tested that the
+  directory *existed*. `readScope` now computes `emptyFixtureDirs` — directories
+  that exist but hold nothing but dotfiles — and `check` gains an
+  `emptyFixtureDirs` parameter so the decision stays in the pure function and
+  the unit tier can state it as a case (a review finding: the first draft put
+  the emptiness filter in `readScope` alone, where no unit test could reach it).
+  An empty directory gets its own message, distinct from "does not exist",
+  mirroring `unionMembers`' "not found" vs. "unreadable" split.
+  `test/fixtures/viya35/` (one README, no payloads) still passes — a README is
+  the documented minimum.
+- **Gap (1) — stale:** left unaddressed, deliberately. "Stale" means recorded
+  payloads that no longer match the wire, which only a live probe settles —
+  `docs/architecture/contracts.md` already says this gate "checks structure, not
+  truth", and fixtures/probes cover drift. Recorded here so a ticked box does
+  not read as if both halves of gap (1) were mechanised.
+- **Gap (2):** real, no general form. A blanket "every directory needs a
+  contract" would wrongly flag `harness/`, `submission-corpus/` and
+  `rich-output/` — contract-less fixtures by design. Added a narrow reverse
+  check: a `test/fixtures/<id>/` whose name is a `DialectId` while *that
+  generation's* contract points `fixtures` at *another directory that itself
+  exists* (the rename-orphan). Scoped so a generation with no contract stays
+  direction 2's report, and a contract whose `fixtures` is missing, empty, or a
+  plain typo pointing nowhere real stays `checkOne`'s single complaint — no
+  double report (the `fixtureDirs.includes(declared)` guard was tightened in
+  response to a PR #97 review comment; the first cut only excluded the
+  non-string case). A leftover renamed *away from* a generation name keeps no
+  toehold and is not caught; accepted and documented.
+- **Gap (3):** found already closed. Both negative arms in
+  `test/unit/contracts.test.ts` — `refuses both a path and a via` and
+  `refuses neither a path nor a via` — predate this slice and assert their
+  specific messages. Added the one adjacent hole while confirming: a positive
+  `accepts a via with no path` (the path-only positive already existed).
+
+**Also folded in from the review pass (2026-09-03):** the new `readdirSync` sits
+inside a guarded `listFixtureDirs` helper (replacing `listDirectories`), so a
+directory that vanishes mid-run drops out rather than throwing a stack trace out
+of the gate; dotfiles (`.gitkeep`) do not count as content; `run()` in the test
+gained optional `fixtureDirs`/`emptyFixtureDirs` params so two cases no longer
+need a hand-built `check` call; `docs/architecture/contracts.md`'s assertion
+table and prose updated (the fixtures row's reverse cell was `—`);
+`test/fixtures/README.md` gained the missing `rich-output/` row and a note on
+which directories the check ties to a contract; `test/fixtures/viya35/README.md`
+stopped pointing at the retired `PROBE-FINDINGS.md`.
+
+**Checks:** `npm run verify` green (exit 0; coverage unmoved at the `.c8rc.json`
+floors — `scripts/` is outside the `out/src` denominator anyway). Test-tier
+count 1191 → 1197. No `src/` change; `test:integration` not warranted (this is a
+build-time gate). Reviewed: one adversarial pass in the separate VS Code Claude
+Code window (2026-09-03), nine P2/P3 findings, all verified independently and
+folded in as above. On PR #97 the two AI reviewers then found two more, both
+folded on the branch: Codex — `listFixtureDirs` recorded a directory in `all`
+before its own `readdirSync` succeeded, so a mid-run read failure left it
+listed as present (fixed: read first, push after); the Claude reviewer — the
+reverse orphan check's typo carve-out only covered a non-string `fixtures`, so
+a `fixtures:` typo pointing at a nonexistent directory still drew a second,
+misworded complaint (fixed: `fixtureDirs.includes(declared)`).
 
 ☐ **5b — Live test tier.** Add a `viya35` scaffold under `test/live/`: one
 file establishing the pattern (a minimal read-only probe, gated on

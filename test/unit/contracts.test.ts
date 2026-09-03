@@ -16,6 +16,7 @@ interface CheckInput {
   dialectIds: string[] | undefined;
   factories: string[];
   fixtureDirs: string[];
+  emptyFixtureDirs?: string[];
 }
 
 // Property signatures rather than methods, as in coverage-scope.test.ts: these
@@ -130,12 +131,18 @@ describe("check-contracts", () => {
       },
     });
 
-    const run = (contracts: Contract[], dialectIds = DIALECTS): string[] =>
+    const run = (
+      contracts: Contract[],
+      dialectIds: string[] | undefined = DIALECTS,
+      fixtureDirs: string[] = FIXTURES,
+      emptyFixtureDirs: string[] = [],
+    ): string[] =>
       script.check({
         contracts,
         dialectIds,
         factories: FACTORIES,
-        fixtureDirs: FIXTURES,
+        fixtureDirs,
+        emptyFixtureDirs,
       });
 
     const both = (extra: Record<string, unknown> = {}): Contract[] => [
@@ -195,6 +202,46 @@ describe("check-contracts", () => {
       assert.match(problems[0] ?? "", /does not exist under test\/fixtures/);
     });
 
+    it("does not also flag the directory when a contract's fixtures points nowhere real", () => {
+      // Review finding on PR #97: the ordinary shape of a typo is a `fixtures:`
+      // value that names a directory which does not exist, while the correctly
+      // named one is still on disk untouched. That is `checkOne`'s single "does
+      // not exist" complaint — the reverse orphan check must not pile a second,
+      // misleadingly worded one on top for the same root cause.
+      const problems = run(both({ fixtures: "viya4-typo" }));
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /does not exist under test\/fixtures/);
+    });
+
+    it("catches a fixture directory that exists but is empty", () => {
+      // Gap (1) of the 5a audit: a directory that exists satisfies "names a
+      // directory" while a directory with nothing in it records no wire shape
+      // at all. `emptyFixtureDirs` carries that distinction into the pure
+      // check, so it reads as its own failure rather than "does not exist".
+      const problems = run(both(), DIALECTS, FIXTURES, ["viya4"]);
+      assert.equal(problems.length, 1);
+      assert.match(
+        problems[0] ?? "",
+        /exists under test\/fixtures\/ but has nothing in it/,
+      );
+    });
+
+    it("does not also flag the directory when a contract is missing its fixtures key", () => {
+      // Gap (3) review finding: a contract with no `fixtures` key is `checkOne`'s
+      // to report. The reverse orphan check must not pile a second problem on
+      // top telling the reader to delete a directory that is fine.
+      const viya35 = good("viya35").contract as Record<string, unknown>;
+      const contract = Object.fromEntries(
+        Object.entries(viya35).filter(([key]) => key !== "fixtures"),
+      );
+      const problems = run([
+        good("viya4"),
+        { name: "contracts/viya35.yaml", contract },
+      ]);
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /has no "fixtures"/);
+    });
+
     it("catches a generation with no contract at all", () => {
       // Direction 2, and the one nothing else would notice: a generation added
       // to the union simply has no recorded footprint, and the absence looks
@@ -206,6 +253,38 @@ describe("check-contracts", () => {
       assert.equal(problems.length, 1);
       assert.match(problems[0] ?? "", /contracts\/viya5\.yaml/);
       assert.match(problems[0] ?? "", /does not exist/);
+    });
+
+    it("flags a generation's fixture directory that no contract points at", () => {
+      // Gap (2) of the 5a audit — the rename-orphan: `fixtures:` is repointed
+      // and `test/fixtures/viya4/`, still named for the generation, is left
+      // behind full of recorded payloads and checked by nothing.
+      const problems = run(
+        [good("viya4", { fixtures: "viya4-recorded" }), good("viya35")],
+        DIALECTS,
+        ["viya4", "viya4-recorded", "viya35", "harness"],
+      );
+      assert.equal(problems.length, 1);
+      assert.match(problems[0] ?? "", /test\/fixtures\/viya4\//);
+      assert.match(
+        problems[0] ?? "",
+        /points its "fixtures" at "viya4-recorded"/,
+      );
+    });
+
+    it("does not hold a non-generation fixture directory to the reverse rule", () => {
+      // `harness/`, `submission-corpus/` and `rich-output/` are fixtures by
+      // design with no contract; only a directory whose name is a DialectId is
+      // expected to be pointed at.
+      assert.deepEqual(
+        run(both(), DIALECTS, [
+          "viya4",
+          "viya35",
+          "harness",
+          "submission-corpus",
+        ]),
+        [],
+      );
     });
 
     it("reports a missing DialectId union rather than passing everything", () => {
@@ -236,6 +315,32 @@ describe("check-contracts", () => {
 
       it("accepts a composed path", () => {
         assert.deepEqual(run(endpoint({ path: "/deploymentData" })), []);
+      });
+
+      it("accepts a via with no path", () => {
+        // The other side of the XOR rule from "accepts a composed path": an
+        // endpoint reached purely by link relation, declaring `via` and no
+        // `path`, is what ADR-0010 asks for.
+        assert.deepEqual(
+          run(
+            both({
+              endpoints: [
+                { id: "root", method: "GET", accept: "a/b", path: "/x" },
+                {
+                  id: "leaf",
+                  method: "GET",
+                  accept: "a/b",
+                  via: {
+                    from: "root",
+                    relation: "cadenceVersion",
+                    type: "a/b",
+                  },
+                },
+              ],
+            }),
+          ),
+          [],
+        );
       });
 
       it("refuses both a path and a via", () => {

@@ -8,7 +8,12 @@ viya4/                 captured from a live Viya 4 deployment
 viya35/                captured from a live Viya 3.5 deployment
 harness/               synthetic; proves the plumbing, imitates nothing
 submission-corpus/     hand-written Python, hostile to SAS tokenisation
+rich-output/           a 1x1 PNG for the image-capture tests
 ```
+
+Only `viya4/` and `viya35/` are tied to a contract (`contracts/*.yaml`'s
+`fixtures:` key, checked both ways by `npm run check:contracts`). The other three
+are fixtures with no contract by design; the check knows not to expect one.
 
 The split by generation is the point. Happy paths run once per generation, so a
 change that quietly works only on Viya 4 fails the 3.5 suite instead of shipping

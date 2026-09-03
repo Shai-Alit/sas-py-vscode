@@ -214,8 +214,9 @@ async function addProfile(
 
   const clientId = await askOptional(
     // Naming the version is the difference between a prompt someone can act on
-    // and one they have to guess at. "The default" means nothing to a 3.5 user,
-    // who is precisely the person who must not leave this empty.
+    // and one they have to guess at. "The default" means nothing to a user on
+    // an older Viya 4, who is precisely the person who must not leave this
+    // empty.
     vscode.l10n.t(
       "OAuth client ID (optional — leave empty on Viya 4 2022.11 and later)",
     ),

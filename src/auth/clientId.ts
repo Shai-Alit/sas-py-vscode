@@ -7,11 +7,11 @@
  * **This module must never import `vscode`.**
  *
  * The rule: an empty `clientId` on the profile falls back to the built-in
- * `vscode` client, which Viya 4 2022.11 and later register themselves. Viya 3.5
- * and Viya 4 2022.10 and earlier have no such client, and on those a user with no
- * `clientId` has to be told, in those words, to ask an administrator for a client
- * id and secret — because what they would otherwise see is a generic OAuth
- * rejection that names nothing they can act on.
+ * `vscode` client, which Viya 4 2022.11 and later register themselves. Viya 4
+ * 2022.10 and earlier has no such client, and on that a user with no `clientId`
+ * has to be told, in those words, to ask an administrator for a client id and
+ * secret — because what they would otherwise see is a generic OAuth rejection
+ * that names nothing they can act on.
  *
  * See `PRODUCTION_PLAN.md` §6 decision 9 and
  * docs/adr/0008-auth-core-transport-and-security-deltas.md.
@@ -34,19 +34,14 @@
  * second question — which is why it is a fact about the client rather than a
  * detail of one error path.
  *
- * ## The Viya 3.5 path here has never been run against Viya 3.5
+ * ## Viya 3.5 removed, 2026-09-03
  *
- * Read that literally. That 3.5 lacks a built-in `vscode` client is SAS's
- * documented behaviour for their own extension, not something this project has
- * observed: there is no Viya 3.5 deployment available to it, so the check is not
- * outstanding, it is not possible. The plan used to call it a pre-release
- * verification, which was a blocker nobody could clear.
- *
- * The exposure is bounded, and knowing its shape is what makes it acceptable: if
- * the documentation is wrong and 3.5 *does* have a built-in client, a 3.5 user is
- * told to obtain a client id they did not need. An unnecessary errand, not a
- * broken flow and not a weakened one. If a 3.5 deployment ever becomes reachable,
- * this is the first thing to point at it.
+ * This module used to carry a `viya35` arm on {@link Deployment}, answering
+ * `false` unconditionally — SAS's documented behaviour for their own extension,
+ * never observed here, because no Viya 3.5 deployment was ever reachable to check
+ * it against. [ADR-0022](../../docs/adr/0022-drop-viya-35-support.md) drops
+ * architectural 3.5 support for exactly that reason; `Deployment` is now
+ * `viya4 | unknown`.
  */
 
 import type { AuthProblem } from "./problems";
@@ -73,7 +68,7 @@ const BUILT_IN_CLIENT_SINCE = { year: 2022, month: 11 } as const;
  * exists — and has to keep behaving sensibly when it fails.
  */
 export type Deployment =
-  { kind: "viya4"; release: string } | { kind: "viya35" } | { kind: "unknown" };
+  { kind: "viya4"; release: string } | { kind: "unknown" };
 
 /** The client the flow should present, once resolved. */
 export interface ClientCredentials {
@@ -141,8 +136,6 @@ function parseRelease(
  */
 export function hasBuiltInClient(deployment: Deployment): boolean | undefined {
   switch (deployment.kind) {
-    case "viya35":
-      return false;
     case "unknown":
       return undefined;
     case "viya4": {
@@ -173,8 +166,6 @@ export function hasBuiltInClient(deployment: Deployment): boolean | undefined {
  */
 export function describeDeployment(deployment: Deployment): string {
   switch (deployment.kind) {
-    case "viya35":
-      return "Viya 3.5";
     case "viya4":
       return `Viya 4 ${deployment.release}`;
     case "unknown":
@@ -238,9 +229,10 @@ export function resolveClient(input: ClientResolutionInput): ClientResolution {
  *
  * Both codes are from RFC 6749 §5.2: `invalid_client` is an unknown or
  * unauthenticated client, `unauthorized_client` a known one not permitted this
- * grant. A 3.5 deployment that has never heard of `vscode` answers with the
- * former. Deliberately narrow — a wrong password or an expired code must keep its
- * own message rather than being rewritten into advice about client registration.
+ * grant. A Viya 4 release before 2022.11, with no registered `vscode` client,
+ * answers with the former. Deliberately narrow — a wrong password or an expired
+ * code must keep its own message rather than being rewritten into advice about
+ * client registration.
  */
 export function explainsMissingClient(
   problem: AuthProblem,

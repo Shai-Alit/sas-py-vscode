@@ -175,9 +175,11 @@ The profile _model_ is validated whether you use the commands or hand-edit
   admin-registered client. Signing in also opens a compute session.
 - [x] **(live) Empty client id uses the built-in client** — profile with
   `clientId` empty.
-  **Expect:** the built-in `vscode` client on Viya 4 2022.11+. On 3.5 / older 4
-  you are told, in those words, to supply an id and secret. _(Viya 3.5 is
-  unverified — treat as untested.)_
+  **Expect:** the built-in `vscode` client on Viya 4 2022.11+. On an older Viya
+  4 you are told, in those words, to supply an id and secret. _(Viya 3.5
+  support is dropped —
+  [ADR-0022](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/adr/0022-drop-viya-35-support.md)
+  — nothing to test.)_
 - [x] **Sign out** — run **Sign Out**, then trigger a run.
   **Expect:** you are taken back through authentication. **Failed, 2026-08-27**
   — clicking **Run File** after sign-out silently fails instead ("The program

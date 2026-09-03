@@ -25,14 +25,11 @@ body:
         3. …
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: viya-version
     attributes:
-      label: Viya generation
-      options:
-        - Viya 4
-        - Viya 3.5
-        - Not sure
+      label: Viya release (e.g. 2026.03)
+      description: Viya 3.5 is not supported — see ADR-0022 in the repo's docs/adr/.
     validations:
       required: true
   - type: input

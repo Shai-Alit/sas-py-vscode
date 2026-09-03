@@ -26,10 +26,14 @@
  * layer full of speculative hooks teaches the next person that the hooks are
  * decoration.
  *
- * It is also worth knowing that this project has *never run anything against
- * Viya 3.5* — there is no 3.5 deployment available to it. Every 3.5 behaviour
- * here is documented behaviour, not observed behaviour, and
- * `src/auth/clientId.ts` carries the long-form version of that caveat.
+ * ## Viya 3.5 removed, 2026-09-03
+ *
+ * This directory used to hold a second dialect, `viya35.ts`, standing for a
+ * generation this project never had a deployment to run anything against — every
+ * claim it made was documented SAS behaviour, not observed behaviour.
+ * [ADR-0022](../../docs/adr/0022-drop-viya-35-support.md) drops it: too few
+ * customers, no way to verify any of it, and no path in sight to getting one.
+ * `DialectId` is `"viya4"` alone until a real second generation shows up.
  */
 
 import { describeDeployment, hasBuiltInClient } from "../auth/clientId";
@@ -52,7 +56,7 @@ export type { Deployment };
  * directories under `test/fixtures/`, and — from 2b-ii — the contract files under
  * `contracts/`.
  */
-export type DialectId = "viya4" | "viya35";
+export type DialectId = "viya4";
 
 /**
  * One Viya generation, bound to a particular deployment.
@@ -98,9 +102,9 @@ export interface Dialect {
 /**
  * Builds the parts of a {@link Dialect} that are identical for every generation.
  *
- * Shared by `./viya4` and `./viya35` so that the two files contain their
- * differences and nothing else — which is what makes it obvious, when a third
- * generation arrives, exactly what a new dialect has to decide.
+ * Shared by every dialect module — `./viya4` today — so that each file contains
+ * only its differences from this base, which is what makes it obvious, when a
+ * second generation arrives, exactly what a new dialect has to decide.
  */
 export function baseDialect(id: DialectId, deployment: Deployment): Dialect {
   return {

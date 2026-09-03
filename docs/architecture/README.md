@@ -8,9 +8,10 @@ Written so far:
 - [**Execution backends**](execution-backends.md) — the `ExecutionBackend`
   interface, why a program is bytes rather than a string, and why the handle
   streams (2b-i)
-- [**The dialect layer**](dialects.md) — how Viya 3.5 and Viya 4 differences are
-  absorbed, why version checks are banned everywhere else, and why the dialects
-  are nearly empty on purpose (2b-i)
+- [**The dialect layer**](dialects.md) — how Viya generation differences are
+  absorbed, why version checks are banned everywhere else, why the dialects are
+  nearly empty on purpose, and why Viya 3.5 is no longer one of them
+  ([ADR-0022](../adr/0022-drop-viya-35-support.md)) (2b-i)
 - [**Capability probing**](capability-probing.md) — the two stages, why stage 1
   cannot ask until a session exists, and why fail-soft is sanctioned here and
   nowhere else (2b-ii; stage 2 lands in 3e)

@@ -16,6 +16,16 @@
  * and says so, rather than blocking a user who is very probably on Viya 4. The
  * reason string is what keeps that from being silent — it is the difference
  * between degrading and guessing.
+ *
+ * ## Viya 3.5 removed, 2026-09-03
+ *
+ * `deploymentFromSignal` used to read a considered `absent` cadence signal as
+ * "this deployment is Viya 3.5" — the one generation with no cadence versioning
+ * at all, so its considered absence was as close to a version number as 3.5
+ * offered (§2.3, old wording). [ADR-0022](../../docs/adr/0022-drop-viya-35-support.md)
+ * drops 3.5 as a supported generation, so `absent` now resolves the same way
+ * `unreadable` does — Viya 4, assumed rather than confirmed — and `Deployment`
+ * no longer has a `viya35` member.
  */
 
 import {
@@ -24,7 +34,6 @@ import {
   type DialectId,
   baseDialect,
 } from "./dialect";
-import { createViya35Dialect } from "./viya35";
 import { createViya4Dialect } from "./viya4";
 
 /** A dialect, and the sentence explaining why it was chosen. */
@@ -52,11 +61,13 @@ export interface DialectResolution {
 /**
  * What stage-1 probing found at `/deploymentData/cadenceVersion`.
  *
- * Three outcomes, and the third is why this is a union rather than
- * `string | undefined`. "The deployment answered, and it has no cadence version"
- * means Viya 3.5. "We could not ask" means we know nothing, and it has to stay a
- * separate answer, because collapsing the two is how a network problem turns
- * into a confident, wrong claim of Viya 3.5.
+ * Three outcomes, kept apart even though only `cadence` currently changes which
+ * dialect is chosen — `absent` and `unreadable` both fall back to Viya 4,
+ * assumed rather than confirmed. They are not the same finding, and collapsing
+ * them would throw away evidence a bug report can use: "a routed Viya service
+ * told us, definitively, that this relation does not exist" is a different fact
+ * from "we could not get an answer at all", even though {@link
+ * deploymentFromSignal} currently treats the two alike.
  *
  * **What "could not ask" is, concretely.** An earlier draft of this comment said
  * the signed-in user might lack permission to read the endpoint. Finding 41
@@ -67,11 +78,11 @@ export interface DialectResolution {
  * and an ingress answering for an absent service returns a bodyless `404` with no
  * media type. A corporate proxy, a VPN portal or a mistyped host produces
  * something in the same family. Read as "the endpoint is not there", any of them
- * would name the generation on the deployment's behalf.
+ * would misreport an ordinary Viya 4 deployment as something it is not.
  *
  * One deployment does not prove every Viya 4 leaves the endpoint open, so
  * `probeCadence` in `./probe` sends the token regardless; a deployment that *did*
- * gate it would otherwise answer `401` and be read as Viya 3.5.
+ * gate it would otherwise answer `401` and be misread the same way.
  */
 export type CadenceSignal =
   | {
@@ -96,16 +107,22 @@ export type CadenceSignal =
  *
  * The provenance of the signal — which endpoint answered, with what status — is
  * the probe's to log. This function only decides what the answer means.
+ *
+ * `unknown` is the answer for both `absent` and `unreadable` now that Viya 3.5
+ * has been dropped ([ADR-0022](../../docs/adr/0022-drop-viya-35-support.md)) —
+ * there is no second generation left for a considered absence to identify.
  */
 export function deploymentFromSignal(signal: CadenceSignal): Deployment {
   switch (signal.kind) {
     case "cadence":
       return { kind: "viya4", release: signal.version.trim() };
     case "absent":
-      // §2.3: a deployment with no cadence version is Viya 3.5. The endpoint is
-      // a Viya 4 addition, so its considered absence is itself the version
-      // signal — which is as close to a version number as 3.5 offers.
-      return { kind: "viya35" };
+      // Used to be read as Viya 3.5 — the endpoint is a Viya 4 addition, and its
+      // considered absence was as close to a version number as 3.5 offered
+      // (§2.3, old wording). ADR-0022 drops 3.5 as a supported generation, so a
+      // considered absence is now inconclusive in the same way `unreadable` is:
+      // there is no generation left for it to identify.
+      return { kind: "unknown" };
     case "unreadable":
       return { kind: "unknown" };
   }
@@ -130,12 +147,6 @@ export function resolveDialect(deployment: Deployment): DialectResolution {
           deployment.release === ""
             ? "the deployment is Viya 4 but did not report a cadence release"
             : `the deployment reports Viya 4 ${deployment.release}`,
-        certain: true,
-      };
-    case "viya35":
-      return {
-        dialect: createViya35Dialect(),
-        reason: "the deployment is Viya 3.5",
         certain: true,
       };
     case "unknown":
@@ -165,27 +176,22 @@ const ALIASES: ReadonlyMap<string, DialectId> = new Map<string, DialectId>([
   ["viya4", "viya4"],
   ["v4", "viya4"],
   ["4", "viya4"],
-  ["viya35", "viya35"],
-  ["viya3.5", "viya35"],
-  ["v3.5", "viya35"],
-  ["3.5", "viya35"],
-  ["35", "viya35"],
 ]);
 
 /**
  * A cadence release, as Viya 4 writes it: `2022.11`, `2025.04`.
  *
- * Anchored, because a substring match would accept a date. Viya 3.5 has no
- * cadence versioning at all, so a string of this shape is by itself a statement
- * of generation.
+ * Anchored, because a substring match would accept a date. A string of this
+ * shape is by itself a statement of generation, since only Viya 4 carries a
+ * cadence version at all.
  */
 const CADENCE = /^\d{4}\.\d{2}$/;
 
 /**
  * Lower-cases and strips the separators people vary on.
  *
- * `Viya 4`, `viya-4` and `VIYA_4` all become `viya4`. Dots survive, because
- * `3.5` needs one and a cadence version is nothing without them.
+ * `Viya 4`, `viya-4` and `VIYA_4` all become `viya4`. Dots survive, because a
+ * cadence release (`2025.04`) is nothing without one.
  */
 export function normaliseAlias(text: string): string {
   return text

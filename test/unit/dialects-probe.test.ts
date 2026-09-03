@@ -22,10 +22,10 @@ import {
  * Stage-1 capability probing.
  *
  * Almost every case here is about one question: **what is allowed to be read as
- * "this deployment is Viya 3.5"?** Getting that wrong is not a probe bug that
- * shows up as a probe failure — the wrong dialect is chosen silently, and then
- * presents later as a handful of unrelated ones, starting with telling the user
- * their deployment has no built-in OAuth client.
+ * `absent` rather than `unreadable`?** Getting that wrong is not a probe bug
+ * that shows up as a probe failure — `./resolve` reads `absent` and
+ * `unreadable` differently in its own bug-report aside, even though (since
+ * ADR-0022 dropped Viya 3.5) both now fall back to the same assumed dialect.
  *
  * Finding 42 is why the answer is narrow. Two 404s were provoked on a live Viya
  * 4 and they are not alike: a routed service answers with a `vnd.sas.error+json`
@@ -267,7 +267,7 @@ describe("probeCadence", () => {
     });
   });
 
-  describe("deciding a deployment is Viya 3.5", () => {
+  describe("deciding a cadence relation is genuinely absent", () => {
     it("reads a missing relation as absent", async () => {
       // ADR-0010's version signal, stated exactly: a Viya service answered, with
       // a document of the right shape, and it does not offer this relation.
@@ -306,7 +306,7 @@ describe("probeCadence", () => {
     it("does not read a bodyless 404 as absent", async () => {
       // Finding 42, second row: no body, no media type, `server: envoy`. A
       // proxy, a VPN portal or a mistyped host produces the same thing, and any
-      // of them would otherwise name the generation on the deployment's behalf.
+      // of them would otherwise misreport an ordinary deployment.
       const fixture = fake(rejected({ status: 404 }));
 
       assert.deepEqual(await probeCadence(fixture.client), {
@@ -318,7 +318,7 @@ describe("probeCadence", () => {
     it("does not read a 401 as absent", async () => {
       // Finding 41 measured the endpoint answering unauthenticated, so a 401
       // here means something other than Viya answered — but even if a future
-      // deployment gates it, "sign in again" is not "this is Viya 3.5".
+      // deployment gates it, "sign in again" is not "this relation is absent".
       const fixture = fake({
         ok: false,
         reason: "the access token is no longer active",

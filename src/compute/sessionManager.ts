@@ -1128,9 +1128,12 @@ export class ComputeSessionManager implements vscode.Disposable {
  *   release of "2026.03" (finding 40). Appended rather than substituted,
  *   because a support track is not a version and nothing may come to read it as
  *   one.
+ * - the `absent` **aside** — "the deployment did not report a cadence version",
+ *   distinguishing it from an `unreadable` probe now that neither identifies a
+ *   generation (ADR-0022 dropped the one they used to distinguish, Viya 3.5).
  *
- * Not localised, and not by omission. Both halves are strings the deployment or
- * the resolver produced, in the same register as `describeComputeProblem`'s
+ * Not localised, and not by omission. Each of these is a string the deployment
+ * or the resolver produced, in the same register as `describeComputeProblem`'s
  * output, and a translated frame around an untranslated diagnostic reads worse
  * than an untranslated pair.
  */
@@ -1152,8 +1155,11 @@ function asideFor(probed: CadenceSignal): string | undefined {
     case "unreadable":
       return probed.detail;
     case "absent":
-      // Nothing to add: "the deployment is Viya 3.5" is the whole finding, and
-      // the evidence for it is an absence, which does not describe.
-      return undefined;
+      // Used to need nothing here: "the deployment is Viya 3.5" was the whole
+      // finding, and the evidence for it was an absence, which does not
+      // describe. Since ADR-0022 dropped 3.5, `resolution.reason` alone only
+      // says "could not be determined" — this is the detail a bug report
+      // needs to distinguish that from an `unreadable` probe.
+      return "the deployment did not report a cadence version";
   }
 }

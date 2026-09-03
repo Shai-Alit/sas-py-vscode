@@ -8,6 +8,12 @@
   by link relation), ADR-0015 (a dialect owns the name of its contract file),
   ADR-0005 (supply-chain policy — every new dependency is a decision)
 - **Executed in:** slice `2b-ii`
+- **Amended by [ADR-0022](0022-drop-viya-35-support.md), 2026-09-03:** this
+  record's Context and Decision describe a world with two contracts,
+  `viya4.yaml` and `viya35.yaml`. ADR-0022 drops Viya 3.5, so `viya35.yaml` no
+  longer exists and only `viya4.yaml` does today — the mechanism this ADR
+  decided (hand-written YAML, checked both ways) is unaffected and still
+  governs whatever contracts exist.
 
 ## Context
 

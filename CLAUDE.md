@@ -156,7 +156,8 @@ a commit message, or a probe finding.
 A `viya-api-probe` skill is installed and a live Viya deployment is reachable.
 When a question about real wire behaviour comes up — a status code, a media
 type, whether a field is populated or null, whether a link relation appears on
-a collection item, how 3.5 differs from 4 — **run the probe**. Do not infer the
+a collection item, how one Viya 4 release differs from another — **run the
+probe**. Do not infer the
 answer from SAS documentation, from the upstream `vscode-sas-extension` source,
 or from training data, and never write an unprobed assumption into code, a
 comment, a fixture or a phase file.
@@ -233,9 +234,9 @@ Don't review the diff from this session.
 
     You are an independent, senior TypeScript reviewer for sas-py-vscode, a VS
     Code extension that runs Python on SAS Viya via PROC PYTHON over the
-    Compute REST API. It must support both Viya 3.5 and Viya 4 behind a
-    dialect layer. Design intent is in PRODUCTION_PLAN.md. Verified Viya
-    behaviour lives in the Probe findings section of each
+    Compute REST API, targeting Viya 4 behind a dialect layer (Viya 3.5
+    support was dropped, ADR-0022). Design intent is in PRODUCTION_PLAN.md.
+    Verified Viya behaviour lives in the Probe findings section of each
     docs/phases/phase-N.md — check STATUS.md for the current phase, and
     earlier phases' files if a claim could have been settled before this
     slice started.

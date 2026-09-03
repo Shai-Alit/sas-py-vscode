@@ -135,8 +135,8 @@ enters the process at all, so it cannot reach a crash dump, a heap snapshot, or 
 log file attached to a bug report.
 
 If a deployment refuses the summary type, the extension retries with the full one
-and discards the personal fields as it parses. That path exists because no Viya
-3.5 deployment was available to check the summary type against — see
+and discards the personal fields as it parses. That path exists as a defensive
+fallback for a deployment that answers this endpoint slightly differently — see
 [`docs/phases/phase-1.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406),
 findings 6 to 9, for what was and was not established.
 
@@ -241,6 +241,7 @@ comes back without a reload. Profile management still works without trust. See
 
 ## What is not here yet
 
-Viya 3.5 is unverified rather than supported: nothing here has been run against a
-3.5 deployment, and the places where that matters are called out above rather
-than papered over.
+Viya 3.5 is not supported at all
+([ADR-0022](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/adr/0022-drop-viya-35-support.md)),
+rather than unverified — nothing here has been run against one, and rather than
+carry that indefinitely, architectural support for it was dropped.

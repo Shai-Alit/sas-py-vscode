@@ -358,5 +358,7 @@ endpoints:
     # already carries.
     response_fields: [cadenceVersion, cadenceDisplayName]
     # This is the whole of stage-1 capability probing (PRODUCTION_PLAN.md §2.3).
-    # Its absence is the Viya 3.5 signal — see `viya35.yaml`, which exists to
-    # record that absence and nothing else.
+    # Its absence used to be read as the Viya 3.5 signal, recorded in a
+    # `viya35.yaml` that existed to note that absence and nothing else.
+    # ADR-0022 dropped Viya 3.5 and that file with it; an absence is now
+    # inconclusive rather than a positive identification (`src/dialects/resolve.ts`).

@@ -44,9 +44,9 @@ change with no documentation change is an incomplete pull request.
 **Do not document what you have not verified.** Claims about Viya behaviour must
 be supported by the **Probe findings** section of the relevant phase file
 (`docs/phases/phase-N.md`) — findings no longer live in one standalone file. In
-particular, no document may claim Viya 3.5 support while it remains unverified —
-say so plainly instead. Both AI reviewers are instructed to flag violations of
-this.
+particular, no document may claim Viya 3.5 support at all — it is dropped, not
+unverified, per [ADR-0022](adr/0022-drop-viya-35-support.md). Both AI reviewers
+are instructed to flag violations of this.
 
 **Machine-readable facts are generated, never transcribed.** A hand-typed copy of
 a settings table is a copy that will silently go stale.

@@ -15,6 +15,11 @@
 > `docs/phases/phase-3.md`'s finding 70. This does not change the mechanism
 > decided below — `infile=` is still how the file reaches the interpreter —
 > only what the job submitting it must also send.
+> **Amended 2026-09-03 by [ADR-0022](0022-drop-viya-35-support.md).** The
+> Consequences section below says this decision is not "Viya-3.5-safe" until
+> probed there, and names "the 3.5 dialect" as owing that confirmation. There
+> is no 3.5 dialect any more — Viya 3.5 support is dropped, not carried as a
+> standing obligation to eventually verify.
 
 ## Context
 

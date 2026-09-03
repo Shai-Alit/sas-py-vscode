@@ -64,9 +64,9 @@ export interface ViyaProfile {
    *
    * Sign-in is Phase 1b; this slice only stores the field. When 1b lands, an
    * empty value falls back to the built-in `vscode` client that Viya 4 2022.11
-   * and later register (PRODUCTION_PLAN.md decision 9). Viya 3.5 and Viya 4
-   * 2022.10 and earlier have no such client and need an explicit id and secret
-   * — that branch must say so plainly rather than surfacing the generic OAuth
+   * and later register (PRODUCTION_PLAN.md decision 9). Viya 4 2022.10 and
+   * earlier has no such client and needs an explicit id and secret — that
+   * branch must say so plainly rather than surfacing the generic OAuth
    * rejection an absent client produces. Documented SAS behaviour, not yet
    * probed here.
    */

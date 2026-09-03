@@ -166,7 +166,7 @@ describe("findLink", () => {
 
   it("answers undefined for a relation that is not there", () => {
     // Not an error: this is how the service says an operation is unavailable in
-    // this state, and how a Viya 3.5 deployment will say it does not support
+    // this state, and how an older Viya 4 release says it does not support
     // something at all.
     assert.equal(findLink(links, "cancel"), undefined);
     assert.equal(findLink([], "self"), undefined);

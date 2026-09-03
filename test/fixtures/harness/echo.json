@@ -1,4 +1,4 @@
 {
-  "note": "Synthetic. This fixture exists only to prove the mocking layer end to end, and deliberately does not imitate any SAS Viya response — inventing a wire shape we have not observed would put a fabrication where the evidence is supposed to be. Real captures live under viya4/ and viya35/.",
+  "note": "Synthetic. This fixture exists only to prove the mocking layer end to end, and deliberately does not imitate any SAS Viya response — inventing a wire shape we have not observed would put a fabrication where the evidence is supposed to be. Real captures live under viya4/.",
   "items": [{ "id": "first" }, { "id": "second" }]
 }

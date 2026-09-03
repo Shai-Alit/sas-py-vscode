@@ -15,19 +15,23 @@ client. That was the right call for the client and it left a gap: a generated
 client is a poor client and an excellent inventory, and hand-writing one keeps the
 first problem away while taking the second one on.
 
-The gap matters more here than it would elsewhere, because this project supports
-two generations of a product and has only ever been run against one. "Viya 3.5
-does not have this endpoint" is a claim the code makes — the whole of stage-1
-probing is that claim — and a claim about somebody else's server needs somewhere
-to say when it was measured and against what. A branch cannot say either.
+The gap matters here because a claim about somebody else's server needs
+somewhere to say when it was measured and against what, and a branch cannot say
+either. Until [ADR-0022](../adr/0022-drop-viya-35-support.md) dropped Viya 3.5
+support, this mattered even more: this project supported two generations of a
+product and had only ever been run against one, and "Viya 3.5 does not have
+this endpoint" was a claim the code made — the whole of stage-1 probing was
+that claim — resting entirely on this inventory rather than on anything
+observed.
 
 ## What a file looks like
 
-Two files exist:
-[`contracts/viya4.yaml`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/contracts/viya4.yaml)
-and
-[`contracts/viya35.yaml`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/contracts/viya35.yaml).
-Each opens with four keys that tie it to the rest of the repository:
+One file exists today:
+[`contracts/viya4.yaml`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/contracts/viya4.yaml).
+A second, `contracts/viya35.yaml`, existed until
+[ADR-0022](../adr/0022-drop-viya-35-support.md) dropped Viya 3.5 support — see
+[below](#writing-an-absence-down) for what it held. Each contract opens with
+four keys that tie it to the rest of the repository:
 
 ```yaml
 generation: viya4                # a DialectId, spelled canonically
@@ -77,7 +81,9 @@ came first and works today by luck.
 
 ## Writing an absence down
 
-`viya35.yaml` has no endpoints and an `absent` list instead:
+A contract with no endpoints of its own can instead carry an `absent` list —
+this is what `viya35.yaml` held, before [ADR-0022](../adr/0022-drop-viya-35-support.md)
+removed it along with Viya 3.5 support:
 
 ```yaml
 endpoints: []
@@ -90,21 +96,22 @@ absent:
     detected_as: absent-link-relation-or-viya-404
 ```
 
-This is the file's whole content, and the emptiness is the point. Stage-1 probing
-identifies a deployment as 3.5 by *not* finding something, so the thing that is
-not found has to be written down — otherwise the only record of what 3.5 lacks is
-a branch, which is what `src/dialects/` exists to prevent.
+That was the file's whole content, and the emptiness was the point. Stage-1
+probing identified a deployment as 3.5 by *not* finding something, so the thing
+that was not found had to be written down — otherwise the only record of what
+3.5 lacked would have been a branch, which is what `src/dialects/` exists to
+prevent.
 
 An absence is only a signal relative to a presence, so every id under `absent`
 must appear as an endpoint in some **other** contract, and the checker enforces
 it. Without that rule the list decays into notes about endpoints that no longer
-exist anywhere, which read as authoritative and are not.
+exist anywhere, which read as authoritative and are not. This mechanism is
+unaffected by dropping 3.5 — a future second generation with something to
+record as absent would use it the same way.
 
-Nothing in `viya35.yaml` has been observed. This project has never had a Viya 3.5
-deployment to run against. Endpoints arrive there when something has talked to a
-3.5, not when a manual describes one — a contract populated from documentation
-reads exactly like one populated from a probe, and the difference is the only
-thing these files are for.
+Nothing in `viya35.yaml` was ever observed. This project never had a Viya 3.5
+deployment to run against, which is exactly why it was dropped rather than kept
+as permanently-unverified — see ADR-0022 for the full reasoning.
 
 ## What the check actually asserts
 
@@ -140,16 +147,16 @@ The forward half fails an empty directory with a message of its own, separate
 from the one for a directory that is not there: naming a directory that exists
 but holds nothing (dotfiles such as `.gitkeep` do not count) satisfies the
 letter of the rule while recording no wire shape at all. A README saying why the
-directory is empty is the minimum that passes — which is what
-`test/fixtures/viya35/` is.
+directory is empty is the minimum that passes — `test/fixtures/viya35/` used to
+be exactly that, before it was removed with the rest of Viya 3.5 support.
 
 Two more rules are worth knowing before a failure surprises you.
 
-**`generation` must be canonical.** `resolveDialectId()` accepts `Viya 4`, `v3.5`
-and a bare cadence release, because the strings it is handed come from settings
-people type and answers servers choose. A contract file is neither — it is written
-here, under review — so the exact `DialectId` is required. The file name must
-match it too.
+**`generation` must be canonical.** `resolveDialectId()` accepts aliases like
+`Viya 4` and a bare cadence release, because the strings it is handed come from
+settings people type and answers servers choose. A contract file is neither —
+it is written here, under review — so the exact `DialectId` is required. The
+file name must match it too.
 
 **Unknown keys are an error, not something ignored.** A mistyped `fixture` for
 `fixtures` would leave the fixtures rule with nothing to check and the file still

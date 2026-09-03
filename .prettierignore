@@ -17,7 +17,6 @@ l10n/
 # committed. `harness/` is excluded from the exclusion: those fixtures are
 # hand-written, so they are source and are formatted like source.
 test/fixtures/viya4/
-test/fixtures/viya35/
 
 # Markdown is deliberately not Prettier-formatted.
 #

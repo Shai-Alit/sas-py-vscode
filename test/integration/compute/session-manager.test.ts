@@ -1229,8 +1229,9 @@ describe("compute session manager", () => {
    * Stage-1 capability probing, from the host's side.
    *
    * `probeCadence` itself is covered exhaustively at the unit tier — every shape
-   * a 404 comes in, and which of them may and may not mean Viya 3.5. What is
-   * only reachable here is the wiring: that it happens after a session and not
+   * a 404 comes in, and which of them may and may not count as a considered
+   * absence. What is only reachable here is the wiring: that it happens after a
+   * session and not
    * before, that its answer reaches the connection, that it is asked once per
    * profile, and that it cannot take a working connection down with it.
    */
@@ -1262,10 +1263,11 @@ describe("compute session manager", () => {
       assert.ok(connection.generation.certain);
     });
 
-    it("reads a deployment that offers no cadence relation as Viya 3.5", async () => {
+    it("assumes Viya 4, uncertain, when the deployment offers no cadence relation", async () => {
       // A Viya service answered, with a document of the right shape, and it does
-      // not advertise the relation. That is the one positive signal Viya 3.5
-      // gives — the endpoint is a Viya 4 addition.
+      // not advertise the relation. This used to be the one positive signal for
+      // Viya 3.5 — the endpoint is a Viya 4 addition — but ADR-0022 dropped 3.5,
+      // so a considered absence is inconclusive now, the same as `unreadable`.
       const scripted = deployment({
         contexts: ok(contextsBody()),
         createSession: ok(sessionBody(), 201),
@@ -1279,8 +1281,8 @@ describe("compute session manager", () => {
       const connection = await manager.connect();
 
       assert.ok(connection);
-      assert.equal(connection.generation.dialect.id, "viya35");
-      assert.ok(connection.generation.certain);
+      assert.equal(connection.generation.dialect.id, "viya4");
+      assert.ok(!connection.generation.certain);
       // Nothing followed: there was no relation to follow.
       assert.ok(!scripted.hrefs.includes(CADENCE_PATH));
     });
@@ -1288,8 +1290,8 @@ describe("compute session manager", () => {
     it("assumes Viya 4 without claiming it when the version cannot be read", async () => {
       // `gone()` is a bodyless 404 — the shape finding 42 records an *ingress*
       // producing for a path no service is routed to. A proxy, a VPN portal or a
-      // mistyped host produces the same thing, so it must never be read as "this
-      // deployment has no cadence endpoint, therefore Viya 3.5".
+      // mistyped host produces the same thing, so it must never be read as a
+      // considered absence.
       const scripted = deployment({
         contexts: ok(contextsBody()),
         createSession: ok(sessionBody(), 201),
@@ -1478,7 +1480,8 @@ describe("compute session manager", () => {
       assert.equal(line.level, "warn");
       assert.match(line.message, /assumed/);
       // And the detail `deploymentFromSignal` throws away, which is the
-      // difference between a proxy in the way and a real Viya 3.5.
+      // difference between a proxy in the way and a deployment that genuinely
+      // has no cadence endpoint.
       assert.match(line.message, /404/);
     });
   });

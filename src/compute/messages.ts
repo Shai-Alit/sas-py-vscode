@@ -117,8 +117,8 @@ export function localiseComputeProblem(problem: ComputeProblem): string {
       // neither is something a user can do anything with. Deployment support
       // stays in: findings 54 and 55 establish that an absent link cannot be
       // used to *infer* an unsupported operation, not that the operation is
-      // supported, and on Viya 3.5 ADR-0010 makes exactly that absence the
-      // intended way a version difference surfaces.
+      // supported, and ADR-0010 makes exactly that absence the intended way a
+      // version difference surfaces.
       return vscode.l10n.t(
         "SAS Viya did not offer that operation to your account here. You may not have permission for it, or this deployment may not support it. See the Python on Viya log for details.",
       );

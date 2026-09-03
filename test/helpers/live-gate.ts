@@ -1,8 +1,13 @@
 // Copyright © 2026, Sean Ford and the Python on Viya contributors
 // SPDX-License-Identifier: Apache-2.0
 
-/** The Viya generations the extension supports. SAS 9 is explicitly not one. */
-export type Generation = "viya4" | "viya35";
+/**
+ * The Viya generations the extension supports. SAS 9 is explicitly not one.
+ *
+ * Was `"viya4" | "viya35"` until
+ * [ADR-0022](../../docs/adr/0022-drop-viya-35-support.md) dropped Viya 3.5.
+ */
+export type Generation = "viya4";
 
 /** A deployment a live test is permitted to talk to. */
 export interface LiveTarget {
@@ -33,10 +38,6 @@ const ENV_VARS: Record<Generation, { url: string; token: string }> = {
   viya4: {
     url: "PYTHON_ON_VIYA_TEST_VIYA4_URL",
     token: "PYTHON_ON_VIYA_TEST_VIYA4_TOKEN",
-  },
-  viya35: {
-    url: "PYTHON_ON_VIYA_TEST_VIYA35_URL",
-    token: "PYTHON_ON_VIYA_TEST_VIYA35_TOKEN",
   },
 };
 

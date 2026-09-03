@@ -12,10 +12,12 @@ import {
 
 /**
  * Choosing the wrong dialect does not fail; it presents as a dozen unrelated
- * bugs somewhere else. So the tests that matter here are about the three
- * outcomes being kept apart — a determined version, a determined *absence* of
- * one, and not being able to ask — and about every resolution carrying a reason
- * that says which of those happened.
+ * bugs somewhere else. So the tests that matter here are about the outcomes
+ * being kept apart at the `CadenceSignal` level — a determined version, a
+ * considered *absence* of one, and not being able to ask at all — and about
+ * every resolution carrying a reason that says which of those happened, even
+ * though (since ADR-0022 dropped Viya 3.5) the latter two now resolve to the
+ * same `Deployment`.
  */
 
 describe("deploymentFromSignal", () => {
@@ -36,20 +38,23 @@ describe("deploymentFromSignal", () => {
     );
   });
 
-  it("reads a considered absence as Viya 3.5", () => {
-    // The endpoint is a Viya 4 addition, so its absence is the version signal —
-    // which is as close to a version number as 3.5 offers (§2.3).
+  it("reads a considered absence as unknown, same as unreadable", () => {
+    // Used to be the one positive signal for Viya 3.5 — the endpoint is a Viya
+    // 4 addition, so its absence was as close to a version number as 3.5
+    // offered (§2.3, old wording). ADR-0022 dropped 3.5, so there is no
+    // generation left for a considered absence to identify.
     assert.deepEqual(deploymentFromSignal({ kind: "absent" }), {
-      kind: "viya35",
+      kind: "unknown",
     });
   });
 
-  it("keeps 'could not ask' apart from 'answered, and there is none'", () => {
-    // The reason this input is a union rather than `string | undefined`. A proxy
-    // or an ingress answering on behalf of a service it cannot route to must not
-    // be reported as Viya 3.5 (finding 42) — that claim would then be used to
-    // tell the user their deployment has no built-in OAuth client, which is a
-    // specific, wrong instruction.
+  it("keeps 'could not ask' apart from 'answered, and there is none' at the signal level", () => {
+    // The reason this input is a union rather than `string | undefined`, even
+    // though both now resolve to the same `Deployment`. A proxy or an ingress
+    // answering on behalf of a service it cannot route to must not be reported
+    // the same as a genuine, confirmed absence (finding 42) — `./probe` is what
+    // keeps that distinction, for the sake of a bug report, even though this
+    // function no longer acts on it.
     assert.deepEqual(
       deploymentFromSignal({ kind: "unreadable", detail: "a bodyless 404" }),
       { kind: "unknown" },
@@ -82,12 +87,6 @@ describe("resolveDialect", () => {
     assert.match(reason, /2025\.04/);
   });
 
-  it("chooses Viya 3.5 for a Viya 3.5 deployment", () => {
-    const { dialect, certain } = resolveDialect({ kind: "viya35" });
-    assert.equal(dialect.id, "viya35");
-    assert.ok(certain);
-  });
-
   it("assumes Viya 4 when the version is unknown, and says it assumed", () => {
     // Fail-soft, per §2.3: an inconclusive probe must not stand between a user
     // and a deployment that is very probably Viya 4. The reason string is what
@@ -118,7 +117,6 @@ describe("resolveDialect", () => {
     const resolutions = [
       resolveDialect({ kind: "viya4", release: "2025.04" }),
       resolveDialect({ kind: "viya4", release: "" }),
-      resolveDialect({ kind: "viya35" }),
       resolveDialect({ kind: "unknown" }),
     ];
     for (const { reason } of resolutions) {
@@ -136,8 +134,7 @@ describe("normaliseAlias", () => {
     }
   });
 
-  it("keeps the dot, because 3.5 needs it", () => {
-    assert.equal(normaliseAlias("Viya 3.5"), "viya3.5");
+  it("keeps the dot, because a cadence release needs it", () => {
     assert.equal(normaliseAlias("2025.04"), "2025.04");
   });
 });
@@ -146,9 +143,6 @@ describe("resolveDialectId", () => {
   it("resolves the ways a generation gets written down", () => {
     for (const written of ["viya4", "Viya 4", "v4", "4"]) {
       assert.equal(resolveDialectId(written), "viya4");
-    }
-    for (const written of ["viya35", "Viya 3.5", "viya-3.5", "3.5", "v3.5"]) {
-      assert.equal(resolveDialectId(written), "viya35");
     }
   });
 
@@ -173,10 +167,10 @@ describe("resolveDialectId", () => {
     assert.equal(resolveDialectId("sas 9"), undefined);
   });
 
-  it("round-trips the ids the dialects report", () => {
-    // The ids name fixture directories and contract files, so a rename that
+  it("round-trips the id the dialect reports", () => {
+    // The id names a fixture directory and a contract file, so a rename that
     // missed this table would fail later and somewhere else.
-    for (const id of ["viya4", "viya35"] as const) {
+    for (const id of ["viya4"] as const) {
       assert.equal(resolveDialectId(id), id);
     }
   });

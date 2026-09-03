@@ -1,15 +1,25 @@
 # The dialect layer
 
-This extension supports SAS Viya 3.5 and Viya 4. Everywhere those two differ,
-the difference lives in `src/dialects/` — and nowhere else. ESLint enforces that
-with a `no-restricted-syntax` rule that bans version comparisons throughout
-`src/`, exempting only this directory.
+This extension supports SAS Viya 4. Wherever a difference between Viya releases
+needs representing, it lives in `src/dialects/` — and nowhere else. ESLint
+enforces that with a `no-restricted-syntax` rule that bans version comparisons
+throughout `src/`, exempting only this directory.
 
 The rule exists because version checks are individually reasonable and
 collectively unmaintainable. Each one is a two-line change that looks obviously
 correct in review; a year later there are forty of them, no two spelled the same
 way, and no way to answer "what does this extension actually do differently on
-3.5?" other than by reading everything.
+an older release?" other than by reading everything.
+
+> Until [ADR-0022](../adr/0022-drop-viya-35-support.md) (2026-09-03), this layer
+> also carried a `viya35` dialect — architectural, never-verified support for
+> Viya 3.5, on the theory that a retrofit should never be needed if a
+> deployment ever became reachable. One never did, and very few Viya 3.5
+> customers remain in the target audience, so ADR-0022 removed it rather than
+> continue carrying an unreachable generation indefinitely. Everything below
+> describes the layer as it exists for a single generation; nothing about the
+> mechanism itself changed, and standing a second dialect back up — 3.5 or a
+> genuinely new release — is "a new file", exactly as designed.
 
 ## What a dialect is
 
@@ -17,7 +27,7 @@ way, and no way to answer "what does this extension actually do differently on
 import type { Deployment, DialectId } from "./dialect";
 
 export interface Dialect {
-  readonly id: DialectId; // "viya4" | "viya35"
+  readonly id: DialectId; // "viya4"
   readonly deployment: Deployment;
   readonly contract: DialectId;
   hasBuiltInClient(): boolean | undefined;
@@ -25,15 +35,13 @@ export interface Dialect {
 }
 ```
 
-Deliberately thin. `viya4.ts` and `viya35.ts` are a few lines each, and neither
-overrides anything yet.
+Deliberately thin. `viya4.ts` is a few lines, and overrides nothing yet.
 
 That is the point rather than an embarrassment. **A dialect gains a method when a
-probe or a known defect proves the two generations differ, and not before.** The
+probe or a known defect proves two generations differ, and not before.** The
 tempting alternative — populating the interface with every path, media type and
 capability that *might* vary — produces a table of guesses that reads like
-evidence. Nothing in this project has ever been run against Viya 3.5, and an
-empty seat says that more honestly than a filled-in one would.
+evidence. An empty seat says that more honestly than a filled-in one would.
 
 The seats are worth having empty because they are where the difference goes when
 one is found: adding it becomes a change to one file with a comment saying which
@@ -80,15 +88,16 @@ export type CadenceSignal =
   | { kind: "unreadable"; detail: string };
 ```
 
-"The deployment answered, and it has no cadence version" means Viya 3.5 — the
-endpoint is a Viya 4 addition, so its considered absence is itself the version
-signal. "We could not ask" means we know nothing.
+"The deployment answered, and it has no cadence version" used to mean Viya 3.5
+— the endpoint is a Viya 4 addition, so its considered absence was itself the
+version signal. Since ADR-0022 dropped 3.5, there is no second generation left
+for that absence to identify, so `deploymentFromSignal()` maps it to `unknown`
+— the same place "we could not ask" maps to.
 
-Collapsing those two into one absent value is how a network problem turns into a
-confident, wrong claim of Viya 3.5 — which would then be used to tell the user
-their deployment has no built-in OAuth client, a specific and wrong instruction.
-The union is what keeps the two apart, and `deploymentFromSignal()` maps the
-third to `unknown`.
+The two are still kept apart at the signal level, even though they now resolve
+the same way. Collapsing them upstream, in the probe itself, is how a network
+problem would be indistinguishable from a genuine, confirmed absence — useful
+for a bug report even when neither changes what dialect gets chosen.
 
 An earlier version of this page said the third arm was there because the
 signed-in user might lack permission to read the endpoint. Probe finding 41
@@ -97,8 +106,9 @@ measured that and it is not so: the cadence resource answered `200` with no
 42's reason instead — a request that never reaches Viya is answered by whatever
 *is* in the path, and an ingress answering for a service that is not there
 returns a bodyless `404` carrying no media type and no message. Read as "the
-endpoint is not there", a proxy, a VPN portal or a mistyped host would be naming
-the generation on the deployment's behalf.
+endpoint is not there", a proxy, a VPN portal or a mistyped host would be
+misreported as a confirmed absence rather than as the inconclusive probe it
+actually is.
 
 `display` is `cadenceDisplayName` — "Long-Term Support 2026.03", the release and
 the support track in one string, which is what belongs in the output channel.

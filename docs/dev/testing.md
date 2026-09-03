@@ -172,7 +172,7 @@ Opt-in, hits a real Viya, never in default CI, and gated three separate ways:
    `.mocharc.live.json`. `npm run verify` cannot reach a real server no matter
    what is in the environment — the spec globs do not overlap.
 2. **Per-generation environment variables.** `PYTHON_ON_VIYA_TEST_VIYA4_URL` +
-   `PYTHON_ON_VIYA_TEST_VIYA4_TOKEN`, or the matching `..._VIYA35_...` pair. A
+   `PYTHON_ON_VIYA_TEST_VIYA4_TOKEN` — the only generation, since ADR-0022. A
    generation with neither set skips; a half-configured pair throws; the URL
    must be `https://`.
 3. **`PYTHON_ON_VIYA_ALLOW_MUTATION=1`**, checked separately by
@@ -212,12 +212,14 @@ against. And `fixtureResponse` serves the recorded bytes rather than parsing and
 re-serialising them, so key order, number formatting, and whitespace reach the
 code under test exactly as the server sent them.
 
-`viya4/` and `viya35/` hold captures from real deployments and nothing else.
-`viya35/` is empty, and honestly so: this project has not yet talked to a live
-Viya 3.5. A payload invented from documentation looks identical to a recorded one
-and is worth much less, with no way to tell them apart six months later. If you
-need a shape you cannot capture, put it in `harness/` and say in the file what it
-is.
+`viya4/` holds captures from real deployments and nothing else. A payload
+invented from documentation looks identical to a recorded one and is worth much
+less, with no way to tell them apart six months later. If you need a shape you
+cannot capture, put it in `harness/` and say in the file what it is.
+
+A `viya35/` sibling existed until [ADR-0022](../adr/0022-drop-viya-35-support.md)
+dropped Viya 3.5 support — it stayed empty for the same reason: this project
+never talked to a live Viya 3.5.
 
 ## Coverage, and the ratchet
 

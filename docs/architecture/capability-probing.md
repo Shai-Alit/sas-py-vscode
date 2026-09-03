@@ -18,10 +18,11 @@ stage-2 facts until then, which is a deliberate placeholder rather than a defaul
 ## The question, and the two requests that ask it
 
 Stage 1 reads the deployment's **cadence version** — `2026.03`, and a display
-name of `Long-Term Support 2026.03` beside it. Viya 4 releases are dated; Viya 3.5
-releases are named and there is no cadence resource at all. So the answer to "is
-this Viya 4?" is the presence of that endpoint, and the answer to "is this 3.5?"
-is its considered absence.
+name of `Long-Term Support 2026.03` beside it. Viya 4 releases are dated, so the
+answer to "is this Viya 4?" is the presence of that endpoint. Its absence is
+inconclusive rather than a second answer — see
+[ADR-0022](../adr/0022-drop-viya-35-support.md) on why it no longer means "this
+is Viya 3.5."
 
 `src/dialects/probe.ts` asks in two requests rather than one:
 
@@ -58,10 +59,9 @@ deliberately does not check for itself, and it comes from probe finding 42:
 > message.
 
 A proxy, a VPN sign-in portal or a mistyped host produces something in that same
-family. So a `404` on its own can never mean "this deployment is Viya 3.5"; read
-that way, anything in the network path could name the generation on the
-deployment's behalf, and the user would then be told their deployment has no
-built-in OAuth client — a specific, wrong instruction.
+family. So a `404` on its own can never mean "this relation is genuinely
+absent"; read that way, anything in the network path could manufacture a
+confident, wrong reading of the response.
 
 A live compute session is the evidence that closes the gap. It proves the host is
 a reachable Viya that this token works against, so once one exists, a Viya-shaped
@@ -83,12 +83,15 @@ export type CadenceSignal =
   | { kind: "unreadable"; detail: string };
 ```
 
-"The deployment answered, and has no cadence version" means 3.5. "We could not
-ask" means we know nothing. Collapsing those two is how a network problem becomes
-a confident, wrong claim — see
-[the dialect layer](dialects.md#three-answers-not-two) for what the resolver then
-does with each, and why the `unknown` case produces the Viya 4 dialect bound to an
-unknown deployment.
+"The deployment answered, and has no cadence version" and "we could not ask"
+both resolve to the same `unknown` deployment today — see
+[ADR-0022](../adr/0022-drop-viya-35-support.md) — but are kept apart at this
+layer anyway: collapsing them upstream is how a network problem would become
+indistinguishable from a genuine, confirmed absence, which is worth keeping
+separate for a bug report even when neither changes what dialect gets chosen.
+See [the dialect layer](dialects.md#three-answers-not-two) for what the
+resolver does with each, and why the `unknown` case produces the Viya 4
+dialect bound to an unknown deployment.
 
 ## Fail-soft, and saying so out loud
 
@@ -152,15 +155,17 @@ is not a version display for the user.
 
 ## What this does not settle
 
-**No Viya 3.5 has ever answered any of this.** The `absent` arm is reached in
-tests and was simulated against a Viya 4 — a missing sibling path, and an unrouted
-service — and findings 40–45 record why that is not the same as having seen one.
-If a real 3.5 answers `/deploymentData` the way an unrouted path does, the probe
-reports `unreadable`, Viya 4 is assumed, and the log says so.
+**No deployment other than Viya 4 has ever answered any of this.** The `absent`
+arm is reached in tests and was simulated against a Viya 4 — a missing sibling
+path, and an unrouted service — and findings 40–45 record why that is not the
+same as having seen a genuinely different deployment. Since
+[ADR-0022](../adr/0022-drop-viya-35-support.md), that no longer matters for
+dialect selection — `absent` and `unreadable` resolve the same way — but the
+distinction stays meaningful for diagnosing what a deployment actually said.
 
 **There is no way for a user to assert the generation by hand.** No profile
-setting overrides the probe. That is a gap rather than a decision, and the first
-real 3.5 deployment is what should settle whether it needs closing.
+setting overrides the probe. That is a gap rather than a decision, worth
+revisiting if a deployment ever needs it.
 
 **Timing is measured, not budgeted.** The cadence pair took 0.25–0.29 s against a
 live Viya 4 (finding 40), and the probe carries a ten-second timeout of its own on

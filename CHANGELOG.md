@@ -314,8 +314,9 @@ called out under **Changed** with a migration note.
   arrives cannot reach a crash dump, a heap snapshot or a log attached to an
   issue. A `406` — which finding 6 established is what a media type a deployment
   does not serve looks like — retries with the full type and drops the personal
-  fields as it parses, which is what lets Viya 3.5 be *unverified* rather than
-  *unsupported*. Only `id`, the display name and the login are kept; the account
+  fields as it parses, which keeps identity working on a deployment that
+  answers this endpoint without the summary type. Only `id`, the display name
+  and the login are kept; the account
   label falls back from one to the next, because only `id` was established as
   always present, and `title` is deliberately not in that chain — it is a job
   title, and nobody's idea of who is signed in.
@@ -517,17 +518,20 @@ called out under **Changed** with a migration note.
   ADR-0015, with the two-phase `stage`/`run` seam, the aggregate return and the
   queue among the alternatives that lost.
 
-- The dialect layer: `Dialect`, the Viya 4 and Viya 3.5 dialects, and
-  `resolveDialect()`, which returns the reason it chose along with the choice.
-  The dialects are nearly empty and stay that way — a method appears when a probe
-  or a known defect proves the generations differ, not in anticipation — because
-  nothing in this project has ever been run against Viya 3.5, and an empty seat
-  says so more honestly than a table of guesses would. Stage-1 probing's signal
-  is a three-way union rather than a string that might be missing: "answered, no
-  cadence version" means 3.5, while "could not ask" means unknown, and collapsing
-  them is how a permissions problem becomes a confident wrong claim about the
-  deployment. An inconclusive answer assumes Viya 4, says it assumed, and marks
-  itself uncertain.
+- The dialect layer: `Dialect`, the Viya 4 dialect, and `resolveDialect()`,
+  which returns the reason it chose along with the choice. Dialects are nearly
+  empty and stay that way — a method appears when a probe or a known defect
+  proves two generations differ, not in anticipation — because an empty seat
+  says more honestly than a table of guesses would that nothing has been
+  measured yet. Stage-1 probing's signal is a three-way union rather than a
+  string that might be missing: "answered, no cadence version" and "could not
+  ask" are both inconclusive, and collapsing them upstream, in the probe
+  itself, is how a permissions problem would become indistinguishable from a
+  genuine, confirmed absence. An inconclusive answer assumes Viya 4, says it
+  assumed, and marks itself uncertain. (Viya 3.5 was carried here as a second,
+  never-verified dialect until [ADR-0022](docs/adr/0022-drop-viya-35-support.md)
+  dropped it before release — no deployment was ever reachable to check any of
+  it against.)
 
 - Nothing implements the seam until 3a, so it ships with its specification
   executable: a complete test double in `test/helpers/`, and a contract test file
@@ -552,13 +556,12 @@ called out under **Changed** with a migration note.
   union and never writing its contract, a failure whose only evidence is a file
   nobody created.
 
-  `viya35.yaml` has no endpoints and an `absent` list instead, because stage-1
-  probing identifies a deployment as 3.5 by *not* finding something and the thing
-  not found has to be written down somewhere other than a branch. Every id under
-  `absent` must appear as an endpoint in another contract, so the list cannot
-  decay into notes about endpoints that no longer exist anywhere. Nothing in that
-  file has been observed; endpoints arrive there when something has talked to a
-  3.5, not when a manual describes one.
+  A contract with nothing to record can carry an `absent` list instead of
+  endpoints — every id under `absent` must appear as an endpoint in another
+  contract, so the list cannot decay into notes about endpoints that no longer
+  exist anywhere. (`viya35.yaml` was the one example of this, before
+  [ADR-0022](docs/adr/0022-drop-viya-35-support.md) removed it with the rest
+  of Viya 3.5 support.)
 
   YAML, with a dev-only parser, because better than half of each file is prose —
   which probe found this, which media type is required, which field is
@@ -583,11 +586,10 @@ called out under **Changed** with a migration note.
   answers a bad path with a Viya error document; an unrouted one is answered by
   the ingress with a bodyless 404 carrying no content type, and a proxy or a VPN
   portal produces something in the same family (finding 42). So a 404 alone can
-  never mean "Viya 3.5" — read that way, anything in the network path could name
-  the generation on the deployment's behalf, and the user would then be told
-  their deployment has no built-in OAuth client. A live compute session is the
-  evidence that closes the gap: it proves the host is a reachable Viya that this
-  token works against.
+  never mean "this relation is genuinely absent" — read that way, anything in
+  the network path could manufacture a confident, wrong reading of the
+  response. A live compute session is the evidence that closes the gap: it
+  proves the host is a reachable Viya that this token works against.
 
   The answer is logged as one line whose **level is the certainty** — information
   when the version was determined, a warning when it was assumed — carrying what
@@ -1542,9 +1544,9 @@ called out under **Changed** with a migration note.
   A contract whose `fixtures:` names a directory that *exists but is empty* now
   fails with its own message, distinct from one that names a missing directory
   — an empty directory records no wire shape, and the checker previously only
-  tested existence (a directory holding just a README, like
-  `test/fixtures/viya35/`, still passes; `.gitkeep`-style dotfiles do not count
-  as content). And a `test/fixtures/<id>/` whose name is a generation id, while
+  tested existence (a directory holding just a README still passes;
+  `.gitkeep`-style dotfiles do not count as content). And a
+  `test/fixtures/<id>/` whose name is a generation id, while
   that generation's contract points `fixtures:` at a different directory, is now
   flagged as the leftover of a rename. The emptiness check runs through a
   guarded directory read, so a directory that disappears mid-run reports a
@@ -1669,5 +1671,22 @@ called out under **Changed** with a migration note.
   what it inherits, slice 2b-i has the completion record it never got, and the
   context write-back re-check that #84 unblocked is a numbered procedure rather
   than a sentence. No source, tests, or published documentation change.
+
+### Removed
+
+- **Architectural Viya 3.5 support**
+  ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)). No Viya 3.5 deployment
+  was ever reachable by this project, across every phase from 0 through 5b,
+  and very few Viya 3.5 customers remain in the target audience, so it is
+  dropped rather than carried indefinitely as an unverified, permanently-skipped
+  generation. `DialectId` is `"viya4"` alone; `src/dialects/viya35.ts`,
+  `contracts/viya35.yaml`, `test/fixtures/viya35/`, and the
+  `viya35-connectivity.test.ts` live-test scaffold are removed. A deployment
+  that answers stage-1 probing with a considered absence of
+  `/deploymentData/cadenceVersion` — the one signal that used to identify Viya
+  3.5 — now resolves the same way an unreadable probe does: the Viya 4 dialect,
+  assumed rather than confirmed. The dialect/capability seam itself is
+  unaffected and unreconsidered; standing a second dialect back up remains "a
+  new file," exactly as designed.
 
 [Unreleased]: https://github.com/Shai-Alit/sas-py-vscode/commits/main

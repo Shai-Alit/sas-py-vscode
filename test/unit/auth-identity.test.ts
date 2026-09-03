@@ -179,8 +179,8 @@ describe("accountLabel", () => {
   });
 
   it("falls back to the login when there is no display name", () => {
-    // The unprobed deployments — LDAP-backed, and Viya 3.5 — are exactly where a
-    // missing display name would turn up, which is why `name` is optional.
+    // An LDAP-backed deployment is exactly where a missing display name would
+    // turn up, which is why `name` is optional.
     assert.equal(
       accountLabel({ id: "abc", login: "dwhitfield" }),
       "dwhitfield",
@@ -333,9 +333,8 @@ describe("fetchCurrentUser", () => {
 
   it("falls back to the full representation on a 406", async () => {
     // Finding 6: a media type this service does not serve is a 406, not a 200
-    // with something else. No Viya 3.5 deployment exists to check the summary
-    // type against, so this fallback is what makes 3.5 unverified rather than
-    // unsupported.
+    // with something else. This fallback keeps identity working on a
+    // deployment that answers this endpoint without the summary type.
     const asked: string[] = [];
     viya.use(
       http.get(USER_URL, ({ request: seen }) => {

@@ -706,10 +706,13 @@ tier-three section trimmed to an overview + pointer; registered in the VitePress
 sidebar. **Checks green this session:** `typecheck`, `lint`, `prettier`,
 `check:docs` (incl. `docs:build`), `check:copyright`, `check:secrets`,
 `test:unit` (1197 passing, unchanged from 5a), `test:live` (clean skip).
-`test:integration` not warranted (no `src/` change — same call as 5a). **Open
-before a PR:** the adversarial review pass (handed over 2026-09-03), then a live
-run of the two new suites against a real deployment. Full detail in
-`docs/phases/phase-5.md`'s 5b Runbook entry. Then 5c.
+`test:integration` not warranted (no `src/` change — same call as 5a). The
+adversarial review pass was **waived by Sean** (2026-09-03, test-files-plus-docs
+only). **Open:** a live run of `viya4-job-cancel.test.ts` against `verde` (real
+wire-behaviour risk) before or alongside the PR. **The `viya35` scaffold's live
+run — against the 3.5 deployment that was deploying as this landed — is deferred
+to the end of Phase 5** (Sean's call, 2026-09-03), with all other 3.5 testing.
+Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry. Then 5c.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

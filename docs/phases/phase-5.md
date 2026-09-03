@@ -629,7 +629,10 @@ Test-files-plus-docs only, no `src/` change.
   that the first run with real 3.5 creds is the verification, as
   `viya4-connectivity.test.ts`'s own first run on 2026-08-19 was for Viya 4.
   Verified `npm run test:live` reports it as a clean skip on this unconfigured
-  machine (`11 pending`, exit 0).
+  machine (`11 pending`, exit 0). **A live 3.5 deployment was deploying as this
+  slice landed; running the scaffold against it — the "first run is the
+  verification" step — is deferred to the end of Phase 5 (Sean's call,
+  2026-09-03), along with any other 3.5 testing.**
 
 - **Audit outcome.** The four live suites (`viya4-connectivity`, `viya4-job`,
   `submission-corpus`, `proc-python-rich-output` — the Plan text says "three",
@@ -675,9 +678,11 @@ the trimmed section both build clean), `npm run check:copyright` (184 OK),
 `npm run check:secrets` (OK), `npm run test:unit` (**1197 passing**, unchanged
 from 5a — no `src/` touched), `npm run test:live` (11 pending / clean skip,
 exit 0). `test:integration` not warranted — no `src/` or integration-tier
-change, same call as 5a. **Still open:** the adversarial review pass (handed
-over 2026-09-03), then a live run of the two new suites against a real
-deployment before or alongside the PR.
+change, same call as 5a. **Review:** the adversarial pass was waived by Sean
+(2026-09-03) — test-files-plus-docs only, no `src/`. **Still open:** a live run
+of `viya4-job-cancel.test.ts` against `verde` (the Findings 75/76 guard — real
+wire-behaviour risk) before or alongside the PR; the `viya35` scaffold's live
+run is deferred to the end of Phase 5 per the note above.
 
 ☐ **5c — Docs publishing and release engineering.**
 

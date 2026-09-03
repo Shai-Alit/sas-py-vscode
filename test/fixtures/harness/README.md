@@ -1,7 +1,7 @@
 # Harness fixtures
 
 Synthetic payloads. Nothing in here was recorded from a deployment, and nothing
-in here is evidence — that is what `viya4/` and `viya35/` are for.
+in here is evidence — that is what `viya4/` is for.
 
 - **`echo.json`** — proves the fixture reader and the mock HTTP layer work.
   Imitates nothing.

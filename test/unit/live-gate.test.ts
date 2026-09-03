@@ -38,7 +38,6 @@ describe("live-tier gate", () => {
   it("stays shut when nothing is configured", () => {
     withEnv({});
     assert.equal(liveTarget("viya4"), undefined);
-    assert.equal(liveTarget("viya35"), undefined);
   });
 
   it("refuses rather than skips when only half the credentials are present", () => {
@@ -79,19 +78,6 @@ describe("live-tier gate", () => {
       PYTHON_ON_VIYA_TEST_VIYA4_TOKEN: "   ",
     });
     assert.equal(liveTarget("viya4"), undefined);
-  });
-
-  it("keeps the two generations independent", () => {
-    withEnv({
-      PYTHON_ON_VIYA_TEST_VIYA4_URL: "https://viya4.example.com",
-      PYTHON_ON_VIYA_TEST_VIYA4_TOKEN: "not-a-real-token",
-    });
-    assert.ok(liveTarget("viya4"));
-    assert.equal(
-      liveTarget("viya35"),
-      undefined,
-      "configuring Viya 4 also opened the Viya 3.5 gate",
-    );
   });
 
   it("refuses to send a bearer token over plaintext HTTP", () => {

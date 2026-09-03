@@ -20,9 +20,9 @@ import {
  * read must attempt it anyway, because refusing on unreadable input would break
  * the common case to protect the rare one.
  *
- * The Viya 3.5 rows encode SAS's documented behaviour. No Viya 3.5 deployment is
- * available to this project, so they are not evidence that 3.5 behaves this way —
- * see the module comment on `src/auth/clientId.ts`.
+ * Viya 3.5 used to be a third row here, on SAS's documented behaviour rather
+ * than anything this project observed — see the module comment on
+ * `src/auth/clientId.ts`. ADR-0022 dropped it.
  */
 
 const viya4 = (release: string): Deployment => ({ kind: "viya4", release });
@@ -52,10 +52,6 @@ describe("hasBuiltInClient", () => {
     // those readings put a September release on the wrong side of the line.
     assert.equal(hasBuiltInClient(viya4("2022.9")), false);
     assert.equal(hasBuiltInClient(viya4("2023.01")), true);
-  });
-
-  it("is false for Viya 3.5", () => {
-    assert.equal(hasBuiltInClient({ kind: "viya35" }), false);
   });
 
   it("is undefined — not false — when the version cannot be read", () => {
@@ -131,16 +127,6 @@ describe("resolveClient", () => {
     assert.equal(result.client.clientId, "padded");
   });
 
-  it("refuses on Viya 3.5 with a problem that names the deployment", () => {
-    const result = resolveClient({ deployment: { kind: "viya35" } });
-    assert.ok(!result.ok);
-    assert.deepEqual(result.problem, {
-      code: "client-id-required",
-      deployment: "Viya 3.5",
-    });
-    assert.match(result.reason, /client id/);
-  });
-
   it("refuses on Viya 4 2022.10 and earlier", () => {
     const result = resolveClient({ deployment: viya4("2022.10") });
     assert.ok(!result.ok);
@@ -149,14 +135,16 @@ describe("resolveClient", () => {
       code: "client-id-required",
       deployment: "Viya 4 2022.10",
     });
+    assert.match(result.reason, /client id/);
   });
 
   it("does not refuse an old deployment that supplied its own client id", () => {
-    // The refusal is about a *missing* id, not about the version. A 3.5 user who
-    // has done what we asked must not be blocked by the same check.
+    // The refusal is about a *missing* id, not about the version. A user on an
+    // old release who has done what we asked must not be blocked by the same
+    // check.
     const result = resolveClient({
       configuredClientId: "registered-by-admin",
-      deployment: { kind: "viya35" },
+      deployment: viya4("2022.05"),
     });
     assert.ok(result.ok);
     assert.equal(result.client.clientId, "registered-by-admin");

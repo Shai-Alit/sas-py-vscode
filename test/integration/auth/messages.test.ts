@@ -22,7 +22,7 @@ import type { AuthProblem } from "../../../src/auth/problems";
  */
 
 const PROBLEMS: AuthProblem[] = [
-  { code: "client-id-required", deployment: "Viya 3.5" },
+  { code: "client-id-required", deployment: "Viya 4 2022.05" },
   { code: "oauth-rejected", error: "invalid_client" },
   {
     code: "oauth-rejected",
@@ -79,9 +79,9 @@ describe("auth problem messages under the real l10n", () => {
   it("names the deployment an administrator has to be told about", () => {
     const message = localiseAuthProblem({
       code: "client-id-required",
-      deployment: "Viya 3.5",
+      deployment: "Viya 4 2022.05",
     });
-    assert.ok(message.includes("Viya 3.5"), message);
+    assert.ok(message.includes("Viya 4 2022.05"), message);
     assert.ok(message.includes("authorization_code"), message);
     assert.ok(message.includes("refresh_token"), message);
   });

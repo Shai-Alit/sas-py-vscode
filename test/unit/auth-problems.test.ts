@@ -20,7 +20,7 @@ import {
 
 /** One of every member of the union, so the exhaustiveness claim is exercised. */
 const every: AuthProblem[] = [
-  { code: "client-id-required", deployment: "Viya 3.5" },
+  { code: "client-id-required", deployment: "Viya 4 2022.05" },
   { code: "oauth-rejected", error: "invalid_grant" },
   { code: "oauth-rejected", error: "invalid_grant", description: "expired" },
   { code: "token-endpoint-unreachable", detail: "ECONNREFUSED" },
@@ -60,9 +60,9 @@ describe("describeAuthProblem", () => {
     assert.match(
       describeAuthProblem({
         code: "client-id-required",
-        deployment: "Viya 3.5",
+        deployment: "Viya 4 2022.05",
       }),
-      /Viya 3\.5/,
+      /Viya 4 2022\.05/,
     );
   });
 

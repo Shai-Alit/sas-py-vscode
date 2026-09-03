@@ -85,9 +85,9 @@ jobs:
 
             You are an independent reviewer for `sas-py-vscode`, a VS Code
             extension that runs Python on SAS Viya (via PROC PYTHON over the
-            Compute REST API) so users need no local Python installation. It must
-            support BOTH Viya 3.5 and Viya 4 behind a dialect layer. Review this PR
-            as a senior TypeScript / VS Code extension maintainer.
+            Compute REST API) so users need no local Python installation, targeting
+            Viya 4 behind a dialect layer (Viya 3.5 support was dropped, ADR-0022).
+            Review this PR as a senior TypeScript / VS Code extension maintainer.
 
             Design intent is in PRODUCTION_PLAN.md. Verified Viya behaviour lives
             in the Probe findings section of each docs/phases/phase-N.md — see
@@ -112,9 +112,10 @@ jobs:
               transcribed); Python submitted to PROC PYTHON is escaped so a string
               containing `endsubmit;` or SAS macro syntax cannot break out;
               webviews are CSP-locked with no `unsafe-inline` or remote scripts.
-            - Viya version handling: 3.5 vs 4 differences belong in `src/dialects/`,
-              never as inline `if (version === ...)` elsewhere; capability
-              differences are probed and degraded gracefully, not assumed.
+            - Viya version handling: differences between Viya releases belong in
+              `src/dialects/`, never as inline `if (version === ...)` elsewhere;
+              capability differences are probed and degraded gracefully, not
+              assumed.
             - TypeScript quality: `strict` honoured — no `any`, no unchecked casts
               across API boundaries, no `!` on legitimately nullable values; TSDoc
               on exported API; no `console.log` in shipped code (use the output

@@ -107,8 +107,8 @@ npm run test:live          # opt-in, env-gated, hits a real Viya — never in de
 ```
 
 New or changed logic needs unit tests, and **every error branch needs a regression
-test.** Fixtures live under `test/fixtures/viya4/` and `test/fixtures/viya35/`;
-happy paths run once per generation so a dialect regression fails loudly.
+test.** Fixtures live under `test/fixtures/viya4/`; happy paths run once per
+generation so a dialect regression fails loudly.
 
 Live tests are gated three ways: the opt-in script, per-generation environment
 variables, and a separate `PYTHON_ON_VIYA_ALLOW_MUTATION` flag for anything that

@@ -30,9 +30,11 @@ import { liveTarget } from "../helpers/live-gate";
  * instead, and gets the summary/full media-type fallback for free rather than
  * asserting a media type header by hand.
  *
- * There is no Viya 3.5 equivalent here, and there will not be one until this
- * project has actually talked to a 3.5 deployment. An empty file is honest; a
- * test written from the documentation is a claim of support we have not earned.
+ * There is no Viya 3.5 equivalent here. A `viya35-connectivity.test.ts`
+ * scaffold existed for a while, gated on a live target this project never had
+ * — [ADR-0022](../../docs/adr/0022-drop-viya-35-support.md) dropped
+ * architectural 3.5 support rather than continue carrying a permanently-skipped
+ * placeholder for it.
  */
 describe("live: Viya 4 connectivity", function () {
   const target = liveTarget("viya4");

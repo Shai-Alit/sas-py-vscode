@@ -721,6 +721,17 @@ suite makes no timing claim either way.
 The `viya35` scaffold's live run is deferred to the end of Phase 5 per the note
 above; **nothing else is open before this merges.**
 
+**Retired 2026-09-03, same day, by [ADR-0022](../adr/0022-drop-viya-35-support.md)
+— not deferred further, dropped.** The 3.5 deployment noted above as
+"deploying as this slice landed" did not turn into something this project
+could reach, and very few Viya 3.5 customers remain in the target audience.
+Rather than keep carrying the deferred item forward, architectural Viya 3.5
+support is dropped outright: `test/live/viya35-connectivity.test.ts` and
+`test/fixtures/viya35/` are removed, `DialectId` is `"viya4"` alone, and there
+is no more deferred 3.5 testing to pick up at any future phase boundary. See
+ADR-0022 for the full record and PRODUCTION_PLAN.md §1.4/§6 for the updated
+plan text.
+
 ☐ **5c — Docs publishing and release engineering.**
 
 1. New user-facing docs pages for Phase 3/4's shipped feature set: running

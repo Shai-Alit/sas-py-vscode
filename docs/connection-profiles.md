@@ -40,8 +40,8 @@ On **Viya 4 2022.11 and later**, leave both empty. Those deployments register a
 built-in public client called `vscode`, and that is what this extension uses.
 You do not need an administrator to set anything up.
 
-On **Viya 3.5, and Viya 4 2022.10 and earlier**, there is no such client, and
-you do need one: ask your Viya administrator to register a client with the
+On **Viya 4 2022.10 and earlier**, there is no such client, and you do need
+one: ask your Viya administrator to register a client with the
 `authorization_code` and `refresh_token` grant types, then put the ID here and
 the secret in the prompt that follows.
 

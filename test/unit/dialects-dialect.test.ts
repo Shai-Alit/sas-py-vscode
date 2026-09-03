@@ -4,7 +4,6 @@
 import assert from "node:assert/strict";
 
 import { baseDialect } from "../../src/dialects/dialect";
-import { createViya35Dialect } from "../../src/dialects/viya35";
 import { createViya4Dialect } from "../../src/dialects/viya4";
 
 /**
@@ -24,14 +23,12 @@ describe("baseDialect", () => {
     // derivation so that the day two generations share a contract, the change is
     // here and not in the checker.
     assert.equal(createViya4Dialect("2025.04").contract, "viya4");
-    assert.equal(createViya35Dialect().contract, "viya35");
   });
 
   it("delegates the built-in client question to the auth layer", () => {
     assert.equal(createViya4Dialect("2022.11").hasBuiltInClient(), true);
     assert.equal(createViya4Dialect("2022.10").hasBuiltInClient(), false);
     assert.equal(createViya4Dialect("2025.04").hasBuiltInClient(), true);
-    assert.equal(createViya35Dialect().hasBuiltInClient(), false);
   });
 
   it("answers unknown rather than guessing when the release is missing", () => {
@@ -48,7 +45,6 @@ describe("baseDialect", () => {
 
   it("describes itself the same way the log already does", () => {
     assert.equal(createViya4Dialect("2025.04").describe(), "Viya 4 2025.04");
-    assert.equal(createViya35Dialect().describe(), "Viya 3.5");
     assert.equal(
       baseDialect("viya4", { kind: "unknown" }).describe(),
       "an unrecognised version",

@@ -35,9 +35,9 @@
  * media type and no message. A corporate proxy, a VPN portal, or a mistyped host
  * produces something in that same family.
  *
- * So a bare 404 is not evidence of Viya 3.5. Keyed on the status alone, anything
+ * So a bare 404 is not evidence of anything. Keyed on the status alone, anything
  * sitting between the editor and the deployment could manufacture a confident,
- * wrong claim about the generation — and a wrongly chosen dialect presents as a
+ * wrong reading of the response — and a wrongly chosen dialect presents as a
  * dozen unrelated bugs, which is the failure the whole `reason`-carrying design
  * of `./resolve` exists to prevent. `absent` therefore requires a 404 that
  * **arrived with a Viya error document**, or a link document that genuinely does
@@ -58,15 +58,17 @@
  * flag would add a branch that no caller sets and no test could justify beyond
  * covering itself, which is a worse trade than a paragraph.
  *
- * ## What is still inference
+ * ## Viya 3.5 removed, 2026-09-03
  *
- * **No Viya 3.5 deployment has ever been available to this project.** The
- * `absent` arm was exercised against a Viya 4 by asking for a sibling path that
- * does not exist; what a real 3.5 answers for `/deploymentData` is unknown, and
- * if it answers the way an unrouted path does here, this probe will honestly
- * report `unreadable` and the Viya 4 dialect will be assumed. That is the
- * fail-soft behaviour §2.3 asks for, and it is the first thing to re-check if a
- * 3.5 ever becomes reachable.
+ * `absent` used to be read one level further, in `./resolve`, as "this deployment
+ * is Viya 3.5" — the endpoint here is a Viya 4 addition, so its considered
+ * absence was as close to a version number as 3.5 offered. No Viya 3.5
+ * deployment was ever available to this project to confirm that reading, and
+ * [ADR-0022](../../docs/adr/0022-drop-viya-35-support.md) drops 3.5 as a
+ * supported generation rather than continue carrying an inference nobody could
+ * check. This probe's own job does not change: it still tells `./resolve`
+ * exactly what it found, `absent` included: `./resolve` is what now treats
+ * `absent` as inconclusive rather than as a positive identification.
  */
 
 import {
@@ -173,7 +175,7 @@ export async function probeCadence(
     // Not `readLinks` straight away. It takes `unknown` and answers `[]` for
     // anything it cannot read, so an HTML sign-in page from a portal — served
     // with a 200 and a content type the client did not parse — would arrive
-    // here as "a document with no links", and be reported as Viya 3.5. The
+    // here as "a document with no links", and be reported `absent`. The
     // absence of a relation only means something in a document that has them.
     if (!isLinkDocument(root.value.body)) {
       return {
@@ -249,7 +251,7 @@ function fromEntryPointFailure(failure: ComputeFailure): CadenceSignal {
   ) {
     // A Viya service, routed and answering, saying it has no such path. On a
     // deployment we are already holding a session against, that is the
-    // deployment-data service being absent — which is the Viya 3.5 signal.
+    // deployment-data service being genuinely absent.
     return { kind: "absent" };
   }
   return { kind: "unreadable", detail: failure.reason };
@@ -267,7 +269,7 @@ function fromEntryPointFailure(failure: ComputeFailure): CadenceSignal {
  * It is a one-way test, and deliberately the safe way round. A Viya error
  * document with every optional field empty would be misread as an intermediary
  * and reported `unreadable`, which costs a fallback to the Viya 4 dialect. The
- * opposite mistake costs a wrong, confident claim of Viya 3.5.
+ * opposite mistake costs a wrongly confident `absent`.
  */
 function isViyaErrorDocument(error: ViyaError): boolean {
   return (

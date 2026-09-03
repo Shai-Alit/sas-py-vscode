@@ -47,7 +47,7 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0005](0005-supply-chain-policy.md) | Supply chain: no install scripts, advisories reviewed by identifier with an expiry | Accepted |
 | [0006](0006-scanning-posture.md) | Scanning: CodeQL as a committed workflow, and a repo-local scanner for credential shapes | Accepted |
 | [0007](0007-connection-profile-storage.md) | Connection profiles: separate storage, a versioned schema, and no secret in settings | Accepted |
-| [0008](0008-auth-core-transport-and-security-deltas.md) | Auth core: a `fetch`-shaped transport port, and the security deltas from upstream `auth.ts` | Accepted |
+| [0008](0008-auth-core-transport-and-security-deltas.md) | Auth core: a `fetch`-shaped transport port, and the security deltas from upstream `auth.ts` | Accepted — its "Viya 3.5 client-id path" section is superseded by [ADR-0022](0022-drop-viya-35-support.md) |
 | [0009](0009-coverage-scope.md) | Coverage measures what the unit tier can reach, and the exclusion is a checked rule | Accepted |
 | [0010](0010-compute-client-is-hand-written.md) | The Compute client is hand-written against the observed wire shape, not a vendored generated client | Accepted |
 | [0011](0011-choosing-where-python-runs.md) | Where Python runs is a visible per-workspace target, not a reinterpretation of the run button | Accepted — its "Default: Viya" paragraph is superseded by [ADR-0020](0020-run-target-defaults-to-local.md) |
@@ -61,3 +61,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0019](0019-rich-output-is-captured-by-diffing-the-working-directory.md) | Rich output is captured by diffing the session's working directory | Accepted |
 | [0020](0020-run-target-defaults-to-local.md) | The run target defaults to Local, not Viya | Accepted |
 | [0021](0021-result-panel-webview.md) | The result panel: a singleton CSP-locked `WebviewPanel`, a buffered message protocol, and a ported DOM layer | Accepted |
+| [0022](0022-drop-viya-35-support.md) | Viya 3.5 support is dropped | Accepted |

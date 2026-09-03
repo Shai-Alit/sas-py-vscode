@@ -27,6 +27,10 @@
   catch a change to it. This is the scoped version of the job slice 1c-ii
   ([phase-1.md](../phases/phase-1.md)) specified and deferred. `machine`
   config scope, so a checked-in workspace settings file cannot widen TLS trust.
+- **Superseded in part by [ADR-0022](0022-drop-viya-35-support.md),
+  2026-09-03:** the "The Viya 3.5 client-id path ships unverified, and says
+  so" section below describes a path that no longer exists — Viya 3.5 support
+  is dropped entirely, not shipped unverified. Nothing else here is affected.
 
 ## Context
 

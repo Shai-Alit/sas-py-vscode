@@ -23,8 +23,18 @@ to be installed side by side).
   local dependency proves unavoidable, it must be the bare minimum and must be
   justified in writing here before it lands.
 - Full suite of software tests, built alongside the code, not retrofitted.
-- Viya 3.5 and Viya 4 both handled, with version differences absorbed at a seam
-  rather than branched inline.
+- Targets Viya 4 only. Version differences within Viya 4 are absorbed at a
+  seam rather than branched inline — the seam this constraint asks for is the
+  same one a real second generation would need, and stays that shape.
+
+> **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
+> This bullet originally read "Viya 3.5 and Viya 4 both handled"; architectural
+> Viya 3.5 support is dropped — too few customers, no deployment ever reachable
+> to verify any of it against, and no path in sight to getting one. Edited in
+> place, rather than left as a superseded original with a note below, because
+> an AI reviewer instructed to enforce this file's constraints verbatim has no
+> way to weigh a trailing amendment against the bullet it amends — see §1.4 for
+> the fuller record.
 
 ---
 
@@ -37,7 +47,7 @@ to be installed side by side).
 | `Shai-Alit/sas-py-vscode` | Empty repo — `LICENSE` (**MIT**) and one initial commit. Everything below is greenfield. |
 | `sassoftware/vscode-sas-extension` (cloned locally) | v1.20.0, **Apache-2.0**, the reference architecture. Substantial reuse is legally permitted with attribution and preserved copyright headers. |
 | Live Viya 4 deployment | Available and probed. See `PROBE-FINDINGS.md`. |
-| Viya 3.5 deployment | **None available.** This shapes the entire 3.5 strategy (§1.4). |
+| Viya 3.5 deployment | **None available.** This shaped the entire 3.5 strategy (§1.4) until [ADR-0022](docs/adr/0022-drop-viya-35-support.md) dropped 3.5 support, 2026-09-03. |
 | `viyapy` | The process template — phased plan, slice-per-PR, dialect layer, contracts, dual AI review. Conventions are inherited wholesale. |
 
 > **✅ Licensing — settled 2026-08-11 (open decision #0, §6). The repo relicenses
@@ -113,17 +123,33 @@ language server, syntaxes, themes, snippets.
 
 ### 1.4 Supported Viya versions — the honest position
 
-Viya 3.5 is a frozen on-prem generation in Standard Support to 2027-10-01; Viya 4
-is date-versioned and continuously moving. The brief requires both.
+Viya 4 is date-versioned and continuously moving; this project targets it
+exclusively.
 
-**Decision: architectural first-class support, empirically unverified.** We build
-a dialect/capability seam so 3.5 is properly represented in the design and a
-retrofit is never needed, and we ship a 3.5 test tier as a **permanently-skipped
-scaffold** until an instance exists — exactly the viyapy pattern. What we will
-**not** do is claim verified 3.5 support in user-facing docs. It is unknown
-whether `PROC PYTHON` exists on 3.5 at all; that is logged as a risk (§6), and
-the capability probe (§2.3) is designed to degrade gracefully and tell the user
-plainly if the runtime is absent.
+**Decision: Viya 4 only, with release differences absorbed at a
+dialect/capability seam rather than branched inline.** The seam exists for
+differences within Viya 4 — an old release with no built-in `vscode` client
+versus a modern one, for example — not for a second generation, since none is
+supported. The capability probe (§2.3) is designed to degrade gracefully and
+tell the user plainly if a capability the extension needs is absent.
+
+> **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
+> This section originally described Viya 3.5 as in scope: "Viya 3.5 is a frozen
+> on-prem generation in Standard Support to 2027-10-01 ... The brief requires
+> both," with a decision recorded as "architectural first-class support,
+> empirically unverified" — a dialect/capability seam so 3.5 was properly
+> represented in the design, and a 3.5 test tier as a permanently-skipped
+> scaffold until an instance existed. The scaffold never got filled — no Viya
+> 3.5 deployment was ever reachable by this project, across every phase from 0
+> through 5b — and very few Viya 3.5 customers remain in the target audience.
+> Rather than continue carrying a permanently-unverified generation
+> indefinitely, 3.5 support is dropped:
+> `DialectId` is `"viya4"` alone, `src/dialects/viya35.ts` and
+> `contracts/viya35.yaml` are removed, and the "considered absence of a cadence
+> version" signal that used to identify Viya 3.5 (§2.3 below) now resolves to
+> the same assumed-Viya-4 outcome as an unreadable probe. The dialect/capability
+> seam itself is unchanged and unreconsidered — see ADR-0022 for the full
+> record, including why a future second generation is unaffected by this.
 
 ### 1.5 Known-hard problems, identified up front
 
@@ -367,6 +393,9 @@ the result panel, notebook renderers, and exporters later.
 > `client/src/connection/` tree sketched in §2 — this repository has no
 > `client/` directory, and `dialects/base.ts` is `dialects/dialect.ts`.
 > `contracts/` and stage-1 probing move to 2b-ii.
+>
+> **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
+> `src/dialects/viya35.ts` is removed; the layer is `src/dialects/{dialect,viya4,resolve,probe}.ts`.
 
 ### 2.3 Capability probing — in two stages, deliberately
 
@@ -374,8 +403,8 @@ Capabilities split by *how they are discovered*, and conflating the two creates 
 circular dependency (you cannot ask Python its version before you can run Python).
 
 **Stage 1 — HTTP-derived (Phase 2b).** Viya generation via
-`/deploymentData/cadenceVersion` (absent ⇒ likely 3.5), endpoint presence, and
-dialect resolution. Requires no execution, so it can ship with the seam itself.
+`/deploymentData/cadenceVersion`, endpoint presence, and dialect resolution.
+Requires no execution, so it can ship with the seam itself.
 
 **Stage 2 — runtime-derived (Phase 3e, after execution and log parsing exist).**
 Whether `PROC PYTHON` actually works, the interpreter version and path, and the
@@ -419,6 +448,12 @@ swallowed exception is correct (§5), and it must carry a comment saying so.
 >
 > Endpoint presence beyond the cadence pair is recorded in `contracts/` rather
 > than probed for. Stage 2 is unchanged and still 3e.
+>
+> **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
+> "Absent ⇒ likely 3.5" is retired along with 3.5 support: the middle arm of
+> the three-way union now resolves the same as `unreadable` — assumed Viya 4,
+> not confirmed anything — because there is no second generation left for a
+> considered absence to identify.
 
 ---
 
@@ -484,10 +519,15 @@ expect things SAS users don't.
 | **Integration** | `npm run test:integration` | `@vscode/test-electron`; real editor, mocked Viya. |
 | **Live** | `npm run test:live` | Opt-in, env-gated, hits a real Viya. Skipped unless configured. Never in default CI. |
 
-**Fixtures are per-generation** (`test/fixtures/viya4/`, `test/fixtures/viya35/`),
-captured from real responses and **sanitised of hostnames, tokens, and personal
-data**. The viyapy generation-parameterised fixture idiom applies: happy paths run
-once per generation so a dialect regression fails loudly.
+**Fixtures are per-generation** (`test/fixtures/viya4/`), captured from real
+responses and **sanitised of hostnames, tokens, and personal data**. The viyapy
+generation-parameterised fixture idiom applies: happy paths run once per
+generation so a dialect regression fails loudly.
+
+> **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
+> `test/fixtures/viya35/` stayed empty from the day it was created — this
+> project never had a Viya 3.5 deployment to capture anything from — and is
+> removed along with 3.5 support.
 
 **Live tests are gated three ways**: an opt-in npm script, per-generation env vars
 (`PYTHON_ON_VIYA_TEST_VIYA4_URL` / `_TOKEN` / …), and a separate
@@ -602,10 +642,11 @@ changed is worse than one that visibly changed.
 > amendment rather than a silent rewrite because where the evidence base lives
 > is a documented invariant.
 
-**Honesty gate.** Docs may not claim Viya 3.5 support while it is unverified (§1.4),
-may not document a capability the runtime probe can't confirm, and must state
-plainly that no telemetry is collected. Anything aspirational belongs in the
-roadmap section, labelled as such.
+**Honesty gate.** Docs may not claim Viya 3.5 support at all (§1.4 — dropped by
+[ADR-0022](docs/adr/0022-drop-viya-35-support.md)), may not document a
+capability the runtime probe can't confirm, and must state plainly that no
+telemetry is collected. Anything aspirational belongs in the roadmap section,
+labelled as such.
 
 **CI enforcement** (0d-i-b): the site builds without warnings, internal links
 resolve, the generated reference matches source, and every `docs/` code sample
@@ -666,7 +707,7 @@ get written.
 | ~~Rich output has no clean return path~~ | ~~High — reshapes Phase 3~~ | **Retired.** Settled by 3c's probe (findings 61–67) and 3c-i (ADR-0019): write to the session's working directory, retrieve by diffing a before/after listing. `print`-only was the v1 floor; never needed |
 | ~~Namespace reset requires killing the session~~ | ~~Medium — degrades cancel *and* Run File~~ | **Retired 2026-08-16 (finding 38).** `proc python restart;` clears the interpreter in ~3.4 s with the compute session, its libraries and its filerefs untouched, and composes with `infile=` in one statement |
 | Session dies mid-run / state lost on reconnect | Medium | Explicit detection and messaging in 2a; fixture-driven tests |
-| `PROC PYTHON` absent on Viya 3.5 | Medium | Capability probe degrades gracefully; docs make no unverified claim |
+| ~~`PROC PYTHON` absent on Viya 3.5~~ | ~~Medium~~ | **Retired 2026-09-03 ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).** Moot: Viya 3.5 support is dropped entirely rather than shipped as an unverified capability probe |
 | ~~Compute cancellation doesn't interrupt a running Python step~~ | ~~Medium — bad UX~~ | **Settled the pessimistic way, 2026-09-01 (Phase 4's 4b probe, Findings 75/76).** It does not preempt: a cancelled statement runs to its natural end regardless. Fixed what was fixable — `cancelJob()` was also silently failing outright on this deployment (missing `If-Match`, Finding 75), corrected in 4c and live-verified; the "Cancelled." message was reworded to say only what's true (this window's view has stopped; Viya may keep executing the in-flight step) rather than add background tracking machinery. No fallback "busy" message for a run/reset queued behind a still-executing cancelled job — considered and left as a documented gap, not a defect, since nothing is corrupted, only unexplained-slow |
 | ~~Phase 2a exceeds a reviewable PR~~ | ~~Medium~~ | **Retired 2026-08-14.** The pre-agreed boundary was the generated client, and ADR-0010 means there is no generated client to split at. 2a split three ways on a different seam — core / VS Code shell / one account, one command — and each part was reviewable on its own |
 | Large stdout volumes truncate or slow the log poll | Medium | High-volume fixtures in 3b |
@@ -775,6 +816,12 @@ get written.
    is wrong about 3.5 having no built-in `vscode` client, the cost is that we tell
    a 3.5 user to go get a client id they did not actually need — a bad message,
    not a broken or insecure flow.
+   **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md) —
+   the 3.5 branch is removed, not carried unverified.** Very few Viya 3.5
+   customers remain in the target audience, and no 3.5 deployment ever became
+   reachable to close the standing invitation above. The client-id-required
+   refusal now only fires for an old Viya 4 release (2022.10 and earlier),
+   which was always the other, verified half of this decision.
 10. ~~**What identifies an account in the Accounts menu**~~ — **SETTLED
     2026-08-13: the endpoint plus the Viya user `id`.** The alternative, the user
     id alone, is what upstream effectively does, and it is wrong for the audience
@@ -873,11 +920,17 @@ cleanly on Windows, macOS, and Linux; a user can create a Viya connection profil
 authenticate via OAuth2/PKCE, and run a `.py` file or selection on Viya; stdout
 streams live and errors appear as accurately-positioned diagnostics; no local
 Python is required; unit tests cover every public path including error branches
-with no network in default CI; the live tier passes against a real Viya 4 and the
-3.5 scaffold is present and skipped; CI is green across lint, type-check, test,
-security, and drift; the licence is consistent with everything we bundle and the
-`NOTICE` is complete; the workspace-trust posture is declared and enforced;
-**no telemetry is collected, and the marketplace listing says so**; the docs site
-builds clean with no broken links and its generated reference matches source, and
-describes setup and limitations honestly — including that 3.5 is unverified; every
-settled §6 decision has an ADR; and no secrets appear anywhere in the repo or logs.
+with no network in default CI; the live tier passes against a real Viya 4; CI is
+green across lint, type-check, test, security, and drift; the licence is
+consistent with everything we bundle and the `NOTICE` is complete; the
+workspace-trust posture is declared and enforced; **no telemetry is collected,
+and the marketplace listing says so**; the docs site builds clean with no broken
+links and its generated reference matches source, and describes setup and
+limitations honestly; every settled §6 decision has an ADR; and no secrets appear
+anywhere in the repo or logs.
+
+> **Amended 2026-09-03 by [ADR-0022](docs/adr/0022-drop-viya-35-support.md).**
+> This criterion used to also require "the 3.5 scaffold is present and skipped"
+> and that the docs honestly describe 3.5 as unverified. Viya 3.5 support is
+> dropped rather than shipped unverified, so neither applies: there is no
+> scaffold, and the docs make no claim about 3.5 at all.

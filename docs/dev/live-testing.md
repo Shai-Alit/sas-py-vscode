@@ -30,7 +30,11 @@ too.)
 | Generation | URL | Token |
 |---|---|---|
 | Viya 4 | `PYTHON_ON_VIYA_TEST_VIYA4_URL` | `PYTHON_ON_VIYA_TEST_VIYA4_TOKEN` |
-| Viya 3.5 | `PYTHON_ON_VIYA_TEST_VIYA35_URL` | `PYTHON_ON_VIYA_TEST_VIYA35_TOKEN` |
+
+> Until [ADR-0022](../adr/0022-drop-viya-35-support.md) (2026-09-03), a Viya 3.5
+> row existed here too, feeding a permanently-skipped scaffold
+> (`viya35-connectivity.test.ts`) that no deployment ever exercised. It is
+> removed along with architectural 3.5 support.
 
 ```bash
 PYTHON_ON_VIYA_TEST_VIYA4_URL=https://viya.example.com \
@@ -108,7 +112,6 @@ Read-only (gates 1 and 2):
 | Suite | What it does | Deployment cost |
 |---|---|---|
 | `viya4-connectivity.test.ts` | `GET /identities/users/@currentUser`, asserts an id comes back | one request |
-| `viya35-connectivity.test.ts` | the same, gated on `liveTarget("viya35")` — see [below](#the-viya-35-scaffold) | one request |
 
 Mutating (all three gates):
 
@@ -160,26 +163,6 @@ The helper each suite uses for this is called `describeFailure`; copy it when
 adding a suite rather than interpolating `problem.reason`, which at the call site
 looks like the more helpful choice.
 
-## The Viya 3.5 scaffold
-
-`viya35-connectivity.test.ts` exists so `liveTarget("viya35")` is reachable from
-a real suite and the clean-skip path is exercised. **This project has never
-talked to a live Viya 3.5 deployment.** Per `docs/README.md`'s standing rule, no
-test presents 3.5 as *supported* while that is true, so the suite asserts only
-the narrowest honest thing: the gate resolves, a token reaches the identities
-service, an id comes back. It does not touch compute, jobs, or `PROC PYTHON` — a
-suite written from documentation for those would look identical to one proven
-against a deployment and be worth far less.
-
-If you have a 3.5 deployment: set the `..._VIYA35_...` pair and run it. **That
-first run is the verification.** `viya4-connectivity.test.ts`'s own first run on
-2026-08-19 failed — on the identity media type [finding
-6](../phases/phase-1.md) records — and 3.5's behaviour on that same endpoint is
-exactly what is still unknown (`src/auth/identity.ts`'s summary-then-full
-fallback is built for it). Record what you see as a numbered finding in the
-current phase file, and take the scaffold from a connectivity smoke to real
-coverage from there.
-
 ## What the live tier covers, and what it does not (5b audit, 2026-09-03)
 
 The tier proves that the wire shapes the unit fixtures recorded are still the
@@ -212,4 +195,6 @@ Deliberately **not** covered by a live test:
   deployment has a Python interpreter is a property of the deployment, and a
   test that failed without one would be reporting site configuration as a
   defect.
-- **Anything Viya 3.5.** See above.
+- **Anything Viya 3.5.** Architectural support for it is dropped
+  ([ADR-0022](../adr/0022-drop-viya-35-support.md)); there is no scaffold left
+  to cover.

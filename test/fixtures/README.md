@@ -5,19 +5,22 @@ unit tier knows about Viya, it learned from a file in here.
 
 ```
 viya4/                 captured from a live Viya 4 deployment
-viya35/                captured from a live Viya 3.5 deployment
 harness/               synthetic; proves the plumbing, imitates nothing
 submission-corpus/     hand-written Python, hostile to SAS tokenisation
 rich-output/           a 1x1 PNG for the image-capture tests
 ```
 
-Only `viya4/` and `viya35/` are tied to a contract (`contracts/*.yaml`'s
-`fixtures:` key, checked both ways by `npm run check:contracts`). The other three
-are fixtures with no contract by design; the check knows not to expect one.
+Only `viya4/` is tied to a contract (`contracts/*.yaml`'s `fixtures:` key,
+checked both ways by `npm run check:contracts`). The other three are fixtures
+with no contract by design; the check knows not to expect one.
 
-The split by generation is the point. Happy paths run once per generation, so a
-change that quietly works only on Viya 4 fails the 3.5 suite instead of shipping
-and being discovered by a customer.
+This directory used to have a `viya35/` sibling, split by generation for the
+same reason `viya4/` is its own directory: a change that quietly worked on only
+one generation would fail the other generation's suite instead of shipping and
+being discovered by a customer. It stayed empty from the day it was created —
+this project never had a Viya 3.5 deployment to capture anything from — and
+[ADR-0022](../../docs/adr/0022-drop-viya-35-support.md) removed it along with
+architectural 3.5 support.
 
 ## Capture, then sanitise
 
@@ -45,14 +48,14 @@ feature reads this file to find out what is available.
 
 ## Rules
 
-**Never hand-write a fixture in `viya4/` or `viya35/`.** Those directories are
-evidence. A payload invented from documentation looks identical to a recorded one
-and is worth much less, and there is no way to tell them apart six months later.
-If you need a shape to test against and cannot capture it, put it in `harness/`
+**Never hand-write a fixture in `viya4/`.** That directory is evidence. A
+payload invented from documentation looks identical to a recorded one and is
+worth much less, and there is no way to tell them apart six months later. If
+you need a shape to test against and cannot capture it, put it in `harness/`
 and say in the file what it is.
 
-**`viya4/` and `viya35/` are exempt from Prettier**, so that a captured payload
-can be committed exactly as it arrived rather than reflowed on the way in. It is
+**`viya4/` is exempt from Prettier**, so that a captured payload can be
+committed exactly as it arrived rather than reflowed on the way in. It is
 a formatter, so it cannot change what a fixture means — but a fixture that no
 longer matches the output it was captured from is harder to re-verify against the
 deployment, and the whole point of these files is that they are evidence.

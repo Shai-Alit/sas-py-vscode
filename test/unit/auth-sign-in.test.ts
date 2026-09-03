@@ -122,18 +122,19 @@ describe("beginSignIn", () => {
   });
 
   it("refuses before opening a browser when there is no client to use", () => {
-    // Viya 3.5 has no built-in sign-in client. Sending the user to a login page
-    // that can only end in invalid_client wastes their time and teaches them
-    // nothing, so this fails while there is still something useful to say.
+    // A Viya 4 release before 2022.11 has no built-in sign-in client. Sending
+    // the user to a login page that can only end in invalid_client wastes their
+    // time and teaches them nothing, so this fails while there is still
+    // something useful to say.
     const result = beginSignIn({
       endpoint: MOCK_VIYA_BASE,
-      deployment: { kind: "viya35" },
+      deployment: { kind: "viya4", release: "2022.05" },
     });
 
     assert.ok(!result.ok);
     assert.deepEqual(result.problem, {
       code: "client-id-required",
-      deployment: "Viya 3.5",
+      deployment: "Viya 4 2022.05",
     });
   });
 

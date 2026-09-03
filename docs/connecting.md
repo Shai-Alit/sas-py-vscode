@@ -167,7 +167,8 @@ something has to be told apart from an idle one before a second submission is
 sent to it, which matters most in the shared-window case above. It lands with
 submission, because there is nothing to refuse until then.
 
-**Viya 3.5.** Unverified rather than supported, as everywhere else in these docs.
+**Viya 3.5.** Not supported — see
+[ADR-0022](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/adr/0022-drop-viya-35-support.md).
 
 ## Where the details are
 

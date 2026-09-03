@@ -55,8 +55,8 @@ describe("check-contracts", () => {
   describe("unionMembers", () => {
     it("reads a string-literal union", () => {
       assert.deepEqual(
-        script.unionMembers('export type Id = "viya4" | "viya35";', "Id"),
-        ["viya4", "viya35"],
+        script.unionMembers('export type Id = "viya4" | "viya6";', "Id"),
+        ["viya4", "viya6"],
       );
     });
 
@@ -111,9 +111,9 @@ describe("check-contracts", () => {
   });
 
   describe("check", () => {
-    const DIALECTS = ["viya4", "viya35"];
-    const FACTORIES = ["createViya4Dialect", "createViya35Dialect"];
-    const FIXTURES = ["viya4", "viya35", "harness"];
+    const DIALECTS = ["viya4", "viya6"];
+    const FACTORIES = ["createViya4Dialect", "createViya6Dialect"];
+    const FIXTURES = ["viya4", "viya6", "harness"];
 
     /** A contract that passes, which each case below then breaks one way. */
     const good = (
@@ -147,7 +147,7 @@ describe("check-contracts", () => {
 
     const both = (extra: Record<string, unknown> = {}): Contract[] => [
       good("viya4", extra),
-      good("viya35"),
+      good("viya6"),
     ];
 
     it("passes a matching set", () => {
@@ -163,7 +163,7 @@ describe("check-contracts", () => {
     });
 
     it("refuses a generation that is not a DialectId", () => {
-      const problems = run([good("viya4"), good("viya35"), good("viya5")]);
+      const problems = run([good("viya4"), good("viya6"), good("viya5")]);
       // Two: the bad generation, and the file name that now disagrees with it.
       assert.ok(
         problems.some((problem) => problem.includes("not a DialectId")),
@@ -175,7 +175,7 @@ describe("check-contracts", () => {
       // file written by hand in this repository is held to one spelling.
       const contract = good("viya4");
       (contract.contract as Record<string, unknown>).generation = "v4";
-      const problems = run([contract, good("viya35")]);
+      const problems = run([contract, good("viya6")]);
       assert.ok(
         problems.some((problem) => problem.includes("not a DialectId")),
       );
@@ -184,7 +184,7 @@ describe("check-contracts", () => {
     it("refuses a file whose name disagrees with its generation", () => {
       const problems = run([
         { name: "contracts/viya-4.yaml", contract: good("viya4").contract },
-        good("viya35"),
+        good("viya6"),
       ]);
       assert.equal(problems.length, 1);
       assert.match(problems[0] ?? "", /but is named "viya-4"/);
@@ -230,13 +230,13 @@ describe("check-contracts", () => {
       // Gap (3) review finding: a contract with no `fixtures` key is `checkOne`'s
       // to report. The reverse orphan check must not pile a second problem on
       // top telling the reader to delete a directory that is fine.
-      const viya35 = good("viya35").contract as Record<string, unknown>;
+      const viya6 = good("viya6").contract as Record<string, unknown>;
       const contract = Object.fromEntries(
-        Object.entries(viya35).filter(([key]) => key !== "fixtures"),
+        Object.entries(viya6).filter(([key]) => key !== "fixtures"),
       );
       const problems = run([
         good("viya4"),
-        { name: "contracts/viya35.yaml", contract },
+        { name: "contracts/viya6.yaml", contract },
       ]);
       assert.equal(problems.length, 1);
       assert.match(problems[0] ?? "", /has no "fixtures"/);
@@ -247,7 +247,7 @@ describe("check-contracts", () => {
       // to the union simply has no recorded footprint, and the absence looks
       // exactly like a generation that needs none.
       const problems = run(
-        [good("viya4"), good("viya35")],
+        [good("viya4"), good("viya6")],
         [...DIALECTS, "viya5"],
       );
       assert.equal(problems.length, 1);
@@ -260,9 +260,9 @@ describe("check-contracts", () => {
       // and `test/fixtures/viya4/`, still named for the generation, is left
       // behind full of recorded payloads and checked by nothing.
       const problems = run(
-        [good("viya4", { fixtures: "viya4-recorded" }), good("viya35")],
+        [good("viya4", { fixtures: "viya4-recorded" }), good("viya6")],
         DIALECTS,
-        ["viya4", "viya4-recorded", "viya35", "harness"],
+        ["viya4", "viya4-recorded", "viya6", "harness"],
       );
       assert.equal(problems.length, 1);
       assert.match(problems[0] ?? "", /test\/fixtures\/viya4\//);
@@ -279,7 +279,7 @@ describe("check-contracts", () => {
       assert.deepEqual(
         run(both(), DIALECTS, [
           "viya4",
-          "viya35",
+          "viya6",
           "harness",
           "submission-corpus",
         ]),
@@ -444,12 +444,12 @@ describe("check-contracts", () => {
 
       const pair = (absent: unknown): Contract[] => [
         good("viya4", { endpoints: [present] }),
-        good("viya35", { absent }),
+        good("viya6", { absent }),
       ];
 
       it("accepts an absence that names an endpoint another contract has", () => {
         assert.deepEqual(
-          run(pair([{ id: "cadence_version", reason: "no cadence in 3.5" }])),
+          run(pair([{ id: "cadence_version", reason: "no cadence in viya6" }])),
           [],
         );
       });
@@ -470,7 +470,7 @@ describe("check-contracts", () => {
             endpoints: [present],
             absent: [{ id: "cadence_version", reason: "contradiction" }],
           }),
-          good("viya35"),
+          good("viya6"),
         ]);
         assert.equal(problems.length, 1);
         assert.match(problems[0] ?? "", /also declares it as an endpoint/);
@@ -508,7 +508,7 @@ describe("check-contracts", () => {
         // file parses to `null`. Both are things a half-written contract is.
         for (const contract of [[], null, "viya4"]) {
           has(
-            run([{ name: "contracts/viya4.yaml", contract }, good("viya35")]),
+            run([{ name: "contracts/viya4.yaml", contract }, good("viya6")]),
             /is not a YAML mapping/,
           );
         }
@@ -526,7 +526,7 @@ describe("check-contracts", () => {
           );
           return run([
             { name: "contracts/viya4.yaml", contract },
-            good("viya35"),
+            good("viya6"),
           ]);
         };
         has(without("generation"), /has no "generation"/);
@@ -637,7 +637,7 @@ describe("check-contracts", () => {
       });
 
       it("refuses an absent entry with no id", () => {
-        const problems = run(both({ absent: [{ reason: "not in 3.5" }] }));
+        const problems = run(both({ absent: [{ reason: "not in viya6" }] }));
         assert.equal(problems.length, 1);
         assert.match(problems[0] ?? "", /absent 0 has no "id"/);
       });
@@ -654,12 +654,12 @@ describe("check-contracts", () => {
               },
             ],
           }),
-          good("viya35", {
+          good("viya6", {
             absent: [
               {
                 id: "cadence_version",
-                reason: "no cadence versioning in 3.5",
-                since: "3.5",
+                reason: "no cadence versioning in viya6",
+                since: "viya6",
               },
             ],
           }),

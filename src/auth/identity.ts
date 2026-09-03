@@ -32,10 +32,10 @@
  *
  * Finding 6: asking for a media type this service does not serve is a **406**,
  * and the obvious guess (`application/vnd.sas.identity+json`, the one the
- * service name invites) is one of those. No Viya 3.5 deployment was available to
- * probe, so whether 3.5 serves the summary type is unknown. A 406 on the summary
- * type therefore retries with the full type and drops the PII fields as it
- * parses, which is what lets Viya 3.5 be *unverified* rather than *unsupported*.
+ * service name invites) is one of those. Nothing here rules out a deployment
+ * that does not serve the summary type at all, so a 406 on the summary type
+ * retries with the full type and drops the PII fields as it parses, rather than
+ * failing a deployment that answers this endpoint slightly differently.
  *
  * ## Nothing here reads the response body into an error
  *
@@ -212,9 +212,9 @@ export function accountLabel(user: ViyaUser): string {
  * because the two rules cannot both hold: decision 10 specifies a label fallback
  * from `name` to the login to the id, and a parser that rejects a user without a
  * `name` makes both fallback arms unreachable. The endpoint we could probe is
- * SCIM-backed and populated `name`; the ones we could not — LDAP-backed, and
- * Viya 3.5 — are exactly where a missing display name would show up. Rejecting
- * the whole user over a cosmetic field would turn that into "cannot sign in".
+ * SCIM-backed and populated `name`; an LDAP-backed one is exactly where a
+ * missing display name would show up. Rejecting the whole user over a cosmetic
+ * field would turn that into "cannot sign in".
  */
 export function parseUser(raw: unknown): ViyaUser | undefined {
   const record = asRecord(raw);
@@ -250,7 +250,8 @@ export async function fetchCurrentUser(
   const first = await send(request, IDENTITY_SUMMARY_TYPE, deps);
   if (first.kind === "unsupported-media-type") {
     // Finding 6: 406 is what a media type this deployment does not serve looks
-    // like. Viya 3.5 is unverified, so this is the branch that keeps it working.
+    // like. This is the branch that keeps a deployment working that answers this
+    // endpoint without the summary type.
     const second = await send(request, IDENTITY_FULL_TYPE, deps);
     return second.kind === "unsupported-media-type"
       ? {

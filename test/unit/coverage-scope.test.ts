@@ -126,7 +126,7 @@ describe("check-coverage-scope", () => {
     // emits an empty JavaScript file.
     const erased = {
       interface: "export interface Program { bytes: Uint8Array }",
-      "type alias": 'export type Id = "viya4" | "viya35";',
+      "type alias": 'export type Id = "a" | "b";',
       "type-only import": 'import type { Uri } from "vscode";\ntype A = Uri;',
       "type-only specifiers":
         'import { type Uri } from "vscode";\ntype A = Uri;',

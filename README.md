@@ -39,8 +39,9 @@ These are commitments, not aspirations:
 **No local Python required.** The extension is TypeScript and talks to Viya over
 REST. If you have no Python on your machine, everything still works.
 
-**Viya 3.5 and Viya 4 both supported.** Version differences live in a dialect
-layer rather than scattered conditionals. SAS 9 is explicitly out of scope.
+**Targets Viya 4.** Version differences between releases live in a dialect
+layer rather than scattered conditionals. SAS 9 and Viya 3.5 are explicitly out
+of scope.
 
 **Complementary to the SAS extension, not a replacement.** Install both. That one
 authors SAS; this one authors Python. Neither needs the other.

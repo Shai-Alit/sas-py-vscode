@@ -78,9 +78,9 @@ describe("compute problem messages under the real l10n", () => {
     // and the Accounts menu end up disagreeing about what is wrong.
     const message = localiseComputeProblem({
       code: "unauthorized",
-      problem: { code: "client-id-required", deployment: "Viya 3.5" },
+      problem: { code: "client-id-required", deployment: "Viya 4 2022.05" },
     });
-    assert.ok(message.includes("Viya 3.5"), message);
+    assert.ok(message.includes("Viya 4 2022.05"), message);
   });
 
   it("relays the deployment's own sentence when an administrator must be told", () => {

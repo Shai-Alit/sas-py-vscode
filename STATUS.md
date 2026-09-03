@@ -731,26 +731,41 @@ substantive record is the commit message and the phase-5.md 5b entry).
 deploying as this landed — is deferred to the end of Phase 5** (Sean's call,
 2026-09-03), with all other 3.5 testing.
 
-**Open consideration, not decided: removing Viya 3.5 support entirely.** Sean is
-weighing it (no reachable 3.5 deployment to test against; few 3.5 customers). A
-codebase survey this session found it would be a **small `src/` change** — the
-dialect layer's "restraint clause" means there is *no* 3.5 behavioural logic, only
-constants and classification labels: delete `src/dialects/viya35.ts`, drop
-`"viya35"` from three union types (`DialectId`, `Deployment`, `Generation`),
-collapse `deploymentFromSignal`'s `"absent"` arm to `{kind:"unknown"}` (fail-soft
-to Viya 4), keep `identity.ts`'s 406 fallback but drop its 3.5 framing. The bulk
-is churn: ~8 unit test files, `contracts/viya35.yaml` + `check-contracts.mjs`
-simplification, `test/fixtures/viya35/`, ~12 doc files, a new ADR superseding the
-3.5 parts of ADR-0008/0015/0016, and a `PRODUCTION_PLAN.md` §2 revision (an
-architecture-level change — a deliberate event). ~1.5–2 days, its own slice.
-Reversible: the dialect seam and contract checker stay generic. If it goes ahead,
-`test/live/viya35-connectivity.test.ts` and `live-testing.md`'s 3.5 section (both
-added in 5b) come out in that slice.
+**Decided and executed, 2026-09-03: Viya 3.5 support is dropped — Sean's call,
+combining code and docs into one slice/PR rather than the usual one-thing-per-PR
+split.** No Viya 3.5 deployment was ever reachable by this project, across every
+phase from 0 through 5b, and very few Viya 3.5 customers remain in the target
+audience — see [ADR-0022](docs/adr/0022-drop-viya-35-support.md) for the full
+record, which also supersedes the Viya-3.5-specific part of ADR-0008.
+Implemented this session, matching the codebase survey the "open consideration"
+note above (now superseded) had sketched: `src/dialects/viya35.ts` deleted;
+`DialectId` (`dialect.ts`) is `"viya4"` alone; `Deployment`
+(`auth/clientId.ts`) is `viya4 | unknown`, no `viya35` member;
+`deploymentFromSignal`'s `absent` arm now resolves to `{kind:"unknown"}`, same
+as `unreadable`; `contracts/viya35.yaml`, `test/fixtures/viya35/`, and
+`test/live/viya35-connectivity.test.ts` removed; `check-contracts.mjs` needed no
+code change, since it already reads `DialectId` off the source file. Test
+fixtures using `{kind:"viya35"}` were deleted or rewritten against the new
+behaviour; `check-contracts.mjs`'s own unit tests, which needed a *second*
+synthetic generation to exercise their cross-file rules, now use a fictitious
+`viya6` instead of `viya35`. Docs swept in the same pass: `PRODUCTION_PLAN.md`
+§1.4/§2/§2.3/§4/§6/decision 9 (amended in place, original text kept per this
+file's own convention — see the amendment blockquotes), `docs/README.md`'s
+honesty gate, `docs/architecture/dialects.md` and `capability-probing.md` and
+`contracts.md`, `docs/dev/live-testing.md` and `testing.md`, and the
+user-facing `docs/connecting.md` / `connection-profiles.md` / `signing-in.md`.
+`docs/phases/phase-5.md`'s 5b entry gets a closing note retiring the
+"`viya35` scaffold deferred to end of Phase 5" item rather than leaving it to
+mislead the next session; phase-1/2a/2b/3/4's own historical 3.5 mentions are
+untouched, per this project's own rule against rewriting history.
+**Implemented; not yet checked, reviewed, or merged — see the next entry.**
 
-Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry. **Next: 5c — docs
-publishing and release engineering** (the largest slice in the phase; see
-phase-5.md's Runbook). The local `phase-5b-live-test-tier` branch is stale now
-(merged) — safe to `git branch -D` and `git fetch --prune`.
+Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry (for the live test
+tier this decision retires part of) and its new closing note (for the decision
+itself). **After this lands: 5c — docs publishing and release engineering**
+(the largest slice in the phase; see phase-5.md's Runbook). The local
+`phase-5b-live-test-tier` branch is stale now (merged) — safe to
+`git branch -D` and `git fetch --prune`.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

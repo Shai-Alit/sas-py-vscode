@@ -571,15 +571,23 @@ unconfigured workspace is Local and contributes nothing to the editor
   2026-09-02** against `verde` with a branch `.vsix` — the entry lands on
   the `1 / 0` line, clears on a clean re-run, and follows the selection's
   `lineOffset`.
-- [ ] **(live) A stranded Problems entry clears on the lifecycle events, not
-  only a re-run — phase 5d-iv** — produce a Problems entry as above, then, one
-  at a time from a fresh entry each: **(a)** close the file's editor tab →
-  entry gone; reopen the file → still gone (no run has happened). **(b)** run
-  **Sign Out** → entry gone. **(c)** **Select Run Target → Local Python** →
-  entry gone; switch back to the Viya profile → still gone. A profile-to-
-  profile switch that stays on Viya (two profiles configured) leaves the
-  entry in place. Implemented in 5d-iv (`src/run/commands.ts` wiring,
-  `RunDiagnostics.clearAll`); **not yet run live.**
+- [x] **(live) A stranded Problems entry clears on the lifecycle events, not
+  only a re-run — phase 5d-iv** — this is about the **Problems** panel
+  (**View → Problems**, `Ctrl+Shift+M`), not the Result panel webview, which
+  is untouched throughout. Produce a Problems entry as in the row above (run a
+  file whose last line is `c = 1 / 0`), confirm the one entry for that file is
+  showing, then — one at a time, re-running for a fresh entry before each:
+  **(a)** close that file's editor tab (save first if it is dirty) → the
+  Problems entry disappears; reopen the file → still gone (no run has
+  happened). **(b)** run **Python on Viya: Sign Out** → entry gone. **(c)**
+  **Select Run Target → Local Python** → entry gone; switch the target back to
+  the Viya profile → still gone. With two profiles configured, switching from
+  one Viya profile to another (staying on Viya) leaves the entry in place.
+  Implemented in 5d-iv (`src/run/commands.ts` wiring, `RunDiagnostics.clearAll`,
+  and `ViyaAuthenticationProvider.onDidSignOut` for (b)). **Verified live
+  2026-09-03** against `verde` with a branch `.vsix` (after a window reload) —
+  (a), (b) and (c) all clear the entry, the reopen/switch-back cases leave it
+  gone, and the viya→viya switch leaves it in place.
 
 ## 8. Rich output: matplotlib and pandas — phases 3c-i, 3d-ii
 

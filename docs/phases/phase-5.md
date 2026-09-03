@@ -513,8 +513,12 @@ group with the test-only BOM fixture.
    handler is never stale; and the token genuinely survives the panel rebuild
    because `emit` clears the backlog on `"reset"`.
 
-   **Still open before a PR:** the live pass (§7's new row — needs a
-   deployment).
+   **Verified live 2026-09-03** against `verde` with a branch `.vsix` (a first
+   run used a stale build; a window reload sorted it). All three clears in §7's
+   new row hold — close the file's editor tab, **Sign Out**, and flip the run
+   target to Local each drop the Problems entry; reopen and switch-back leave
+   it gone; a viya→viya profile switch leaves it in place. `manual-test-pass.md`
+   §7 ticked. **Nothing outstanding before the PR opens.**
 
 ☐ **5a — Drift gate hardening.** Audit `scripts/check-contracts.mjs` against
 three specific gaps found in this session's grounding survey, rather than a

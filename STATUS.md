@@ -627,7 +627,12 @@ fallback that masked a missing `sendReady()`. All fixed in the same branch,
 (`diagnostics-surface.md`, phase-4.md pointer, phase-5.md 5d-iv entry,
 CHANGELOG, `manual-test-pass.md` §7/§8) all reflect the final shape.
 
-**Open before a PR:** the live pass only (§7's new row — needs a deployment).
+**Live-verified 2026-09-03** against `verde` with a branch `.vsix` (after a
+window reload — a first attempt ran a stale build): all three lifecycle clears
+in §7's new row hold — closing the file's editor tab, **Sign Out**, and
+flipping the run target to Local each clear the Problems entry; reopen /
+switch-back leave it gone; a viya→viya profile switch leaves it in place.
+`manual-test-pass.md` §7 ticked. **Nothing outstanding before the PR opens.**
 Then 5a → 5b → 5c. See `docs/phases/phase-5.md`'s Runbook item 4.
 
 Its between-phase housekeeping

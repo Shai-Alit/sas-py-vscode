@@ -115,14 +115,15 @@ it documents and packages the finished v0.1.0 feature set rather than
 preceding it. Nothing here is a hard technical dependency — this is a
 recommendation, not a barrier._
 
-☐ **5d — Deferred hardening carried over from Phase 3/4.** Four independent
-items, one PR each (Sean's call, 2026-09-02): **5d-i** ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)),
-**5d-ii** ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)),
-**5d-iii** ([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92)) all
-merged; **5d-iv** (item 4, diagnostics-lifecycle gaps) is implemented — see its
-entry below — and is the last of the four. Item 1 turned out to be a real
-`src/` change rather than the docs decision the Plan anticipated, so it did not
-group with the test-only BOM fixture.
+☑ **5d — Deferred hardening carried over from Phase 3/4. Done — all four
+items merged**, one PR each (Sean's call, 2026-09-02): **5d-i**
+([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)), **5d-ii**
+([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)), **5d-iii**
+([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92)), **5d-iv**
+([PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94), squashed as
+`b03a92d`). Item 1 turned out to be a real `src/` change rather than the docs
+decision the Plan anticipated, so it did not group with the test-only BOM
+fixture.
 
 1. ~~**Certificate escape hatch.** Decide whether an incomplete certificate
    chain needs a user-facing workaround (compare the SAS extension's own
@@ -399,8 +400,10 @@ group with the test-only BOM fixture.
    run of the same file. Add a per-run token to `RevealFrameMessage`
    (`resultPanelModel.ts`/`resultPanel.ts`) so a `revealFrame` message queued
    before a new run started can't resolve against that new run's frame
-   data.~~ **Done — slice 5d-iv.** This closes both gaps `phase-4.md`'s 4d
-   entry deferred here, and with it all four of 5d.
+   data.~~ **Done — slice 5d-iv, merged 2026-09-03 as
+   [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94), squashed as
+   `b03a92d`.** This closes both gaps `phase-4.md`'s 4d entry deferred here,
+   and with it all four of 5d.
 
    **(a) — clearing the Problems collection.** `RunDiagnostics` gains
    `clearAll()` (`collection.clear()`), the collection-wide counterpart to
@@ -518,7 +521,11 @@ group with the test-only BOM fixture.
    new row hold — close the file's editor tab, **Sign Out**, and flip the run
    target to Local each drop the Problems entry; reopen and switch-back leave
    it gone; a viya→viya profile switch leaves it in place. `manual-test-pass.md`
-   §7 ticked. **Nothing outstanding before the PR opens.**
+   §7 ticked. A PR-bot nit on the open PR — `phase-4.md`'s deferral note
+   contradicted itself after the "resolved" prepend — was folded in (reworded
+   to past tense). **Merged 2026-09-03 as
+   [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94), squashed as
+   `b03a92d`.**
 
 ☐ **5a — Drift gate hardening.** Audit `scripts/check-contracts.mjs` against
 three specific gaps found in this session's grounding survey, rather than a

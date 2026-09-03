@@ -767,6 +767,44 @@ itself). **After this lands: 5c — docs publishing and release engineering**
 `phase-5b-live-test-tier` branch is stale now (merged) — safe to
 `git branch -D` and `git fetch --prune`.
 
+**Viya 3.5 drop merged 2026-09-03 as
+[PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), squashed as
+`c2c5b2b` on `main`** — local `main` fast-forwarded, matches `origin/main`,
+working tree clean. (The "not yet checked, reviewed, or merged" two paragraphs
+up was accurate when written; it went stale on merge. Recording it here rather
+than editing that paragraph, per this file's supersede-don't-rewrite
+convention.) CI + both reviewers passed. The `phase-5b-live-test-tier` and
+`drop-viya-35-support` local branches are both stale now.
+
+**5c scoped into four sub-slices, 2026-09-03 (Sean's call).** 5c is the five
+Runbook items regrouped: **5c-i** the user-facing feature-docs pages (item 1,
+docs-only), **5c-ii** the troubleshooting guide (item 2, docs-only), **5c-iii**
+release engineering — `release.yml` + `package.json` marketplace metadata +
+icon asset + `release-checklist.md` rewrite (items 3 + 4 minus the version
+bump), **5c-iv** the v0.1.0 release itself — dry run then tag, plus the
+deferred version bump / `CHANGELOG` finalise (item 5). Order i → ii → iii → iv;
+i and ii have no dependency between them. Full breakdown in phase-5.md's own 5c
+Runbook entry.
+
+**5c-i implemented 2026-09-03; not yet reviewed or merged, no PR.** Docs-only —
+no adversarial pass, per this project's own rule (the diff is its own
+evidence); the `check:docs` build (incl. `docs:build`) and `check:secrets` are
+the checks it can plausibly fail. Three new top-level pages —
+`docs/running-python.md`, `docs/diagnostics.md`, `docs/python-environment.md` —
+covering Phase 3/4's shipped feature set (Run File/Selection, the output
+channel and Result panel, Reset, one-run-at-a-time, cancel with the Findings
+75/76 caveat; the traceback surfaces and the Problems panel with its "no entry
+when no `<string>` frame maps" rule and 5d-iv lifecycle clears; Show/Refresh
+Environment and the per-profile no-auto-refresh cache). Registered in
+`.vitepress/config.mjs`'s "Using the extension" sidebar; `docs/README.md`'s
+page list extended; now-false "not here yet" notes in `connecting.md` /
+`connection-profiles.md` swept to point at the new pages; `CHANGELOG.md`
+`[Unreleased]` entry added. **One `src/` follow-up noted, deliberately not
+folded in** (it would make 5c-i not docs-only): `src/run/outputChannel.ts`'s
+`writeOutput` still says an image/HTML output's viewer "ships in a later slice"
+— stale since 3d-ii — its own small `fix(run):` change. Branch
+`phase-5c-i-feature-docs`.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -854,7 +892,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); 5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) implemented and pending review — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

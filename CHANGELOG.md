@@ -12,6 +12,20 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **User-facing documentation for running Python.** Slice 5c-i adds three pages
+  to the documentation site — [Running Python](docs/running-python.md) (Run
+  File/Selection, the output channel, the Result panel, Reset Python State, the
+  one-run-at-a-time rule, and cancel behaviour including the measured caveat
+  that a cancel does not preempt an already-running Python statement),
+  [Diagnostics](docs/diagnostics.md) (the traceback in the output channel and
+  Result panel, click-to-jump from a `<string>` frame, the Problems-panel entry
+  and when there is none, its lifecycle clearing, and the `ModuleNotFoundError`
+  → Show Environment pointer), and
+  [The Python environment](docs/python-environment.md) (Show/Refresh
+  Environment, per-profile caching with no automatic refresh, and the
+  side-effect-free probe) — each registered in the VitePress sidebar. Stale
+  "not here yet" notes in the connecting and connection-profile pages that
+  predated Phases 3–4 are swept to point at the new pages. Docs only.
 - **Python on Viya can now actually run Python on Viya.** Slice 3d-i
   ([ADR-0011](docs/adr/0011-choosing-where-python-runs.md)) adds `Python on
   Viya: Run File`, `Run Selection`, `Cancel` and `Reset Python State`, wiring

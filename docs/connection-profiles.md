@@ -148,9 +148,10 @@ require trust, because they run code on a remote server under your identity.
 Workspace-scoped values for both profile settings are ignored until you trust the
 folder. See [ADR-0002](adr/0002-workspace-trust-posture.md).
 
-## What is not here yet
+## Where to next
 
-Running code is a later slice. A profile says *where*; [Signing
-in](signing-in.md) covers getting a session against it. The reference tables for
-every setting and command are generated from the manifest in
+A profile says *where*. [Signing in](signing-in.md) covers getting a session
+against it, [Connecting to Viya](connecting.md) what that session is, and
+[Running Python](running-python.md) what you do with it. The reference tables
+for every setting and command are generated from the manifest in
 [Settings](reference/settings.md) and [Commands](reference/commands.md).

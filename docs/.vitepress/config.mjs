@@ -64,6 +64,9 @@ export default defineConfig({
           { text: "Connection profiles", link: "/connection-profiles" },
           { text: "Signing in", link: "/signing-in" },
           { text: "Connecting to Viya", link: "/connecting" },
+          { text: "Running Python", link: "/running-python" },
+          { text: "Diagnostics", link: "/diagnostics" },
+          { text: "The Python environment", link: "/python-environment" },
         ],
       },
       {

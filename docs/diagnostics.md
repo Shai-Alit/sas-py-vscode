@@ -71,8 +71,10 @@ too, for when there is no next run coming:
 - **signing out** of the Viya profile (**Python on Viya: Sign Out**, or the
   Accounts menu) — this clears every entry, because an entry carries no record
   of which profile's run produced it;
-- **switching the run target to Local** — a Local run can never clear a Viya
-  run's entry, so flipping the target strands them all.
+- **switching the run target to Local** — every entry is cleared at once. A
+  Local run can never re-run one of these files to clear its entry the normal
+  way, so flipping the target away from Viya clears them all now rather than
+  leaving them stranded.
 
 Switching from one Viya profile to another leaves the entries in place: a run
 against the new profile might still be about the same code.

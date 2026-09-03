@@ -166,120 +166,38 @@ you. Dispose only what the test itself made — an `EventEmitter`, a
 
 ## Tier three — live
 
-Opt-in, and gated three separate ways.
+Opt-in, hits a real Viya, never in default CI, and gated three separate ways:
 
-1. **The script.** Only `npm run test:live` points Mocha at `test/live/`, using
+1. **The script.** Only `npm run test:live` points Mocha at `test/live/`, via
    `.mocharc.live.json`. `npm run verify` cannot reach a real server no matter
-   what is in the environment. (The config file exists rather than a `--spec`
-   flag because `--spec` does not replace the `spec` in `.mocharc.json` — Mocha
-   merges them, and the live run would quietly execute the unit suite too.)
-2. **Per-generation environment variables.** `PYTHON_ON_VIYA_TEST_VIYA4_URL` and
-   `PYTHON_ON_VIYA_TEST_VIYA4_TOKEN`, or the matching `..._VIYA35_...` pair. The
-   names are prefixed on purpose: these live in a developer's shell, not in a
-   config file scoped to this repository, and a bare `ALLOW_MUTATION` exported
-   for some other project would silently open this one's write gate. A test whose
-   generation is not configured skips itself rather than failing — a tier that
-   fails when it is not set up gets disabled, and a disabled tier never runs
-   anywhere. The URL must be `https://`; the gate refuses to send a bearer token
-   over plaintext.
+   what is in the environment — the spec globs do not overlap.
+2. **Per-generation environment variables.** `PYTHON_ON_VIYA_TEST_VIYA4_URL` +
+   `PYTHON_ON_VIYA_TEST_VIYA4_TOKEN`, or the matching `..._VIYA35_...` pair. A
+   generation with neither set skips; a half-configured pair throws; the URL
+   must be `https://`.
 3. **`PYTHON_ON_VIYA_ALLOW_MUTATION=1`**, checked separately by
-   `requireMutation`. Read access and write access are different decisions: pointing the suite at a shared
-   deployment to read from it should not also grant permission to create objects
-   there. Mutating tests owe that deployment per-run unique names and cleanup in
-   a `finally` — or in a Mocha `after` hook, which is the same promise made in
-   the one place a failure earlier in the test cannot skip.
+   `requireMutation` at the first write in every mutating suite. Read access and
+   write access are different decisions.
 
 The gate itself is unit-tested — `test/unit/live-gate.test.ts` — including every
 refusal path, because it is the one piece of test infrastructure that can cause
 damage when it is wrong.
 
-### What the tier contains
+Two rules carry from this tier into any suite added to it. A failure message
+**names the endpoint and the status code and nothing else** — never the
+`ComputeProblem.reason` beside it, which on the rejected path carries the
+deployment's own sentence (session id included). And **a live test is only wrong
+against a live deployment**, so it should *import* the paths and media types it
+exercises from the code under test rather than restate them — the interval
+between writing one and first running it is the interval in which it is
+unverified, and `viya4-connectivity.test.ts`'s own first run on 2026-08-19
+failed on exactly such a restated media type ([finding
+6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406)).
 
-Two suites, and the second is the one to read before adding a third.
-
-`viya4-connectivity.test.ts` is read-only: it reaches
-`/identities/users/@currentUser` and asserts the status. It needs gates one and
-two.
-
-`viya4-job.test.ts` runs the whole of slice 2c — resolve a context, start a
-session, submit a `%put` of a per-run marker, read the log to the end, delete the
-session — and needs all three gates. It is the only caller of `requireMutation`
-outside that function's own unit test, which is half of why it exists: a gate
-with no exercised path is a gate that can break unnoticed.
-
-Three things about it generalise to any suite added later.
-
-It **skips** when `PYTHON_ON_VIYA_ALLOW_MUTATION` is absent rather than failing,
-and still calls `requireMutation` at the point of the first write. The skip is
-ergonomics — the same argument gate two makes, applied to someone pointing the
-tier at a deployment they may only read from — and the call is the guarantee,
-positioned where restructuring the hooks cannot get round it.
-
-It reports a failure by its `ComputeProblem` code and, where there is one, the
-HTTP status — never by the `reason` string that travels beside it. `reason` is
-composed for the extension's log and on the rejected path it carries the
-deployment's own sentence, which has been measured saying
-`A session with the ID "…" could not be found.` `live-gate.ts` sets the rule for
-the tier in as many words: a live failure message "may name the endpoint and the
-status code and nothing else". Interpolating `reason` into an assertion is the
-easy way to break it, because at the call site it looks like the more helpful
-choice.
-
-It runs in the context named by `PYTHON_ON_VIYA_TEST_VIYA4_CONTEXT`, defaulting
-to `SAS Job Execution compute context`, which is the name the SAS extension ships
-as its own default. That variable is a **parameter, not a gate**: it lives in the
-test file rather than in `live-gate.ts` because nothing about it decides whether
-the suite may run. When the name is wrong the failure says how many contexts the
-account could see — a count, not a list, since context names can carry a
-customer's or a team's name and this is a message that ends up in terminals and
-screenshots.
-
-There is deliberately no `PROC PYTHON` in it. Whether a deployment can run Python
-is a property of that deployment, and a test that failed on a Viya without an
-interpreter configured would be reporting site configuration as a defect. Slice
-3a owns that test and the skip that has to come with it.
-
-### When it fails on the certificate rather than the request
-
-A deployment behind an internal certificate authority fails like this:
-
-```
-TypeError: fetch failed
-Caused by: Error: unable to verify the first certificate
-```
-
-That is TLS, not authentication, and it is expected. This tier runs under bare
-`node`, which trusts its own bundled CA list and nothing else; the extension
-never meets the problem because VS Code loads the operating system's
-certificates into the extension host (`http.systemCertificates`, on by default).
-Point Node at the chain for the run:
-
-```bash
-NODE_EXTRA_CA_CERTS=/path/to/viya-ca.pem npm run test:live
-```
-
-The file must contain the **issuing** authority, not only the server's own
-certificate — `unable to verify the first certificate` means the deployment sent
-a leaf whose issuer Node cannot find. `node --use-system-ca` is the alternative
-where the root is already installed locally; Node suggests it in the error text
-itself. Neither belongs in the test code: a live tier that disables verification
-to get green is worse than one that skips.
-
-### What the first live run cost
-
-This tier was written in Phase 0 and first run on **2026-08-19**. It failed —
-it had been asking for `application/vnd.sas.identity+json`, the media type
-[finding 6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406)
-records as a `406` and that `src/auth/identity.ts` explicitly warns against. Two
-things follow, and they generalise past this one string. A live test is only
-wrong against a live deployment, so the interval between writing one and running
-it is the interval in which it is unverified. And a live test should **import**
-the paths and media types it exercises from the code under test rather than
-restate them, so that it is the same claim rather than a copy of one.
-
-**Never log a token.** Not in an assertion message, not in a failure dump, not
-in a fixture. A live failure message may name the endpoint and the status code
-and nothing else; the response body carries a real user's identity.
+**Running it — the env vars in full, the CA-certificate case, what each suite
+costs the deployment, the cleanup contract for mutating tests, and the 5b
+coverage audit — is its own page: [The live test tier in
+anger](live-testing.md).** Read it before adding a suite.
 
 ## Fixtures
 

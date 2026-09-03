@@ -81,6 +81,7 @@ export default defineConfig({
           { text: "Overview", link: "/dev/" },
           { text: "Building and debugging", link: "/dev/building" },
           { text: "Testing", link: "/dev/testing" },
+          { text: "The live test tier", link: "/dev/live-testing" },
           { text: "Manual test pass", link: "/dev/manual-test-pass" },
           { text: "Continuous integration", link: "/dev/ci" },
         ],

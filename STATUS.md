@@ -677,8 +677,10 @@ typo pointing nowhere real still drew a second misworded complaint
 `f0e55b8`** — local `main` fast-forwarded, matches `origin/main`, working tree
 clean. CI + both reviewers passed on the final commit. Nothing carried over.
 
-**5b (live test tier) implemented 2026-09-03; verified green; not yet reviewed,
-not yet merged, no PR.** Test-files-plus-docs only, no `src/` change. Three
+**5b (live test tier) merged 2026-09-03 as
+[PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), squashed as
+`a3b89ce`.** Local `main` fast-forwarded, matches `origin/main`, working tree
+clean. Test-files-plus-docs only, no `src/` change. Three
 parts: **(1)** a `viya35` scaffold — `test/live/viya35-connectivity.test.ts`,
 mirroring `viya4-connectivity.test.ts`, gated on `liveTarget("viya35")`,
 reporting a clean skip on an unconfigured machine (verified: `npm run test:live`
@@ -716,10 +718,39 @@ passing, 8 s, exit 0, no `console.warn`s — `cancelJob` returned `ok` (the
 (the `cacert.pem` bundle via `NODE_EXTRA_CA_CERTS` was not enough). Incidental:
 the SAS `data _null_` sleep cancelled promptly (~8 s), unlike Finding 76's
 `PROC PYTHON` loop — consistent with that finding's own reasoning, not asserted.
+The two AI reviewers then raised one Major (the mutating cancel suite submitted a
+deterministic job under the fixed `SESSION_NAME`, missing `CONTRIBUTING.md`'s
+per-run-uniqueness rule — fixed in `9918268` with a `%put` of a `randomUUID`
+marker, re-verified live) and two nits (the flat `120_000` timeout — comment now
+owns the tradeoff; `describeFailure`'s fourth byte-identical copy — deferred to
+its own cleanup lifting it into `test/helpers/live-gate.ts`). The `gh pr comment`
+replies posted during this did not appear on the PR (a known local issue — the
+substantive record is the commit message and the phase-5.md 5b entry).
+
 **The `viya35` scaffold's live run — against the 3.5 deployment that was
 deploying as this landed — is deferred to the end of Phase 5** (Sean's call,
-2026-09-03), with all other 3.5 testing. **Nothing else open before this
-merges.** Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry. Then 5c.
+2026-09-03), with all other 3.5 testing.
+
+**Open consideration, not decided: removing Viya 3.5 support entirely.** Sean is
+weighing it (no reachable 3.5 deployment to test against; few 3.5 customers). A
+codebase survey this session found it would be a **small `src/` change** — the
+dialect layer's "restraint clause" means there is *no* 3.5 behavioural logic, only
+constants and classification labels: delete `src/dialects/viya35.ts`, drop
+`"viya35"` from three union types (`DialectId`, `Deployment`, `Generation`),
+collapse `deploymentFromSignal`'s `"absent"` arm to `{kind:"unknown"}` (fail-soft
+to Viya 4), keep `identity.ts`'s 406 fallback but drop its 3.5 framing. The bulk
+is churn: ~8 unit test files, `contracts/viya35.yaml` + `check-contracts.mjs`
+simplification, `test/fixtures/viya35/`, ~12 doc files, a new ADR superseding the
+3.5 parts of ADR-0008/0015/0016, and a `PRODUCTION_PLAN.md` §2 revision (an
+architecture-level change — a deliberate event). ~1.5–2 days, its own slice.
+Reversible: the dialect seam and contract checker stay generic. If it goes ahead,
+`test/live/viya35-connectivity.test.ts` and `live-testing.md`'s 3.5 section (both
+added in 5b) come out in that slice.
+
+Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry. **Next: 5c — docs
+publishing and release engineering** (the largest slice in the phase; see
+phase-5.md's Runbook). The local `phase-5b-live-test-tier` branch is stale now
+(merged) — safe to `git branch -D` and `git fetch --prune`.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
@@ -808,7 +839,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b–5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); 5c pending — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |

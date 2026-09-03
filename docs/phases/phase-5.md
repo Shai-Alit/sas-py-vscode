@@ -602,7 +602,13 @@ misworded complaint (fixed: `fixtureDirs.includes(declared)`).
 `f0e55b8`.** Local `main` fast-forwarded, matches `origin/main`. Nothing
 carried over.
 
-☐ **5b — Live test tier.** Add a `viya35` scaffold under `test/live/`: one
+☑ **5b — Live test tier. Merged 2026-09-03 as
+[PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), squashed as
+`a3b89ce`** — local `main` fast-forwarded, matches `origin/main`, working tree
+clean. CI + both AI reviewers passed on the final commit (the Major per-run-marker
+finding fixed in `9918268`, re-verified live). The `viya35` scaffold's own live
+run against a real 3.5 deployment is deferred to the end of Phase 5. Add a
+`viya35` scaffold under `test/live/`: one
 file establishing the pattern (a minimal read-only probe, gated on
 `liveTarget("viya35")`) that reports a clean skip on a machine with no
 `PYTHON_ON_VIYA_TEST_VIYA35_*` pair set, mirroring the shape of the three

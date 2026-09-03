@@ -597,6 +597,11 @@ reverse orphan check's typo carve-out only covered a non-string `fixtures`, so
 a `fixtures:` typo pointing at a nonexistent directory still drew a second,
 misworded complaint (fixed: `fixtureDirs.includes(declared)`).
 
+**Merged 2026-09-03 as
+[PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), squashed as
+`f0e55b8`.** Local `main` fast-forwarded, matches `origin/main`. Nothing
+carried over.
+
 ☐ **5b — Live test tier.** Add a `viya35` scaffold under `test/live/`: one
 file establishing the pattern (a minimal read-only probe, gated on
 `liveTarget("viya35")`) that reports a clean skip on a machine with no

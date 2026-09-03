@@ -8,6 +8,9 @@ satisfy; these pages explain how the machinery works and why.
   constraints that bite silently
 - [**Testing**](testing.md) — the three tiers, the HTTP mocking layer, fixtures
   and how to sanitise them, and the coverage ratchet
+- [**The live test tier in anger**](live-testing.md) — running `npm run
+  test:live` against a real deployment: the gates, the CA-certificate case, what
+  each suite costs, and the cleanup contract for mutating tests
 - [**Manual test pass**](manual-test-pass.md) — the human tier: a scripted
   walkthrough of every user-visible behaviour, run by hand against a real
   deployment with the packaged `.vsix`, before a release and when a phase closes
@@ -16,8 +19,6 @@ satisfy; these pages explain how the machinery works and why.
 
 Planned pages:
 
-- **The live test tier in anger** — what to run it against, and the cleanup
-  contract for mutating tests (5b)
 - **AI reviewers** — the Foundry and Entra setup, and how to diagnose a silent
   reviewer (0a-ii; `AI-PR-REVIEWERS-RUNBOOK.md` lands here in 0d-ii)
 - **Releasing** — versioning, packaging, marketplace and Open VSX publishing (5c)

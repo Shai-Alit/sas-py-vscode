@@ -677,9 +677,39 @@ typo pointing nowhere real still drew a second misworded complaint
 `f0e55b8`** — local `main` fast-forwarded, matches `origin/main`, working tree
 clean. CI + both reviewers passed on the final commit. Nothing carried over.
 
-**Next: 5b — live test tier** (a `viya35` scaffold under `test/live/` plus an
-audit of the three viya4 suites' coverage of Phase 3/4's shipped behaviour;
-*Small*). Then 5c. See `docs/phases/phase-5.md`'s Runbook.
+**5b (live test tier) implemented 2026-09-03; verified green; not yet reviewed,
+not yet merged, no PR.** Test-files-plus-docs only, no `src/` change. Three
+parts: **(1)** a `viya35` scaffold — `test/live/viya35-connectivity.test.ts`,
+mirroring `viya4-connectivity.test.ts`, gated on `liveTarget("viya35")`,
+reporting a clean skip on an unconfigured machine (verified: `npm run test:live`
+→ 11 pending, exit 0). Deliberately narrow (identity endpoint only, no compute /
+jobs / `PROC PYTHON`) because this project has still never talked to a live 3.5
+and `docs/README.md` bars presenting 3.5 as supported from documentation — the
+doc comment says the first run with real 3.5 creds is the verification. **(2)**
+Audit of the existing viya4 suites vs. Phase 3/4's shipped behaviour: the four
+suites cover the 2c / 2b-3a / 3c-i wire paths well; the one real gap is **cancel
+(Findings 75/76)** — `cancelJob`'s `If-Match` round trip regressed silently once
+and only a by-hand check guarded it. Closed with a new mutating suite
+`test/live/viya4-job-cancel.test.ts` (submit a 30 s `data _null_` sleep, cancel
+the running job, assert `cancelJob` returns `ok` — which on `verde` is
+end-to-end proof the fresh-`ETag` `If-Match` path still satisfies the `428`;
+terminal-state check is best-effort `console.warn` only, since Finding 76
+measured the state reading `running` for 24+ s after an accepted cancel).
+`parseTraceback` / `tracebackDiagnostics.ts` (3c-ii/4c) and 4d's diagnostics
+surface are **not** live-coverage gaps — pure text transforms / VS Code
+integration with no new wire risk. **(3)** New `docs/dev/live-testing.md` ("The
+live test tier in anger", the page `docs/dev/README.md` already had planned for
+5b) — the three gates with env-var names in full, the CA-certificate case, a
+per-suite deployment-cost table, the cleanup contract for mutating tests, the
+`viya35` scaffold's unverified status, and the audit summary; `testing.md`'s
+tier-three section trimmed to an overview + pointer; registered in the VitePress
+sidebar. **Checks green this session:** `typecheck`, `lint`, `prettier`,
+`check:docs` (incl. `docs:build`), `check:copyright`, `check:secrets`,
+`test:unit` (1197 passing, unchanged from 5a), `test:live` (clean skip).
+`test:integration` not warranted (no `src/` change — same call as 5a). **Open
+before a PR:** the adversarial review pass (handed over 2026-09-03), then a live
+run of the two new suites against a real deployment. Full detail in
+`docs/phases/phase-5.md`'s 5b Runbook entry. Then 5c.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

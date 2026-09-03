@@ -613,6 +613,72 @@ or whether a live-coverage gap has opened there too. Document `npm run
 test:live` usage for a maintainer with real credentials, either in
 `docs/dev/testing.md` or a new `docs/dev/live-testing.md`.
 
+**Implemented 2026-09-03; not yet verified by review, not yet merged, no PR.**
+Test-files-plus-docs only, no `src/` change.
+
+- **`viya35` scaffold — `test/live/viya35-connectivity.test.ts`.** Mirrors
+  `viya4-connectivity.test.ts` exactly: `liveTarget("viya35")` in the
+  `describe` body, `before` skips the suite when unset, the one `it` calls
+  `fetchCurrentUser` and asserts an `id` comes back. Deliberately narrow — no
+  compute, no jobs, no `PROC PYTHON` — because this project has still never
+  talked to a live 3.5 and `docs/README.md`'s rule bars presenting 3.5 as
+  supported from documentation. `/identities/users/@currentUser` is the one
+  endpoint the production code already designs around 3.5's unknowns
+  (`identity.ts`'s summary→full media-type fallback, finding 6), so the scaffold
+  is the first thing that would exercise it live; the doc comment says plainly
+  that the first run with real 3.5 creds is the verification, as
+  `viya4-connectivity.test.ts`'s own first run on 2026-08-19 was for Viya 4.
+  Verified `npm run test:live` reports it as a clean skip on this unconfigured
+  machine (`11 pending`, exit 0).
+
+- **Audit outcome.** The four live suites (`viya4-connectivity`, `viya4-job`,
+  `submission-corpus`, `proc-python-rich-output` — the Plan text says "three",
+  predating `proc-python-rich-output`) cover the 2c / 2b-3a / 3c-i wire paths
+  well. **One real gap: cancel — Findings 75/76.** `cancelJob`'s `If-Match`
+  round trip is live wire behaviour (a bare `PUT` draws `428` on `verde`), it
+  regressed silently once, and until now only a by-hand check on 2026-09-01
+  guarded it. **Closed here** with a new mutating suite
+  `test/live/viya4-job-cancel.test.ts`: submit a 30-second `data _null_` sleep
+  (SAS-only — the `If-Match` requirement is the cancel endpoint's, independent
+  of what the job runs, so no Python interpreter is needed and the suite keeps
+  `viya4-job.test.ts`'s "no `PROC PYTHON`" posture), wait until it is running,
+  `cancelJob`, assert `ok` (which on this deployment is end-to-end proof the
+  fresh-`ETag` `If-Match` path still satisfies the `428`). The terminal-state
+  check is best-effort `console.warn` only — Finding 76 measured the job's
+  `state` reading `running` for 24+ seconds after an accepted cancel, so
+  asserting a prompt `canceled` would be flaky by that finding's own
+  measurement. **Not a gap:** 3c-ii `parseTraceback` and 4c
+  `tracebackDiagnostics.ts` are pure text transforms over log lines the
+  streaming suites already prove arrive intact — unit-covered against recorded
+  fixtures, no additional wire risk; 4d's diagnostics surface is VS Code
+  integration with no new Viya calls (integration tier + manual pass);
+  `probeRuntime()` (3e) has no live test but a deployment's Python availability
+  is a site property, not a code one. Recorded in full in the new
+  `docs/dev/live-testing.md` §"What the live tier covers, and what it does not".
+
+- **Docs — new `docs/dev/live-testing.md`** ("The live test tier in anger",
+  the page `docs/dev/README.md` already had planned for 5b). Covers the three
+  gates with the env-var names in full, the `NODE_EXTRA_CA_CERTS` /
+  `--use-system-ca` case, a per-suite table of what each costs the deployment,
+  the cleanup contract for mutating tests (per-run unique value; `after`-hook
+  delete that clears its handle first and `console.warn`s a failed cleanup),
+  the `viya35` scaffold's unverified status, and the audit summary above.
+  `docs/dev/testing.md`'s "Tier three — live" section trimmed to a short
+  overview (the three gates in brief, the two carried rules) plus a pointer;
+  registered in `.vitepress/config.mjs`'s Contributing sidebar and linked from
+  `docs/dev/README.md`.
+
+**Checks (2026-09-03, this VS Code session):** `npm run typecheck` (all three
+projects), `npm run lint`, `npx prettier --write` on the new/changed files,
+`npm run check:docs` (all four steps, `docs:build` included — the new page and
+the trimmed section both build clean), `npm run check:copyright` (184 OK),
+`npm run check:secrets` (OK), `npm run test:unit` (**1197 passing**, unchanged
+from 5a — no `src/` touched), `npm run test:live` (11 pending / clean skip,
+exit 0). `test:integration` not warranted — no `src/` or integration-tier
+change, same call as 5a. **Still open:** the adversarial review pass (handed
+over 2026-09-03), then a live run of the two new suites against a real
+deployment before or alongside the PR.
+
 ☐ **5c — Docs publishing and release engineering.**
 
 1. New user-facing docs pages for Phase 3/4's shipped feature set: running

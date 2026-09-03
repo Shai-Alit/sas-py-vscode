@@ -732,7 +732,21 @@ is no more deferred 3.5 testing to pick up at any future phase boundary. See
 ADR-0022 for the full record and PRODUCTION_PLAN.md §1.4/§6 for the updated
 plan text.
 
-☐ **5c — Docs publishing and release engineering.**
+☐ **5c — Docs publishing and release engineering.** The five items below,
+**taken as four sub-slices** (Sean's call, 2026-09-03 — the docs are the bulk
+of the authoring and the part review actually catches things in; "make
+publishing possible" is coherent on its own and shouldn't ride behind a docs
+PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
+5c-ii → 5c-iii → 5c-iv:
+
+- **5c-i** — item 1: the user-facing feature-docs pages. Docs-only.
+- **5c-ii** — item 2: the troubleshooting guide. Docs-only.
+- **5c-iii** — items 3 + 4 minus the version bump: `release.yml` (VS
+  Marketplace + Open VSX), `package.json` marketplace metadata
+  (`"private": false`, `icon`, gallery fields), the icon asset, and a rewrite
+  of `docs/release-checklist.md` to match the real workflow. CI/manifest PR.
+- **5c-iv** — item 5 plus the deferred version bump / `CHANGELOG` finalise: the
+  v0.1.0 release itself, dry run then tag. Mostly Sean-driven.
 
 1. New user-facing docs pages for Phase 3/4's shipped feature set: running
    Python (Run File/Selection, live output streaming), diagnostics (Problems
@@ -742,6 +756,39 @@ plan text.
    Environment). Register each in `.vitepress/config.mjs`'s `nav`/`sidebar` —
    an unregistered page builds without complaint per `docs/README.md`'s own
    warning.
+
+   **5c-i implemented 2026-09-03; not yet reviewed or merged, no PR.**
+   Docs-only, so no adversarial pass per this project's own rule (the diff is
+   its own evidence). Three new top-level pages rather than one big one or
+   four small ones: **`docs/running-python.md`** (run target prerequisite,
+   Run File `freshNamespace: true` vs Run Selection's notebook-cell semantics,
+   the **Python on Viya: Output** transcript channel and how it differs from
+   the log, the Result panel's reveal policy / singleton-replace / CSP /
+   ADR-0019 write-a-file capture / 10 MiB skip, Reset Python State vs a fresh
+   namespace, the one-run-at-a-time refusal, and cancel — with the Findings
+   75/76 caveat quoted from the reworded output-channel line and cited to
+   phase-4.md); **`docs/diagnostics.md`** ("Finished with an error." vs
+   "Finished.", the raw traceback in the channel, the structured traceback in
+   the Result panel with `<string>` frames clickable and library frames not,
+   wrapper-frame trimming, the Problems entry — positioned, `relatedInformation`,
+   cleared at the *start* of the next run — the **no entry when no `<string>`
+   frame maps** rule, the 5d-iv lifecycle clears, and the `ModuleNotFoundError`
+   → Show Environment sentence); **`docs/python-environment.md`** (Show
+   Environment doc contents, `importlib.metadata` not `pip`, per-profile
+   `globalState` cache with **no automatic refresh**, Refresh Environment Info
+   updating an open tab in place, the side-effect-free file-not-`print` probe,
+   and the shared serial contract). All three registered in
+   `.vitepress/config.mjs`'s "Using the extension" sidebar group.
+   `docs/README.md`'s "so far that is …" list extended. Stale, now-false "not
+   here yet" notes swept: `connecting.md`'s "Running Python — the next slices
+   add …" and "Refusing to submit into a busy session … lands with submission"
+   bullets removed, its "Nothing runs Python yet" intro line rewritten;
+   `connection-profiles.md`'s "Running code is a later slice" section retitled
+   and pointed at the new pages. `CHANGELOG.md` `[Unreleased]` entry added.
+   **One `src/` follow-up noted, not fixed here** (would take 5c-i out of
+   docs-only): `src/run/outputChannel.ts`'s `writeOutput` still labels an
+   image/HTML output `"… the result panel to view it ships in a later slice"`,
+   stale since 3d-ii shipped the panel — its own small `fix(run):` change.
 2. A troubleshooting guide assembled from what actually went wrong during
    Phases 1–4 — source material is the phase files' own Probe findings
    sections and `STATUS.md`'s incident record, not a generic FAQ.

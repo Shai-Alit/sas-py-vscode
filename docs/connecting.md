@@ -11,9 +11,10 @@ start — and it works the other way round too, because
 notification appears while the session opens, and an information message names
 the profile you are connected to when it is ready.
 
-Nothing runs Python yet. This slice ships the connection the run command will
-use, and the reason it ships on its own is that almost everything that can go
-wrong between an editor and a deployment goes wrong here rather than later.
+Connecting is worth understanding on its own, because almost everything that can
+go wrong between an editor and a deployment goes wrong here rather than later.
+Once you have a session, [Running Python](running-python.md) is what you do with
+it.
 
 ## Why the session is worth keeping
 
@@ -157,15 +158,6 @@ message pointing at **Workspaces: Manage Workspace Trust**. See
 [ADR-0002](adr/0002-workspace-trust-posture.md).
 
 ## What is not here yet
-
-**Running Python.** The next slices add submission, the log filter and the output
-channel. Until then, connecting proves the plumbing and gives you a session; it
-does not give you anything to do with it.
-
-**Refusing to submit into a busy session.** A session that is already running
-something has to be told apart from an idle one before a second submission is
-sent to it, which matters most in the shared-window case above. It lands with
-submission, because there is nothing to refuse until then.
 
 **Viya 3.5.** Not supported — see
 [ADR-0022](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/adr/0022-drop-viya-35-support.md).

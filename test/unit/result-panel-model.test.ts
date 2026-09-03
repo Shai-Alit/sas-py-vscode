@@ -21,11 +21,14 @@ const labels: RenderItemLabels = {
     `${frame.file}, line ${String(frame.line)}, in ${frame.name}`,
 };
 
+/** A stand-in for `resultPanel.ts`'s per-run counter (Phase 5d-iv). */
+const RUN_TOKEN = 7;
+
 describe("run/resultPanelModel", () => {
   describe("toRenderItem", () => {
     it("passes text/plain through as text", () => {
       const output: RichOutput = { mime: "text/plain", data: "hello\n" };
-      assert.deepEqual(toRenderItem(output, labels, 1), {
+      assert.deepEqual(toRenderItem(output, labels, 1, RUN_TOKEN), {
         kind: "text",
         text: "hello\n",
       });
@@ -36,7 +39,7 @@ describe("run/resultPanelModel", () => {
         mime: "text/html",
         data: "<table><tr><td>1</td></tr></table>",
       };
-      assert.deepEqual(toRenderItem(output, labels, 1), {
+      assert.deepEqual(toRenderItem(output, labels, 1, RUN_TOKEN), {
         kind: "html",
         markup: "<table><tr><td>1</td></tr></table>",
       });
@@ -44,14 +47,14 @@ describe("run/resultPanelModel", () => {
 
     it("wraps image/png as a data URI with the caller's alt text, numbered by image index", () => {
       const output: RichOutput = { mime: "image/png", data: "aGVsbG8=" };
-      assert.deepEqual(toRenderItem(output, labels, 3), {
+      assert.deepEqual(toRenderItem(output, labels, 3, RUN_TOKEN), {
         kind: "image",
         dataUri: "data:image/png;base64,aGVsbG8=",
         alt: "Output image 3",
       });
     });
 
-    it("structures a traceback with the caller's heading and every frame, formatted in order", () => {
+    it("structures a traceback with the caller's heading, every frame in order, and the run token", () => {
       const output: RichOutput = {
         mime: "application/vnd.python.traceback",
         data: {
@@ -62,7 +65,7 @@ describe("run/resultPanelModel", () => {
           ],
         },
       };
-      assert.deepEqual(toRenderItem(output, labels, 1), {
+      assert.deepEqual(toRenderItem(output, labels, 1, RUN_TOKEN), {
         kind: "traceback",
         heading: "Traceback",
         message: "ZeroDivisionError: division by zero",
@@ -76,6 +79,9 @@ describe("run/resultPanelModel", () => {
           { file: "app.py", line: 3, name: "<module>" },
           { file: "app.py", line: 7, name: "divide" },
         ],
+        // Phase 5d-iv: the caller's per-run token, stamped on the only item
+        // kind that produces a webview→host message.
+        runToken: RUN_TOKEN,
       });
     });
 
@@ -93,12 +99,23 @@ describe("run/resultPanelModel", () => {
           return frame.name;
         },
       };
-      toRenderItem({ mime: "text/plain", data: "hi" }, countingLabels, 1);
-      toRenderItem({ mime: "image/png", data: "AA==" }, countingLabels, 1);
+      toRenderItem(
+        { mime: "text/plain", data: "hi" },
+        countingLabels,
+        1,
+        RUN_TOKEN,
+      );
+      toRenderItem(
+        { mime: "image/png", data: "AA==" },
+        countingLabels,
+        1,
+        RUN_TOKEN,
+      );
       toRenderItem(
         { mime: "text/html", data: "<table></table>" },
         countingLabels,
         1,
+        RUN_TOKEN,
       );
       assert.equal(headingCalls, 0);
       assert.equal(frameCalls, 0);
@@ -108,7 +125,7 @@ describe("run/resultPanelModel", () => {
       // Guards the module's own doc comment: nothing here may hardcode an
       // English word, because the localisation boundary lives in the caller.
       const output: RichOutput = { mime: "image/png", data: "AA==" };
-      const item = toRenderItem(output, labels, 1);
+      const item = toRenderItem(output, labels, 1, RUN_TOKEN);
       assert.equal(item.kind, "image");
       assert.equal(item.alt, labels.imageAlt(1));
     });
@@ -156,6 +173,7 @@ describe("run/resultPanelModel", () => {
           message: "boom",
           frameLines: ["a.py, line 1, in <module>"],
           frames: [{ file: "<string>", line: 1, name: "<module>" }],
+          runToken: 3,
         }),
         true,
       );
@@ -192,6 +210,7 @@ describe("run/resultPanelModel", () => {
         heading: "h",
         message: "m",
         frameLines: ["a.py, line 1, in <module>"],
+        runToken: 1,
       };
       assert.equal(isRenderItem(base), false, "frames absent");
       assert.equal(isRenderItem({ ...base, frames: "nope" }), false);
@@ -213,6 +232,34 @@ describe("run/resultPanelModel", () => {
         }),
         false,
         "frame line not a number",
+      );
+    });
+
+    it("rejects a traceback whose run token is absent, negative, or non-integer (Phase 5d-iv)", () => {
+      const wellFormedExceptToken = {
+        kind: "traceback",
+        heading: "h",
+        message: "m",
+        frameLines: ["a.py, line 1, in <module>"],
+        frames: [{ file: "<string>", line: 1, name: "<module>" }],
+      };
+      assert.equal(isRenderItem(wellFormedExceptToken), false, "token absent");
+      assert.equal(
+        isRenderItem({ ...wellFormedExceptToken, runToken: "1" }),
+        false,
+        "token not a number",
+      );
+      // Matched to `isRevealFrameMessage`'s own guard — the two validate the
+      // same value on the round trip.
+      assert.equal(
+        isRenderItem({ ...wellFormedExceptToken, runToken: -1 }),
+        false,
+        "token negative",
+      );
+      assert.equal(
+        isRenderItem({ ...wellFormedExceptToken, runToken: 1.5 }),
+        false,
+        "token non-integer",
       );
     });
   });
@@ -269,34 +316,89 @@ describe("run/resultPanelModel", () => {
   });
 
   describe("isRevealFrameMessage", () => {
-    it("accepts a well-formed revealFrame message", () => {
+    it("accepts a well-formed revealFrame message carrying a run token", () => {
       assert.equal(
-        isRevealFrameMessage({ type: "revealFrame", frameIndex: 0 }),
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: 0,
+          runToken: 1,
+        }),
         true,
       );
       assert.equal(
-        isRevealFrameMessage({ type: "revealFrame", frameIndex: 3 }),
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: 3,
+          runToken: 42,
+        }),
         true,
       );
     });
 
     it("rejects a wrong type, a missing/negative/non-integer index, and a non-object", () => {
       assert.equal(isRevealFrameMessage({ type: "ready" }), false);
-      assert.equal(isRevealFrameMessage({ type: "revealFrame" }), false);
       assert.equal(
-        isRevealFrameMessage({ type: "revealFrame", frameIndex: -1 }),
+        isRevealFrameMessage({ type: "revealFrame", runToken: 1 }),
         false,
       );
       assert.equal(
-        isRevealFrameMessage({ type: "revealFrame", frameIndex: 1.5 }),
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: -1,
+          runToken: 1,
+        }),
         false,
       );
       assert.equal(
-        isRevealFrameMessage({ type: "revealFrame", frameIndex: "0" }),
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: 1.5,
+          runToken: 1,
+        }),
+        false,
+      );
+      assert.equal(
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: "0",
+          runToken: 1,
+        }),
         false,
       );
       assert.equal(isRevealFrameMessage(null), false);
       assert.equal(isRevealFrameMessage("revealFrame"), false);
+    });
+
+    it("rejects a missing, negative, or non-integer run token (Phase 5d-iv)", () => {
+      assert.equal(
+        isRevealFrameMessage({ type: "revealFrame", frameIndex: 0 }),
+        false,
+        "token absent",
+      );
+      assert.equal(
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: 0,
+          runToken: -1,
+        }),
+        false,
+      );
+      assert.equal(
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: 0,
+          runToken: 1.5,
+        }),
+        false,
+      );
+      assert.equal(
+        isRevealFrameMessage({
+          type: "revealFrame",
+          frameIndex: 0,
+          runToken: "1",
+        }),
+        false,
+      );
     });
   });
 

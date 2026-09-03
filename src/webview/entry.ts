@@ -67,12 +67,13 @@ const vscodeApi = acquireVsCodeApi();
 if (root !== null) {
   window.addEventListener("message", (event: MessageEvent<unknown>) => {
     if (isResultPanelMessage(event.data)) {
-      applyMessage(realPort, root, event.data, (frameIndex) => {
+      applyMessage(realPort, root, event.data, (frameIndex, runToken) => {
         // Webview → host, Phase 4d: the user activated a traceback frame.
         // The host holds the structured frames and the run's origin and
         // does the mapping — see `src/run/resultPanelModel.ts`'s
-        // `RevealFrameMessage`.
-        vscodeApi.postMessage({ type: "revealFrame", frameIndex });
+        // `RevealFrameMessage`. `runToken` (5d-iv) rode in on the traceback
+        // item; echoing it lets the host ignore a click from a superseded run.
+        vscodeApi.postMessage({ type: "revealFrame", frameIndex, runToken });
       });
     }
   });

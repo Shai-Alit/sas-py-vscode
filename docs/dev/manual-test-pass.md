@@ -571,6 +571,23 @@ unconfigured workspace is Local and contributes nothing to the editor
   2026-09-02** against `verde` with a branch `.vsix` — the entry lands on
   the `1 / 0` line, clears on a clean re-run, and follows the selection's
   `lineOffset`.
+- [x] **(live) A stranded Problems entry clears on the lifecycle events, not
+  only a re-run — phase 5d-iv** — this is about the **Problems** panel
+  (**View → Problems**, `Ctrl+Shift+M`), not the Result panel webview, which
+  is untouched throughout. Produce a Problems entry as in the row above (run a
+  file whose last line is `c = 1 / 0`), confirm the one entry for that file is
+  showing, then — one at a time, re-running for a fresh entry before each:
+  **(a)** close that file's editor tab (save first if it is dirty) → the
+  Problems entry disappears; reopen the file → still gone (no run has
+  happened). **(b)** run **Python on Viya: Sign Out** → entry gone. **(c)**
+  **Select Run Target → Local Python** → entry gone; switch the target back to
+  the Viya profile → still gone. With two profiles configured, switching from
+  one Viya profile to another (staying on Viya) leaves the entry in place.
+  Implemented in 5d-iv (`src/run/commands.ts` wiring, `RunDiagnostics.clearAll`,
+  and `ViyaAuthenticationProvider.onDidSignOut` for (b)). **Verified live
+  2026-09-03** against `verde` with a branch `.vsix` (after a window reload) —
+  (a), (b) and (c) all clear the entry, the reopen/switch-back cases leave it
+  gone, and the viya→viya switch leaves it in place.
 
 ## 8. Rich output: matplotlib and pandas — phases 3c-i, 3d-ii
 
@@ -703,7 +720,12 @@ your script must actually write a `.png` or `.html` file; there is no implicit
   change — the panel still loads nothing from the network. **Verified live
   2026-09-02** against `verde` with a branch `.vsix` — clicking a `<string>`
   frame reveals it in the editor column (not over the panel); a library
-  frame is not clickable.
+  frame is not clickable. **Phase 5d-iv** adds a per-run token to the
+  `revealFrame` message so a click delayed past the start of a later run is
+  dropped, not resolved against the new run's traceback — a race that needs
+  the host event loop stalled across a whole run to hit, so it is
+  unit/integration-covered (`result-panel.test.ts`) rather than a hand-run
+  step here.
 
 ## 9. Environment and package list — phase 3e
 

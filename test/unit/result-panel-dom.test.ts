@@ -147,6 +147,7 @@ describe("run/resultPanelDom", () => {
             { file: "app.py", line: 3, name: "<module>" },
             { file: "app.py", line: 7, name: "divide" },
           ],
+          runToken: 1,
         },
       };
       applyMessage(fakePort(), root, message);
@@ -183,6 +184,7 @@ describe("run/resultPanelDom", () => {
           message: "boom",
           frameLines: [],
           frames: [],
+          runToken: 1,
         },
       };
       applyMessage(fakePort(), root, message);
@@ -193,7 +195,7 @@ describe("run/resultPanelDom", () => {
 
     it("wraps a <string> frame's line in an inner role=button span wired to onFrameActivate, and leaves the <li> itself a listitem", () => {
       const root = fakeRoot();
-      const activated: number[] = [];
+      const activated: [number, number][] = [];
       const message: ResultPanelMessage = {
         type: "output",
         item: {
@@ -208,9 +210,12 @@ describe("run/resultPanelDom", () => {
             { file: "<string>", line: 3, name: "<module>" },
             { file: "/x/numpy/core.py", line: 9, name: "divide" },
           ],
+          runToken: 55,
         },
       };
-      applyMessage(fakePort(), root, message, (index) => activated.push(index));
+      applyMessage(fakePort(), root, message, (index, runToken) =>
+        activated.push([index, runToken]),
+      );
 
       const list = root.children[0]?.children[2];
       assert.ok(list);
@@ -237,8 +242,8 @@ describe("run/resultPanelDom", () => {
       button.activateHandlers[0]?.();
       assert.deepEqual(
         activated,
-        [0],
-        "the frame's own index in traceback order",
+        [[0, 55]],
+        "the frame's index in traceback order, plus the item's run token (5d-iv)",
       );
 
       // The library frame is plain text on the <li>, no inner span.
@@ -257,6 +262,7 @@ describe("run/resultPanelDom", () => {
           message: "boom",
           frameLines: ["<string>, line 1, in <module>"],
           frames: [{ file: "<string>", line: 1, name: "<module>" }],
+          runToken: 1,
         },
       };
       applyMessage(fakePort(), root, message);
@@ -281,6 +287,7 @@ describe("run/resultPanelDom", () => {
           message: "boom",
           frameLines: ["<string>, line 1, in <module>", "orphan line"],
           frames: [{ file: "<string>", line: 1, name: "<module>" }],
+          runToken: 1,
         },
       };
       applyMessage(fakePort(), root, message, () => undefined);

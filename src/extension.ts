@@ -212,6 +212,11 @@ export function activate(context: vscode.ExtensionContext): void {
     runTargets,
     environment,
     output,
+    // Phase 5d-iv: clear the Problems collection when a profile is signed out.
+    // `onDidSignOut` fires only on the deliberate path (palette / Accounts
+    // menu), not on `onDidChangeSessions`'s diff, which also drops a profile a
+    // slow renewal missed for one poll.
+    { onDidSignOut: auth.onDidSignOut },
   );
 }
 

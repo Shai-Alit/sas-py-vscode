@@ -34,6 +34,18 @@ function isOutcomeMessage(
   return message.type === "outcome";
 }
 
+/** The `runToken` on the most recent traceback output the panel posted — what
+ * the real webview would echo back in a `revealFrame` message, since its
+ * activation closure is built from that item (Phase 5d-iv). `undefined` if no
+ * traceback has been posted yet. */
+function lastTracebackToken(posted: readonly unknown[]): number | undefined {
+  for (const message of [...posted].reverse()) {
+    if (!isResultPanelMessage(message) || !isOutputMessage(message)) continue;
+    if (message.item.kind === "traceback") return message.item.runToken;
+  }
+  return undefined;
+}
+
 /** A `ResultWebviewPanel` double that records everything asked of it and lets
  * a test drive the `"ready"` handshake and disposal by hand — the same shape
  * `output-channel.test.ts`'s `fakeChannel()` takes for `vscode.OutputChannel`. */
@@ -45,8 +57,13 @@ function fakePanel(): {
   /** Simulates the webview's own bootstrap script sending its handshake. */
   sendReady(): void;
   /** Simulates the webview posting a clicked-frame message back to the host
-   * (Phase 4d). */
-  sendRevealFrame(frameIndex: number): void;
+   * (Phase 4d). `runToken` defaults to the last traceback output's own token
+   * — what the real webview echoes (Phase 5d-iv) — so a caller that just
+   * wants "click frame N of the current run" need not pass one; a stale-run
+   * test passes an explicit older token. Throws if neither is available (no
+   * token passed and no traceback posted to derive one from), so a missing
+   * `sendReady()` in a test surfaces as a failure, not a silent token 0. */
+  sendRevealFrame(frameIndex: number, runToken?: number): void;
 } {
   const posted: unknown[] = [];
   const revealed: { column: vscode.ViewColumn; preserveFocus: boolean }[] = [];
@@ -94,8 +111,16 @@ function fakePanel(): {
     revealed,
     disposed,
     sendReady: () => messageListener?.({ type: "ready" }),
-    sendRevealFrame: (frameIndex) =>
-      messageListener?.({ type: "revealFrame", frameIndex }),
+    sendRevealFrame: (frameIndex, runToken) => {
+      const token = runToken ?? lastTracebackToken(posted);
+      if (token === undefined) {
+        throw new Error(
+          "sendRevealFrame: no token given and no traceback posted to derive " +
+            "one from — call sendReady() after a traceback, or pass a token",
+        );
+      }
+      messageListener?.({ type: "revealFrame", frameIndex, runToken: token });
+    },
   };
 }
 
@@ -419,6 +444,7 @@ describe("ResultPanel", () => {
       const { panel, revealed } = panelWithRevealSpy(fake);
       panel.startRun({ uri: origin.uri, lineOffset: 10 });
       panel.writeOutput(tracebackOutput);
+      fake.sendReady();
 
       fake.sendRevealFrame(0);
       const jump = revealed[0];
@@ -431,15 +457,17 @@ describe("ResultPanel", () => {
       const { panel, revealed } = panelWithRevealSpy(fake);
       panel.startRun(origin);
       // An image opens the panel (wiring the inbound listener) before any
-      // traceback has streamed, so there are no frames retained yet.
+      // traceback has streamed, so there are no frames retained yet. The run
+      // token matches (this run's), so it is the empty-frames guard that
+      // stops it, not the 5d-iv token check.
       panel.writeOutput({ mime: "image/png", data: "AA==" });
-      fake.sendRevealFrame(0);
+      fake.sendRevealFrame(0, 1);
       assert.equal(revealed.length, 0, "no frames retained yet");
 
       panel.writeOutput(tracebackOutput);
-      fake.sendRevealFrame(99);
+      fake.sendRevealFrame(99, 1);
       assert.equal(revealed.length, 0, "index past the end of the stack");
-      fake.sendRevealFrame(1);
+      fake.sendRevealFrame(1, 1);
       assert.equal(
         revealed.length,
         0,
@@ -450,13 +478,42 @@ describe("ResultPanel", () => {
     it("does nothing when a revealFrame arrives before any run has started", () => {
       // `commands.ts` always calls `startRun` before `writeOutput`, but the
       // guard on `currentOrigin` is still load-bearing: drive `writeOutput`
-      // straight, with no `startRun`, and the inbound message is a no-op.
+      // straight, with no `startRun`, and the inbound message is a no-op. The
+      // token passed here (0) matches the untouched counter, so it is the
+      // `currentOrigin` guard being tested, not the 5d-iv token check.
       const fake = fakePanel();
       const { panel, revealed } = panelWithRevealSpy(fake);
       panel.writeOutput(tracebackOutput);
 
-      fake.sendRevealFrame(0);
+      fake.sendRevealFrame(0, 0);
       assert.equal(revealed.length, 0);
+    });
+
+    it("drops a revealFrame carrying a superseded run's token, but honours the current run's (Phase 5d-iv)", () => {
+      const fake = fakePanel();
+      const { panel, revealed } = panelWithRevealSpy(fake);
+
+      panel.startRun(origin);
+      panel.writeOutput(tracebackOutput);
+      fake.sendReady();
+      const firstToken = lastTracebackToken(fake.posted);
+      assert.ok(firstToken !== undefined);
+
+      // A second run begins and streams its own traceback — the panel resets
+      // and re-stamps a fresh token.
+      panel.startRun(origin);
+      panel.writeOutput(tracebackOutput);
+      const secondToken = lastTracebackToken(fake.posted);
+      assert.ok(secondToken !== undefined);
+      assert.notEqual(secondToken, firstToken);
+
+      // A click queued during the first run, arriving now: dropped.
+      fake.sendRevealFrame(0, firstToken);
+      assert.equal(revealed.length, 0, "stale run token — no jump");
+
+      // The current run's own click still resolves.
+      fake.sendRevealFrame(0, secondToken);
+      assert.equal(revealed.length, 1);
     });
   });
 });

@@ -161,6 +161,32 @@ describe("RunDiagnostics", () => {
     diagnostics.clearFor(vscode.Uri.file("/workspace/never-published.py"));
   });
 
+  it("clearAll removes entries published for every URI (Phase 5d-iv)", () => {
+    const { diagnostics, collection } = build();
+    const a = vscode.Uri.file("/workspace/clearall-a.py");
+    const b = vscode.Uri.file("/workspace/clearall-b.py");
+    const tb = (message: string): Traceback => ({
+      message,
+      frames: [frame("<string>", 1, "<module>")],
+    });
+    diagnostics.publish(
+      { uri: a, lineOffset: 0 },
+      tb("ValueError: a"),
+      "ValueError: a",
+    );
+    diagnostics.publish(
+      { uri: b, lineOffset: 0 },
+      tb("ValueError: b"),
+      "ValueError: b",
+    );
+    assert.equal((collection.get(a) ?? []).length, 1);
+    assert.equal((collection.get(b) ?? []).length, 1);
+
+    diagnostics.clearAll();
+    assert.deepEqual([...(collection.get(a) ?? [])], []);
+    assert.deepEqual([...(collection.get(b) ?? [])], []);
+  });
+
   it("dispose() removes what it published", () => {
     const { diagnostics, collection } = build();
     // A URI no other test in this file touches, so the aggregate read below

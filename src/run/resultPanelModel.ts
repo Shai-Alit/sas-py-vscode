@@ -78,6 +78,15 @@ export type RenderItem =
        * itself user-facing text — nothing here is localised or displayed
        * directly. */
       readonly frames: readonly RenderTracebackFrame[];
+      /** The run this traceback belongs to, as `resultPanel.ts`'s
+       * monotonic per-run counter. Phase 5d-iv: baked into each clickable
+       * frame's activation so the {@link RevealFrameMessage} it posts back
+       * carries the token, and a click from a superseded run is dropped by
+       * the host rather than resolved against the current run's frames. Rides
+       * on the item (not on transient webview state) so it survives the
+       * panel's hide/show rebuild and backlog replay unchanged. Not
+       * user-facing. */
+      readonly runToken: number;
     };
 
 /** Already-localised strings {@link toRenderItem} needs but must not invent
@@ -114,6 +123,7 @@ export function toRenderItem(
   output: RichOutput,
   labels: RenderItemLabels,
   imageIndex: number,
+  runToken: number,
 ): RenderItem {
   switch (output.mime) {
     case "text/plain":
@@ -137,6 +147,9 @@ export function toRenderItem(
           labels.tracebackFrame(toRenderFrame(frame)),
         ),
         frames: output.data.frames.map(toRenderFrame),
+        // Phase 5d-iv: only the traceback arm carries it — it is the only
+        // item that produces a webview→host message worth scoping to a run.
+        runToken,
       };
   }
 }
@@ -192,6 +205,15 @@ export type ResultPanelMessage =
  * (`mapFrameToOrigin` returns `undefined` for anything else), so a
  * malformed or stale index is a no-op rather than a wrong jump.
  *
+ * `runToken` (Phase 5d-iv) is the value the host stamped on the traceback
+ * {@link RenderItem} this frame was rendered from — its monotonic per-run
+ * counter. The host drops a message whose token is not the current run's,
+ * closing the one race `frameIndex` alone left open: a `revealFrame` for a
+ * previous run's frame, delayed in the host queue until the next run has both
+ * reset and streamed its own traceback, would otherwise resolve against the
+ * new run's origin/frames — a jump to a plausible-but-wrong line rather than
+ * the no-op this message type promises.
+ *
  * Kept out of {@link ResultPanelMessage} deliberately: that union is the
  * host-authored, host → webview protocol (its own doc comment says so), and
  * `resultPanel.ts` validates this direction with {@link isRevealFrameMessage}
@@ -200,12 +222,14 @@ export type ResultPanelMessage =
 export interface RevealFrameMessage {
   readonly type: "revealFrame";
   readonly frameIndex: number;
+  readonly runToken: number;
 }
 
 /** Structural validation for a value received over
  * `webview.onDidReceiveMessage` that claims to be a {@link RevealFrameMessage}.
- * `frameIndex` must be a non-negative integer — anything else cannot be a
- * real array index and is rejected here rather than reaching the lookup. */
+ * `frameIndex` and `runToken` must both be non-negative integers — anything
+ * else cannot be a real array index or a real run counter and is rejected
+ * here rather than reaching the lookup. */
 export function isRevealFrameMessage(
   value: unknown,
 ): value is RevealFrameMessage {
@@ -214,7 +238,10 @@ export function isRevealFrameMessage(
     value.type === "revealFrame" &&
     typeof value.frameIndex === "number" &&
     Number.isInteger(value.frameIndex) &&
-    value.frameIndex >= 0
+    value.frameIndex >= 0 &&
+    typeof value.runToken === "number" &&
+    Number.isInteger(value.runToken) &&
+    value.runToken >= 0
   );
 }
 
@@ -282,7 +309,14 @@ export function isRenderItem(value: unknown): value is RenderItem {
         typeof value.heading === "string" &&
         typeof value.message === "string" &&
         isStringArray(value.frameLines) &&
-        isRenderTracebackFrameArray(value.frames)
+        isRenderTracebackFrameArray(value.frames) &&
+        // Same shape `isRevealFrameMessage` demands of the token it gets back
+        // — a non-negative integer — so the two guards agree on the one value
+        // that makes a round trip (a `NaN`/`-1` here would be echoed and then
+        // rejected inbound, silently un-clicking a frame).
+        typeof value.runToken === "number" &&
+        Number.isInteger(value.runToken) &&
+        value.runToken >= 0
       );
     default:
       return false;

@@ -135,17 +135,28 @@ describe("run commands — Problems-panel diagnostics (4d)", () => {
     targets: RunTargetStore;
     collection: vscode.DiagnosticCollection;
     uri: vscode.Uri;
+    document: vscode.TextDocument;
+    /** Fires `commands.ts`'s injected close hook (Phase 5d-iv). */
+    closeEmitter: vscode.EventEmitter<vscode.TextDocument>;
+    /** Fires `commands.ts`'s injected sign-out hook (Phase 5d-iv). */
+    signOutEmitter: vscode.EventEmitter<void>;
+    /** Simulates the active profile changing while the target stays on Viya —
+     * `RunTargetStore` re-fires its own `onDidChange` off this. */
+    profileChanges: vscode.EventEmitter<void>;
   }> {
     const editor = await pythonEditor();
     const profiles = fakeProfiles();
+    const profileChanges = new vscode.EventEmitter<void>();
     const targets = new RunTargetStore(
       { workspaceState: memoryMemento() },
-      profiles,
+      { ...profiles, onDidChange: profileChanges.event },
     );
     const environment = new EnvironmentStore({ globalState: memoryMemento() });
     const collection = vscode.languages.createDiagnosticCollection(
       "test-commands-diagnostics",
     );
+    const closeEmitter = new vscode.EventEmitter<vscode.TextDocument>();
+    const signOutEmitter = new vscode.EventEmitter<void>();
     const handlers = createRunCommandHandlers(
       recordedSessions(connection),
       profiles,
@@ -159,6 +170,8 @@ describe("run commands — Problems-panel diagnostics (4d)", () => {
           createChannel: () => silentChannel(),
         }),
         diagnostics: new RunDiagnostics({ createCollection: () => collection }),
+        onDidCloseTextDocument: closeEmitter.event,
+        onDidSignOut: signOutEmitter.event,
         ...bypassProgress(),
       },
     );
@@ -166,8 +179,35 @@ describe("run commands — Problems-panel diagnostics (4d)", () => {
       handlers.dispose();
       targets.dispose();
       collection.dispose();
+      closeEmitter.dispose();
+      signOutEmitter.dispose();
+      profileChanges.dispose();
     });
-    return { handlers, targets, collection, uri: editor.document.uri };
+    return {
+      handlers,
+      targets,
+      collection,
+      uri: editor.document.uri,
+      document: editor.document,
+      closeEmitter,
+      signOutEmitter,
+      profileChanges,
+    };
+  }
+
+  /** Drives one failing run to completion so a Problems entry is published,
+   * then returns — the shared setup for every lifecycle-clear test below. */
+  async function publishOneFailure(
+    connection: RecordedConnection,
+    handlers: RunCommandHandlers,
+  ): Promise<void> {
+    const failing = handlers.runFile();
+    await flush();
+    const job = connection.currentJob();
+    assert.ok(job, "the run should have created its job");
+    for (const line of TRACEBACK_LINES) job.push(line);
+    job.finish(false, "ZeroDivisionError: division by zero");
+    await failing;
   }
 
   it("publishes one error at the innermost mapped frame on a failed run, then clears it on the next run", async () => {
@@ -235,5 +275,61 @@ describe("run commands — Problems-panel diagnostics (4d)", () => {
     await failing;
 
     assert.deepEqual([...(collection.get(uri) ?? [])], []);
+  });
+
+  describe("lifecycle clears (Phase 5d-iv)", () => {
+    it("clears a file's entry when its document closes", async () => {
+      const connection = createRecordedConnection({
+        profileId: PROFILE_ID,
+        profileName: PROFILE_NAME,
+      });
+      const { handlers, targets, collection, uri, document, closeEmitter } =
+        await build(connection);
+      await targets.setKind("viya");
+      await publishOneFailure(connection, handlers);
+      assert.equal((collection.get(uri) ?? []).length, 1);
+
+      closeEmitter.fire(document);
+      assert.deepEqual([...(collection.get(uri) ?? [])], []);
+    });
+
+    it("clears the whole collection on sign-out", async () => {
+      const connection = createRecordedConnection({
+        profileId: PROFILE_ID,
+        profileName: PROFILE_NAME,
+      });
+      const { handlers, targets, collection, uri, signOutEmitter } =
+        await build(connection);
+      await targets.setKind("viya");
+      await publishOneFailure(connection, handlers);
+      assert.equal((collection.get(uri) ?? []).length, 1);
+
+      signOutEmitter.fire();
+      assert.deepEqual([...(collection.get(uri) ?? [])], []);
+    });
+
+    it("clears the whole collection when the run target flips to Local, but not on a viya→viya profile switch", async () => {
+      const connection = createRecordedConnection({
+        profileId: PROFILE_ID,
+        profileName: PROFILE_NAME,
+      });
+      const { handlers, targets, collection, uri, profileChanges } =
+        await build(connection);
+      await targets.setKind("viya");
+      await publishOneFailure(connection, handlers);
+      assert.equal((collection.get(uri) ?? []).length, 1);
+
+      // A profile switch while still parked on Viya fires the same
+      // `onDidChange` — the entry stays.
+      profileChanges.fire();
+      assert.equal(
+        (collection.get(uri) ?? []).length,
+        1,
+        "viya→viya switch leaves the entry alone",
+      );
+
+      await targets.setKind("local");
+      assert.deepEqual([...(collection.get(uri) ?? [])], []);
+    });
   });
 });

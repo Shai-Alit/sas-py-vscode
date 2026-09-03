@@ -119,9 +119,10 @@ recommendation, not a barrier._
 items, one PR each (Sean's call, 2026-09-02): **5d-i** ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)),
 **5d-ii** ([PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)),
 **5d-iii** ([PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92)) all
-merged; **item 4** (diagnostics-lifecycle gaps) is the last. Item 1 turned out
-to be a real `src/` change rather than the docs decision the Plan anticipated,
-so it did not group with the test-only BOM fixture.
+merged; **5d-iv** (item 4, diagnostics-lifecycle gaps) is implemented — see its
+entry below — and is the last of the four. Item 1 turned out to be a real
+`src/` change rather than the docs decision the Plan anticipated, so it did not
+group with the test-only BOM fixture.
 
 1. ~~**Certificate escape hatch.** Decide whether an incomplete certificate
    chain needs a user-facing workaround (compare the SAS extension's own
@@ -392,12 +393,132 @@ so it did not group with the test-only BOM fixture.
    child, so `@vscode/test-electron` launches `Code.exe` as bare Node. Ran
    green here by stripping those vars for the one command. Worth a harness fix
    (unset them in `runTest.js`) in a later infra slice.
-4. **Diagnostics-lifecycle gaps.** Clear `RunDiagnostics`'
+4. ~~**Diagnostics-lifecycle gaps.** Clear `RunDiagnostics`'
    `DiagnosticCollection` (`src/run/diagnostics.ts`) on document close, on
    profile sign-out, and on a run-target flip to Local — not only on the next
    run of the same file. Add a per-run token to `RevealFrameMessage`
    (`resultPanelModel.ts`/`resultPanel.ts`) so a `revealFrame` message queued
-   before a new run started can't resolve against that new run's frame data.
+   before a new run started can't resolve against that new run's frame
+   data.~~ **Done — slice 5d-iv.** This closes both gaps `phase-4.md`'s 4d
+   entry deferred here, and with it all four of 5d.
+
+   **(a) — clearing the Problems collection.** `RunDiagnostics` gains
+   `clearAll()` (`collection.clear()`), the collection-wide counterpart to
+   `clearFor`. `createRunCommandHandlers` (`src/run/commands.ts`) wires the
+   three new triggers — the one place the "when to clear" now lives, so one
+   integration suite covers it:
+   - **run target flipped to Local** — the existing `targets.onDidChange`
+     subscription, now gated `if (targets.kind() === "local")
+     diagnostics.clearAll()`. A viya→viya profile switch fires the same event
+     and is deliberately left alone: a run against the new profile could still
+     be about the same code, and nothing here can tell whose entry it was.
+   - **document close** — a new subscription to
+     `vscode.workspace.onDidCloseTextDocument` → `clearFor(document.uri)`.
+     Unconditional — `clearFor` on a URI with no entry is a documented safe
+     no-op, so no `languageId`/`scheme` filter. Injectable as
+     `RunCommandDeps.onDidCloseTextDocument` (defaulting to the real event),
+     matching the rest of `RunCommandDeps`' "a test cannot close a real
+     editor" rationale. `onDidCloseTextDocument` also fires on a language-id
+     change (VS Code's own API note), so a file switched out of Python mode
+     clears its entry too — fine, it is no longer a Python file.
+   - **profile sign-out** — a new `RunCommandDeps.onDidSignOut` event →
+     `clearAll()`, fed by a **new `ViyaAuthenticationProvider.onDidSignOut`**
+     that fires only from `removeSession` (the palette `Sign Out` command and
+     the Accounts menu both route through it, nothing else does). The first
+     draft derived this from the `auth.onDidChangeSessions` listener
+     `extension.ts` already runs, but the review pass caught that `removed`
+     there is a *diff* of the published session list — it also fires for a
+     profile a slow renewal or an unreadable keychain entry dropped for one
+     poll (`allSessions`/`within`), which would wipe the Problems panel on
+     transient network weather. `forgetProfile`, the diff's other consumer,
+     tolerates a false positive (the backend reconnects); `clearAll` does not,
+     so it gets its own deliberate-only signal.
+
+   All three subscriptions are torn down in `createRunCommandHandlers`'
+   existing `dispose()`.
+
+   **(b) — the per-run token.** `resultPanel.ts` gains `currentRunToken`, a
+   monotonic counter bumped in `startRun` (starts at 0, so the first run's
+   token is 1; a message can only echo a token a real traceback item carried,
+   and `revealFrame`'s `currentOrigin` guard covers the no-run-yet case where
+   the counter is still 0). It is stamped onto the
+   traceback `RenderItem` (`toRenderItem` gains a `runToken` parameter) rather
+   than kept as transient webview state — so it survives the panel's
+   `retainContextWhenHidden: false` hide/show rebuild and full backlog replay
+   for free, because the replayed `output` message carries it. `resultPanelDom.ts`
+   passes `(frameIndex, runToken)` to `onFrameActivate`; `src/webview/entry.ts`
+   echoes both in the `revealFrame` message; `RevealFrameMessage` and
+   `isRevealFrameMessage` gain `runToken` (validated as a non-negative
+   integer, like `frameIndex`); `ResultPanel.revealFrame` drops a message
+   whose token is not `currentRunToken` before any origin/frame lookup. The
+   `"reset"` message is left unchanged — the token only needs to reach the one
+   message the webview sends back.
+
+   **Correction to `phase-4.md`'s 4d note.** That note said a per-run token
+   would close "(b) and the two-`<ol>`s-in-one-run case together." It closes
+   (b). It does *not* close the two-`<ol>` alias — one run is one token, so
+   two tracebacks in a single run would share it — but that case stays
+   structurally impossible upstream: `procPython.ts`'s `buildFailureOutcome`
+   emits exactly one `application/vnd.python.traceback` per run.
+   `resultPanel.ts`'s `currentFrames` doc comment and `phase-4.md`'s note are
+   both updated to say so.
+
+   **Landed:** `src/run/diagnostics.ts` (`clearAll`), `src/run/commands.ts`
+   (`RunCommandDeps.onDidCloseTextDocument`/`onDidSignOut`, the three
+   subscriptions), `src/auth/authProvider.ts` (new `onDidSignOut`, fired from
+   `removeSession`), `src/extension.ts` (wires `auth.onDidSignOut` through to
+   the run commands), `src/run/resultPanelModel.ts` (`runToken` on the
+   traceback `RenderItem` and `RevealFrameMessage`, both guards),
+   `src/run/resultPanelDom.ts` (`onFrameActivate` arity), `src/webview/entry.ts`
+   (echo the token), `src/run/resultPanel.ts` (`currentRunToken`, the drop).
+   Tests: `result-panel-model.test.ts` (token threaded through `toRenderItem`,
+   both guards' new arms), `result-panel-dom.test.ts` (`onFrameActivate` gets
+   the token), `result-panel.test.ts` (a superseded-token `revealFrame` is
+   dropped, the current one still resolves), `commands-diagnostics.test.ts`
+   (all three clear triggers, plus the viya→viya negative),
+   `diagnostics.test.ts` (`clearAll` across two URIs), `auth-provider.test.ts`
+   (`onDidSignOut` fires on a deliberate sign-out, not on a vanished-session
+   diff). Docs:
+   `docs/architecture/diagnostics-surface.md` (new "Lifecycle" section),
+   `phase-4.md`'s 4d deferred note (resolved pointer + the correction),
+   `CHANGELOG.md`, `docs/dev/manual-test-pass.md` §7/§8.
+
+   **Checks:** `npm run verify` green (1191 passing; coverage
+   94.22/95.16/93.78/94.22, all above the `.c8rc.json` floors — no ratchet
+   move) and `npm run test:integration` green (Sean's runs).
+
+   **Review:** one adversarial pass, 2026-09-02, in the separate VS Code
+   Claude Code window. No P0/P1. Six findings, all verified independently and
+   folded in: **(1, P2)** the sign-out clear was derived from
+   `onDidChangeSessions`'s `removed`, which is a diff of the published list and
+   also fires when a slow renewal or an unreadable keychain entry drops a
+   profile for one poll — a transient condition that would have wiped the
+   Problems panel. Fixed by adding `ViyaAuthenticationProvider.onDidSignOut`,
+   fired only from `removeSession` (both deliberate sign-out routes go through
+   it), and consuming that instead; the `extension.ts` `EventEmitter` bridge
+   is gone. **(2, P3)** `onDidCloseTextDocument` also fires on a language-id
+   change — comment amended to own that (a file leaving Python mode clearing
+   its entry is correct). **(3, P3)** the `currentRunToken` doc comment and
+   `phase-5.md` both claimed "a token-0 message never matches"; it does match
+   the pre-first-run counter and is stopped by the `currentOrigin` guard —
+   both corrected. **(4, P3)** the sign-out rationale leaned on "a run only
+   ever targets the active one," which argues the other way; restated as "an
+   entry carries no profile tag, so there is nothing finer to clear."
+   **(5, P3)** `isRenderItem` accepted any `number` for `runToken` while
+   `isRevealFrameMessage` demanded a non-negative integer — aligned, with the
+   negative test extended. **(6, P3, test)** `sendRevealFrame`'s `?? 0`
+   fallback masked a missing `sendReady()`; it now throws when no token is
+   derivable. The reviewer also recorded two checks that held: `setKind`
+   awaits its `workspaceState` write before firing, so `targets.kind()` in the
+   handler is never stale; and the token genuinely survives the panel rebuild
+   because `emit` clears the backlog on `"reset"`.
+
+   **Verified live 2026-09-03** against `verde` with a branch `.vsix` (a first
+   run used a stale build; a window reload sorted it). All three clears in §7's
+   new row hold — close the file's editor tab, **Sign Out**, and flip the run
+   target to Local each drop the Problems entry; reopen and switch-back leave
+   it gone; a viya→viya profile switch leaves it in place. `manual-test-pass.md`
+   §7 ticked. **Nothing outstanding before the PR opens.**
 
 ☐ **5a — Drift gate hardening.** Audit `scripts/check-contracts.mjs` against
 three specific gaps found in this session's grounding survey, rather than a

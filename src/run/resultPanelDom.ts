@@ -64,16 +64,18 @@ export interface DomPort<El> {
  * one more node to it. Safe to call repeatedly as messages stream in — it
  * never re-reads or replaces what an earlier call already built.
  *
- * `onFrameActivate` (Phase 4d) is called with a traceback frame's index when
- * the user activates its `<li>`. Optional: a caller that does not supply it
- * (or a run whose frames are none of them mappable) renders every frame as
- * plain, non-interactive text — the pre-4d behaviour. `src/webview/entry.ts`
- * supplies one that posts a `revealFrame` message to the host. */
+ * `onFrameActivate` (Phase 4d) is called when the user activates a traceback
+ * frame's `<li>`, with that frame's index and — from Phase 5d-iv — the
+ * `runToken` the host stamped on the traceback item. Optional: a caller that
+ * does not supply it (or a run whose frames are none of them mappable)
+ * renders every frame as plain, non-interactive text — the pre-4d behaviour.
+ * `src/webview/entry.ts` supplies one that posts a `revealFrame` message,
+ * token included, to the host. */
 export function applyMessage<El>(
   port: DomPort<El>,
   root: El,
   message: ResultPanelMessage,
-  onFrameActivate?: (frameIndex: number) => void,
+  onFrameActivate?: (frameIndex: number, runToken: number) => void,
 ): void {
   switch (message.type) {
     case "reset":
@@ -102,7 +104,7 @@ export function applyMessage<El>(
 function buildItem<El>(
   port: DomPort<El>,
   item: RenderItem,
-  onFrameActivate?: (frameIndex: number) => void,
+  onFrameActivate?: (frameIndex: number, runToken: number) => void,
 ): El {
   switch (item.kind) {
     case "text": {
@@ -132,7 +134,7 @@ function buildItem<El>(
 function buildTraceback<El>(
   port: DomPort<El>,
   item: Extract<RenderItem, { kind: "traceback" }>,
-  onFrameActivate?: (frameIndex: number) => void,
+  onFrameActivate?: (frameIndex: number, runToken: number) => void,
 ): El {
   const container = port.createElement("div");
   port.setAttribute(container, "class", "python-on-viya-traceback");
@@ -174,7 +176,7 @@ function buildTraceback<El>(
         port.setAttribute(button, "tabindex", "0");
         port.setText(button, line);
         port.onActivate(button, () => {
-          onFrameActivate(index);
+          onFrameActivate(index, item.runToken);
         });
         port.appendChild(entry, button);
       } else {

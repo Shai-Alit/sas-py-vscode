@@ -117,7 +117,7 @@ Mutating (all three gates):
 | `viya4-job.test.ts` | resolve a context, start a session, `%put` a per-run marker, read the log to the end, delete the session | one session (deleted), one job (taken by the session teardown) |
 | `submission-corpus.test.ts` | upload five curated corpus files through a fileref and read each back byte for byte | one session (deleted), five filerefs |
 | `proc-python-rich-output.test.ts` | run a real matplotlib figure through `ProcPythonBackend`, assert the `image/png` and that the captured file is deleted after (ADR-0019) | one session (deleted), one job, one PNG written then deleted |
-| `viya4-job-cancel.test.ts` | submit a 30-second `data _null_` sleep, cancel it once it is running, assert `cancelJob`'s `If-Match` round trip is accepted (Findings 75/76) | one session (deleted after the cancelled step runs out its natural duration — see below), one job |
+| `viya4-job-cancel.test.ts` | submit a 30-second `data _null_` sleep (prefixed with a `%put` of a per-run random marker), cancel it once it is running, assert `cancelJob`'s `If-Match` round trip is accepted (Findings 75/76) | one session (deleted after the cancelled step runs out its natural duration — see below), one job |
 
 ### The cleanup contract for mutating tests
 

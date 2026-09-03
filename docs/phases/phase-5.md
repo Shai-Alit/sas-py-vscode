@@ -679,7 +679,21 @@ the trimmed section both build clean), `npm run check:copyright` (184 OK),
 from 5a — no `src/` touched), `npm run test:live` (11 pending / clean skip,
 exit 0). `test:integration` not warranted — no `src/` or integration-tier
 change, same call as 5a. **Review:** the adversarial pass was waived by Sean
-(2026-09-03) — test-files-plus-docs only, no `src/`.
+(2026-09-03) — test-files-plus-docs only, no `src/`. The two AI reviewers on
+[PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99) then raised one
+Major and two nits. **Major (fixed):** `viya4-job-cancel.test.ts` submitted a
+fully deterministic job under the fixed `SESSION_NAME`, so it did not meet
+`CONTRIBUTING.md`'s per-run-uniqueness rule for a mutating suite — the
+submitted step now starts with a `%put` of a `randomUUID`-derived marker
+(`viya4-job.test.ts`'s own pattern), so a leaked session or job is traceable
+to its run by `grep`; the marker is emitted, not read back. **Nits (one
+addressed, one deferred):** the flat `120_000` timeout does not cover
+`waitWhilePending`'s worst case the way `viya4-job.test.ts`'s computed ceiling
+does — the comment now owns that tradeoff (this suite has no long log-stream
+poll, and the two sibling live suites make the same choice); and
+`describeFailure` is now a fourth byte-identical copy across the live suites —
+left for its own small cleanup that lifts it into `test/helpers/live-gate.ts`
+rather than expanding this slice into three untouched files.
 
 **Live-verified 2026-09-03** against `verde` (Viya 4), token loaded via the
 `viya-api-probe` skill's creds mechanism, scoped run `npm run test:live --

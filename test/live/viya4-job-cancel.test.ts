@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 
 import {
   type ComputeClient,
@@ -80,9 +81,16 @@ const SLEEP_SECONDS = 30;
  * One compute session, alive for the length of the run and deleted in the
  * `after` hook — which, per Finding 76, blocks until the cancelled step's
  * natural end. One job, not deleted (nothing here deletes a job; the session's
- * teardown takes it). The session's name is `SESSION_NAME`, the constant inside
- * the module under test, and cannot be per-run unique for the reason
- * `viya4-job.test.ts` gives.
+ * teardown takes it).
+ *
+ * The session's name is `SESSION_NAME`, the constant inside the module under
+ * test, and cannot be per-run unique for the reason `viya4-job.test.ts` gives.
+ * `CONTRIBUTING.md`'s per-run-uniqueness requirement is met the same way that
+ * suite meets it: the submitted step is prefixed with a `%put` of a per-run
+ * random marker, so a session or job this run leaks (an `after`-hook failure,
+ * an overlapping run, a Mocha timeout mid-test) can be tied back to it by
+ * `grep`-ing that marker in the leaked resource's log. Nothing here reads the
+ * marker back — it only has to be *emitted*.
  */
 describe("live: Viya 4 job cancel (Findings 75/76)", function () {
   const target = liveTarget("viya4");
@@ -92,6 +100,17 @@ describe("live: Viya 4 job cancel (Findings 75/76)", function () {
   // the worst case is: session create + launch wait, then the full sleep, then
   // the teardown `deleteSession` waits out. Generous headroom over that, in the
   // shape `submission-corpus.test.ts` and `proc-python-rich-output.test.ts` use.
+  //
+  // A flat number, not `viya4-job.test.ts`'s computed
+  // `MAX_WAIT_WINDOWS * (DEFAULT_WAIT_SECONDS + WAIT_MARGIN_SECONDS) * 1000 + …`
+  // ceiling. That suite needs the formula because it then runs a long
+  // log-stream poll whose duration no constant bounds; this one has no such
+  // poll, only a session launch and two short bounded state polls. The cost of
+  // the flat number is that a pathologically slow-but-legitimate
+  // `waitWhilePending` would surface here as a Mocha timeout rather than as the
+  // slow launch it was — accepted, as the two sibling suites accept it, because
+  // that failure mode is rare and the formula's ~750 s ceiling turns a genuine
+  // hang into a twelve-minute wait.
   this.timeout(120_000);
 
   let client: ComputeClient | undefined;
@@ -163,8 +182,19 @@ describe("live: Viya 4 job cancel (Findings 75/76)", function () {
     );
     session = ready;
 
+    // The per-run breadcrumb. Hex and upper-case, not the UUID's own hyphenated
+    // form, so it survives the SAS macro processor unchanged — the same shape
+    // and reasoning as `viya4-job.test.ts`'s marker. `Math.random` is banned
+    // repository-wide (`eslint.config.mjs`); a collision here would let two
+    // runs' leaked resources look like one.
+    const marker = `PYTHONONVIYALIVE${randomUUID().replaceAll("-", "").toUpperCase()}`;
+
     const job = await expectOk(
+      // `%put` first — it runs near-instantly and stamps the marker into the
+      // session and job logs before the `data` step sleeps, so a leaked
+      // resource carries it whether or not the sleep ever started.
       createJob(compute, ready, [
+        `%put ${marker};`,
         "data _null_;",
         `  rc = sleep(${String(SLEEP_SECONDS)}, 1);`,
         "run;",

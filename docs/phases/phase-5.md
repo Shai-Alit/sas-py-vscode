@@ -785,10 +785,15 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    bullets removed, its "Nothing runs Python yet" intro line rewritten;
    `connection-profiles.md`'s "Running code is a later slice" section retitled
    and pointed at the new pages. `CHANGELOG.md` `[Unreleased]` entry added.
-   **One `src/` follow-up noted, not fixed here** (would take 5c-i out of
-   docs-only): `src/run/outputChannel.ts`'s `writeOutput` still labels an
-   image/HTML output `"… the result panel to view it ships in a later slice"`,
-   stale since 3d-ii shipped the panel — its own small `fix(run):` change.
+   **Two `src/` comment/string follow-ups noted, not fixed here** (would take
+   5c-i out of docs-only) — one small `fix(run):` PR for both:
+   `src/run/outputChannel.ts`'s `writeOutput` still labels an image/HTML output
+   `"… the result panel to view it ships in a later slice"`, stale since 3d-ii
+   shipped the panel; and `src/run/commands.ts`'s `targets.onDidChange` inline
+   comment says flipping the target to Local "strands every existing one",
+   contradicted by the `diagnostics.clearAll()` call directly below it (the
+   `github-actions` reviewer on PR #102 caught the same wording copied into
+   `diagnostics.md`, fixed there in `e6a061f`).
 2. A troubleshooting guide assembled from what actually went wrong during
    Phases 1–4 — source material is the phase files' own Probe findings
    sections and `STATUS.md`'s incident record, not a generic FAQ.

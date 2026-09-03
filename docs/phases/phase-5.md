@@ -805,7 +805,9 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    Phases 1–4 — source material is the phase files' own Probe findings
    sections and `STATUS.md`'s incident record, not a generic FAQ.
 
-   **5c-ii implemented 2026-09-03; not yet reviewed or merged, no PR.**
+   **5c-ii merged 2026-09-03 as
+   [PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), squashed as
+   `1f073e4` on `main`.**
    Docs-only, so no adversarial pass per this project's own rule (the diff is
    its own evidence); `check:docs` (incl. `docs:build`) and `check:secrets` are
    the checks it can plausibly fail. One new top-level page
@@ -826,8 +828,20 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    extension" sidebar; `docs/README.md`'s page list extended; `CHANGELOG.md`
    `[Unreleased]` entry added. No new probe was opened — every entry rests on a
    finding already recorded; Finding 74's source-side resolution stays its own
-   tracked probe follow-up, not part of this slice. Branch
-   `phase-5c-ii-troubleshooting`, cut from `main` after 5c-i's merge.
+   tracked probe follow-up, not part of this slice.
+
+   **Review:** CI green; both AI reviewers passed with no blocking findings and
+   an independent evidence-check of every finding citation against source. Two
+   non-blocking notes, both folded into the merge-record follow-up
+   (`docs/record-pr-104`): (1) `STATUS.md` / this entry had cited "Finding 6"
+   for the sign-in material — `phase-1.md`'s Finding 6 is the unrelated
+   `/identities/@currentUser` media-type 406 — corrected to Findings 9/10
+   pre-merge (`795b48f` on the branch); (2) the shipped page's "fileref already
+   exists" entry said the two-window race "clears itself in up to a minute",
+   which was the pre-fix *single-window* reload measurement — the residual
+   two-window case is absorbed by Finding 72's bounded assign-retry instead, so
+   the sentence was reworded to "close the other window on that folder and run
+   again". The `phase-5c-ii-troubleshooting` branch is deleted.
 3. Marketplace metadata: an icon asset, flipping `package.json`'s `"private"`
    to `false`, bumping `version` to `0.1.0` (in the release PR itself, per
    `docs/release-checklist.md`'s D1/D2 — not before), README screenshots/GIFs.

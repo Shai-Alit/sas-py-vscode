@@ -829,8 +829,10 @@ diff is its own evidence); `check:docs` (incl. `docs:build`) and `check:secrets`
 are the checks it can plausibly fail. One new top-level page
 `docs/troubleshooting.md` — symptom-indexed, assembled from failures actually
 hit in Phases 1–4 rather than a generic FAQ: the sign-in paste-code route and
-redirect/`401`/certificate failures (Findings 6/9/10), the per-response
-context-links message and the no-Python-context case (`connecting.md`, phase-2b),
+redirect-mismatch message (Finding 10) and the bare-`401` ambiguity (Finding 9),
+with the private-CA / TLS case pointing at `signing-in.md` (5d-i, no numbered
+finding), the per-response context-links message and the no-Python-context case
+(`connecting.md`, phase-2b),
 session reaping (Finding 18) and the post-reload stale-fileref collision and its
 seed-the-counter fix (Finding 72), the measured cancel caveat (Findings 75–76),
 the interpreter banner / `>>>` noise (Finding 74, still a probe follow-up),

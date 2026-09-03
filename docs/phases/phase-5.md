@@ -809,8 +809,10 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    Docs-only, so no adversarial pass per this project's own rule (the diff is
    its own evidence); `check:docs` (incl. `docs:build`) and `check:secrets` are
    the checks it can plausibly fail. One new top-level page
-   `docs/troubleshooting.md`, symptom-indexed, drawing on: Findings 6/9/10 (the
-   paste-code route, the bare-`401` ambiguity, the redirect-mismatch message),
+   `docs/troubleshooting.md`, symptom-indexed, drawing on: Finding 10 (the
+   paste-code route and the redirect-mismatch message) and Finding 9 (the
+   bare-`401` ambiguity), with the private-CA / TLS case pointing at
+   `signing-in.md` (5d-i, no numbered finding),
    the per-response context-links message (`connecting.md`'s existing write-up,
    phase-2b), Finding 29 (a stale session id is one uniform `404`, no reason
    available), Finding 18's ~15-minute idle reap, Finding 72 (the post-reload

@@ -679,10 +679,27 @@ the trimmed section both build clean), `npm run check:copyright` (184 OK),
 from 5a — no `src/` touched), `npm run test:live` (11 pending / clean skip,
 exit 0). `test:integration` not warranted — no `src/` or integration-tier
 change, same call as 5a. **Review:** the adversarial pass was waived by Sean
-(2026-09-03) — test-files-plus-docs only, no `src/`. **Still open:** a live run
-of `viya4-job-cancel.test.ts` against `verde` (the Findings 75/76 guard — real
-wire-behaviour risk) before or alongside the PR; the `viya35` scaffold's live
-run is deferred to the end of Phase 5 per the note above.
+(2026-09-03) — test-files-plus-docs only, no `src/`.
+
+**Live-verified 2026-09-03** against `verde` (Viya 4), token loaded via the
+`viya-api-probe` skill's creds mechanism, scoped run `npm run test:live --
+--grep "job cancel"`: **1 passing, 8.0 s, exit 0**, no `console.warn` lines —
+the job was observed running before the cancel, `cancelJob` returned `ok` (the
+fresh-`ETag` `If-Match` `PUT` accepted, not the `428` a bare cancel draws — the
+Finding 75 guard holds live), the job settled to a terminal `canceled` state,
+and the `after` hook deleted the session. Node needed `NODE_OPTIONS=--use-system-ca`
+to reach the compute service — `NODE_EXTRA_CA_CERTS=/c/certs/cacert.pem` was
+*not* sufficient (the first attempt failed `compute-unreachable` on the first
+`/compute/contexts` call), matching `submission-corpus.test.ts`'s own P33 note.
+**Incidental observation, not asserted:** the SAS `data _null_; rc = sleep(30,
+1); run;` step cancelled *promptly* (~8 s, not its full 30 s), unlike Finding
+76's `PROC PYTHON` loop which ran to its natural end — consistent with Finding
+76's reasoning that a SAS `data` step has statement boundaries SAS controls
+where a single Python call inside one `submit`/`endsubmit` block does not. The
+suite makes no timing claim either way.
+
+The `viya35` scaffold's live run is deferred to the end of Phase 5 per the note
+above; **nothing else is open before this merges.**
 
 ☐ **5c — Docs publishing and release engineering.**
 

@@ -88,13 +88,18 @@ NODE_EXTRA_CA_CERTS=/path/to/viya-ca.pem npm run test:live
 ```
 
 The file must contain the **issuing** authority, not only the server's own leaf.
-`node --use-system-ca` is the alternative where the root is already installed
-locally. Neither belongs in the test code — a live tier that disables
-verification to go green is worse than one that skips.
+`NODE_OPTIONS=--use-system-ca` is the alternative where the root is already in
+the OS store — and on a SAS-issued machine pointed at an internal `verde`-style
+deployment it is the one that works: `NODE_EXTRA_CA_CERTS` with the local
+`cacert.pem` bundle was **not** sufficient for Node there (2026-09-03), even
+though `curl --cacert` against the same bundle succeeded. Neither belongs in the
+test code — a live tier that disables verification to go green is worse than one
+that skips.
 
 If every case fails with `compute-unreachable`, look locally first: that is what
 a TLS or proxy problem on *your* machine looks like from here. The connectivity
-suite fails the same way, which is why it is worth running on its own first.
+suite fails the same way (as `fetch failed` rather than `compute-unreachable`),
+which is why it is worth running on its own first.
 
 ## The suites, and what each costs the deployment
 

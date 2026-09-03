@@ -708,11 +708,18 @@ sidebar. **Checks green this session:** `typecheck`, `lint`, `prettier`,
 `test:unit` (1197 passing, unchanged from 5a), `test:live` (clean skip).
 `test:integration` not warranted (no `src/` change — same call as 5a). The
 adversarial review pass was **waived by Sean** (2026-09-03, test-files-plus-docs
-only). **Open:** a live run of `viya4-job-cancel.test.ts` against `verde` (real
-wire-behaviour risk) before or alongside the PR. **The `viya35` scaffold's live
-run — against the 3.5 deployment that was deploying as this landed — is deferred
-to the end of Phase 5** (Sean's call, 2026-09-03), with all other 3.5 testing.
-Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry. Then 5c.
+only). **`viya4-job-cancel.test.ts` live-verified 2026-09-03** against `verde`
+(token via the `viya-api-probe` skill, scoped `--grep "job cancel"` run): 1
+passing, 8 s, exit 0, no `console.warn`s — `cancelJob` returned `ok` (the
+`If-Match` `PUT` accepted, not the `428` a bare cancel draws), the job settled to
+`canceled`, the session cleaned up. Node needed `NODE_OPTIONS=--use-system-ca`
+(the `cacert.pem` bundle via `NODE_EXTRA_CA_CERTS` was not enough). Incidental:
+the SAS `data _null_` sleep cancelled promptly (~8 s), unlike Finding 76's
+`PROC PYTHON` loop — consistent with that finding's own reasoning, not asserted.
+**The `viya35` scaffold's live run — against the 3.5 deployment that was
+deploying as this landed — is deferred to the end of Phase 5** (Sean's call,
+2026-09-03), with all other 3.5 testing. **Nothing else open before this
+merges.** Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry. Then 5c.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

@@ -585,8 +585,12 @@ function listFixtureDirs(root) {
     const full = join(root, FIXTURE_DIR, entry);
     try {
       if (!statSync(full).isDirectory()) continue;
-      all.push(entry);
+      // Read the contents before recording the directory as present, so a
+      // directory that vanishes or turns unreadable between the listing and
+      // now drops out of *both* lists rather than landing in `all` with the
+      // failure swallowed underneath it.
       const content = readdirSync(full).filter((name) => !name.startsWith("."));
+      all.push(entry);
       if (content.length === 0) empty.push(entry);
     } catch {
       // Vanished or unreadable between the listing and now: leave it out.

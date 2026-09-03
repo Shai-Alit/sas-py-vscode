@@ -504,13 +504,16 @@ describe("Viya authentication provider", () => {
       });
     });
 
-    it("reports a vanished session as removed, but does not fire onDidSignOut for it", async () => {
+    it("reports a session as removed when it drops off a poll, but does not fire onDidSignOut for it", async () => {
       // A profile can leave the published list without the user signing out —
-      // an unreadable keychain entry, or a renewal that misses the resolve
-      // budget (`within`). That still fires `onDidChangeSessions` with a
-      // `removed`, whose existing consumer (`forgetProfile`) is self-healing.
-      // `onDidSignOut` (Phase 5d-iv) must not fire for it: its consumer clears
-      // the Problems panel, which a transient drop should not.
+      // an unreadable keychain entry, a renewal that misses the resolve budget
+      // (`within`), or trust revoked mid-window. All of them make `allSessions`
+      // publish a shorter list, which fires `onDidChangeSessions` with a
+      // `removed`; its existing consumer (`forgetProfile`) is self-healing.
+      // `onDidSignOut` (Phase 5d-iv) must not fire for it — its consumer clears
+      // the Problems panel, which a transient drop should not. Trust revocation
+      // is the one such drop that doesn't need the in-memory token to have
+      // expired first (`getSessions` serves a live token straight from memory).
       await h.sessions.write(PROFILE_ID, {
         accessToken: FAKE_ACCESS,
         refreshToken: FAKE_REFRESH,
@@ -518,10 +521,7 @@ describe("Viya authentication provider", () => {
       });
       await h.provider.getSessions();
 
-      // The stored credential disappears out from under a still-published
-      // session — the same end state a budget miss or a keychain read failure
-      // reaches, without needing to stall a deployment.
-      await h.sessions.clear(PROFILE_ID);
+      h.trust.granted = false;
       await h.provider.getSessions();
 
       assert.equal(

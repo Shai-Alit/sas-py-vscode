@@ -804,6 +804,30 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
 2. A troubleshooting guide assembled from what actually went wrong during
    Phases 1–4 — source material is the phase files' own Probe findings
    sections and `STATUS.md`'s incident record, not a generic FAQ.
+
+   **5c-ii implemented 2026-09-03; not yet reviewed or merged, no PR.**
+   Docs-only, so no adversarial pass per this project's own rule (the diff is
+   its own evidence); `check:docs` (incl. `docs:build`) and `check:secrets` are
+   the checks it can plausibly fail. One new top-level page
+   `docs/troubleshooting.md`, symptom-indexed, drawing on: Finding 10 (the
+   paste-code route and the redirect-mismatch message) and Finding 9 (the
+   bare-`401` ambiguity), with the private-CA / TLS case pointing at
+   `signing-in.md` (5d-i, no numbered finding),
+   the per-response context-links message (`connecting.md`'s existing write-up,
+   phase-2b), Finding 29 (a stale session id is one uniform `404`, no reason
+   available), Finding 18's ~15-minute idle reap, Finding 72 (the post-reload
+   stale-fileref collision, and its seed-the-counter fix), Findings 33/64 +
+   ADR-0014 (why upload-plus-`infile=` cannot poison the SAS parser, so Reset
+   Python State is for a wedged *namespace* not a submission problem), Finding
+   74 (interpreter banner / `>>>` noise, still a probe follow-up), ADR-0019 +
+   Finding 73 (rich-output capture needs a written file; the 10 MiB skip vs the
+   OOM-during-generation kill are different failures), and Findings 75–76 (the
+   cancel caveat). Registered in `.vitepress/config.mjs`'s "Using the
+   extension" sidebar; `docs/README.md`'s page list extended; `CHANGELOG.md`
+   `[Unreleased]` entry added. No new probe was opened — every entry rests on a
+   finding already recorded; Finding 74's source-side resolution stays its own
+   tracked probe follow-up, not part of this slice. Branch
+   `phase-5c-ii-troubleshooting`, cut from `main` after 5c-i's merge.
 3. Marketplace metadata: an icon asset, flipping `package.json`'s `"private"`
    to `false`, bumping `version` to `0.1.0` (in the release PR itself, per
    `docs/release-checklist.md`'s D1/D2 — not before), README screenshots/GIFs.

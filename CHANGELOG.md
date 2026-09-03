@@ -12,6 +12,17 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **A troubleshooting guide.** Slice 5c-ii adds
+  [Troubleshooting](docs/troubleshooting.md) to the documentation site — a
+  single symptom-indexed page assembled from failures actually hit during
+  Phases 1–4 (the phase files' Probe findings and the incident record), not a
+  generic FAQ. It covers the sign-in paste-code route and redirect/`401`/
+  certificate failures, the per-response context-links message, a context with
+  no Python interpreter, session reaping and the post-reload stale-fileref
+  collision, the measured cancel caveat (Findings 75–76), the interpreter
+  banner/`>>>` noise, rich-output capture and the out-of-memory figure case
+  (Finding 73), and a short reset-vs-reconnect-vs-reload guide. Registered in
+  the VitePress sidebar and linked from `docs/README.md`. Docs only.
 - **User-facing documentation for running Python.** Slice 5c-i adds three pages
   to the documentation site — [Running Python](docs/running-python.md) (Run
   File/Selection, the output channel, the Result panel, Reset Python State, the

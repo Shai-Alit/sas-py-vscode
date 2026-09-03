@@ -587,36 +587,48 @@ of either mode — so §6's "Hello world streams clean" no longer holds for Run
 File; not a 5d-iii regression (the stream is untouched), folded into that box
 and the probe. See `docs/phases/phase-5.md`'s Runbook item 3.
 
-**5d-iv (diagnostics-lifecycle gaps) implemented 2026-09-02 on branch
-`5d-iv-diagnostics-lifecycle`; not yet verified, reviewed, or merged.** This is
-the last of 5d's four items. **(a) Clearing the Problems collection:**
-`RunDiagnostics` gains `clearAll()`; `createRunCommandHandlers`
-(`src/run/commands.ts`) wires three triggers, all in that one place — a
-run-target flip to Local (existing `targets.onDidChange` sub, gated
-`kind() === "local"`; a viya→viya profile switch is deliberately left alone), a
-document close (`vscode.workspace.onDidCloseTextDocument`, injectable as
+**5d-iv (diagnostics-lifecycle gaps) implemented and reviewed 2026-09-02 on
+branch `5d-iv-diagnostics-lifecycle`; not yet merged.** This is the last of
+5d's four items. **(a) Clearing the Problems collection:** `RunDiagnostics`
+gains `clearAll()`; `createRunCommandHandlers` (`src/run/commands.ts`) wires
+three triggers, all in that one place — a run-target flip to Local (existing
+`targets.onDidChange` sub, gated `kind() === "local"`; a viya→viya profile
+switch is deliberately left alone), a document close
+(`vscode.workspace.onDidCloseTextDocument`, injectable as
 `RunCommandDeps.onDidCloseTextDocument`), and a profile sign-out (new
-`RunCommandDeps.onDidSignOut`, fed by an `EventEmitter` `extension.ts` fires
-from the `auth.onDidChangeSessions` listener it already runs). **(b) Per-run
-token:** `resultPanel.ts` gains a monotonic `currentRunToken` bumped in
-`startRun`, stamped onto the traceback `RenderItem` (`toRenderItem` gains the
-param) so it survives the panel's hide/show rebuild + backlog replay; the
-webview echoes it in `revealFrame`; `RevealFrameMessage`/`isRevealFrameMessage`
-gain `runToken` (non-negative integer, like `frameIndex`);
-`ResultPanel.revealFrame` drops a message whose token isn't the current run's.
-**Correction to phase-4.md's 4d note:** the token closes (b), not the
-"two-`<ol>`s-in-one-run" alias it also named — that stays structurally
-impossible (`buildFailureOutcome` emits one traceback per run); the note and
-`resultPanel.ts`'s `currentFrames` comment are both updated. Tests across
-`result-panel-model`/`-dom`/`result-panel`/`commands-diagnostics`/`diagnostics`.
-Docs: `diagnostics-surface.md` (new Lifecycle section), phase-4.md pointer,
-CHANGELOG, `manual-test-pass.md` §7 (new unrun live row) / §8. **Checks run
-here:** `npm run typecheck` (all three projects), `prettier --check`,
-`check:copyright`/`check:secrets`/`check:coverage-scope`, `docs:build` — all
-green; no coverage-ratchet move expected. **Open before a PR:** `npm run
-verify` + `npm run test:integration` (Sean's), the adversarial review pass, and
-the live pass (§7's new row). Then 5a → 5b → 5c. See `docs/phases/phase-5.md`'s
-Runbook item 4.
+`RunCommandDeps.onDidSignOut`). **(b) Per-run token:** `resultPanel.ts` gains a
+monotonic `currentRunToken` bumped in `startRun`, stamped onto the traceback
+`RenderItem` (`toRenderItem` gains the param) so it survives the panel's
+hide/show rebuild + backlog replay; the webview echoes it in `revealFrame`;
+`RevealFrameMessage`/`isRevealFrameMessage` gain `runToken` (non-negative
+integer, like `frameIndex`); `ResultPanel.revealFrame` drops a message whose
+token isn't the current run's. **Correction to phase-4.md's 4d note:** the
+token closes (b), not the "two-`<ol>`s-in-one-run" alias it also named — that
+stays structurally impossible (`buildFailureOutcome` emits one traceback per
+run); the note and `resultPanel.ts`'s `currentFrames` comment are both updated.
+
+**`npm run verify` + `npm run test:integration` green (Sean's runs)** — 1191
+passing, coverage 94.22/95.16/93.78/94.22, no ratchet move. **Adversarial
+review pass done 2026-09-02** (separate VS Code Claude Code window). No P0/P1;
+six findings, all verified and folded in. The one that mattered: **the sign-out
+clear was keyed off `auth.onDidChangeSessions`'s `removed`, which is a diff of
+the published session list — it also fires when a slow renewal or an unreadable
+keychain entry drops a profile for one poll**, so transient network weather
+would have wiped the Problems panel. Fixed by adding a dedicated
+`ViyaAuthenticationProvider.onDidSignOut` that fires only from `removeSession`
+(both deliberate sign-out routes go through it); `extension.ts` wires that
+through instead, and its `EventEmitter` bridge is gone. The other five were P3:
+an `onDidCloseTextDocument`-also-fires-on-language-change comment gap; a wrong
+"token 0 never matches" claim in two places; a self-undermining sign-out
+rationale; `isRenderItem` accepting any `number` for `runToken` where
+`isRevealFrameMessage` wanted a non-negative integer; and a test-helper `?? 0`
+fallback that masked a missing `sendReady()`. All fixed in the same branch,
+`authProvider.ts` + a new `auth-provider.test.ts` case added. Docs
+(`diagnostics-surface.md`, phase-4.md pointer, phase-5.md 5d-iv entry,
+CHANGELOG, `manual-test-pass.md` §7/§8) all reflect the final shape.
+
+**Open before a PR:** the live pass only (§7's new row — needs a deployment).
+Then 5a → 5b → 5c. See `docs/phases/phase-5.md`'s Runbook item 4.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

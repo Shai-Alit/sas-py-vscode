@@ -310,7 +310,13 @@ export function isRenderItem(value: unknown): value is RenderItem {
         typeof value.message === "string" &&
         isStringArray(value.frameLines) &&
         isRenderTracebackFrameArray(value.frames) &&
-        typeof value.runToken === "number"
+        // Same shape `isRevealFrameMessage` demands of the token it gets back
+        // — a non-negative integer — so the two guards agree on the one value
+        // that makes a round trip (a `NaN`/`-1` here would be echoed and then
+        // rejected inbound, silently un-clicking a frame).
+        typeof value.runToken === "number" &&
+        Number.isInteger(value.runToken) &&
+        value.runToken >= 0
       );
     default:
       return false;

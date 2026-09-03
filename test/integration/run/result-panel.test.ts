@@ -60,7 +60,9 @@ function fakePanel(): {
    * (Phase 4d). `runToken` defaults to the last traceback output's own token
    * — what the real webview echoes (Phase 5d-iv) — so a caller that just
    * wants "click frame N of the current run" need not pass one; a stale-run
-   * test passes an explicit older token. */
+   * test passes an explicit older token. Throws if neither is available (no
+   * token passed and no traceback posted to derive one from), so a missing
+   * `sendReady()` in a test surfaces as a failure, not a silent token 0. */
   sendRevealFrame(frameIndex: number, runToken?: number): void;
 } {
   const posted: unknown[] = [];
@@ -109,12 +111,16 @@ function fakePanel(): {
     revealed,
     disposed,
     sendReady: () => messageListener?.({ type: "ready" }),
-    sendRevealFrame: (frameIndex, runToken) =>
-      messageListener?.({
-        type: "revealFrame",
-        frameIndex,
-        runToken: runToken ?? lastTracebackToken(posted) ?? 0,
-      }),
+    sendRevealFrame: (frameIndex, runToken) => {
+      const token = runToken ?? lastTracebackToken(posted);
+      if (token === undefined) {
+        throw new Error(
+          "sendRevealFrame: no token given and no traceback posted to derive " +
+            "one from — call sendReady() after a traceback, or pass a token",
+        );
+      }
+      messageListener?.({ type: "revealFrame", frameIndex, runToken: token });
+    },
   };
 }
 

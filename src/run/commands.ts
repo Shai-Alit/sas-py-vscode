@@ -156,13 +156,14 @@ export interface RunCommandDeps {
    * than closing a real editor. */
   onDidCloseTextDocument?: vscode.Event<vscode.TextDocument> | undefined;
   /** Phase 5d-iv: fires when a profile signs out, at which point the whole
-   * Problems collection is cleared — `clearAll`, not a per-profile delete: an
-   * entry is not tagged with the profile whose run produced it, and a run
-   * only ever targets the active one, so "signed out of anything ⇒ clear the
-   * lot" is the proportionate move. Supplied by `extension.ts` from the
-   * `auth.onDidChangeSessions` listener it already runs; absent in tests that
-   * do not exercise sign-out. No default — there is no `vscode` namespace
-   * event for "a Viya profile signed out". */
+   * Problems collection is cleared. `clearAll`, not a per-profile delete,
+   * because an entry carries no record of which profile's run produced it —
+   * there is nothing finer to clear. Supplied by `extension.ts` as
+   * `ViyaAuthenticationProvider.onDidSignOut`, which fires only on a
+   * deliberate sign-out (palette command or Accounts menu), never on
+   * `onDidChangeSessions`'s diff — that also drops a profile a slow renewal
+   * missed for one poll. Absent in tests that do not exercise sign-out; no
+   * default, there is no `vscode` namespace event for it. */
   onDidSignOut?: vscode.Event<void> | undefined;
 }
 
@@ -269,8 +270,12 @@ export function createRunCommandHandlers(
   const onDidCloseTextDocument =
     deps.onDidCloseTextDocument ?? vscode.workspace.onDidCloseTextDocument;
   const documentCloseSubscription = onDidCloseTextDocument((document) => {
-    // `clearFor` on a URI with no entry is a documented safe no-op, so this
-    // needs no languageId/scheme filter — every close just checks and moves on.
+    // `onDidCloseTextDocument` also fires when a document's language id
+    // changes (VS Code's own API note), not only on a real close — so a file
+    // switched out of Python mode clears its entry too. That is fine: it is
+    // no longer a Python file, and a stale Viya-run marker on it would only
+    // mislead. `clearFor` on a URI with no entry is a documented safe no-op,
+    // so this needs no languageId/scheme filter either way.
     diagnostics.clearFor(document.uri);
   });
   const signOutSubscription = deps.onDidSignOut?.(() => {

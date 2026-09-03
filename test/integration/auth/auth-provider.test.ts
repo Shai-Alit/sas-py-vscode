@@ -101,6 +101,9 @@ interface Harness {
   contexts: { key: string; value: unknown }[];
   /** Sessions the change event reported, flattened. */
   events: vscode.AuthenticationProviderAuthenticationSessionsChangeEvent[];
+  /** One entry per `onDidSignOut` fire — the deliberate-sign-out signal
+   * (Phase 5d-iv), distinct from a `removed` in {@link events}. */
+  signOuts: true[];
   /** Requests held by a stalled endpoint, and the way to let them answer. */
   stalled: Stalled;
   /** Every line the provider logged, with its level. See {@link recordingLog}. */
@@ -155,6 +158,7 @@ function harness(
   const contexts: { key: string; value: unknown }[] = [];
   const events: vscode.AuthenticationProviderAuthenticationSessionsChangeEvent[] =
     [];
+  const signOuts: true[] = [];
   const whoami = { id: USER_ID, name: "Dana Whitfield" };
   const trust = { granted: options.trusted ?? true };
   const answers: string[] = [];
@@ -287,6 +291,9 @@ function harness(
   provider.onDidChangeSessions((event) => {
     events.push(event);
   });
+  provider.onDidSignOut(() => {
+    signOuts.push(true);
+  });
 
   return {
     provider,
@@ -299,6 +306,7 @@ function harness(
     prompts,
     contexts,
     events,
+    signOuts,
     stalled,
     logged: recorder.lines,
     dispose(): void {
@@ -484,11 +492,44 @@ describe("Viya authentication provider", () => {
       await h.provider.removeSession(PROFILE_ID);
 
       assert.equal(h.events.at(-1)?.removed?.length, 1);
+      assert.equal(
+        h.signOuts.length,
+        1,
+        "onDidSignOut fired once for the deliberate sign-out",
+      );
       assert.deepEqual(await h.provider.getSessions(), []);
       assert.deepEqual(h.contexts.at(-1), {
         key: AUTHORIZED_CONTEXT_KEY,
         value: false,
       });
+    });
+
+    it("reports a vanished session as removed, but does not fire onDidSignOut for it", async () => {
+      // A profile can leave the published list without the user signing out —
+      // an unreadable keychain entry, or a renewal that misses the resolve
+      // budget (`within`). That still fires `onDidChangeSessions` with a
+      // `removed`, whose existing consumer (`forgetProfile`) is self-healing.
+      // `onDidSignOut` (Phase 5d-iv) must not fire for it: its consumer clears
+      // the Problems panel, which a transient drop should not.
+      await h.sessions.write(PROFILE_ID, {
+        accessToken: FAKE_ACCESS,
+        refreshToken: FAKE_REFRESH,
+        tokenType: "bearer",
+      });
+      await h.provider.getSessions();
+
+      // The stored credential disappears out from under a still-published
+      // session — the same end state a budget miss or a keychain read failure
+      // reaches, without needing to stall a deployment.
+      await h.sessions.clear(PROFILE_ID);
+      await h.provider.getSessions();
+
+      assert.equal(
+        h.events.at(-1)?.removed?.length,
+        1,
+        "the diff still reported it gone",
+      );
+      assert.equal(h.signOuts.length, 0, "but no deliberate sign-out fired");
     });
 
     it("refuses to sign out of an id it did not issue", async () => {

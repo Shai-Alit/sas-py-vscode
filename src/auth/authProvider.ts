@@ -236,6 +236,24 @@ export class ViyaAuthenticationProvider
 
   readonly onDidChangeSessions = this.changed.event;
 
+  private readonly signedOut = new vscode.EventEmitter<void>();
+
+  /**
+   * Fires once when {@link removeSession} completes a deliberate sign-out. The
+   * palette `Sign Out` command and VS Code's Accounts menu both route through
+   * that method, and nothing else does.
+   *
+   * Deliberately distinct from {@link onDidChangeSessions}: that event's
+   * `removed` is a *diff* of the published list, so it also fires for a
+   * profile a slow renewal or an unreadable keychain entry dropped for one
+   * poll (see {@link within}) and will bring back on the next — a false
+   * positive a consumer must not read as "the user signed out". Its existing
+   * consumer, `forgetProfile`, tolerates that because a dropped connection
+   * just reconnects; Phase 5d-iv's Problems-panel clear does not self-heal,
+   * so it listens here instead.
+   */
+  readonly onDidSignOut = this.signedOut.event;
+
   /** Keyed on profile id. Holds the access token, which never reaches disk. */
   private readonly live = new Map<string, LiveSession>();
 
@@ -585,6 +603,10 @@ export class ViyaAuthenticationProvider
     await this.sessions.clear(profile.id);
     this.log.info(vscode.l10n.t("Signed out of {0}.", profile.endpoint));
     await this.refreshPublished();
+    // After the publish, so a listener that re-reads the session list sees it
+    // already without this profile. Fires on the deliberate path only — never
+    // from `refreshPublished`'s own diff.
+    this.signedOut.fire();
   }
 
   /**
@@ -610,6 +632,7 @@ export class ViyaAuthenticationProvider
     // it.
     this.resolving.clear();
     this.changed.dispose();
+    this.signedOut.dispose();
   }
 
   /**

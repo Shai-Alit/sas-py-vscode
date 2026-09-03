@@ -235,7 +235,7 @@ describe("run/resultPanelModel", () => {
       );
     });
 
-    it("rejects a traceback that is otherwise well-formed but has no run token (Phase 5d-iv)", () => {
+    it("rejects a traceback whose run token is absent, negative, or non-integer (Phase 5d-iv)", () => {
       const wellFormedExceptToken = {
         kind: "traceback",
         heading: "h",
@@ -248,6 +248,18 @@ describe("run/resultPanelModel", () => {
         isRenderItem({ ...wellFormedExceptToken, runToken: "1" }),
         false,
         "token not a number",
+      );
+      // Matched to `isRevealFrameMessage`'s own guard — the two validate the
+      // same value on the round trip.
+      assert.equal(
+        isRenderItem({ ...wellFormedExceptToken, runToken: -1 }),
+        false,
+        "token negative",
+      );
+      assert.equal(
+        isRenderItem({ ...wellFormedExceptToken, runToken: 1.5 }),
+        false,
+        "token non-integer",
       );
     });
   });

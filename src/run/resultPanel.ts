@@ -171,9 +171,11 @@ export class ResultPanel implements vscode.Disposable {
   /** A monotonic per-run counter, bumped by {@link startRun}. Stamped onto
    * each run's traceback {@link RenderItem} so the webview echoes it back in
    * a `RevealFrameMessage`; {@link revealFrame} honours a message only while
-   * its token is still the current one. Starts at 0 and is 1 for the first
-   * run — a `revealFrame` claiming token 0 (no run has started) never
-   * matches. */
+   * its token is still the current one. Starts at 0, so the first run's token
+   * is 1. A message can only carry a token a real traceback item was stamped
+   * with, so the lowest one in play after any run is 1; token 0 means no run
+   * has streamed a traceback yet, and {@link revealFrame}'s `currentOrigin`
+   * guard covers that case regardless of the token check. */
   private currentRunToken = 0;
 
   constructor(extensionUri: vscode.Uri, deps: ResultPanelDeps = {}) {

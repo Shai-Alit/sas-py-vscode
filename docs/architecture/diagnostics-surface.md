@@ -145,9 +145,12 @@ one with no such run coming:
 - **document close** — `onDidCloseTextDocument` → `clearFor(document.uri)`
   (injectable as `RunCommandDeps.onDidCloseTextDocument`; a no-op on a URI
   with no entry, so no scheme/language filter);
-- **profile sign-out** — an `EventEmitter` `extension.ts` fires from its
-  existing `auth.onDidChangeSessions` listener, passed as
-  `RunCommandDeps.onDidSignOut` → `clearAll()`;
+- **profile sign-out** — `ViyaAuthenticationProvider.onDidSignOut` (new; fires
+  only from `removeSession`, i.e. the palette command or the Accounts menu),
+  passed as `RunCommandDeps.onDidSignOut` → `clearAll()`. Deliberately *not*
+  `onDidChangeSessions`'s `removed`: that is a diff of the published list and
+  also fires for a profile a slow renewal dropped for one poll, which would
+  wipe the panel on transient network weather;
 - **run target flipped to Local** — the existing `targets.onDidChange`
   subscription, gated on `targets.kind() === "local"` → `clearAll()`. A
   viya→viya profile switch fires the same event and is deliberately left

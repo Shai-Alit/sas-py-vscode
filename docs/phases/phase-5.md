@@ -418,21 +418,30 @@ group with the test-only BOM fixture.
      no-op, so no `languageId`/`scheme` filter. Injectable as
      `RunCommandDeps.onDidCloseTextDocument` (defaulting to the real event),
      matching the rest of `RunCommandDeps`' "a test cannot close a real
-     editor" rationale.
+     editor" rationale. `onDidCloseTextDocument` also fires on a language-id
+     change (VS Code's own API note), so a file switched out of Python mode
+     clears its entry too — fine, it is no longer a Python file.
    - **profile sign-out** — a new `RunCommandDeps.onDidSignOut` event →
-     `clearAll()`. `src/extension.ts` owns the signal: a
-     `vscode.EventEmitter<void>` fired from the `auth.onDidChangeSessions`
-     listener it *already* runs (the one that calls `forgetProfile` per
-     removed session), once per event that removed at least one session. No
-     new listener, and the run commands are still not handed the auth
-     provider itself.
+     `clearAll()`, fed by a **new `ViyaAuthenticationProvider.onDidSignOut`**
+     that fires only from `removeSession` (the palette `Sign Out` command and
+     the Accounts menu both route through it, nothing else does). The first
+     draft derived this from the `auth.onDidChangeSessions` listener
+     `extension.ts` already runs, but the review pass caught that `removed`
+     there is a *diff* of the published session list — it also fires for a
+     profile a slow renewal or an unreadable keychain entry dropped for one
+     poll (`allSessions`/`within`), which would wipe the Problems panel on
+     transient network weather. `forgetProfile`, the diff's other consumer,
+     tolerates a false positive (the backend reconnects); `clearAll` does not,
+     so it gets its own deliberate-only signal.
 
    All three subscriptions are torn down in `createRunCommandHandlers`'
    existing `dispose()`.
 
    **(b) — the per-run token.** `resultPanel.ts` gains `currentRunToken`, a
-   monotonic counter bumped in `startRun` (so it is `1` for the first run;
-   a `revealFrame` claiming `0` never matches). It is stamped onto the
+   monotonic counter bumped in `startRun` (starts at 0, so the first run's
+   token is 1; a message can only echo a token a real traceback item carried,
+   and `revealFrame`'s `currentOrigin` guard covers the no-run-yet case where
+   the counter is still 0). It is stamped onto the
    traceback `RenderItem` (`toRenderItem` gains a `runToken` parameter) rather
    than kept as transient webview state — so it survives the panel's
    `retainContextWhenHidden: false` hide/show rebuild and full backlog replay
@@ -456,27 +465,56 @@ group with the test-only BOM fixture.
 
    **Landed:** `src/run/diagnostics.ts` (`clearAll`), `src/run/commands.ts`
    (`RunCommandDeps.onDidCloseTextDocument`/`onDidSignOut`, the three
-   subscriptions), `src/extension.ts` (the sign-out `EventEmitter` bridge),
-   `src/run/resultPanelModel.ts` (`runToken` on the traceback `RenderItem`
-   and `RevealFrameMessage`, both guards), `src/run/resultPanelDom.ts`
-   (`onFrameActivate` arity), `src/webview/entry.ts` (echo the token),
-   `src/run/resultPanel.ts` (`currentRunToken`, the drop). Tests:
-   `result-panel-model.test.ts` (token threaded through `toRenderItem`, both
-   guards' new arms), `result-panel-dom.test.ts` (`onFrameActivate` gets the
-   token), `result-panel.test.ts` (a superseded-token `revealFrame` is
+   subscriptions), `src/auth/authProvider.ts` (new `onDidSignOut`, fired from
+   `removeSession`), `src/extension.ts` (wires `auth.onDidSignOut` through to
+   the run commands), `src/run/resultPanelModel.ts` (`runToken` on the
+   traceback `RenderItem` and `RevealFrameMessage`, both guards),
+   `src/run/resultPanelDom.ts` (`onFrameActivate` arity), `src/webview/entry.ts`
+   (echo the token), `src/run/resultPanel.ts` (`currentRunToken`, the drop).
+   Tests: `result-panel-model.test.ts` (token threaded through `toRenderItem`,
+   both guards' new arms), `result-panel-dom.test.ts` (`onFrameActivate` gets
+   the token), `result-panel.test.ts` (a superseded-token `revealFrame` is
    dropped, the current one still resolves), `commands-diagnostics.test.ts`
    (all three clear triggers, plus the viya→viya negative),
-   `diagnostics.test.ts` (`clearAll` across two URIs). Docs:
+   `diagnostics.test.ts` (`clearAll` across two URIs), `auth-provider.test.ts`
+   (`onDidSignOut` fires on a deliberate sign-out, not on a vanished-session
+   diff). Docs:
    `docs/architecture/diagnostics-surface.md` (new "Lifecycle" section),
    `phase-4.md`'s 4d deferred note (resolved pointer + the correction),
    `CHANGELOG.md`, `docs/dev/manual-test-pass.md` §7/§8.
 
-   **Checks:** `npm run typecheck` (all three projects) green;
-   `prettier --check`, `check:copyright`, `check:secrets`,
-   `check:coverage-scope` green — no ratchet move expected (every touched
-   `src/run`/`src/webview` module is already outside the coverage denominator
-   or at 100%). `npm run verify` / `npm run test:integration` and the live
-   pass are Sean's to run; adversarial review pass still to do.
+   **Checks:** `npm run verify` green (1191 passing; coverage
+   94.22/95.16/93.78/94.22, all above the `.c8rc.json` floors — no ratchet
+   move) and `npm run test:integration` green (Sean's runs).
+
+   **Review:** one adversarial pass, 2026-09-02, in the separate VS Code
+   Claude Code window. No P0/P1. Six findings, all verified independently and
+   folded in: **(1, P2)** the sign-out clear was derived from
+   `onDidChangeSessions`'s `removed`, which is a diff of the published list and
+   also fires when a slow renewal or an unreadable keychain entry drops a
+   profile for one poll — a transient condition that would have wiped the
+   Problems panel. Fixed by adding `ViyaAuthenticationProvider.onDidSignOut`,
+   fired only from `removeSession` (both deliberate sign-out routes go through
+   it), and consuming that instead; the `extension.ts` `EventEmitter` bridge
+   is gone. **(2, P3)** `onDidCloseTextDocument` also fires on a language-id
+   change — comment amended to own that (a file leaving Python mode clearing
+   its entry is correct). **(3, P3)** the `currentRunToken` doc comment and
+   `phase-5.md` both claimed "a token-0 message never matches"; it does match
+   the pre-first-run counter and is stopped by the `currentOrigin` guard —
+   both corrected. **(4, P3)** the sign-out rationale leaned on "a run only
+   ever targets the active one," which argues the other way; restated as "an
+   entry carries no profile tag, so there is nothing finer to clear."
+   **(5, P3)** `isRenderItem` accepted any `number` for `runToken` while
+   `isRevealFrameMessage` demanded a non-negative integer — aligned, with the
+   negative test extended. **(6, P3, test)** `sendRevealFrame`'s `?? 0`
+   fallback masked a missing `sendReady()`; it now throws when no token is
+   derivable. The reviewer also recorded two checks that held: `setKind`
+   awaits its `workspaceState` write before firing, so `targets.kind()` in the
+   handler is never stale; and the token genuinely survives the panel rebuild
+   because `emit` clears the backlog on `"reset"`.
+
+   **Still open before a PR:** the live pass (§7's new row — needs a
+   deployment).
 
 ☐ **5a — Drift gate hardening.** Audit `scripts/check-contracts.mjs` against
 three specific gaps found in this session's grounding survey, rather than a

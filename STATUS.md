@@ -847,6 +847,44 @@ stays its own tracked follow-up, not this slice's. **After this: 5c-iii —
 release engineering** (`release.yml`, `package.json` marketplace metadata, icon
 asset, `release-checklist.md` rewrite); see phase-5.md's own 5c Runbook entry.
 
+**5c-iii (release engineering) implemented 2026-09-03; not yet checked,
+reviewed, or merged, no PR.** Branch `phase-5c-iii-release-engineering`.
+`.github/workflows/release.yml` — a `v*`-tag-triggered `publish` job
+(plus a `workflow_dispatch` dry run, `dry_run` input defaulting true): checkout
+the tag → `npm ci` → assert tag `vX.Y.Z` equals `package.json` `version` →
+`npm run verify` → `npm run package` → `vsce publish --oidc --packagePath` (VS
+Marketplace, OIDC trusted publishing, **no stored PAT** — chosen over `VSCE_PAT`
+because Azure DevOps retires those PATs 2026-12-01) → `ovsx publish`
+(best-effort: `continue-on-error`, a failure only warns) → `gh release create`
+with the `.vsix` attached and notes from `CHANGELOG.md`. Recorded as
+[ADR-0023](docs/adr/0023-release-publishing.md). `package.json` gains
+`"private": false`, `"icon": "media/icon.png"`, `galleryBanner`, `pricing`
+(version bump and `"preview"` deliberately left to 5c-iv). `media/icon.png` is a
+deterministically-generated `Py` wordmark (white on `#0766D1`, 128×128, no
+alpha) — an explicit stopgap, `release-checklist.md` D3 says replace it with a
+designed asset before the tag. `ovsx@1.1.1` added as an exact-pinned dev
+dependency (`npm install` pulled 114 transitive packages; `npm audit` unchanged
+at the 2 pre-existing lows, `allowScripts` unchanged); `check:audit` can't run
+on this Windows box (the `npm.cmd`-spawn `EINVAL`, as in 5d-ii) — CI's
+`supply-chain` job confirms. **Pre-existing packaging leak, folded in:** the
+`.vsix` was already shipping `CLAUDE.md`, `STATUS.md`, `HOUSEKEEPING.md`,
+`.claude/**` and `tsconfig.webview.json` (`.vscodeignore` never excluded them,
+`check:package`'s rules predated them) — `STATUS.md`/`CLAUDE.md` name
+deployments, and this is the slice that makes the package public. `.vscodeignore`
++ `scripts/check-package.mjs` (`DENY` "internal document"/"repository metadata"
+rules + `SELF_TEST`) updated; `check-package.mjs` `REQUIRED` also now lists the
+icon. Archive drops 18 files/142 KiB → 12/97 KiB. `docs/release-checklist.md`
+rewritten around the tag→workflow flow (one-time setup: Marketplace
+trusted-publishing policy, `OVSX_PAT` secret, `ovsx create-namespace`);
+`docs/dev/ci.md` gains a "Release (on a tag, not a gate)" section; `CHANGELOG.md`
+`[Unreleased]` entry added. **Checks green this session:** `npm run verify`,
+`npm run check:docs`, `npm run package` (exit 0; trimmed archive, icon present).
+`test:integration` not warranted (no `src/`). The `--oidc` + `--packagePath`
+pairing and the publish path itself are not exercisable locally — the 5c item 5
+`workflow_dispatch` dry run is their first real test. Adversarial review pass:
+Sean's call — CI/manifest slice, no `src/`, but the workflow handles publish
+credentials.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items

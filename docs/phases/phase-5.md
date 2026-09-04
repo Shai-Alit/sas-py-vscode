@@ -836,6 +836,89 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
 5. Exercise `docs/release-checklist.md` end to end at least once, as a dry
    run, before the real v0.1.0 tag.
 
+   **5c-iii (release engineering) implemented 2026-09-03; not yet reviewed or
+   merged, no PR.** Items 3 + 4 above, minus the version bump (that stays with
+   5c-iv). Branch `phase-5c-iii-release-engineering`.
+
+   - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
+     one `publish` job on a `v*` tag push, plus a `workflow_dispatch` whose
+     `dry_run` input defaults to true. Steps: checkout the tag → `npm ci` →
+     assert tag `vX.Y.Z` equals `package.json` `version` (fail loudly on
+     mismatch) → `npm run verify` → `npm run package` (builds and `check:package`s
+     the `.vsix`) → `vsce publish --oidc --packagePath dist/python-on-viya.vsix`
+     → `ovsx publish` (best-effort: `continue-on-error`, a failure warns) →
+     `gh release create` with the `.vsix` attached and notes sliced from the
+     matching `CHANGELOG.md` section (`awk`, `--generate-notes` fallback). The
+     publish/release steps are skipped on a dry run. Job is fork-gated
+     (`github.repository == 'Shai-Alit/sas-py-vscode'`), `permissions:
+     { id-token: write, contents: write }`, `concurrency` never cancels a run
+     in progress. Actions pinned by tag (`@v7`), matching `ci.yml`'s convention
+     rather than `ai-review.yml`'s SHA pins — `dependabot`'s `github-actions`
+     ecosystem entry already tracks them.
+   - **Marketplace auth is OIDC, no PAT.** `vsce publish --oidc`; the retirement
+     of Azure DevOps global PATs on 2026-12-01 is why a `VSCE_PAT` workflow was
+     rejected outright rather than written now and migrated later. `--oidc` has
+     no PAT fallback, so a missing trusted-publishing policy fails the release.
+     The `--oidc` + `--packagePath` pairing is not yet run end to end — the 5c
+     item 5 dry run confirms it; if it fails, drop `--packagePath` from the
+     Marketplace step alone.
+   - **`package.json` marketplace metadata:** `"private": false`,
+     `"icon": "media/icon.png"`, `"galleryBanner": { "color": "#0766D1",
+     "theme": "dark" }`, `"pricing": "Free"`. `"preview": true` and the version
+     bump are deliberately left to 5c-iv. `docs/reference/` regenerated — no
+     drift (gallery metadata is not in the settings/commands tables).
+   - **`media/icon.png`** — a 128×128, no-alpha `Py` wordmark, white on
+     `#0766D1`, generated deterministically (hand-rolled PNG encoder over a
+     6×9 pixel-font `P`/`y`; Chrome/Edge headless screenshotting was tried first
+     and would not render text reliably in this environment). An explicit
+     stopgap: `release-checklist.md` D3 says to replace it with a designed asset
+     before the v0.1.0 tag. `scripts/check-package.mjs` `REQUIRED` now lists
+     `extension/media/icon.png` so a dropped/mistyped icon path fails packaging.
+   - **`ovsx@1.1.1`** added as an exact-pinned dev dependency (repo convention;
+     `npm ci` installs it, `check:audit` covers it) rather than an `npx` fetch
+     inside the job that holds the publish tokens. `npm install` brought 114
+     transitive packages; `npm audit` stays at the pre-existing 2 low
+     (`diff` GHSA-73RR-HH4G-FPGX, already allow-listed) — no new advisory, and
+     `allowScripts` is unchanged (`ovsx`'s install-script deps —
+     `@vscode/vsce-sign`, `keytar` — are already listed via `@vscode/vsce`).
+     **`check:audit` itself cannot run locally on this Windows box** (the
+     `npm.cmd`-spawn `EINVAL`, same as 5d-ii) — CI's `supply-chain` job on
+     Linux is the confirmation.
+   - **Pre-existing packaging leak, folded in.** Building the `.vsix` for this
+     slice showed the archive already shipping `CLAUDE.md`, `STATUS.md`,
+     `HOUSEKEEPING.md`, `.claude/**` (skill definitions + local settings) and
+     `tsconfig.webview.json` — `.vscodeignore` never excluded them and
+     `check:package`'s `DENY` list predated them, so `check:package` passed on
+     it. `STATUS.md` and `CLAUDE.md` name deployments, which this project's own
+     rule says must never ship, and this is the slice that makes the package
+     public. Fixed here (5d-ii's precedent — fold a pre-existing packaging
+     issue into the slice touching that surface): `.vscodeignore` excludes all
+     five; `check-package.mjs`'s "internal document" rule gains
+     `STATUS|HOUSEKEEPING|CLAUDE` and "repository metadata" gains `.claude/`,
+     with matching `SELF_TEST` cases. The `.vsix` drops from 18 files / 142 KiB
+     to 12 / 97 KiB (manifest, LICENSE, NOTICE, changelog, the two bundle
+     files, the l10n bundle, `media/icon.png`, `package.json`,
+     `package.nls.json`, `readme.md`).
+   - **Docs:** `docs/release-checklist.md` rewritten around the tag→workflow
+     flow (one-time setup: the Marketplace policy, `OVSX_PAT`,
+     `ovsx create-namespace`; a "what release.yml does" summary; D1–D8; a dry-run
+     section). `docs/dev/ci.md` gains a "Release (on a tag, not a gate)" section
+     and its workflow inventory goes from "two separate workflows" to three.
+     `CHANGELOG.md` `[Unreleased]` entry added. ADR-0023 written and indexed.
+   - **Checks (this VS Code session, all green):** `npm run verify` (exit 0 —
+     format, lint, typecheck ×3, copyright, secrets, coverage-scope, contracts,
+     build, coverage; coverage ratchet unmoved, no `src/` change),
+     `npm run check:docs` (exit 0 — reference up to date, 8 samples type-check,
+     12 self-links resolve, VitePress build clean), and `npm run package`
+     (exit 0 — `check:package` OK on the trimmed 12-file archive, icon
+     present). `test:integration` not warranted (no `src/` or integration-tier
+     change). **Not runnable here:** `check:audit` (Windows `npm.cmd` `EINVAL`);
+     the `release.yml` publish path (needs the OIDC exchange + registry tokens —
+     the 5c item 5 dry run is its first real exercise). Adversarial review: a
+     CI/manifest slice with no `src/`, but the workflow handles publish
+     credentials — Sean's call whether the standing pass applies (leaning yes,
+     a light one).
+
 ---
 
 ## Probe findings

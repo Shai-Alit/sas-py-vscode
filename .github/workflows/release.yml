@@ -1,0 +1,152 @@
+name: Release
+
+# Publishes a tagged version to the VS Marketplace and Open VSX, and cuts a
+# GitHub Release with the built .vsix attached.
+#
+# Trigger: pushing a `vX.Y.Z` tag. The tag is cut by hand from a merge commit on
+# `main` once the release PR (version bump + CHANGELOG finalise) has landed — see
+# docs/release-checklist.md. There is no version-bump logic here; this workflow
+# packages and publishes what is already on the tag.
+#
+# `workflow_dispatch` runs the same pipeline as a rehearsal. Its `dry_run` input
+# defaults to **true**, so a manual run builds, verifies, packages and stops
+# before anything irreversible; set it to false to publish from a manual run.
+#
+# Marketplace auth is OIDC trusted publishing (`vsce publish --oidc`) — no stored
+# PAT. It requires a trusted-publishing policy for this repo + this workflow file
+# configured on the Marketplace, and `id-token: write` below. It does not fall
+# back to a PAT if the token exchange fails. See ADR-0023.
+#
+# Open VSX auth is a token (`OVSX_PAT` secret). That step is best-effort: a
+# failure there is a warning, not a failed release, because the Marketplace is
+# the primary channel and Open VSX outages should not block a release.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build, verify and package but publish nothing"
+        type: boolean
+        default: true
+
+# A half-finished release is worse than a delayed one: never cancel a run in
+# progress, and never start a second run for the same ref alongside it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: publish
+    # Never on a fork: the secrets and the trusted-publishing policy are this
+    # repository's, and a fork's tag push would only ever fail here.
+    if: github.repository == 'Shai-Alit/sas-py-vscode'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    permissions:
+      # OIDC token for `vsce publish --oidc`.
+      id-token: write
+      # Creating the GitHub Release and uploading the .vsix asset.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # On a tag push the tag and package.json must agree, or the wrong version
+      # ships to a channel that will not let it be replaced. On a manual run
+      # there is no tag to check — just report what would be published.
+      - name: Resolve and check version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$EVENT_NAME" = "push" ]; then
+            if [ "$REF_NAME" != "$pkg" ]; then
+              echo "::error::tag $REF_NAME does not match package.json version $pkg — bump package.json in the release PR before tagging"
+              exit 1
+            fi
+            echo "tag $REF_NAME matches package.json ($pkg)"
+          else
+            echo "manual run: package.json version is $pkg (dry_run=${{ inputs.dry_run }})"
+          fi
+          echo "version=${pkg#v}" >> "$GITHUB_OUTPUT"
+
+      # The same gate CI runs on every PR, re-run against the exact tagged tree.
+      # A tag can be pushed from anywhere; this is the last chance to catch a
+      # tree that never went through CI green.
+      - run: npm run verify
+
+      # Builds dist/python-on-viya.vsix and runs check:package against it —
+      # .vscodeignore is allow-by-default, so this is what proves the archive
+      # holds the right files and nothing shaped like a credential.
+      - run: npm run package
+
+      # --- everything below is skipped on a dry run ---
+
+      - name: Publish to the VS Marketplace
+        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+        run: ./node_modules/.bin/vsce publish --oidc --packagePath dist/python-on-viya.vsix
+
+      - name: Publish to Open VSX
+        id: openvsx
+        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+        continue-on-error: true
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: ./node_modules/.bin/ovsx publish dist/python-on-viya.vsix --pat "$OVSX_PAT"
+
+      - name: Note an Open VSX failure
+        if: ${{ steps.openvsx.outcome == 'failure' }}
+        run: echo "::warning::Open VSX publish failed. The Marketplace publish is unaffected; re-run \`ovsx publish\` by hand once Open VSX is healthy."
+
+      # Release notes and the GitHub Release are tag-only: a manual publish
+      # (workflow_dispatch with dry_run unchecked) ships to the registries but
+      # leaves the GitHub Release to be created by hand, since there is no tag.
+      - name: Extract release notes from CHANGELOG
+        if: ${{ github.event_name == 'push' }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          awk -v ver="$VERSION" '
+            $0 ~ ("^## \\[" ver "\\]") { cap = 1; next }
+            cap && /^## / { exit }
+            cap { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "no [$VERSION] section in CHANGELOG.md; GitHub will auto-generate notes"
+          fi
+
+      - name: Create the GitHub Release
+        if: ${{ github.event_name == 'push' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -s release-notes.md ]; then
+            notes=(--notes-file release-notes.md)
+          else
+            notes=(--generate-notes)
+          fi
+          gh release create "$TAG" dist/python-on-viya.vsix \
+            --title "$TAG" \
+            --verify-tag \
+            "${notes[@]}"

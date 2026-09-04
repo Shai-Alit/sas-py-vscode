@@ -2,10 +2,11 @@
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
 `main`. Six jobs: `changes`, `verify`, `test`, `docs`, `package`, and
-`supply-chain`. Two separate workflows sit beside it:
-`.github/workflows/codeql.yml`, which gates a pull request *and* runs weekly, and
+`supply-chain`. Three separate workflows sit beside it:
+`.github/workflows/codeql.yml`, which gates a pull request *and* runs weekly;
 `.github/workflows/link-check.yml`, which runs weekly and is deliberately not
-part of the gate.
+part of the gate; and `.github/workflows/release.yml`, which runs on a `vX.Y.Z`
+tag and is not a gate at all — see [Release](#release-on-a-tag-not-a-gate).
 
 The organising principle is that **CI runs commands you can run**. There is no
 step in this workflow that exists only in CI, no environment variable that
@@ -556,6 +557,43 @@ Unlike every other job here, this one is not a command you can run locally. The
 CodeQL CLI can be installed and pointed at the tree, but that is not the same
 build, and nothing in `npm run verify` reproduces it. If `analyze` is red, the
 alert in the Security tab is the artefact, not the log.
+
+## Release (on a tag, not a gate)
+
+`.github/workflows/release.yml` runs when a `vX.Y.Z` tag is pushed. It is not a
+pull-request check and nothing about it blocks a merge; it is the thing that
+turns a tag into a published extension. The operational steps — the one-time
+Marketplace and Open VSX setup, and the per-release punch list — are in
+[the release checklist](../release-checklist.md); this section is what the
+workflow itself does and the two decisions in it worth knowing.
+
+One `publish` job: check out the tag, `npm ci`, assert the tag matches
+`package.json`'s `version`, run `npm run verify` and `npm run package` against
+the tagged tree, then publish `dist/python-on-viya.vsix` to the VS Marketplace
+and to Open VSX and cut a GitHub Release with the `.vsix` attached.
+
+**Marketplace auth is OIDC, not a stored token.** `vsce publish --oidc` requests
+a GitHub Actions OIDC token (hence `id-token: write` on the job) and exchanges
+it for a short-lived Marketplace credential against a trusted-publishing policy
+registered on the Marketplace side. There is no `VSCE_PAT` secret, and `--oidc`
+does not fall back to one — a missing policy fails the publish rather than
+degrading to something weaker. The classic Azure DevOps PATs that `vsce publish
+-p` needs are being retired on 2026-12-01, so this is where the workflow had to
+land; [ADR-0023](../adr/0023-release-publishing.md) records the alternatives.
+
+**The Open VSX publish is best-effort.** That step is `continue-on-error: true`:
+a failure emits a warning and the release still counts as done, because the
+Marketplace is the primary channel and a third-party registry's downtime should
+not force a retag. `ovsx` is a pinned dev dependency for the same reason every
+other tool here is — a command that handles a publish token should be one a
+maintainer can read and run, and `check:audit` covers it like anything else in
+the tree.
+
+`workflow_dispatch` runs the same job with a `dry_run` input that defaults to
+true, stopping after `npm run package`. Unlike everything in `ci.yml`, the
+publish steps are *not* a command you can usefully run locally — they need the
+OIDC exchange and the registry tokens — so the dispatch dry run is how the path
+gets exercised before a real tag depends on it.
 
 ## What is deliberately not here yet
 

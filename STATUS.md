@@ -925,6 +925,39 @@ two stale-comment `fix(run):` items 5c-i carried are still open and deliberately
 not taken mid-phase — a small PR when convenient, or fold into Phase 5→6
 housekeeping.
 
+**CI reliability follow-up to 5c-iii, 2026-09-04 — [PR #112](https://github.com/Shai-Alit/sas-py-vscode/pull/112)
+and [PR #113](https://github.com/Shai-Alit/sas-py-vscode/pull/113) merged.** Two
+`ci:` PRs off the thread above; no `src/` change. **#112** (`a8b906d`) closes the
+`check:audit`/`supply-chain` reliability item flagged above. `supply-chain` no
+longer runs on every code change: `changes` now emits a `deps` output (true when
+the diff touches `package.json`, `package-lock.json`, `.npmrc`,
+`scripts/check-audit.mjs`, `scripts/advisory-allowlist.json`, or a workflow file)
+and `supply-chain` gates on that instead of `code`, so a comment or `src/` edit
+no longer pays the ~9-minute `npm@12` install + `npm audit` round trip;
+`verify`/`test`/`package` are unchanged and the `allowScripts` half stays checked
+on every code change by the unit tier. `scripts/check-audit.mjs` also now passes
+`--fetch-timeout=45000 --fetch-retries=2` to `npm audit` — a single wedged
+request, not a slow tree, was the real cause of the intermittent failures the
+120→240s bump had not fixed — and its backstop per-audit timeout drops 240s →
+180s. **#113** (`219c096`) adds a `ci-required` aggregate job: it `needs` the
+gated jobs (`changes, verify, test, docs, package, supply-chain`) with
+`if: always()` and passes only when each succeeded or was legitimately skipped
+(a `failure`/`cancelled` result fails it; the guard matches the bad states
+positively so a blank line cannot read as failure). This lets branch protection
+name one stable check instead of the six matrix-expanded `test (…)` names that
+never report on a run where `test` is skipped — the reason a documentation-only
+PR previously needed an admin merge. `analyze` (CodeQL, in `codeql.yml`, cannot
+be a `needs:` here, and runs on every PR with no path filter) stays required on
+its own. **Branch protection updated 2026-09-04** via `gh api`, after
+`ci-required` reported once green on `main`: `main`'s required status checks went
+from `docs, package, verify, analyze, supply-chain, changes` to
+`ci-required, analyze, changes`; `strict` (up-to-date), linear history and
+required-conversation-resolution are unchanged. The everything-runs case is
+confirmed — all six `test` legs plus `ci-required` green on the `219c096` merge
+commit — and this docs-only PR is itself the first live exercise of the
+skip-tolerant path (`verify`/`test`/`package`/`supply-chain` skipped,
+`ci-required` still green, no admin merge). This paragraph is that record.
+
 **Phase 6 (SAS Content explorer) scoped 2026-09-03**, from a separate clone
 (`sas-py-vscode-cowork`), deliberately kept apart from the primary working
 copy so this scoping session would not collide with Phase 5's own in-progress

@@ -1186,6 +1186,54 @@ snapshot gap after a failed re-probe; and a transcription error in this
 slice's own citation of finding 62. See phase-3.md's 3e entry for the full
 account.
 
+**Phase 10 (Viya environment awareness) scoped 2026-09-04**, same separate
+clone (`sas-py-vscode-cowork`) Phases 6–9 were scoped from — `main` at
+`95e4c73` (Phase 9's own scoping merge, PR #115, already in this history).
+**No code was written; nothing in this clone has been committed yet** —
+`docs/phases/phase-10.md` and this file's own phase-index row are edited in
+the working tree, ready for review before a commit. A codebase survey of
+this repo's existing Stage-2 probe and its consumers
+(`src/backend/environment.ts`, `environmentPanel.ts`/`environmentDocument.ts`/
+`environmentStore.ts`/`environmentStatusBar.ts`, all landed in 3e) plus
+`PRODUCTION_PLAN.md` §2.3/§3.1 and current Python/Pylance extension
+documentation (cited inline in the phase file) refined the plan's one-line
+sketch into a 2-slice Runbook (10a environment view — search/filtering plus
+a local/remote diff; 10b Pylance environment reflection), recommending 10b's
+own spike first since its answer sizes the rest. **No live-Viya probe was
+run or needed** — same reasoning Phase 9 gave for its own scoping session:
+the open questions here are VS Code/Pylance client-side questions (does a
+generated `python.analysis.stubPath` get picked up without a reload; does a
+workspace-settings write need a merge), not Viya wire behaviour, and 3e's
+existing probe (untouched by this phase) already answers everything this
+phase needs about the deployment side. **Central technical finding, backed
+by two independent documented examples, not settled as an ADR yet since
+nothing here has been hands-on-verified**: Pylance/pyright's own
+`python.analysis.stubPath` mechanism — a directory of generated `.pyi` stub
+packages, one per remote-reported distribution, containing only a
+permissive catch-all — is the documented way to turn a Viya-only import from
+a hard `reportMissingImports` into at worst a suppressible
+`reportMissingModuleSource`, without installing anything locally; a
+`microsoft/pyright` discussion thread and the `micropython-stubs` project's
+own docs both show exactly this shape used for a package (or, in
+MicroPython's case, an entire interpreter) that is never locally installed.
+Getting the local side of 10a's diff needs no new local-Python dependency
+either — `@vscode/python-extension`'s `resolveEnvironment()` gives a
+`sysPrefix` to read `*.dist-info` metadata from directly, the same
+no-subprocess shape `environment.ts`'s own Viya-side probe already uses via
+`importlib.metadata`. **What's still open, and deliberately not settled
+here**: whether 3e's plain-text `Show environment` document should gain a
+filterable `QuickPick` sibling rather than being replaced (3e's own
+documented rationale for plain text — editor-native search, split view —
+still stands for the "read the whole thing" case); and a hands-on spike,
+10b's own first task, confirming whether a changed `stubPath` is picked up
+live and whether a workspace-settings write is safe to make without
+clobbering a user's own keys — this sandbox has no interactive VS Code
+window to run that spike itself. See `docs/phases/phase-10.md` for the full
+account, including why the newer `ms-python.vscode-python-envs` extension's
+own environment-registration API is named as an optional future
+enhancement rather than a dependency, the same way Phase 9 treated
+`ms-toolsai.jupyter`.
+
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
 > only file every session should need to open to know where to start — open the
@@ -1207,7 +1255,7 @@ account.
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |
-| 10 — Viya environment awareness | not started | `docs/phases/phase-10.md` |
+| 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 

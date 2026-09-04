@@ -783,8 +783,20 @@ get written.
    the observed wire shape, imports no `vscode`, and stays in the denominator
    like any other pure module. ADR-0009's three options remain the right three
    should vendoring ever be proposed again.
-7. **Notebook format** (Phase 9a). ipynb-compatible vs bespoke. *Recommend ipynb —
-   the Python ecosystem expects it — but defer until Phase 9.*
+7. ~~**Notebook format** (Phase 9a). ipynb-compatible vs bespoke. *Recommend ipynb —
+   the Python ecosystem expects it — but defer until Phase 9.*~~ — **SETTLED
+   2026-09-04: ipynb-native, no bespoke fallback.** A developer already using
+   Jupyter/`.ipynb` notebooks gets the same file format everywhere — this
+   extension, JupyterLab, GitHub — rather than a proprietary shape the way
+   the SAS extension's `.sasnb` is for SAS; this project's own `RichOutput`
+   union is already exactly nbformat's own cell-output mime-bundle shape, so
+   nothing is gained by inventing a format the way `.sasnb` had to. What's
+   still open is implementation mechanics only — whether a bare
+   `NotebookController` targeting the existing `jupyter-notebook` notebook
+   type is sufficient, or whether this project ends up documenting
+   `ms-toolsai.jupyter` as a soft/required companion extension — settled by
+   a hands-on spike at the start of 9a, not a reason to reconsider the format
+   itself. Recorded as [ADR-0024](docs/adr/0024-notebooks-are-ipynb-native.md).
 8. **Package installation into Viya** (Phase 10). Governance question, not a
    technical one. Deferred deliberately.
 9. ~~**Default OAuth client id**~~ — **SETTLED 2026-08-13: fall back to the

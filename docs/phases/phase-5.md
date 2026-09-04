@@ -850,10 +850,13 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
 5. Exercise `docs/release-checklist.md` end to end at least once, as a dry
    run, before the real v0.1.0 tag.
 
-   **5c-iii (release engineering) — [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106),
-   opened 2026-09-03, reviewed, fixes folded, not yet merged.** Items 3 + 4
-   above, minus the version bump (that stays with 5c-iv). Branch
-   `phase-5c-iii-release-engineering`.
+   **5c-iii (release engineering) — merged 2026-09-04 as
+   [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), squashed as
+   `e70c682`.** Items 3 + 4 above, minus the version bump (that stays with
+   5c-iv). CI + both AI reviewers passed; the adversarial-review fixes and two
+   mid-flight follow-ups (the packaging leak, the `check:audit` timeout) were
+   folded into #106. **Next: 5c-iv** — the two stale-comment `fix(run):` items
+   5c-i carried are still open, deliberately not taken mid-phase.
 
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —

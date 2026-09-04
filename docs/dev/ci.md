@@ -1,8 +1,10 @@
 # Continuous integration
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
-`main`. Six jobs: `changes`, `verify`, `test`, `docs`, `package`, and
-`supply-chain`. Three separate workflows sit beside it:
+`main`. Seven jobs: `changes`, `verify`, `test`, `docs`, `package`,
+`supply-chain`, and `ci-required` (the aggregate the branch-protection rule
+actually names — see [Required status checks](#required-status-checks)). Three
+separate workflows sit beside it:
 `.github/workflows/codeql.yml`, which gates a pull request *and* runs weekly;
 `.github/workflows/link-check.yml`, which runs weekly and is deliberately not
 part of the gate; and `.github/workflows/release.yml`, which runs on a `vX.Y.Z`
@@ -657,9 +659,28 @@ tag is their first exercise.
 ## Required status checks
 
 Branch protection cannot require a check until it has reported at least once, so
-required checks are added after this workflow first runs on `main` — see
-`RUNBOOK.md`. Note that they are required **per job name**: adding an OS to the
-matrix creates a new check that is not required until someone says so, and
-`analyze` lives in a different workflow but is a required check like any other.
+required checks are added after a workflow first runs on `main` — see
+`RUNBOOK.md`.
+
+From this workflow, the branch-protection rule names exactly one check:
+**`ci-required`**. It is an aggregate job — `needs: [changes, verify, test,
+docs, package, supply-chain]`, `if: always()` — that passes only when every one
+of those succeeded or was deliberately skipped by its own `if:`, and fails if
+any of them failed or was cancelled.
+
+The problem it solves is the matrix. Required checks are matched **per job
+name**, and `test` reports under six expanded names —
+`test (ubuntu-latest, node 24)` and so on — that exist only on a run where the
+matrix expands. On a documentation-only pull request `test` is skipped, those
+six names are never reported, and a rule that lists them waits for them forever:
+the pull request cannot merge without an administrator. Naming `ci-required`
+instead means the rule sees a skipped `test` as a `skipped` dependency (which is
+fine) rather than as six absent checks, and **adding or dropping a matrix leg
+never touches repository settings again**.
+
+`analyze` (CodeQL) lives in `codeql.yml`, so it cannot be a `needs:` of
+`ci-required`; it stays a required check in its own right. `changes` may stay
+required directly too — harmless, since `ci-required` already fails when
+`changes` does — but it no longer needs to be.
 
 The two AI reviewers stay advisory. They comment; they do not block.

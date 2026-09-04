@@ -1596,6 +1596,20 @@ called out under **Changed** with a migration note.
 
 ### Changed
 
+- **The `supply-chain` CI job runs only when a dependency file changes.** It was
+  gated on the same "is this a code change" signal as `verify`/`test`/`package`,
+  so a comment fix or a `src/` refactor paid a ~9-minute `npm@12` install +
+  `npm audit` round trip that re-derives what already passed on `main`. The
+  `changes` job now emits a separate `deps` output (true when the diff touches
+  `package.json`, `package-lock.json`, `.npmrc`, `scripts/check-audit.mjs`,
+  `scripts/advisory-allowlist.json`, or a workflow) and `supply-chain` gates on
+  that. The `allowScripts` half is still checked on every code change by the
+  unit tier. Separately, `scripts/check-audit.mjs` now passes
+  `--fetch-timeout=45000 --fetch-retries=2` to `npm audit` so a single stalled
+  request is retried rather than hanging the whole audit, and its backstop
+  timeout is 180s (a wedged request, not a slow tree, was the cause of the
+  intermittent failures a longer timeout did not fix). Contributor-facing;
+  `docs/dev/ci.md` updated.
 - **The contract drift gate (`npm run check:contracts`) rejects two cases it
   used to pass** (Phase 5's 5a slice — an audit and harden, no new CI wiring).
   A contract whose `fixtures:` names a directory that *exists but is empty* now

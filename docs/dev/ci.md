@@ -22,16 +22,27 @@ one check whose output lives in the Security tab rather than in a log.
 
 ## changes
 
-The first job classifies the diff, and the four expensive jobs — `verify`,
-`test`, `package`, `supply-chain` — gate on its `code` output. A pull request
-that touches only documentation runs `docs` and nothing else.
+The first job classifies the diff on two axes, and the expensive jobs gate on
+them. A pull request that touches only documentation runs `docs` and nothing
+else.
 
-The classification is one `git diff --name-only` against the base branch. A file
-counts as documentation if it is under `docs/` or is a top-level markdown file;
-**everything else is code**, including `package.json`, anything under `.github/`,
-and markdown that lives beside source. The bias is deliberate: misclassifying a
-code change as prose skips the gate, so the ambiguous cases all resolve to
-"code". A push to `main` skips the classification entirely and runs everything —
+- **`code`** — not unambiguously documentation. Gates `verify`, `test` and
+  `package`. A file counts as documentation if it is under `docs/` or is a
+  top-level markdown file; **everything else is code**, including `package.json`,
+  anything under `.github/`, and markdown that lives beside source. The bias is
+  deliberate: misclassifying a code change as prose skips the gate, so the
+  ambiguous cases all resolve to "code".
+- **`deps`** — can change the dependency tree or the supply-chain gate itself:
+  `package.json`, `package-lock.json`, `.npmrc`, `scripts/check-audit.mjs`,
+  `scripts/advisory-allowlist.json`, or anything under `.github/workflows/`.
+  Gates `supply-chain` **only**. It is narrower than `code` on purpose — what
+  `supply-chain` checks is entirely a function of the lockfile, so running it
+  on a source or test change that leaves the lockfile alone is a ~9-minute
+  `npm install -g npm@12` + `npm ci` + `npm audit` round trip that re-derives
+  the result already proved on `main`. The `allowScripts` half is still checked
+  on every `code` change by `npm run test:unit`, which needs no network.
+
+A push to `main` skips the classification entirely and sets both outputs true —
 it is the last line of defence and should never be narrowed.
 
 Two things this is *not*. It is not a top-level `paths-ignore`: a path filter
@@ -378,6 +389,16 @@ this section is about the job.
 npm install -g npm@^12.0.0  →  npm ci  →  npm run check:audit
 ```
 
+It runs on the `changes` job's **`deps`** output, not `code` — so a pull
+request that does not touch `package.json`, the lockfile, `.npmrc`, the audit
+script/allow-list or a workflow file skips it. Both things it checks are
+functions of the lockfile, and a ~9-minute `npm@12` install + `npm ci` +
+`npm audit` on an unchanged tree only re-proves what already passed on `main`.
+The `allowScripts` half is still covered on every `code` change by the unit
+tier (see [The deny-list is checked, not trusted](#the-deny-list-is-checked-not-trusted));
+what is `deps`-only is the npm-12 `strict-allow-scripts` enforcement and
+`npm audit`.
+
 ### Why this job is pinned instead of folded into the matrix
 
 The install-script policy is the `allowScripts` field in `package.json`, and
@@ -492,12 +513,19 @@ well-formed JSON, on stdout. Aimed at an unreachable registry it prints
 neither obvious signal is usable — the exit code is non-zero when the audit
 *worked* and found something, zero when it never ran, and the JSON parses either
 way. Without a shape check, that payload reads as an empty `vulnerabilities` map
-and the production rule announces a clean tree. Both audits also run under a
-per-audit timeout (four minutes, raised from two when slice 5c-iii's added
-dependencies pushed the full-tree `npm audit --json` from ~15s to ~90s and the
-old margin started failing `supply-chain` on a slightly slow registry), so a
-hung registry fails this job rather than holding a runner open until GitHub
-reclaims it. The job's own 10-minute ceiling is the hard backstop.
+and the production rule announces a clean tree.
+
+Resilience against a slow or flaky registry is npm's own job first: each audit
+call passes `--fetch-timeout=45000 --fetch-retries=2`, so a single stalled HTTP
+request is abandoned after 45s and retried rather than wedging the whole tree
+walk. On top of that, each audit runs under a 180s backstop timeout (2x the
+~90s the full dev-tree audit takes locally) for a total wedge npm's retry does
+not escape — it fails the job with a message that names the cause rather than
+holding a runner open until GitHub reclaims it. The job's own 10-minute ceiling
+is the last resort. An earlier attempt to fix intermittent `supply-chain`
+failures by raising this number alone (to four minutes) did not work, because
+the failure was one hung request, not a slow tree — hence the per-request
+`--fetch-timeout`.
 
 ### The deny-list is checked, not trusted
 

@@ -886,8 +886,12 @@ packaging leak, folded in:** the `.vsix` was already shipping `CLAUDE.md`,
 `STATUS.md`/`CLAUDE.md` name deployments, and this is the slice that makes the
 package public. `.vscodeignore` + `scripts/check-package.mjs` (`DENY`
 rules + `SELF_TEST`) updated; `REQUIRED` also now lists the icon. Archive drops
-18 files/142 KiB → 12/97 KiB. `docs/release-checklist.md` rewritten around the
-tag→two-job flow; `docs/dev/ci.md`'s Release section rewritten. `CHANGELOG.md`
+18 files/142 KiB → 12/97 KiB. **Also folded in:** `scripts/check-audit.mjs`'s
+per-audit timeout 120s → 240s — the `ovsx`/`vsce` deps pushed the full-tree
+`npm audit --json` to ~90s (measured local) and the old cap kept failing the
+`supply-chain` CI job on registry latency (2 of 3 runs on this branch).
+`docs/release-checklist.md` rewritten around the tag→two-job flow;
+`docs/dev/ci.md`'s Release + audit-timeout notes updated. `CHANGELOG.md`
 `[Unreleased]` + ADR-0023 (indexed) updated.
 
 **Adversarial review done 2026-09-03** (hand-over prompt, separate window).

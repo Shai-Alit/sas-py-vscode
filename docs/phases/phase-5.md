@@ -922,6 +922,15 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
      pre-existing 2 low (`diff` GHSA-73RR-HH4G-FPGX, allow-listed). **`check:audit`
      can't run on this Windows box** (`npm.cmd`-spawn `EINVAL`, as in 5d-ii) —
      CI's `supply-chain` job confirms.
+   - **`check:audit` timeout raised, folded in.** The bigger dev tree pushed the
+     full-tree `npm audit --json` from ~15s to ~90s (measured locally), and
+     `scripts/check-audit.mjs`'s 120s per-audit cap — set when the run was ~15s —
+     no longer had margin for a slightly slow CI registry, so `supply-chain`
+     started failing intermittently (2 of 3 runs on this branch). Raised to
+     240s; the script runs two audits in series, so a double timeout is still
+     8 min, inside the job's 10-min ceiling (the hard backstop). `docs/dev/ci.md`
+     updated; `audit-gate.test.ts` injects its own `timeoutMs` so it is
+     unaffected.
    - **Pre-existing packaging leak, folded in.** Building the `.vsix` showed the
      archive already shipping `CLAUDE.md`, `STATUS.md`, `HOUSEKEEPING.md`,
      `.claude/**` and `tsconfig.webview.json` — `.vscodeignore` never excluded

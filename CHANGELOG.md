@@ -39,7 +39,11 @@ called out under **Changed** with a migration note.
   pre-existing leak this surfaced — `.vscodeignore` and
   `scripts/check-package.mjs` now also keep `CLAUDE.md`, `STATUS.md`,
   `HOUSEKEEPING.md`, `.claude/` and `tsconfig.webview.json` out of the archive,
-  which drops from 18 files to 12. No extension behaviour changes.
+  which drops from 18 files to 12. `scripts/check-audit.mjs`'s per-audit
+  timeout is raised from two minutes to four: the added `ovsx` / `vsce`
+  dependencies pushed the full-tree `npm audit --json` to ~90s, and the old
+  margin began failing the `supply-chain` CI job intermittently. No extension
+  behaviour changes.
 - **A troubleshooting guide.** Slice 5c-ii adds
   [Troubleshooting](docs/troubleshooting.md) to the documentation site — a
   single symptom-indexed page assembled from failures actually hit during

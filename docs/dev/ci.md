@@ -493,8 +493,11 @@ neither obvious signal is usable — the exit code is non-zero when the audit
 *worked* and found something, zero when it never ran, and the JSON parses either
 way. Without a shape check, that payload reads as an empty `vulnerabilities` map
 and the production rule announces a clean tree. Both audits also run under a
-two-minute timeout, so a hung registry fails this job rather than holding a
-runner open until GitHub reclaims it.
+per-audit timeout (four minutes, raised from two when slice 5c-iii's added
+dependencies pushed the full-tree `npm audit --json` from ~15s to ~90s and the
+old margin started failing `supply-chain` on a slightly slow registry), so a
+hung registry fails this job rather than holding a runner open until GitHub
+reclaims it. The job's own 10-minute ceiling is the hard backstop.
 
 ### The deny-list is checked, not trusted
 

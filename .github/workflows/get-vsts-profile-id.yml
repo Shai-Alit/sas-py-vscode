@@ -1,0 +1,37 @@
+name: Get VSTS profile id (throwaway)
+
+# One-off helper, not part of the release pipeline. The Marketplace's "add a
+# member to this publisher" search does not accept an Azure Entra object id,
+# client id, or tenant id — it wants the Azure DevOps (VSTS) profile id for
+# the identity, which is only obtainable by asking Azure DevOps for it while
+# actually authenticated as that identity. This workflow does exactly that,
+# once, so the id can be read out of the run log and pasted into the
+# Marketplace's Members UI. Delete this file once that id has been captured.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  get-id:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Fetch the Azure DevOps profile id for this identity
+        run: |
+          set -euo pipefail
+          # Same Azure DevOps resource id `vsce`'s own --azure-credential path
+          # requests a token for (src/auth.ts, getAzureCredentialAccessToken).
+          token=$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)
+          curl -sf -H "Authorization: Bearer $token" \
+            "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1" \
+            | jq '{id, displayName}'

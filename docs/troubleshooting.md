@@ -103,9 +103,10 @@ next run reconnects and starts a fresh interpreter for you.
 reload: the extension's per-run fileref counter restarts while the reattached
 session still holds names allocated before the reload. The extension now seeds
 that counter from the session on the first run after connecting, so a reload
-should no longer trigger this. If it still happens, two editor windows are open
-on the same folder and racing for names — they share one session by design;
-close one, or keep retrying for up to a minute and it clears itself.
+should no longer trigger this, and a short bounded retry absorbs the remaining
+case where two editor windows open on the same folder race for names — they
+share one session by design. If a run still fails this way, close the other
+window on that folder and run again.
 
 **A second run is refused while the first is still going.** The session runs
 one thing at a time — a run, a reset, or an environment probe. Cancel the first

@@ -6,7 +6,7 @@
   "publisher": "shai-alit",
   "license": "Apache-2.0",
   "author": "Sean Ford",
-  "private": true,
+  "private": false,
   "repository": {
     "type": "git",
     "url": "https://github.com/Shai-Alit/sas-py-vscode.git"
@@ -15,6 +15,12 @@
     "url": "https://github.com/Shai-Alit/sas-py-vscode/issues"
   },
   "homepage": "https://github.com/Shai-Alit/sas-py-vscode#readme",
+  "icon": "media/icon.png",
+  "galleryBanner": {
+    "color": "#0766D1",
+    "theme": "dark"
+  },
+  "pricing": "Free",
   "engines": {
     "vscode": "^1.104.0",
     "node": ">=22.18.0"
@@ -278,7 +284,7 @@
     "@types/vscode": "1.104.0",
     "@vscode/l10n-dev": "0.0.35",
     "@vscode/test-electron": "3.1.0",
-    "@vscode/vsce": "3.9.2",
+    "@vscode/vsce": "3.9.3-11",
     "c8": "12.0.0",
     "esbuild": "0.28.2",
     "eslint": "10.9.1",
@@ -287,6 +293,7 @@
     "js-yaml": "5.4.1",
     "mocha": "11.8.0",
     "msw": "2.15.0",
+    "ovsx": "1.1.1",
     "prettier": "3.9.6",
     "sinon": "22.1.0",
     "typescript": "6.0.3",

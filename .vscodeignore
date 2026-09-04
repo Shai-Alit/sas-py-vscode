@@ -10,6 +10,10 @@
 .vscode/**
 .vscode-test/**
 .vscode-test-web/**
+# Agent working files. `.claude/` holds skill definitions and local settings;
+# CLAUDE.md is the standing instructions for the two Claude agents. None of it
+# has meaning inside a published VSIX, and CLAUDE.md names deployments.
+.claude/**
 # The API contracts. Nothing reads them at run time — the YAML parser is a
 # devDependency and `check:contracts` is a build-time gate — so shipping them
 # would put a maintenance document in a user's extension directory.
@@ -38,6 +42,7 @@ esbuild.mjs
 eslint.config.mjs
 tsconfig.json
 tsconfig.test.json
+tsconfig.webview.json
 .mocharc.json
 .mocharc.live.json
 .c8rc.json
@@ -45,6 +50,9 @@ tsconfig.test.json
 PRODUCTION_PLAN.md
 PROBE-FINDINGS.md
 RUNBOOK.md
+STATUS.md
+HOUSEKEEPING.md
+CLAUDE.md
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
 SECURITY.md

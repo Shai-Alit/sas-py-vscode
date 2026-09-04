@@ -857,6 +857,62 @@ remote branches are deleted. **After this: 5c-iii —
 release engineering** (`release.yml`, `package.json` marketplace metadata, icon
 asset, `release-checklist.md` rewrite); see phase-5.md's own 5c Runbook entry.
 
+**5c-iii (release engineering) — [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106),
+opened 2026-09-03, reviewed, fixes folded, not yet merged.** Branch
+`phase-5c-iii-release-engineering`. `.github/workflows/release.yml` — **two
+jobs** on a `v*` tag push: `build` (`contents: read`, no credentials) runs
+checkout → `npm ci` → assert tag `vX.Y.Z` equals `package.json` `version` →
+`npm run verify` → `npm run package` → upload the `.vsix` artifact; `publish`
+(`needs: build`, `if: push`, `environment: release`, `id-token: write` +
+`contents: write`) downloads the artifact and `npx`es the pinned `vsce`/`ovsx`
+(**never `npm ci`** — keeps the ~880-pkg dev tree out of the credentialed job)
+→ `vsce publish --oidc --packagePath` (VS Marketplace, OIDC trusted publishing,
+**no stored PAT**) → `ovsx publish` (best-effort: `continue-on-error`,
+unset-`OVSX_PAT` guard, a failure only warns) → `gh release create` with the
+`.vsix` + notes from `CHANGELOG.md`. `workflow_dispatch` runs `build` only —
+no input, cannot publish. Recorded as
+[ADR-0023](docs/adr/0023-release-publishing.md). `package.json` gains
+`"private": false`, `"icon": "media/icon.png"`, `galleryBanner`, `pricing`
+(version bump / `"preview"` → 5c-iv). `media/icon.png` is a
+deterministically-generated `Py` wordmark (white on `#0766D1`, 128×128, no
+alpha) — explicit stopgap, `release-checklist.md` D3 says replace it.
+`ovsx@1.1.1` + **`@vscode/vsce` pinned to the `3.9.3-11` prerelease** (see the
+review below); `npm audit` unchanged at 2 pre-existing lows, `allowScripts`
+unchanged; `check:audit` can't run on this Windows box (`npm.cmd`-spawn
+`EINVAL`, as in 5d-ii) — CI's `supply-chain` job confirms. **Pre-existing
+packaging leak, folded in:** the `.vsix` was already shipping `CLAUDE.md`,
+`STATUS.md`, `HOUSEKEEPING.md`, `.claude/**` and `tsconfig.webview.json`
+(`.vscodeignore` never excluded them, `check:package`'s rules predated them) —
+`STATUS.md`/`CLAUDE.md` name deployments, and this is the slice that makes the
+package public. `.vscodeignore` + `scripts/check-package.mjs` (`DENY`
+rules + `SELF_TEST`) updated; `REQUIRED` also now lists the icon. Archive drops
+18 files/142 KiB → 12/97 KiB. **Also folded in:** `scripts/check-audit.mjs`'s
+per-audit timeout 120s → 240s — the `ovsx`/`vsce` deps pushed the full-tree
+`npm audit --json` to ~90s (measured local) and the old cap kept failing the
+`supply-chain` CI job on registry latency (2 of 3 runs on this branch).
+`docs/release-checklist.md` rewritten around the tag→two-job flow;
+`docs/dev/ci.md`'s Release + audit-timeout notes updated. `CHANGELOG.md`
+`[Unreleased]` + ADR-0023 (indexed) updated.
+
+**Adversarial review done 2026-09-03** (hand-over prompt, separate window).
+**One blocker (finding 1):** `@vscode/vsce@3.9.2` (latest stable, what the
+first cut pinned) has **no `--oidc`** — it shipped only in the `3.9.3`
+prereleases. Fixed by pinning `@vscode/vsce@3.9.3-11`; Dependabot's normal bump
+retires the exception when `3.9.3` goes stable. **Two should-fix, both done:**
+(2) `id-token`/`contents: write` were in scope while `npm ci`/`verify` ran
+arbitrary tagged-tree code → the two-job split above; (3) any tag push could
+publish any tree → `environment: release` gate + a `v*` tag ruleset (repo
+settings, documented). **One docs gap (4):** the one-time setup skipped that
+the `shai-alit` Marketplace publisher must pre-exist and Open VSX needs a
+signed Eclipse Publisher Agreement → added. Smaller items folded: `--pat`
+dropped from the `ovsx` call (env-read) with an unset guard; release notes →
+`$RUNNER_TEMP`; `awk` regex → literal `index()` match. The reviewer's positive
+verifications held. **Checks:** green on the first cut (`verify`, `check:docs`,
+`package`); **re-run after the fixes pending** (the vsce pin changed the
+lockfile). The publish path (OIDC exchange + tokens + the environment gate) is
+not exercisable locally or by the build-only dispatch — first real run is the
+v0.1.0 tag.
+
 **Phase 6 (SAS Content explorer) scoped 2026-09-03**, from a separate clone
 (`sas-py-vscode-cowork`), deliberately kept apart from the primary working
 copy so this scoping session would not collide with Phase 5's own in-progress

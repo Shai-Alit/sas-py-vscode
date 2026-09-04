@@ -65,12 +65,19 @@ const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
 // `npm audit` talks to the registry, and CONTRIBUTING.md's rule that every
 // network call has a timeout and an abort path has no carve-out for build
-// tooling. Two minutes is roughly ten times the observed run and well inside the
-// job's own 10-minute ceiling, so this fires on a wedged connection rather than
-// on a slow one — and it fires with a message that names the cause, which is the
-// part a job-level timeout cannot do. SIGKILL rather than SIGTERM because the
-// thing being killed is a process that has already stopped responding.
-const AUDIT_TIMEOUT_MS = 120_000;
+// tooling. This fires on a wedged connection rather than on a slow one, and it
+// fires with a message that names the cause — the part a job-level timeout
+// cannot do. SIGKILL rather than SIGTERM because the thing being killed is a
+// process that has already stopped responding.
+//
+// The full dev-tree `npm audit --json` was measured at ~90s locally after
+// slice 5c-iii added `ovsx` and a `@vscode/vsce` prerelease (~120 packages);
+// the previous 120_000 was set when that run was ~15s and left no margin for a
+// slightly slow CI registry, so `supply-chain` began failing intermittently.
+// Four minutes is ~2.7x the observed run, and this script runs two audits in
+// series, so a double timeout is still 8 minutes — inside the job's 10-minute
+// ceiling, which stays the hard backstop.
+const AUDIT_TIMEOUT_MS = 240_000;
 const AUDIT_KILL_SIGNAL = "SIGKILL";
 
 /**

@@ -2,10 +2,11 @@
 
 `.github/workflows/ci.yml` runs on every pull request and on every push to
 `main`. Six jobs: `changes`, `verify`, `test`, `docs`, `package`, and
-`supply-chain`. Two separate workflows sit beside it:
-`.github/workflows/codeql.yml`, which gates a pull request *and* runs weekly, and
+`supply-chain`. Three separate workflows sit beside it:
+`.github/workflows/codeql.yml`, which gates a pull request *and* runs weekly;
 `.github/workflows/link-check.yml`, which runs weekly and is deliberately not
-part of the gate.
+part of the gate; and `.github/workflows/release.yml`, which runs on a `vX.Y.Z`
+tag and is not a gate at all — see [Release](#release-on-a-tag-not-a-gate).
 
 The organising principle is that **CI runs commands you can run**. There is no
 step in this workflow that exists only in CI, no environment variable that
@@ -492,8 +493,11 @@ neither obvious signal is usable — the exit code is non-zero when the audit
 *worked* and found something, zero when it never ran, and the JSON parses either
 way. Without a shape check, that payload reads as an empty `vulnerabilities` map
 and the production rule announces a clean tree. Both audits also run under a
-two-minute timeout, so a hung registry fails this job rather than holding a
-runner open until GitHub reclaims it.
+per-audit timeout (four minutes, raised from two when slice 5c-iii's added
+dependencies pushed the full-tree `npm audit --json` from ~15s to ~90s and the
+old margin started failing `supply-chain` on a slightly slow registry), so a
+hung registry fails this job rather than holding a runner open until GitHub
+reclaims it. The job's own 10-minute ceiling is the hard backstop.
 
 ### The deny-list is checked, not trusted
 
@@ -556,6 +560,52 @@ Unlike every other job here, this one is not a command you can run locally. The
 CodeQL CLI can be installed and pointed at the tree, but that is not the same
 build, and nothing in `npm run verify` reproduces it. If `analyze` is red, the
 alert in the Security tab is the artefact, not the log.
+
+## Release (on a tag, not a gate)
+
+`.github/workflows/release.yml` runs when a `vX.Y.Z` tag is pushed. It is not a
+pull-request check and nothing about it blocks a merge; it is the thing that
+turns a tag into a published extension. The operational steps — the one-time
+Marketplace and Open VSX setup, and the per-release punch list — are in
+[the release checklist](../release-checklist.md); this section is what the
+workflow itself does and the decisions in it worth knowing.
+
+**Two jobs, on purpose.** `build` checks out the tag, `npm ci`s, asserts the tag
+matches `package.json`'s `version`, runs `npm run verify` and `npm run package`
+against the tagged tree, and uploads the `.vsix` as an artifact. It runs at
+`contents: read` with no publishing credentials, because `npm ci` and
+`npm run verify` execute code from the tagged tree and the whole dev dependency
+tree. `publish` (`needs: build`) downloads that artifact, `npx`es `@vscode/vsce`
+and `ovsx` at the versions `package.json` pins, and publishes to the VS
+Marketplace and Open VSX and cuts the GitHub Release. It holds `id-token: write`
+and `contents: write` and installs none of the dev tree — the split is what
+keeps a compromised dev dependency away from the credentials.
+[ADR-0023](../adr/0023-release-publishing.md) has the full reasoning.
+
+**Marketplace auth is OIDC, not a stored token.** `vsce publish --oidc` requests
+a GitHub Actions OIDC token (hence `id-token: write` on `publish`) and exchanges
+it for a short-lived Marketplace credential against a trusted-publishing policy
+registered on the Marketplace side. There is no `VSCE_PAT` secret, and `--oidc`
+does not fall back to one — a missing policy fails the publish rather than
+degrading. The classic Azure DevOps PATs that `vsce publish -p` needs are being
+retired on 2026-12-01. `--oidc` is not in a stable `@vscode/vsce` release yet,
+so the devDependency is pinned to a `3.9.3` prerelease until one ships (ADR-0023).
+
+**The Open VSX publish is best-effort.** That step is `continue-on-error: true`:
+a failure emits a warning and the release still counts as done, because the
+Marketplace is the primary channel and a third-party registry's downtime should
+not force a retag. `ovsx` is a pinned dev dependency so `check:audit` covers it;
+`publish` runs it as `npx ovsx@<the pin>` rather than from `node_modules`.
+
+**The `publish` job waits on an environment.** It declares `environment: release`,
+so a maintainer approves each publish before it runs — an approval gate in front
+of something irreversible, since branch protection does not cover tags.
+
+`workflow_dispatch` runs `build` only and never publishes — no input, no way to
+make it. It is the rehearsal: it proves the build, the gate and packaging on CI
+infrastructure. The publish steps are *not* commands you can usefully run
+locally (they need the OIDC exchange and the registry tokens), so a real `v*`
+tag is their first exercise.
 
 ## What is deliberately not here yet
 

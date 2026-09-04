@@ -850,6 +850,124 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
 5. Exercise `docs/release-checklist.md` end to end at least once, as a dry
    run, before the real v0.1.0 tag.
 
+   **5c-iii (release engineering) — [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106),
+   opened 2026-09-03, reviewed, fixes folded, not yet merged.** Items 3 + 4
+   above, minus the version bump (that stays with 5c-iv). Branch
+   `phase-5c-iii-release-engineering`.
+
+   - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
+     **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —
+     no input, it cannot publish):
+     - **`build`** (`contents: read`, no publishing credentials): checkout the
+       tag → `npm ci` → assert tag `vX.Y.Z` equals `package.json` `version`
+       (fail loudly; reports only on dispatch) → `npm run verify` →
+       `npm run package` → `actions/upload-artifact` the `.vsix`.
+     - **`publish`** (`needs: build`, `if: github.event_name == 'push'`,
+       `environment: release`, `id-token: write` + `contents: write`): checkout
+       (for `package.json` tool pins + `CHANGELOG.md`) → `download-artifact` →
+       `npx @vscode/vsce@<pin> publish --oidc --packagePath` → `npx ovsx@<pin>
+       publish` (best-effort: `continue-on-error`, unset-`OVSX_PAT` guard, a
+       failure warns) → `gh release create` with the `.vsix` attached and notes
+       sliced from `CHANGELOG.md` (literal `index()` line-start match, no regex
+       escaping needed; `--generate-notes` fallback; written to `$RUNNER_TEMP`,
+       not the repo).
+     Both jobs fork-gated; `concurrency` never cancels a run in progress.
+     Actions pinned by tag (`@v7`), matching `ci.yml`; `dependabot`'s
+     `github-actions` entry tracks them.
+   - **The two-job split is the review's finding 2.** The single-job first cut
+     had `id-token: write` in scope while `npm ci` (~880 packages) and
+     `npm run verify` (ESLint, Mocha — arbitrary tagged-tree code) ran. `build`
+     now holds no credentials; `publish` holds them and installs nothing — it
+     `npx`es the two publishing CLIs at the versions `package.json` pins, so the
+     dev tree is absent from the job that can publish.
+   - **`environment: release` + a `v*` tag ruleset — the review's finding 3.**
+     Branch protection does not cover tags, so without this any write-access
+     collaborator could push `v9.9.9` at any tree. The environment gives a
+     human-approval gate; the ruleset restricts who can push release tags. Both
+     are repo settings, in `release-checklist.md`'s one-time setup, not the
+     workflow.
+   - **Marketplace auth is OIDC, no PAT — and `--oidc` is not in a stable
+     `@vscode/vsce` yet.** The review's blocking finding 1: `@vscode/vsce@3.9.2`
+     (latest stable, and what the first cut pinned) has **no `--oidc` option** —
+     `grep -ri oidc node_modules/@vscode/vsce` is empty; `commander` would
+     reject the flag. It landed in the `3.9.3` prereleases (`out/oidc.js`), so
+     `@vscode/vsce` is now pinned to **`3.9.3-11`** (engines `node >= 22`, our
+     floor; `hasInstallScript` set unchanged, so `allowScripts` untouched);
+     Dependabot's ordinary bump retires the exception when `3.9.3` ships stable.
+     `--oidc` + `--packagePath` are independent in that build's source
+     (credential resolution runs regardless of `--packagePath`), so the pairing
+     should hold, but the first real exercise is the v0.1.0 tag — the dispatch
+     rehearsal is build-only. If it fails, drop `--packagePath` from the
+     Marketplace step alone. `VSCE_PAT` (retires 2026-12-01) and
+     `--azure-credential` (needs an Entra federation) were the considered
+     alternatives — Sean's call was the prerelease pin.
+   - **`package.json` marketplace metadata:** `"private": false`,
+     `"icon": "media/icon.png"`, `"galleryBanner": { "color": "#0766D1",
+     "theme": "dark" }`, `"pricing": "Free"`. `"preview": true` and the version
+     bump are deliberately left to 5c-iv. `docs/reference/` regenerated — no
+     drift. Note (review nit, accepted): `"private": false` removes the
+     stray-`npm publish` guard, but `vsce` refuses a `private` package so the
+     flip is mandatory, and nothing runs `npm publish` / there is no npm token
+     in CI.
+   - **`media/icon.png`** — a 128×128, no-alpha `Py` wordmark, white on
+     `#0766D1`, generated deterministically (hand-rolled PNG encoder over a
+     6×9 pixel-font `P`/`y`; Chrome/Edge headless screenshotting was tried first
+     and would not render text reliably here). An explicit stopgap:
+     `release-checklist.md` D3 says replace it before the v0.1.0 tag.
+     `scripts/check-package.mjs` `REQUIRED` now lists `extension/media/icon.png`.
+   - **`ovsx@1.1.1`** — exact-pinned dev dependency so `check:audit` covers it
+     and local `npx ovsx` / `npm run package` resolve the pin; the `publish`
+     job runs it as `npx ovsx@<pin>` (see the split). `npm install` for it +
+     the vsce prerelease changed ~24 packages net; `npm audit` stays at the
+     pre-existing 2 low (`diff` GHSA-73RR-HH4G-FPGX, allow-listed). **`check:audit`
+     can't run on this Windows box** (`npm.cmd`-spawn `EINVAL`, as in 5d-ii) —
+     CI's `supply-chain` job confirms.
+   - **`check:audit` timeout raised, folded in.** The bigger dev tree pushed the
+     full-tree `npm audit --json` from ~15s to ~90s (measured locally), and
+     `scripts/check-audit.mjs`'s 120s per-audit cap — set when the run was ~15s —
+     no longer had margin for a slightly slow CI registry, so `supply-chain`
+     started failing intermittently (2 of 3 runs on this branch). Raised to
+     240s; the script runs two audits in series, so a double timeout is still
+     8 min, inside the job's 10-min ceiling (the hard backstop). `docs/dev/ci.md`
+     updated; `audit-gate.test.ts` injects its own `timeoutMs` so it is
+     unaffected.
+   - **Pre-existing packaging leak, folded in.** Building the `.vsix` showed the
+     archive already shipping `CLAUDE.md`, `STATUS.md`, `HOUSEKEEPING.md`,
+     `.claude/**` and `tsconfig.webview.json` — `.vscodeignore` never excluded
+     them and `check:package`'s `DENY` list predated them, so `check:package`
+     passed on it. `STATUS.md` / `CLAUDE.md` name deployments, which this
+     project's own rule bars from shipping, and this is the slice that makes the
+     package public. Fixed here (5d-ii precedent): `.vscodeignore` excludes all
+     five; `check-package.mjs`'s "internal document" rule gains
+     `STATUS|HOUSEKEEPING|CLAUDE` and "repository metadata" gains `.claude/`,
+     with matching `SELF_TEST` cases. The `.vsix` drops 18 files / 142 KiB →
+     12 / 97 KiB.
+   - **Docs:** `docs/release-checklist.md` rewritten around the tag→two-job
+     flow; the one-time setup now names the review's finding-4 prerequisites —
+     the `shai-alit` Marketplace *publisher* must exist, and Open VSX needs a
+     signed Eclipse Publisher Agreement before any token works — plus the
+     `release` environment and the tag ruleset. `docs/dev/ci.md`'s "Release"
+     section rewritten for the two-job split. `CHANGELOG.md` `[Unreleased]`,
+     ADR-0023 (indexed) reflect the final shape.
+   - **Review:** one adversarial pass (the hand-over prompt this project's
+     policy names), 2026-09-03. One blocker (finding 1, `--oidc` unreleased —
+     fixed via the prerelease pin), two should-fix (findings 2 and 3, the
+     job split and the tag/environment gate — both done), one docs gap
+     (finding 4, the setup prerequisites — added), and smaller items all
+     folded: `--pat` dropped from the `ovsx` call (it reads `OVSX_PAT` itself)
+     with an unset-guard added; release notes to `$RUNNER_TEMP`; the `awk`
+     regex replaced with literal `index()` matching. The reviewer's positive
+     verifications (guard logic, `steps.openvsx.outcome`, the bash arrays,
+     `check-package.mjs` rules + `SELF_TEST` ordering, `.vscodeignore` regexes,
+     the icon, `ovsx@1.1.1`) held.
+   - **Checks (this VS Code session):** `npm run verify`, `npm run check:docs`,
+     `npm run package` green on the first cut; **re-run after the review fixes**
+     — _pending_ (the vsce pin changed the lockfile). `test:integration` not
+     warranted (no `src/`). **Not runnable here:** `check:audit`; the
+     `release.yml` publish path (OIDC exchange + registry tokens + the `release`
+     environment — first exercised by the v0.1.0 tag, since the dispatch
+     rehearsal is build-only).
+
 ---
 
 ## Probe findings

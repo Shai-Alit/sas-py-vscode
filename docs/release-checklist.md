@@ -143,7 +143,8 @@ git push origin vX.Y.Z
 ☐ **D6.** Watch the `Release` workflow. When `publish` is queued, approve the
 `release` environment. Then confirm:
 
-- the Marketplace publish succeeded (OIDC, no PAT);
+- the Marketplace publish succeeded (Azure workload identity federation, no
+  PAT);
 - the Open VSX publish succeeded — or, if it warned, re-run
   `npx ovsx publish dist/python-on-viya.vsix --pat "$OVSX_PAT"` by hand once
   Open VSX is healthy;

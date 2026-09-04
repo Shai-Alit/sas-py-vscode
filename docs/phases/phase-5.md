@@ -858,6 +858,41 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    folded into #106. **Next: 5c-iv** — the two stale-comment `fix(run):` items
    5c-i carried are still open, deliberately not taken mid-phase.
 
+   **5c-iv started 2026-09-04 — S1 done, but not as `release-checklist.md`
+   originally described it.** Working through the one-time setup S1–S4 live
+   against the real Marketplace/Open VSX/GitHub UIs surfaced that `--oidc`
+   trusted publishing (ADR-0023's original decision) is not actually usable:
+   the Marketplace has never shipped the policy-registration UI it depends
+   on — confirmed against the live `shai-alit` publisher's own Manage page
+   (no such option anywhere) and against an open, unanswered question on the
+   upstream PR that added `--oidc` to `vsce`
+   ([microsoft/vscode-vsce#1291](https://github.com/microsoft/vscode-vsce/pull/1291)).
+   Switched to `vsce publish --azure-credential`, reusing this repo's
+   existing Entra ID identity (kept live when Foundry was walked back from
+   `claude-review.yml`) via a new federated credential scoped to this repo's
+   `release` GitHub Environment — which S1 also created in the same pass
+   (with Sean as required reviewer), so S3's environment half is also done.
+   No new Azure subscription needed. Two non-obvious findings from wiring
+   this up, recorded in [ADR-0023](../adr/0023-release-publishing.md)'s
+   2026-09-04 amendment: GitHub's OIDC subject claim already defaults to the
+   immutable owner/repo-id form for this repo, not the classic form most
+   federation guides show (caused an `AADSTS700213` failure until the
+   federated credential's Subject was corrected to match); and the
+   Marketplace's Members search wants the identity's Azure DevOps profile
+   id, not any Entra identifier, obtainable only by querying Azure DevOps
+   while authenticated as that identity — done via a throwaway
+   `workflow_dispatch` helper, merged as
+   [PR #117](https://github.com/Shai-Alit/sas-py-vscode/pull/117) then
+   deleted again in the fix. The actual `release.yml`/`ADR-0023`/checklist
+   rewrite merged as
+   [PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118)
+   (`278eac7`); `@vscode/vsce` reverts from the `3.9.3` prerelease pin to
+   stable `3.9.2`, which already carries `--azure-credential`. **Still open
+   before the real tag:** S2 (Open VSX Publisher Agreement, `OVSX_PAT`,
+   `ovsx create-namespace`), S3's separate repository-level `v*` tag
+   ruleset (distinct from the `release` environment's own tag restriction,
+   which is done), and item 5's dry run via `workflow_dispatch`.
+
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —
      no input, it cannot publish):

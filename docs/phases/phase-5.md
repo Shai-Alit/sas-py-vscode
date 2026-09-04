@@ -887,11 +887,22 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    rewrite merged as
    [PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118)
    (`278eac7`); `@vscode/vsce` reverts from the `3.9.3` prerelease pin to
-   stable `3.9.2`, which already carries `--azure-credential`. **Still open
-   before the real tag:** S2 (Open VSX Publisher Agreement, `OVSX_PAT`,
-   `ovsx create-namespace`), S3's separate repository-level `v*` tag
-   ruleset (distinct from the `release` environment's own tag restriction,
-   which is done), and item 5's dry run via `workflow_dispatch`.
+   stable `3.9.2`, which already carries `--azure-credential`.
+
+   **S2, S3, and item 5's dry run all closed out the same day.** S2: Eclipse
+   Foundation Open VSX Publisher Agreement signed, `OVSX_PAT` set as a repo
+   secret, `npx ovsx create-namespace shai-alit` run once
+   ("Created namespace shai-alit"). S3's remaining half: a `release-tags`
+   repository ruleset targeting `refs/tags/v*` with `creation`, `deletion`,
+   and `non_fast_forward` all active (confirmed via
+   `gh api repos/Shai-Alit/sas-py-vscode/rulesets`) — the `release`
+   environment's own reviewer gate was already done alongside S1. Item 5: a
+   `workflow_dispatch` run of `release.yml` on `main`
+   ([run 33916176665](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/33916176665)) —
+   `build` green in 1m9s (checkout, `npm ci`, tag/version check, `verify`,
+   `package`, artifact upload all passed), `publish` correctly skipped
+   (dispatch, not a tag push). **All of S1–S4 and the dry run are done. What
+   remains is Section D itself — the real v0.1.0 release.**
 
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —

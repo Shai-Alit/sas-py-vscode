@@ -1264,6 +1264,18 @@ open before the real v0.1.0 tag:** S2 (Open VSX), S3's separate
 repository-level `v*` tag ruleset, and the `workflow_dispatch` dry run. See
 `docs/phases/phase-5.md`'s own 5c-iv Runbook entry for the full account.
 
+**S2, S3, and the dry run all closed the same day, 2026-09-04.** Open VSX:
+Publisher Agreement signed, `OVSX_PAT` set, `shai-alit` namespace created.
+S3: a `release-tags` repository ruleset (target `refs/tags/v*`, `creation`/
+`deletion`/`non_fast_forward` all active) — confirmed via
+`gh api repos/Shai-Alit/sas-py-vscode/rulesets`. Dry run: `release.yml`
+dispatched manually on `main`
+([run 33916176665](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/33916176665)),
+`build` green in 1m9s, `publish` correctly skipped. **All of S1–S4 and the
+dry run are done — nothing left before the real v0.1.0 tag except Section D
+itself.** See `docs/phases/phase-5.md`'s 5c-iv Runbook entry for the full
+account.
+
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
 > only file every session should need to open to know where to start — open the
@@ -1280,7 +1292,7 @@ repository-level `v*` tag ruleset, and the `workflow_dispatch` dry run. See
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release) started — S1 done via `--azure-credential`, not `--oidc` ([PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023 amended); S2/S3's tag ruleset/dry run still open — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release) in progress — S1–S4 and the `workflow_dispatch` dry run all done (S1 via `--azure-credential`, not `--oidc` — [PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023 amended); only Section D (the real tag) remains — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |

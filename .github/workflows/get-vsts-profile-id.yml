@@ -32,6 +32,7 @@ permissions:
 jobs:
   get-id:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment: release
     steps:
       - uses: azure/login@v2
@@ -46,6 +47,7 @@ jobs:
           # Same Azure DevOps resource id `vsce`'s own --azure-credential path
           # requests a token for (src/auth.ts, getAzureCredentialAccessToken).
           token=$(az account get-access-token --resource 499b84ac-1321-427f-aa17-267ca6975798 --query accessToken -o tsv)
-          curl -sf -H "Authorization: Bearer $token" \
+          echo "::add-mask::$token"
+          curl -sSf --connect-timeout 10 --max-time 30 -H "Authorization: Bearer $token" \
             "https://app.vssps.visualstudio.com/_apis/profile/profiles/me?api-version=7.1" \
             | jq '{id, displayName}'

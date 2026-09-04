@@ -891,6 +891,44 @@ append on both sides — but confirm with a fresh `git pull --ff-only` before
 cutting the branch, since this paragraph was written against a snapshot, not
 against `main` as it stands when this actually gets pushed.
 
+**Phase 7 (Libraries and data viewer) scoped 2026-09-03**, same day, same
+separate clone (`sas-py-vscode-cowork`) — branched from `main` at `c57a4f1`
+(Phase 6 scoping merged as PR #107), so it does not reflect anything landed
+on `main` since. **No code was written.** A codebase survey of both this
+repo (`src/compute/sessionManager.ts`, `job.ts`, `links.ts`) and
+`vscode-sas-extension`'s Library Navigator
+(`client/src/components/LibraryNavigator/`,
+`client/src/connection/rest/RestLibraryAdapter.ts`, its generated
+`DataAccessApi` client, `client/src/panels/DataViewer.ts`/
+`TablePropertiesViewer.ts`, `client/src/webview/useDataViewer.ts`) refined
+`PRODUCTION_PLAN.md`'s one-line sketch into a 3-slice Runbook (7a adapter +
+read-only tree, 7b data-viewer webview, 7c sort/filter/CSV export/table
+properties), recommended order 7a→7b→7c. Key outcome: **the whole feature is
+session-scoped, not a separate service** — every `DataAccessApi` call is a
+path under `/compute/sessions/{sessionId}/data/…`, so a library browser rides
+on the exact same `ComputeSessionManager`-held session Phase 3 already runs
+Python in, a materially smaller structural lift than Phase 6's four-new-surface
+problem. One open architecture question recorded, not resolved: React +
+`ag-grid-community`/`ag-grid-react` (upstream's data-viewer stack) as this
+project's first React dependency, versus hand-rolling a lighter grid in the
+existing DOM-manipulation webview style ADR-0021 established — flagged for
+7b, not decided here. **The busy-submission question is now settled, not
+just flagged**: an initial probe attempt this session failed at the network
+layer (every `CONNECT` to `verde` came back `502 Bad Gateway` while a public
+host tunnelled fine — a VPN outage on the deployment side, confirmed resolved
+once retried), and once reachability returned, a live probe (Finding 85)
+measured a `getRows` call blocking for 14.911s behind a submitted 15-second
+job, against a 0.349s baseline once idle — `DataAccessApi` calls serialize at
+the session's kernel level rather than erroring or racing, so 7a needs a
+visible "session busy" UI rather than assuming browsing is always safe
+mid-run. Five other findings (83, 84, 86) confirmed the core wire shapes
+against `SASHELP`/`WORK` on `verde`, via one throwaway session created and
+deleted (confirmed gone by a `404` read-back) — full account in
+`docs/phases/phase-7.md`'s own Probe findings section. **Not yet committed** —
+prepared in the working
+copy; same merge-conflict caveat as the Phase 6 paragraph above applies here
+too (confirm `git pull --ff-only` against `main` before cutting the branch).
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -980,7 +1018,7 @@ account.
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) next — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
-| 7 — Libraries and data viewer | not started | `docs/phases/phase-7.md` |
+| 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | not started | `docs/phases/phase-10.md` |

@@ -1189,9 +1189,13 @@ account.
 **Phase 10 (Viya environment awareness) scoped 2026-09-04**, same separate
 clone (`sas-py-vscode-cowork`) Phases 6–9 were scoped from — `main` at
 `95e4c73` (Phase 9's own scoping merge, PR #115, already in this history).
-**No code was written; nothing in this clone has been committed yet** —
-`docs/phases/phase-10.md` and this file's own phase-index row are edited in
-the working tree, ready for review before a commit. A codebase survey of
+**No code was written.** `docs/phases/phase-10.md` and this file's own
+phase-index row and narrative entry. **Committed as `fa70f0f` on branch
+`phase-10-scoping`, opened as [PR #116](https://github.com/Shai-Alit/sas-py-vscode/pull/116),
+2026-09-04.** Docs-only, no adversarial review pass needed (the diff is its
+own evidence, same as Phases 6–9's own scoping PRs) — `check:docs` and
+`check:secrets` are the checks it can plausibly fail, and both pass clean
+(so does `prettier --check`). A codebase survey of
 this repo's existing Stage-2 probe and its consumers
 (`src/backend/environment.ts`, `environmentPanel.ts`/`environmentDocument.ts`/
 `environmentStore.ts`/`environmentStatusBar.ts`, all landed in 3e) plus

@@ -1610,6 +1610,16 @@ called out under **Changed** with a migration note.
   timeout is 180s (a wedged request, not a slow tree, was the cause of the
   intermittent failures a longer timeout did not fix). Contributor-facing;
   `docs/dev/ci.md` updated.
+- **CI exposes a single `ci-required` aggregate check for branch protection.**
+  The `test` job is a matrix, so its status reports under six expanded names
+  (`test (ubuntu-latest, node 24)` and so on) that are never reported at all on
+  a run where `test` is skipped — which left documentation-only pull requests
+  unmergeable without an administrator, because the branch-protection rule
+  listed those six names and waited for them forever. A new `ci-required` job
+  `needs` the gated jobs with `if: always()` and passes only when each
+  succeeded or was legitimately skipped; branch protection now names just that
+  one check. Adding or removing a matrix leg no longer touches repository
+  settings. Contributor-facing; `docs/dev/ci.md` updated.
 - **The contract drift gate (`npm run check:contracts`) rejects two cases it
   used to pass** (Phase 5's 5a slice — an audit and harden, no new CI wiring).
   A contract whose `fixtures:` names a directory that *exists but is empty* now

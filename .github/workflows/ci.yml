@@ -322,3 +322,55 @@ jobs:
       # and an unexpired date. Needs the network, which is why it is not part of
       # `npm run verify`.
       - run: npm run check:audit
+
+  # The one required status check.
+  #
+  # Branch protection requires exactly one context from this workflow: this job.
+  # It passes only when every job it needs either succeeded or was deliberately
+  # skipped by its own `if:`. So a documentation-only pull request — which skips
+  # verify, test, package and supply-chain — still merges without an
+  # administrator override, while a real failure in any of those jobs blocks the
+  # merge here.
+  #
+  # Why an aggregate rather than requiring each job by name: `test` is a matrix,
+  # and its status is reported under six expanded names
+  # (`test (ubuntu-latest, node 24)` and so on) that exist only on a run where
+  # the matrix actually expands. On a run where `test` is skipped they are never
+  # reported at all, so a branch-protection rule that names them waits for them
+  # forever and the pull request cannot be merged without an admin. Depending on
+  # the matrix job *here* — where a skipped `needs` entry is visible as
+  # `skipped` rather than simply absent — lets branch protection name one stable
+  # check, and adding or dropping a matrix leg never touches repository settings
+  # again. `analyze` lives in codeql.yml and cannot be a `needs:` of this job,
+  # so it stays a required check in its own right. See docs/dev/ci.md.
+  #
+  # `if: always()` so the job runs even when every dependency was skipped —
+  # otherwise it would inherit the skip and report nothing, which is the exact
+  # gap it exists to close.
+  ci-required:
+    name: ci-required
+    needs: [changes, verify, test, docs, package, supply-chain]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every needed job must have succeeded or been skipped
+        env:
+          RESULTS: |
+            changes=${{ needs.changes.result }}
+            verify=${{ needs.verify.result }}
+            test=${{ needs.test.result }}
+            docs=${{ needs.docs.result }}
+            package=${{ needs.package.result }}
+            supply-chain=${{ needs.supply-chain.result }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$RESULTS"
+          # A job `result` is one of success, failure, cancelled, skipped.
+          # success and skipped are both fine here; matching the other two
+          # positively means a blank line cannot read as a failure.
+          if printf '%s\n' "$RESULTS" | grep -E '=(failure|cancelled)$'; then
+            echo "::error::ci-required: a needed job failed or was cancelled"
+            exit 1
+          fi
+          echo "all needed jobs succeeded or were legitimately skipped"

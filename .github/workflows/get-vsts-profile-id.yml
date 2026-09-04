@@ -31,6 +31,9 @@ permissions:
 
 jobs:
   get-id:
+    # Never on a fork: same guard release.yml's jobs use, so a fork can't run
+    # with this repo's secrets and environment.
+    if: github.repository == 'Shai-Alit/sas-py-vscode'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     environment: release

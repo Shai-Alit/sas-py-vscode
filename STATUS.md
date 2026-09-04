@@ -1068,6 +1068,53 @@ flagged happens in 8a, 7a, or not at all. **Not yet committed** — prepared in
 the working copy; same merge-conflict caveat as the Phase 6/7 paragraphs
 applies here too.
 
+**Phase 9 (Notebooks) scoped 2026-09-04**, same separate clone
+(`sas-py-vscode-cowork`) Phases 6–8 were scoped from — branched from `main`
+at `a62f6c4` (current tip: 5c-iii, ADR-0023, and the CI-reliability/
+`ci-required` follow-ups all merged; Phases 6/7/8 also already in this
+history). **No code was written.** A codebase survey of this repo
+(`src/backend/backend.ts`, `richOutput.ts`, `src/run/commands.ts`,
+`resultPanel.ts`/`resultPanelModel.ts`) and `vscode-sas-extension`'s one
+notebook implementation (`client/src/components/notebook/`), plus VS Code's
+own Notebook API documentation, refined `PRODUCTION_PLAN.md`'s one-line
+sketch into a 4-slice Runbook (9a format decision, 9b controller + execution,
+9c renderers + diagnostics, 9d export), recommended order 9a→9b→9c→9d.
+**No live-Viya probe was run or needed** — unlike Phases 6–8, this phase's
+open questions are VS Code client-side integration questions, not wire
+behaviour; the underlying Viya mechanics (persistent namespace across cells,
+rich-output capture, cancellation) were already settled in Phases 2–5 for Run
+File, and a notebook cell is just one more caller of the same
+`ExecutionBackend` seam — `ExecuteOptions.freshNamespace` was already
+documented in-repo as *"a notebook cell passes `false`"* before this phase
+existed. **Key outcome, now a settled decision, not just a recommendation:
+[ADR-0024](docs/adr/0024-notebooks-are-ipynb-native.md) — notebooks are
+ipynb-native, with no bespoke fallback**, settling `PRODUCTION_PLAN.md` §6
+open decision 7. Go ipynb-native by registering only a `NotebookController`
+against VS Code's existing `.ipynb` infrastructure (the documented
+"alternative kernel for an existing notebook type" pattern, the same shape
+.NET Interactive and Deno's own Jupyter kernels use), rather than inventing a
+bespoke format the way upstream's `.sasnb` did — since a Python notebook's
+own `RichOutput` shape is already a well-formed Jupyter output bundle, unlike
+SAS's two-fixed-mimetype log/ODS model, and a developer already using Jupyter
+notebooks should get the same file format everywhere, not a shape only this
+extension understands (Sean's direction, 2026-09-04). **What's still open is
+implementation mechanics only, not the format itself**: 9a's very first task
+is a hands-on spike confirming whether `.ipynb` notebooks open and accept a
+third-party kernel with `ms-toolsai.jupyter` **not** installed, since nothing
+found this session states that directly — if the spike shows that extension
+is needed, 9a documents it as a recommended/required companion rather than
+retreating to a bespoke format. Two further open architecture questions carried into the
+phase file rather than settled here: lifting `commands.ts`'s private
+`backends`/`backendFor` cache out of its closure so a notebook controller and
+Run File share one backend per profile instead of each holding an
+independent one, and whether the run-target (ADR-0011/0020) status-bar
+concept needs to extend to notebooks at all, given the kernel picker is
+already an explicit per-notebook choice. **Committed as `3bdb9f2` on branch
+`phase-9-scoping`, opened as [PR #115](https://github.com/Shai-Alit/sas-py-vscode/pull/115),
+2026-09-04.** Docs-only, no adversarial review pass needed (the diff is its
+own evidence, same as Phases 6/7/8's own scoping PRs) — `check:docs` and
+`check:secrets` are the checks it can plausibly fail.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -1159,7 +1206,7 @@ account.
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
-| 9 — Notebooks | not started | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

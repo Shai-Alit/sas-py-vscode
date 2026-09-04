@@ -68,6 +68,63 @@ a PAT, so a misconfigured policy fails the release rather than silently
 degrading — which is the behaviour we want for something that ships under the
 publisher's identity.
 
+> **Amended 2026-09-04.** `--oidc` cannot actually be used: the Marketplace has
+> never shipped the trusted-publishing policy UI this paragraph assumed exists.
+> `vsce`'s client-side `--oidc` support merged 2026-07-23
+> ([microsoft/vscode-vsce#1291](https://github.com/microsoft/vscode-vsce/pull/1291)),
+> but a commenter on that same PR asked "Is this configurable in Marketplace
+> yet? I can't find it in any docs or config pages in there" and it is still
+> open and unanswered — there is no page anywhere under
+> `marketplace.visualstudio.com/manage` to register a policy against, checked
+> directly against the `shai-alit` publisher's own management page.
+>
+> The release now publishes with `vsce publish --azure-credential` instead —
+> the other tokenless route this ADR's Alternatives section originally
+> rejected. What changed the calculus: this repo already had a live Entra ID
+> identity with GitHub Actions federation (added for the Foundry-based AI
+> reviewer, which was walked back — see `ci: authenticate claude-review.yml
+> with a subscription token, not Foundry` — but the identity itself was
+> deliberately left in place). A second federated credential was added to that
+> same identity, scoped to this repo's `release` GitHub Environment
+> specifically (not reused from whatever scope the Foundry integration used).
+> `AZURE_CLIENT_ID`/`AZURE_TENANT_ID` were already present as repo secrets from
+> that earlier work. No new Azure subscription or payment method was needed —
+> contrary to the Alternatives section's assumption that this route needs "an
+> Entra app registration and a federated credential managed outside this
+> repo": both already existed, reachable, and free (`az login`'s
+> `allow-no-subscriptions: true`).
+>
+> Two non-obvious things hit while wiring this up, worth recording so a future
+> re-federation doesn't rediscover them the slow way:
+>
+> 1. **GitHub's OIDC subject claim already defaults to the immutable-ID
+>    format** for this repo (`repo:Shai-Alit@54478616/sas-py-vscode@1331483707:environment:release`,
+>    confirmed against the GitHub API — `54478616` is the `Shai-Alit` user id,
+>    `1331483707` this repo's id), not the classic `repo:Shai-Alit/sas-py-vscode:…`
+>    form most OIDC-federation guides (including Microsoft's own, as of this
+>    writing) still show. `gh api repos/Shai-Alit/sas-py-vscode/actions/oidc/customization/sub`
+>    reports `use_default: true, use_immutable_subject: false` yet already
+>    resolves to the immutable form — the flag name does not describe current
+>    behaviour. A federated credential's Subject must be set to the exact
+>    presented string or the token exchange fails
+>    (`AADSTS700213: No matching federated identity record found…`).
+> 2. **The Marketplace's "add a member" search does not accept an Entra object
+>    id, client id, or tenant id.** It wants the identity's Azure DevOps (VSTS)
+>    profile id, obtainable only by querying
+>    `https://app.vssps.visualstudio.com/_apis/profile/profiles/me` while
+>    authenticated as that identity — there is no portal page that shows it.
+>    A one-off `workflow_dispatch` helper (`get-vsts-profile-id.yml`, deleted
+>    once used) did the query and printed the id to a run log for a human to
+>    read and paste into the Members UI by hand.
+>
+> `@vscode/vsce` is back to pinned-latest-stable (`3.9.2`) — `--azure-credential`
+> has been in stable since before this ADR was written (checked directly
+> against the `v3.9.2` tag), so the prerelease pin this ADR introduced for
+> `--oidc`'s sake no longer has a reason to exist. The Alternatives section
+> below is left as originally written, since the reasoning it gives for
+> preferring `--oidc` was sound *given a working policy UI* — only the premise
+> that one exists turned out to be wrong.
+
 **`--oidc` shipped after `@vscode/vsce@3.9.2`.** It is merged upstream and
 documented in the `main` README, but as of 2026-09-03 the latest stable release
 (`3.9.2`) does not carry it — `commander` would reject the flag outright. It is
@@ -163,6 +220,14 @@ route ever becomes necessary (for example, the repo already federates into
 Entra for the AI reviewers — see `PRODUCTION_PLAN.md` §7 — and consolidating is
 judged worthwhile), it supersedes this paragraph, not the whole ADR.
 
+> **Amended 2026-09-04.** This is what the release actually uses now — see the
+> amendment on the Decision section above. The "heavier for no gain" call was
+> right given a working `--oidc` policy UI; it was the premise that turned out
+> false. The AI-reviewer federation this paragraph names as a *future*
+> consolidation trigger was already walked back by the time this fired, but
+> the underlying Entra identity was kept, which is what made reusing it here
+> free rather than "managed outside this repo" as originally assumed.
+
 **Skip Open VSX for v0.1.0.** Smaller blast radius — one fewer secret and
 namespace to set up before the first release. Rejected because the marginal cost
 once the workflow exists is one best-effort step and one secret, and the
@@ -227,3 +292,10 @@ artifact, not the documentation site.
 If the repo consolidates its Entra federation (§7), reconsider `--oidc` versus
 `--azure-credential`. Revisit the Open VSX "best-effort" stance if that registry
 becomes a primary channel for this audience rather than a secondary one.
+
+> **Amended 2026-09-04.** The second trigger fired, sooner than expected and
+> for a different reason than planned — not a deliberate consolidation
+> decision, but `--oidc` turning out unusable at all. See the Decision
+> section's amendment. If the Marketplace ever does ship a trusted-publishing
+> policy UI, that is the trigger to revisit `--azure-credential` versus
+> `--oidc` again — nothing here rules out switching back.

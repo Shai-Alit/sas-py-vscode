@@ -15,15 +15,22 @@ name: Release
 # Two jobs on purpose. `build` runs `npm ci` and `npm run verify`, which execute
 # code from the tagged tree (eslint, mocha) and the whole dev dependency tree —
 # so it runs at `contents: read` with no `id-token`. `publish` holds the
-# publishing credentials (`id-token: write` for OIDC, `contents: write` for the
-# GitHub Release) and never installs the dev tree: it downloads the artifact
-# `build` produced and runs only `vsce`, `ovsx` and `gh`. See ADR-0023.
+# publishing credentials (`id-token: write` for the OIDC exchange to Entra ID,
+# `contents: write` for the GitHub Release) and never installs the dev tree: it
+# downloads the artifact `build` produced and runs only `azure/login`, `vsce`,
+# `ovsx` and `gh`. See ADR-0023 and its 2026-09-04 amendment.
 #
-# Marketplace auth is OIDC trusted publishing (`vsce publish --oidc`) — no stored
-# PAT. It requires a trusted-publishing policy for this repo + this workflow file
-# configured on the Marketplace, and needs `@vscode/vsce` >= 3.9.3 (the
-# devDependency is pinned to a 3.9.3 prerelease until the stable release ships —
-# ADR-0023). It does not fall back to a PAT if the token exchange fails.
+# Marketplace auth is `vsce publish --azure-credential` — no stored PAT.
+# `azure/login` exchanges a GitHub Actions OIDC token for an Entra ID session
+# (workload identity federation, no client secret), scoped by a federated
+# credential trusting this repo's `release` environment specifically; `vsce`
+# then requests an Azure DevOps token from that session. The identity also
+# needs to be added as a Contributor member of the `shai-alit` Marketplace
+# publisher — see docs/release-checklist.md S1. (`vsce publish --oidc`, a
+# GitHub-Actions-native trusted-publishing flow needing no Azure identity at
+# all, was tried first — ADR-0023's original decision — but the Marketplace has
+# never shipped the policy UI it depends on, so it cannot actually be used;
+# see the ADR's amendment for the evidence.)
 #
 # Open VSX auth is a token (`OVSX_PAT` secret). That step is best-effort: a
 # failure there is a warning, not a failed release, because the Marketplace is
@@ -107,7 +114,7 @@ jobs:
     # on the `release` environment to require a human click before each publish.
     environment: release
     permissions:
-      # OIDC token for `vsce publish --oidc`.
+      # OIDC token for azure/login's workload identity federation to Entra ID.
       id-token: write
       # Creating the GitHub Release and uploading the .vsix asset.
       contents: write
@@ -141,10 +148,16 @@ jobs:
             echo "ovsx=$(node -p "require('./package.json').devDependencies['ovsx']")"
           } >> "$GITHUB_OUTPUT"
 
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
       - name: Publish to the VS Marketplace
         env:
           VSCE_VERSION: ${{ steps.tools.outputs.vsce }}
-        run: npx --yes "@vscode/vsce@${VSCE_VERSION}" publish --oidc --packagePath dist/python-on-viya.vsix
+        run: npx --yes "@vscode/vsce@${VSCE_VERSION}" publish --azure-credential --packagePath dist/python-on-viya.vsix
 
       - name: Publish to Open VSX
         id: openvsx

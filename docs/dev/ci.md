@@ -610,16 +610,21 @@ and `ovsx` at the versions `package.json` pins, and publishes to the VS
 Marketplace and Open VSX and cuts the GitHub Release. It holds `id-token: write`
 and `contents: write` and installs none of the dev tree — the split is what
 keeps a compromised dev dependency away from the credentials.
-[ADR-0023](../adr/0023-release-publishing.md) has the full reasoning.
+[ADR-0023](../adr/0023-release-publishing.md) has the full reasoning, including
+its 2026-09-04 amendment.
 
-**Marketplace auth is OIDC, not a stored token.** `vsce publish --oidc` requests
-a GitHub Actions OIDC token (hence `id-token: write` on `publish`) and exchanges
-it for a short-lived Marketplace credential against a trusted-publishing policy
-registered on the Marketplace side. There is no `VSCE_PAT` secret, and `--oidc`
-does not fall back to one — a missing policy fails the publish rather than
-degrading. The classic Azure DevOps PATs that `vsce publish -p` needs are being
-retired on 2026-12-01. `--oidc` is not in a stable `@vscode/vsce` release yet,
-so the devDependency is pinned to a `3.9.3` prerelease until one ships (ADR-0023).
+**Marketplace auth is `--azure-credential`, not a stored token.** `azure/login`
+exchanges a GitHub Actions OIDC token (hence `id-token: write` on `publish`)
+for an Entra ID session via workload identity federation — no client secret —
+scoped by a federated credential trusting this repo's `release` environment
+specifically; `vsce publish --azure-credential` then requests an Azure DevOps
+token from that session. There is no `VSCE_PAT` secret. (`vsce publish --oidc`
+was tried first — it needs no Azure identity at all, only a trusted-publishing
+policy registered on the Marketplace side — but the Marketplace has never
+shipped a UI to register one, so it cannot actually be used; see ADR-0023's
+amendment for the evidence.) The classic Azure DevOps PATs that `vsce publish
+-p` needs are being retired on 2026-12-01, which is the other reason neither
+publish step touches one.
 
 **The Open VSX publish is best-effort.** That step is `continue-on-error: true`:
 a failure emits a warning and the release still counts as done, because the

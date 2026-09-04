@@ -65,20 +65,26 @@ const NPM = process.platform === "win32" ? "npm.cmd" : "npm";
 
 // `npm audit` talks to the registry, and CONTRIBUTING.md's rule that every
 // network call has a timeout and an abort path has no carve-out for build
-// tooling. This fires on a wedged connection rather than on a slow one, and it
-// fires with a message that names the cause — the part a job-level timeout
-// cannot do. SIGKILL rather than SIGTERM because the thing being killed is a
-// process that has already stopped responding.
+// tooling.
 //
-// The full dev-tree `npm audit --json` was measured at ~90s locally after
-// slice 5c-iii added `ovsx` and a `@vscode/vsce` prerelease (~120 packages);
-// the previous 120_000 was set when that run was ~15s and left no margin for a
-// slightly slow CI registry, so `supply-chain` began failing intermittently.
-// Four minutes is ~2.7x the observed run, and this script runs two audits in
-// series, so a double timeout is still 8 minutes — inside the job's 10-minute
-// ceiling, which stays the hard backstop.
-const AUDIT_TIMEOUT_MS = 240_000;
+// Resilience is npm's own job first: `AUDIT_FETCH_ARGS` below give each HTTP
+// request a 45s ceiling and two retries, so a single stalled request is
+// abandoned and retried rather than wedging the whole tree walk. The outer
+// timeout here is the last-resort backstop for a total wedge that npm's retry
+// does not escape; it fires with a message that names the cause, which a
+// job-level timeout cannot. SIGKILL because the thing being killed has already
+// stopped responding.
+//
+// The full dev-tree `npm audit --json` runs ~90s locally (measured after slice
+// 5c-iii's `ovsx` / `vsce`-prerelease additions). 180s is 2x that. A run that
+// hit 240s on a CI runner is what prompted the fetch args — raising this
+// number alone did not help, because the failure was one hung request, not a
+// slow tree. Two audits run in series, so a double backstop timeout is 6
+// minutes, inside the job's 10-minute ceiling.
+const AUDIT_TIMEOUT_MS = 180_000;
 const AUDIT_KILL_SIGNAL = "SIGKILL";
+// Per-request, not per-audit: npm retries the one failed fetch.
+const AUDIT_FETCH_ARGS = ["--fetch-timeout=45000", "--fetch-retries=2"];
 
 /**
  * Flattens an `npm audit --json` report into one entry per distinct advisory.
@@ -250,7 +256,7 @@ export function runAudit(
   extraArgs = [],
   {
     command = NPM,
-    baseArgs = ["audit", "--json"],
+    baseArgs = ["audit", "--json", ...AUDIT_FETCH_ARGS],
     timeoutMs = AUDIT_TIMEOUT_MS,
   } = {},
 ) {

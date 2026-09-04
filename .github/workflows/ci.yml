@@ -26,9 +26,18 @@ jobs:
   # Which tiers this change actually needs.
   #
   # A pull request that only touches prose cannot break the compiler, the unit
-  # tier, the VSIX or the lockfile, and running those four jobs anyway costs
-  # roughly twenty minutes of wall clock to tell us something we already knew.
-  # This job classifies the diff once and the expensive jobs gate on it.
+  # tier, the VSIX or the lockfile, and running those jobs anyway costs tens of
+  # minutes of wall clock to tell us something we already knew. This job
+  # classifies the diff once and the expensive jobs gate on it, on two axes:
+  #
+  #   `code` — not unambiguously documentation. Gates verify, test, package.
+  #   `deps` — can change the dependency tree or the supply-chain gate itself
+  #            (package.json, the lockfile, .npmrc, the audit script/allow-list,
+  #            a workflow). Gates supply-chain only. Narrower than `code`
+  #            because a source or test edit that leaves the lockfile alone
+  #            would make `supply-chain` re-derive what it already proved on
+  #            `main` — a ~9-minute npm-12 install + `npm audit` round trip for
+  #            no new information.
   #
   # Gating with `if:` rather than a top-level `paths-ignore` is deliberate. A
   # path filter makes the whole workflow *not run*, which leaves any required
@@ -45,6 +54,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       code: ${{ steps.classify.outputs.code }}
+      deps: ${{ steps.classify.outputs.deps }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -60,7 +70,10 @@ jobs:
 
           if [ "${{ github.event_name }}" != "pull_request" ]; then
             # A push to main is the last line of defence — never narrow it.
-            echo "code=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "code=true"
+              echo "deps=true"
+            } >> "$GITHUB_OUTPUT"
             echo "not a pull request: running everything"
             exit 0
           fi
@@ -71,18 +84,29 @@ jobs:
           echo "changed files:"
           echo "$changed"
 
-          # Documentation-only means: under docs/, or a markdown file outside
-          # .github/. Everything else — including package.json, source, tests,
-          # and workflows — is code.
+          # `code`: anything that is not unambiguously documentation — gates
+          # verify, test and package. Documentation-only means under docs/ or a
+          # markdown file outside .github/; everything else (source, tests,
+          # package.json, workflows) is code.
           other=$(echo "$changed" | grep -Ev '^docs/|^[^/]+\.md$' || true)
 
-          if [ -z "$other" ]; then
-            echo "code=false" >> "$GITHUB_OUTPUT"
-            echo "documentation only: skipping verify, test, package, supply-chain"
-          else
-            echo "code=true" >> "$GITHUB_OUTPUT"
-            echo "code changed: running everything"
-          fi
+          # `deps`: a change that can alter the dependency tree or the
+          # supply-chain gate itself — package.json, the lockfile, .npmrc, the
+          # audit script or its allow-list, or a workflow. Only these change
+          # what `supply-chain` would find; a code change that leaves them alone
+          # would re-derive what the job already proved on `main`. Deliberately
+          # narrower than `code` so a source or test edit does not pay the
+          # ~9-minute npm-12 install + `npm audit` round trip for nothing.
+          deps_changed=$(echo "$changed" | grep -E '^(package\.json|package-lock\.json|\.npmrc|scripts/check-audit\.mjs|scripts/advisory-allowlist\.json|\.github/workflows/)' || true)
+
+          if [ -z "$other" ]; then code=false; else code=true; fi
+          if [ -z "$deps_changed" ]; then deps=false; else deps=true; fi
+
+          {
+            echo "code=$code"
+            echo "deps=$deps"
+          } >> "$GITHUB_OUTPUT"
+          echo "classification: code=$code deps=$deps"
 
   # Everything platform-independent, once. Splitting these into separate steps
   # would give prettier failure annotations and would also let CI and the local
@@ -260,10 +284,17 @@ jobs:
   # `allowScripts`.
   # This job is the gate on what enters the lockfile, not a guarantee about how
   # any given machine installed it. docs/dev/ci.md says so out loud.
+  #
+  # Gated on `deps`, not `code`: what this job checks — the install-script
+  # policy and the advisory set — is entirely a function of the lockfile, so a
+  # source or test change that does not touch it re-derives the result already
+  # proved on `main`. `npm run test:unit` still checks `allowScripts` against
+  # the lockfile on every `code` change (it needs no network or npm 12); this
+  # job adds the npm-12 `strict-allow-scripts` enforcement and `npm audit`.
   supply-chain:
     name: supply-chain
     needs: changes
-    if: needs.changes.outputs.code == 'true'
+    if: needs.changes.outputs.deps == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

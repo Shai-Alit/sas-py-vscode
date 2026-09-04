@@ -1,12 +1,26 @@
 name: Get VSTS profile id (throwaway)
 
-# One-off helper, not part of the release pipeline. The Marketplace's "add a
-# member to this publisher" search does not accept an Azure Entra object id,
-# client id, or tenant id — it wants the Azure DevOps (VSTS) profile id for
-# the identity, which is only obtainable by asking Azure DevOps for it while
-# actually authenticated as that identity. This workflow does exactly that,
-# once, so the id can be read out of the run log and pasted into the
-# Marketplace's Members UI. Delete this file once that id has been captured.
+# One-off helper, not part of the release pipeline — release.yml is untouched
+# by this file and still publishes via `vsce publish --oidc` per ADR-0023.
+#
+# Why this exists: ADR-0023's `--oidc` path needs a trusted-publishing policy
+# configured on the Marketplace side, and as of 2026-09-04 the Marketplace has
+# never shipped a UI for that (open, unanswered question on the upstream PR
+# that added --oidc to vsce: microsoft/vscode-vsce#1291). So `--oidc` cannot
+# actually be used yet, and this repo is evaluating `--azure-credential` as a
+# replacement — reusing the Entra identity this repo already federates with
+# GitHub for (its Foundry-era federated credential was left in place when
+# PR #71 removed Foundry from claude-review.yml; a new credential scoped to
+# this repo's `release` environment was added alongside it, not instead of
+# it). This is exploratory: it only proves the identity can obtain an Azure
+# DevOps token, and captures the one Marketplace-recognized identifier for
+# that identity (the Marketplace's "add a member" search wants the Azure
+# DevOps/VSTS profile id — not the Entra object id, client id, or tenant id —
+# obtainable only by querying Azure DevOps while authenticated as the
+# identity). If `--azure-credential` is then confirmed working end to end,
+# ADR-0023 gets a dated amendment and release.yml gets rewritten in a
+# follow-up PR; until that lands, `--oidc` remains the documented decision.
+# Delete this file once the id has been captured.
 
 on:
   workflow_dispatch:

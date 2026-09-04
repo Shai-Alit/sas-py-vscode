@@ -929,6 +929,44 @@ prepared in the working
 copy; same merge-conflict caveat as the Phase 6 paragraph above applies here
 too (confirm `git pull --ff-only` against `main` before cutting the branch).
 
+**Phase 8 (CAS and SWAT) scoped 2026-09-03**, same day, same separate clone
+(`sas-py-vscode-cowork`) — branched from `main` at whatever commit was current
+when this session started (Phase 6 and Phase 7's own scoping commits are both
+ahead of `main` on their own unmerged branches; confirm with a fresh
+`git pull --ff-only` before cutting this branch, same caveat those two
+paragraphs already give). **No code was written.** A codebase survey (this
+repo's `src/compute/sessionManager.ts`/`client.ts`/`links.ts`, plus a targeted
+grep of `vscode-sas-extension` that confirms its own claim of calling no CAS
+APIs — every `CAS`/`CASLIB`/`swat` hit lands in the language server's syntax
+reference data, nothing in `client/src`), a web search for the CAS Management
+REST API and `swat`'s current authentication documentation, and eight live
+probes against `verde` (Findings 87–92, `docs/phases/phase-8.md`'s own Probe
+findings section) refined `PRODUCTION_PLAN.md`'s one-line sketch into a
+3-slice Runbook (8a CAS browsing, 8b authenticated CAS session helper, 8c CAS
+tables in the data viewer), recommended order 8a→8b→8c. Key outcomes: caslib
+and table browsing needs **no `sessionId` and no CAS session of its own**
+for global-scope resources, contradicting every example in the CAS
+Management API's own reference docs (Finding 88); the existing
+`ComputeClient`/`links.ts` machinery already fits `casManagement`'s hypermedia
+shape without modification, so 8a needs no new HTTP layer (Finding 87); and a
+`PROC PYTHON` cell can authenticate to CAS with the exact same Viya access
+token this project already borrows per request, live-confirmed over both the
+binary and REST/HTTP transports (Finding 91) — settling Phase 8's central
+premise. **One serious finding came out of settling that last one**: the
+naive way of delivering that token to the cell (an inline `PROC PYTHON`
+`submit` block) echoed it in plaintext into the job log (Finding 92), which
+happened for real during this session's own probe — the exposed `verde`
+token was reported to Sean for rotation, and the throwaway Compute session
+that carried it is deleted and confirmed gone (`404` read-back). 8b's own
+Runbook entry now carries a non-negotiable constraint as a result: never
+deliver a credential to a session via inline submitted code. Two open
+architecture questions carried into the phase file rather than settled here:
+whether 8a needs its own CAS-session lifecycle for session-scoped (personal)
+caslibs, and whether the `links.ts`/`client.ts` promotion Phase 7 already
+flagged happens in 8a, 7a, or not at all. **Not yet committed** — prepared in
+the working copy; same merge-conflict caveat as the Phase 6/7 paragraphs
+applies here too.
+
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
 ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
@@ -1019,7 +1057,7 @@ account.
 | 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) next — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
-| 8 — CAS and SWAT | not started | `docs/phases/phase-8.md` |
+| 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |

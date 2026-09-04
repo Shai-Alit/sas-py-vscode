@@ -1222,6 +1222,14 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **Stale wording in the run output.** When a run produces an image or an HTML
+  table, the **Python on Viya: Output** channel's notice line said the viewer
+  for it "ships in a later slice" — the Result panel it meant has shipped since
+  3d-ii. The line now reads "shown in the Result panel". Comment-only
+  corrections alongside it: the `onDidChange` note in `src/run/commands.ts` no
+  longer contradicts the diagnostic-clear it sits above, and
+  `src/run/render.ts`'s doc comment no longer says the extension "cannot show"
+  rich output. No behaviour change.
 - **A Problems-panel entry from a failed Viya run no longer lingers after the
   run that produced it is out of reach** (Phase 5d-iv). It was previously
   cleared only by the next run of the _same file_; it is now also cleared when

@@ -254,11 +254,12 @@ export function createRunCommandHandlers(
   };
   const targetChangeSubscription = targets.onDidChange(() => {
     syncTargetContext();
-    // Phase 5d-iv: a Problems entry is only ever published for a Viya run, so
-    // flipping the target to Local strands every existing one — nothing that
-    // target can do will re-run the file and clear it. A viya→viya profile
-    // switch fires this too and is deliberately left alone: a run against the
-    // new profile could still be about the same code.
+    // Phase 5d-iv: a Problems entry is only ever published for a Viya run, and
+    // once the target is Local nothing can re-run the file to clear one — so a
+    // flip to Local clears the whole collection rather than leave entries
+    // stranded. A viya→viya profile switch fires this too and is deliberately
+    // left alone: a run against the new profile could still be about the same
+    // code.
     if (targets.kind() === "local") diagnostics.clearAll();
   });
   syncTargetContext();

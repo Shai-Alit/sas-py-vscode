@@ -95,8 +95,9 @@ export class RunOutputChannel implements vscode.Disposable {
   /**
    * Writes one streamed output. `text/plain` lines are appended verbatim —
    * they already carry their own trailing newline (`logFilter.ts`) — so the
-   * channel reads exactly like the program's own stdout. Anything this slice
-   * cannot render as text gets one localised line saying so; see `./render`.
+   * channel reads exactly like the program's own stdout. Anything the channel
+   * cannot render as text gets one localised line naming it and pointing at
+   * the Result panel, which does show it; see `./render`.
    */
   writeOutput(output: RichOutput): void {
     for (const line of renderRichOutput(output)) {
@@ -106,11 +107,9 @@ export class RunOutputChannel implements vscode.Disposable {
       }
       this.channel.appendLine(
         line.mime === "image/png"
-          ? vscode.l10n.t(
-              "[an image was produced — the result panel to view it ships in a later slice]",
-            )
+          ? vscode.l10n.t("[an image was produced — shown in the Result panel]")
           : vscode.l10n.t(
-              "[an HTML table was produced — the result panel to view it ships in a later slice]",
+              "[an HTML table was produced — shown in the Result panel]",
             ),
       );
     }

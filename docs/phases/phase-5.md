@@ -792,15 +792,19 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    bullets removed, its "Nothing runs Python yet" intro line rewritten;
    `connection-profiles.md`'s "Running code is a later slice" section retitled
    and pointed at the new pages. `CHANGELOG.md` `[Unreleased]` entry added.
-   **Two `src/` comment/string follow-ups noted, not fixed here** (would take
+   ~~**Two `src/` comment/string follow-ups noted, not fixed here** (would take
    5c-i out of docs-only) — one small `fix(run):` PR for both:
    `src/run/outputChannel.ts`'s `writeOutput` still labels an image/HTML output
    `"… the result panel to view it ships in a later slice"`, stale since 3d-ii
    shipped the panel; and `src/run/commands.ts`'s `targets.onDidChange` inline
    comment says flipping the target to Local "strands every existing one",
-   contradicted by the `diagnostics.clearAll()` call directly below it (the
-   `github-actions` reviewer on PR #102 caught the same wording copied into
-   `diagnostics.md`, fixed there in `e6a061f`).
+   contradicted by the `diagnostics.clearAll()` call directly below it.~~
+   **Done 2026-09-04**, after 5c-iii merged: the two notice strings now say
+   "shown in the Result panel" (`l10n/bundle.l10n.json` regenerates from
+   source), the `onDidChange` comment is reworded to match the `clearAll()`
+   below it, and `src/run/render.ts`'s doc comment stopped saying "this slice
+   cannot show" now that the panel does. Test-name touch-up in
+   `output-channel.test.ts`; no assertion change.
 2. A troubleshooting guide assembled from what actually went wrong during
    Phases 1–4 — source material is the phase files' own Probe findings
    sections and `STATUS.md`'s incident record, not a generic FAQ.
@@ -850,10 +854,13 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
 5. Exercise `docs/release-checklist.md` end to end at least once, as a dry
    run, before the real v0.1.0 tag.
 
-   **5c-iii (release engineering) — [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106),
-   opened 2026-09-03, reviewed, fixes folded, not yet merged.** Items 3 + 4
-   above, minus the version bump (that stays with 5c-iv). Branch
-   `phase-5c-iii-release-engineering`.
+   **5c-iii (release engineering) — merged 2026-09-04 as
+   [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), squashed as
+   `e70c682`.** Items 3 + 4 above, minus the version bump (that stays with
+   5c-iv). CI + both AI reviewers passed; the adversarial-review fixes and two
+   mid-flight follow-ups (the packaging leak, the `check:audit` timeout) were
+   all folded into #106. **Next in 5c: the carried `fix(run):` follow-up, then
+   5c-iv.** Branch was `phase-5c-iii-release-engineering` (deleted).
 
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —

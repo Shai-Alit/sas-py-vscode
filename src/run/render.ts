@@ -22,23 +22,23 @@
  * clickable); repeating it here as more text would be the same information
  * twice with no more of it readable.
  *
- * `text/html` and `image/png` are real output this slice cannot show — 3d-i is
- * text-only by its own plan text, and matplotlib figures or a DataFrame's HTML
- * repr have no textual form worth dumping into a log (a base64 PNG blob or a
- * wall of markup is not what "text-only" is offering). Reported here as their
- * own line rather than silently dropped, so the person watching the channel
- * knows their program *did* produce something, and that the extension has not
- * lost it — 3d-ii's result panel is where it is actually shown.
+ * `text/html` and `image/png` are real output the *channel* cannot show — it
+ * is text-only, and matplotlib figures or a DataFrame's HTML repr have no
+ * textual form worth dumping into a log (a base64 PNG blob or a wall of markup
+ * is not what "text-only" is offering). Reported here as their own line rather
+ * than silently dropped, so the person watching the channel knows their
+ * program *did* produce something and the extension has not lost it — the
+ * Result panel (3d-ii) is where it is actually shown.
  */
 
 import type { RichOutput } from "../backend/backend";
 
-/** One line this slice's output channel writes, or the shape of one it defers. */
+/** One line the output channel writes, or the shape of one it defers to the panel. */
 export type OutputLine =
   /** Appended exactly as given — already includes its own trailing newline,
    * per `logFilter.ts`'s `logLineOutput`/`droppedLinesOutput`. */
   | { readonly kind: "raw"; readonly text: string }
-  /** A rich output this slice cannot render as text. The shell localises the
+  /** A rich output the channel cannot render as text. The shell localises the
    * one line shown for it; see this module's own doc comment for why. */
   | {
       readonly kind: "deferred-rich-output";

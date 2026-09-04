@@ -69,7 +69,7 @@ describe("RunOutputChannel", () => {
     assert.deepEqual(fake.lines, ["hello\n"]);
   });
 
-  it("defers image/png and text/html to a localised placeholder line", () => {
+  it("defers image/png and text/html to a localised Result-panel notice line", () => {
     const fake = fakeChannel();
     const output = new RunOutputChannel({ createChannel: () => fake.channel });
     output.writeOutput({ mime: "image/png", data: "aGVsbG8=" });

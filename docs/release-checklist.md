@@ -15,51 +15,82 @@ merge.
 ## One-time setup
 
 Done once for the repository, not per release. If a step here is not done, the
-matching part of `release.yml` fails on the first real tag.
+matching part of `release.yml` fails on the first real tag. None of it can be
+done from inside the repo.
 
-☐ **S1 — Marketplace trusted-publishing policy.** On the Visual Studio
-Marketplace management page for the `shai-alit` publisher, add a trusted
-publishing policy for this repository (`Shai-Alit/sas-py-vscode`) and this
-workflow file (`.github/workflows/release.yml`). This is what lets
-`vsce publish --oidc` exchange a GitHub Actions OIDC token for a short-lived
-Marketplace credential with **no stored PAT**. There is no fallback: if the
-policy is missing or misscoped, the Marketplace publish step fails outright.
+☐ **S1 — Marketplace publisher and trusted-publishing policy.**
 
-☐ **S2 — Open VSX token.** Create an Open VSX account under the `shai-alit`
-namespace owner, generate an access token, and set it as the repository secret
-`OVSX_PAT`. Then create the namespace once:
+- The `shai-alit` publisher must exist on the Visual Studio Marketplace. Create
+  it at https://marketplace.visualstudio.com/manage if it does not — `vsce
+  create-publisher` was removed years ago.
+- On that publisher's page, add a **trusted publishing policy** for this
+  repository (`Shai-Alit/sas-py-vscode`) and this workflow file
+  (`.github/workflows/release.yml`). That is what lets `vsce publish --oidc`
+  exchange a GitHub Actions OIDC token for a short-lived Marketplace credential
+  with **no stored PAT**. There is no fallback: a missing or misscoped policy
+  fails the Marketplace publish outright.
+- `--oidc` needs `@vscode/vsce` **>= 3.9.3**. The devDependency is pinned to a
+  `3.9.3` prerelease until the stable release ships (ADR-0023); nothing to do
+  here, but if the pin is ever moved *back* to 3.9.2 the publish breaks.
 
-```bash
-npx ovsx create-namespace shai-alit --pat "$OVSX_PAT"
-```
+☐ **S2 — Open VSX.**
 
-Creating the namespace does **not** grant exclusive rights immediately — that
-comes after the first successful publish and an Eclipse Foundation review.
+- Create an Eclipse Foundation account, then **sign the Eclipse Foundation Open
+  VSX Publisher Agreement** (<https://open-vsx.org> → your profile). Without the
+  signed agreement no token can publish anything.
+- Generate an Open VSX access token and set it as the repository secret
+  `OVSX_PAT`.
+- Create the namespace once:
 
-☐ **S3 — Nothing else.** The GitHub Release step uses the automatic
-`GITHUB_TOKEN`; `id-token: write` and `contents: write` are declared in the
-workflow. No other secret is needed.
+  ```bash
+  npx ovsx create-namespace shai-alit --pat "$OVSX_PAT"
+  ```
+
+  Creating the namespace does not grant exclusive rights immediately — that
+  follows the first successful publish and an Eclipse review.
+
+☐ **S3 — Approval gate and tag ruleset.**
+
+- Settings → Environments → create an environment named **`release`**. Add
+  required reviewers to it so each publish needs a human click; the `publish`
+  job declares `environment: release` and will wait.
+- Add a **tag protection / ruleset** matching `v*` so only maintainers can push
+  release tags (branch protection does not cover tags).
+
+☐ **S4 — Nothing else.** The GitHub Release step uses the automatic
+`GITHUB_TOKEN`. `id-token: write` and `contents: write` are declared on the
+`publish` job in the workflow.
 
 ---
 
 ## What `release.yml` does
 
-On a `v*` tag push, one `publish` job:
+On a `v*` tag push, two jobs:
+
+**`build`** (`contents: read`, no publishing credentials):
 
 1. Checks out the tag, `npm ci`.
 2. Asserts the tag and `package.json` `version` agree — fails loudly if not.
-3. Runs `npm run verify` against the tagged tree (the same gate CI runs on
-   every PR).
-4. Runs `npm run package` — builds `dist/python-on-viya.vsix` and runs
+3. `npm run verify` — the same gate CI runs on every PR, against the tagged tree.
+4. `npm run package` — builds `dist/python-on-viya.vsix` and runs
    `check:package` against it.
-5. `vsce publish --oidc --packagePath dist/python-on-viya.vsix` → VS Marketplace.
-6. `ovsx publish dist/python-on-viya.vsix` → Open VSX. **Best-effort**: a
+5. Uploads the `.vsix` as a workflow artifact.
+
+**`publish`** (`needs: build`, `environment: release`, `id-token: write` +
+`contents: write`; **tag pushes only** — a `workflow_dispatch` run stops after
+`build`):
+
+6. Downloads the `.vsix` artifact. Does **not** run `npm ci` — it `npx`es the
+   two publishing CLIs at the versions `package.json` pins, so the dev tree
+   never enters the job that holds the credentials.
+7. `vsce publish --oidc --packagePath …` → VS Marketplace.
+8. `ovsx publish …` → Open VSX (`OVSX_PAT` from the secret). **Best-effort**: a
    failure here is a `::warning::`, not a failed release.
-7. Creates a GitHub Release for the tag with the `.vsix` attached and notes
+9. Creates a GitHub Release for the tag with the `.vsix` attached and notes
    sliced from the matching `CHANGELOG.md` section.
 
-A `workflow_dispatch` run does steps 1–4 only (its `dry_run` input defaults to
-true) — see [Dry run](#dry-run) below.
+A `workflow_dispatch` run executes `build` only and never publishes — see
+[Dry run](#dry-run).
 
 ---
 
@@ -67,7 +98,7 @@ true) — see [Dry run](#dry-run) below.
 
 ☐ **D1.** Finalise `CHANGELOG.md`: `[Unreleased]` → `[X.Y.Z] - YYYY-MM-DD`.
 Leave the heading text exactly `## [X.Y.Z] - ...` — the workflow's notes
-extractor matches on `## [X.Y.Z]`.
+extractor matches a line that starts with `## [X.Y.Z]`.
 
 ☐ **D2.** Set `version` in `package.json` to `X.Y.Z`. While here, decide
 whether this release is a `"preview": true` (marketplace shows a preview badge
@@ -87,7 +118,8 @@ git checkout main && git pull --ff-only && git tag vX.Y.Z
 git push origin vX.Y.Z
 ```
 
-☐ **D6.** Watch the `Release` workflow run. Confirm:
+☐ **D6.** Watch the `Release` workflow. When `publish` is queued, approve the
+`release` environment. Then confirm:
 
 - the Marketplace publish succeeded (OIDC, no PAT);
 - the Open VSX publish succeeded — or, if it warned, re-run
@@ -116,14 +148,13 @@ Before the first real release — or after any change to `release.yml`,
 `package.json` packaging metadata, or `.vscodeignore` — rehearse without
 publishing:
 
-1. GitHub → Actions → **Release** → **Run workflow**, on `main`, leaving
-   `dry_run` checked (the default).
-2. It runs checkout → `npm ci` → version check → `npm run verify` →
-   `npm run package`, then stops. No publish, no GitHub Release.
+1. GitHub → Actions → **Release** → **Run workflow**, on `main`.
+2. The `build` job runs: checkout → `npm ci` → tag/version check (reporting
+   only, there is no tag) → `npm run verify` → `npm run package` → artifact
+   upload. The `publish` job is skipped.
 3. A green run means the build, the gate, and packaging all pass on CI
-   infrastructure. It does **not** exercise the OIDC exchange or either
-   registry — those only run on a real tag (or a `workflow_dispatch` with
-   `dry_run` explicitly unchecked, which really does publish).
+   infrastructure. It does **not** exercise the OIDC exchange, either registry,
+   or the `release` environment gate — those only run on a real `v*` tag.
 
 `phase-5.md`'s 5c item 5 ("exercise the checklist end to end at least once as a
 dry run") is this step, run before the v0.1.0 tag.

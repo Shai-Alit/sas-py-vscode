@@ -565,35 +565,44 @@ pull-request check and nothing about it blocks a merge; it is the thing that
 turns a tag into a published extension. The operational steps — the one-time
 Marketplace and Open VSX setup, and the per-release punch list — are in
 [the release checklist](../release-checklist.md); this section is what the
-workflow itself does and the two decisions in it worth knowing.
+workflow itself does and the decisions in it worth knowing.
 
-One `publish` job: check out the tag, `npm ci`, assert the tag matches
-`package.json`'s `version`, run `npm run verify` and `npm run package` against
-the tagged tree, then publish `dist/python-on-viya.vsix` to the VS Marketplace
-and to Open VSX and cut a GitHub Release with the `.vsix` attached.
+**Two jobs, on purpose.** `build` checks out the tag, `npm ci`s, asserts the tag
+matches `package.json`'s `version`, runs `npm run verify` and `npm run package`
+against the tagged tree, and uploads the `.vsix` as an artifact. It runs at
+`contents: read` with no publishing credentials, because `npm ci` and
+`npm run verify` execute code from the tagged tree and the whole dev dependency
+tree. `publish` (`needs: build`) downloads that artifact, `npx`es `@vscode/vsce`
+and `ovsx` at the versions `package.json` pins, and publishes to the VS
+Marketplace and Open VSX and cuts the GitHub Release. It holds `id-token: write`
+and `contents: write` and installs none of the dev tree — the split is what
+keeps a compromised dev dependency away from the credentials.
+[ADR-0023](../adr/0023-release-publishing.md) has the full reasoning.
 
 **Marketplace auth is OIDC, not a stored token.** `vsce publish --oidc` requests
-a GitHub Actions OIDC token (hence `id-token: write` on the job) and exchanges
+a GitHub Actions OIDC token (hence `id-token: write` on `publish`) and exchanges
 it for a short-lived Marketplace credential against a trusted-publishing policy
 registered on the Marketplace side. There is no `VSCE_PAT` secret, and `--oidc`
 does not fall back to one — a missing policy fails the publish rather than
-degrading to something weaker. The classic Azure DevOps PATs that `vsce publish
--p` needs are being retired on 2026-12-01, so this is where the workflow had to
-land; [ADR-0023](../adr/0023-release-publishing.md) records the alternatives.
+degrading. The classic Azure DevOps PATs that `vsce publish -p` needs are being
+retired on 2026-12-01. `--oidc` is not in a stable `@vscode/vsce` release yet,
+so the devDependency is pinned to a `3.9.3` prerelease until one ships (ADR-0023).
 
 **The Open VSX publish is best-effort.** That step is `continue-on-error: true`:
 a failure emits a warning and the release still counts as done, because the
 Marketplace is the primary channel and a third-party registry's downtime should
-not force a retag. `ovsx` is a pinned dev dependency for the same reason every
-other tool here is — a command that handles a publish token should be one a
-maintainer can read and run, and `check:audit` covers it like anything else in
-the tree.
+not force a retag. `ovsx` is a pinned dev dependency so `check:audit` covers it;
+`publish` runs it as `npx ovsx@<the pin>` rather than from `node_modules`.
 
-`workflow_dispatch` runs the same job with a `dry_run` input that defaults to
-true, stopping after `npm run package`. Unlike everything in `ci.yml`, the
-publish steps are *not* a command you can usefully run locally — they need the
-OIDC exchange and the registry tokens — so the dispatch dry run is how the path
-gets exercised before a real tag depends on it.
+**The `publish` job waits on an environment.** It declares `environment: release`,
+so a maintainer approves each publish before it runs — an approval gate in front
+of something irreversible, since branch protection does not cover tags.
+
+`workflow_dispatch` runs `build` only and never publishes — no input, no way to
+make it. It is the rehearsal: it proves the build, the gate and packaging on CI
+infrastructure. The publish steps are *not* commands you can usefully run
+locally (they need the OIDC exchange and the registry tokens), so a real `v*`
+tag is their first exercise.
 
 ## What is deliberately not here yet
 

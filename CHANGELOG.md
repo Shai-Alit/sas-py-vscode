@@ -14,22 +14,29 @@ called out under **Changed** with a migration note.
 
 - **Release publishing.** Slice 5c-iii
   ([ADR-0023](docs/adr/0023-release-publishing.md)) adds
-  `.github/workflows/release.yml`: pushing a `vX.Y.Z` tag builds the extension,
-  re-runs the full `npm run verify` gate against the tagged tree, packages and
-  checks the `.vsix`, publishes it to the VS Marketplace over OIDC trusted
-  publishing (no stored token), publishes it to Open VSX on a best-effort basis
-  (a failure there warns rather than failing the release), and cuts a GitHub
-  Release with the `.vsix` attached and notes taken from this file. A
-  `workflow_dispatch` run does the same up to but not including any publish, as
-  a rehearsal. The workflow does not bump the version or create the tag — those
+  `.github/workflows/release.yml`. Pushing a `vX.Y.Z` tag runs two jobs: a
+  `build` job (no publishing credentials) that re-runs the full `npm run verify`
+  gate against the tagged tree, packages and checks the `.vsix`, and uploads it
+  as an artifact; and a `publish` job (gated on a `release` environment) that
+  downloads the artifact and publishes it to the VS Marketplace over OIDC
+  trusted publishing (no stored token), to Open VSX on a best-effort basis (a
+  failure there warns rather than failing the release), and cuts a GitHub
+  Release with the `.vsix` attached and notes taken from this file. The `publish`
+  job `npx`es the pinned `vsce` / `ovsx` rather than installing the dev tree, so
+  a compromised dev dependency cannot reach the credentials. A
+  `workflow_dispatch` run executes `build` only, as a rehearsal, and never
+  publishes. The workflow does not bump the version or create the tag — those
   stay manual, in the release PR. `docs/release-checklist.md` is rewritten
   around this flow, including the one-time setup a first release needs (the
-  Marketplace trusted-publishing policy, the `OVSX_PAT` secret, and
-  `ovsx create-namespace`). `package.json` gains the marketplace metadata a
-  publish requires — `"private": false`, an `icon`, `galleryBanner` and
-  `pricing` — and `media/icon.png`, a plain `Py` wordmark that is a deliberate
-  stopgap for a designed asset. `check:package` now requires the icon to be in
-  the archive, and — a pre-existing leak this surfaced — `.vscodeignore` and
+  `shai-alit` Marketplace publisher and its trusted-publishing policy, the
+  Eclipse Open VSX Publisher Agreement and `OVSX_PAT`, `ovsx create-namespace`,
+  the `release` environment, and a `v*` tag ruleset). `package.json` gains the
+  marketplace metadata a publish requires — `"private": false`, an `icon`,
+  `galleryBanner` and `pricing` — and `media/icon.png`, a plain `Py` wordmark
+  that is a deliberate stopgap for a designed asset. `@vscode/vsce` is pinned to
+  a `3.9.3` prerelease because `--oidc` is not in a stable release yet.
+  `check:package` now requires the icon to be in the archive, and — a
+  pre-existing leak this surfaced — `.vscodeignore` and
   `scripts/check-package.mjs` now also keep `CLAUDE.md`, `STATUS.md`,
   `HOUSEKEEPING.md`, `.claude/` and `tsconfig.webview.json` out of the archive,
   which drops from 18 files to 12. No extension behaviour changes.

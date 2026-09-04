@@ -8,14 +8,22 @@ name: Release
 # docs/release-checklist.md. There is no version-bump logic here; this workflow
 # packages and publishes what is already on the tag.
 #
-# `workflow_dispatch` runs the same pipeline as a rehearsal. Its `dry_run` input
-# defaults to **true**, so a manual run builds, verifies, packages and stops
-# before anything irreversible; set it to false to publish from a manual run.
+# `workflow_dispatch` runs the `build` job only — build, verify, package,
+# upload the artifact — and never publishes. It is the rehearsal: it exercises
+# everything the tag path does up to the point of no return.
+#
+# Two jobs on purpose. `build` runs `npm ci` and `npm run verify`, which execute
+# code from the tagged tree (eslint, mocha) and the whole dev dependency tree —
+# so it runs at `contents: read` with no `id-token`. `publish` holds the
+# publishing credentials (`id-token: write` for OIDC, `contents: write` for the
+# GitHub Release) and never installs the dev tree: it downloads the artifact
+# `build` produced and runs only `vsce`, `ovsx` and `gh`. See ADR-0023.
 #
 # Marketplace auth is OIDC trusted publishing (`vsce publish --oidc`) — no stored
 # PAT. It requires a trusted-publishing policy for this repo + this workflow file
-# configured on the Marketplace, and `id-token: write` below. It does not fall
-# back to a PAT if the token exchange fails. See ADR-0023.
+# configured on the Marketplace, and needs `@vscode/vsce` >= 3.9.3 (the
+# devDependency is pinned to a 3.9.3 prerelease until the stable release ships —
+# ADR-0023). It does not fall back to a PAT if the token exchange fails.
 #
 # Open VSX auth is a token (`OVSX_PAT` secret). That step is best-effort: a
 # failure there is a warning, not a failed release, because the Marketplace is
@@ -26,11 +34,6 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Build, verify and package but publish nothing"
-        type: boolean
-        default: true
 
 # A half-finished release is worse than a delayed one: never cancel a run in
 # progress, and never start a second run for the same ref alongside it.
@@ -42,20 +45,15 @@ permissions:
   contents: read
 
 jobs:
-  publish:
-    name: publish
+  build:
+    name: build
     # Never on a fork: the secrets and the trusted-publishing policy are this
-    # repository's, and a fork's tag push would only ever fail here.
+    # repository's, and a fork's tag push would only ever fail downstream.
     if: github.repository == 'Shai-Alit/sas-py-vscode'
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
     permissions:
-      # OIDC token for `vsce publish --oidc`.
-      id-token: write
-      # Creating the GitHub Release and uploading the .vsix asset.
-      contents: write
-
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
@@ -69,28 +67,20 @@ jobs:
       # On a tag push the tag and package.json must agree, or the wrong version
       # ships to a channel that will not let it be replaced. On a manual run
       # there is no tag to check — just report what would be published.
-      - name: Resolve and check version
-        id: version
+      - name: Check the tag matches package.json
         env:
           EVENT_NAME: ${{ github.event_name }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           pkg="v$(node -p "require('./package.json').version")"
-          if [ "$EVENT_NAME" = "push" ]; then
-            if [ "$REF_NAME" != "$pkg" ]; then
-              echo "::error::tag $REF_NAME does not match package.json version $pkg — bump package.json in the release PR before tagging"
-              exit 1
-            fi
-            echo "tag $REF_NAME matches package.json ($pkg)"
-          else
-            echo "manual run: package.json version is $pkg (dry_run=${{ inputs.dry_run }})"
+          if [ "$EVENT_NAME" = "push" ] && [ "$REF_NAME" != "$pkg" ]; then
+            echo "::error::tag $REF_NAME does not match package.json version $pkg — bump package.json in the release PR before tagging"
+            exit 1
           fi
-          echo "version=${pkg#v}" >> "$GITHUB_OUTPUT"
+          echo "package.json version is $pkg (event: $EVENT_NAME)"
 
       # The same gate CI runs on every PR, re-run against the exact tagged tree.
-      # A tag can be pushed from anywhere; this is the last chance to catch a
-      # tree that never went through CI green.
       - run: npm run verify
 
       # Builds dist/python-on-viya.vsix and runs check:package against it —
@@ -98,51 +88,108 @@ jobs:
       # holds the right files and nothing shaped like a credential.
       - run: npm run package
 
-      # --- everything below is skipped on a dry run ---
+      - uses: actions/upload-artifact@v7
+        with:
+          name: vsix
+          path: dist/python-on-viya.vsix
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: publish
+    needs: build
+    # Tag pushes only. A workflow_dispatch run stops after `build`.
+    if: github.event_name == 'push' && github.repository == 'Shai-Alit/sas-py-vscode'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # An approval gate for something irreversible, and the scope the
+    # trusted-publishing policy can be narrowed to. Configure required reviewers
+    # on the `release` environment to require a human click before each publish.
+    environment: release
+    permissions:
+      # OIDC token for `vsce publish --oidc`.
+      id-token: write
+      # Creating the GitHub Release and uploading the .vsix asset.
+      contents: write
+    steps:
+      # Checkout for package.json (the pinned tool versions) and CHANGELOG.md
+      # (the release notes). No `npm ci` — this job never installs the dev tree.
+      # `persist-credentials: false` because nothing here pushes with git; the
+      # GitHub Release is created through `gh` with GITHUB_TOKEN.
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: vsix
+          path: dist
+
+      # `npx` the two publishing CLIs at the exact versions package.json pins,
+      # rather than installing them: this keeps the whole dev dependency tree
+      # out of the job that holds the publishing credentials.
+      - name: Resolve pinned tool versions
+        id: tools
+        run: |
+          set -euo pipefail
+          {
+            echo "vsce=$(node -p "require('./package.json').devDependencies['@vscode/vsce']")"
+            echo "ovsx=$(node -p "require('./package.json').devDependencies['ovsx']")"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Publish to the VS Marketplace
-        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
-        run: ./node_modules/.bin/vsce publish --oidc --packagePath dist/python-on-viya.vsix
+        env:
+          VSCE_VERSION: ${{ steps.tools.outputs.vsce }}
+        run: npx --yes "@vscode/vsce@${VSCE_VERSION}" publish --oidc --packagePath dist/python-on-viya.vsix
 
       - name: Publish to Open VSX
         id: openvsx
-        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
         continue-on-error: true
         env:
+          OVSX_VERSION: ${{ steps.tools.outputs.ovsx }}
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: ./node_modules/.bin/ovsx publish dist/python-on-viya.vsix --pat "$OVSX_PAT"
-
-      - name: Note an Open VSX failure
-        if: ${{ steps.openvsx.outcome == 'failure' }}
-        run: echo "::warning::Open VSX publish failed. The Marketplace publish is unaffected; re-run \`ovsx publish\` by hand once Open VSX is healthy."
-
-      # Release notes and the GitHub Release are tag-only: a manual publish
-      # (workflow_dispatch with dry_run unchecked) ships to the registries but
-      # leaves the GitHub Release to be created by hand, since there is no tag.
-      - name: Extract release notes from CHANGELOG
-        if: ${{ github.event_name == 'push' }}
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -euo pipefail
-          awk -v ver="$VERSION" '
-            $0 ~ ("^## \\[" ver "\\]") { cap = 1; next }
-            cap && /^## / { exit }
+          if [ -z "${OVSX_PAT:-}" ]; then
+            echo "::error::OVSX_PAT is not set — add the secret (see docs/release-checklist.md S2)"
+            exit 1
+          fi
+          npx --yes "ovsx@${OVSX_VERSION}" publish dist/python-on-viya.vsix
+
+      - name: Note an Open VSX failure
+        if: steps.openvsx.outcome == 'failure'
+        run: echo "::warning::Open VSX publish failed. The Marketplace publish is unaffected; re-run \`ovsx publish\` by hand once Open VSX is healthy."
+
+      - name: Extract release notes from CHANGELOG
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          # Literal substring matching (index(...) == 1 means "line starts
+          # with"), so no regex escaping of the dots in the version is needed
+          # and `### Added` does not trip the `## ` terminator.
+          awk -v head="## [$ver]" '
+            index($0, head) == 1 { cap = 1; next }
+            cap && index($0, "## ") == 1 { exit }
             cap { print }
-          ' CHANGELOG.md > release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "no [$VERSION] section in CHANGELOG.md; GitHub will auto-generate notes"
+          ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md" || true
+          if [ ! -s "$RUNNER_TEMP/release-notes.md" ]; then
+            echo "no [$ver] section in CHANGELOG.md; GitHub will auto-generate notes"
           fi
 
       - name: Create the GitHub Release
-        if: ${{ github.event_name == 'push' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [ -s release-notes.md ]; then
-            notes=(--notes-file release-notes.md)
+          if [ -s "$RUNNER_TEMP/release-notes.md" ]; then
+            notes=(--notes-file "$RUNNER_TEMP/release-notes.md")
           else
             notes=(--generate-notes)
           fi

@@ -18,20 +18,41 @@ Done once for the repository, not per release. If a step here is not done, the
 matching part of `release.yml` fails on the first real tag. None of it can be
 done from inside the repo.
 
-☐ **S1 — Marketplace publisher and trusted-publishing policy.**
+☐ **S1 — Marketplace publisher and an Entra ID identity with Marketplace
+Contributor rights.** (See [ADR-0023](adr/0023-release-publishing.md)'s
+2026-09-04 amendment for why this isn't `--oidc` trusted publishing — the
+Marketplace has never shipped that policy UI.)
 
 - The `shai-alit` publisher must exist on the Visual Studio Marketplace. Create
   it at https://marketplace.visualstudio.com/manage if it does not — `vsce
   create-publisher` was removed years ago.
-- On that publisher's page, add a **trusted publishing policy** for this
-  repository (`Shai-Alit/sas-py-vscode`) and this workflow file
-  (`.github/workflows/release.yml`). That is what lets `vsce publish --oidc`
-  exchange a GitHub Actions OIDC token for a short-lived Marketplace credential
-  with **no stored PAT**. There is no fallback: a missing or misscoped policy
-  fails the Marketplace publish outright.
-- `--oidc` needs `@vscode/vsce` **>= 3.9.3**. The devDependency is pinned to a
-  `3.9.3` prerelease until the stable release ships (ADR-0023); nothing to do
-  here, but if the pin is ever moved *back* to 3.9.2 the publish breaks.
+- An Entra ID identity (an app registration or managed identity — this repo
+  reuses one that already existed for an unrelated reason) needs a **federated
+  credential** trusting GitHub Actions for this specific repository and its
+  `release` GitHub Environment: scenario "GitHub Actions deploying Azure
+  resources", Organization/Repository set to this repo, **Entity type =
+  Environment**, environment name `release`. The identity needs to live in
+  *some* Azure subscription, but publishing itself needs none — `azure/login`
+  runs with `allow-no-subscriptions: true`.
+  - **The federated credential's Subject must match what GitHub actually
+    sends, not the classic form most guides show.** Check
+    `gh api repos/Shai-Alit/sas-py-vscode/actions/oidc/customization/sub` —
+    if `sub_claim_prefix` includes `@<numeric-id>` after the owner and repo
+    names, the Subject has to be
+    `repo:Shai-Alit@<id>/sas-py-vscode@<id>:environment:release`, verbatim, or
+    the token exchange fails with `AADSTS700213`.
+  - `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` repo secrets must point at that
+    identity — `release.yml`'s `publish` job reads them via `azure/login`.
+- **That identity must be added as a Contributor member of the `shai-alit`
+  publisher.** The Marketplace's Members → Add search does not accept an Entra
+  object id, client id, or tenant id — it wants the identity's **Azure DevOps
+  (VSTS) profile id**, obtainable only by querying
+  `https://app.vssps.visualstudio.com/_apis/profile/profiles/me` while
+  authenticated as that identity (no portal page shows it directly). A
+  throwaway `workflow_dispatch` job that runs `azure/login` then that query is
+  the practical way to get it once.
+- `--azure-credential` has been in stable `@vscode/vsce` since before this was
+  written (confirmed against the `v3.9.2` tag) — no prerelease pin needed.
 
 ☐ **S2 — Open VSX.**
 
@@ -83,7 +104,8 @@ On a `v*` tag push, two jobs:
 6. Downloads the `.vsix` artifact. Does **not** run `npm ci` — it `npx`es the
    two publishing CLIs at the versions `package.json` pins, so the dev tree
    never enters the job that holds the credentials.
-7. `vsce publish --oidc --packagePath …` → VS Marketplace.
+7. `azure/login` (workload identity federation, no client secret) then
+   `vsce publish --azure-credential --packagePath …` → VS Marketplace.
 8. `ovsx publish …` → Open VSX (`OVSX_PAT` from the secret). **Best-effort**: a
    failure here is a `::warning::`, not a failed release.
 9. Creates a GitHub Release for the tag with the `.vsix` attached and notes

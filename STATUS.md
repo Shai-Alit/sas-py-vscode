@@ -1109,9 +1109,11 @@ phase file rather than settled here: lifting `commands.ts`'s private
 Run File share one backend per profile instead of each holding an
 independent one, and whether the run-target (ADR-0011/0020) status-bar
 concept needs to extend to notebooks at all, given the kernel picker is
-already an explicit per-notebook choice. **Not yet committed** — prepared in
-the working copy; same merge-conflict caveat as the Phase 6/7/8 paragraphs
-applies here too.
+already an explicit per-notebook choice. **Committed as `3bdb9f2` on branch
+`phase-9-scoping`, opened as [PR #115](https://github.com/Shai-Alit/sas-py-vscode/pull/115),
+2026-09-04.** Docs-only, no adversarial review pass needed (the diff is its
+own evidence, same as Phases 6/7/8's own scoping PRs) — `check:docs` and
+`check:secrets` are the checks it can plausibly fail.
 
 Its between-phase housekeeping
 housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to

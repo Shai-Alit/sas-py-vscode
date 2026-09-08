@@ -1357,12 +1357,22 @@ after the release:**
   don't cover the release path. Merge after the release, then re-run the
   `workflow_dispatch` rehearsal to validate.
 
-**Still open:** **D7** — confirm the corrected listing text renders on the live
-Marketplace / Open VSX pages once 0.1.1 indexes, plus a smoke install (a full
-`manual-test-pass.md` re-run is not warranted — zero `src/` delta across
-0.1.0→0.1.1). **D8** — follow-up PR bumping `version` to the next
-`0.1.x-dev` + a fresh `[Unreleased]`. Then the Open VSX namespace claim, then
-Dependabot #124 + #125, then the #123 allowlist-sweep PR.
+**D7 confirmed 2026-09-08** (Sean) — the 0.1.1 listing renders on the live
+Marketplace / Open VSX pages with the corrected blockquote (no more "nothing
+published"); no full `manual-test-pass.md` re-run, zero `src/` delta across
+0.1.0→0.1.1. **D8** is [PR #128](https://github.com/Shai-Alit/sas-py-vscode/pull/128) —
+`version` → `0.1.2-dev`, fresh `## [Unreleased]` in `CHANGELOG.md`; docs-only,
+no publish. **With D8 merged, Section D (and slice 5c-iv, and Phase 5's
+release track) is complete — v0.1.1 is the first published release.**
+
+**Carried past the release, in order:** (1) the **Open VSX namespace claim** —
+file the "Request ownership of a namespace" issue on `EclipseFdn/open-vsx.org`
+for `shai-alit` (Sean's Eclipse Foundation account) to clear the ⚠️
+unverified-publisher warning; (2) **Dependabot #124 + #125** (`azure/login`
+v3, `actions/download-artifact` v8) — merge, then re-run the
+`workflow_dispatch` rehearsal to exercise the changed `release.yml`; (3) the
+**#123 allowlist-sweep PR** — take `mocha` 12, delete the now-stale `diff`
+entry from `scripts/advisory-allowlist.json`, sweep its four doc citations.
 
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
@@ -1380,7 +1390,7 @@ Dependabot #124 + #125, then the #123 allowlist-sweep PR.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release): **v0.1.0 published 2026-09-08** ([PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121), tag `v0.1.0`), plus a **v0.1.1** docs patch ([PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127), tag `v0.1.1`) fixing stale "nothing published" text in the shipped README; S1–S4 + dry run done earlier ([PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023). Section D **D7** (confirm listing text + smoke install) and **D8** (dev-version bump) still open; Open VSX namespace claim + Dependabot #123–125 carried — see phase-5.md's own Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release): **v0.1.0 published 2026-09-08** ([PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121), tag `v0.1.0`), plus a **v0.1.1** docs patch ([PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127), tag `v0.1.1`) fixing stale "nothing published" text in the shipped README; S1–S4 + dry run done earlier ([PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023). Section D D7 confirmed 2026-09-08, D8 in [PR #128](https://github.com/Shai-Alit/sas-py-vscode/pull/128) (`0.1.2-dev` + fresh `[Unreleased]`). **With #128 merged, all Phase 5 slices are merged and v0.1.1 is the first published release** — the Phase 5→6 between-phase housekeeping is the next trigger (not yet run). Carried past the release: Open VSX namespace claim, Dependabot #123–125 — see phase-5.md's own Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |

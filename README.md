@@ -3,9 +3,9 @@
 Run Python on SAS Viya from Visual Studio Code — using the Python packages your
 Viya administrator installed and manages, without installing Python locally.
 
-> **Status: pre-release, under active development.** Nothing is published to the
-> marketplace yet. See [STATUS.md](STATUS.md) for the current phase, or
-> [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) for the overall architecture and plan.
+> **Status: preview.** Released and evolving pre-1.0 — minor versions may carry
+> breaking changes, always noted in the [changelog](CHANGELOG.md). Bug reports
+> and feedback: [issues](https://github.com/Shai-Alit/sas-py-vscode/issues).
 
 > **Not a SAS product.** This is an independent project. It is not built,
 > endorsed, or supported by SAS Institute Inc. It reuses Apache-2.0 licensed code

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until `1.0.0`, minor versions may contain breaking changes; they will always be
 called out under **Changed** with a migration note.
 
+## [0.1.1] - 2026-09-08
+
+### Changed
+
+- Corrected the marketplace listing text. The README still read "Nothing is
+  published to the marketplace yet" and pointed at `STATUS.md` /
+  `PRODUCTION_PLAN.md`, which are not part of the published package; it now
+  states the preview status and links the changelog and issue tracker. No code
+  change — the extension is identical to 0.1.0.
+
 ## [0.1.0] - 2026-09-04
 
 ### Added

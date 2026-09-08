@@ -987,12 +987,20 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    merged, Section D — and slice 5c-iv, and Phase 5's release track — is
    complete; v0.1.1 is the first published release.**
 
+   **Dependabot PRs cleared 2026-09-08.** #124 (`azure/login` v2→v3) and #125
+   (`actions/download-artifact` v7→v8) merged — v8 is the intended pairing for
+   `upload-artifact@v7` (no v8 of that action exists), validated by the next
+   real tag push (the `workflow_dispatch` rehearsal can't — `download-artifact`
+   runs only in the push-only `publish` job). #123 superseded by the
+   `mocha` 12 PR: exact pin `12.0.0`, drops `diff@^7` → `diff@^9`, clearing
+   **GHSA-73RR-HH4G-FPGX** and a same-day fresh **high** `js-yaml` advisory
+   **GHSA-2883-XCG3-V3HH**; `advisory-allowlist.json` `allowed` now empty, its
+   four doc citations swept, `check:audit` green.
+
    **Carried past the release:** (1) the **Open VSX namespace claim** (issue
    on `EclipseFdn/open-vsx.org`, Sean's EF account, to clear the ⚠️
-   unverified-publisher warning); (2) **Dependabot #124 + #125** — merge, then
-   `workflow_dispatch`-rehearse the changed `release.yml`; (3) the **#123
-   allowlist-sweep PR** — take `mocha` 12, delete the stale `diff` entry from
-   `scripts/advisory-allowlist.json`, sweep its four doc citations.
+   unverified-publisher warning); (2) the **Phase 5→6 between-phase
+   housekeeping** (`HOUSEKEEPING.md`) — its own session.
 
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —
@@ -1058,7 +1066,9 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
      and local `npx ovsx` / `npm run package` resolve the pin; the `publish`
      job runs it as `npx ovsx@<pin>` (see the split). `npm install` for it +
      the vsce prerelease changed ~24 packages net; `npm audit` stays at the
-     pre-existing 2 low (`diff` GHSA-73RR-HH4G-FPGX, allow-listed). **`check:audit`
+     pre-existing 2 low (`diff` GHSA-73RR-HH4G-FPGX, allow-listed — that entry
+     was removed 2026-09-08 once mocha 12 took `diff@^9`; the allow-list is now
+     empty). **`check:audit`
      can't run on this Windows box** (`npm.cmd`-spawn `EINVAL`, as in 5d-ii) —
      CI's `supply-chain` job confirms.
    - **`check:audit` timeout raised, folded in.** The bigger dev tree pushed the

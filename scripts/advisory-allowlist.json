@@ -43,15 +43,12 @@
     "`overrides.qs` ^6.16.0 and `overrides.fast-uri` ^3.1.6 clear all six via the",
     "child-override route with no entry here. Landed in the 5d-ii PR (#89).",
     "",
-    "That leaves one entry, the low diff advisory."
+    "The last entry — the low diff advisory, GHSA-73RR-HH4G-FPGX — was removed on",
+    "2026-09-08. It was reached only through mocha's diff@^7 pin; mocha 12 ships",
+    "diff@^9, out of the vulnerable range, so the advisory cleared on its own (as",
+    "that entry's own `why` predicted) and check-audit.mjs then flagged the entry",
+    "as stale. `allowed` is now empty: the dev tree carries no accepted",
+    "advisories. See STATUS.md's 2026-09-08 entry and ADR-0005."
   ],
-  "allowed": [
-    {
-      "id": "GHSA-73RR-HH4G-FPGX",
-      "package": "diff",
-      "severity": "low",
-      "why": "Reached only through mocha, which pins diff@^7; the fixed line is diff@8.0.3 and latest is 9.0.0, so the child-override route that cleared serialize-javascript exists here too — a two-major jump in the package mocha uses to render assertion diffs, taken for a low-severity denial of service in patch parsing that Dependabot itself auto-dismissed, on input that is our own test files. Not worth the override; kept here and revisited when mocha 12 (currently rc) ships with diff@^8 on its own. `npm audit fix --force` still proposes mocha@11.3.0, a downgrade that fixes nothing.",
-      "expires": "2026-11-12"
-    }
-  ]
+  "allowed": []
 }

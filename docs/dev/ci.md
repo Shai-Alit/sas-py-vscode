@@ -483,10 +483,11 @@ twice. Four of its seven entries — the three `vite` advisories and the nested
 pins a vite underneath vitepress that is out of every vulnerable range and brings
 `esbuild ^0.25` with it. The two `serialize-javascript` entries went on
 2026-08-27, the same way — `overrides` pins `serialize-javascript ^7.0.5` under
-mocha, clearing both `GHSA-5C6J-R48X-RMVQ` and `GHSA-QJ8W-GFJ5-8C6V`. One entry
-remains, the `low` `diff` advisory: it has the same child-override route
-(`diff@8.0.3`), declined because it is a two-major bump in mocha's diff renderer
-for an advisory Dependabot auto-dismissed.
+mocha, clearing both `GHSA-5C6J-R48X-RMVQ` and `GHSA-QJ8W-GFJ5-8C6V`. The last
+entry, the `low` `diff` advisory (`GHSA-73RR-HH4G-FPGX`), was removed on
+2026-09-08: mocha 12 replaced its `diff@^7` pin with `diff@^9`, out of the
+vulnerable range, so it cleared without an override. The allow-list is now
+empty.
 
 That `overrides` block carries two pins, [ADR-0005](../adr/0005-supply-chain-policy.md)
 records why for both. Both overrule a declared range: `vitepress@1.6.4` asks for

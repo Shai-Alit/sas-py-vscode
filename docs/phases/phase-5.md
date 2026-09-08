@@ -987,15 +987,19 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    merged, Section D — and slice 5c-iv, and Phase 5's release track — is
    complete; v0.1.1 is the first published release.**
 
-   **Dependabot PRs cleared 2026-09-08.** #124 (`azure/login` v2→v3) and #125
-   (`actions/download-artifact` v7→v8) merged — v8 is the intended pairing for
-   `upload-artifact@v7` (no v8 of that action exists), validated by the next
-   real tag push (the `workflow_dispatch` rehearsal can't — `download-artifact`
-   runs only in the push-only `publish` job). #123 superseded by the
-   `mocha` 12 PR: exact pin `12.0.0`, drops `diff@^7` → `diff@^9`, clearing
+   **Dependabot PRs, 2026-09-08.** #123 superseded by
+   [PR #129](https://github.com/Shai-Alit/sas-py-vscode/pull/129) (`c12ee64`):
+   `mocha` 12, exact pin `12.0.0`, drops `diff@^7` → `diff@^9`, clearing
    **GHSA-73RR-HH4G-FPGX** and a same-day fresh **high** `js-yaml` advisory
    **GHSA-2883-XCG3-V3HH**; `advisory-allowlist.json` `allowed` now empty, its
-   four doc citations swept, `check:audit` green.
+   four doc citations swept, `check:audit` green. #124 (`azure/login` v2→v3)
+   merged (`e72a458`). #125 (`actions/download-artifact` v7→v8) rebased and
+   green but **not merged this session** — the `gh` token lacks the `workflow`
+   OAuth scope for a `.github/workflows/` edit; needs a merge from Sean's
+   session. v8 is the intended pairing for `upload-artifact@v7` (no v8 of that
+   action exists), validated by the next real tag push (not the
+   `workflow_dispatch` rehearsal — `download-artifact` runs only in the
+   push-only `publish` job).
 
    **Carried past the release:** (1) the **Open VSX namespace claim** (issue
    on `EclipseFdn/open-vsx.org`, Sean's EF account, to clear the ⚠️

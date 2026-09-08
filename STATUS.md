@@ -1367,19 +1367,30 @@ published"); no full `manual-test-pass.md` re-run, zero `src/` delta across
 no publish. **With D8 merged, Section D (and slice 5c-iv, and Phase 5's
 release track) is complete — v0.1.1 is the first published release.**
 
-**The three held Dependabot PRs cleared 2026-09-08.** **#124** (`azure/login`
-v2→v3) and **#125** (`actions/download-artifact` v7→v8) merged after
-confirming v8 is the intended pairing for `upload-artifact@v7` (no v8 of that
-action exists) — validated by the next real tag push, not the
-`workflow_dispatch` rehearsal, since `download-artifact` runs only in the
-push-only `publish` job. **#123** superseded by this PR — `mocha` 12 taken
-directly (exact pin `12.0.0`), which drops `diff@^7` for `diff@^9` and so
-clears **GHSA-73RR-HH4G-FPGX** _and_, as a bonus, a fresh **high** advisory
-**GHSA-2883-XCG3-V3HH** (`js-yaml`) that npm published against the tree the
-same day and that had started reddening `supply-chain` on every open PR.
-`scripts/advisory-allowlist.json` `allowed` is now empty and its four doc
-citations (`docs/dev/ci.md`, ADR-0005, this file's 2026-09-02 housekeeping
-entry, `phase-5.md`'s `ovsx@1.1.1` bullet) are swept. `check:audit` green.
+**The three held Dependabot PRs, 2026-09-08.** **#123** superseded by
+**[PR #129](https://github.com/Shai-Alit/sas-py-vscode/pull/129)** (`c12ee64`) —
+`mocha` 12 taken directly (exact pin `12.0.0`), which drops `diff@^7` for
+`diff@^9` and so clears **GHSA-73RR-HH4G-FPGX** _and_, as a bonus, a fresh
+**high** advisory **GHSA-2883-XCG3-V3HH** (`js-yaml`) that npm published
+against the tree the same day and that had started reddening `supply-chain`
+on every open PR. `scripts/advisory-allowlist.json` `allowed` is now empty
+and its four doc citations (`docs/dev/ci.md`, ADR-0005, this file's
+2026-09-02 housekeeping entry, `phase-5.md`'s `ovsx@1.1.1` bullet) are swept;
+`check:audit` green. **#124** (`azure/login` v2→v3) **merged** (`e72a458`).
+**#125** (`actions/download-artifact` v7→v8) is rebased and green but **not
+yet merged** — this session's `gh` token lacks the `workflow` OAuth scope
+needed to merge a PR that edits `.github/workflows/`, so #125 needs a merge
+from Sean's own session (one click; it's `CLEAN`). v8 is the intended pairing
+for `upload-artifact@v7` (no v8 of that action exists) and is validated by
+the next real tag push, not the `workflow_dispatch` rehearsal, since
+`download-artifact` runs only in the push-only `publish` job.
+
+**CI note — the `review` (Claude) reviewer workflow is currently broken.** On
+a non-`[skip-review]` PR it fails with `Claude Code native binary not found` /
+empty `ANTHROPIC_API_KEY` on the runner (seen on #129). It is not a required
+check (`main` requires only `analyze`, `changes`, `ci-required`), and `Codex
+review` still runs, so it did not block merges — but the reviewer setup wants
+fixing (`docs/ai-reviewer-setup.md`).
 
 **Carried past the release:** (1) the **Open VSX namespace claim** — file the
 "Request ownership of a namespace" issue on `EclipseFdn/open-vsx.org` for

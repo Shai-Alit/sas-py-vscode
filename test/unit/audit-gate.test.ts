@@ -336,6 +336,9 @@ describe("advisory allow-list parsing", () => {
 
   // The committed file is the one that actually runs, and a checker that only
   // ever validates synthetic input has never validated anything that ships.
+  // `parseAllowlist` throws on any malformed entry, so a clean parse is the
+  // assertion; an empty `allowed` is valid and is in fact the healthy state —
+  // it means nothing in the dev tree currently needs an exception.
   it("accepts the allow-list this repository actually commits", () => {
     const text = readFileSync(
       path.join(REPO_ROOT, "scripts", "advisory-allowlist.json"),
@@ -343,8 +346,8 @@ describe("advisory allow-list parsing", () => {
     );
     const parsed = parseAllowlist(text);
     assert.ok(
-      parsed.length > 0,
-      "the committed allow-list should not be empty",
+      Array.isArray(parsed),
+      "the committed allow-list should parse to an array",
     );
   });
 });

@@ -339,7 +339,9 @@ Punch-list completeness (`phase-4.md`, 4a–4d) and manual-test completeness
 (`docs/dev/manual-test-pass.md` §6/§7/§8, all live-verified and ticked) were
 both confirmed clean. Dependency advisories: `npm audit` shows exactly the
 one entry `scripts/advisory-allowlist.json` already allows (`diff`,
-GHSA-73RR-HH4G-FPGX, low, dev-only via mocha), expiring 2026-11-12 — no
+GHSA-73RR-HH4G-FPGX, low, dev-only via mocha), expiring 2026-11-12 (that
+entry was removed 2026-09-08 once mocha 12 took `diff@^9` and cleared it —
+see this file's Section D entry below) — no
 open Dependabot items found this pass, though this sandbox has no `gh` CLI
 or token, so GitHub's own Dependabot UI (e.g. any Actions-workflow
 advisories) couldn't be checked directly; `npm audit` is a proxy for the
@@ -1365,14 +1367,25 @@ published"); no full `manual-test-pass.md` re-run, zero `src/` delta across
 no publish. **With D8 merged, Section D (and slice 5c-iv, and Phase 5's
 release track) is complete — v0.1.1 is the first published release.**
 
-**Carried past the release, in order:** (1) the **Open VSX namespace claim** —
-file the "Request ownership of a namespace" issue on `EclipseFdn/open-vsx.org`
-for `shai-alit` (Sean's Eclipse Foundation account) to clear the ⚠️
-unverified-publisher warning; (2) **Dependabot #124 + #125** (`azure/login`
-v3, `actions/download-artifact` v8) — merge, then re-run the
-`workflow_dispatch` rehearsal to exercise the changed `release.yml`; (3) the
-**#123 allowlist-sweep PR** — take `mocha` 12, delete the now-stale `diff`
-entry from `scripts/advisory-allowlist.json`, sweep its four doc citations.
+**The three held Dependabot PRs cleared 2026-09-08.** **#124** (`azure/login`
+v2→v3) and **#125** (`actions/download-artifact` v7→v8) merged after
+confirming v8 is the intended pairing for `upload-artifact@v7` (no v8 of that
+action exists) — validated by the next real tag push, not the
+`workflow_dispatch` rehearsal, since `download-artifact` runs only in the
+push-only `publish` job. **#123** superseded by this PR — `mocha` 12 taken
+directly (exact pin `12.0.0`), which drops `diff@^7` for `diff@^9` and so
+clears **GHSA-73RR-HH4G-FPGX** _and_, as a bonus, a fresh **high** advisory
+**GHSA-2883-XCG3-V3HH** (`js-yaml`) that npm published against the tree the
+same day and that had started reddening `supply-chain` on every open PR.
+`scripts/advisory-allowlist.json` `allowed` is now empty and its four doc
+citations (`docs/dev/ci.md`, ADR-0005, this file's 2026-09-02 housekeeping
+entry, `phase-5.md`'s `ovsx@1.1.1` bullet) are swept. `check:audit` green.
+
+**Carried past the release:** (1) the **Open VSX namespace claim** — file the
+"Request ownership of a namespace" issue on `EclipseFdn/open-vsx.org` for
+`shai-alit` (Sean's Eclipse Foundation account) to clear the ⚠️
+unverified-publisher warning; (2) the **Phase 5→6 between-phase housekeeping**
+(`HOUSEKEEPING.md`) — its own session.
 
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the

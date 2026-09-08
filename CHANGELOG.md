@@ -10,6 +10,15 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- Dev tooling: `mocha` 11 → 12. Its move from `diff@^7` to `diff@^9` clears two
+  advisories in the development dependency tree (`GHSA-73RR-HH4G-FPGX` low,
+  `GHSA-2883-XCG3-V3HH` high in `js-yaml`); `scripts/advisory-allowlist.json` is
+  now empty. GitHub Actions bumps: `azure/login` v2 → v3,
+  `actions/download-artifact` v7 → v8 in the release workflow. No effect on the
+  published extension.
+
 ## [0.1.1] - 2026-09-08
 
 ### Changed

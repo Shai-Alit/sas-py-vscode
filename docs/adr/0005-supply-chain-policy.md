@@ -90,11 +90,10 @@ available, and a policy had to exist for the case where it is not.
 > `--parallel` smoke job would turn that one-time check into real cover; it is
 > noted as a possible follow-up rather than added here, on the same
 > "one CI job, not everywhere" grounds as the rest of this policy. The `low`
-> `diff` advisory has the same child-override route open — `diff@8.0.3` fixes
-> it — and it is declined on cost, not left unexamined: a two-major bump in the
-> package mocha renders assertion diffs with, for a denial of service Dependabot
-> auto-dismissed. That reasoning now lives in the allow-list entry, so the next
-> reader does not re-derive it.
+> `diff` advisory (`GHSA-73RR-HH4G-FPGX`) was carried on the allow-list until
+> 2026-09-08, then removed: mocha 12 replaced its `diff@^7` pin with `diff@^9`,
+> out of the vulnerable range, so it cleared without an override. The allow-list
+> is now empty.
 
 ## Decision
 

@@ -904,6 +904,88 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    (dispatch, not a tag push). **All of S1–S4 and the dry run are done. What
    remains is Section D itself — the real v0.1.0 release.**
 
+   **Section D run 2026-09-08 — v0.1.0 shipped, then a v0.1.1 docs patch to
+   fix the store listing. D7/D8 and three held Dependabot PRs remain.**
+
+   D1–D4 landed pre-weekend as
+   [PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121) (`432b4e7`,
+   2026-09-04): `CHANGELOG.md` finalised to `## [0.1.0] - 2026-09-04`,
+   `package.json` → `0.1.0` with `"preview": true`. **D3 (replace the stopgap
+   icon) deliberately skipped** — ships the generated `Py`-wordmark icon,
+   Sean's call; `release-checklist.md` D3 carried to a later release.
+
+   **D5/D6, v0.1.0.** `git push origin v0.1.0` was **rejected by the
+   `release-tags` ruleset**: S3 set the `creation` / `deletion` /
+   `non_fast_forward` rules but left `bypass_actors` empty, so `creation`
+   blocked _everyone_ — admins included — from ever cutting a release tag.
+   Fixed via the GitHub UI: added the **Repository admin** role as an
+   always-bypass actor (`gh api …/rulesets/22299037` →
+   `bypass_actors:[{actor_id:5,actor_type:RepositoryRole,bypass_mode:always}]`).
+   Ordinary write collaborators still can't push `v*` tags; admins can.
+   **S3's guard is only genuinely complete as of this fix** — its earlier
+   "confirmed via `gh api`" note checked the rules, not the (empty) bypass
+   list. Tag re-pushed at `432b4e7` exactly (Sean's call — not `main` HEAD,
+   so #122 rides the next release). Release
+   [run 34277110735](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/34277110735):
+   `build` green, `publish` approved on the `release` environment, every step
+   green — Marketplace `vsce publish --azure-credential`, Open VSX
+   `ovsx publish` (failure-note step _skipped_), GitHub Release `v0.1.0` with
+   the `.vsix`. Marketplace listing live in ~15 min, publisher flag `verified`.
+
+   **Open VSX namespace warning — expected, one follow-up.** Every version in
+   the `shai-alit` namespace shows ⚠️ _"…is not a verified publisher of the
+   namespace shai-alit"_: `ovsx create-namespace` (S2) reserves the name but
+   does not make you a verified owner (`"verified": false`). Blocks nothing —
+   trust signal only. Removed by a one-time public claim: an issue on
+   `EclipseFdn/open-vsx.org` ("Request ownership of a namespace" template —
+   namespace `shai-alit`, the EF account that signed the S2 Publisher
+   Agreement, proof via `package.json` `publisher` + the Open VSX profile +
+   the extension page). An Eclipse admin grants `owner`; the ⚠️ becomes a
+   shield on the existing and all future releases, no republish. **Not yet
+   filed — post-release item.**
+
+   **v0.1.1 (`e76e8e0`) — docs-only, fixes the store listing.** `README.md`'s
+   status blockquote ships _inside_ the `.vsix` and renders on both listing
+   pages; it still read **"Nothing is published to the marketplace yet"** and
+   linked `STATUS.md` / `PRODUCTION_PLAN.md` (both `.vscodeignore`d out of the
+   package). Rewritten to the preview status + `CHANGELOG.md` / issue-tracker
+   links. [PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127):
+   `README.md` + `version` → `0.1.1` (`npm version --no-git-tag-version`) +
+   a `## [0.1.1] - 2026-09-08` CHANGELOG section. **No `src/` change —
+   byte-identical to 0.1.0** — so no adversarial pass (docs-only). Local
+   `prettier` / `check:docs` / `check:secrets` green; CI + both reviewers
+   green. Tagged `v0.1.1` (ruleset bypass let it through — "Bypassed rule
+   violations" in the push output, as designed). Release
+   [run 34281281390](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/34281281390):
+   all steps green, same three targets; GitHub Release live, both registries
+   re-indexing at time of writing.
+
+   **Dependabot 2026-09-07 — four PRs, triaged 2026-09-08, none
+   release-related.** [PR #122](https://github.com/Shai-Alit/sas-py-vscode/pull/122)
+   **merged** (`5fd67c2`) — `eslint` 10.9.1→10.10.0, `globals` 17.11→17.12,
+   `typescript-eslint` 8.68→8.69; CI green incl. `verify`, dev tree only, no
+   `.vsix` impact. **#123/#124/#125 held until after the release:**
+   - **#123** `mocha` 11.8.0 → 12.0.0 — suite green on all eight `test` jobs,
+     but `supply-chain` fails correctly: mocha 12 drops `diff@^7` for
+     `diff@^9`, clearing **GHSA-73RR-HH4G-FPGX**, so the lone
+     `scripts/advisory-allowlist.json` entry now matches nothing
+     (`check-audit.mjs`'s `stale` arm — the entry's own `why` foresaw exactly
+     this). Fix = delete the entry + sweep its four doc citations (`STATUS.md`,
+     `docs/dev/ci.md`, ADR-0005, this file's `ovsx@1.1.1` bullet below), in a
+     small PR since Dependabot can't make that change.
+   - **#124** `azure/login` v2→v3 (Node 20→24) and **#125**
+     `actions/download-artifact` v7→v8 (ESM; digest-mismatch now errors; no
+     auto-unzip of non-zips) — both touch only `release.yml`, which no PR
+     exercises, so their green checks don't cover the release path. Merge
+     after the release, then re-run the `workflow_dispatch` rehearsal.
+
+   **Still open:** **D7** — confirm the corrected listing renders on the live
+   Marketplace / Open VSX pages once 0.1.1 indexes, plus a smoke install (no
+   full `manual-test-pass.md` re-run — zero `src/` delta across 0.1.0→0.1.1).
+   **D8** — follow-up PR: `version` → next `0.1.x-dev`, fresh `[Unreleased]`.
+   Then the Open VSX namespace claim, then Dependabot #124 + #125, then the
+   #123 allowlist-sweep PR.
+
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —
      no input, it cannot publish):

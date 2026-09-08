@@ -1276,6 +1276,94 @@ dry run are done — nothing left before the real v0.1.0 tag except Section D
 itself.** See `docs/phases/phase-5.md`'s 5c-iv Runbook entry for the full
 account.
 
+**Section D run 2026-09-08 — v0.1.0 and a v0.1.1 listing-text patch both
+shipped. D7/D8 and three held Dependabot PRs remain.**
+
+**D1–D4** landed pre-weekend as
+[PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121) (`432b4e7`,
+2026-09-04): `CHANGELOG.md` finalised to `## [0.1.0] - 2026-09-04`,
+`package.json` → `0.1.0` with `"preview": true`. **D3 (replace the stopgap
+icon) deliberately skipped** — ships the generated `Py`-wordmark icon, Sean's
+call; `release-checklist.md` D3 carried to a later release. After the long
+weekend `main` was still at `432b4e7` with no tag pushed.
+
+**D5/D6 for v0.1.0, 2026-09-08.** The first `git push origin v0.1.0` was
+**rejected by the `release-tags` ruleset** — S3 set its `creation` /
+`deletion` / `non_fast_forward` rules but left `bypass_actors` empty, so the
+`creation` rule blocked _everyone_, admins included, from ever cutting a
+release tag. Fixed via the GitHub UI by adding the **Repository admin** role
+as an always-bypass actor (`gh api …/rulesets/22299037` confirms
+`bypass_actors:[{actor_id:5,actor_type:RepositoryRole,bypass_mode:always}]`) —
+the guard against ordinary write collaborators pushing arbitrary `v*` tags is
+kept, admins can now tag. S3's guard is only actually complete as of this fix;
+its earlier "confirmed via `gh api`" note was checking the rules, not the
+bypass list. Tag re-pushed (Sean chose to tag `432b4e7` exactly, not `main`
+HEAD, so #122 rides the next release). Release workflow
+[run 34277110735](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/34277110735):
+`build` green, `publish` approved on the `release` environment, all steps
+green — Marketplace `vsce publish --azure-credential`, Open VSX `ovsx publish`
+(the failure-note step _skipped_, i.e. it succeeded), and the GitHub Release
+`v0.1.0` with the `.vsix` attached. VS Marketplace listing live within ~15 min,
+publisher flag `verified`.
+
+**Open VSX namespace warning — expected, one open follow-up.** Every version in
+the `shai-alit` namespace shows ⚠️ _"Shai-Alit is not a verified publisher of
+the namespace shai-alit"_ — `ovsx create-namespace` (S2) only reserves the
+name, it does not make you a verified owner (`"verified": false` on the
+namespace and every release). It blocks neither publishing nor installing; it
+is a trust-signal only. Removed by a one-time public namespace claim: an issue
+on `EclipseFdn/open-vsx.org` (the "Request ownership of a namespace" template —
+namespace `shai-alit`, the Eclipse Foundation account that signed the S2
+Publisher Agreement, proof via `package.json` `publisher` + the Open VSX
+profile + the extension page). An Eclipse admin grants `owner`; the ⚠️ then
+becomes a shield on the existing release and all future ones, no republish.
+**Not yet filed — carried as a post-release item.**
+
+**v0.1.1 (`e76e8e0`), 2026-09-08 — a docs-only patch to fix the store
+listing.** `README.md`'s status blockquote, which ships _inside_ the `.vsix`
+and renders on both listing pages, still read **"Nothing is published to the
+marketplace yet"** and linked `STATUS.md` / `PRODUCTION_PLAN.md` (both
+`.vscodeignore`d out of the package). Rewritten to state the preview status
+and link `CHANGELOG.md` (in the package) + the issue tracker.
+[PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127) — `README.md` +
+`version` → `0.1.1` (`npm version --no-git-tag-version`) + a
+`## [0.1.1] - 2026-09-08` CHANGELOG section; **no `src/` change, extension
+byte-identical to 0.1.0**, so no adversarial review pass (docs-only). Local
+`prettier` / `check:docs` / `check:secrets` green; CI + both reviewers green.
+Tagged `v0.1.1` (the ruleset bypass let it through, "Bypassed rule violations"
+noted in the push output as designed). Release
+[run 34281281390](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/34281281390):
+`build` + `publish` all steps green, same three targets. GitHub Release live;
+both registries re-indexing at time of writing (~15 min like 0.1.0).
+
+**Dependabot's 2026-09-07 weekly run — four PRs, triaged 2026-09-08, none
+release-related.** [PR #122](https://github.com/Shai-Alit/sas-py-vscode/pull/122)
+**merged** (`5fd67c2`) — dev-tooling minor bumps (`eslint` 10.9.1→10.10.0,
+`globals` 17.11→17.12, `typescript-eslint` 8.68→8.69); CI green incl.
+`verify`, dev tree only, no `.vsix` impact. **#123, #124, #125 held until
+after the release:**
+- **#123** (`mocha` 11.8.0 → **12.0.0**) — suite green on all eight `test`
+  jobs, but `supply-chain` fails _correctly_: mocha 12 moves off `diff@^7`
+  onto `diff@^9`, clearing **GHSA-73RR-HH4G-FPGX** so the sole
+  `scripts/advisory-allowlist.json` entry matches nothing (`check-audit.mjs`'s
+  `stale` arm — the entry's own `why` foresaw exactly this). Fix = delete the
+  entry + sweep its four doc citations (this file's line ~342, `docs/dev/ci.md`,
+  `docs/adr/0005-supply-chain-policy.md`, `docs/phases/phase-5.md`); its own
+  small PR, since Dependabot can't make that change.
+- **#124** (`azure/login` v2 → **v3**; Node 20→24) and **#125**
+  (`actions/download-artifact` v7 → **v8**; breaking — ESM, digest-mismatch
+  now errors, no auto-unzip of non-zips) — both touch **only**
+  `.github/workflows/release.yml`, which no PR exercises, so their green checks
+  don't cover the release path. Merge after the release, then re-run the
+  `workflow_dispatch` rehearsal to validate.
+
+**Still open:** **D7** — confirm the corrected listing text renders on the live
+Marketplace / Open VSX pages once 0.1.1 indexes, plus a smoke install (a full
+`manual-test-pass.md` re-run is not warranted — zero `src/` delta across
+0.1.0→0.1.1). **D8** — follow-up PR bumping `version` to the next
+`0.1.x-dev` + a fresh `[Unreleased]`. Then the Open VSX namespace claim, then
+Dependabot #124 + #125, then the #123 allowlist-sweep PR.
+
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
 > only file every session should need to open to know where to start — open the
@@ -1292,7 +1380,7 @@ account.
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release) in progress — S1–S4 and the `workflow_dispatch` dry run all done (S1 via `--azure-credential`, not `--oidc` — [PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023 amended); only Section D (the real tag) remains — see phase-5.md's own Plan/Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release): **v0.1.0 published 2026-09-08** ([PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121), tag `v0.1.0`), plus a **v0.1.1** docs patch ([PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127), tag `v0.1.1`) fixing stale "nothing published" text in the shipped README; S1–S4 + dry run done earlier ([PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023). Section D **D7** (confirm listing text + smoke install) and **D8** (dev-version bump) still open; Open VSX namespace claim + Dependabot #123–125 carried — see phase-5.md's own Runbook | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |

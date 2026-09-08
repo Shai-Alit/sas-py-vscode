@@ -979,12 +979,20 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
      exercises, so their green checks don't cover the release path. Merge
      after the release, then re-run the `workflow_dispatch` rehearsal.
 
-   **Still open:** **D7** — confirm the corrected listing renders on the live
-   Marketplace / Open VSX pages once 0.1.1 indexes, plus a smoke install (no
-   full `manual-test-pass.md` re-run — zero `src/` delta across 0.1.0→0.1.1).
-   **D8** — follow-up PR: `version` → next `0.1.x-dev`, fresh `[Unreleased]`.
-   Then the Open VSX namespace claim, then Dependabot #124 + #125, then the
-   #123 allowlist-sweep PR.
+   **D7 confirmed 2026-09-08** (Sean) — the 0.1.1 listing renders on both
+   live pages with the corrected blockquote; no full `manual-test-pass.md`
+   re-run (zero `src/` delta across 0.1.0→0.1.1). **D8** —
+   [PR #128](https://github.com/Shai-Alit/sas-py-vscode/pull/128): `version` →
+   `0.1.2-dev`, fresh `## [Unreleased]`; docs-only, no publish. **With D8
+   merged, Section D — and slice 5c-iv, and Phase 5's release track — is
+   complete; v0.1.1 is the first published release.**
+
+   **Carried past the release:** (1) the **Open VSX namespace claim** (issue
+   on `EclipseFdn/open-vsx.org`, Sean's EF account, to clear the ⚠️
+   unverified-publisher warning); (2) **Dependabot #124 + #125** — merge, then
+   `workflow_dispatch`-rehearse the changed `release.yml`; (3) the **#123
+   allowlist-sweep PR** — take `mocha` 12, delete the stale `diff` entry from
+   `scripts/advisory-allowlist.json`, sweep its four doc citations.
 
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —

@@ -1,12 +1,27 @@
-# Status
+<!-- Copyright © 2026, Sean Ford and the Python on Viya contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Status archive
+
+The slice-by-slice narrative that `STATUS.md` accumulated from Phase 3's
+final slice (3f) through the v0.1.1 first release and the Phase 5→6
+between-phase housekeeping. Moved here 2026-09-09 to keep `STATUS.md` small
+enough to load every session — it had grown past 1,500 lines.
+
+This is history, not current state. For where the project is now and what to
+do next, read `STATUS.md` at the repository root. Per-phase detail (plan,
+punch list, probe findings) lives in each `docs/phases/phase-N.md`; this file
+is the cross-phase chronological record and the reasoning captured in passing.
+
+---
 
 **Phase 5 (Hardening & first release) is complete.** `v0.1.1` is the first
 published release — VS Marketplace, Open VSX, and GitHub Releases. All Phase 5
 slices (5a, 5b, 5c-i–5c-iv, 5d-i–5d-iv) are merged; Viya 3.5 support was dropped
-along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
+along the way ([ADR-0022](adr/0022-drop-viya-35-support.md)).
 
 **Phase 6 (SAS Content explorer) is next — open
-[`docs/phases/phase-6.md`](docs/phases/phase-6.md).** It was scoped 2026-09-03
+[`docs/phases/phase-6.md`](phases/phase-6.md).** It was scoped 2026-09-03
 (4 slices, 6a–6d). The one thing to do before 6a: **re-read
 `PRODUCTION_PLAN.md` §3** and confirm the 6→12 order still matches real
 post-`v0.1.0` demand — the listed order is a recommendation, not a dependency

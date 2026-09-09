@@ -161,9 +161,52 @@
         "command": "pythonOnViya.refreshEnvironment",
         "title": "%command.refreshEnvironment.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.refreshContentExplorer",
+        "title": "%command.refreshContentExplorer.title%",
+        "category": "%extension.category%",
+        "icon": "$(refresh)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pythonOnViya",
+          "title": "%viewsContainers.pythonOnViya.title%",
+          "icon": "media/activity-bar.svg"
+        }
+      ]
+    },
+    "views": {
+      "pythonOnViya": [
+        {
+          "id": "pythonOnViya.contentExplorer",
+          "name": "%views.contentExplorer.name%",
+          "contextualTitle": "%views.contentExplorer.name%"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "pythonOnViya.contentExplorer",
+        "when": "!pythonOnViya.hasProfiles",
+        "contents": "%viewsWelcome.contentExplorer.noProfile%"
+      },
+      {
+        "view": "pythonOnViya.contentExplorer",
+        "when": "pythonOnViya.hasProfiles && !pythonOnViya.authorized",
+        "contents": "%viewsWelcome.contentExplorer.signedOut%"
       }
     ],
     "menus": {
+      "view/title": [
+        {
+          "command": "pythonOnViya.refreshContentExplorer",
+          "when": "view == pythonOnViya.contentExplorer",
+          "group": "navigation"
+        }
+      ],
       "editor/title/run": [
         {
           "command": "pythonOnViya.runFile",

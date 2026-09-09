@@ -1,0 +1,74 @@
+{
+  "version": 2,
+  "accept": "application/json",
+  "count": 2,
+  "start": 0,
+  "limit": 1000000,
+  "name": "members",
+  "items": [
+    {
+      "creationTimeStamp": "2024-02-10T10:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-02-10T10:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "eeeeeeee-0000-4000-8000-000000000001",
+      "name": "summary.py",
+      "added": "2024-02-10T10:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+      "uri": "/files/files/cccccccc-0000-4000-8000-0000000000b1",
+      "type": "child",
+      "contentType": "file",
+      "typeDefName": "file_py",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members/eeeeeeee-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members/eeeeeeee-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000b1",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000b1",
+          "type": "application/vnd.sas.summary"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2024-02-10T10:05:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-02-10T10:05:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "eeeeeeee-0000-4000-8000-000000000002",
+      "name": "readme.txt",
+      "added": "2024-02-10T10:05:00.100000Z",
+      "parentFolderUri": "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+      "uri": "/files/files/cccccccc-0000-4000-8000-0000000000b2",
+      "type": "child",
+      "contentType": "file",
+      "typeDefName": "file",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members/eeeeeeee-0000-4000-8000-000000000002",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members/eeeeeeee-0000-4000-8000-000000000002",
+          "type": "application/vnd.sas.content.folder.member"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members",
+      "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "version": 2,
+  "accept": "application/vnd.sas.content.folder",
+  "start": 0,
+  "limit": 1000000,
+  "count": 3,
+  "name": "folders",
+  "items": [
+    {
+      "creationTimeStamp": "2022-09-21T21:55:45.550908Z",
+      "createdBy": "sas.system",
+      "modifiedTimeStamp": "2022-09-21T21:55:45.550908Z",
+      "modifiedBy": "sas.system",
+      "version": 1,
+      "id": "bbbbbbbb-0000-4000-8000-000000000003",
+      "name": "Users",
+      "type": "folder",
+      "memberCount": 4,
+      "iconUri": "sas-icon://folder-users",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000003",
+          "uri": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000003",
+          "type": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "members",
+          "href": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000003/members",
+          "uri": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000003/members",
+          "type": "application/vnd.sas.collection",
+          "itemType": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "ancestors",
+          "href": "/folders/ancestors?childUri=/folders/folders/bbbbbbbb-0000-4000-8000-000000000003",
+          "uri": "/folders/ancestors?childUri=/folders/folders/bbbbbbbb-0000-4000-8000-000000000003",
+          "type": "application/vnd.sas.content.folder.ancestor"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2022-09-21T21:55:45.550908Z",
+      "createdBy": "sas.system",
+      "modifiedTimeStamp": "2022-09-21T21:55:45.550908Z",
+      "modifiedBy": "sas.system",
+      "version": 1,
+      "id": "bbbbbbbb-0000-4000-8000-000000000001",
+      "name": "Products",
+      "type": "folder",
+      "memberCount": 6,
+      "iconUri": "sas-icon://folder-products",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "members",
+          "href": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000001/members",
+          "uri": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000001/members",
+          "type": "application/vnd.sas.collection",
+          "itemType": "application/vnd.sas.content.folder"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2022-09-21T21:55:45.550908Z",
+      "createdBy": "sas.system",
+      "modifiedTimeStamp": "2022-09-21T21:55:45.550908Z",
+      "modifiedBy": "sas.system",
+      "version": 1,
+      "id": "bbbbbbbb-0000-4000-8000-000000000002",
+      "name": "Public",
+      "type": "folder",
+      "memberCount": 2,
+      "iconUri": "sas-icon://folder-public",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000002",
+          "uri": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000002",
+          "type": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "members",
+          "href": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000002/members",
+          "uri": "/folders/folders/bbbbbbbb-0000-4000-8000-000000000002/members",
+          "type": "application/vnd.sas.collection",
+          "itemType": "application/vnd.sas.content.folder"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders?filter=and(isNull(parent),in(type,'file','dataFlow','folder'))&limit=1000000",
+      "uri": "/folders/folders?filter=and(isNull(parent),in(type,'file','dataFlow','folder'))&limit=1000000",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

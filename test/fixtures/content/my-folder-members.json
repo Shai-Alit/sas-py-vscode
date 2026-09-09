@@ -1,0 +1,222 @@
+{
+  "version": 2,
+  "accept": "application/json",
+  "count": 4,
+  "start": 0,
+  "limit": 1000000,
+  "name": "members",
+  "items": [
+    {
+      "creationTimeStamp": "2024-02-01T09:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-02-01T09:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "dddddddd-0000-4000-8000-0000000000a1",
+      "name": "analysis.py",
+      "added": "2024-02-01T09:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+      "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+      "type": "child",
+      "contentType": "file",
+      "typeDefName": "file_py",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a1",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a1",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "PUT",
+          "rel": "putResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1"
+        },
+        {
+          "method": "DELETE",
+          "rel": "deleteResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a1",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a1"
+        },
+        {
+          "method": "GET",
+          "rel": "ancestors",
+          "href": "/folders/ancestors?childUri=/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "uri": "/folders/ancestors?childUri=/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "type": "application/vnd.sas.content.folder.ancestor"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2024-01-20T12:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-01-20T12:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "dddddddd-0000-4000-8000-000000000001",
+      "name": "reports",
+      "description": "generated report notebooks",
+      "added": "2024-01-20T12:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+      "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+      "type": "child",
+      "contentType": "folder",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "DELETE",
+          "rel": "deleteResource",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-000000000001",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-000000000001"
+        },
+        {
+          "method": "POST",
+          "rel": "addMember",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000001/members",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "POST",
+          "rel": "createChild",
+          "href": "/folders/folders?parentFolderUri=/folders/folders/cccccccc-0000-4000-8000-000000000001",
+          "uri": "/folders/folders?parentFolderUri=/folders/folders/cccccccc-0000-4000-8000-000000000001",
+          "type": "application/vnd.sas.content.folder"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2024-01-18T08:30:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-01-18T08:30:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "dddddddd-0000-4000-8000-0000000000a2",
+      "name": "notes.sas",
+      "added": "2024-01-18T08:30:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+      "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a2",
+      "type": "child",
+      "contentType": "file",
+      "typeDefName": "file",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a2",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a2",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000a2",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a2",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a2",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-0000000000a2"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2023-11-05T14:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2023-11-05T14:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "dddddddd-0000-4000-8000-000000000002",
+      "name": "archive",
+      "added": "2023-11-05T14:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001",
+      "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000002",
+      "type": "child",
+      "contentType": "folder",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-000000000002",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members/dddddddd-0000-4000-8000-000000000002",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-000000000002",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-000000000002",
+          "type": "application/vnd.sas.summary"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members?start=0&limit=1000000&filter=in(contentType,'file','folder','dataFlow')",
+      "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members?start=0&limit=1000000&filter=in(contentType,'file','folder','dataFlow')",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.content.folder"
+    },
+    {
+      "method": "POST",
+      "rel": "createMember",
+      "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members",
+      "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000001/members",
+      "type": "application/vnd.sas.content.folder.member",
+      "responseType": "application/vnd.sas.content.folder.member"
+    }
+  ]
+}

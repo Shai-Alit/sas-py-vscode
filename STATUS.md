@@ -8,16 +8,24 @@ along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 **Phase 6 (SAS Content explorer) is in progress — open
 [`docs/phases/phase-6.md`](docs/phases/phase-6.md).** Scoped 2026-09-03 (4
 slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 before
-starting. 6a (`ContentAdapter` + read-only tree) is split in two:
+starting. **6a is done** (split 6a-i + 6a-ii); **6b is next.**
 
 - **6a-i — `src/wire/` promotion.** Done. The Viya hypermedia link helpers and
   the `application/vnd.sas.error+json` reader moved from `src/compute/` to a
   new service-agnostic `src/wire/` layer so `src/content/` can share them
   ([ADR-0025](docs/adr/0025-shared-wire-layer.md)). Zero behaviour change.
-- **6a-ii — content adapter + read-only tree.** Next: the `src/content/`
-  module, the first activity-bar view container, and the SAS Content tree
-  view. It carries the live Folders/Files probe findings (recorded in
-  `phase-6.md`) that its wire shapes are built from.
+- **6a-ii — content adapter + read-only tree.** Done. The `src/content/`
+  module (`types`/`problems`/`client`/`adapter` pure; `messages`/`contentTree`/
+  `contentExplorer` on `vscode`), this repo's first activity-bar view
+  container, and a read-only SAS Content tree (My Favorites / My Folder / SAS
+  Content / Recycle Bin, lazy-expanded). No `ContentModel`, no adapter factory,
+  no `sortBy` cadence branch — [ADR-0026](docs/adr/0026-content-adapter-shape.md).
+  Live Folders/Files findings 83–87 in `phase-6.md`; the `.py`-type
+  second-cadence probe moved to 6c (it only feeds create-file).
+- **6b — open/save via `FileSystemProvider`.** Next: `readFile`/`writeFile`/
+  `stat` and the ETag round trip so a remote `.py` opens and saves in place.
+  `getParent`/`TreeView.reveal` and the `ancestors` shape (finding 87, not
+  pinned) land here too.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 2026-09-09 — nothing else gates Phase 6.
@@ -101,7 +109,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **in progress.** 6a-i (`src/wire/` promotion, [ADR-0025](docs/adr/0025-shared-wire-layer.md)) done; 6a-ii (content adapter + read-only tree) next. | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a done — 6a-i (`src/wire/` promotion, [ADR-0025](docs/adr/0025-shared-wire-layer.md)) and 6a-ii (content adapter + read-only tree, [ADR-0026](docs/adr/0026-content-adapter-shape.md)); 6b (open/save via `FileSystemProvider`) next. | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

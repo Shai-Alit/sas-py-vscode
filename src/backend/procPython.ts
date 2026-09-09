@@ -1317,10 +1317,11 @@ export class ProcPythonBackend implements ExecutionBackend {
    * still holds earlier `PYnnnnnn` names (Finding 72).
    *
    * {@link seedFilerefCounter} runs first, once per connection, moving the
-   * counter past whatever the session already holds in a single `GET`. The
-   * loop is the backstop for what that cannot cover — two windows sharing
-   * one session (ADR-0012), each counting independently — and for a seed
-   * request that failed: on a retriable `4xx` from `assign`
+   * counter past whatever the session already holds by reading its fileref
+   * collection to the end (`listFilerefNames` pages through `next` — Finding
+   * 94). The loop is the backstop for what that cannot cover — two windows
+   * sharing one session (ADR-0012), each counting independently — and for a
+   * seed that returned nothing usable: on a retriable `4xx` from `assign`
    * ({@link isRetriableFilerefName}) it advances to the next name and tries
    * again, up to {@link MAX_FILEREF_ASSIGN_ATTEMPTS} times. Any other
    * failure, or a cancel, returns straight away.

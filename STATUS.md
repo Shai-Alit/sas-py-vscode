@@ -1386,11 +1386,19 @@ the next real tag push, not the `workflow_dispatch` rehearsal, since
 `download-artifact` runs only in the push-only `publish` job.
 
 **CI note — the `review` (Claude) reviewer workflow is currently broken.** On
-a non-`[skip-review]` PR it fails with `Claude Code native binary not found` /
-empty `ANTHROPIC_API_KEY` on the runner (seen on #129). It is not a required
-check (`main` requires only `analyze`, `changes`, `ci-required`), and `Codex
-review` still runs, so it did not block merges — but the reviewer setup wants
-fixing (`docs/ai-reviewer-setup.md`).
+a non-`[skip-review]` PR (seen on #129) it fails with `Claude Code native
+binary not found at /home/runner/.local/bin/claude` — `anthropics/claude-code-action@v1`
+failing its own install step on the runner. `@v1` floats, so a bad upstream
+release breaks it with no change on our side; `claude-review.yml` itself was
+last touched 2026-09-03. Not an auth problem: the workflow authenticates with
+`secrets.CLAUDE_CODE_OAUTH_TOKEN` (intact, last updated 2026-08-27), not an
+API key — an earlier note here that read the blank `ANTHROPIC_API_KEY` env
+line as a symptom was wrong; that variable is simply unset because this repo
+uses OAuth-token auth. It is not a required check (`main` gates only on
+`analyze`, `changes`, `ci-required`) and `Codex review` still runs, so no
+merge was blocked. Fix: pin `anthropics/claude-code-action` off `@v1` to a
+known-good version in `claude-review.yml` (and `ai-review.yml` if it uses the
+same action).
 
 **Carried past the release:** (1) the **Open VSX namespace claim** — file the
 "Request ownership of a namespace" issue on `EclipseFdn/open-vsx.org` for

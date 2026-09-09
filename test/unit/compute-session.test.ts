@@ -10,7 +10,7 @@ import {
   type ComputeResult,
 } from "../../src/compute/client";
 import type { ComputeContext } from "../../src/compute/contexts";
-import type { Link } from "../../src/compute/links";
+import type { Link } from "../../src/wire/links";
 import {
   asSessionGone,
   attachSession,

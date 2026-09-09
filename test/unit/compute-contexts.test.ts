@@ -22,7 +22,7 @@ import {
   quoteFilterValue,
   resolveContext,
 } from "../../src/compute/contexts";
-import type { Link } from "../../src/compute/links";
+import type { Link } from "../../src/wire/links";
 
 /**
  * Resolving the compute context a profile names.

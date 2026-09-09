@@ -6,13 +6,13 @@ import assert from "node:assert/strict";
 import {
   ForeignLinkError,
   type Link,
-  computeMediaType,
   findLink,
   findLinkOfType,
   linkMethod,
   readLinks,
   resolveHref,
-} from "../../src/compute/links";
+  sasMediaType,
+} from "../../src/wire/links";
 
 /**
  * The link layer is where a wrong answer is quietest. A bad media type comes
@@ -213,7 +213,7 @@ describe("findLinkOfType", () => {
   });
 
   it("treats the bare and +json spellings as the same type", () => {
-    // `computeMediaType`'s rule read backwards: Viya advertises its vendor types
+    // `sasMediaType`'s rule read backwards: Viya advertises its vendor types
     // bare and serves them suffixed, so a deployment that starts advertising the
     // suffixed form has not changed what it is offering.
     assert.equal(
@@ -375,7 +375,7 @@ describe("resolveHref", () => {
   });
 });
 
-describe("computeMediaType", () => {
+describe("sasMediaType", () => {
   /** Advertised by a link, and what must go on the wire for it. */
   const cases: readonly (readonly [
     string | null | undefined,
@@ -445,7 +445,7 @@ describe("computeMediaType", () => {
   it("appends +json to exactly the types that need it", () => {
     for (const [advertised, sent] of cases) {
       assert.equal(
-        computeMediaType(advertised),
+        sasMediaType(advertised),
         sent,
         `for ${JSON.stringify(advertised)}`,
       );
@@ -457,8 +457,8 @@ describe("computeMediaType", () => {
     // through — which is what makes it safe to apply at the point of use rather
     // than tracking whether it has already been applied.
     for (const [advertised] of cases) {
-      const once = computeMediaType(advertised);
-      assert.equal(computeMediaType(once), once, `for ${String(advertised)}`);
+      const once = sasMediaType(advertised);
+      assert.equal(sasMediaType(once), once, `for ${String(advertised)}`);
     }
   });
 
@@ -468,7 +468,7 @@ describe("computeMediaType", () => {
     // assert the absence of an import, but it can assert the behaviour that
     // would otherwise justify one: a value a strict parser would reject is
     // passed through rather than thrown on.
-    assert.equal(computeMediaType("not a media type"), "not a media type");
-    assert.equal(computeMediaType("application/"), "application/");
+    assert.equal(sasMediaType("not a media type"), "not a media type");
+    assert.equal(sasMediaType("application/"), "application/");
   });
 });

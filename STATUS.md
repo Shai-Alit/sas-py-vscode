@@ -5,12 +5,19 @@ published release — VS Marketplace, Open VSX, and GitHub Releases. All Phase 5
 slices (5a, 5b, 5c-i–5c-iv, 5d-i–5d-iv) are merged; Viya 3.5 support was dropped
 along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 
-**Phase 6 (SAS Content explorer) is next — open
-[`docs/phases/phase-6.md`](docs/phases/phase-6.md).** It was scoped 2026-09-03
-(4 slices, 6a–6d). The one thing to do before 6a: **re-read
-`PRODUCTION_PLAN.md` §3** and confirm the 6→12 order still matches real
-post-`v0.1.0` demand — the listed order is a recommendation, not a dependency
-chain.
+**Phase 6 (SAS Content explorer) is in progress — open
+[`docs/phases/phase-6.md`](docs/phases/phase-6.md).** Scoped 2026-09-03 (4
+slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 before
+starting. 6a (`ContentAdapter` + read-only tree) is split in two:
+
+- **6a-i — `src/wire/` promotion.** Done. The Viya hypermedia link helpers and
+  the `application/vnd.sas.error+json` reader moved from `src/compute/` to a
+  new service-agnostic `src/wire/` layer so `src/content/` can share them
+  ([ADR-0025](docs/adr/0025-shared-wire-layer.md)). Zero behaviour change.
+- **6a-ii — content adapter + read-only tree.** Next: the `src/content/`
+  module, the first activity-bar view container, and the SAS Content tree
+  view. It carries the live Folders/Files probe findings (recorded in
+  `phase-6.md`) that its wire shapes are built from.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 2026-09-09 — nothing else gates Phase 6.
@@ -94,7 +101,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **scoped 2026-09-03**, not started — **next** | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a-i (`src/wire/` promotion, [ADR-0025](docs/adr/0025-shared-wire-layer.md)) done; 6a-ii (content adapter + read-only tree) next. | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

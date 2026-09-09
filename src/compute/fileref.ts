@@ -83,7 +83,7 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "./client";
-import { findLink, type Link, readLinks } from "./links";
+import { findLink, type Link, readLinks } from "../wire/links";
 import { asSessionGone, type ComputeSession } from "./session";
 
 /** The relation on a session that creates a fileref in it. `POST`. */
@@ -322,7 +322,7 @@ export async function writeFilerefContent(
   const result = await client.send({
     // No `Content-Type` is set here, and none needs to be: finding 57 measured
     // the `upload` relation advertising `application/octet-stream` in the link
-    // itself. That is not a SAS vendor type, so `computeMediaType` passes it
+    // itself. That is not a SAS vendor type, so `sasMediaType` passes it
     // through untouched and `client.ts` sends it verbatim — the link is followed
     // exactly as the deployment described it, which is the rule every other
     // link-follow in this codebase keeps. `client.ts`'s own octet-stream default

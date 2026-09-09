@@ -20,7 +20,7 @@ import {
   MAX_FILEREF_PAGES,
   writeFilerefContent,
 } from "../../src/compute/fileref";
-import { type Link } from "../../src/compute/links";
+import { type Link } from "../../src/wire/links";
 import { type ComputeSession } from "../../src/compute/session";
 
 /**

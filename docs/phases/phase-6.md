@@ -243,8 +243,13 @@ hard technical barrier — this is a recommendation, not a dependency lock._
   above. Audit rather than transcribe, per this project's own ported-code
   rule; note anything that looks like an upstream defect the way Phase 1's
   `auth.ts`/`AuthProvider.ts` audits did.
-- ☐ Settle the `links.ts` promotion question (see Plan) before writing
-  content-side wire code against either copy of it.
+- ☑ Settle the `links.ts` promotion question (see Plan) before writing
+  content-side wire code against either copy of it. **Resolved in 6a-i:**
+  promoted to a new session-agnostic `src/wire/` layer
+  (`src/wire/links.ts` + `src/wire/viyaError.ts`), `src/compute/` and
+  `src/content/` both import it. [ADR-0025](../adr/0025-shared-wire-layer.md).
+  `computeMediaType` renamed `sasMediaType` in the move. Zero behaviour change;
+  the moved unit suites pass unchanged.
 - ☐ Build `ContentItem`/`ContentAdapter`/`ContentModel`(if kept)/
   `ContentDataProvider` under a new `src/content/` module, paralleling
   `src/compute/`/`src/auth/` in shape.

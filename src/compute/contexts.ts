@@ -51,7 +51,7 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "./client";
-import { findLink, type Link, readLinks } from "./links";
+import { findLink, type Link, readLinks } from "../wire/links";
 
 /**
  * The contexts collection. The only path this project composes; see above.
@@ -66,7 +66,7 @@ export const CONTEXTS_PATH = "/compute/contexts";
 export const CREATE_SESSION_REL = "createSession";
 
 /**
- * The `Accept` for a collection, before {@link computeMediaType} adds `+json`.
+ * The `Accept` for a collection, before {@link sasMediaType} adds `+json`.
  *
  * Named here rather than inlined because it is the media type the probe asked
  * for, and asking for one the deployment does not serve is a `406` that fails

@@ -9,7 +9,7 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "../../src/compute/client";
-import { type Link } from "../../src/compute/links";
+import { type Link } from "../../src/wire/links";
 import { type ComputeSession } from "../../src/compute/session";
 import { readVariable, VARIABLES_REL } from "../../src/compute/variables";
 

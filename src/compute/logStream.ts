@@ -77,7 +77,7 @@ import {
   readJobState,
   readLogPage,
 } from "./job";
-import { type Link } from "./links";
+import { type Link } from "../wire/links";
 
 /**
  * How many lines the pump will hold for a consumer that is not keeping up.

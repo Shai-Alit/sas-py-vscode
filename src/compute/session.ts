@@ -49,7 +49,7 @@ import {
   type ComputeResult,
 } from "./client";
 import { type ComputeContext, CREATE_SESSION_REL } from "./contexts";
-import { findLink, type Link, readLinks } from "./links";
+import { findLink, type Link, readLinks } from "../wire/links";
 
 /** The relation on a session that reads its state. `GET`, `text/plain`. */
 export const STATE_REL = "state";
@@ -70,7 +70,7 @@ export const DELETE_REL = "delete";
 export const SESSIONS_PATH = "/compute/sessions";
 
 /**
- * The media type of a single session, before {@link computeMediaType} adds
+ * The media type of a single session, before {@link sasMediaType} adds
  * `+json`. The type the create call answered with (finding 21).
  */
 const SESSION_TYPE = "application/vnd.sas.compute.session";

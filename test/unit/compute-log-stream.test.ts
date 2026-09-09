@@ -10,7 +10,7 @@ import {
   type ComputeResult,
 } from "../../src/compute/client";
 import { type ComputeJob } from "../../src/compute/job";
-import { type Link } from "../../src/compute/links";
+import { type Link } from "../../src/wire/links";
 import {
   FAST_EMPTY_FRACTION,
   type LogEvent,

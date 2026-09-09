@@ -46,7 +46,7 @@ import {
   type ComputeResult,
 } from "./client";
 import { contextFilter } from "./contexts";
-import { findLink } from "./links";
+import { findLink } from "../wire/links";
 import { asSessionGone, type ComputeSession } from "./session";
 
 /** The relation on a session that lists its variables. `GET`, a collection. */

@@ -9,7 +9,7 @@ import type {
   ComputeResponse,
   ComputeResult,
 } from "../../src/compute/client";
-import type { ViyaError } from "../../src/compute/problems";
+import type { ViyaError } from "../../src/wire/viyaError";
 import {
   CADENCE_REL,
   CADENCE_TYPE,

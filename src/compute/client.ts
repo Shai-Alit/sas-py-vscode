@@ -51,16 +51,13 @@ import {
 } from "../auth/transport";
 import {
   ForeignLinkError,
-  computeMediaType,
   linkMethod,
   resolveHref,
+  sasMediaType,
   type Link,
-} from "./links";
-import {
-  describeViyaError,
-  readViyaError,
-  type ComputeProblem,
-} from "./problems";
+} from "../wire/links";
+import { describeViyaError, readViyaError } from "../wire/viyaError";
+import { type ComputeProblem } from "./problems";
 
 /**
  * How long to wait on a request that is not a long poll.
@@ -285,15 +282,15 @@ async function sendRequest(
     // `application/json` because a raw body is never JSON. It is a **default,
     // not the measured value**: finding 57 recorded the only `rawBody` caller
     // today, a fileref's `upload` relation, advertising `octet-stream` in the
-    // link itself, so `computeMediaType` passes that through and this fallback
+    // link itself, so `sasMediaType` passes that through and this fallback
     // is not the arm taken. It exists for a future raw-body link that carries no
     // type at all.
     body = request.rawBody;
     headers["content-type"] =
-      computeMediaType(link.type) ?? "application/octet-stream";
+      sasMediaType(link.type) ?? "application/octet-stream";
   } else if (request.body !== undefined) {
     body = JSON.stringify(request.body);
-    headers["content-type"] = computeMediaType(link.type) ?? "application/json";
+    headers["content-type"] = sasMediaType(link.type) ?? "application/json";
   }
 
   if (request.etag !== undefined) headers["if-match"] = request.etag;
@@ -465,9 +462,9 @@ async function sendRequest(
  * server's default representation — which is the one the link intended.
  */
 function acceptFor(link: Link, method: string): string | undefined {
-  const declared = computeMediaType(link.responseType);
+  const declared = sasMediaType(link.responseType);
   if (declared !== undefined) return declared;
-  return method === "GET" ? computeMediaType(link.type) : undefined;
+  return method === "GET" ? sasMediaType(link.type) : undefined;
 }
 
 /**
@@ -475,7 +472,7 @@ function acceptFor(link: Link, method: string): string | undefined {
  *
  * Every Viya representation is a vendor type ending `+json` (finding 14 —
  * except in `links[].type`, where the suffix is missing and
- * {@link computeMediaType} puts it back), and an error is
+ * {@link sasMediaType} puts it back), and an error is
  * `application/vnd.sas.error+json` (finding 17), which ends the same way.
  * Anything else is a gateway's HTML or a log file.
  *

@@ -22,7 +22,7 @@ import {
   readLogPage,
   TERMINAL_STATES,
 } from "../../src/compute/job";
-import { type Link } from "../../src/compute/links";
+import { type Link } from "../../src/wire/links";
 import {
   type ComputeSession,
   WAIT_MARGIN_SECONDS,

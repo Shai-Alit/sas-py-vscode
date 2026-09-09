@@ -10,7 +10,7 @@ import type {
 } from "../../src/auth/transport";
 import { createComputeClient } from "../../src/compute/client";
 import { createFileref, writeFilerefContent } from "../../src/compute/fileref";
-import { type Link } from "../../src/compute/links";
+import { type Link } from "../../src/wire/links";
 import { type ComputeSession } from "../../src/compute/session";
 import { listFixtureFiles, readFixtureBytes } from "../helpers/fixtures";
 

@@ -56,16 +56,25 @@ all already built and, in principle, already reusable as-is.
   SAS-specific. `LibraryModel.getChildren` dispatches libraries vs. tables
   purely off `LibraryItem.type`; `PaginatedResultSet` is a generic
   start/end/sort/query callback wrapper with nothing in it that assumes SAS.
-- The wire shape itself: `GET /sessions/{sessionId}/data` (libraries,
-  `#summary`-suffixed variants for the `readOnly` flag), `GET
-  /sessions/{sessionId}/data/{libref}#tables` (tables in a libref), `GET
+- The wire shape itself: `GET /sessions/{sessionId}/data` (libraries), `GET
+  /sessions/{sessionId}/data/{libref}` (tables in a libref), `GET
   /sessions/{sessionId}/data/{libref}/{tableName}` (table info, `rowCount`
   etc.), `GET …/{tableName}/columns` (paged column metadata), and `GET
   …/{tableName}/rows` (paged row data, `start`/`limit`/`where`/
   `formatMissingValues`/`includeIndex` query params) — all standard
   `application/vnd.sas.collection+json` collections with the same
   `start`/`limit`/`count` paging shape `src/compute/contexts.ts` and
-  `job.ts` already handle for other Compute collections.
+  `job.ts` already handle for other Compute collections. **Superseded in part
+  by Finding 95:** an earlier draft of this bullet wrote the `readOnly`/tables
+  detail as `#summary`- and `#tables`-suffixed URL segments
+  (`.../data/{libref}#summary`, `.../data/{libref}#tables`), mirroring
+  upstream's `compute.ts` template strings. Those are not requestable paths —
+  the `#` is a URL fragment stripped before the wire, and a properly
+  percent-encoded `WORK%23summary` returns HTTP 400. The rich-detail and
+  tables views are selected by `Accept`-header content negotiation on the
+  bare `.../data/{libref}` URI, which this project's `src/wire/links.ts` +
+  `src/compute/client.ts` link-following already produces from the item's own
+  links (see Finding 95).
 - The read-only/actionable distinction (`LibraryItem.readOnly`, inherited from
   the owning library unless a table overrides it) is the same shape as Phase
   6's folder/file `readOnly` handling — a second application of a convention

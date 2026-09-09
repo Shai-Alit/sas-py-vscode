@@ -189,7 +189,7 @@ a real decision (and probably an ADR) rather than an inline string compare
 slipping in under time pressure.
 
 **Resolved for 6a-ii by not having the branch.** 6a-ii's probe pass
-(findings 83–87) reproduced no cadence-shaped difference in the member
+(findings 97–101) reproduced no cadence-shaped difference in the member
 listing, and the adapter omits `sortBy` entirely — it orders the listing
 client-side (folders first, then name). So upstream's `viyaCadence ===
 "2023.03"` check has no analogue here to gate.
@@ -253,9 +253,9 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   the Viya-REST/SAS-Content half only, per the "no adapter factory" decision
   above. **Done in 6a-ii.** Audited, not transcribed. Notes:
   `getResourceIdFromItem`'s `self`-link fallback is load-bearing on the first
-  level the tree renders (confirmed, finding 84); a folder *member* carries no
+  level the tree renders (confirmed, finding 98); a folder *member* carries no
   `members` link, so listing its children means composing `${uri}/members`
-  (finding 85), which upstream also does; upstream's `deleteResource` swallows
+  (finding 99), which upstream also does; upstream's `deleteResource` swallows
   a `404`/`403` from its follow-up member delete and returns it as success —
   noted for 6c, not ported here.
 - ☑ Settle the `links.ts` promotion question (see Plan) before writing
@@ -265,13 +265,21 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   `src/content/` both import it. [ADR-0025](../adr/0025-shared-wire-layer.md).
   `computeMediaType` renamed `sasMediaType` in the move. Zero behaviour change;
   the moved unit suites pass unchanged.
-- ☑ Build the `src/content/` module — **done in 6a-ii.** `types.ts`,
-  `problems.ts`, `client.ts`, `adapter.ts` (all `vscode`-free, in the
-  coverage denominator) plus `messages.ts`, `contentTree.ts`
-  (`TreeDataProvider`), `contentExplorer.ts` (wiring). **No `ContentModel`,
-  no `ContentAdapterFactory`** — [ADR-0026](../adr/0026-content-adapter-shape.md).
-  The HTTP-boundary test seam is a fake `ContentClient`
-  (`test/helpers/recorded-content.ts`).
+- ☑ Build the `src/content/` module — **done in 6a-ii.** `vscode`-free and in
+  the coverage denominator: `types.ts`, `problems.ts`, `client.ts`,
+  `adapter.ts`, `contentSession.ts` (adapter lifecycle — endpoint cache,
+  sign-out clear, the silent token flow), `presentation.ts` (icon /
+  `contextValue` / collapsible mapping). Thin `vscode` shells (excluded):
+  `contentTree.ts` (`TreeDataProvider`), `contentExplorer.ts` (the registrar).
+  **No `ContentModel`, no `ContentAdapterFactory`, and no `messages.ts` yet** —
+  the read-only tree only logs, so the `l10n.t()` renderer had no caller and
+  returns with 6b; [ADR-0026](../adr/0026-content-adapter-shape.md). The
+  HTTP-boundary test seam is a fake `ContentClient`
+  (`test/helpers/recorded-content.ts`); `contentSession`/`presentation` are
+  unit-tested directly, and `test/integration/content/` smoke-tests the two
+  shells in the extension host. (Splitting the logic out of the shells and
+  adding the integration suite folded in the two AI-review findings on PR #139
+  before merge.)
 - ☑ Add the `viewsContainers`/`activitybar`/`views` contributions to
   `package.json` — this repo's first. **Done in 6a-ii:** view container
   `pythonOnViya`, view `pythonOnViya.contentExplorer`, `viewsWelcome` for the
@@ -281,13 +289,13 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
 - ☑ ~~A second live probe of `/types/types?filter=contains('extensions','py')`~~
   **Moved to 6c.** That endpoint is only read by *create file*
   (`getTypeDefinition`), a mutation; nothing in the read-only 6a-ii path calls
-  it. The read-only slice's own probe pass (findings 83–87) confirmed the tree
+  it. The read-only slice's own probe pass (findings 97–101) confirmed the tree
   shapes instead. Finding 79's "confirmed on one cadence" caveat stands until
-  6c re-probes it. (A side observation from finding 85: a `.py` file *member*
+  6c re-probes it. (A side observation from finding 99: a `.py` file *member*
   already carries `typeDefName: "file_py"` inline on read — so 6c may not need
   a `/types/types` round trip at all, only a probe to confirm that.)
 - ☑ `test/helpers/recorded-content.ts` + `test/fixtures/content/`, built
-  from findings 83–85's scrubbed shapes. **Done in 6a-ii:** six fixtures
+  from findings 97–99's scrubbed shapes. **Done in 6a-ii:** six fixtures
   (delegate folders, `isNull(parent)` root, member listing with a `.py` file
   and a child folder, nested folder). Real user name, folder GUIDs and
   hostname replaced with synthetic-but-faithful values.
@@ -313,7 +321,7 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   from 6a.** Create-file (`getTypeDefinition`) is the only path that reads it.
   Probe against a Viya 4 cadence other than `verde`'s to check Finding 79's
   one-cadence caveat, **and** check whether the inline `typeDefName` a `.py`
-  member already carries on read (finding 85) removes the need for the lookup
+  member already carries on read (finding 99) removes the need for the lookup
   on the create path too. Upstream's `deleteResource` also swallows a
   `404`/`403` from its follow-up member-delete — decide whether to keep that
   or surface it (6a-ii's audit flagged it).
@@ -411,11 +419,14 @@ not a defensive branch for an edge case that never occurs.
 
 ---
 
-_Findings 83–87 ran 2026-09-09 against `verde` (Viya 4), read-only (`GET`
+_Findings 97–101 ran 2026-09-09 against `verde` (Viya 4), read-only (`GET`
 only), via the `viya-api-probe` skill, to build 6a-ii's fixtures from a
-current capture and reconfirm findings 78/82 before depending on them._
+current capture and reconfirm findings 78/82 before depending on them. They
+take numbers 97+ because the global sequence had reached Finding 96 by then
+(Phase 5→6 housekeeping used 93–94, Phase 7's library probes 83–86 and
+95–96)._
 
-**Finding 83 — the delegate folders resolve as finding 78 recorded, and a bad
+**Finding 97 — the delegate folders resolve as finding 78 recorded, and a bad
 delegate name is a 400.**
 `GET /folders/folders/@myFolder`, `@myFavorites`, `@myRecycleBin` each
 returned `200` as `application/vnd.sas.content.folder+json` **with no `Accept`
@@ -427,7 +438,7 @@ the link set `self`, `members` (`type: application/vnd.sas.collection`),
 `getResource` — those appear on ordinary folders and on member records, not on
 a delegate. `GET /folders/folders/@notAThing` → **400**, not 404.
 
-**Finding 84 — the `isNull(parent)` root listing: full folder representations,
+**Finding 98 — the `isNull(parent)` root listing: full folder representations,
 `uri` and `contentType` simply absent.**
 `GET /folders/folders?filter=isNull(parent)&limit=5` → `200`
 `application/vnd.sas.collection+json`, envelope `{ version, accept, start,
@@ -441,7 +452,7 @@ the address therefore *must* fall back to the `self` link, confirming
 finding 82. `and(isNull(parent),in(type,'file','dataFlow','folder',…))` also
 returns `200` — the combined filter 6a-ii composes for the root works.
 
-**Finding 85 — folder member listing: `type: "child"` records, kind in
+**Finding 99 — folder member listing: `type: "child"` records, kind in
 `contentType`, and no `members` link on a folder member.**
 `GET /folders/folders/{id}/members?limit=N&filter=in(contentType,'file',
 'folder','dataFlow')` → `application/vnd.sas.collection+json`. Every item has
@@ -460,7 +471,7 @@ collection's own links are `self` and `createMember` only; a 38-member folder
 came back whole with no `next`, so pagination past `limit` is still unprobed
 (6a-ii keeps upstream's `limit=1000000`).
 
-**Finding 86 — `Accept` sensitivity, and the error envelope on a real miss.**
+**Finding 100 — `Accept` sensitivity, and the error envelope on a real miss.**
 Sending `Accept: application/vnd.sas.error+json` on a folder `GET` → **406
 Not Acceptable**, with an envelope listing the types the endpoint *will*
 serve. Sending no `Accept`, or `application/json`, returns the default
@@ -472,7 +483,7 @@ details: ["path: …", "correlator: …"] }` — the finding-17 envelope
 the link-derived `Accept` (or none) and reads the error envelope from
 whatever body a non-2xx carries, exactly as `src/compute/client.ts` does.
 
-**Finding 87 — `ancestors` shape not pinned; `getParent` deferred to 6b.**
+**Finding 101 — `ancestors` shape not pinned; `getParent` deferred to 6b.**
 `GET /folders/ancestors?childUri=…` (the `ancestors` relation) answered **406**
 under `Accept: application/vnd.sas.collection+json` and, under `Accept:
 application/json`, returned an **empty object `{}`** for a file directly under

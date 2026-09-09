@@ -26,17 +26,17 @@
  *
  * - **`GET /folders/folders/@myFavorites`** (and `@myFolder`, `@myRecycleBin`)
  *   — the delegate-folder mechanism. There is no link to these; the `@name`
- *   segment *is* the API (finding 83).
+ *   segment *is* the API (finding 97).
  * - **`${folderUri}/members`** for a folder that carries no `members` link.
- *   Delegate and root-listing folders carry one (finding 83/84) and it is
- *   followed; a folder *member* record does not (finding 85), and its
+ *   Delegate and root-listing folders carry one (finding 97/84) and it is
+ *   followed; a folder *member* record does not (finding 99), and its
  *   children are reached by composing `members` onto its `uri`, exactly as
  *   `RestContentAdapter.generatedMembersUrlForParentItem` does.
  *
  * The query string (`limit`, `filter`) is appended to whichever href results.
  * The filter value is sent **raw** — `in(contentType,'file',…)` with its
  * quotes and parentheses intact — matching upstream and what the live probe
- * accepted (findings 84/85); `resolveHref` deliberately does not re-encode it.
+ * accepted (findings 98/99); `resolveHref` deliberately does not re-encode it.
  *
  * ## No `sortBy`, so no cadence branch
  *
@@ -77,7 +77,7 @@ import {
  * The `limit` on a member query.
  *
  * Upstream's value, unchanged — one page big enough that no folder this
- * project has seen is truncated by it (finding 85: a 38-member folder came
+ * project has seen is truncated by it (finding 99: a 38-member folder came
  * back whole with no `next` link). Pagination past this limit is unprobed and
  * left for a slice that needs it; a folder with more than a million members is
  * not a case this tree is sized for.
@@ -91,7 +91,7 @@ export class ContentAdapter {
    * The four top-level folders, in display order.
    *
    * `@sasRoot` is {@link SAS_CONTENT_ROOT} — synthetic, no request. The other
-   * three are `GET /folders/folders/@name` (finding 83). Resilient to a single
+   * three are `GET /folders/folders/@name` (finding 97). Resilient to a single
    * unreadable delegate: if at least one resolves, the resolved ones are
    * returned (a user without Recycle Bin access still sees My Folder); only
    * when *every* fetch fails is the first failure propagated, so a dead
@@ -145,9 +145,9 @@ export class ContentAdapter {
    * The members of a folder the user expanded, folders first then by name.
    *
    * For {@link SAS_CONTENT_ROOT} this is `GET /folders/folders` with an
-   * `and(isNull(parent), …)` filter (finding 84). For any other folder it
+   * `and(isNull(parent), …)` filter (finding 98). For any other folder it
    * follows the `members` link, or composes `${uri}/members` when there is
-   * none (a folder member record — finding 85).
+   * none (a folder member record — finding 99).
    */
   async getChildItems(
     parent: ContentItem,

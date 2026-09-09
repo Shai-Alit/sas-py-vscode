@@ -18,7 +18,7 @@
  * ## The three shapes one `ContentItem` covers
  *
  * A single item type spans three representations the Folders service returns,
- * and {@link isContainer} has to read all three (findings 83–85, `verde`,
+ * and {@link isContainer} has to read all three (findings 97–99, `verde`,
  * 2026-09-09):
  *
  * - **A delegate folder** — `GET /folders/folders/@myFolder` and friends.
@@ -26,7 +26,7 @@
  *   `contentType`, and no `uri` field (its address is the `self` link).
  * - **A root folder** — an item of the `isNull(parent)` listing the SAS
  *   Content pseudo-root renders. `type` is `folder`; `contentType` and `uri`
- *   are **absent** (finding 84), so the `self` link is again the only address.
+ *   are **absent** (finding 98), so the `self` link is again the only address.
  * - **A member** — an entry of a folder's `members` collection. `type` is
  *   always `"child"`; `contentType` is `folder` or `file` and is what actually
  *   says whether the tree can descend; `uri` points at the underlying resource
@@ -56,7 +56,7 @@ export interface ContentItem {
    */
   readonly type?: string | undefined;
   /**
-   * A member record's underlying kind — `folder` or `file` (finding 85). Only
+   * A member record's underlying kind — `folder` or `file` (finding 99). Only
    * a member (`type: "child"`) carries it; absent on every folder read
    * directly.
    */
@@ -64,7 +64,7 @@ export interface ContentItem {
   /**
    * The underlying resource's address, when the representation states one. A
    * member carries it (`/folders/folders/{id}` or `/files/files/{id}`); a
-   * delegate or root-listing folder does not (finding 84), and the tree falls
+   * delegate or root-listing folder does not (finding 98), and the tree falls
    * back to the `self` link — see {@link resourceHrefOf}.
    */
   readonly uri?: string | undefined;
@@ -80,7 +80,7 @@ export interface ContentItem {
 export const SELF_REL = "self";
 
 /** `GET` a folder's member collection. Present on delegate and root-listing
- * folders; **absent** on a folder *member* record (finding 85), where the
+ * folders; **absent** on a folder *member* record (finding 99), where the
  * tree composes `${uri}/members` instead. */
 export const MEMBERS_REL = "members";
 
@@ -89,10 +89,10 @@ export const MEMBERS_REL = "members";
  * display order (matching upstream's `SAS_CONTENT_ROOT_FOLDERS`).
  *
  * `@myFavorites`, `@myFolder` and `@myRecycleBin` each resolve with a
- * `GET /folders/folders/@name` (finding 83). `@sasRoot` does **not** — it is a
+ * `GET /folders/folders/@name` (finding 97). `@sasRoot` does **not** — it is a
  * synthetic node standing for "every folder with no parent", rendered from
  * {@link SAS_CONTENT_ROOT} and expanded with an `isNull(parent)` query
- * (finding 84).
+ * (finding 98).
  */
 export const DELEGATE_FOLDERS = [
   "@myFavorites",
@@ -120,7 +120,7 @@ export const FOLDERS_COLLECTION = "/folders/folders";
  *
  * It has no service representation: the tree renders it from this constant and,
  * when it is expanded, queries `${FOLDERS_COLLECTION}?filter=isNull(parent)…`
- * for the folders that have no parent (finding 84). `id` is a fixed sentinel,
+ * for the folders that have no parent (finding 98). `id` is a fixed sentinel,
  * not a service id.
  */
 export const SAS_CONTENT_ROOT: ContentItem = {
@@ -211,9 +211,9 @@ export function memberTypeFilter(field: "type" | "contentType"): string {
  * The address of the underlying resource an item names.
  *
  * `item.uri` when the representation states one (a member record), else the
- * `self` link's `href` (a delegate or root-listing folder, finding 84), else
+ * `self` link's `href` (a delegate or root-listing folder, finding 98), else
  * `undefined`. Upstream's `getResourceIdFromItem`, whose `self`-link fallback
- * finding 84 confirms is exercised on the very first level the tree renders.
+ * finding 98 confirms is exercised on the very first level the tree renders.
  */
 export function resourceHrefOf(item: ContentItem): string | undefined {
   if (item.uri !== undefined && item.uri !== "") return item.uri;

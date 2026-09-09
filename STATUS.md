@@ -14,17 +14,18 @@ starting. **6a is done** (split 6a-i + 6a-ii); **6b is next.**
   the `application/vnd.sas.error+json` reader moved from `src/compute/` to a
   new service-agnostic `src/wire/` layer so `src/content/` can share them
   ([ADR-0025](docs/adr/0025-shared-wire-layer.md)). Zero behaviour change.
-- **6a-ii — content adapter + read-only tree.** Done. The `src/content/`
-  module (`types`/`problems`/`client`/`adapter` pure; `messages`/`contentTree`/
-  `contentExplorer` on `vscode`), this repo's first activity-bar view
-  container, and a read-only SAS Content tree (My Favorites / My Folder / SAS
-  Content / Recycle Bin, lazy-expanded). No `ContentModel`, no adapter factory,
-  no `sortBy` cadence branch — [ADR-0026](docs/adr/0026-content-adapter-shape.md).
-  Live Folders/Files findings 83–87 in `phase-6.md`; the `.py`-type
-  second-cadence probe moved to 6c (it only feeds create-file).
+- **6a-ii — content adapter + read-only tree.** Done ([PR #139](https://github.com/Shai-Alit/sas-py-vscode/pull/139)).
+  The `src/content/` module (`types`/`problems`/`client`/`adapter`/
+  `contentSession`/`presentation` `vscode`-free; `contentTree`/`contentExplorer`
+  thin `vscode` shells), this repo's first activity-bar view container, and a
+  read-only SAS Content tree (My Favorites / My Folder / SAS Content / Recycle
+  Bin, lazy-expanded). No `ContentModel`, no adapter factory, no `sortBy`
+  cadence branch — [ADR-0026](docs/adr/0026-content-adapter-shape.md). Live
+  Folders/Files findings 97–101 in `phase-6.md`; the `.py`-type second-cadence
+  probe moved to 6c (it only feeds create-file).
 - **6b — open/save via `FileSystemProvider`.** Next: `readFile`/`writeFile`/
   `stat` and the ETag round trip so a remote `.py` opens and saves in place.
-  `getParent`/`TreeView.reveal` and the `ancestors` shape (finding 87, not
+  `getParent`/`TreeView.reveal` and the `ancestors` shape (finding 101, not
   pinned) land here too.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed

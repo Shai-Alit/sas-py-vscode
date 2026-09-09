@@ -24,7 +24,7 @@
  * the same transport-outcome mapping the Compute client already carries and
  * that has already been through review: unreachable, 401 (via slice 1c's
  * challenge reading), 403, any other non-2xx (read as an
- * `application/vnd.sas.error+json` envelope — finding 86), and a JSON body that
+ * `application/vnd.sas.error+json` envelope — finding 100), and a JSON body that
  * will not parse.
  *
  * ## Why a link and not a path
@@ -168,7 +168,7 @@ async function sendRequest(
   const headers: Record<string, string> = {
     authorization: `Bearer ${token}`,
   };
-  // Only what the link declares. Finding 86: asking for a media type the
+  // Only what the link declares. Finding 100: asking for a media type the
   // endpoint does not serve — `application/vnd.sas.error+json` among them — is
   // a 406, whereas sending no `Accept` yields the default representation the
   // link intended.
@@ -241,7 +241,7 @@ async function sendRequest(
     return {
       ok: false,
       // Unclassified on purpose: a 404 may be a folder deleted elsewhere, a
-      // 400 a malformed delegate name (finding 83). The caller decides what
+      // 400 a malformed delegate name (finding 97). The caller decides what
       // absence means.
       reason: `the SAS Content service answered HTTP ${String(response.status)}${describeViyaError(error)}`,
       problem: { code: "content-rejected", error },
@@ -280,8 +280,8 @@ async function sendRequest(
  *
  * Every Folders/Files representation is a vendor type ending `+json`, a
  * collection is `application/vnd.sas.collection+json`, and an error is
- * `application/vnd.sas.error+json` (finding 86) — all end the same way. The
- * essence is taken first because finding 86's error type carries `charset` and
+ * `application/vnd.sas.error+json` (finding 100) — all end the same way. The
+ * essence is taken first because finding 100's error type carries `charset` and
  * `version` parameters.
  */
 function isJson(contentType: string | undefined): boolean {

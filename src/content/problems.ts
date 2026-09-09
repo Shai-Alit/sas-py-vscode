@@ -8,10 +8,13 @@
  * **This module must never import `vscode`.**
  *
  * The arrangement is `src/compute/problems.ts`'s, one service over: this file
- * names the failures and writes the English sentence for the log, and
- * `src/content/messages.ts` renders the user-facing half through
- * `vscode.l10n.t()`. The `application/vnd.sas.error+json` envelope both
- * services return on a failure (finding 86, and finding 17 before it) is read
+ * names the failures and writes the English sentence for the log
+ * ({@link describeContentProblem}). The read-only tree only logs — a failed
+ * folder listing is not shown as a notification — so there is no
+ * `l10n.t()`-backed `messages.ts` counterpart yet; that returns with slice 6b,
+ * when an action the user took directly (open a file, save it) can fail and
+ * warrants a message. The `application/vnd.sas.error+json` envelope both
+ * services return on a failure (finding 100, and finding 17 before it) is read
  * by `src/wire/viyaError.ts`; this file keeps only the Content vocabulary.
  *
  * There is no `session-gone` analogue. Browsing content is not bound to a
@@ -51,7 +54,7 @@ export type ContentProblem =
   /**
    * Any other non-2xx. `error.status` carries which. A 404 lands here (a
    * folder removed between one expand and the next), as does a 400 from a
-   * malformed delegate name (finding 83) — the tree treats both as "there is
+   * malformed delegate name (finding 97) — the tree treats both as "there is
    * nothing to show here" rather than surfacing them as errors.
    */
   | { code: "content-rejected"; error: ViyaError }

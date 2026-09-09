@@ -16,7 +16,6 @@
     "src/compute/sessionManager.ts",
     "src/content/contentExplorer.ts",
     "src/content/contentTree.ts",
-    "src/content/messages.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",

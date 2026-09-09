@@ -81,7 +81,7 @@ generations, not cadences within one).
 Two paths the adapter composes rather than following a link — the
 `GET /folders/folders/@name` delegate mechanism, and `${folderUri}/members` for
 a folder member that carries no `members` link — are documented, load-bearing
-parts of the Folders service's own URL structure (findings 83–85) that upstream
+parts of the Folders service's own URL structure (findings 97–99) that upstream
 relies on identically. The query string (`limit`, `filter`) is appended raw,
 matching upstream and what the live probe accepted; `resolveHref` does not
 re-encode it.
@@ -104,9 +104,13 @@ re-encode it.
 
 ## Consequences
 
-- `src/content/` is four small pure modules plus three thin `vscode` ones,
-  paralleling `src/compute/` — no factory, no model, no `ContentSourceType`
-  enum for a reader to trace.
+- `src/content/` is six small `vscode`-free modules (`types`, `problems`,
+  `client`, `adapter`, `contentSession`, `presentation`) plus two thin `vscode`
+  shells (`contentTree`, `contentExplorer`), paralleling `src/compute/` — no
+  factory, no model, no `ContentSourceType` enum for a reader to trace. The
+  logic lives in the `vscode`-free modules so the unit tier reaches it; the
+  shells stay branch-free, the discipline
+  [ADR-0021](0021-result-panel-webview.md) states for `src/webview/`.
 - A folder listing is ordered by this extension, not the server. If a future
   requirement needs the server's own ordering (a very large folder where
   client-side sort of a truncated page would mislead), that is a real change

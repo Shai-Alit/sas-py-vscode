@@ -17,7 +17,7 @@ import {
 import { readJsonFixture } from "../helpers/fixtures";
 
 /**
- * The SAS Content vocabulary — grounded in findings 83–85 (`verde`,
+ * The SAS Content vocabulary — grounded in findings 97–99 (`verde`,
  * 2026-09-09): a delegate folder's `type` is `myFolder`/`favoritesFolder`/
  * `trashFolder`; a root-listing folder's is `folder` with no `uri`/
  * `contentType`; a member's is always `"child"` and `contentType` carries the
@@ -124,7 +124,7 @@ describe("content/types", () => {
       assert.equal(readContentItem(null), undefined);
     });
 
-    it("reads a real root-listing item — no uri, no contentType (finding 84)", () => {
+    it("reads a real root-listing item — no uri, no contentType (finding 98)", () => {
       const listing = readJsonFixture("content", "root-listing.json") as {
         items: unknown[];
       };
@@ -145,7 +145,7 @@ describe("content/types", () => {
       );
     });
 
-    it("falls back to the self link when there is no uri (finding 84)", () => {
+    it("falls back to the self link when there is no uri (finding 98)", () => {
       assert.equal(
         resourceHrefOf(
           item({

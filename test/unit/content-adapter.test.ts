@@ -19,7 +19,7 @@ import {
 
 /**
  * The real `ContentAdapter` against recorded Folders/Files wire shapes
- * (findings 83–85, `verde`, 2026-09-09). The adapter is `vscode`-free, so this
+ * (findings 97–99, `verde`, 2026-09-09). The adapter is `vscode`-free, so this
  * is a plain unit test; the HTTP boundary is the fake `ContentClient`.
  */
 

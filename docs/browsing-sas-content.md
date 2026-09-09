@@ -45,6 +45,6 @@ It also refreshes itself when you switch connection profile or sign in or out.
 - [ADR-0026](adr/0026-content-adapter-shape.md) — why there is one content
   adapter and no factory or model layer, and why the listing is ordered by the
   extension rather than the server.
-- Probe findings 83–87 in
+- Probe findings 97–101 in
   [`docs/phases/phase-6.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-6.md)
   — the live Folders/Files wire shapes this is built from.

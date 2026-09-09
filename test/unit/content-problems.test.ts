@@ -9,10 +9,9 @@ import {
 } from "../../src/content/problems";
 
 /**
- * `describeContentProblem` writes the lower-case log fragment; the localised
- * user string is `src/content/messages.ts`'s job. Mirrors
- * `compute-problems.test.ts` — every variant, and the `ViyaError` clause each
- * carries.
+ * `describeContentProblem` writes the lower-case log fragment the read-only
+ * tree logs on a failed listing. Mirrors `compute-problems.test.ts` — every
+ * variant, and the `ViyaError` clause each carries.
  */
 describe("content/problems describeContentProblem", () => {
   const cases: readonly [ContentProblem, RegExp][] = [

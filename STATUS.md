@@ -104,12 +104,14 @@ Probe findings are now numbered per-phase (`N.x`), not one continuing global
 sequence — see `CLAUDE.md`'s "Don't guess about Viya — probe it" section for
 the full rationale (this project now works phases in parallel from separate
 clones, and a continuing global counter can't be claimed safely by two
-sessions at once) and the rules for applying it. Phase 7's findings were
-renumbered `7.1`–`7.7` (previously the global 83, 84, 85, 86, 95, 96, 102) as
-part of this change. Phases 0–6, and any already-recorded phase 8–10
-findings from their original scoping sessions, keep their old global
-numbers — renumber a phase's own findings to its `N.x` scheme when that
-phase is actually picked up, not preemptively.
+sessions at once) and the rules for applying it. **Applies from Phase 6
+onward:** Phase 6's 6b-and-later findings are `6.1`, `6.2`, …; Phase 7's were
+renumbered `7.1`–`7.7` (previously the global 83–86, 95, 96, 102). The old
+flat sequence ran through **Finding 101** — findings written under it
+(including Phase 6's 78–82 and 97–101) keep their global numbers. Any
+already-recorded phase 8–10 findings from their scoping sessions keep their
+global numbers until that phase is picked up, then move to `N.x` — not
+preemptively.
 
 ## History
 

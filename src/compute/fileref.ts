@@ -17,12 +17,13 @@
  *
  * ## Listing what a session already holds
  *
- * {@link listFilerefNames} is a single read-only `GET` of the session's
- * fileref collection, following the `files` relation (the wire name — not
- * renamed here despite the near-clash with `files.ts`'s working-*directory*
- * API, which follows a different relation, `getFiles`). It exists for one
- * caller: `procPython.ts` seeds its per-run `PYnnnnnn` counter past whatever
- * a *reattached* session already holds, so the first run after a window
+ * {@link listFilerefNames} is a read-only walk of the session's fileref
+ * collection — one `GET` per page, following the `next` link to the end
+ * (Finding 94) — via the `files` relation (the wire name — not renamed here
+ * despite the near-clash with `files.ts`'s working-*directory* API, which
+ * follows a different relation, `getFiles`). It exists for one caller:
+ * `procPython.ts` seeds its per-run `PYnnnnnn` counter past whatever a
+ * *reattached* session already holds, so the first run after a window
  * reload does not collide on `PY000001` (Finding 72 — a fresh extension
  * host restarts that counter at zero while the session it reconnects to,
  * ADR-0012, still holds the names an earlier host assigned). Being a read,
@@ -211,9 +212,12 @@ export const MAX_FILEREF_PAGES = 100;
  * bounded retry and failing the seed would turn a merely slow first run into a
  * broken one:
  *
- * - A transport failure on the **first** page propagates (mapped through
+ * - A **transport failure** on the **first** page propagates (mapped through
  *   {@link asSessionGone}), so a genuinely dead session is not hidden behind an
  *   empty list and `seedFilerefCounter` retries on the next run.
+ * - A **non-collection body** on the first page returns an empty list, not a
+ *   failure — the pre-existing contract, unchanged: a slow first run beats a
+ *   broken one.
  * - A failure or a non-collection body on a **later** page stops the walk and
  *   returns what came back so far — still a better seed than page one alone.
  * - The `MAX_FILEREF_PAGES` guard does the same rather than erroring.

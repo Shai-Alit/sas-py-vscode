@@ -26,6 +26,18 @@
  * (no profile, or signed out) every call fails `Unavailable` with a sign-in
  * hint rather than a stack trace.
  *
+ * ## The lost-update guard lives here
+ *
+ * `readFile` records the `ETag` it read for each resource in {@link opened};
+ * `writeFile` sends that tag — the one for the bytes the editor is showing, not
+ * a fresh one — as `If-Match`, so a `PUT` after someone else changed the file
+ * comes back `412` and the user is told to reopen it. `stat` deliberately does
+ * **not** touch {@link opened}: VS Code also calls `stat` at save time, and a
+ * tag captured then would already reflect the other person's edit. A `200`
+ * refreshes the entry from the `PUT` response so a second save in the same
+ * session needs no re-read; a `412`/`428` clears it so the retry-after-reopen
+ * starts clean.
+ *
  * ## What this slice does not do
  *
  * Structural mutation — `createDirectory`, `delete`, `rename`,
@@ -38,7 +50,7 @@
 
 import * as vscode from "vscode";
 
-import { type ContentAdapter } from "./adapter";
+import { type ContentAdapter, type WritePrecondition } from "./adapter";
 import { localiseContentProblem } from "./messages";
 import { describeContentProblem, type ContentProblem } from "./problems";
 import { resourceHrefOfQuery } from "./uri";
@@ -50,6 +62,13 @@ export class SasContentFileSystemProvider
     vscode.FileChangeEvent[]
   >();
   readonly onDidChangeFile = this.changed.event;
+
+  /**
+   * Per-resource `{ etag, contentType }` for every file `readFile` has served,
+   * keyed by the `/files/files/{id}` href. `writeFile` reads it for the
+   * `If-Match` that makes the lost-update guard real — see the class doc.
+   */
+  private readonly opened = new Map<string, WritePrecondition>();
 
   /**
    * @param currentAdapter Returns the adapter for the active profile, or
@@ -75,7 +94,7 @@ export class SasContentFileSystemProvider
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
     const { adapter, href } = this.resolve(uri);
     const result = await adapter.statFile(href);
-    if (!result.ok) throw this.toFileSystemError(uri, result.problem);
+    if (!result.ok) throw this.toFileSystemError(result.problem);
     return {
       type: vscode.FileType.File,
       ctime: result.value.createdAt ?? 0,
@@ -87,7 +106,13 @@ export class SasContentFileSystemProvider
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
     const { adapter, href } = this.resolve(uri);
     const result = await adapter.readFileContent(href);
-    if (!result.ok) throw this.toFileSystemError(uri, result.problem);
+    if (!result.ok) throw this.toFileSystemError(result.problem);
+    if (result.value.etag !== undefined) {
+      this.opened.set(href, {
+        etag: result.value.etag,
+        contentType: result.value.contentType,
+      });
+    }
     return result.value.bytes;
   }
 
@@ -96,8 +121,30 @@ export class SasContentFileSystemProvider
   // exists, so every write is an overwrite of a known resource.
   async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
     const { adapter, href } = this.resolve(uri);
-    const result = await adapter.writeFileContent(href, content);
-    if (!result.ok) throw this.toFileSystemError(uri, result.problem);
+    const precondition = this.opened.get(href);
+    if (precondition === undefined) {
+      // No read populated the guard — a save with nothing to be conditional
+      // against. Should not happen (VS Code reads before it lets you edit); if
+      // it does, a blind overwrite is exactly what the guard exists to stop.
+      throw new vscode.FileSystemError(
+        vscode.l10n.t(
+          "Open this file from the SAS Content view before saving it.",
+        ),
+      );
+    }
+    const result = await adapter.writeFileContent(href, content, precondition);
+    if (!result.ok) {
+      if (isPreconditionFailure(result.problem)) this.opened.delete(href);
+      throw this.toFileSystemError(result.problem);
+    }
+    // Advance the guard to the tag the server just assigned, so a second save
+    // in this session does not need a re-read.
+    if (result.value.etag !== undefined) {
+      this.opened.set(href, {
+        etag: result.value.etag,
+        contentType: precondition.contentType,
+      });
+    }
     // No `onDidChangeFile` fire: the editor already holds the buffer it just
     // saved, and announcing a change to the URI it wrote invites a needless
     // re-read. `stat` on the next open is how an *external* change is noticed.
@@ -142,19 +189,21 @@ export class SasContentFileSystemProvider
     return { adapter, href };
   }
 
-  /** Log the technical sentence, return the `FileSystemError` to throw. */
-  private toFileSystemError(
-    uri: vscode.Uri,
-    problem: ContentProblem,
-  ): vscode.FileSystemError {
+  /** Log the technical sentence, return the `FileSystemError` to throw. The
+   * editor tab already shows which file, so every arm carries the localised
+   * explanation rather than the URI. */
+  private toFileSystemError(problem: ContentProblem): vscode.FileSystemError {
     this.log.error(
       vscode.l10n.t("SAS Content: {0}", describeContentProblem(problem)),
     );
     const message = localiseContentProblem(problem);
     switch (problem.code) {
       case "content-rejected":
+        // The string overload keeps the `FileNotFound` code while showing
+        // "this file no longer exists on the server" rather than VS Code's
+        // generic "File not found (…)".
         if (problem.error.status === 404) {
-          return vscode.FileSystemError.FileNotFound(uri);
+          return vscode.FileSystemError.FileNotFound(message);
         }
         return new vscode.FileSystemError(message);
       case "forbidden":
@@ -168,4 +217,14 @@ export class SasContentFileSystemProvider
         return new vscode.FileSystemError(message);
     }
   }
+}
+
+/** Whether a failed write means the file changed on the server since it was
+ * opened — a `412` (stale `If-Match`) or, defensively, a `428` (the guard
+ * somehow sent no `If-Match` at all). */
+function isPreconditionFailure(problem: ContentProblem): boolean {
+  return (
+    problem.code === "content-rejected" &&
+    (problem.error.status === 412 || problem.error.status === 428)
+  );
 }

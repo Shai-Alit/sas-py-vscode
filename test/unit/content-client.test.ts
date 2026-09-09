@@ -342,26 +342,6 @@ describe("content/client", () => {
       assert.equal(only(seen).maxBodyBytes, 5_000_000);
     });
 
-    it("follows a HEAD link and reads its ETag (the write pre-read)", async () => {
-      const { client, seen } = clientWith({
-        status: 200,
-        headers: { etag: '"e1"', "content-type": "application/x-python" },
-      });
-      const result = await client.send({
-        link: {
-          rel: "content",
-          href: "/files/files/1/content",
-          method: "HEAD",
-        },
-      });
-      const call = only(seen);
-      assert.equal(call.method, "HEAD");
-      assert.equal(call.body, undefined);
-      assert.ok(result.ok);
-      assert.equal(result.value.etag, '"e1"');
-      assert.equal(result.value.contentType, "application/x-python");
-    });
-
     it("maps a 412 precondition failure to content-rejected carrying the status", async () => {
       const { client } = clientWith({
         status: 412,

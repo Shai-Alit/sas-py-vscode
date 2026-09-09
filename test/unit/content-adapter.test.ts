@@ -269,8 +269,6 @@ describe("content/adapter", () => {
     const fileRep = () => readJsonFixture("content", "file-python.json");
     const isGet = (href: string, method: string) =>
       href === CONTENT && method === "GET";
-    const isHead = (href: string, method: string) =>
-      href === CONTENT && method === "HEAD";
     const isPut = (href: string, method: string) =>
       href === CONTENT && method === "PUT";
 
@@ -402,16 +400,9 @@ describe("content/adapter", () => {
     });
 
     describe("writeFileContent", () => {
-      it("HEADs for the ETag then PUTs the bytes with If-Match and the read's content-type", async () => {
+      it("PUTs the bytes with the caller's ETag as If-Match, and returns the server's fresh ETag", async () => {
         let put: ContentRequest | undefined;
         const { adapter, calls } = adapterWith([
-          {
-            when: isHead,
-            reply: contentBytes("", {
-              etag: '"e1"',
-              contentType: "application/x-python;charset=UTF-8",
-            }),
-          },
           {
             when: isPut,
             reply: (request) => {
@@ -425,25 +416,23 @@ describe("content/adapter", () => {
           },
         ]);
         const bytes = new TextEncoder().encode("new content\n");
-        const result = await adapter.writeFileContent(FILE_RES, bytes);
+        const result = await adapter.writeFileContent(FILE_RES, bytes, {
+          etag: '"e1"',
+          contentType: "application/x-python;charset=UTF-8",
+        });
         assert.ok(result.ok);
+        assert.equal(result.value.etag, '"e2"');
         assert.ok(put !== undefined);
         assert.equal(put.etag, '"e1"');
         assert.equal(put.contentType, "application/x-python;charset=UTF-8");
         assert.deepEqual(put.rawBody, bytes);
-        assert.deepEqual(calls, [
-          { href: CONTENT, method: "HEAD" },
-          { href: CONTENT, method: "PUT" },
-        ]);
+        // No pre-read: the write path never re-fetches the ETag.
+        assert.deepEqual(calls, [{ href: CONTENT, method: "PUT" }]);
       });
 
-      it("defaults the content-type when the pre-read reported none", async () => {
+      it("defaults the content-type when the precondition has none", async () => {
         let put: ContentRequest | undefined;
         const { adapter } = adapterWith([
-          {
-            when: isHead,
-            reply: contentBytes("", { etag: '"e1"', contentType: "" }),
-          },
           {
             when: isPut,
             reply: (request) => {
@@ -452,28 +441,16 @@ describe("content/adapter", () => {
             },
           },
         ]);
-        await adapter.writeFileContent(FILE_RES, new Uint8Array());
+        await adapter.writeFileContent(FILE_RES, new Uint8Array(), {
+          etag: '"e1"',
+          contentType: undefined,
+        });
         assert.ok(put !== undefined);
         assert.equal(put.contentType, "text/plain");
       });
 
-      it("returns response-malformed when the pre-read carried no ETag", async () => {
-        const { adapter, calls } = adapterWith([
-          { when: isHead, reply: contentBytes("") },
-        ]);
-        const result = await adapter.writeFileContent(
-          FILE_RES,
-          new Uint8Array(),
-        );
-        assert.ok(!result.ok);
-        assert.equal(result.problem.code, "response-malformed");
-        // No PUT was attempted.
-        assert.deepEqual(calls, [{ href: CONTENT, method: "HEAD" }]);
-      });
-
       it("surfaces a 412 from the PUT as content-rejected (the conflict)", async () => {
         const { adapter } = adapterWith([
-          { when: isHead, reply: contentBytes("", { etag: '"e1"' }) },
           {
             when: isPut,
             reply: contentFail({
@@ -485,28 +462,27 @@ describe("content/adapter", () => {
         const result = await adapter.writeFileContent(
           FILE_RES,
           new Uint8Array(),
+          { etag: '"stale"', contentType: undefined },
         );
         assert.ok(!result.ok);
         assert.equal(result.problem.code, "content-rejected");
         assert.equal(result.problem.error.status, 412);
       });
 
-      it("passes a failure from the pre-read straight through", async () => {
+      it("passes any other PUT failure straight through", async () => {
         const { adapter } = adapterWith([
           {
-            when: isHead,
-            reply: contentFail({
-              code: "content-rejected",
-              error: { status: 404 },
-            }),
+            when: isPut,
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
           },
         ]);
         const result = await adapter.writeFileContent(
           FILE_RES,
           new Uint8Array(),
+          { etag: '"e1"', contentType: undefined },
         );
         assert.ok(!result.ok);
-        assert.equal(result.problem.code, "content-rejected");
+        assert.equal(result.problem.code, "forbidden");
       });
     });
   });

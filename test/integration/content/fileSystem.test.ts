@@ -9,6 +9,7 @@ import type {
   ContentAdapter,
   FileContent,
   FileStat,
+  WritePrecondition,
 } from "../../../src/content/adapter";
 import type { ContentResult } from "../../../src/content/client";
 import { SasContentFileSystemProvider } from "../../../src/content/contentFileSystem";
@@ -159,23 +160,74 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     assert.deepEqual(result, bytes);
   });
 
-  it("writeFile resolves when the adapter accepts the write", async () => {
-    let seenHref: string | undefined;
-    let seenBytes: Uint8Array | undefined;
+  it("writeFile sends the ETag readFile opened with — not a fresh one — as If-Match", async () => {
+    let sentHref: string | undefined;
+    let precond: WritePrecondition | undefined;
+    let sentBytes: Uint8Array | undefined;
     const { provider } = providerWith({
-      writeFileContent: (href, bytes) => {
-        seenHref = href;
-        seenBytes = bytes;
-        return Promise.resolve(ok(undefined));
+      readFileContent: () =>
+        Promise.resolve(
+          ok<FileContent>({
+            bytes: new Uint8Array(),
+            etag: '"opened-with"',
+            contentType: "application/x-python",
+          }),
+        ),
+      writeFileContent: (href, bytes, p) => {
+        sentHref = href;
+        precond = p;
+        sentBytes = bytes;
+        return Promise.resolve(ok({ etag: '"after-save"' }));
       },
     });
-    const payload = new TextEncoder().encode("new\n");
+    await provider.readFile(A_CONTENT_URI);
+    const payload = new TextEncoder().encode("edited\n");
     await provider.writeFile(A_CONTENT_URI, payload);
-    assert.equal(seenHref, HREF);
-    assert.deepEqual(seenBytes, payload);
+    assert.equal(sentHref, HREF);
+    assert.deepEqual(sentBytes, payload);
+    assert.ok(precond !== undefined);
+    assert.equal(precond.etag, '"opened-with"');
+    assert.equal(precond.contentType, "application/x-python");
   });
 
-  it("maps a 404 content-rejected to FileNotFound", async () => {
+  it("a second save in the same session carries the ETag the first PUT returned", async () => {
+    const seen: string[] = [];
+    const { provider } = providerWith({
+      readFileContent: () =>
+        Promise.resolve(
+          ok<FileContent>({
+            bytes: new Uint8Array(),
+            etag: '"v1"',
+            contentType: undefined,
+          }),
+        ),
+      writeFileContent: (_href, _bytes, p) => {
+        seen.push(p.etag);
+        return Promise.resolve(ok({ etag: `"${String(seen.length + 1)}"` }));
+      },
+    });
+    await provider.readFile(A_CONTENT_URI);
+    await provider.writeFile(A_CONTENT_URI, new Uint8Array());
+    await provider.writeFile(A_CONTENT_URI, new Uint8Array());
+    assert.deepEqual(seen, ['"v1"', '"2"']);
+  });
+
+  it("rejects a save with nothing to be conditional against (no prior read)", async () => {
+    let called = false;
+    const { provider } = providerWith({
+      writeFileContent: () => {
+        called = true;
+        return Promise.resolve(ok({ etag: undefined }));
+      },
+    });
+    const error = await rejectionOf(
+      provider.writeFile(A_CONTENT_URI, new Uint8Array()),
+    );
+    assert.match(error.message, /Open this file from the SAS Content view/);
+    assert.equal(called, false, "no PUT is attempted without a precondition");
+  });
+
+  it("maps a 404 content-rejected to FileNotFound with the localised message", async () => {
     const { provider, errors } = providerWith({
       statFile: () =>
         Promise.resolve(
@@ -184,21 +236,41 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     });
     const error = await rejectionOf(provider.stat(A_CONTENT_URI));
     assert.equal(error.code, "FileNotFound");
+    assert.match(error.message, /no longer exists/);
     assert.equal(errors.length, 1, "the technical sentence is logged");
   });
 
-  it("maps a 412 conflict to a FileSystemError carrying the reopen wording", async () => {
+  it("maps a 412 conflict to the reopen wording and clears the stale ETag", async () => {
+    let attempts = 0;
     const { provider } = providerWith({
-      writeFileContent: () =>
+      readFileContent: () =>
         Promise.resolve(
-          fail({ code: "content-rejected", error: { status: 412 } }),
+          ok<FileContent>({
+            bytes: new Uint8Array(),
+            etag: '"e1"',
+            contentType: undefined,
+          }),
         ),
+      writeFileContent: () => {
+        attempts += 1;
+        return Promise.resolve(
+          fail({ code: "content-rejected", error: { status: 412 } }),
+        );
+      },
     });
-    const error = await rejectionOf(
+    await provider.readFile(A_CONTENT_URI);
+    const conflict = await rejectionOf(
       provider.writeFile(A_CONTENT_URI, new Uint8Array()),
     );
-    assert.match(error.message, /changed on the server/);
-    assert.match(error.message, /open it again/);
+    assert.match(conflict.message, /changed on the server/);
+    assert.match(conflict.message, /open it again/);
+    // The cached tag is now known-stale: a retry without reopening is refused
+    // here, not sent to the server with a tag that would only 412 again.
+    const retry = await rejectionOf(
+      provider.writeFile(A_CONTENT_URI, new Uint8Array()),
+    );
+    assert.match(retry.message, /Open this file from the SAS Content view/);
+    assert.equal(attempts, 1);
   });
 
   it("maps forbidden to NoPermissions and unauthorized/unreachable to Unavailable", async () => {

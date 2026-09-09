@@ -131,6 +131,22 @@ export interface FileContent {
   readonly contentType: string | undefined;
 }
 
+/**
+ * What {@link ContentAdapter.writeFileContent} needs to write safely — the
+ * `etag` and `contentType` from the read that populated the editor buffer,
+ * carried by the caller (the `FileSystemProvider`), **not** re-fetched at save
+ * time. Re-reading the ETag immediately before the `PUT` would hand the server
+ * a tag it considers current no matter who changed the file in between, so the
+ * `412` the lost-update guard depends on could never fire.
+ */
+export interface WritePrecondition {
+  /** The `ETag` from the file read the editor is showing. Sent as `If-Match`. */
+  readonly etag: string;
+  /** That read's `Content-Type`. Not validated server-side (finding 6.2), sent
+   * for correctness; {@link DEFAULT_CONTENT_TYPE} stands in when absent. */
+  readonly contentType: string | undefined;
+}
+
 export class ContentAdapter {
   constructor(private readonly client: ContentClient) {}
 
@@ -303,9 +319,10 @@ export class ContentAdapter {
    * Composes `${resourceHref}/content` (finding 6.1's `content` relation) and
    * reads `rawBody`, never `.text` — a file this tree opens is usually text,
    * but the transport's UTF-8 decode is lossy for one that is not, and the
-   * editor is entitled to the real bytes. The returned `etag` is what
-   * {@link ContentAdapter.writeFileContent} would send as `If-Match`, though it
-   * re-reads its own rather than trust one carried this far.
+   * editor is entitled to the real bytes. The returned `etag` is the tag for
+   * exactly these bytes; the caller keeps it and hands it back as the
+   * {@link WritePrecondition} on save. Re-fetching it at save time instead
+   * would defeat the lost-update guard — see {@link ContentAdapter.writeFileContent}.
    */
   async readFileContent(
     resourceHref: string,
@@ -336,43 +353,31 @@ export class ContentAdapter {
   }
 
   /**
-   * Replace a file's bytes, guarded by a fresh `If-Match`.
+   * Replace a file's bytes, guarded by the ETag the editor opened with.
    *
-   * Two requests: a `HEAD` of `${resourceHref}/content` for the current ETag
-   * and content-type, then a `PUT` of the same href carrying them. Re-reading
-   * rather than accepting an ETag the editor held since it opened the file is
-   * the choice `src/compute/files.ts` and `fileref.ts` both make and document —
-   * nothing has measured that an older ETag is still current. `HEAD`, not
-   * `GET`: finding 6.1 confirmed it returns the same `ETag`/`Last-Modified`/
-   * `Content-Type` with no body, so this costs nothing and cannot trip the
-   * transport's response-size cap on a large file the way pulling its whole
-   * content back would. Finding 6.2: the `PUT` needs `If-Match` (a bare one is
-   * `428`), the sent `Content-Type` is not validated but is echoed for
-   * correctness, and a stale ETag comes back as `412` — returned here unchanged
-   * as `content-rejected` for the caller to read as a conflict.
+   * One request: `PUT ${resourceHref}/content` carrying `precondition.etag` as
+   * `If-Match`. That tag has to be the one {@link ContentAdapter.readFileContent}
+   * returned for the bytes now in the editor — **not** a freshly-fetched one.
+   * `src/compute/files.ts` and `fileref.ts` re-read their ETag immediately
+   * before mutating, but they act on a session's private working directory that
+   * `PROC PYTHON`'s serial execution (ADR-0015) guarantees nothing else touches;
+   * a SAS Content file is editable at the same time from SAS Studio, the web
+   * client, or another editor, so the guard only means something if the tag
+   * predates those edits.
+   *
+   * Finding 6.2: a bare `PUT` is `428`, a stale `If-Match` is `412` — both
+   * come back unchanged as `content-rejected` for the caller to localise as
+   * "reopen it". A `200` carries a fresh `ETag`; it is returned so the caller
+   * can update what it holds and let a second save in the same session through
+   * without a re-read. The sent `Content-Type` is not validated (finding 6.2)
+   * but is echoed for correctness.
    */
   async writeFileContent(
     resourceHref: string,
     bytes: Uint8Array,
+    precondition: WritePrecondition,
     signal?: AbortSignal,
-  ): Promise<ContentResult<void>> {
-    const current = await this.client.send({
-      link: {
-        rel: CONTENT_REL,
-        href: `${resourceHref}/content`,
-        method: "HEAD",
-      },
-      ...withSignal(signal),
-    });
-    if (!current.ok) return current;
-    if (current.value.etag === undefined) {
-      return malformed(
-        current.value,
-        "a file's content",
-        "and the response carried no ETag to write it back with",
-      );
-    }
-
+  ): Promise<ContentResult<{ etag: string | undefined }>> {
     const put = await this.client.send({
       link: {
         rel: UPDATE_CONTENT_REL,
@@ -380,12 +385,12 @@ export class ContentAdapter {
         method: "PUT",
       },
       rawBody: bytes,
-      contentType: current.value.contentType ?? DEFAULT_CONTENT_TYPE,
-      etag: current.value.etag,
+      contentType: precondition.contentType ?? DEFAULT_CONTENT_TYPE,
+      etag: precondition.etag,
       ...withSignal(signal),
     });
     if (!put.ok) return put;
-    return { ok: true, value: undefined };
+    return { ok: true, value: { etag: put.value.etag } };
   }
 }
 

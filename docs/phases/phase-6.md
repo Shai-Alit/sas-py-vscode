@@ -315,12 +315,16 @@ lines below.
   (`rawBody`/`contentType`/`If-Match`; response `etag`/`lastModified`/`rawBody`).
   Findings 6.1/6.2: the file resource carries `content`/`updateContent`
   relations at `${self}/content`, `PUT` needs `If-Match` (bare ⇒ `428`, stale ⇒
-  `412`), and a successful `PUT` returns a fresh `ETag`. `writeFileContent`
-  re-reads the ETag with a `HEAD` immediately before the `PUT` — the same
-  "re-read before mutate" choice `src/compute/fileref.ts`/`files.ts` make — and
-  a `412`/`428` surfaces to the user as a "changed on the server, reopen it"
-  conflict through the returning `localiseContentProblem` seam
-  (`src/content/messages.ts`).
+  `412`), and a successful `PUT` returns a fresh `ETag`. The
+  `FileSystemProvider` keeps the `ETag` `readFile` opened each resource with and
+  hands it to `writeFileContent` as the `If-Match` — **not** a freshly-fetched
+  one, which is what `src/compute/fileref.ts`/`files.ts` do but only because
+  `PROC PYTHON`'s serial execution (ADR-0015) guarantees nothing else touches a
+  session's files; a SAS Content file is editable concurrently, so the guard
+  only bites if the tag predates the other edit. A `412`/`428` surfaces to the
+  user as a "changed on the server, reopen it" conflict through the returning
+  `localiseContentProblem` seam (`src/content/messages.ts`), and clears the
+  stale cached tag; a `200` advances it to the tag the `PUT` returned.
 - ☑ `workspace.registerFileSystemProvider("sasContent", …)` + the
   `onFileSystem:sasContent` activation event. A tree file leaf
   (`NodePresentation.openable` — an ordinary `file`, never a `dataFlow`) gets a
@@ -584,8 +588,9 @@ trade `${uri}/members` already makes.
 `application/x-python;charset=UTF-8`, the **same `ETag`/`Last-Modified`** as the
 resource, plus `Content-Disposition: attachment; filename="…"` and
 `Content-Length`. **`HEAD` on `…/content`** returns those same three headers
-with no body — which is what 6b's `writeFileContent` uses for its pre-write
-ETag re-read, so a large file is not pulled back just to read a header.
+with no body. 6b does not use it — the write path carries the `ETag` from the
+`readFile` that filled the editor rather than re-fetch one — but it is noted as
+a cheap way for a later slice to check an `ETag` without pulling content.
 
 **Finding 6.2 — `PUT .../content` is a strict optimistic-concurrency endpoint;
 content-type is not validated; success returns a fresh ETag.**
@@ -598,11 +603,14 @@ content-type is not validated; success returns a fresh ETag.**
 | `If-Match: <current>` + `Content-Type: application/x-python` | **`200`**, body = the full updated `application/vnd.sas.file+json` representation, **fresh `ETag` + `Last-Modified` in the response headers** |
 | `If-Unmodified-Since: <far past>` only, no `If-Match` | **`412`** — honoured as a standalone precondition (matches the `428` message) |
 
-So the FileSystemProvider: `writeFileContent` sends `If-Match` with a
-freshly-`HEAD`-read ETag; a `200` means the save is done and no follow-up `GET`
-is needed; a `412`/`428` is returned unchanged as `content-rejected` and
-`localiseContentProblem` turns status `412`/`428` into a "this file changed on
-the server, reopen it" message. The `Content-Type` sent is the file's real
+So the FileSystemProvider: `writeFileContent` sends `If-Match` with the `ETag`
+the provider recorded when `readFile` served the bytes the editor is showing —
+never a freshly-fetched one, or a concurrent edit between open and save would
+be silently overwritten. A `200` returns the new `ETag`, which the provider
+keeps so a second save needs no re-read; a `412`/`428` is returned unchanged as
+`content-rejected` and `localiseContentProblem` turns those statuses into a
+"this file changed on the server, reopen it" message. The `Content-Type` sent
+is the file's real
 media type (echoed from the read) even though it is not enforced. `428` should
 not occur while the provider always sends `If-Match`, but is handled for
 defence. Creating a file (`POST /files/files?typeDefName=file_py` with

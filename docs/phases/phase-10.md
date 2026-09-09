@@ -329,5 +329,9 @@ Viya for it. If 10a's or 10b's implementation turns up a genuine Viya-side
 surprise (for example, whether an interpreter with an unusually large
 installed set makes the existing Stage-2 probe's fixed byte cap,
 `MAX_ENVIRONMENT_PROBE_BYTES`, worth revisiting — untouched by this phase,
-but adjacent to it), that would be the first probe recorded here, continuing
-this project's global finding numbering from Finding 92 (`phase-8.md`).
+but adjacent to it), that would be the first probe recorded here — numbered `10.1`, per the
+phase-scoped finding-numbering scheme adopted 2026-09-09 (`STATUS.md`,
+repo-root `CLAUDE.md`), not a continuation of the project's old global
+sequence (which this phase file's scoping session originally assumed would
+run from Finding 92, `phase-8.md`, the same starting point phase-9.md's
+scoping session also assumed — a latent collision the new scheme avoids).

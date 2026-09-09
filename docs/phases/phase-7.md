@@ -22,7 +22,7 @@ grounding came from a codebase survey of both this repo and
 and `TablePropertiesViewer.ts`, `client/src/webview/useDataViewer.ts`/`TableFilter.tsx`)
 and the generated `DataAccessApi` client (`client/src/connection/rest/api/compute.ts`),
 plus this project's own `src/compute/` (`sessionManager.ts`, `job.ts`, `links.ts`), plus
-six read-only-to-the-target-data live probes against `verde` (Findings 83–86
+six read-only-to-the-target-data live probes against `verde` (Findings 7.1–7.4
 below; one throwaway session created and deleted to run them, confirmed gone
 by a `404` read-back). **The first probe attempt this session failed at the
 network layer** (the sandbox's egress proxy could not tunnel to `verde` —
@@ -67,7 +67,7 @@ all already built and, in principle, already reusable as-is.
   `application/vnd.sas.collection+json` collections with the same
   `start`/`limit`/`count` paging shape `src/compute/contexts.ts` and
   `job.ts` already handle for other Compute collections. **Superseded in part
-  by Finding 95:** an earlier draft of this bullet wrote the `readOnly`/tables
+  by Finding 7.5:** an earlier draft of this bullet wrote the `readOnly`/tables
   detail as `#summary`- and `#tables`-suffixed URL segments
   (`.../data/{libref}#summary`, `.../data/{libref}#tables`), mirroring
   upstream's `compute.ts` template strings. Those are not requestable paths —
@@ -76,7 +76,7 @@ all already built and, in principle, already reusable as-is.
   tables views are selected by `Accept`-header content negotiation on the
   bare `.../data/{libref}` URI, which this project's `src/wire/links.ts` +
   `src/compute/client.ts` link-following already produces from the item's own
-  links (see Finding 95).
+  links (see Finding 7.5).
 - The read-only/actionable distinction (`LibraryItem.readOnly`, inherited from
   the owning library unless a table overrides it) is the same shape as Phase
   6's folder/file `readOnly` handling — a second application of a convention
@@ -101,6 +101,7 @@ all already built and, in principle, already reusable as-is.
   design (ADR-0007, ADR-0022). **7a should skip the factory and
   `ItcLibraryAdapter` entirely**: one concrete class implementing whatever
   this project's `LibraryAdapter`-equivalent interface turns out to be.
+  Ratified as [ADR-0027](../adr/0027-library-adapter-shape.md).
 - **Session ownership is the real design question, and it's bigger than a
   straight port suggests.** Upstream's `RestLibraryAdapter.connect()` calls
   its own module-level `getSession()` — a process-global singleton, the same
@@ -112,7 +113,8 @@ all already built and, in principle, already reusable as-is.
   means 7a's adapter is a consumer of `ComputeSessionManager`'s existing
   public surface, not a self-contained class the way upstream's is, and
   whoever writes it should read `ComputeSessionManager`'s own doc comments in
-  full before assuming the shape.
+  full before assuming the shape. Settled as
+  [ADR-0027](../adr/0027-library-adapter-shape.md).
 - **The busy-submission guard raises a question upstream never had to
   answer — now settled, not merely theorized.** `ComputeSessionManager.
   startSubmission`/`endSubmission` refuse a second concurrent submission into
@@ -120,7 +122,7 @@ all already built and, in principle, already reusable as-is.
   because finding 29 left what a second submission does to a running session
   unobserved. `DataAccessApi` calls are a *different* resource path (`/data/…`,
   not `/jobs`), so the question was whether they're safe to issue while a job
-  is executing in the same session. **Finding 85** measured it directly: a
+  is executing in the same session. **Finding 7.3** measured it directly: a
   `getRows` call issued immediately after submitting a 15-second job returned
   `200` only after **14.911s** — not an error, not an immediate race, a wait
   matching the job's own duration almost exactly — against a **0.349s**
@@ -129,12 +131,12 @@ all already built and, in principle, already reusable as-is.
   up; it does not refuse it and does not run it concurrently.** That answers
   the UI question this bullet raised: browsing during an active run would not
   fail fast, it would hang silently for the run's whole duration — precisely
-  the "busy clears before the session is actually free" failure shape Finding
-  76 (Phase 4b) already found on the cancel path, now confirmed on this path
+  the "busy clears before the session is actually free" failure shape Finding 76 (Phase 4b) already found on the cancel path, now confirmed on this path
   too. 7a should treat a `DataAccessApi` call the same way `startSubmission`
   already treats a second run: check `ComputeSessionManager`'s busy state
   before issuing one, and refuse or queue with a visible "session busy"
-  message, rather than let a browse action hang with no explanation.
+  message, rather than let a browse action hang with no explanation. Settled
+  as [ADR-0027](../adr/0027-library-adapter-shape.md): refuse, not queue.
 - **Sorting is not client-side, and every re-sort is a mutation.**
   `RestLibraryAdapter.getSortedRows` doesn't sort locally — it calls
   `createView` (`POST`, `application/vnd.sas.compute.data.table.view.request+json`)
@@ -223,28 +225,26 @@ either:**
 **Testing.** Same shape this project already committed to for Phase 6: a
 new `test/helpers/recorded-data-access.ts` (or similar) plus fixtures under
 `test/fixtures/data/`, mocking at the HTTP boundary per this project's
-standing rule. Findings 83–86 below are real, confirmed shapes (`SASHELP.CLASS`
+standing rule. Findings 7.1–7.4 below are real, confirmed shapes (`SASHELP.CLASS`
 against `verde`) to build those fixtures from — scrubbed per this project's
 own rule before anything becomes a committed fixture (this phase file already
 avoids naming the site-registered libraries the probe's `getLibraries` call
 returned beyond `WORK`/`SASHELP`/`SASUSER`, since several of the others read as
 customer- or business-identifying and have no bearing on the confirmed shape).
 
-**Dialect risk, narrowed but not resolved (updated by Findings 95/96,
-2026-09-09 — superseding the "one cadence, one deployment" framing this
-paragraph originally had).** Unlike Phase 6 (which found one inline cadence
-check in upstream's content adapter), nothing in `RestLibraryAdapter.ts` or
-the generated `DataAccessApi` client carries a visible version branch. This
-phase's probing has since covered **two independent Viya 4 deployments**
-(`verde` and `Innov`, Findings 83–86/95/96), and every mechanism agreed
-between them — the deployment axis of this risk is closed. What remains
-open is narrower: whether a **different Viya 4 cadence** (not merely a
-different deployment) shows any difference in these endpoints. Nothing so
-far establishes that `verde` and `Innov` run different cadences, so two
-deployments agreeing is not the same evidence as two cadences agreeing.
-7a's own probe pass should check the cadence question directly the same way
-6a's punch list already commits to for its own endpoints, rather than
-treating the deployment-level agreement above as settling it.
+**Dialect risk, closed for the endpoints this phase has probed (updated by
+Finding 7.7, 2026-09-09 — superseding the "narrowed but not resolved"
+framing this paragraph previously had).** Unlike Phase 6 (which found one
+inline cadence check in upstream's content adapter), nothing in
+`RestLibraryAdapter.ts` or the generated `DataAccessApi` client carries a
+visible version branch. This phase's probing covered **two independent Viya
+4 deployments** (`verde` and `Innov`, Findings 7.1–7.4/7.5/7.6) — the deployment
+axis closed first. Finding 7.7 then read each deployment's own
+`/deploymentData/cadenceVersion` and found they are also **two different
+cadence classes** (`verde` on `lts`/`2026.03`, `Innov` on `stable`/`2026.06`,
+three release-months apart) — closing the cadence axis too, since Findings 7.5/7.6 already showed every `DataAccessApi` mechanism this phase covers
+agreeing between them. Nothing so far found a version-conditioned branch on
+either axis. (Viya 3.5 remains out of scope entirely — ADR-0022.)
 
 **The earlier network failure was a VPN outage on the deployment side, not a
 sandbox limitation.** This session's first probe attempt failed identically
@@ -264,7 +264,7 @@ sandbox's egress in general.
 - **7a — `LibraryAdapter` + read-only tree.** *Medium* — smaller than 6a's
   structural lift (no new `FileSystemProvider`, no drag-and-drop controller
   required for read-only browsing, no new activity-bar container if 6a lands
-  first). The busy-submission *wire behaviour* is now settled (Finding 85);
+  first). The busy-submission *wire behaviour* is now settled (Finding 7.3);
   what 7a still owns is the UI decision it implies (block/queue/warn) and
   whatever cadence/version differences a second-deployment probe turns up.
   `SASHELP`/`WORK` are enough to exercise every read-only path without
@@ -303,7 +303,7 @@ actually ask for once v0.1.0 is in their hands.
 _Scoped 2026-09-03, before any code was written — technical grounding (what
 ports closely vs. what needs rework vs. what is a deliberate non-goal) came
 from the codebase survey described in the Plan section above and six live
-probes against `verde` (Findings 83–86 below). **Recommended execution order:
+probes against `verde` (Findings 7.1–7.4 below). **Recommended execution order:
 7a → 7b → 7c**, matching the dependency chain `PRODUCTION_PLAN.md`'s original
 sketch already implies (an adapter and tree before a viewer that opens from
 it; sort/filter/export as refinements on a working viewer). Nothing here is a
@@ -312,38 +312,49 @@ hard technical barrier — this is a recommendation, not a dependency lock._
 ☐ **7a — `LibraryAdapter` + read-only tree.**
 
 - ☑ A second-**deployment** probe of `GET /sessions/{sessionId}/data`, the
-  summary/tables content-negotiation Finding 95 corrected, `…/{tableName}`,
-  `…/columns`, `…/rows`. Finding 95 (2026-09-09) re-ran the full set against
-  `verde` again and reconfirmed Findings 83–85's practical shape (correcting
-  83/84's URL-suffix mechanism to `Accept`-header content negotiation) and
-  Finding 86 (session-state is bare `text/plain` regardless of `Accept` —
-  stronger/simpler than originally stated). Finding 96 (2026-09-09) then
+  summary/tables content-negotiation Finding 7.5 corrected, `…/{tableName}`,
+  `…/columns`, `…/rows`. Finding 7.5 (2026-09-09) re-ran the full set against
+  `verde` again and reconfirmed Findings 7.1–7.3's practical shape (correcting
+  7.1/7.2's URL-suffix mechanism to `Accept`-header content negotiation) and
+  Finding 7.4 (session-state is bare `text/plain` regardless of `Accept` —
+  stronger/simpler than originally stated). Finding 7.6 (2026-09-09) then
   re-ran the same set against a second, distinct deployment (`Innov`) and
   every mechanism reproduced identically. **Done** for the second-deployment
   axis specifically.
-- ☐ A second-**cadence** probe (still outstanding — Findings 95/96 used two
-  deployments, but nothing establishes they are different Viya 4 cadences).
-  Not settled by the item above; Viya 3.5 is out of scope per ADR-0022 and
-  is not what this bullet is asking about — see Finding 96's closing note.
-- ☐ Design the "session busy" UI 7a needs as a result of Finding 85 — block
-  the tree, queue the request, or surface a visible wait state — rather than
-  let a browse action hang silently behind an active run the way the raw
-  measurement did.
-- ☐ Read `RestLibraryAdapter.ts`/`LibraryModel.ts`/`LibraryDataProvider.ts`
+- ☑ A second-**cadence** probe. **Done** — Finding 7.7 (2026-09-09) read each
+  deployment's own `/deploymentData/cadenceVersion` and found `verde` on
+  `lts`/`2026.03` and `Innov` on `stable`/`2026.06`: not merely two
+  deployments but two different cadence classes, three release-months
+  apart. Combined with Findings 7.5/7.6 (every `DataAccessApi` mechanism this
+  phase covers already agreed between them), the cadence axis of this
+  phase's dialect risk is closed, not merely narrowed. Viya 3.5 remains out
+  of scope per ADR-0022.
+- ☑ Design the "session busy" UI 7a needs as a result of Finding 7.3. **Done**
+  — [ADR-0027](../adr/0027-library-adapter-shape.md): refuse rather than
+  queue, reusing `ComputeSessionManager.isBusy(profileId)`, mirroring
+  `startSubmission`'s existing precedent (finding 27). An unclaimed race
+  (busy becomes true between the check and the request landing) is accepted
+  rather than closed — see the ADR's Consequences.
+- ☑ Read `RestLibraryAdapter.ts`/`LibraryModel.ts`/`LibraryDataProvider.ts`
   in full for what they do, not what they are, per this project's own
-  ported-code rule.
-- ☐ Design how a `LibraryAdapter`-equivalent asks `ComputeSessionManager`
-  for the active profile's session, rather than owning a connection —
-  read `ComputeSessionManager`'s own doc comments first.
+  ported-code rule. **Done** — findings folded into
+  [ADR-0027](../adr/0027-library-adapter-shape.md).
+- ☑ Design how a `LibraryAdapter`-equivalent asks `ComputeSessionManager`
+  for the active profile's session, rather than owning a connection.
+  **Done** — [ADR-0027](../adr/0027-library-adapter-shape.md):
+  `current(profileId)`, profile-keyed, no adapter-owned connection. One UX
+  call stays open on purpose (lazy `connect()` on first tree expansion vs. an
+  explicit "not connected" state) — see the ADR's Consequences.
 - ☐ Build `LibraryItem`/`LibraryAdapter`/`LibraryModel`/
   `LibraryDataProvider`/`PaginatedResultSet` (names TBD to this project's own
-  conventions) under a new `src/data/` (or similar) module.
-- ☐ Add the tree view to the `viewsContainers` entry 6a creates (or, if 7a
-  lands first, create it) — coordinate with whichever of 6a/7a is in flight,
-  per the Plan section's note. Command ids follow the flat
-  `pythonOnViya.<verb>` convention.
+  conventions) under a new `src/data/` (or similar) module, per
+  [ADR-0027](../adr/0027-library-adapter-shape.md)'s shape.
+- ☐ Add the tree view to the `viewsContainers` entry 6a-ii already created
+  (6a landed first — this is no longer a coordination question, just an
+  implementation step). Command ids follow the flat `pythonOnViya.<verb>`
+  convention.
 - ☐ `test/helpers/recorded-data-access.ts` + `test/fixtures/data/`, built
-  from Findings 83–86's scrubbed shapes.
+  from Findings 7.1–7.4's scrubbed shapes.
 
 ☐ **7b — Data viewer webview.**
 
@@ -378,18 +389,22 @@ the network layer (every `CONNECT` through the sandbox's egress proxy to
 through the same proxy) — a VPN outage on the deployment side, confirmed
 resolved once retried. One throwaway compute session was created (`SAS
 Studio compute context`) to run the mutating parts of this list and deleted
-at the end, confirmed gone by a `404` read-back. Continuing this project's
-global finding numbering from Finding 82 (`phase-6.md`).
+at the end, confirmed gone by a `404` read-back. Findings in this phase are
+numbered independently as `7.x`, per the phase-scoped numbering scheme
+adopted 2026-09-09 (`STATUS.md`, repo-root `CLAUDE.md`) — this probe session
+predates that change and originally continued the project's old global
+sequence from Finding 82 (`phase-6.md`); renumbered `7.1` onward below as
+part of that switch.
 
-**Finding 83 — the core `DataAccessApi` read shapes are exactly what the
+**Finding 7.1 — the core `DataAccessApi` read shapes are exactly what the
 generated client and `RestLibraryAdapter.ts` claim, on this deployment.**
-**Superseded in part by Finding 95, below: `…/data/{libref}#summary` and
-`…/data/{libref}#tables` are not real, requestable paths — see Finding 95
+**Superseded in part by Finding 7.5, below: `…/data/{libref}#summary` and
+`…/data/{libref}#tables` are not real, requestable paths — see Finding 7.5
 for the corrected `Accept`-header content-negotiation mechanism. The rest of
 this finding (the field shapes themselves) stands.**
 `GET /compute/sessions/{id}/data` (libraries), `…/data/{libref}` with the
 default `library+json` media type (per-library `readOnly`/engine detail — the
-rich representation, not the `summary` one; see Finding 95), `…/data/{libref}`
+rich representation, not the `summary` one; see Finding 7.5), `…/data/{libref}`
 with the tables media type (tables in a libref), `…/data/{libref}/{tableName}`
 (table info), `…/{tableName}/columns`,
 and `…/{tableName}/rows` all returned `200` with exactly the fields
@@ -407,13 +422,13 @@ note for whoever writes 7a on whether to follow links here the way
 `src/compute/links.ts` already does for Compute, rather than composing paths
 by hand the way upstream's adapter does.
 
-**Finding 84 — the plain `getLibraries`/`getTables` collections carry no
+**Finding 7.2 — the plain `getLibraries`/`getTables` collections carry no
 per-item detail; the `readOnly`/size fields only appear on the singular
-per-item detail `GET`, not on the list.** **Superseded in part by Finding 95,
+per-item detail `GET`, not on the list.** **Superseded in part by Finding 7.5,
 below: the `#summary` notation is not a real path — the per-item detail comes
 from the *default* `library+json` representation, reached by `Accept`-header
 content negotiation on the *same* bare URI (the `summary` media type is
-actually the *sparse* one; see Finding 95), not from a separate
+actually the *sparse* one; see Finding 7.5), not from a separate
 `#summary`-suffixed resource. The practical conclusion — the list is sparse, a
 per-item follow-up is needed — stands; the mechanism described here does not.** The
 default `GET …/data` and the tables-media-type read on `…/data/{libref}`
@@ -426,13 +441,13 @@ one follow-up request per library. Measured directly (via the bare
 representation; the `summary` media type is the sparse one, and the
 `#summary`-suffixed URL notation an earlier draft of this sentence showed was
 never what curl actually requested, since it silently strips the `#…` fragment
-before the wire, per Finding 95): `GET …/data/WORK` → `readOnly: false`;
+before the wire, per Finding 7.5): `GET …/data/WORK` → `readOnly: false`;
 `GET …/data/SASHELP` → `readOnly: true`, `concatenationCount: 4` (four physical
 paths concatenated into one libref) — confirms the read-only/writable
 distinction the tree's icon and context-menu gating depend on is real and
 populated, not merely documented.
 
-**Finding 85 — a `DataAccessApi` call blocks behind a running job in the same
+**Finding 7.3 — a `DataAccessApi` call blocks behind a running job in the same
 session; it does not error and does not run concurrently.** With no job
 running, `GET …/data/SASHELP/CLASS/rows?start=0&limit=2` returned `200` in
 **0.349s**. Immediately after submitting a job that runs
@@ -448,8 +463,8 @@ already found on the cancel path, now confirmed on this path too. Not
 probed: whether a *second* concurrent `DataAccessApi` call (no job involved)
 queues the same way, or whether only a running job causes this.
 
-**Finding 86 — the session `state` endpoint needs its own media type, not a
-bare `Accept: application/json`.** **Superseded by Finding 95, below: on
+**Finding 7.4 — the session `state` endpoint needs its own media type, not a
+bare `Accept: application/json`.** **Superseded by Finding 7.5, below: on
 re-probe, the specific media type did *not* return cleanly-parseable JSON
 either — both `Accept` values return the identical bare `text/plain` word.
 Treat this endpoint as always plain text regardless of `Accept`, not as
@@ -463,29 +478,31 @@ Compute media-type trap.
 
 **Not probed this session, left open:** a second Viya 4 cadence/deployment
 (the dialect-risk item above); whether a *second* `DataAccessApi` call queues
-the same way a job does (Finding 85's own open question); the `createView`
+the same way a job does (Finding 7.3's own open question); the `createView`
 sort round trip and its cleanup-on-failure behaviour (a mutating probe,
 deliberately out of scope for this pass); and the CSV (`rowsAsCSV`) and
 `promptContent` relations `getTable`'s link set surfaced but
 `RestLibraryAdapter.ts` reaches by composed URL rather than by link. All are
 7a/7c implementation-time probes, not settled here.
 
-**Finding 95 — re-probe against `verde`, 2026-09-09 (no second deployment was
-available this session — see below): Finding 85 reconfirmed as measured;
-Finding 86 does not reproduce as stated; Findings 83/84's mechanism was
+**Finding 7.5 — re-probe against `verde`, 2026-09-09 (no second deployment was
+available this session — see below): Finding 7.3 reconfirmed as measured;
+Finding 7.4 does not reproduce as stated; Findings 7.1/7.2's mechanism was
 wrong, though their practical conclusion holds.** Run via `viya-api-probe`
 against a fresh throwaway `SAS Studio compute context` session (created and
-deleted per-check below; each read back `404` after its `DELETE`). Global
-finding numbering continues from Finding 94 (`phase-5.md`).
+deleted per-check below; each read back `404` after its `DELETE`). This
+re-probe continues phase 7's own `7.x` numbering (from `7.4`); it originally
+continued the project's old global sequence from Finding 94 (`phase-5.md`)
+before the 2026-09-09 renumbering.
 
-- **Finding 85 — reconfirmed, same magnitude.** Idle baseline `GET
+- **Finding 7.3 — reconfirmed, same magnitude.** Idle baseline `GET
   …/data/SASHELP/CLASS/rows?start=0&limit=2` → **0.547s**. Immediately after
   submitting `data _null_; x=sleep(15,1); run;` (async, no wait), the
   identical call → **15.003s** — again a wait matching the job's own sleep
   almost exactly, not a fast race or an error. The blocking-not-erroring
   behaviour this phase's busy-submission UI design depends on is stable
   across sessions on this deployment.
-- **Finding 86 — does not reproduce; corrected.** Today, `GET
+- **Finding 7.4 — does not reproduce; corrected.** Today, `GET
   …/sessions/{id}/state` returned **`Content-Type: text/plain;charset=UTF-8`**
   with the bare unquoted body `idle` for **both** a generic `Accept:
   application/json` **and** the specific
@@ -495,9 +512,9 @@ finding numbering continues from Finding 94 (`phase-5.md`).
   JSON-parseable) did not hold this time; both requests behave identically,
   and neither is JSON. Treat the session-state endpoint as **always** a bare
   text/plain state word regardless of `Accept`, not as a media-type-sensitive
-  endpoint — a stronger and simpler statement than Finding 86 made, and the
+  endpoint — a stronger and simpler statement than Finding 7.4 made, and the
   one to design against.
-- **Findings 83/84 — the mechanism they describe does not exist; the
+- **Findings 7.1/7.2 — the mechanism they describe does not exist; the
   practical conclusion they drew is still correct.** `{libref}#summary` and
   `{libref}#tables` are not real URL path segments. Directly confirmed:
   requesting the properly percent-encoded path
@@ -513,19 +530,19 @@ finding numbering continues from Finding 94 (`phase-5.md`).
 
   **The real mechanism is `Accept`-header content negotiation on the same
   bare URI**, and it inverts which media type is "rich" versus "sparse" from
-  what Finding 84's naming implied:
+  what Finding 7.2's naming implied:
   - `GET …/data/WORK` with the default/bare `Accept` (equivalently,
     explicit `Accept: application/vnd.sas.compute.library+json`) returns the
     **rich** shape — `readOnly`, `concatenationCount`, `engineName`,
     `physicalName`, `fileFormat`, `links`, etc. Reconfirmed unchanged:
     `WORK` → `readOnly: false, concatenationCount: 0`; `SASHELP` →
-    `readOnly: true, concatenationCount: 4` — same numbers Finding 84
+    `readOnly: true, concatenationCount: 4` — same numbers Finding 7.2
     measured, just obtained by the correct request.
   - `GET …/data/WORK` with `Accept: application/vnd.sas.compute.library.summary+json`
     on the **identical URI** returns the **sparse** shape (`id`, `name`,
     `links`, `version` only, everything else absent) — "summary" is the lean
     representation, not the detailed one; this is the reverse of what the
-    word suggested and the reverse of how Finding 84 characterized it.
+    word suggested and the reverse of how Finding 7.2 characterized it.
   - The plain collection `GET …/data` (all libraries) already negotiates to
     this same sparse per-item media type by default — its own envelope says
     `"accept":"application/vnd.sas.compute.library.summary"`. That is *why*
@@ -551,21 +568,21 @@ finding numbering continues from Finding 94 (`phase-5.md`).
   same URI the list item's own link already names — exactly the
   link-following discipline `src/wire/links.ts` already applies elsewhere
   in this project (promoted there from `src/compute/links.ts` in 6a-i,
-  ADR-0025, merged before this branch), and the same discipline Finding 83
+  ADR-0025, merged before this branch), and the same discipline Finding 7.1
   already flagged as worth adopting here. **Composing a `#summary`/`#tables`-suffixed URL by
   hand, the way the original finding's wording could be read to suggest,
   would not work at all** (confirmed: 400, not merely suboptimal) — this is
   a correctness-affecting correction, not a style note.
 
-**Finding 96 — second deployment (`Innov`), 2026-09-09: every part of
-Finding 95 reproduces identically; the dialect-risk item for these endpoints
+**Finding 7.6 — second deployment (`Innov`), 2026-09-09: every part of
+Finding 7.5 reproduces identically; the dialect-risk item for these endpoints
 is closed.** Sean added an `innov` section (deployment `Innov`) to
-`creds.json` after the Finding 95 checkpoint. Re-ran the same probe set via
+`creds.json` after the Finding 7.5 checkpoint. Re-ran the same probe set via
 `viya-api-probe` against a fresh throwaway `SAS Studio compute context`
 session on `Innov` (created and deleted; `404` read-back confirmed):
 
 - Session-state endpoint: `text/plain;charset=UTF-8` with a bare unquoted
-  word for **both** generic and specific `Accept`, exactly as Finding 95
+  word for **both** generic and specific `Accept`, exactly as Finding 7.5
   corrected. The word itself differed — `pending` rather than `idle` — but
   that's the state of a just-created session at the instant checked, not a
   media-type or version difference; both requests still agree with each
@@ -579,29 +596,58 @@ session on `Innov` (created and deleted; `404` read-back confirmed):
   (`id`/`name`/`links`/`version` only). Same URI with
   `Accept: application/vnd.sas.collection+json;itemtype=…table.summary` →
   tables collection (empty, fresh `WORK`). All three exactly reproduce the
-  content-negotiation mechanism Finding 95 established on `verde` — this
+  content-negotiation mechanism Finding 7.5 established on `verde` — this
   was the main thing worth re-confirming on a second deployment, and it did.
 - `SASHELP` → `readOnly: true, concatenationCount: 4`, same values as
   `verde`.
 - The literal percent-encoded `WORK%23summary` path → **HTTP 400**,
   `errorCode 5334`, same message, confirming the "`#summary` is not a real
   path segment" conclusion isn't a `verde`-specific quirk.
-- Finding 85 (busy-blocking): idle baseline **0.452s**; immediately after
+- Finding 7.3 (busy-blocking): idle baseline **0.452s**; immediately after
   submitting the same 15s sleep job, the identical `getRows` call →
   **15.039s**. Same magnitude and shape as both `verde` runs.
 
-**Net effect on the Plan section's "Dialect risk, flagged not resolved"
-note:** for the specific endpoints and mechanisms Findings 83–86/95/96
-cover (library/table list and detail shapes, the summary/tables
-content-negotiation mechanism, the busy-blocking behaviour, and the
-session-state media type), two independent Viya 4 deployments now agree in
-every particular except a session-state *value* that differs for an
-unrelated, expected reason (session age at time of check). Nothing here
-found a version-conditioned branch. Still open, and not something two
-same-cadence-class deployments can settle: whether an older or newer Viya 4
-*cadence* behaves differently — that remains a genuine gap, just no longer
-blocked on having a second deployment at all to probe with. (Viya 3.5 is out
-of scope entirely — ADR-0022 dropped it; not a question this phase carries.)
+**Finding 7.7 — second-cadence probe, 2026-09-09: `verde` and `Innov` are not
+just two deployments, they are two different Viya 4 cadence classes,
+closing the cadence axis of this phase's dialect risk.** Documented shape
+checked before probing (public `sasctl` source): a Viya 4 deployment's
+cadence is read via `GET /deploymentData/cadenceVersion`, returning
+`cadenceName` (`stable`/`lts`) and `cadenceVersion`; a prior `/licenses/grants`
+step distinguishes Viya 3 from 4, not needed here since Findings 7.1–7.4
+already established both deployments are Viya 4. Run via `viya-api-probe`,
+read-only, against each deployment directly (no session needed for this
+endpoint):
+
+- `verde` → `200`, `cadenceName: "lts"`, `cadenceDisplayName: "Long-Term
+  Support 2026.03"`, `cadenceVersion: "2026.03"`.
+- `Innov` → `200`, `cadenceName: "stable"`, `cadenceDisplayName: "Stable
+  2026.06"`, `cadenceVersion: "2026.06"`.
+
+One LTS, one Stable, three release-months apart — a materially different
+pair than "two deployments that happen to run the same build." Findings 7.5/7.6 already established that every `DataAccessApi` mechanism this phase
+has probed (library/table list and detail shapes, the summary/tables
+content-negotiation mechanism, the busy-blocking behaviour, the
+session-state media type) agrees identically between them. Combining that
+agreement with this finding closes the question the Plan section and the
+punch list both left open: it is no longer "two deployments agreeing, which
+isn't the same evidence as two cadences agreeing" — it is two different
+cadences agreeing, for the specific endpoints this phase covers. What this
+does **not** claim: agreement outside those specific endpoints, or that no
+future cadence could ever diverge — only that the endpoints Findings 7.1–7.4/7.5/7.6 exercised show no cadence-conditioned difference between an LTS
+and a Stable release three months apart.
+
+**Net effect on the Plan section's dialect-risk note:** for the specific
+endpoints and mechanisms Findings 7.1–7.4/7.5/7.6 cover (library/table list and
+detail shapes, the summary/tables content-negotiation mechanism, the
+busy-blocking behaviour, and the session-state media type), two independent
+Viya 4 deployments now agree in every particular except a session-state
+*value* that differs for an unrelated, expected reason (session age at time
+of check). Finding 7.7 establishes those two deployments are also two
+different cadence classes (LTS vs. Stable), so this agreement is evidence
+across cadences, not merely across deployments — **both axes of this
+phase's dialect risk are now closed** for the endpoints probed. (Viya 3.5 is
+out of scope entirely — ADR-0022 dropped it; not a question this phase
+carries.)
 
 Whether a *second* concurrent `DataAccessApi` call (no job involved) queues
 the same way a job does remains unprobed, as does the `createView` sort

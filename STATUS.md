@@ -84,6 +84,19 @@ No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
 issue tracking once past "preview".
 
+## Finding-numbering scheme changed 2026-09-09
+
+Probe findings are now numbered per-phase (`N.x`), not one continuing global
+sequence — see `CLAUDE.md`'s "Don't guess about Viya — probe it" section for
+the full rationale (this project now works phases in parallel from separate
+clones, and a continuing global counter can't be claimed safely by two
+sessions at once) and the rules for applying it. Phase 7's findings were
+renumbered `7.1`–`7.7` (previously the global 83, 84, 85, 86, 95, 96, 102) as
+part of this change. Phases 0–6, and any already-recorded phase 8–10
+findings from their original scoping sessions, keep their old global
+numbers — renumber a phase's own findings to its `N.x` scheme when that
+phase is actually picked up, not preemptively.
+
 ## History
 
 `docs/status-archive.md` holds the slice-by-slice narrative for Phase 3f
@@ -111,7 +124,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **in progress.** 6a done — 6a-i (`src/wire/` promotion, [ADR-0025](docs/adr/0025-shared-wire-layer.md)) and 6a-ii (content adapter + read-only tree, [ADR-0026](docs/adr/0026-content-adapter-shape.md)); 6b (open/save via `FileSystemProvider`) next. | `docs/phases/phase-6.md` |
-| 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
+| 7 — Libraries and data viewer | **scoped 2026-09-03**; pre-implementation work done — dialect risk (deployment *and* cadence axes) closed for the endpoints probed (Finding 7.7), and 7a's adapter shape/session-ownership/busy-UI design settled as [ADR-0027](docs/adr/0027-library-adapter-shape.md); 7a code (`src/data/`, tree view) not yet started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |

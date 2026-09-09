@@ -176,7 +176,10 @@ These apply to every slice. Most PR review comments trace back to one of them.
   catches it.
 - **Probe before implementing** against an unverified endpoint. Record findings in
   the **Probe findings** section of the current phase file (`docs/phases/phase-N.md`,
-  per `STATUS.md`) and cite the finding number in the PR description.
+  per `STATUS.md`) and cite the finding number in the PR description. Findings are
+  numbered **`<phase>.<n>`** (`Finding 6.1`, `Finding 7.3`) so parallel phase
+  branches don't collide; findings 1–101 keep their flat pre-2026-09-09 numbers.
+  See CLAUDE.md, "Don't guess about Viya — probe it".
 - **New user-facing setting or command?** Add it to `package.json` contributions;
   the docs reference is *generated* from there, so never hand-edit the tables —
   regenerate them and commit the result, or CI will fail the diff check.

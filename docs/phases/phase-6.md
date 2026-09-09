@@ -204,11 +204,14 @@ cadence difference.
   implementation, the `links.ts` promotion decision) lands here even though
   the wire calls themselves (Findings 78, 82) are already confirmed working.
 - **6b — Open/save via `FileSystemProvider`.** *Medium* — `readFile`/
-  `writeFile`/`stat` plus the ETag round trip 6a's adapter already exposes;
-  the drag-and-drop "insert a snippet referencing this file" behavior
-  (`getFileStatement`) has no Python equivalent (a `filename … filesrvc …;`
-  statement is SAS syntax) and needs its own small decision — drop it, or
-  find what a Python analogue would even mean — rather than a silent gap.
+  `writeFile`/`stat` plus the ETag round trip (findings 6.1/6.2). **Done**,
+  merged as `phase-6b-open-save`, scoped to the open/save core — see the
+  Runbook block for the three items moved out. The drag-and-drop "insert a
+  snippet referencing this file" behavior (`getFileStatement`) has no direct
+  Python equivalent (a `filename … filesrvc …;` statement is SAS syntax);
+  **decision (Sean, 2026-09-09): build a Python-shaped equivalent, gated on a
+  probe** of how Python inside `PROC PYTHON` reaches a `filesrvc` fileref, and
+  do it in **6c** alongside the drag-and-drop move.
 - **6c — Mutations (create/rename/move/delete).** *Medium* — closely
   confirmed live (Finding 78's link set covers every verb here); the open
   upload/download scope question above most naturally lands in this slice
@@ -300,16 +303,42 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   and a child folder, nested folder). Real user name, folder GUIDs and
   hostname replaced with synthetic-but-faithful values.
 
-☐ **6b — Open/save via `FileSystemProvider`.**
+☑ **6b — Open/save via `FileSystemProvider`.** Merged as `phase-6b-open-save`.
+Scoped down at slice start (Sean, 2026-09-09) to the open/save core; three
+items moved to the slices that give them a reason to exist — see the struck
+lines below.
 
-- ☐ `readFile`/`writeFile`/`stat` against the adapter's `getContentOfUri`/
-  `updateContentOfItem`/ETag pattern.
-- ☐ Decide the drag-and-drop snippet-insert question (Plan, above) —
-  drop the feature, or design a Python-shaped equivalent — rather than
-  leaving it an implicit gap.
-- ☐ `workspace.registerFileSystemProvider` + the read-only
-  `TextDocumentContentProvider` scheme for recycle-bin content, mirroring
-  upstream's `sasContentReadOnly` pattern.
+- ☑ `readFile`/`writeFile`/`stat` via a new `sasContent:` `FileSystemProvider`
+  (`src/content/contentFileSystem.ts`, a `vscode` shell) over three new
+  `vscode`-free `ContentAdapter` methods — `statFile`, `readFileContent`,
+  `writeFileContent` — on the mutating arm added to `src/content/client.ts`
+  (`rawBody`/`contentType`/`If-Match`; response `etag`/`lastModified`/`rawBody`).
+  Findings 6.1/6.2: the file resource carries `content`/`updateContent`
+  relations at `${self}/content`, `PUT` needs `If-Match` (bare ⇒ `428`, stale ⇒
+  `412`), and a successful `PUT` returns a fresh `ETag`. `writeFileContent`
+  re-reads the ETag with a `HEAD` immediately before the `PUT` — the same
+  "re-read before mutate" choice `src/compute/fileref.ts`/`files.ts` make — and
+  a `412`/`428` surfaces to the user as a "changed on the server, reopen it"
+  conflict through the returning `localiseContentProblem` seam
+  (`src/content/messages.ts`).
+- ☑ `workspace.registerFileSystemProvider("sasContent", …)` + the
+  `onFileSystem:sasContent` activation event. A tree file leaf
+  (`NodePresentation.openable` — an ordinary `file`, never a `dataFlow`) gets a
+  `resourceUri` and a `vscode.open` command pointed at its
+  `sasContent:/<name>?id=<resourceHref>` URI (`src/content/uri.ts`).
+- ☑ ~~The read-only `TextDocumentContentProvider` `sasContentReadOnly` scheme
+  for recycle-bin content~~ — **moved to 6d.** Nothing in 6b views recycled
+  content; the scheme belongs with the recycle bin it exists for.
+- ☑ ~~Decide the drag-and-drop snippet-insert question~~ — **moved to 6c.**
+  Decision (Sean, 2026-09-09): build a Python-shaped equivalent of upstream's
+  `filename … filesrvc …;` insert, **gated on a probe** of how Python inside
+  `PROC PYTHON` reads a `filesrvc` fileref / a SAS Content file. It shares the
+  `DataTransfer` wiring with 6c's existing drag-and-drop move item, so it rides
+  there rather than gating open/save.
+- ☑ ~~`getParent` / `TreeView.reveal` + a probe to pin finding 101's
+  `ancestors` shape~~ — **moved to 6c.** Nothing reveals in an open/save slice;
+  the first real caller is "select the item you just created or moved", so the
+  `ancestors` probe rides with 6c's probe pass.
 
 ☐ **6c — Mutations (create/rename/move/delete).**
 
@@ -329,6 +358,19 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   deferred to Phase 11.
 - ☐ Drag-and-drop move/create-from-local-file, mirroring
   `handleContentItemDrop`/`handleFolderDrop`/`uploadUrisToTarget` in shape.
+- ☐ **Drag-a-file-into-the-editor snippet (moved from 6b).** Python-shaped
+  equivalent of upstream's `getFileStatement` (`filename … filesrvc …;`).
+  **Probe first:** how does Python running under `PROC PYTHON` read a
+  `filesrvc` fileref / a SAS Content file — a resolvable path in the Python
+  process, or bytes handed across the `SAS` bridge? No unprobed guess goes in
+  the snippet template. Shares the `DataTransfer` wiring with the move item
+  above.
+- ☐ **`getParent` / `TreeView.reveal` + the finding-101 `ancestors` probe
+  (moved from 6b).** The first caller is "reveal the item just created or
+  moved". `GET /folders/ancestors?childUri=…` returned `406` under the
+  collection media type and `{}` under `application/json` in finding 101 —
+  pin the real shape here before iterating it the way upstream's
+  `getParentOfItem` does.
 
 ☐ **6d — Favourites and recycle bin.**
 
@@ -346,6 +388,10 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   confirm upstream's own "no link ⇒ can't restore, don't offer the command"
   handling is the right behaviour here too, rather than a masked defect.
 - ☐ Empty-recycle-bin command.
+- ☐ **The read-only `sasContentReadOnly` `TextDocumentContentProvider` scheme
+  (moved from 6b).** Lets a recycled file's content open read-only, mirroring
+  upstream's `sasContentReadOnly` pattern — it only has a caller once the
+  recycle bin is browsable.
 
 ---
 
@@ -483,14 +529,14 @@ details: ["path: …", "correlator: …"] }` — the finding-17 envelope
 the link-derived `Accept` (or none) and reads the error envelope from
 whatever body a non-2xx carries, exactly as `src/compute/client.ts` does.
 
-**Finding 101 — `ancestors` shape not pinned; `getParent` deferred to 6b.**
+**Finding 101 — `ancestors` shape not pinned; `getParent` deferred to 6c.**
 `GET /folders/ancestors?childUri=…` (the `ancestors` relation) answered **406**
 under `Accept: application/vnd.sas.collection+json` and, under `Accept:
 application/json`, returned an **empty object `{}`** for a file directly under
-My Folder — not the array upstream's `getParentOfItem` iterates. 6a-ii does
-**not** implement `getParent` (only `TreeView.reveal` needs it, and nothing
-reveals in a read-only tree), so this is left for 6b to pin with its own
-probe when `reveal` is actually wired.
+My Folder — not the array upstream's `getParentOfItem` iterates. Neither 6a-ii
+nor 6b implements `getParent` (only `TreeView.reveal` needs it, and nothing
+reveals in a browse/open/save flow), so this is left for 6c to pin with its own
+probe when `reveal` is actually wired — see the 6b Runbook block.
 
 **Not probed this session, left open:** the Files service's `rawUpload`
 `POST` (file creation) — a mutating call, out of scope for a read-only
@@ -498,3 +544,67 @@ scoping pass per this project's own probe-safety rule; the folder/file
 rename-validation `PUT` endpoints; and the `RecycleResource` `PATCH`
 relation Finding 78 turned up. All three are 6a/6c/6d implementation-time
 probes, not settled here.
+
+---
+
+### Numbering changed here: `phase.n` from now on
+
+Findings **1–101 keep their flat global numbers** (this file's 78–82 and
+97–101 among them — do not renumber them). From 6b onward a new Phase 6
+finding is **`6.n`**, counting from 1, and Phase 7's are **`7.n`** — so two
+branches working different phases in parallel can never claim the same number.
+Cite an earlier finding in whatever form it carries (`finding 82`,
+`finding 6.1`). Settled with Sean 2026-09-09; see `CLAUDE.md` and `STATUS.md`.
+
+_Findings 6.1–6.2 ran 2026-09-09 against `verde` (Viya 4) via the
+`viya-api-probe` skill, for 6b's open/save path. Read probes (`GET`/`HEAD`)
+were run directly; the write probes (`POST` create, `PUT .../content`) ran
+against a single throwaway file resource created by `POST /files/files`, never
+linked into any folder, and `DELETE`d in the same shell (`GET` after ⇒ `404`).
+Sean approved the mutating run._
+
+**Finding 6.1 — a file resource carries its own `content` / `updateContent`
+relations; the ETag and Last-Modified are headers, not body.**
+`GET /files/files/{id}` (default `Accept`, or `application/vnd.sas.file+json` —
+`application/json` also works) → `200`
+`application/vnd.sas.file+json;version=1`, with `ETag` (a short quoted opaque
+token, e.g. `"mtugx7s6"` — no `W/` prefix) and `Last-Modified` as **response
+headers**, never in the JSON. Body fields the adapter reads: `size`,
+`creationTimeStamp`, `modifiedTimeStamp`; also present `name`, `encoding`,
+`contentType` (`"application/x-python; charset=UTF-8"` for a `.py`),
+`typeDefName` (`file_py`). The `links` array carries `self`, `alternate`
+(`application/vnd.sas.summary`), `patch`, `update` (metadata `PUT`), `delete`,
+**`content`** (`GET` → `/files/files/{id}/content`), **`updateContent`** (`PUT`
+→ `/files/files/{id}/content`, `type: */*`), `copyFile`, `create`. So the
+tree *member*'s `getResource` (finding 99) points only at the bare resource,
+but the resource representation itself blesses `${self}/content` for both read
+and write — 6b composes that suffix rather than spend the round trip, the same
+trade `${uri}/members` already makes.
+`GET /files/files/{id}/content` → `200`, `Content-Type`
+`application/x-python;charset=UTF-8`, the **same `ETag`/`Last-Modified`** as the
+resource, plus `Content-Disposition: attachment; filename="…"` and
+`Content-Length`. **`HEAD` on `…/content`** returns those same three headers
+with no body — which is what 6b's `writeFileContent` uses for its pre-write
+ETag re-read, so a large file is not pulled back just to read a header.
+
+**Finding 6.2 — `PUT .../content` is a strict optimistic-concurrency endpoint;
+content-type is not validated; success returns a fresh ETag.**
+
+| Preconditions on the `PUT` | Result |
+|---|---|
+| none | **`428` Precondition Required**, `application/vnd.sas.error+json`, `errorCode 42801`, message *"One of the following request header fields is required: `If-Match` or `If-Unmodified-Since`."* |
+| `If-Match: "<stale>"` | **`412` Precondition Failed**, `errorCode 0`, message names both the sent value and the resource's real ETag |
+| `If-Match: <current>` + `Content-Type: text/plain` (deliberately wrong) | **`200`** — the content type is **not** checked against the registered type; the write took effect |
+| `If-Match: <current>` + `Content-Type: application/x-python` | **`200`**, body = the full updated `application/vnd.sas.file+json` representation, **fresh `ETag` + `Last-Modified` in the response headers** |
+| `If-Unmodified-Since: <far past>` only, no `If-Match` | **`412`** — honoured as a standalone precondition (matches the `428` message) |
+
+So the FileSystemProvider: `writeFileContent` sends `If-Match` with a
+freshly-`HEAD`-read ETag; a `200` means the save is done and no follow-up `GET`
+is needed; a `412`/`428` is returned unchanged as `content-rejected` and
+`localiseContentProblem` turns status `412`/`428` into a "this file changed on
+the server, reopen it" message. The `Content-Type` sent is the file's real
+media type (echoed from the read) even though it is not enforced. `428` should
+not occur while the provider always sends `If-Match`, but is handled for
+defence. Creating a file (`POST /files/files?typeDefName=file_py` with
+`Content-Disposition` + raw body) returns `201` with the same representation
+shape — noted for 6c; the `#rawUpload` fragment upstream uses is not required.

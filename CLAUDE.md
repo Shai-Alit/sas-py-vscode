@@ -198,6 +198,17 @@ findings** section, in the same pull request as the code relying on it. A value
 it supersedes gets swept out of every place it was written down — see "Every
 claim carries its evidence" below.
 
+**Finding numbers are per-phase: `<phase>.<n>`.** A new finding is numbered
+`Finding 6.1`, `Finding 7.3`, … — `<n>` counting from 1 within that phase's
+`docs/phases/phase-N.md`. This is what lets two branches work different phases
+at once without both claiming the same number. **Findings 1–101 predate the
+scheme (settled with Sean 2026-09-09) and keep their flat numbers — never
+renumber them.** When you cite an earlier finding, use whatever form it
+carries (`finding 82`, `finding 6.1`). When you add findings to a phase,
+continue that phase's `<phase>.<n>` sequence from its current maximum; if a
+parallel branch on the same phase races you to a number, renumber yours before
+merge (the flat-era hazard that motivated this still applies within a phase).
+
 ## Verification is proportional to the change
 
 Run only the checks a change can plausibly fail. A prose, comment or doc-string

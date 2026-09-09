@@ -18,11 +18,11 @@
  * VS Code `TreeDataProvider` in `src/content/contentTree.ts` talks to this
  * class directly; the HTTP-boundary test seam is a fake {@link ContentClient}.
  *
- * ## Two paths this module composes, and why that is not an ADR-0010 breach
+ * ## Three paths this module composes, and why that is not an ADR-0010 breach
  *
  * ADR-0010 says navigate by relation, not by a path this project wrote. This
- * module composes exactly two, both of which the Folders service's own link
- * documents make load-bearing and upstream relies on identically:
+ * module composes exactly three, each of which a link the deployment hands back
+ * makes load-bearing and upstream relies on identically:
  *
  * - **`GET /folders/folders/@myFavorites`** (and `@myFolder`, `@myRecycleBin`)
  *   — the delegate-folder mechanism. There is no link to these; the `@name`
@@ -32,11 +32,21 @@
  *   followed; a folder *member* record does not (finding 99), and its
  *   children are reached by composing `members` onto its `uri`, exactly as
  *   `RestContentAdapter.generatedMembersUrlForParentItem` does.
+ * - **`${fileResourceHref}/content`** for a file's bytes. The tree *member*
+ *   record carries only `getResource` → the file resource (finding 99); the
+ *   file resource representation itself carries `content` (GET) and
+ *   `updateContent` (PUT) relations, both at exactly `${self}/content`
+ *   (finding 6.1). {@link ContentAdapter.readFileContent} /
+ *   {@link ContentAdapter.writeFileContent} compose that suffix rather than
+ *   spend a round trip reading the representation first — the same trade
+ *   `${uri}/members` above makes, and upstream's `getContentOfUri` composes
+ *   the identical string.
  *
- * The query string (`limit`, `filter`) is appended to whichever href results.
- * The filter value is sent **raw** — `in(contentType,'file',…)` with its
- * quotes and parentheses intact — matching upstream and what the live probe
- * accepted (findings 98/99); `resolveHref` deliberately does not re-encode it.
+ * On the folder paths the query string (`limit`, `filter`) is appended to
+ * whichever href results. The filter value is sent **raw** —
+ * `in(contentType,'file',…)` with its quotes and parentheses intact — matching
+ * upstream and what the live probe accepted (findings 98/99); `resolveHref`
+ * deliberately does not re-encode it.
  *
  * ## No `sortBy`, so no cadence branch
  *
@@ -83,6 +93,43 @@ import {
  * not a case this tree is sized for.
  */
 const MEMBER_LIMIT = 1_000_000;
+
+/** The relation a file resource representation carries for reading its bytes,
+ * and — composed the same way — the suffix this module appends to a member's
+ * own `uri` to reach them (finding 6.1). `GET`. */
+const CONTENT_REL = "content";
+
+/** The relation a file resource representation carries for replacing its bytes
+ * (finding 6.1). `PUT`, at `${self}/content`. */
+const UPDATE_CONTENT_REL = "updateContent";
+
+/**
+ * The response-body cap for a file read, well above the transport's 1 MiB
+ * default. A `.py` past 10 MiB is not something this extension can usefully put
+ * in an editor, and the transport rejecting it there surfaces as a clear
+ * "could not read" rather than a silently truncated buffer.
+ */
+export const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
+
+/** The `Content-Type` sent on a write when the preceding read did not report
+ * one. Finding 6.2: the Files service does not validate it, so this only has to
+ * be a sane default, not the true type. */
+const DEFAULT_CONTENT_TYPE = "text/plain";
+
+/** A file's size and timestamps, for a `vscode.FileStat`. Epoch milliseconds;
+ * `undefined` where the representation gave nothing parseable. */
+export interface FileStat {
+  readonly size: number;
+  readonly createdAt: number | undefined;
+  readonly modifiedAt: number | undefined;
+}
+
+/** A file's bytes plus the entity tag a later conditional write sends back. */
+export interface FileContent {
+  readonly bytes: Uint8Array;
+  readonly etag: string | undefined;
+  readonly contentType: string | undefined;
+}
 
 export class ContentAdapter {
   constructor(private readonly client: ContentClient) {}
@@ -209,6 +256,145 @@ export class ContentAdapter {
 
     return undefined;
   }
+
+  /**
+   * A file's size and timestamps — `GET` on the file resource itself.
+   *
+   * `vscode` calls `stat` before every open and before every save, so this is
+   * the request that keeps the editor's "changed on disk" detection honest: the
+   * `modifiedAt` it returns comes from the `Last-Modified` header when the
+   * deployment sent one (finding 6.1), falling back to the representation's own
+   * `modifiedTimeStamp`.
+   */
+  async statFile(
+    resourceHref: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<FileStat>> {
+    const result = await this.client.send({
+      link: { rel: SELF_REL, href: resourceHref },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    const body: unknown = result.value.body;
+    if (typeof body !== "object" || body === null) {
+      return malformed(
+        result.value,
+        "a file representation",
+        "and the body was not an object",
+      );
+    }
+    const raw = body as Record<string, unknown>;
+    return {
+      ok: true,
+      value: {
+        size: typeof raw.size === "number" ? raw.size : 0,
+        createdAt: parseTimestamp(raw.creationTimeStamp),
+        modifiedAt:
+          parseTimestamp(result.value.lastModified) ??
+          parseTimestamp(raw.modifiedTimeStamp),
+      },
+    };
+  }
+
+  /**
+   * A file's bytes, exactly as the deployment sent them.
+   *
+   * Composes `${resourceHref}/content` (finding 6.1's `content` relation) and
+   * reads `rawBody`, never `.text` — a file this tree opens is usually text,
+   * but the transport's UTF-8 decode is lossy for one that is not, and the
+   * editor is entitled to the real bytes. The returned `etag` is what
+   * {@link ContentAdapter.writeFileContent} would send as `If-Match`, though it
+   * re-reads its own rather than trust one carried this far.
+   */
+  async readFileContent(
+    resourceHref: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<FileContent>> {
+    const result = await this.client.send({
+      link: { rel: CONTENT_REL, href: `${resourceHref}/content` },
+      maxBodyBytes: MAX_FILE_CONTENT_BYTES,
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    if (result.value.rawBody === undefined) {
+      return malformed(
+        result.value,
+        "a file's content",
+        "and the transport returned no raw bytes for it",
+      );
+    }
+    return {
+      ok: true,
+      value: {
+        bytes: result.value.rawBody,
+        etag: result.value.etag,
+        contentType: result.value.contentType,
+      },
+    };
+  }
+
+  /**
+   * Replace a file's bytes, guarded by a fresh `If-Match`.
+   *
+   * Two requests: a `HEAD` of `${resourceHref}/content` for the current ETag
+   * and content-type, then a `PUT` of the same href carrying them. Re-reading
+   * rather than accepting an ETag the editor held since it opened the file is
+   * the choice `src/compute/files.ts` and `fileref.ts` both make and document —
+   * nothing has measured that an older ETag is still current. `HEAD`, not
+   * `GET`: finding 6.1 confirmed it returns the same `ETag`/`Last-Modified`/
+   * `Content-Type` with no body, so this costs nothing and cannot trip the
+   * transport's response-size cap on a large file the way pulling its whole
+   * content back would. Finding 6.2: the `PUT` needs `If-Match` (a bare one is
+   * `428`), the sent `Content-Type` is not validated but is echoed for
+   * correctness, and a stale ETag comes back as `412` — returned here unchanged
+   * as `content-rejected` for the caller to read as a conflict.
+   */
+  async writeFileContent(
+    resourceHref: string,
+    bytes: Uint8Array,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<void>> {
+    const current = await this.client.send({
+      link: {
+        rel: CONTENT_REL,
+        href: `${resourceHref}/content`,
+        method: "HEAD",
+      },
+      ...withSignal(signal),
+    });
+    if (!current.ok) return current;
+    if (current.value.etag === undefined) {
+      return malformed(
+        current.value,
+        "a file's content",
+        "and the response carried no ETag to write it back with",
+      );
+    }
+
+    const put = await this.client.send({
+      link: {
+        rel: UPDATE_CONTENT_REL,
+        href: `${resourceHref}/content`,
+        method: "PUT",
+      },
+      rawBody: bytes,
+      contentType: current.value.contentType ?? DEFAULT_CONTENT_TYPE,
+      etag: current.value.etag,
+      ...withSignal(signal),
+    });
+    if (!put.ok) return put;
+    return { ok: true, value: undefined };
+  }
+}
+
+/** An ISO-8601 or HTTP-date string as epoch milliseconds, or `undefined` if it
+ * is neither a string nor a date `Date.parse` understands. */
+function parseTimestamp(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? undefined : ms;
 }
 
 /** Folders before files; within a group, by name, case-insensitively. */

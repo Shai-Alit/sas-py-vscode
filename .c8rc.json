@@ -15,7 +15,9 @@
     "src/compute/messages.ts",
     "src/compute/sessionManager.ts",
     "src/content/contentExplorer.ts",
+    "src/content/contentFileSystem.ts",
     "src/content/contentTree.ts",
+    "src/content/messages.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",
@@ -37,6 +39,6 @@
   "check-coverage": true,
   "lines": 94,
   "statements": 94,
-  "functions": 93,
+  "functions": 94,
   "branches": 95
 }

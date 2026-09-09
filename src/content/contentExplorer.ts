@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Wires the "SAS Content" view into the window: the tree data provider, the
- * activity-bar view, the refresh command, and the auth events the tree
- * refreshes on.
+ * Wires the "SAS Content" surface into the window: the tree data provider, the
+ * activity-bar view, the `sasContent:` filesystem provider (6b), the refresh
+ * command, and the auth events the tree refreshes on.
  *
  * This file is a registrar with no branch in it — the adapter lifecycle (build,
  * endpoint-cache, sign-out clear) and the silent token flow live in
@@ -35,7 +35,9 @@ import {
   type ContentSessionDeps,
   type SessionLike,
 } from "./contentSession";
+import { SasContentFileSystemProvider } from "./contentFileSystem";
 import { SasContentTreeProvider } from "./contentTree";
+import { CONTENT_SCHEME } from "./uri";
 
 /** The id of the tree view, matching `package.json`'s `contributes.views`. */
 export const CONTENT_VIEW_ID = "pythonOnViya.contentExplorer";
@@ -89,8 +91,15 @@ export function registerContentExplorer(
     getSession: deps.getSession ?? defaultGetSession,
   });
 
-  const provider = new SasContentTreeProvider(
-    () => session.adapterFor(profiles.active()?.profile.endpoint),
+  // Both the tree and the filesystem provider read the adapter for whatever
+  // deployment is active right now; `ContentSession` hands back the same
+  // instance until the endpoint changes.
+  const adapterForActiveProfile = () =>
+    session.adapterFor(profiles.active()?.profile.endpoint);
+
+  const provider = new SasContentTreeProvider(adapterForActiveProfile, log);
+  const fileSystem = new SasContentFileSystemProvider(
+    adapterForActiveProfile,
     log,
   );
 
@@ -100,6 +109,14 @@ export function registerContentExplorer(
 
   context.subscriptions.push(
     provider,
+    fileSystem,
+    // `sasContent:` files are editable (`isReadonly: false`); the read-only
+    // recycle-bin scheme is a separate registration in 6d. Case-sensitive
+    // because the id in the query, not the path, identifies the file.
+    vscode.workspace.registerFileSystemProvider(CONTENT_SCHEME, fileSystem, {
+      isCaseSensitive: true,
+      isReadonly: false,
+    }),
     view,
     vscode.commands.registerCommand(
       "pythonOnViya.refreshContentExplorer",

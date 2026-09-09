@@ -14,6 +14,7 @@
  */
 
 import {
+  FILE_CONTENT_TYPE,
   isContainer,
   isSasContentRoot,
   typeNameOf,
@@ -31,6 +32,12 @@ export interface NodePresentation {
   readonly label: string;
   /** `true` → the tree shows an expand chevron (collapsed). */
   readonly expandable: boolean;
+  /**
+   * `true` → a file leaf the `sasContent:` `FileSystemProvider` can open, so
+   * `contentTree.ts` gives the node a `vscode.open` command. Only an ordinary
+   * `file` member qualifies; a folder, the root, and a `dataFlow` leaf do not.
+   */
+  readonly openable: boolean;
   /** A `vscode.ThemeIcon` id — no bundled SVGs. */
   readonly icon: string;
   readonly contextValue: string;
@@ -42,6 +49,7 @@ export function nodePresentationOf(item: ContentItem): NodePresentation {
   return {
     label: item.name,
     expandable: container,
+    openable: !container && typeNameOf(item) === FILE_CONTENT_TYPE,
     icon: iconIdFor(item, container),
     contextValue: isSasContentRoot(item)
       ? CONTEXT_ROOT

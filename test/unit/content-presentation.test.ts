@@ -26,6 +26,7 @@ describe("content/presentation nodePresentationOf", () => {
     assert.deepEqual(nodePresentationOf(SAS_CONTENT_ROOT), {
       label: "SAS Content",
       expandable: true,
+      openable: false,
       icon: "root-folder",
       contextValue: CONTEXT_ROOT,
     });
@@ -51,6 +52,7 @@ describe("content/presentation nodePresentationOf", () => {
     assert.deepEqual(p, {
       label: "Products",
       expandable: true,
+      openable: false,
       icon: "folder",
       contextValue: CONTEXT_FOLDER,
     });
@@ -65,15 +67,30 @@ describe("content/presentation nodePresentationOf", () => {
     assert.equal(p.contextValue, CONTEXT_FOLDER);
   });
 
-  it("presents a file member as a non-expandable leaf", () => {
+  it("presents a file member as a non-expandable, openable leaf", () => {
     const p = nodePresentationOf(
       item({ name: "analysis.py", type: "child", contentType: "file" }),
     );
     assert.deepEqual(p, {
       label: "analysis.py",
       expandable: false,
+      openable: true,
       icon: "file",
       contextValue: CONTEXT_FILE,
     });
+  });
+
+  it("does not mark a folder or a dataFlow leaf openable", () => {
+    assert.equal(
+      nodePresentationOf(item({ type: "child", contentType: "folder" }))
+        .openable,
+      false,
+    );
+    assert.equal(
+      nodePresentationOf(item({ type: "child", contentType: "dataFlow" }))
+        .openable,
+      false,
+    );
+    assert.equal(nodePresentationOf(item({ type: "folder" })).openable, false);
   });
 });

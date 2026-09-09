@@ -159,6 +159,11 @@ const CONTAINER_TYPE_NAMES: ReadonlySet<string> = new Set([
 /** The member `contentType` value that is itself a folder. */
 export const FOLDER_CONTENT_TYPE = "folder";
 
+/** The member `contentType` value for an ordinary file — the one kind of leaf
+ * the `sasContent:` `FileSystemProvider` can open (finding 99). A `dataFlow`
+ * leaf is listed but not openable this way. */
+export const FILE_CONTENT_TYPE = "file";
+
 /**
  * The effective type name of an item — its `contentType` if it is a member
  * record (`type: "child"`), otherwise its `type`. Upstream's `getTypeName`.

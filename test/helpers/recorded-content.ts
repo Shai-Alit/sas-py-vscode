@@ -31,7 +31,12 @@ export interface RecordedContentCall {
 /** A successful JSON reply. */
 export function contentOk(
   body: unknown,
-  init?: { status?: number; contentType?: string },
+  init?: {
+    status?: number;
+    contentType?: string;
+    etag?: string;
+    lastModified?: string;
+  },
 ): ContentResult<ContentResponse> {
   return {
     ok: true,
@@ -39,8 +44,49 @@ export function contentOk(
       status: init?.status ?? 200,
       contentType:
         init?.contentType ?? "application/vnd.sas.collection+json;version=2",
+      ...(init?.etag === undefined ? {} : { etag: init.etag }),
+      ...(init?.lastModified === undefined
+        ? {}
+        : { lastModified: init.lastModified }),
       text: JSON.stringify(body),
       body,
+    },
+  };
+}
+
+/**
+ * A successful raw-bytes reply — what `GET .../content` and a successful
+ * `PUT .../content` return (findings 6.1/6.2). `text` mirrors the bytes so a
+ * route can be asserted either way; `body` is left undefined, as the real
+ * client leaves it for a non-JSON content-type.
+ */
+export function contentBytes(
+  text: string,
+  init?: {
+    status?: number;
+    /** A falsy value (`""`) models the `Content-Type` header being absent,
+     * which is what the real client leaves as `undefined`. */
+    contentType?: string;
+    etag?: string;
+    lastModified?: string;
+  },
+): ContentResult<ContentResponse> {
+  const contentType =
+    init && "contentType" in init
+      ? init.contentType
+      : "application/x-python;charset=UTF-8";
+  return {
+    ok: true,
+    value: {
+      status: init?.status ?? 200,
+      ...(contentType ? { contentType } : {}),
+      ...(init?.etag === undefined ? {} : { etag: init.etag }),
+      ...(init?.lastModified === undefined
+        ? {}
+        : { lastModified: init.lastModified }),
+      text,
+      body: undefined,
+      rawBody: new TextEncoder().encode(text),
     },
   };
 }

@@ -3,13 +3,19 @@
 
 import assert from "node:assert/strict";
 
-import { ContentAdapter } from "../../src/content/adapter";
+import {
+  ContentAdapter,
+  MAX_FILE_CONTENT_BYTES,
+} from "../../src/content/adapter";
+import { type ContentRequest } from "../../src/content/client";
 import {
   isSasContentRoot,
   SAS_CONTENT_ROOT,
   type ContentItem,
 } from "../../src/content/types";
+import { readJsonFixture } from "../helpers/fixtures";
 import {
+  contentBytes,
   contentFail,
   contentFixture,
   contentOk,
@@ -254,6 +260,254 @@ describe("content/adapter", () => {
       const result = await adapter.getChildItems(SAS_CONTENT_ROOT);
       assert.ok(!result.ok);
       assert.equal(result.problem.code, "content-rejected");
+    });
+  });
+
+  describe("statFile / readFileContent / writeFileContent (findings 6.1/6.2)", () => {
+    const FILE_RES = "/files/files/dddddddd-0000-4000-8000-000000000001";
+    const CONTENT = `${FILE_RES}/content`;
+    const fileRep = () => readJsonFixture("content", "file-python.json");
+    const isGet = (href: string, method: string) =>
+      href === CONTENT && method === "GET";
+    const isHead = (href: string, method: string) =>
+      href === CONTENT && method === "HEAD";
+    const isPut = (href: string, method: string) =>
+      href === CONTENT && method === "PUT";
+
+    describe("statFile", () => {
+      it("reads size and timestamps, preferring the Last-Modified header for mtime", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: FILE_RES,
+            reply: contentOk(fileRep(), {
+              contentType: "application/vnd.sas.file+json;version=1",
+              lastModified: "Wed, 07 Jan 2026 08:15:00 GMT",
+            }),
+          },
+        ]);
+        const result = await adapter.statFile(FILE_RES);
+        assert.ok(result.ok);
+        assert.equal(result.value.size, 42);
+        assert.equal(
+          result.value.createdAt,
+          Date.parse("2026-01-05T12:00:00.000Z"),
+        );
+        assert.equal(
+          result.value.modifiedAt,
+          Date.parse("Wed, 07 Jan 2026 08:15:00 GMT"),
+        );
+        assert.deepEqual(calls, [{ href: FILE_RES, method: "GET" }]);
+      });
+
+      it("falls back to the body's modifiedTimeStamp when there is no header", async () => {
+        const { adapter } = adapterWith([
+          { when: FILE_RES, reply: contentOk(fileRep()) },
+        ]);
+        const result = await adapter.statFile(FILE_RES);
+        assert.ok(result.ok);
+        assert.equal(
+          result.value.modifiedAt,
+          Date.parse("2026-01-06T09:30:00.000Z"),
+        );
+      });
+
+      it("returns size 0 and undefined timestamps when the body has none", async () => {
+        const { adapter } = adapterWith([
+          { when: FILE_RES, reply: contentOk({ id: "d", name: "x.py" }) },
+        ]);
+        const result = await adapter.statFile(FILE_RES);
+        assert.ok(result.ok);
+        assert.deepEqual(result.value, {
+          size: 0,
+          createdAt: undefined,
+          modifiedAt: undefined,
+        });
+      });
+
+      it("reports response-malformed when the body is not an object", async () => {
+        const { adapter } = adapterWith([
+          { when: FILE_RES, reply: contentOk("just a string") },
+        ]);
+        const result = await adapter.statFile(FILE_RES);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("passes a client failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: FILE_RES,
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 404 },
+            }),
+          },
+        ]);
+        const result = await adapter.statFile(FILE_RES);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+    });
+
+    describe("readFileContent", () => {
+      it("composes {href}/content, returns the bytes, etag and content-type, raising the body cap", async () => {
+        let seen: ContentRequest | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: isGet,
+            reply: (request) => {
+              seen = request;
+              return contentBytes("print('hi')\n", {
+                etag: '"abc123"',
+                contentType: "application/x-python;charset=UTF-8",
+              });
+            },
+          },
+        ]);
+        const result = await adapter.readFileContent(FILE_RES);
+        assert.ok(result.ok);
+        assert.equal(
+          new TextDecoder().decode(result.value.bytes),
+          "print('hi')\n",
+        );
+        assert.equal(result.value.etag, '"abc123"');
+        assert.equal(
+          result.value.contentType,
+          "application/x-python;charset=UTF-8",
+        );
+        assert.equal(seen?.maxBodyBytes, MAX_FILE_CONTENT_BYTES);
+        assert.deepEqual(calls, [{ href: CONTENT, method: "GET" }]);
+      });
+
+      it("reports response-malformed when the transport returned no bytes", async () => {
+        const { adapter } = adapterWith([
+          { when: isGet, reply: contentOk({ unexpected: "json" }) },
+        ]);
+        const result = await adapter.readFileContent(FILE_RES);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("passes a client failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: isGet,
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+        ]);
+        const result = await adapter.readFileContent(FILE_RES);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+      });
+    });
+
+    describe("writeFileContent", () => {
+      it("HEADs for the ETag then PUTs the bytes with If-Match and the read's content-type", async () => {
+        let put: ContentRequest | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: isHead,
+            reply: contentBytes("", {
+              etag: '"e1"',
+              contentType: "application/x-python;charset=UTF-8",
+            }),
+          },
+          {
+            when: isPut,
+            reply: (request) => {
+              put = request;
+              return contentOk(fileRep(), {
+                contentType: "application/vnd.sas.file+json;version=1",
+                status: 200,
+                etag: '"e2"',
+              });
+            },
+          },
+        ]);
+        const bytes = new TextEncoder().encode("new content\n");
+        const result = await adapter.writeFileContent(FILE_RES, bytes);
+        assert.ok(result.ok);
+        assert.ok(put !== undefined);
+        assert.equal(put.etag, '"e1"');
+        assert.equal(put.contentType, "application/x-python;charset=UTF-8");
+        assert.deepEqual(put.rawBody, bytes);
+        assert.deepEqual(calls, [
+          { href: CONTENT, method: "HEAD" },
+          { href: CONTENT, method: "PUT" },
+        ]);
+      });
+
+      it("defaults the content-type when the pre-read reported none", async () => {
+        let put: ContentRequest | undefined;
+        const { adapter } = adapterWith([
+          {
+            when: isHead,
+            reply: contentBytes("", { etag: '"e1"', contentType: "" }),
+          },
+          {
+            when: isPut,
+            reply: (request) => {
+              put = request;
+              return contentOk(fileRep(), { status: 200 });
+            },
+          },
+        ]);
+        await adapter.writeFileContent(FILE_RES, new Uint8Array());
+        assert.ok(put !== undefined);
+        assert.equal(put.contentType, "text/plain");
+      });
+
+      it("returns response-malformed when the pre-read carried no ETag", async () => {
+        const { adapter, calls } = adapterWith([
+          { when: isHead, reply: contentBytes("") },
+        ]);
+        const result = await adapter.writeFileContent(
+          FILE_RES,
+          new Uint8Array(),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+        // No PUT was attempted.
+        assert.deepEqual(calls, [{ href: CONTENT, method: "HEAD" }]);
+      });
+
+      it("surfaces a 412 from the PUT as content-rejected (the conflict)", async () => {
+        const { adapter } = adapterWith([
+          { when: isHead, reply: contentBytes("", { etag: '"e1"' }) },
+          {
+            when: isPut,
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 412 },
+            }),
+          },
+        ]);
+        const result = await adapter.writeFileContent(
+          FILE_RES,
+          new Uint8Array(),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+        assert.equal(result.problem.error.status, 412);
+      });
+
+      it("passes a failure from the pre-read straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: isHead,
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 404 },
+            }),
+          },
+        ]);
+        const result = await adapter.writeFileContent(
+          FILE_RES,
+          new Uint8Array(),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
     });
   });
 });

@@ -78,7 +78,37 @@ describe("SasContentTreeProvider", () => {
     provider.dispose();
   });
 
-  it("maps a file member to a non-collapsible leaf with no open command", () => {
+  it("maps a file member to a non-collapsible leaf that opens via sasContent:", () => {
+    const { channel } = fakeLog();
+    const provider = new SasContentTreeProvider(
+      () => adapterReturning(okResult([])),
+      channel,
+    );
+    const node = provider.getTreeItem(
+      item({
+        id: "f",
+        name: "a.py",
+        type: "child",
+        contentType: "file",
+        uri: "/files/files/eeeeeeee-0000-4000-8000-000000000001",
+      }),
+    );
+    assert.equal(node.collapsibleState, vscode.TreeItemCollapsibleState.None);
+    assert.equal(node.contextValue, "sasContent:file");
+    assert.ok(node.command);
+    assert.equal(node.command.command, "vscode.open");
+    const openArg: unknown = (node.command.arguments ?? [])[0];
+    assert.ok(openArg instanceof vscode.Uri);
+    assert.equal(
+      openArg.toString(true),
+      "sasContent:/a.py?id=/files/files/eeeeeeee-0000-4000-8000-000000000001",
+    );
+    assert.ok(node.resourceUri instanceof vscode.Uri);
+    assert.equal(node.resourceUri.scheme, "sasContent");
+    provider.dispose();
+  });
+
+  it("leaves a file member with no resolvable href inert", () => {
     const { channel } = fakeLog();
     const provider = new SasContentTreeProvider(
       () => adapterReturning(okResult([])),
@@ -87,9 +117,8 @@ describe("SasContentTreeProvider", () => {
     const node = provider.getTreeItem(
       item({ id: "f", name: "a.py", type: "child", contentType: "file" }),
     );
-    assert.equal(node.collapsibleState, vscode.TreeItemCollapsibleState.None);
-    assert.equal(node.contextValue, "sasContent:file");
     assert.equal(node.command, undefined);
+    assert.equal(node.resourceUri, undefined);
     provider.dispose();
   });
 

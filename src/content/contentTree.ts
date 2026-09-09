@@ -21,15 +21,17 @@
  *
  * ## What this slice does not do
  *
- * No `command` on a file node (opening a remote file needs a
- * `FileSystemProvider`, slice 6b), no `resourceUri`, no `getParent` (only
- * `TreeView.reveal` needs it, and nothing reveals yet), no context-menu
- * actions (mutations are 6c). `contextValue` is set now so 6c's menu `when`
- * clauses do not require touching this file. A failed listing is logged, not
- * shown as a notification per expand — a per-click toast for a folder you
- * cannot read would be noise. The user-facing localisation seam
- * (`localiseContentProblem`) returns with 6b, when an action the user took
- * directly (open, save) can actually fail.
+ * No `getParent` (only `TreeView.reveal` needs it, and nothing reveals yet), no
+ * context-menu actions (mutations are 6c). `contextValue` is set now so 6c's
+ * menu `when` clauses do not require touching this file. A failed *listing* is
+ * logged, not shown as a notification per expand — a per-click toast for a
+ * folder you cannot read would be noise; a failed *open or save* is the
+ * `FileSystemProvider`'s to surface, through `localiseContentProblem`.
+ *
+ * 6b does wire one thing here: an openable file leaf
+ * ({@link NodePresentation.openable}) gets a `resourceUri` and a `vscode.open`
+ * command pointed at its `sasContent:` URI, so a single click opens the remote
+ * file through `src/content/contentFileSystem.ts`.
  */
 
 import * as vscode from "vscode";
@@ -37,7 +39,8 @@ import * as vscode from "vscode";
 import { type ContentAdapter } from "./adapter";
 import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
-import { type ContentItem } from "./types";
+import { resourceHrefOf, type ContentItem } from "./types";
+import { contentUriString } from "./uri";
 
 export class SasContentTreeProvider
   implements vscode.TreeDataProvider<ContentItem>, vscode.Disposable
@@ -81,6 +84,23 @@ export class SasContentTreeProvider
     // id and a member-record id never collide — and the synthetic root's id is
     // a fixed sentinel.
     node.id = item.id;
+
+    // An openable file leaf: one click opens it through the `sasContent:`
+    // FileSystemProvider. `resourceHrefOf` is the member's own `uri`; a member
+    // that somehow carries neither `uri` nor a `self` link is left inert
+    // rather than pointed at a URI with no id.
+    if (shape.openable) {
+      const href = resourceHrefOf(item);
+      if (href !== undefined) {
+        const uri = vscode.Uri.parse(contentUriString(item.name, href));
+        node.resourceUri = uri;
+        node.command = {
+          command: "vscode.open",
+          title: vscode.l10n.t("Open SAS Content File"),
+          arguments: [uri],
+        };
+      }
+    }
     return node;
   }
 

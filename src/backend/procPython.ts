@@ -258,13 +258,14 @@ const FILEREF_NAME_PATTERN = /^PY(\d{6})$/i;
 /** How many fileref names one run will try before giving up.
  *
  * {@link ProcPythonBackend.seedFilerefCounter} normally skips a reattached
- * session's existing `PYnnnnnn` filerefs in a single request, so this bounded
- * retry only ever engages for the residual case: two windows sharing one
- * session (ADR-0012), each with its own counter, drifting onto the same name,
- * or a seed request that failed. Sixteen is far more than that race can
- * realistically need and still a hard stop, so a deployment that answers
- * every `assign` with a `4xx` for some unrelated reason fails the run rather
- * than looping. */
+ * session's existing `PYnnnnnn` filerefs by reading the fileref collection to
+ * its end (`listFilerefNames` pages through `next` — Finding 94), so this
+ * bounded retry only ever engages for the residual case: two windows sharing
+ * one session (ADR-0012), each with its own counter, drifting onto the same
+ * name, or a seed that returned nothing usable (a failed or cancelled listing).
+ * Sixteen is far more than that race can realistically need and still a hard
+ * stop, so a deployment that answers every `assign` with a `4xx` for some
+ * unrelated reason fails the run rather than looping. */
 const MAX_FILEREF_ASSIGN_ATTEMPTS = 16;
 
 /**

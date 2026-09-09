@@ -651,8 +651,12 @@ tag is their first exercise.
   rewrite.
 - **An API reference** — `src/` has no exported surface worth documenting yet,
   so TypeDoc waits for one rather than generating a page of nothing.
-- **Deploying the site** — slice 5c. The `docs` job builds it and uploads it;
-  nothing publishes it.
+- **Deploying the site** — the `docs` job builds it (a dead-internal-link gate)
+  and uploads `site/` as a short-lived artifact for reviewers; nothing
+  publishes it. A hosted site was in slice 5c's original scope but was not
+  built, and is **not currently planned** (Phase 5→6 boundary, 2026-09-09) —
+  pre-1.0 effort is going to features. If revisited it is a standalone task,
+  not a phase slice.
 - **The live tier** — it needs a real Viya deployment and credentials, and it
   never runs in default CI. See `docs/dev/testing.md`.
 - **Caching `.vscode-test`** — the VS Code download is the slowest step in the

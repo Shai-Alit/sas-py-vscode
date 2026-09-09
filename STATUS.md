@@ -1464,6 +1464,39 @@ not a tracked item.
 above, the `claude-review.yml` fix, and a re-read of `PRODUCTION_PLAN.md` §3 to
 confirm the 6→12 order against real post-v0.1.0 demand.
 
+**Phase 5→6 checkpoint closeout, 2026-09-09.**
+- **Manual test pass — done, Sean's run.** Full pass against `verde` (SSO) /
+  `Innov` (SAS corporate creds) with the published `.vsix`. Everything passed
+  **except the 5d-i user-provided-CA row** — no reachable deployment whose chain
+  the OS distrusts; stays deferred, as `phase-5.md`'s 5d-i entry records. Three
+  notes (`docs/dev/manual-test-pass.md` §3/§4):
+  - **Fileref collision after a full VS Code restart — real bug, `fix/` PR
+    before Phase 6.** `src/compute/fileref.ts`'s `listFilerefNames` reads only
+    the first page of the session's fileref collection, so Finding 72's
+    `seedFilerefCounter` under-seeds when a reattached session holds >1 page of
+    `PYnnnnnn` names and the 16-attempt retry can't close the gap
+    (`The fileref "py000026" already exists … 16 names tried`). Disconnect →
+    Connect clears it (new session). Fix = paginate the listing. Standalone
+    `fix/` PR, not a phase slice.
+  - **Reload-reconnect may re-prompt for auth** on a password-backed profile
+    (profile B did; SSO profile A did not) — expected IdP behaviour, not a
+    defect; §4 wording updated.
+  - **Accounts menu shows both profiles as separate rows** when their auth
+    flows differ — refines [#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42)
+    (collapse is `account.label`-keyed), and the rows don't identify the
+    extension or the profile (`Sean Ford (SAS Viya)` vs `sean.ford@sas.com
+    (Microsoft)`). Carried to **Phase 11** (`docs/phases/phase-11.md`).
+- **Hosted docs site — not planned.** It was in 5c's original scope but never
+  built; the last 10% (Pages deploy, `base` path, `srcExclude` for `phases/**`,
+  a canonical-URL ADR) is an independently-breakable surface not worth it pre-1.0.
+  Recorded as a standalone task, not a phase slice; the misleading "slice 5c"
+  notes in `docs/.vitepress/config.mjs` and `docs/dev/ci.md` are corrected.
+- **`claude-review.yml` fix — dropped.** Both AI reviewers ran clean on #133;
+  the earlier install-step failure was a one-off, not worth chasing.
+- **New issues held.** Per Sean, no new GitHub issues filed while the project is
+  pre-release / invite-only — the fileref bug is a `fix/` PR, the accounts-menu
+  gap lives in `phase-11.md`. Revisit issue tracking once past "preview".
+
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
 > only file every session should need to open to know where to start — open the

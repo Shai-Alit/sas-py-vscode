@@ -16,7 +16,13 @@
  * rides along with a build we want anyway rather than arriving as a second tool
  * that has to be taught the same conventions.
  *
- * Deploying the site is Phase 5c. This slice only builds it.
+ * The build runs in CI as a link-check gate; nothing deploys the output.
+ * A hosted site was in 5c's original scope but was not built, and is
+ * deliberately not planned as of the Phase 5→6 boundary (2026-09-09) —
+ * pre-1.0 effort goes to features. If it is revisited it is a standalone
+ * task, not a phase slice: it needs a Pages deploy workflow, a `base` path
+ * (project Pages serve from `/sas-py-vscode/`), an `srcExclude` for the
+ * internal `phases/**` planning docs, and an ADR line for the canonical URL.
  */
 
 import { defineConfig } from "vitepress";

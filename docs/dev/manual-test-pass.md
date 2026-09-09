@@ -19,7 +19,19 @@ and the ADRs they cite. Each **Expect** line is an assertion, not a
 documentation claim: if one turns out wrong, that is either a bug or a stale line
 here, and the fix is whichever it is.
 
-**Last full pass: 2026-08-27**, against live `verde`/`Innov` profiles with the
+**Last full pass: 2026-09-09** (Phase 5→6 boundary), against live `verde` (SSO)
+and `Innov` (SAS corporate creds) profiles with the published `.vsix`. **All
+sections passed except §3's user-provided-CA row (5d-i)**, which needs a
+deployment whose chain the OS does not trust — none is available, and it stays
+`[ ]` and deferred, as `phase-5.md`'s 5d-i entry already records. Three notes,
+none blocking Phase 6: a nuance in §4 (reload-reconnect may re-prompt for auth
+on a password-backed profile — expected, not a defect), a **bug** in §4 (fileref
+collision after a full VS Code restart on a session with many accumulated
+filerefs — Finding 72's fix does not paginate; a standalone `fix/` PR lands
+before Phase 6), and an Accounts-menu observation in §3 carried to Phase 11. The
+2026-08-27/30/31 history below is kept for context.
+
+**Earlier full pass: 2026-08-27**, against live `verde`/`Innov` profiles with the
 packaged `.vsix` — the first full run since Phase 3 closed. Findings triaged
 2026-08-28; three confirmed regressions it found are tracked as Phase 3's
 **3f** slice in `docs/phases/phase-3.md` rather than repeated here — this
@@ -91,13 +103,12 @@ and the live-Viya probe.
 banner-and-`>>>` question is now **closed** — probed against `verde`
 (Finding 93, `docs/phases/phase-5.md`): no `PROC PYTHON` option suppresses the
 interpreter banner or the `>>>` prompts, so it is accepted as known behaviour
-and the §6 boxes are reworded, not left as open contradictions. **Still
-outstanding: a full pass has not run since 2026-08-27** (end of Phase 3). All
-of Phase 4 and Phase 5 — including the first published releases v0.1.0 / v0.1.1
-— had only targeted re-checks (4c, 4d, 5d-iii, 5d-iv). A full re-run against
-`verde` / `Innov` with the published `.vsix`, plus the still-`[ ]` 5d-i
-user-provided-CA row (needs a deployment the OS does not already trust), is
-Sean's to run before Phase 6 coding starts.
+and the §6 boxes are reworded, not left as open contradictions. **The full
+pass ran 2026-09-09** (see the "Last full pass" note above) — the first since
+2026-08-27; all of Phase 4 and Phase 5 in between had only targeted re-checks.
+Everything passed bar the 5d-i CA row (no environment); three notes are folded
+into §3/§4, one of them a fileref-pagination bug getting a standalone `fix/` PR
+before Phase 6.
 
 ## How to use this
 
@@ -197,7 +208,20 @@ The profile _model_ is validated whether you use the commands or hand-edit
   — clicking **Run File** after sign-out silently fails instead ("The program
   could not be sent to SAS Viya…", nothing in the log, no re-auth prompt).
   Root-caused and tracked as Phase 3's **3f** slice (`docs/phases/phase-3.md`)
-  — re-run this item once that lands.
+  — re-run this item once that lands. **Retested 2026-09-09: passes** — Sign
+  Out then Run File takes you back through auth.
+- [x] **(live) Accounts menu with two profiles signed in** — sign into two
+  profiles whose auth flows differ (e.g. an SSO Viya profile and a
+  corporate-creds one).
+  **Expect:** both appear as separate rows. **Observed 2026-09-09:** they do —
+  refining [#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42), which is
+  about the collapse that happens only when two profiles produce the *same*
+  `account.label`. Two open points, not defects for this box: the rows do not
+  identify themselves as **Python on Viya** or say which profile each is (one
+  showed as `Sean Ford (SAS Viya)`, the other as `sean.ford@sas.com
+  (Microsoft)` — the parenthetical is the auth provider's name, and the
+  `(Microsoft)` label for a corporate-creds profile is itself confusing). Both
+  carried to **Phase 11** (parity gaps) — see `docs/phases/phase-11.md`.
 - [x] **(live) (slow) Proxy / internal CA** — only if applicable: sign in as
   normal.
   **Expect:** it completes; proxy and OS/internal certificate trust are
@@ -251,6 +275,25 @@ Reload reconnects; it does not restart.
   backstop. **Re-verified live 2026-08-31** against a `.vsix` from this
   branch: `k = 99`, reload, `print(k)` returns `99` on the first attempt
   with no delay.
+  **Full-pass re-run 2026-09-09** (published `.vsix`, profiles A `verde`/SSO
+  and B `Innov`/SAS-corporate-creds): reload-with-state passes on both, with
+  **one nuance and one bug.**
+  - *Nuance (not a defect):* the reconnect after reload may need re-auth,
+    depending on the profile's auth flow. Profile B (password-backed corporate
+    creds) re-opened the browser sign-in on the `print(k)` after reload, then
+    returned `99` cleanly with no delay; profile A (SSO, no password) reconnected
+    silently and printed `99`. The re-auth is the IdP's, not the extension's.
+  - *Bug (tracked — standalone `fix/` PR before Phase 6):* after **fully
+    quitting and reopening VS Code** (not a reload) on a folder whose session had
+    accumulated many runs — the §6 corpus plus more — the first run failed with
+    `The fileref "py000026" already exists … (16 names tried, all already
+    assigned)`. Root cause: `listFilerefNames` (`src/compute/fileref.ts`) reads
+    only the first page of the session's fileref collection, so
+    `seedFilerefCounter` (Finding 72's fix) under-seeds when the reattached
+    session holds more than one page of `PYnnnnnn` names, and the 16-attempt
+    retry cannot close the gap. **Disconnect → Connect** clears it (it opens a
+    brand-new session). This is Finding 72's fix being incomplete for the
+    many-filerefs reattach case.
 - [x] **(live) Disconnect ends it now** — run **Disconnect from SAS Viya**, then
   run selection `print(k)` again.
   **Expect:** a fresh interpreter opens and `k` is gone (`NameError`).

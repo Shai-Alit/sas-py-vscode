@@ -228,9 +228,11 @@ async function sendRequest(
 
   // The write arm. `rawBody` only — this client never serialises a JSON body,
   // because the one mutation it makes (finding 6.1's `updateContent`) sends a
-  // file's bytes. `If-Match` is set only when the caller holds an ETag; finding
-  // 6.2 measured a bare `PUT .../content` as `428`, so the adapter reads a
-  // fresh one immediately before writing rather than let that happen.
+  // file's bytes. `If-Match` is set only when the caller passes an `etag`, and
+  // the caller always does: finding 6.2 measured a bare `PUT .../content` as
+  // `428`, and `src/content/contentFileSystem.ts` keeps that from happening by
+  // refusing the save outright when it holds no ETag for the file — it never
+  // lets a preconditionless `PUT` reach this point.
   let body: Uint8Array | undefined;
   if (request.rawBody !== undefined) {
     body = request.rawBody;

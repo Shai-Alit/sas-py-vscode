@@ -305,6 +305,24 @@ fixture.
      investigate, not a papered-over client hack. Left open as a **probe
      follow-up**; `phase-3.md`'s Finding 74 entry carries the same note.
 
+     **Probed and closed 2026-09-09 (Phase 5→6 housekeeping) — Finding 93,
+     below.** The premise above ("only on the error path") is wrong, per the
+     5d-iii live pass's own refinement further down this entry: the banner
+     tracks interpreter *init* (every Run File, plus the first Run Selection
+     after connect/reset) and `>>>` shows on *every* run. Finding 93 pulled the
+     deployment's authoritative `PROC PYTHON` option list off a syntax-error
+     enumeration — `COMMAND ECHO INFILE RESTART SRC TERMINATE TIMEOUT` — and
+     **none suppresses the CPython startup banner or the `>>>` prompts**; `ECHO`
+     only adds a source echo. There is no source-side fix to wait for. Decision
+     (Sean, 2026-09-09): **accept and document** — `manual-test-pass.md` §6 is
+     reconciled to expect the banner/`>>>` as known `PROC PYTHON` output, and
+     the user docs (`running-python.md` "Known rough edges",
+     `troubleshooting.md`) are corrected from "needs a change on the SAS side"
+     to "inherent to `PROC PYTHON`". A narrow, position-anchored client filter
+     over the `normal` stream stays a *possible* future enhancement (it reopens
+     `logFilter.ts`'s findings-52/63 boundary and wants its own ADR), not a
+     tracked follow-up.
+
    **Landed:** `src/backend/tracebackDiagnostics.ts`
    (`SYNTHESIZED_TRACEBACK_MESSAGE` + `alreadyStreamedAsTraceback`),
    `src/backend/procPython.ts` (`PROMPT_LINES` end-trim, uses the constant),
@@ -386,6 +404,13 @@ fixture.
    never touches; it is the live-Viya probe's to resolve source-side (the
    way `PAGESIZE=MAX` resolved the `title` page-break banner), not a
    client-side scrub of `normal`-typed lines.
+
+   **Probe ran 2026-09-09 (Finding 93) — no source-side answer exists.** Unlike
+   the `title` banner, `PROC PYTHON` has no option that turns the interpreter
+   banner or `>>>` prompts off. Accepted and documented rather than filtered;
+   `manual-test-pass.md` §6 and the user docs are reconciled. See the
+   "Probed and closed 2026-09-09" note under sub-finding (a) above and
+   Finding 93.
 
    **Environment note (not a code change):** `npm run test:integration` fails
    at VS Code launch (`Code.exe: bad option: --disable-extensions`) when run
@@ -732,7 +757,12 @@ is no more deferred 3.5 testing to pick up at any future phase boundary. See
 ADR-0022 for the full record and PRODUCTION_PLAN.md §1.4/§6 for the updated
 plan text.
 
-☐ **5c — Docs publishing and release engineering.** The five items below,
+☑ **5c — Docs publishing and release engineering. Done — all four sub-slices
+merged** (5c-i [PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102),
+5c-ii [PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104),
+5c-iii [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106),
+5c-iv the v0.1.0 / v0.1.1 release track — see the Section D closeout at the end
+of this item). The five items below,
 **taken as four sub-slices** (Sean's call, 2026-09-03 — the docs are the bulk
 of the authoring and the part review actually catches things in; "make
 publishing possible" is coherent on its own and shouldn't ride behind a docs
@@ -1001,10 +1031,29 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
    `workflow_dispatch` rehearsal — `download-artifact` runs only in the
    push-only `publish` job).
 
+   **Phase 5→6 housekeeping closeout, 2026-09-09.** Everything above under
+   5c-iv is landed: **#125** (`actions/download-artifact` v7→v8) merged
+   (`c383430`) from Sean's own session — the earlier "not merged this session /
+   `gh` token lacks the `workflow` OAuth scope" note is closed; **#123** was
+   superseded and closed by **#129** (`c12ee64` — `advisory-allowlist.json`
+   `allowed` now empty, its four doc citations swept); **#124** (`azure/login`
+   v2→v3) merged (`e72a458`). The 5c-iii "**Checks (this VS Code session) …
+   re-run after the review fixes — _pending_**" note (below) is closed — #106
+   merged clean, CI + both AI reviewers green on the final commit. The detailed
+   `release.yml` bullet below still describes the original `--oidc` design; it
+   is **superseded** by the 5c-iv narrative above and by
+   [ADR-0023](../adr/0023-release-publishing.md)'s 2026-09-04 amendment — the
+   shipped workflow authenticates with `vsce publish --azure-credential`, and
+   `@vscode/vsce` is back on stable (`3.9.2`), not the `3.9.3-11` prerelease pin
+   that bullet names.
+
    **Carried past the release:** (1) the **Open VSX namespace claim** (issue
    on `EclipseFdn/open-vsx.org`, Sean's EF account, to clear the ⚠️
-   unverified-publisher warning); (2) the **Phase 5→6 between-phase
-   housekeeping** (`HOUSEKEEPING.md`) — its own session.
+   unverified-publisher warning); (2) fixing the **`review` (Claude) CI
+   workflow** — `anthropics/claude-code-action@v1` fails its own install step on
+   the runner; pin it off floating `@v1` in `claude-review.yml` (check
+   `ai-review.yml` too). Both are their own small follow-ups; the Phase 5→6
+   between-phase housekeeping itself ran 2026-09-09 (see `STATUS.md`).
 
    - **`.github/workflows/release.yml`** ([ADR-0023](../adr/0023-release-publishing.md)) —
      **two jobs** on a `v*` tag push (a `workflow_dispatch` runs `build` only —
@@ -1125,9 +1174,12 @@ PR's CI; "actually publish" is Sean's to drive). Recommended order 5c-i →
 
 ## Probe findings
 
-Probed 2026-09-02 against `verde` (Viya 4), SAS Studio compute context, via
-the `viya-api-probe` skill against `creds.json`. Continues the numbering from
-`phase-4.md` (last was Finding 76).
+Probed against `verde` (Viya 4), SAS Studio compute context, via the
+`viya-api-probe` skill against `creds.json`. Continues the numbering from
+`phase-4.md` (last was Finding 76). **Findings 78–92 are in the Phase 6/7/8
+files** — those phases were scoped (and probed) in parallel with Phase 5's own
+work, so the global counter skips ahead here: Finding 77 (below) then
+Finding 93 (the Phase 5→6 housekeeping probe).
 
 ### Finding 77 — A UTF-8 BOM in the uploaded file does not break `PROC PYTHON infile=`
 
@@ -1179,3 +1231,95 @@ fixture needs (BOM immediately followed by ASCII). Good enough to write
 5d's fixture as "add the case, assert success" rather than "add the case,
 investigate what happens" — the fixture itself, once it exists, is what
 keeps this true across whatever the deployment upgrades to next.
+
+### Finding 93 — `PROC PYTHON` has no option to suppress the interpreter banner or the `>>>` prompt markers
+
+Probed 2026-09-09 against `verde` (Viya 4, SAS Studio compute context, Python
+3.12.12), during the Phase 5→6 between-phase housekeeping, to close the last
+open half of **Finding 74** (`phase-3.md`) — sub-finding (a), the interpreter
+startup banner and bare `>>>` / `...` prompt lines that bleed into a run's
+output stream. 5d-iii fixed the redundant-echo half and left this one recorded
+as "a live-Viya probe's to resolve source-side, the way `PAGESIZE=MAX` resolved
+the `title` page-break banner". Two throwaway sessions on the SAS Studio compute
+context, both `DELETE`d and confirmed gone by a `404` read-back; no other object
+touched. `PUT`/`POST` were the session create and the probe jobs only — no
+mutation of existing state.
+
+**Documented shape first (per the skill).** SAS's public PROC PYTHON
+documentation (Base SAS Procedures Guide; the SAS Viya *Getting Started with
+Python Programming* guide) and the community/conference write-ups describe
+`INFILE=` and the `SUBMIT`/`ENDSUBMIT` block but **do not enumerate the full
+option list** and name no console/verbosity/quiet switch. Web search turned up
+nothing on suppressing the banner or `>>>`. So the deployment's own answer was
+the only authoritative one.
+
+**Measured.**
+
+1. **The authoritative option list** — from the deployment's own
+   `ERROR 22-322: Syntax error, expecting one of the following:` enumeration,
+   drawn twice (on a bogus `ZZQUIET` and on `NOECHO`):
+
+   > `;, COMMAND, ECHO, INFILE, RESTART, SRC, TERMINATE, TIMEOUT`
+
+   That is the whole set. There is **no `QUIET`, `NOECHO`, `NOBANNER`,
+   `VERBOSE`, `SILENT`** or any console-output switch. `ECHO` is a bare flag
+   (`ECHO=none` / `ECHO=off` → "expecting one of the following: COMMAND, INFILE,
+   SRC", i.e. only those three take `=value`); `SRC` and `COMMAND` require `=`;
+   `TIMEOUT` takes a duration; `TERMINATE` is a bare flag.
+
+2. **The CPython startup banner** (`Python 3.12.12 … on linux` +
+   `Type "help", "copyright", "credits" or "license" …`) is emitted, typed
+   **`normal`**, **exactly when the embedded interpreter initialises** — the
+   first `PROC PYTHON` in a session (`NOTE: Python initialized.`), after
+   `RESTART` (`NOTE: Previous Python state destroyed.` / `NOTE: Python
+   initialized.`), or after a prior `TERMINATE`. A run that resumes existing
+   state (`NOTE: Resuming Python state from previous PROC PYTHON invocation.`)
+   emits **no banner**. Consequence for this extension: **Run File** issues the
+   `proc python restart infile=…` form (`procPython.ts`), so it prints the
+   banner **every time**; **Run Selection** resumes, so it prints the banner
+   only on the first run after connect / Reset Python State.
+
+3. **The bare `>>>` markers** are emitted, typed **`normal`**, on **every**
+   `PROC PYTHON` invocation that runs Python — `infile=`, `restart infile=`,
+   `submit`/`endsubmit`, resumed or fresh, success or error path. Always a run
+   of one or two `>>>` before the program's stdout and one after. **No option
+   removes them.**
+
+4. **`ECHO` makes it worse**, not better: with `proc python infile=pf echo;`
+   the submitted source line (`print("body-…")`) is echoed into the `normal`
+   stream *in addition to* the `>>>` and output. Not useful here.
+
+5. **Mechanism (inferred, consistent with all of the above):** `PROC PYTHON`
+   drives an **embedded interactive CPython REPL**, feeding the uploaded file
+   line by line and forwarding the interpreter's own stdout — which includes the
+   startup banner on init and the `>>>` / `...` prompts between statements.
+   There is no discovered or documented non-interactive (`python script.py`)
+   execution mode.
+
+**Documented vs. observed.** Documentation names only `INFILE=` and
+`SUBMIT`/`ENDSUBMIT` and no output-control option; observed (Viya 4,
+2026-09-09) the full option set is `COMMAND ECHO INFILE RESTART SRC TERMINATE
+TIMEOUT` and **none of them controls interpreter console output**. The docs
+were not wrong, just silent — a reader could not have concluded either way.
+
+**What this settles.** Finding 74's sub-finding (a) has **no source-side fix to
+wait for**. The choice is: accept the banner/`>>>` as inherent `PROC PYTHON`
+output, or add a narrow client-side filter over the `normal` stream. Decision
+(Sean, 2026-09-09): **accept and document**. `manual-test-pass.md` §6's
+"Hello world streams clean" assertion is reworded to expect the banner (on a
+Run File, and the first Run Selection after connect/reset) and `>>>` markers as
+known behaviour; `docs/running-python.md` ("Known rough edges") and
+`docs/troubleshooting.md` are corrected from "removing them cleanly needs a
+change on the SAS side" to "inherent to `PROC PYTHON`; no option suppresses
+them". A position-anchored client filter — drop only a leading contiguous run of
+`{banner, 'Type "help" …', '>>>', '...'}` sitting between a `NOTE: Python
+initialized. / Resuming / destroyed` line and the first real `normal` line, plus
+a trailing lone `>>>` before the `NOTE: PROCEDURE PYTHON used` footer — remains
+a *possible* future enhancement, but it reopens `logFilter.ts`'s "trust the
+type, never text-scan `normal`" boundary (findings 52, 63) and would need its
+own ADR. It is **not** a tracked follow-up.
+
+**Not settled by this probe:** whether `TIMEOUT=`, `SRC=` or `COMMAND=` carry
+any side effect on output framing (not exercised — none is plausibly a
+verbosity control), and whether a future SAS release adds a quiet mode (re-check
+against the option enumeration if the banner behaviour ever matters again).

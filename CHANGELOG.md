@@ -19,6 +19,15 @@ called out under **Changed** with a migration note.
   `actions/download-artifact` v7 → v8 in the release workflow. No effect on the
   published extension.
 
+### Fixed
+
+- The **Python on Viya: Output** channel's placeholder line for an image or
+  HTML-table output no longer claims the viewer "ships in a later slice" — the
+  Result panel has shown these since the diagnostics work landed. It now reads
+  `[an image was produced — see the Result panel]` /
+  `[an HTML table was produced — see the Result panel]`. Comment-only
+  corrections in `src/run/render.ts` and `src/run/commands.ts` to match.
+
 ## [0.1.1] - 2026-09-08
 
 ### Changed

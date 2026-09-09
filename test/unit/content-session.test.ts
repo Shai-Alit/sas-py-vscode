@@ -88,21 +88,21 @@ describe("content/ContentSession", () => {
 
   describe("the token function it hands the client", () => {
     it("resolves the account for the endpoint and returns the session's token", async () => {
-      let hinted: AccountLike | undefined = { id: "unset" };
+      const hints: (AccountLike | undefined)[] = [];
       const { session, configs } = harness({
         accounts: [
           { id: `${ENDPOINT}::alex` },
           { id: `${OTHER_ENDPOINT}::sam` },
         ],
         getSession: (account) => {
-          hinted = account;
+          hints.push(account);
           return Promise.resolve({ accessToken: "live-token" });
         },
       });
       session.adapterFor(ENDPOINT);
       const token = await configs[0]?.token();
       assert.equal(token, "live-token");
-      assert.equal(hinted?.id, `${ENDPOINT}::alex`);
+      assert.equal(hints[0]?.id, `${ENDPOINT}::alex`);
     });
 
     it("throws when there is no session, so the client reports not-authenticated", async () => {
@@ -114,17 +114,17 @@ describe("content/ContentSession", () => {
     });
 
     it("passes no hint when the endpoint matches no single account", async () => {
-      let hinted: AccountLike | undefined = { id: "unset" };
+      const hints: (AccountLike | undefined)[] = [];
       const { session, configs } = harness({
         accounts: [],
         getSession: (account) => {
-          hinted = account;
+          hints.push(account);
           return Promise.resolve({ accessToken: "t" });
         },
       });
       session.adapterFor(ENDPOINT);
       await configs[0]?.token();
-      assert.equal(hinted, undefined);
+      assert.deepEqual(hints, [undefined]);
     });
   });
 });

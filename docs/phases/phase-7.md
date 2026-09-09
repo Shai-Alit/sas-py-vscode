@@ -219,15 +219,21 @@ avoids naming the site-registered libraries the probe's `getLibraries` call
 returned beyond `WORK`/`SASHELP`/`SASUSER`, since several of the others read as
 customer- or business-identifying and have no bearing on the confirmed shape).
 
-**Dialect risk, flagged not resolved.** Unlike Phase 6 (which found one
-inline cadence check in upstream's content adapter), nothing in
-`RestLibraryAdapter.ts` or the generated `DataAccessApi` client carries a
-visible version branch, and this session's probe — one cadence, one
-deployment — didn't contradict that. Still open: whether a different Viya 4
-cadence or generation shows any difference in these endpoints. 7a's own probe
-pass should check that the same way 6a's punch list already commits to for
-its own endpoints, rather than assuming none exists because none was visible
-in the client source or turned up on the one cadence probed here.
+**Dialect risk, narrowed but not resolved (updated by Findings 95/96,
+2026-09-09 — superseding the "one cadence, one deployment" framing this
+paragraph originally had).** Unlike Phase 6 (which found one inline cadence
+check in upstream's content adapter), nothing in `RestLibraryAdapter.ts` or
+the generated `DataAccessApi` client carries a visible version branch. This
+phase's probing has since covered **two independent Viya 4 deployments**
+(`verde` and `Innov`, Findings 83–86/95/96), and every mechanism agreed
+between them — the deployment axis of this risk is closed. What remains
+open is narrower: whether a **different Viya 4 cadence** (not merely a
+different deployment) shows any difference in these endpoints. Nothing so
+far establishes that `verde` and `Innov` run different cadences, so two
+deployments agreeing is not the same evidence as two cadences agreeing.
+7a's own probe pass should check the cadence question directly the same way
+6a's punch list already commits to for its own endpoints, rather than
+treating the deployment-level agreement above as settling it.
 
 **The earlier network failure was a VPN outage on the deployment side, not a
 sandbox limitation.** This session's first probe attempt failed identically

@@ -1,0 +1,1513 @@
+<!-- Copyright © 2026, Sean Ford and the Python on Viya contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Status archive
+
+The slice-by-slice narrative that `STATUS.md` accumulated from Phase 3's
+final slice (3f) through the v0.1.1 first release and the Phase 5→6
+between-phase housekeeping. Moved here 2026-09-09 to keep `STATUS.md` small
+enough to load every session — it had grown past 1,500 lines.
+
+This is history, not current state. For where the project is now and what to
+do next, read `STATUS.md` at the repository root. Per-phase detail (plan,
+punch list, probe findings) lives in each `docs/phases/phase-N.md`; this file
+is the cross-phase chronological record and the reasoning captured in passing.
+
+---
+
+**Phase 3's implementation is done; one more slice (3f) is queued before**
+**Phase 4 starts.** The first full run of `docs/dev/manual-test-pass.md`
+(2026-08-27, against live `verde`/`Innov` profiles) found three confirmed
+regressions against invariants Phase 3 already claimed as done — 3b's "no SAS
+NOTEs, no page-break banners" and the cross-cutting "failures are
+diagnosable" promise don't currently hold. Triaged 2026-08-28; full root
+causes and the punch list are in `docs/phases/phase-3.md`'s new **3f** entry.
+Phase 4 (Diagnostics) does not start until 3f closes, since it would only
+compound on top of an already-broken diagnosability story. See
+`docs/dev/manual-test-pass.md` for the annotated checklist this pass
+produced. **3f's fixes are implemented (2026-08-28); a first independent
+review pass is also complete**, raising three findings — two fixed
+(`3d965d0`, `34a2987`), one left open and documented rather than closed
+(the untested `run/commands.ts` → `forgetProfile` wiring) — **not yet
+merged, no PR opened.** See phase-3.md's own 3f entry for exactly what
+landed and what each review finding was. Still open, in order: a second,
+final adversarial pass over the post-review diff, two hand-run retests,
+and a full re-run of the manual test pass — none of which this session can
+do itself (no live Viya deployment reachable here, and this project's own
+rule against Claude running the suite).
+
+**Full re-run of the manual test pass, complete 2026-08-30**, against a
+`.vsix` built from `phase-3f-manual-test-regressions` (still unmerged) —
+confirms the fixes above hold live for every item this slice targeted
+(Cold-start Connect, Idle reap, both Sign Out paths, Failures are
+diagnosable, the page-break banner, the big package list, and the reworded
+Cancel/`defaultProfile`/Shared-sessions items). It also surfaced three
+findings this slice's fixes don't cover, none of which it was written to
+fix: Reload reconnects now fails a different way (a stale-fileref collision
+that clears itself after 60–90 seconds, Finding 72), the deep-recursion
+container crash reproducing identically on retry (still unexplained), and
+an oversized rich output write taking the whole compute session down rather
+than skipping cleanly (Finding 73). `docs/dev/manual-test-pass.md` and
+phase-3.md's own **3f** entry (new open items, and Findings 72–73) both
+reflect this.
+
+**Work on those three, 2026-08-31.** **Finding 72 is root-caused and fixed**
+on `phase-3f-manual-test-regressions`: the per-run fileref counter is a
+per-backend value that restarts at zero on a window reload while the
+re-attached session still holds the names the old backend assigned. The
+backend now seeds that counter from the session's own `filerefs`
+collection on the first run after connecting, with a bounded assign-retry
+as a backstop for two windows sharing one session; unit-covered in
+`compute-fileref.test.ts` and `proc-python-backend.test.ts`, and
+**verified live** against a branch `.vsix` — `print(k)` after a reload
+returns on the first attempt. **Finding 73 is settled as not a size-cap
+defect** — a script whose figure *generation* exhausts the container is an
+OOM kill outside ADR-0019's transfer cap; ADR-0019 is amended and §8's
+test script reworded, and the reworded script's skip path is **verified
+live** (returns the "could not retrieve rich output file …" note, session
+survives). One small `translate()` message change for the rare OOM path
+is left as an optional, non-blocking follow-up. **The deep-recursion
+crash is resolved** — verified live 2026-08-31 that a minimal recursion
+gives a clean `RecursionError` with the session intact, so the earlier
+crash was `test_deep_stack_trim.py`'s own `unittest` harness
+(`sys.exit()` under `PROC PYTHON`), not `PROC PYTHON`; §7 is reworded and
+ticked. That run turned up **one new, deferred item** (Finding 74): a
+*failing* run's output stream carries the Python interpreter banner and
+`>>>` markers, which §6 says it should not — error-path only, output
+channel not the diagnostic log, line types not yet captured; its own
+item for a later slice, not a 3f blocker. Still open before a PR opens:
+the second, final adversarial pass and the profile-switch retest.
+
+**Second, final adversarial review pass, 2026-08-31** (Sean's own VS Code
+window, full branch diff against `main`, per this project's standing
+review policy): no P0/P1s, disciplined error handling, no secrets, clean
+strict-TypeScript throughout. One minor finding worth fixing: in the
+Finding 72 fix above, `ProcPythonBackend.seedFilerefCounter` set its
+`filerefCounterSeeded` flag before confirming the fileref listing actually
+succeeded, so a transient failure or a cancel mid-`GET` disabled seeding
+for the rest of the connection — dropping every later run in it back onto
+the 16-attempt retry, which cannot walk past a reattached session holding
+more than 16 `PYnnnnnn` names, reproducing Finding 72's own symptom in a
+narrower window. **Fixed the same day**: the flag now sets only after the
+listing reports `ok`, so a failed or cancelled attempt retries on the next
+run instead of sticking; re-seeding is safe since the counter only ever
+moves up. A new regression test pins the retry. Independently re-verified
+this session (traced the reorder, the doc-comment update, and the new
+test's arithmetic against the actual diff, not the review's word alone).
+Two other notes were left as documented, non-blocking judgment calls
+rather than fixes: the retry loop has no backoff between attempts, and
+`connect()` no longer de-duplicates concurrent calls when no profile is
+configured. See phase-3.md's Finding 72 punch-list item for the full
+account. **Still open before a PR opens: the profile-switch retest only.**
+
+**Profile-switch retest closed, 2026-08-31, not reproduced.** Started a
+long-running program on profile A, switched the active profile to B
+mid-run, ran a new selection — B was not yet signed in, so it prompted for
+sign-in first, then ran only the selection just invoked. Repeated with B
+already signed in from that first pass: switching alone triggered no
+sign-in and, more to the point, ran nothing on its own. Confirms the code
+read (no queue/replay/resume path exists) in both the needs-auth and the
+already-authenticated case; the original report's likely explanation
+(Run was in fact invoked a second time) stands, uncontradicted by two
+clean passes. **3f's punch list is now fully closed** except Finding 74
+(the interpreter banner/`>>>` markers), which is deliberately deferred to
+a later slice, not a 3f blocker. **Nothing left before a PR opens.**
+
+**PR opened, then merged, 2026-08-31: [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)**, squashed as `b21317b` on `main`. **Phase 3 (3a–3f) is now fully done.** Confirmed independently — local `main` fast-forwarded to `b21317b`, matching `origin/main`, working tree clean. **Phase 4 (Diagnostics) is no longer blocked** and can start next session. This PR's own merge is the trigger for this project's own between-phase-housekeeping checklist (ADRs, punch-list completeness, RUNBOOK/PRODUCTION_PLAN currency, this file's phase pointer, any scratch-file reconciliation, manual-test completeness, and Dependabot advisories) — not yet run; see chat for the proposal on scope and timing. The local `phase-3f-manual-test-regressions` branch is stale now (merged) — safe to `git branch -D` and `git fetch --prune` once ready.
+
+**Between-phase housekeeping for the Phase 3→4 boundary ran twice**, with 3f's
+own rework landing in between: a first pass around 2026-08-27 (before the
+manual-test pass surfaced the regressions that became 3f — see
+`b53d3e9`/`80293a5` for that day's Dependabot clearance, and
+`phase-3-runbook-pending.md` in the project folder for that pass's
+scratch-file reconciliation), then a second, final pass on 2026-08-31 that
+re-verified the first pass's items were still accurate after 3f's changes
+and closed out the rest — landed as `3b658a7`** (docs-only, `[skip-review]`,
+plus the project-folder-only scratch-file re-verification that leaves no git
+diff of its own): ticked 3f's own header in `phase-3.md` now that its punch
+list is closed (Finding 74 excepted, same carried-over pattern 3d-i used),
+retired the "rich output has no clean return path" risk row in
+`PRODUCTION_PLAN.md` §6 (settled by 3c-i/ADR-0019), and replaced a
+hard-coded, twice-stale coverage figure there with a pointer at `.c8rc.json`
+instead. That closes the checklist's punch-list-completeness, plan-currency,
+and scratch-file-reconciliation items. This paragraph itself closes the
+phase-pointer item — the previous paragraph's "not yet run" was accurate when
+written but went stale the moment `3b658a7` landed without this file being
+updated in the same commit; caught and fixed 2026-08-31 rather than left to
+misdirect the next session. **One item is genuinely open, not silently
+assumed done: today's (2026-08-31) Dependabot run hasn't been looked at.**
+Last Monday's (2026-08-24) findings were addressed the same week
+(`b53d3e9`/`80293a5`, 2026-08-27) and `scripts/advisory-allowlist.json`
+reflects that review accurately (one low-severity `diff` entry, expires
+2026-11-12). But Dependabot runs on its own schedule and has almost certainly
+produced a fresh batch today, unreviewed. **Sean's call, 2026-08-31: don't
+spend pre-first-release time chasing that churn now** — carry it as an open
+item to the next between-phase checkpoint, by which point Dependabot will
+have run again regardless. Manual-test completeness is covered by the record
+above through 2026-08-31.
+
+**Phase 4 started, 2026-08-31. 4a is merged, as
+[PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78), squashed as
+`8b1bc7c` on `main`.** `docs/phases/phase-4.md`'s own 4a entry — a regression
+suite for three `commands.ts` paths that only exist once a real backend is
+running (`backendFor()`'s reconnect-orphan `close()`, `cancelRun`'s
+`currentReset` fallback, and the `busy` serialisation guard
+`runNow`/`resetPythonState` share) — is implemented, in
+`test/integration/run/commands-backend.test.ts` plus a new
+`test/helpers/recorded-connection.ts`. Test-infrastructure only, no `src/`
+behaviour change; see phase-4.md's own 4a entry for the two small additions
+made to `recorded-proc-python.ts`'s shared simulated wire and why. Before the
+PR opened: an `exactOptionalPropertyTypes` typecheck error `npm run
+typecheck`'s `tsconfig.test.json` step caught that a bare `tsc --noEmit`
+against the app's own config did not, fixed with a conditional spread; and an
+adversarial review pass (2026-08-31, verdict "looks good, merge-ready") whose
+one real finding — a stale `AbortSignal` listener on `SimulatedJob.nextPage`
+left attached when a poll settles via `push`/`finish` rather than abort,
+latent today only because this module's own consumers stream few enough
+lines to never trip Node's `maxListeners` warning — was fixed the same day.
+A second, smaller lint fix (`prefer-const` on that same cleanup closure)
+landed after CI caught it on the open PR, restructured so both `onAbort` and
+`settle` stay `const` and `settle` alone owns the listener's removal on every
+path, not just the abort one. `npm run test:unit`, `npm run test:integration`
+and `npm run lint` were re-confirmed green after each of those two fixes, not
+assumed from the first pass. **Also merged the same day, independent of 4a:
+[PR #79](https://github.com/Shai-Alit/sas-py-vscode/pull/79)** (squashed as
+`9f8540d`) — a one-line `.gitignore` addition for `docs/.vitepress/.temp/`
+(VitePress's own build cache, noticed sitting untracked in this session's
+mount); docs-only, no adversarial review pass needed. Local branches for both
+are gone (`gh pr merge --delete-branch` on each); the stale local
+`phase-4a-backend-path-regression-tests` and the two stale
+`remotes/origin/*` refs for the deleted branches are cosmetic only — `git
+branch -D phase-4a-backend-path-regression-tests && git fetch --prune`
+whenever convenient, not urgent.
+
+**4b (probe cancellation) run and closed, 2026-09-01** — a live probe against
+`verde`, no code touched. Two findings, both in `docs/phases/phase-4.md`'s own
+4b entry and Probe findings section: **Finding 75** — the deployment requires
+`If-Match` on a job cancel; `cancelJob()` (`job.ts:508-521`) doesn't send one,
+so every cancel this extension issues against this deployment is rejected
+outright with `428` today, and `cancelRun()` (`commands.ts:518-522`) discards
+that failure without ever inspecting it — the "Cancelled." message users see
+comes entirely from a local abort in `LogStream`, independent of whether the
+paired server request succeeded. **Finding 76** — even a correctly-`If-Match`'d
+cancel doesn't preempt a running Python statement: a 60-second loop cancelled
+~6s in still ran its full 60.01s before SAS tore the interpreter down, so
+`cancelRun`'s existing "busy" messaging has no fallback for a run or reset
+queued behind a still-executing cancelled job (checked directly, not
+assumed — `backend.busy` clears on the local abort well before the session is
+actually free, so the "busy" message never fires; the user just gets a
+silently slow Run/Reset). **Decided with Sean the same day: fold both fixes
+into 4c** rather than open a separate slice — 4c is now traceback parsing
+*plus* the `cancelJob` `If-Match` fix and a decision on `cancelRun`'s
+messaging gap, raised from *Medium* to reflect the added scope.
+
+**4c implemented, 2026-09-01; not yet verified or reviewed.** All of it in
+one pass: `src/backend/tracebackDiagnostics.ts` (new — the `<string>`-frame
+offset mapping plus `primaryFrame`/`primaryPosition` for 4d, none of it
+wired into anything user-visible yet), the `ModuleNotFoundError` → `Show
+Environment` pointer in `procPython.ts`'s diagnostic message, `cancelJob`'s
+`If-Match` fix (a fresh `ETag` read off the job's own `self` relation right
+before the cancel `PUT` — Finding 75), `cancelRun` no longer discarding a
+cancel failure, and the "Cancelled." message reworded rather than papering
+over Finding 76's queued-run gap with new background-tracking machinery
+(considered and rejected as disproportionate for this slice — see
+`phase-4.md`'s own 4c entry for the reasoning). Finding 74's triage is also
+closed: not a `parseTraceback` defect — see `phase-3.md`'s own Finding 74
+entry — with two adjacent, smaller gaps found and deliberately left open
+rather than fixed here. Unit tests updated throughout, including two test
+fixtures (`proc-python-backend.test.ts`'s router, and
+`test/helpers/recorded-proc-python.ts`'s simulated wire) that needed a
+`self` relation added to their job payloads, without which `cancelJob`'s new
+code fails `link-missing` before ever reaching the server.
+
+**Verified and independently reviewed, 2026-09-01.** Sean's own
+`tsc`/`prettier`/`test`/`lint` run first (all green), then a senior-review
+pass over the full branch diff against `main`: no P0/P1s — the `cancelJob`
+`If-Match` fix mirrors `fileref.ts`/`files.ts`'s existing fresh-`ETag`
+pattern exactly, error handling is disciplined (no swallowed failures, every
+new call timeout- and abort-bounded), the new `self` relation is confirmed
+present on a live job payload (finding 46) so its `link-missing` arm is a
+real guard rather than a new failure mode, and the tests are HTTP-boundary
+mocks covering every new branch. Three review notes were folded in the same
+day: (1) `primaryFrame` reworked from an index walk to a `for…of` over a
+reversed shallow copy, removing an unreachable `noUncheckedIndexedAccess`
+guard branch — `tracebackDiagnostics.ts` is now 100% branch-covered and the
+suite's 95% floor is unmoved; (2) a new `primaryFrame` test for the
+non-empty "no `<string>` frame anywhere" case; (3) `backend.ts`'s
+`RichOutput` doc comment, which enumerated "the four" un-`l10n`'d
+extension-authored strings, corrected to five (this slice's
+`withModuleNotFoundGuidance` is the fifth) with a note that a sixth should
+reopen ADR-0015's localisation boundary rather than extend the list again.
+Also caught: the branch's `compute-job.test.ts` edits were not
+`prettier`-clean (`format:check` now passes). Two review observations left
+as non-blocking: the failed-server-cancel path now shows both the reworded
+"Cancelled…" outcome and a `backend-failed` toast (intentional per Finding
+75, mildly noisy), and `tracebackDiagnostics.ts`'s `primaryFrame`/
+`primaryPosition`/`mapFrameToOrigin` ship unwired until 4d (disclosed in the
+CHANGELOG and this phase's 4c entry).
+
+**Fully verified, 2026-09-01.** `npm run verify` and `npm run
+test:integration` both green (Sean's own run). Then the cancel fix —
+Findings 75/76, the part with real wire-behaviour risk — **live-verified**
+against `verde` (Viya 4) with a branch `.vsix`: Cancel from both the
+progress-notification button and the palette command stops the run with
+`done` never printing, the output channel shows the reworded "Cancelled. If
+a single step was already running…" line, and **no error toast** — meaning
+the server accepted the `If-Match`'d `PUT` rather than answering the `428` a
+bare request drew before. A run submitted ~15 s into the 60 s `sleep`,
+right after cancelling, completed cleanly ~30–40 s later — the cancelled
+step running out its natural duration before the session freed, exactly
+Finding 76, no corruption and no reconnect needed. `docs/dev/manual-test-
+pass.md` §6's "Cancel, both ways" item is updated for the reworded message
+and this run. The `ModuleNotFoundError` → Show Environment message addition
+was live-verified in the same session (`import polars` against `verde`) —
+the appended `Run "Python on Viya: Show Environment" …` sentence shows on
+the diagnostic as specified, and `manual-test-pass.md` §7's row is rewritten
+from a `(known gap)` into a ticked assertion. **Nothing outstanding before
+the PR opens.** Merged as [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81).
+
+**4d (diagnostics surface) merged 2026-09-02 as
+[PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83), squashed as
+`f3a4bb2` on `main`. This closes Phase 4 (4a–4d).** Wires 4c's
+`tracebackDiagnostics.ts` mapping to its two consumers. **Problems panel:**
+new `src/run/diagnostics.ts` (`RunDiagnostics` — a `vscode` shell around one
+`languages.createDiagnosticCollection("pythonOnViya")`, on `.c8rc.json`'s
+exclude list, integration-tested); `commands.ts`'s `runNow` clears it for the
+program's origin URI at the start of every run and, on a `!succeeded` outcome
+that streamed a structured traceback (`drainOutputs` now captures the trailing
+`application/vnd.python.traceback` output and hands it back), publishes one
+`Error` at `primaryPosition`, `source "Python on Viya"`, the `<string>` stack
+as `relatedInformation`. **Publishes nothing when no frame maps** — a SAS-side
+failure or an all-library stack gets no Problems entry rather than one planted
+at line 0 (the phase's exit criterion is an *accurately*-positioned error;
+`tracebackDiagnostics.ts`'s own "don't guess a position" rule, applied at the
+surface). **Result panel:** the traceback `RenderItem` gained structured
+`frames`; `resultPanelDom.ts` wraps a `<string>`-frame's line in an inner
+`<span role="button">` (new `DomPort.onActivate`) when `applyMessage` is
+given an `onFrameActivate` — the `<li>` stays a listitem so the `<ol>`'s
+screen-reader semantics hold; `webview/entry.ts` posts `{ type:
+"revealFrame", frameIndex }` — the one webview→host message beyond `"ready"`,
+its own `isRevealFrameMessage` guard, kept out of `ResultPanelMessage`;
+`resultPanel.ts` retains the run's `ProgramOrigin` (`startRun(origin)`, now
+required) and frames, maps the activated index via `mapFrameToOrigin`, opens
+the editor via a new injectable `revealPosition` dep (default reuses an
+existing editor's column, else `ViewColumn.One` — never the panel's; swallows
+a rejected `showTextDocument`). No new command, setting, webview surface or
+CSP change. New page `docs/architecture/diagnostics-surface.md` covers both
+4c and 4d (4c never wrote its reserved page). **An adversarial review pass
+has been done** (2026-09-01) and its findings folded in: `revealPosition`
+now reuses an existing editor's column (never `Active`/the panel's) and
+swallows a rejected `showTextDocument`; the clickable frame is an inner
+`<span role="button">` so the `<ol>` keeps its screen-reader semantics;
+`clearFor` moved to sit with `startRun` at the "a run began" point;
+`startRun(origin)` made required; comment/record corrections. Nits left as
+documented, not fixed: `?? traceback.message` is an unreachable
+belt-and-braces fallback; and two diagnostics-lifecycle gaps carried to
+Phase 5 (also flagged by the CI reviewer on PR #83) — the Problems entry is
+only cleared by the next run of the same file, and `RevealFrameMessage`
+carries no per-run token so a stale `revealFrame` that outraces the host
+queue can resolve against the wrong run. The CI reviewer also asked why
+`Diagnostic.source` is a bare literal rather than `l10n.t()` — kept bare
+(a per-locale source string fragments Problems-panel filtering) with the
+comment expanded to say so. **Checks run this session** (VS
+Code Claude Code — the sandbox-timeout reason `CLAUDE.md` bars lint/tests
+for does not apply here): `typecheck` ×3, `npm run lint`, `prettier
+--check`, `check:coverage-scope`/`check:copyright`/`check:secrets`,
+`check:docs`, `npm run test:unit` (**1161 passing**; one unrelated Windows
+drive-letter flake that passes on re-run), and **`npm run verify` end to end
+(exit 0)** — all green. Coverage ratchet bumped in `.c8rc.json`:
+`lines`/`statements` 93 → 94 (measured 94.09), `functions`/`branches`
+unchanged; `resultPanelModel.ts`/`resultPanelDom.ts`/`tracebackDiagnostics.ts`
+all 100%. **Verified 2026-09-02 (Sean):** `npm run test:integration` green in
+the VS Code host tier — one test failed first (`diagnostics.test.ts` read
+`DiagnosticCollection.get()` after `dispose()`, which throws; moved onto
+`languages.getDiagnostics()`), re-run green. **Live-verified against `verde`**
+with a branch `.vsix`: failing run → positioned Problems entry that opens in
+the editor column not over the panel; clean re-run clears it; Run Selection
+mid-file lands on the true line; clicking a `<string>` frame jumps the
+editor, a library-frame line does not. `manual-test-pass.md` §7/§8 ticked.
+The two CI-reviewer nits (above) were folded in as comments/docs only
+(`3a8de68`, in the PR).
+
+**Phase 4 (Diagnostics) is fully done — 4a–4d all merged. Phase 5
+(Hardening & first release) is next; `docs/phases/phase-5.md`.** PR #83's
+merge is the trigger for the Phase 4→5 between-phase-housekeeping checklist
+(ADRs, punch-list completeness, RUNBOOK/PRODUCTION_PLAN currency, this file's
+phase pointer, scratch-file reconciliation, manual-test completeness, and
+Dependabot advisories — the last already carried forward from the Phase 3→4
+pass, still unreviewed). Not yet run. This docs PR only records the merge;
+the housekeeping is its own pass. The local `phase-4d-diagnostics-surface`
+branch is stale now (merged) — `git branch -D` and `git fetch --prune` when
+convenient.
+
+**Phase 4→5 between-phase housekeeping run 2026-09-02.** ADRs: ADR-0021
+still read the traceback-to-editor jump as unscoped future work after 4d
+actually shipped it — amended with a dated note pointing at phase-4.md's 4d
+entry and PR #83; ADR-0011/0019/0020/README all confirmed correct, no
+change needed. `PRODUCTION_PLAN.md`: the coverage figure was stale (still
+93/93/93/95; `.c8rc.json` moved to 94/94/93/95 in 4d) — corrected; the
+"Compute cancellation doesn't interrupt" risk row still said "Not yet
+probed" though 4b/4c settled and partly fixed it (Findings 75/76) — struck
+through and retired with the actual outcome. `RUNBOOK.md` and this file's
+own phase pointer/index table were both already current, no edit needed.
+Punch-list completeness (`phase-4.md`, 4a–4d) and manual-test completeness
+(`docs/dev/manual-test-pass.md` §6/§7/§8, all live-verified and ticked) were
+both confirmed clean. Dependency advisories: `npm audit` shows exactly the
+one entry `scripts/advisory-allowlist.json` already allows (`diff`,
+GHSA-73RR-HH4G-FPGX, low, dev-only via mocha), expiring 2026-11-12 (that
+entry was removed 2026-09-08 once mocha 12 took `diff@^9` and cleared it —
+see this file's Section D entry below) — no
+open Dependabot items found this pass, though this sandbox has no `gh` CLI
+or token, so GitHub's own Dependabot UI (e.g. any Actions-workflow
+advisories) couldn't be checked directly; `npm audit` is a proxy for the
+npm ecosystem only, not a full substitute. **Scratch-file reconciliation:**
+`phase-3-runbook-pending.md`'s two pre-existing items (certificate escape
+hatch, BOM fixture) were re-confirmed still genuinely untracked elsewhere;
+two more were added rather than written into `phase-5.md` ahead of its own
+scoping session — Finding 74's two adjacent sub-findings (the interpreter
+banner/`>>>` noise and `writeOutcome`'s redundant traceback-tail echo,
+`phase-3.md`'s Finding 74 entry) and phase-4.md's two "Deferred to Phase 5"
+diagnostics-lifecycle gaps (`DiagnosticCollection` not cleared on
+doc-close/sign-out/target-flip; `RevealFrameMessage`'s missing per-run
+token) — both previously named as Phase-5-bound with no phase-file home.
+**Left deliberately unswept, Sean's call:** `phase-3.md`'s orphaned
+bash-stub branch names for "Phase 5"/"Phases 6–12" (flagged when the
+Phase-4 stub was removed as "worth a sweep whenever Phase 5 starts") —
+noted, not actioned this pass. `docs/phases/phase-5.md` itself is
+untouched; its Runbook stays "not yet reached" until Phase 5's own scoping
+session, which is when the four scratch-file items above should get folded
+into a real punch list.
+
+**Phase 5 scoped 2026-09-02**, same day as the housekeeping pass above. A
+codebase survey found 5a (drift gate) and 5b (live test tier) both further
+along than the plan text assumed — `scripts/check-contracts.mjs` already
+exists and is already wired into `npm run verify`/CI, and `test/live/`
+already has three viya4 suites plus a fully working `viya35`-capable gate in
+`test/helpers/live-gate.ts` with no viya35 test file yet written. Both are
+downgraded to *Small* and rescoped as audits/scaffolding rather than
+build-from-scratch work. 5c (docs publishing) holds up as planned and is now
+the largest slice — the docs site has no user-facing pages at all yet for
+Phase 3/4's shipped feature set (running Python, diagnostics, cancel,
+environment info), and `docs/release-checklist.md` names a publish workflow
+that doesn't exist. **New 5d slice** carries the four scratch-file items
+above (certificate escape hatch, BOM fixture, Finding 74's two sub-findings,
+the two 4d-deferred diagnostics-lifecycle gaps) — `phase-3-runbook-pending.md`
+is reconciled and its holding role retired again now that all four have a
+real home. Recommended order: 5d → 5a → 5b → 5c. Full Plan and Runbook detail
+in `docs/phases/phase-5.md`; the stale Phase 5 bash-stub in `phase-3.md`
+(orphaned branch names predating this scoping) was removed in the same pass,
+the same way the Phase 4 stub was retired at its own scoping session. This
+paragraph also closes this file's own phase-index-table item — the previous
+Phase 4 row's "housekeeping not yet run" note was accurate when `baacf3c`
+landed but should have been corrected in that same commit; fixed here rather
+than left to misdirect the next session, per this project's own precedent for
+exactly this mistake three paragraphs above. **Merged 2026-09-02 as
+[PR #86](https://github.com/Shai-Alit/sas-py-vscode/pull/86)**, squashed as
+`043d7dd`.
+
+**Finding 77 probed 2026-09-02, same day**, against `verde` — de-risking 5d's
+BOM-fixture item before it's written rather than after: a UTF-8 BOM
+(`EF BB BF`) immediately followed by `print("bom-ok")` was uploaded through
+the exact `assign`/`self`/`upload` fileref path `procPython.ts` uses and run
+via `proc python infile=...;`. It ran clean — job `completed`, `SYSCC` `0`,
+`bom-ok` printed with nothing garbled around it, no `SyntaxError` anywhere in
+the log — so ADR-0014's byte-for-byte upload discipline is not put in a bind
+by a BOM. One incidental correction recorded in the same finding: a link's
+wire `type` (e.g. `application/vnd.sas.compute.session.request`) needs
+`computeMediaType`'s `+json` suffix restored before it's sent as a real
+`Content-Type` header (finding 14) — copying `contracts/viya4.yaml`'s
+`via.type` value verbatim into a hand-run probe draws a `415`. Full account
+in `docs/phases/phase-5.md`'s own Finding 77 entry; the throwaway session was
+deleted and confirmed gone by a `404` read-back. Not yet committed — landing
+alongside this paragraph in a small follow-up PR.
+
+**Phase 5 started, 2026-09-02. 5d-i (certificate escape hatch) implemented; not
+yet verified, reviewed, or merged.** Recommended order was 5d → 5a → 5b → 5c,
+and 5d's four items are being taken as three PRs (Sean's call): item 1 alone,
+then item 2 (BOM fixture), then 3, then 4. Item 1 was scoped in `phase-5.md` as
+"decide whether an escape hatch is needed, the way the SAS extension needs
+none" — but on inspection the SAS extension *does* ship one
+(`SAS.userProvidedCertificates` + `CAHelper.ts`'s `installCAs()` + a documented
+FAQ), so the premise was wrong and a deployment with an incomplete chain or an
+uninstalled private root is genuinely unreachable here today. 5d-i is therefore
+the scoped implementation of the long-deferred **1c-ii**: a `machine`-scoped
+`pythonOnViya.userProvidedCertificates` array; `src/auth/caAgent.ts` (new,
+unit-tested, and the fourth entry on `eslint.config.mjs`'s Node-built-in
+allow-list — the "certificate module" ADR-0003's hedge always named, amended
+2026-09-02) building **one dedicated `https.Agent`** from Node's bundled
+roots plus the user's PEMs — never `https.globalAgent`, which is what upstream's
+`installCAs()` mutates process-wide; `src/auth/transport.ts` gaining
+`createNodeHttpTransport({ agent })` with `nodeHttpTransport` unchanged as its
+zero-config form; and `src/extension.ts` threading the resulting transport
+through both `ViyaAuthenticationProvider` (`token`/`identity` deps) and
+`ComputeSessionManager` (new `transport` dep) so a private-CA deployment is
+reachable for running Python, not only for signing in. Unreadable cert paths
+are logged, not swallowed. ADR-0008 amended (2026-09-02) — the `agent` seam it
+left unset is now filled, and its "upstream has no TLS code" claim is corrected.
+`docs/signing-in.md` gains a "Private certificate authorities" section;
+`manual-test-pass.md` §3 gains an unrun live row (needs a deployment whose chain
+the OS does not already trust). **`verify` + `test:integration` green
+2026-09-02** (1171 unit passing; coverage 94.16/95.15/93.46/94.16, all flooring
+to the current `.c8rc.json` thresholds — no ratchet bump). **Adversarial review
+pass done 2026-09-02** (Sean's own window, full branch diff): overall sound —
+threading complete, no secrets, ADR upstream claims verified against live
+`CAHelper.ts`, `machine` scope correct. Five findings, all verified here and
+fixed on the branch: (1, P1) a mistyped `machine`-scoped setting value could
+throw out of `activate()` — the raw value is now read as `unknown` and coerced
+by a new tested `certificatePathsFrom` (the `connectionProfiles` discipline);
+(2–3, P2) `@vscode/proxy-agent` stops merging the OS cert store once a request
+carries `ca`, and under default `proxySupport` replaces the agent instance
+while hoisting only its `ca` — so the CA trust works but by hoist, not by the
+agent; documented in `caAgent.ts`, `signing-in.md`, the setting description and
+phase-5.md with the `microsoft/vscode-proxy-agent` citation, and the boundary
+test reworded; (4, P3) `keepAlive: true` added to match Node 19+'s global-agent
+default for the no-proxy-patch path, with `agent.destroy()` on teardown; (5,
+P3) a test now exercises the default `node:fs` reader so the one filesystem
+line is covered. **Open before a PR:** re-run `verify`/`test:integration`/`docs:build`
+on the fix commit.
+
+**5d-i merged 2026-09-02 as
+[PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)**, squashed as
+`331bcf3` on `main` (local `main` fast-forwarded, matches `origin/main`,
+working tree clean). The pre-PR checks above were run and CI + both reviewers
+passed on the PR. Recording the merge here is the first thing after it merged,
+per this project's plan/runbook policy — the paragraph above was accurate up to
+"Open before a PR" and stopped there.
+
+**5d-ii (BOM fixture) merged 2026-09-02 as
+[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), squashed as
+`e08e55f`.** This is 5d's item 2, taken as its own PR per the 5d plan. New
+`test/fixtures/submission-corpus/utf8-bom.py` — three `EF BB BF` bytes then
+`print("byte-order mark before this line")\n` (45 bytes), BOM-then-ASCII, the
+simplest shape Finding 77 said the fixture needs. Added to `EXPECTED_CASES` in
+`test/unit/submission-corpus.test.ts` so the existing "what reaches the
+transport" loop drives it byte-for-byte with the other fourteen; a new "the
+fixtures themselves" assertion pins the leading three bytes and the absence of a
+second BOM later in the file. `.editorconfig`'s corpus block gains
+`charset = unset` so an editor honouring the repo-wide `charset = utf-8` ("no
+BOM", per the EditorConfig spec) cannot strip the mark on save — the same
+failure class `.gitattributes` `-text` already guards for the CRLF and
+no-trailing-newline cases. Enumerations updated in `PRODUCTION_PLAN.md` §4,
+`test/fixtures/README.md`, `docs/dev/manual-test-pass.md` §6's grid, and
+`CHANGELOG.md`. De-risked by Finding 77 (live BOM probe already ran clean), so
+this is "add the case, assert success". **`test/live/submission-corpus.test.ts`'s
+`CURATED_CASES` left unchanged** — deliberate: that tier is capped at five
+maximally-distinct cases and Finding 77 already exercised the live BOM path;
+the unit tier is the permanent guard the runbook item called for. Test-only, no
+`src/` change. **One adversarial review pass, 2026-09-02, ran in this session —
+not the separate VS Code Claude Code window the standing policy names; the
+record should say so, and Sean's call whether the window pass is still wanted
+for a test-only slice.** It read the full `a852504` diff plus the surrounding
+files whose invariants it touches. No P0/P1. Three findings, all verified
+independently and folded into a follow-up commit on the branch: (1, P2) the
+live suite's doc comment still said "not all fourteen" — corrected to fifteen
+in the same PR, per this project's evidence-sweep rule; (2, P3) the new fixture
+assertion did not pin that anything follows the BOM — added a check that
+`print(` source does; (3, P3, claim accuracy) a scope note in phase-5.md's
+5d-ii entry, since `program.bytes` is `TextEncoder().encode(document.getText())`
+(`commands.ts:396`/`:404`) and `getText()` has already consumed any BOM — so
+the fixture pins the transport seam (the corpus's actual charter), not the
+editor path. **Verified green 2026-09-02 (Sean's run): `npm run verify`, `npm
+run check:docs`, and `npm run test:integration` all pass.** Merged as
+[PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89) (`e08e55f`); local
+`main` fast-forwarded, matches `origin/main`.
+
+**PR #89's `supply-chain` job first failed on six dev-tree advisories that have
+nothing to do with 5d-ii** — pre-existing on `main`, transitive under
+`@vscode/vsce`, and not shown by GitHub's Dependabot UI (dev-tree; `npm audit` /
+`check:audit` is deliberately stricter). `qs` 6.15.3 carried two moderate DoS
+advisories (fixed in 6.16.0), `fast-uri` 3.1.5 four high host-confusion / SSRF
+advisories (fixed in 3.1.6). Both fixed lines are in range for their parents, so
+they clear via the child-override route (`overrides.qs ^6.16.0`,
+`overrides.fast-uri ^3.1.6`) the `vite` / `serialize-javascript` pins already
+use — no allow-list entry. `npm install` resolved `qs@6.16.0` / `fast-uri@3.1.7`
+(18 packages changed) and dropped `npm audit` from 1 moderate + 1 high to just
+the pre-existing lows. **Folded into #89** rather than a separate PR, since the
+`check:audit` gate blocks every PR until the tree is clean and a separate PR
+would only add a round trip. `check:audit` could not be re-run locally to
+confirm — it spawns `npm.cmd` and current Node throws `EINVAL` doing that on
+Windows (the CVE-2024-27980 `.cmd`-spawn hardening); CI runs it on Linux, where
+that does not apply, so #89's own re-run is the confirmation. CHANGELOG (under
+`### Changed`, beside the `vite` entry) and `advisory-allowlist.json`'s `$comment`
+narrative both updated.
+
+**Two more pre-existing `main` issues surfaced in the same look, neither
+touched here and neither blocking #89 — their own follow-up PR:** (a) two CodeQL
+*High* findings open ~3 weeks — `scripts/generate-reference.mjs:83` (a
+markdown-cell escaper that adds `\|` without escaping backslashes first) and
+`scripts/check-package.mjs:266` (`statSync` then `readFileSync` on the same path
+— a check-then-use TOCTOU); both in build scripts over fully trusted input, so
+low real risk but real patterns. (b) `scripts/check-audit.mjs` cannot run on
+Windows at all (the `npm.cmd` `EINVAL` above), despite `CLAUDE.md` listing the
+`check-*.mjs` gates as locally runnable — worth a `shell`/`execPath` fix in the
+same PR.
+
+**All three landed in a follow-up build-script PR, 2026-09-02** (branch
+`chore/build-script-hardening`, off `main` after #89's squash-merge): the
+`cell()` escaper now escapes backslashes before pipes (output byte-identical —
+no manifest string carries a backslash, `docs:reference:check` unchanged);
+`check-package.mjs` reads the `.vsix` once and takes the size from the buffer,
+dropping the `statSync`; `check-audit.mjs` passes `shell: needsShell(command)`
+(new exported predicate, true only for a `.cmd`/`.bat` shim), all-literal args.
+`prettier --check`, `docs:reference --check`, and two `check-package.mjs` smoke
+runs (missing file, non-zip file) pass locally; the `codeql` context on the PR
+is what confirms the two `main` alerts close. The `github-actions` reviewer
+asked for regression tests on all three; two were added (`docs-reference.test.ts`
+for the backslash-before-pipe escape, `audit-gate.test.ts` for `needsShell`'s
+two arms) and the third (`check-package.mjs`'s errno branch) was declined with a
+reply — the module runs `main()` unconditionally so it is not importable for a
+test, and its pure logic is already runtime-checked by `runSelfTest()`; making
+it importable is its own small change. **Merged 2026-09-02 as
+[PR #90](https://github.com/Shai-Alit/sas-py-vscode/pull/90), squashed as
+`c72e6a8`.** The two CodeQL *High* alerts on `main` should drop on the next
+code-scanning run against `main`; confirm in the GitHub Code scanning UI (no
+`gh`/token in this sandbox to check directly). Making `check-package.mjs`
+importable + its own test file is the one carried-forward item from this
+detour — small, unscheduled, not on any phase punch list.
+
+**5d-iii (Finding 74) merged 2026-09-02 as
+[PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), squashed as
+`b9b18ef`.** Local `main` fast-forwarded, matches `origin/main`. Module
+confirmed: the Runbook's `src/backend/outputChannel.ts` path was stale — the
+real target is `src/run/outputChannel.ts`. **Sub-finding (b) fixed on both outcome surfaces:**
+a shared helper `alreadyStreamedAsTraceback` (`tracebackDiagnostics.ts`) lets
+`RunOutputChannel.writeOutcome` **and** `ResultPanel.writeOutcome` drop a
+diagnostic whose message already streamed as the raw traceback — value-equality,
+so a SAS-side `SYSCC=3000` message, the synthesized "an unhandled Python
+exception" stand-in, and a `ModuleNotFoundError`'s "Show Environment" pointer
+all still print. Paired backend cleanup: `parseTraceback` trims the
+interpreter's bare `>>>`/`...` prompt markers from each end of the message tail
+(not the interior). **Sub-finding (a)'s live-transcript half deliberately not
+fixed** — scrubbing `normal`-typed output client-side contradicts
+`logFilter.ts`'s documented rationale and `>>>` collides with real program
+output; the success/error-path asymmetry points at a `PROC PYTHON` invocation
+question for a live probe. **Adversarial pass done (separate review window):**
+no P0/P1; three P2s folded into a follow-up commit — the synthesized-fallback
+string was suppressible (carve-out added), `PROMPT_LINES` filtered interior
+lines (restricted to the ends), and the result-panel triple-render was hedged
+rather than closed (now closed). A non-blocking PR bot comment on the
+end-trim's doc comment (it overstated boundary safety — a message whose own
+first/last line is exactly `>>>`/`...` loses it) was answered with a comment
+tightening plus a pinning test (`d4da928`), the unbounded trim kept.
+`npm run verify` green (coverage ratchet held;
+`tracebackDiagnostics.ts` 100%); `npm run test:integration` green (237 passing,
+after stripping the extension host's `ELECTRON_RUN_AS_NODE=1` — see phase-5.md's
+5d-iii entry for that harness gotcha). **Verified live 2026-09-02** against
+`verde` with a branch `.vsix` — 10 runs, five scripts × Run Selection and Run
+File: the output channel ends at "Finished with an error." with no repeated
+exception line (the `ModuleNotFoundError` superset line still prints, by
+design), the Result panel shows no third copy of the message and no trailing
+`>>>` on the structured message, and a program's own `>>>`/`...` stdout is
+untouched. **Sub-finding (a) refined:** the banner tracks the Run File
+`restart` (shows on a successful Run File too), and `>>>` shows on every run
+of either mode — so §6's "Hello world streams clean" no longer holds for Run
+File; not a 5d-iii regression (the stream is untouched), folded into that box
+and the probe. See `docs/phases/phase-5.md`'s Runbook item 3.
+
+**5d-iv (diagnostics-lifecycle gaps) merged 2026-09-03 as
+[PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94), squashed as
+`b03a92d`.** Local `main` fast-forwarded, matches `origin/main`. This was the
+last of 5d's four items — **Phase 5's 5d slice is now fully done (5d-i–5d-iv).**
+**(a) Clearing the Problems collection:** `RunDiagnostics`
+gains `clearAll()`; `createRunCommandHandlers` (`src/run/commands.ts`) wires
+three triggers, all in that one place — a run-target flip to Local (existing
+`targets.onDidChange` sub, gated `kind() === "local"`; a viya→viya profile
+switch is deliberately left alone), a document close
+(`vscode.workspace.onDidCloseTextDocument`, injectable as
+`RunCommandDeps.onDidCloseTextDocument`), and a profile sign-out (new
+`RunCommandDeps.onDidSignOut`). **(b) Per-run token:** `resultPanel.ts` gains a
+monotonic `currentRunToken` bumped in `startRun`, stamped onto the traceback
+`RenderItem` (`toRenderItem` gains the param) so it survives the panel's
+hide/show rebuild + backlog replay; the webview echoes it in `revealFrame`;
+`RevealFrameMessage`/`isRevealFrameMessage` gain `runToken` (non-negative
+integer, like `frameIndex`); `ResultPanel.revealFrame` drops a message whose
+token isn't the current run's. **Correction to phase-4.md's 4d note:** the
+token closes (b), not the "two-`<ol>`s-in-one-run" alias it also named — that
+stays structurally impossible (`buildFailureOutcome` emits one traceback per
+run); the note and `resultPanel.ts`'s `currentFrames` comment are both updated.
+
+**`npm run verify` + `npm run test:integration` green (Sean's runs)** — 1191
+passing, coverage 94.22/95.16/93.78/94.22, no ratchet move. **Adversarial
+review pass done 2026-09-02** (separate VS Code Claude Code window). No P0/P1;
+six findings, all verified and folded in. The one that mattered: **the sign-out
+clear was keyed off `auth.onDidChangeSessions`'s `removed`, which is a diff of
+the published session list — it also fires when a slow renewal or an unreadable
+keychain entry drops a profile for one poll**, so transient network weather
+would have wiped the Problems panel. Fixed by adding a dedicated
+`ViyaAuthenticationProvider.onDidSignOut` that fires only from `removeSession`
+(both deliberate sign-out routes go through it); `extension.ts` wires that
+through instead, and its `EventEmitter` bridge is gone. The other five were P3:
+an `onDidCloseTextDocument`-also-fires-on-language-change comment gap; a wrong
+"token 0 never matches" claim in two places; a self-undermining sign-out
+rationale; `isRenderItem` accepting any `number` for `runToken` where
+`isRevealFrameMessage` wanted a non-negative integer; and a test-helper `?? 0`
+fallback that masked a missing `sendReady()`. All fixed in the same branch,
+`authProvider.ts` + a new `auth-provider.test.ts` case added. Docs
+(`diagnostics-surface.md`, phase-4.md pointer, phase-5.md 5d-iv entry,
+CHANGELOG, `manual-test-pass.md` §7/§8) all reflect the final shape.
+
+**Live-verified 2026-09-03** against `verde` with a branch `.vsix` (after a
+window reload — a first attempt ran a stale build): all three lifecycle clears
+in §7's new row hold — closing the file's editor tab, **Sign Out**, and
+flipping the run target to Local each clear the Problems entry; reopen /
+switch-back leave it gone; a viya→viya profile switch leaves it in place.
+`manual-test-pass.md` §7 ticked. One PR-bot nit folded in on the open PR (the
+`phase-4.md` deferral note contradicted itself after the "resolved" prepend —
+reworded to past tense). **Merged as `b03a92d`; nothing carried over.**
+
+**5a (drift-gate hardening) implemented and reviewed 2026-09-03; verified
+green; not yet merged, no PR opened.** An audit of `scripts/check-contracts.mjs`
+against the three gaps in phase-5.md's Runbook item 5a, then harden. Outcome:
+**(1) empty fixture dir** — real, fixed: `readScope` now derives
+`emptyFixtureDirs` (exists but holds nothing but dotfiles) and `check` gains an
+`emptyFixtureDirs` param so the rule is a pure-function case the unit tier can
+state; an empty dir gets its own message, distinct from "does not exist"
+(`test/fixtures/viya35/`, one README, still passes). **(1) stale fixture dir** —
+left unaddressed by design: staleness is drift, which only a probe settles, not
+a structural gate (recorded so the ticked box isn't misread). **(2) orphan
+fixture dir** — real, no general form (`harness/`, `submission-corpus/`,
+`rich-output/` are contract-less by design); added a narrow reverse check for a
+`test/fixtures/<id>/` named for a `DialectId` whose generation's contract points
+`fixtures` elsewhere (the rename-orphan), scoped so a missing contract or a
+missing `fixtures` key doesn't double-report. **(3) path/via XOR negative
+tests** — found already present for both arms; added the one adjacent positive
+(`accepts a via with no path`). One adversarial review pass in the separate VS
+Code Claude Code window (2026-09-03): nine P2/P3 findings, all verified
+independently and folded in — the emptiness rule moved into pure `check` for
+testability, the new dir read guarded (`listFixtureDirs` replaces
+`listDirectories`), dotfiles excluded from "content", the reverse check
+tightened against the double-report, `run()` in the test given optional
+`fixtureDirs`/`emptyFixtureDirs`, `docs/architecture/contracts.md` +
+`test/fixtures/README.md` (missing `rich-output/` row) + `test/fixtures/viya35/
+README.md` (stale `PROBE-FINDINGS.md` pointer) all updated. `npm run verify`
+green (exit 0; coverage unmoved — `scripts/` is outside the `out/src`
+denominator); unit tier 1191 → 1197; no `src/` change, so `test:integration`
+not warranted. **Opened as
+[PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97)** (`98fa14d`); the
+two AI reviewers then each found one more, both folded on the branch — Codex:
+`listFixtureDirs` recorded a directory as present before its own `readdirSync`
+succeeded (`7aab792`, read-then-push); the Claude reviewer: the reverse orphan
+check's typo carve-out only covered a non-string `fixtures`, so a `fixtures:`
+typo pointing nowhere real still drew a second misworded complaint
+(`fixtureDirs.includes(declared)` added). **Merged 2026-09-03 as
+[PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), squashed as
+`f0e55b8`** — local `main` fast-forwarded, matches `origin/main`, working tree
+clean. CI + both reviewers passed on the final commit. Nothing carried over.
+
+**5b (live test tier) merged 2026-09-03 as
+[PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), squashed as
+`a3b89ce`.** Local `main` fast-forwarded, matches `origin/main`, working tree
+clean. Test-files-plus-docs only, no `src/` change. Three
+parts: **(1)** a `viya35` scaffold — `test/live/viya35-connectivity.test.ts`,
+mirroring `viya4-connectivity.test.ts`, gated on `liveTarget("viya35")`,
+reporting a clean skip on an unconfigured machine (verified: `npm run test:live`
+→ 11 pending, exit 0). Deliberately narrow (identity endpoint only, no compute /
+jobs / `PROC PYTHON`) because this project has still never talked to a live 3.5
+and `docs/README.md` bars presenting 3.5 as supported from documentation — the
+doc comment says the first run with real 3.5 creds is the verification. **(2)**
+Audit of the existing viya4 suites vs. Phase 3/4's shipped behaviour: the four
+suites cover the 2c / 2b-3a / 3c-i wire paths well; the one real gap is **cancel
+(Findings 75/76)** — `cancelJob`'s `If-Match` round trip regressed silently once
+and only a by-hand check guarded it. Closed with a new mutating suite
+`test/live/viya4-job-cancel.test.ts` (submit a 30 s `data _null_` sleep, cancel
+the running job, assert `cancelJob` returns `ok` — which on `verde` is
+end-to-end proof the fresh-`ETag` `If-Match` path still satisfies the `428`;
+terminal-state check is best-effort `console.warn` only, since Finding 76
+measured the state reading `running` for 24+ s after an accepted cancel).
+`parseTraceback` / `tracebackDiagnostics.ts` (3c-ii/4c) and 4d's diagnostics
+surface are **not** live-coverage gaps — pure text transforms / VS Code
+integration with no new wire risk. **(3)** New `docs/dev/live-testing.md` ("The
+live test tier in anger", the page `docs/dev/README.md` already had planned for
+5b) — the three gates with env-var names in full, the CA-certificate case, a
+per-suite deployment-cost table, the cleanup contract for mutating tests, the
+`viya35` scaffold's unverified status, and the audit summary; `testing.md`'s
+tier-three section trimmed to an overview + pointer; registered in the VitePress
+sidebar. **Checks green this session:** `typecheck`, `lint`, `prettier`,
+`check:docs` (incl. `docs:build`), `check:copyright`, `check:secrets`,
+`test:unit` (1197 passing, unchanged from 5a), `test:live` (clean skip).
+`test:integration` not warranted (no `src/` change — same call as 5a). The
+adversarial review pass was **waived by Sean** (2026-09-03, test-files-plus-docs
+only). **`viya4-job-cancel.test.ts` live-verified 2026-09-03** against `verde`
+(token via the `viya-api-probe` skill, scoped `--grep "job cancel"` run): 1
+passing, 8 s, exit 0, no `console.warn`s — `cancelJob` returned `ok` (the
+`If-Match` `PUT` accepted, not the `428` a bare cancel draws), the job settled to
+`canceled`, the session cleaned up. Node needed `NODE_OPTIONS=--use-system-ca`
+(the `cacert.pem` bundle via `NODE_EXTRA_CA_CERTS` was not enough). Incidental:
+the SAS `data _null_` sleep cancelled promptly (~8 s), unlike Finding 76's
+`PROC PYTHON` loop — consistent with that finding's own reasoning, not asserted.
+The two AI reviewers then raised one Major (the mutating cancel suite submitted a
+deterministic job under the fixed `SESSION_NAME`, missing `CONTRIBUTING.md`'s
+per-run-uniqueness rule — fixed in `9918268` with a `%put` of a `randomUUID`
+marker, re-verified live) and two nits (the flat `120_000` timeout — comment now
+owns the tradeoff; `describeFailure`'s fourth byte-identical copy — deferred to
+its own cleanup lifting it into `test/helpers/live-gate.ts`). The `gh pr comment`
+replies posted during this did not appear on the PR (a known local issue — the
+substantive record is the commit message and the phase-5.md 5b entry).
+
+**The `viya35` scaffold's live run — against the 3.5 deployment that was
+deploying as this landed — is deferred to the end of Phase 5** (Sean's call,
+2026-09-03), with all other 3.5 testing.
+
+**Decided and executed, 2026-09-03: Viya 3.5 support is dropped — Sean's call,
+combining code and docs into one slice/PR rather than the usual one-thing-per-PR
+split.** No Viya 3.5 deployment was ever reachable by this project, across every
+phase from 0 through 5b, and very few Viya 3.5 customers remain in the target
+audience — see [ADR-0022](adr/0022-drop-viya-35-support.md) for the full
+record, which also supersedes the Viya-3.5-specific part of ADR-0008.
+Implemented this session, matching the codebase survey the "open consideration"
+note above (now superseded) had sketched: `src/dialects/viya35.ts` deleted;
+`DialectId` (`dialect.ts`) is `"viya4"` alone; `Deployment`
+(`auth/clientId.ts`) is `viya4 | unknown`, no `viya35` member;
+`deploymentFromSignal`'s `absent` arm now resolves to `{kind:"unknown"}`, same
+as `unreadable`; `contracts/viya35.yaml`, `test/fixtures/viya35/`, and
+`test/live/viya35-connectivity.test.ts` removed; `check-contracts.mjs` needed no
+code change, since it already reads `DialectId` off the source file. Test
+fixtures using `{kind:"viya35"}` were deleted or rewritten against the new
+behaviour; `check-contracts.mjs`'s own unit tests, which needed a *second*
+synthetic generation to exercise their cross-file rules, now use a fictitious
+`viya6` instead of `viya35`. Docs swept in the same pass: `PRODUCTION_PLAN.md`
+§1.4/§2/§2.3/§4/§6/decision 9 (amended in place, original text kept per this
+file's own convention — see the amendment blockquotes), `docs/README.md`'s
+honesty gate, `docs/architecture/dialects.md` and `capability-probing.md` and
+`contracts.md`, `docs/dev/live-testing.md` and `testing.md`, and the
+user-facing `docs/connecting.md` / `connection-profiles.md` / `signing-in.md`.
+`docs/phases/phase-5.md`'s 5b entry gets a closing note retiring the
+"`viya35` scaffold deferred to end of Phase 5" item rather than leaving it to
+mislead the next session; phase-1/2a/2b/3/4's own historical 3.5 mentions are
+untouched, per this project's own rule against rewriting history.
+**Implemented; not yet checked, reviewed, or merged — see the next entry.**
+
+Full detail in `docs/phases/phase-5.md`'s 5b Runbook entry (for the live test
+tier this decision retires part of) and its new closing note (for the decision
+itself). **After this lands: 5c — docs publishing and release engineering**
+(the largest slice in the phase; see phase-5.md's Runbook). The local
+`phase-5b-live-test-tier` branch is stale now (merged) — safe to
+`git branch -D` and `git fetch --prune`.
+
+**Viya 3.5 drop merged 2026-09-03 as
+[PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), squashed as
+`c2c5b2b` on `main`** — local `main` fast-forwarded, matches `origin/main`,
+working tree clean. (The "not yet checked, reviewed, or merged" two paragraphs
+up was accurate when written; it went stale on merge. Recording it here rather
+than editing that paragraph, per this file's supersede-don't-rewrite
+convention.) CI + both reviewers passed. The `phase-5b-live-test-tier` and
+`drop-viya-35-support` local branches are both stale now.
+
+**5c scoped into four sub-slices, 2026-09-03 (Sean's call).** 5c is the five
+Runbook items regrouped: **5c-i** the user-facing feature-docs pages (item 1,
+docs-only), **5c-ii** the troubleshooting guide (item 2, docs-only), **5c-iii**
+release engineering — `release.yml` + `package.json` marketplace metadata +
+icon asset + `release-checklist.md` rewrite (items 3 + 4 minus the version
+bump), **5c-iv** the v0.1.0 release itself — dry run then tag, plus the
+deferred version bump / `CHANGELOG` finalise (item 5). Order i → ii → iii → iv;
+i and ii have no dependency between them. Full breakdown in phase-5.md's own 5c
+Runbook entry.
+
+**5c-i implemented 2026-09-03; not yet reviewed or merged, no PR.** Docs-only —
+no adversarial pass, per this project's own rule (the diff is its own
+evidence); the `check:docs` build (incl. `docs:build`) and `check:secrets` are
+the checks it can plausibly fail. Three new top-level pages —
+`docs/running-python.md`, `docs/diagnostics.md`, `docs/python-environment.md` —
+covering Phase 3/4's shipped feature set (Run File/Selection, the output
+channel and Result panel, Reset, one-run-at-a-time, cancel with the Findings
+75/76 caveat; the traceback surfaces and the Problems panel with its "no entry
+when no `<string>` frame maps" rule and 5d-iv lifecycle clears; Show/Refresh
+Environment and the per-profile no-auto-refresh cache). Registered in
+`.vitepress/config.mjs`'s "Using the extension" sidebar; `docs/README.md`'s
+page list extended; now-false "not here yet" notes in `connecting.md` /
+`connection-profiles.md` swept to point at the new pages; `CHANGELOG.md`
+`[Unreleased]` entry added. **One `src/` follow-up noted, deliberately not
+folded in** (it would make 5c-i not docs-only): `src/run/outputChannel.ts`'s
+`writeOutput` still says an image/HTML output's viewer "ships in a later slice"
+— stale since 3d-ii — its own small `fix(run):` change. Branch
+`phase-5c-i-feature-docs`.
+
+**5c-i merged 2026-09-03 as
+[PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), squashed as
+`bce3dc3` on `main`** — local `main` fast-forwarded, matches `origin/main`,
+working tree clean. CI green. The `github-actions` reviewer raised **one
+blocking finding**, verified and fixed on the branch (`e6a061f`): the
+"switching the run target to Local" bullet in `diagnostics.md` said flipping
+the target *strands* every Viya Problems entry, where the shipped code
+(`targets.onDidChange` → `diagnostics.clearAll()`, pinned by
+`commands-diagnostics.test.ts`) *clears* the whole collection — reworded, with
+the reason. The reviewer's non-blocking side note — `src/run/commands.ts`'s
+own `targets.onDidChange` inline comment carries the same wrong "strands"
+wording, contradicted by the `clearAll()` directly below it — is folded into
+the carried `fix(run):` follow-up, which is now **two** items: that comment
+plus the `outputChannel.ts` "ships in a later slice" string. Both live in
+`phase-5.md`'s 5c Runbook entry. The `phase-5c-i-feature-docs` local branch is
+stale now (merged).
+
+**5c-ii (troubleshooting guide) merged 2026-09-03 as
+[PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), squashed as
+`1f073e4` on `main`** — local `main` fast-forwarded, matches `origin/main`,
+working tree clean. Docs-only, so no adversarial pass per this project's own rule (the
+diff is its own evidence); `check:docs` (incl. `docs:build`) and `check:secrets`
+are the checks it can plausibly fail. One new top-level page
+`docs/troubleshooting.md` — symptom-indexed, assembled from failures actually
+hit in Phases 1–4 rather than a generic FAQ: the sign-in paste-code route and
+redirect-mismatch message (Finding 10) and the bare-`401` ambiguity (Finding 9),
+with the private-CA / TLS case pointing at `signing-in.md` (5d-i, no numbered
+finding), the per-response context-links message and the no-Python-context case
+(`connecting.md`, phase-2b),
+session reaping (Finding 18) and the post-reload stale-fileref collision and its
+seed-the-counter fix (Finding 72), the measured cancel caveat (Findings 75–76),
+the interpreter banner / `>>>` noise (Finding 74, still a probe follow-up),
+rich-output capture and the OOM-during-generation kill vs the 10 MiB skip
+(ADR-0019 + Finding 73), why Reset Python State is for a wedged namespace not a
+submission problem (ADR-0014 + Findings 33/64), and a short
+reset-vs-reconnect-vs-reload guide. Registered in `.vitepress/config.mjs`'s
+"Using the extension" sidebar; `docs/README.md` page list extended;
+`CHANGELOG.md` `[Unreleased]` entry added. **No new probe opened** — every entry
+rests on a finding already recorded, and Finding 74's source-side resolution
+stays its own tracked follow-up, not this slice's. CI green; both AI reviewers
+passed with no blocking findings. Two non-blocking review notes: the Finding 6 →
+Finding 9/10 citation fix (folded pre-merge as `795b48f` on the branch), and a
+prose accuracy fix in the "fileref already exists" entry — its "clears itself in
+up to a minute" borrowed a number measured for the pre-fix single-window race,
+where the residual two-window case is instead absorbed by the bounded
+assign-retry (Finding 72's fix). The prose fix and this merge record land
+together in a small follow-up docs PR (`docs/record-pr-104`), per the same
+pattern PR #103 used for 5c-i. The `phase-5c-ii-troubleshooting` local and
+remote branches are deleted. **After this: 5c-iii —
+release engineering** (`release.yml`, `package.json` marketplace metadata, icon
+asset, `release-checklist.md` rewrite); see phase-5.md's own 5c Runbook entry.
+
+**5c-iii (release engineering) — [PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106),
+opened 2026-09-03, reviewed, fixes folded, not yet merged.** Branch
+`phase-5c-iii-release-engineering`. `.github/workflows/release.yml` — **two
+jobs** on a `v*` tag push: `build` (`contents: read`, no credentials) runs
+checkout → `npm ci` → assert tag `vX.Y.Z` equals `package.json` `version` →
+`npm run verify` → `npm run package` → upload the `.vsix` artifact; `publish`
+(`needs: build`, `if: push`, `environment: release`, `id-token: write` +
+`contents: write`) downloads the artifact and `npx`es the pinned `vsce`/`ovsx`
+(**never `npm ci`** — keeps the ~880-pkg dev tree out of the credentialed job)
+→ `vsce publish --oidc --packagePath` (VS Marketplace, OIDC trusted publishing,
+**no stored PAT**) → `ovsx publish` (best-effort: `continue-on-error`,
+unset-`OVSX_PAT` guard, a failure only warns) → `gh release create` with the
+`.vsix` + notes from `CHANGELOG.md`. `workflow_dispatch` runs `build` only —
+no input, cannot publish. Recorded as
+[ADR-0023](adr/0023-release-publishing.md). `package.json` gains
+`"private": false`, `"icon": "media/icon.png"`, `galleryBanner`, `pricing`
+(version bump / `"preview"` → 5c-iv). `media/icon.png` is a
+deterministically-generated `Py` wordmark (white on `#0766D1`, 128×128, no
+alpha) — explicit stopgap, `release-checklist.md` D3 says replace it.
+`ovsx@1.1.1` + **`@vscode/vsce` pinned to the `3.9.3-11` prerelease** (see the
+review below); `npm audit` unchanged at 2 pre-existing lows, `allowScripts`
+unchanged; `check:audit` can't run on this Windows box (`npm.cmd`-spawn
+`EINVAL`, as in 5d-ii) — CI's `supply-chain` job confirms. **Pre-existing
+packaging leak, folded in:** the `.vsix` was already shipping `CLAUDE.md`,
+`STATUS.md`, `HOUSEKEEPING.md`, `.claude/**` and `tsconfig.webview.json`
+(`.vscodeignore` never excluded them, `check:package`'s rules predated them) —
+`STATUS.md`/`CLAUDE.md` name deployments, and this is the slice that makes the
+package public. `.vscodeignore` + `scripts/check-package.mjs` (`DENY`
+rules + `SELF_TEST`) updated; `REQUIRED` also now lists the icon. Archive drops
+18 files/142 KiB → 12/97 KiB. **Also folded in:** `scripts/check-audit.mjs`'s
+per-audit timeout 120s → 240s — the `ovsx`/`vsce` deps pushed the full-tree
+`npm audit --json` to ~90s (measured local) and the old cap kept failing the
+`supply-chain` CI job on registry latency (2 of 3 runs on this branch).
+`docs/release-checklist.md` rewritten around the tag→two-job flow;
+`docs/dev/ci.md`'s Release + audit-timeout notes updated. `CHANGELOG.md`
+`[Unreleased]` + ADR-0023 (indexed) updated.
+
+**Adversarial review done 2026-09-03** (hand-over prompt, separate window).
+**One blocker (finding 1):** `@vscode/vsce@3.9.2` (latest stable, what the
+first cut pinned) has **no `--oidc`** — it shipped only in the `3.9.3`
+prereleases. Fixed by pinning `@vscode/vsce@3.9.3-11`; Dependabot's normal bump
+retires the exception when `3.9.3` goes stable. **Two should-fix, both done:**
+(2) `id-token`/`contents: write` were in scope while `npm ci`/`verify` ran
+arbitrary tagged-tree code → the two-job split above; (3) any tag push could
+publish any tree → `environment: release` gate + a `v*` tag ruleset (repo
+settings, documented). **One docs gap (4):** the one-time setup skipped that
+the `shai-alit` Marketplace publisher must pre-exist and Open VSX needs a
+signed Eclipse Publisher Agreement → added. Smaller items folded: `--pat`
+dropped from the `ovsx` call (env-read) with an unset guard; release notes →
+`$RUNNER_TEMP`; `awk` regex → literal `index()` match. The reviewer's positive
+verifications held. **Merged 2026-09-04 as
+[PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), squashed as
+`e70c682` on `main`** (local `main` fast-forwarded). CI + both AI reviewers
+passed on the final commit. Two mid-flight follow-ups were folded into #106
+rather than split: the pre-existing packaging leak (above) and a `check:audit`
+per-audit timeout bump 120s → 240s — the added `ovsx`/`vsce` deps pushed
+`npm audit --json` to ~90s locally and the 120s cap kept failing `supply-chain`.
+**That bump did not fix it** — `npm audit --json` on CI now exceeds 240s too
+(PR #110's run), so `check:audit`/`supply-chain` reliability needs its own
+look, likely gating the job on `package-lock.json` actually changing rather
+than raising the timeout again. The publish path (OIDC exchange + tokens + the
+`release` environment gate) is still not exercisable locally or by the
+build-only dispatch — first real run is the v0.1.0 tag (**5c-iv**), which
+needs the one-time setup S1–S4 in `docs/release-checklist.md` done first. The
+two stale-comment `fix(run):` items 5c-i carried are still open and deliberately
+not taken mid-phase — a small PR when convenient, or fold into Phase 5→6
+housekeeping.
+
+**CI reliability follow-up to 5c-iii, 2026-09-04 — [PR #112](https://github.com/Shai-Alit/sas-py-vscode/pull/112)
+and [PR #113](https://github.com/Shai-Alit/sas-py-vscode/pull/113) merged.** Two
+`ci:` PRs off the thread above; no `src/` change. **#112** (`a8b906d`) closes the
+`check:audit`/`supply-chain` reliability item flagged above. `supply-chain` no
+longer runs on every code change: `changes` now emits a `deps` output (true when
+the diff touches `package.json`, `package-lock.json`, `.npmrc`,
+`scripts/check-audit.mjs`, `scripts/advisory-allowlist.json`, or a workflow file)
+and `supply-chain` gates on that instead of `code`, so a comment or `src/` edit
+no longer pays the ~9-minute `npm@12` install + `npm audit` round trip;
+`verify`/`test`/`package` are unchanged and the `allowScripts` half stays checked
+on every code change by the unit tier. `scripts/check-audit.mjs` also now passes
+`--fetch-timeout=45000 --fetch-retries=2` to `npm audit` — a single wedged
+request, not a slow tree, was the real cause of the intermittent failures the
+120→240s bump had not fixed — and its backstop per-audit timeout drops 240s →
+180s. **#113** (`219c096`) adds a `ci-required` aggregate job: it `needs` the
+gated jobs (`changes, verify, test, docs, package, supply-chain`) with
+`if: always()` and passes only when each succeeded or was legitimately skipped
+(a `failure`/`cancelled` result fails it; the guard matches the bad states
+positively so a blank line cannot read as failure). This lets branch protection
+name one stable check instead of the six matrix-expanded `test (…)` names that
+never report on a run where `test` is skipped — the reason a documentation-only
+PR previously needed an admin merge. `analyze` (CodeQL, in `codeql.yml`, cannot
+be a `needs:` here, and runs on every PR with no path filter) stays required on
+its own. **Branch protection updated 2026-09-04** via `gh api`, after
+`ci-required` reported once green on `main`: `main`'s required status checks went
+from `docs, package, verify, analyze, supply-chain, changes` to
+`ci-required, analyze, changes`; `strict` (up-to-date), linear history and
+required-conversation-resolution are unchanged. The everything-runs case is
+confirmed — all six `test` legs plus `ci-required` green on the `219c096` merge
+commit — and this docs-only PR is itself the first live exercise of the
+skip-tolerant path (`verify`/`test`/`package`/`supply-chain` skipped,
+`ci-required` still green, no admin merge). This paragraph is that record.
+
+**Phase 6 (SAS Content explorer) scoped 2026-09-03**, from a separate clone
+(`sas-py-vscode-cowork`), deliberately kept apart from the primary working
+copy so this scoping session would not collide with Phase 5's own in-progress
+work (5c-iii next, per the paragraph above) — this branched from `main` at
+`0e2efb4` (5c-ii merged) and does not reflect anything landed on `main` since.
+**No code was written.** A codebase survey of both this repo and
+`vscode-sas-extension`'s Content Navigator
+(`client/src/components/ContentNavigator/`,
+`client/src/connection/rest/RestContentAdapter.ts`), plus five read-only live
+probes against `verde` (Findings 78–82, `docs/phases/phase-6.md`'s own Probe
+findings section), refined `PRODUCTION_PLAN.md`'s one-line sketch into a
+4-slice Runbook (6a adapter + read-only tree, 6b `FileSystemProvider`
+open/save, 6c mutations, 6d favourites/recycle bin), recommended order
+6a→6b→6c→6d. Key outcomes: **no adapter factory needed** — unlike upstream's
+six-way `{Rest,IOM,COM}×{SASContent,SASServer}` dispatch, this project is
+Viya-REST-only (ADR-0007, ADR-0022), so one concrete `ContentAdapter` class
+is the whole adapter layer; **the generic `.py` type lookup already works**
+on the one cadence probed (Finding 79 — `file_py`, no `.sas`-style special
+case needed); and **an open architecture question** — whether
+`src/compute/links.ts`'s link-following helpers should be promoted to a
+shared, session-agnostic home before `src/content/` either imports across a
+layering boundary or duplicates them. Two live anomalies (Findings 80, 81 —
+a favorites member-count mismatch; an inconsistent recycle-bin restore link)
+and one non-goal correction (`convertNotebookToFlow`/SAS Studio flow
+conversion, already excluded by `PRODUCTION_PLAN.md` §3.1) are recorded, not
+resolved, in the phase file. **Not yet committed** — this is prepared in the
+working copy; see the handoff for the exact branch/commit/PR commands.
+**Merge-conflict note for whoever lands this:** `STATUS.md` and
+`docs/phases/phase-6.md` are new/appended content only, so a conflict against
+whatever Phase 5 has landed on `main` in the meantime should be a clean
+append on both sides — but confirm with a fresh `git pull --ff-only` before
+cutting the branch, since this paragraph was written against a snapshot, not
+against `main` as it stands when this actually gets pushed.
+
+**Phase 7 (Libraries and data viewer) scoped 2026-09-03**, same day, same
+separate clone (`sas-py-vscode-cowork`) — branched from `main` at `c57a4f1`
+(Phase 6 scoping merged as PR #107), so it does not reflect anything landed
+on `main` since. **No code was written.** A codebase survey of both this
+repo (`src/compute/sessionManager.ts`, `job.ts`, `links.ts`) and
+`vscode-sas-extension`'s Library Navigator
+(`client/src/components/LibraryNavigator/`,
+`client/src/connection/rest/RestLibraryAdapter.ts`, its generated
+`DataAccessApi` client, `client/src/panels/DataViewer.ts`/
+`TablePropertiesViewer.ts`, `client/src/webview/useDataViewer.ts`) refined
+`PRODUCTION_PLAN.md`'s one-line sketch into a 3-slice Runbook (7a adapter +
+read-only tree, 7b data-viewer webview, 7c sort/filter/CSV export/table
+properties), recommended order 7a→7b→7c. Key outcome: **the whole feature is
+session-scoped, not a separate service** — every `DataAccessApi` call is a
+path under `/compute/sessions/{sessionId}/data/…`, so a library browser rides
+on the exact same `ComputeSessionManager`-held session Phase 3 already runs
+Python in, a materially smaller structural lift than Phase 6's four-new-surface
+problem. One open architecture question recorded, not resolved: React +
+`ag-grid-community`/`ag-grid-react` (upstream's data-viewer stack) as this
+project's first React dependency, versus hand-rolling a lighter grid in the
+existing DOM-manipulation webview style ADR-0021 established — flagged for
+7b, not decided here. **The busy-submission question is now settled, not
+just flagged**: an initial probe attempt this session failed at the network
+layer (every `CONNECT` to `verde` came back `502 Bad Gateway` while a public
+host tunnelled fine — a VPN outage on the deployment side, confirmed resolved
+once retried), and once reachability returned, a live probe (Finding 85)
+measured a `getRows` call blocking for 14.911s behind a submitted 15-second
+job, against a 0.349s baseline once idle — `DataAccessApi` calls serialize at
+the session's kernel level rather than erroring or racing, so 7a needs a
+visible "session busy" UI rather than assuming browsing is always safe
+mid-run. Five other findings (83, 84, 86) confirmed the core wire shapes
+against `SASHELP`/`WORK` on `verde`, via one throwaway session created and
+deleted (confirmed gone by a `404` read-back) — full account in
+`docs/phases/phase-7.md`'s own Probe findings section. **Not yet committed** —
+prepared in the working
+copy; same merge-conflict caveat as the Phase 6 paragraph above applies here
+too (confirm `git pull --ff-only` against `main` before cutting the branch).
+
+**Phase 8 (CAS and SWAT) scoped 2026-09-03**, same day, same separate clone
+(`sas-py-vscode-cowork`) — branched from `main` at whatever commit was current
+when this session started (Phase 6 and Phase 7's own scoping commits are both
+ahead of `main` on their own unmerged branches; confirm with a fresh
+`git pull --ff-only` before cutting this branch, same caveat those two
+paragraphs already give). **No code was written.** A codebase survey (this
+repo's `src/compute/sessionManager.ts`/`client.ts`/`links.ts`, plus a targeted
+grep of `vscode-sas-extension` that confirms its own claim of calling no CAS
+APIs — every `CAS`/`CASLIB`/`swat` hit lands in the language server's syntax
+reference data, nothing in `client/src`), a web search for the CAS Management
+REST API and `swat`'s current authentication documentation, and eight live
+probes against `verde` (Findings 87–92, `docs/phases/phase-8.md`'s own Probe
+findings section) refined `PRODUCTION_PLAN.md`'s one-line sketch into a
+3-slice Runbook (8a CAS browsing, 8b authenticated CAS session helper, 8c CAS
+tables in the data viewer), recommended order 8a→8b→8c. Key outcomes: caslib
+and table browsing needs **no `sessionId` and no CAS session of its own**
+for global-scope resources, contradicting every example in the CAS
+Management API's own reference docs (Finding 88); the existing
+`ComputeClient`/`links.ts` machinery already fits `casManagement`'s hypermedia
+shape without modification, so 8a needs no new HTTP layer (Finding 87); and a
+`PROC PYTHON` cell can authenticate to CAS with the exact same Viya access
+token this project already borrows per request, live-confirmed over both the
+binary and REST/HTTP transports (Finding 91) — settling Phase 8's central
+premise. **One serious finding came out of settling that last one**: the
+naive way of delivering that token to the cell (an inline `PROC PYTHON`
+`submit` block) echoed it in plaintext into the job log (Finding 92), which
+happened for real during this session's own probe — the exposed `verde`
+token was reported to Sean for rotation, and the throwaway Compute session
+that carried it is deleted and confirmed gone (`404` read-back). 8b's own
+Runbook entry now carries a non-negotiable constraint as a result: never
+deliver a credential to a session via inline submitted code. Two open
+architecture questions carried into the phase file rather than settled here:
+whether 8a needs its own CAS-session lifecycle for session-scoped (personal)
+caslibs, and whether the `links.ts`/`client.ts` promotion Phase 7 already
+flagged happens in 8a, 7a, or not at all. **Not yet committed** — prepared in
+the working copy; same merge-conflict caveat as the Phase 6/7 paragraphs
+applies here too.
+
+**Phase 9 (Notebooks) scoped 2026-09-04**, same separate clone
+(`sas-py-vscode-cowork`) Phases 6–8 were scoped from — branched from `main`
+at `a62f6c4` (current tip: 5c-iii, ADR-0023, and the CI-reliability/
+`ci-required` follow-ups all merged; Phases 6/7/8 also already in this
+history). **No code was written.** A codebase survey of this repo
+(`src/backend/backend.ts`, `richOutput.ts`, `src/run/commands.ts`,
+`resultPanel.ts`/`resultPanelModel.ts`) and `vscode-sas-extension`'s one
+notebook implementation (`client/src/components/notebook/`), plus VS Code's
+own Notebook API documentation, refined `PRODUCTION_PLAN.md`'s one-line
+sketch into a 4-slice Runbook (9a format decision, 9b controller + execution,
+9c renderers + diagnostics, 9d export), recommended order 9a→9b→9c→9d.
+**No live-Viya probe was run or needed** — unlike Phases 6–8, this phase's
+open questions are VS Code client-side integration questions, not wire
+behaviour; the underlying Viya mechanics (persistent namespace across cells,
+rich-output capture, cancellation) were already settled in Phases 2–5 for Run
+File, and a notebook cell is just one more caller of the same
+`ExecutionBackend` seam — `ExecuteOptions.freshNamespace` was already
+documented in-repo as *"a notebook cell passes `false`"* before this phase
+existed. **Key outcome, now a settled decision, not just a recommendation:
+[ADR-0024](adr/0024-notebooks-are-ipynb-native.md) — notebooks are
+ipynb-native, with no bespoke fallback**, settling `PRODUCTION_PLAN.md` §6
+open decision 7. Go ipynb-native by registering only a `NotebookController`
+against VS Code's existing `.ipynb` infrastructure (the documented
+"alternative kernel for an existing notebook type" pattern, the same shape
+.NET Interactive and Deno's own Jupyter kernels use), rather than inventing a
+bespoke format the way upstream's `.sasnb` did — since a Python notebook's
+own `RichOutput` shape is already a well-formed Jupyter output bundle, unlike
+SAS's two-fixed-mimetype log/ODS model, and a developer already using Jupyter
+notebooks should get the same file format everywhere, not a shape only this
+extension understands (Sean's direction, 2026-09-04). **What's still open is
+implementation mechanics only, not the format itself**: 9a's very first task
+is a hands-on spike confirming whether `.ipynb` notebooks open and accept a
+third-party kernel with `ms-toolsai.jupyter` **not** installed, since nothing
+found this session states that directly — if the spike shows that extension
+is needed, 9a documents it as a recommended/required companion rather than
+retreating to a bespoke format. Two further open architecture questions carried into the
+phase file rather than settled here: lifting `commands.ts`'s private
+`backends`/`backendFor` cache out of its closure so a notebook controller and
+Run File share one backend per profile instead of each holding an
+independent one, and whether the run-target (ADR-0011/0020) status-bar
+concept needs to extend to notebooks at all, given the kernel picker is
+already an explicit per-notebook choice. **Committed as `3bdb9f2` on branch
+`phase-9-scoping`, opened as [PR #115](https://github.com/Shai-Alit/sas-py-vscode/pull/115),
+2026-09-04.** Docs-only, no adversarial review pass needed (the diff is its
+own evidence, same as Phases 6/7/8's own scoping PRs) — `check:docs` and
+`check:secrets` are the checks it can plausibly fail.
+
+Its between-phase housekeeping
+housekeeping (2026-08-27) fixed a stale `PRODUCTION_PLAN.md` reference to
+ADR-0011's superseded default, rolled two open "After 3d-i" punch-list items
+into `docs/phases/phase-4.md`'s own Runbook, and ran the live check
+phase-3.md's own closing note called for: `probeRuntime()`'s full wire
+sequence (job, `SYSCC`, directory listing, content fetch, delete, cleanup),
+confirmed against `verde` — see `docs/phases/phase-3.md`'s Finding 71. The
+two open Dependabot alerts (both `serialize-javascript`, `GHSA-5C6J-R48X-RMVQ`
+high and `GHSA-QJ8W-GFJ5-8C6V` moderate) were cleared 2026-08-27 by pinning
+`serialize-javascript ^7.0.5` in `package.json`'s `overrides` — the
+child-override route the August allow-list note said to check and then did not
+apply to these two; the allow-list is now down to the one `low` `diff` entry.
+See ADR-0005's 2026-08-27 amendments. See `docs/phases/phase-3.md`. Slice 3a (`PROC PYTHON`
+backend, plus the `resolveContext` no-such-context correction) and 3b (the log
+filter) are merged. 3c's own probe (step 1, findings 61–66) is also merged —
+the file-write-plus-Compute-files-API mechanism won outright over
+base64-through-the-log. 3c-i (matplotlib/pandas rich-output capture) is merged
+too (PR #59, ADR-0019), and so is 3c-ii (traceback structuring: `parseTraceback`
+drops the harness's `<stdin>` wrapper frames, finding 39 — no ADR needed, a
+narrow correction rather than a competing design). **3d-i is merged, as
+[PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63)** — the run
+target (ADR-0011) plus, per a scope decision settled before writing any code,
+the full `Run File`/`Run Selection`/`Cancel`/`Reset Python State` commands and
+the program output channel, not only the run-target mechanism the Runbook's
+own punch list had detailed going in. See `docs/phases/phase-3.md`'s 3d-i
+entry for the scope note and the design decisions. **The "confirm by hand"
+editor check ADR-0011 called for was run, 2026-08-26, and found the outcome
+the ADR said would mean revisiting it**: this extension's own Run File came
+up as the *primary* `editor/title/run` button, ahead of `ms-python.python`'s,
+on a folder where it had never once been invoked before — not explainable as
+"last used remembered." **Resolved the same day by
+[ADR-0020](adr/0020-run-target-defaults-to-local.md)**, which reverses
+the run target's default to Local — an unconfigured workspace now
+contributes nothing to the editor, so this extension can only win the
+primary slot once a user has explicitly asked for Viya. See phase-3.md's
+findings write-up and ADR-0020 for the full record. **3d-ii is merged, as
+[PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65)** — this
+repository's first webview: a singleton `WebviewPanel`, CSP-locked, fed by a
+buffered host↔webview message protocol, per
+[ADR-0021](adr/0021-result-panel-webview.md), opening only for a run
+that produces `text/html`, `image/png`, or a structured traceback. Two
+rounds of in-session adversarial review plus a third manual pass in Sean's
+own VS Code window found and fixed real defects before the PR opened —
+most notably a user closing the panel mid-run permanently using up that
+run's one reveal, caught only by `npm run test:integration` against the
+real VS Code host, since the mocked-`vscode` unit tier never executes
+`test/integration/**` at all. Two automated PR reviewers then raised a
+CodeQL origin-check finding (dismissed as a scanner false positive — the
+CSP already makes it unreachable) and an incorrect claim that
+`style-src 'unsafe-inline'` permits script execution (it does not; kept,
+for pandas fidelity, and turned into an explicit recorded exception in
+ADR-0021/`SECURITY.md`, pinned by a test). See phase-3.md's 3d-ii entry for
+the full account. **3e is merged, as
+[PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67)** —
+`ExecutionBackend.probeRuntime()` (widening `BackendCapabilities.runtime` from
+the seam's own `"unprobed"`-only type), a fixed, extension-authored Python
+probe that writes its answer to a file rather than printing it (finding 62
+applied, not a new finding), a per-profile `globalState` cache with explicit
+refresh, and the new `Show environment`/`Refresh Environment Info` commands
+opening a read-only virtual document. Two rounds of in-session adversarial
+review, an independent senior-review pass, and the automated PR reviewer
+between them found and fixed: a cache-hit path that connected before ever
+checking the cache, defeating the point of caching for a fresh window; a
+distribution with malformed `METADATA` that could crash or blank the whole
+probe; a `del` that only ran on the success path; a coverage-branches gap the
+eventual unit-tier move exposed (95.03% once fixed, floor unmoved); an
+implicit vs. explicit fetch cap on the probe's own file read; a stale-runtime-
+snapshot gap after a failed re-probe; and a transcription error in this
+slice's own citation of finding 62. See phase-3.md's 3e entry for the full
+account.
+
+**Phase 10 (Viya environment awareness) scoped 2026-09-04**, same separate
+clone (`sas-py-vscode-cowork`) Phases 6–9 were scoped from — `main` at
+`95e4c73` (Phase 9's own scoping merge, PR #115, already in this history).
+**No code was written.** `docs/phases/phase-10.md` and this file's own
+phase-index row and narrative entry. **Committed as `fa70f0f` on branch
+`phase-10-scoping`, opened as [PR #116](https://github.com/Shai-Alit/sas-py-vscode/pull/116),
+2026-09-04.** Docs-only, no adversarial review pass needed (the diff is its
+own evidence, same as Phases 6–9's own scoping PRs) — `check:docs` and
+`check:secrets` are the checks it can plausibly fail, and both pass clean
+(so does `prettier --check`). A codebase survey of
+this repo's existing Stage-2 probe and its consumers
+(`src/backend/environment.ts`, `environmentPanel.ts`/`environmentDocument.ts`/
+`environmentStore.ts`/`environmentStatusBar.ts`, all landed in 3e) plus
+`PRODUCTION_PLAN.md` §2.3/§3.1 and current Python/Pylance extension
+documentation (cited inline in the phase file) refined the plan's one-line
+sketch into a 2-slice Runbook (10a environment view — search/filtering plus
+a local/remote diff; 10b Pylance environment reflection), recommending 10b's
+own spike first since its answer sizes the rest. **No live-Viya probe was
+run or needed** — same reasoning Phase 9 gave for its own scoping session:
+the open questions here are VS Code/Pylance client-side questions (does a
+generated `python.analysis.stubPath` get picked up without a reload; does a
+workspace-settings write need a merge), not Viya wire behaviour, and 3e's
+existing probe (untouched by this phase) already answers everything this
+phase needs about the deployment side. **Central technical finding, backed
+by two independent documented examples, not settled as an ADR yet since
+nothing here has been hands-on-verified**: Pylance/pyright's own
+`python.analysis.stubPath` mechanism — a directory of generated `.pyi` stub
+packages, one per remote-reported distribution, containing only a
+permissive catch-all — is the documented way to turn a Viya-only import from
+a hard `reportMissingImports` into at worst a suppressible
+`reportMissingModuleSource`, without installing anything locally; a
+`microsoft/pyright` discussion thread and the `micropython-stubs` project's
+own docs both show exactly this shape used for a package (or, in
+MicroPython's case, an entire interpreter) that is never locally installed.
+Getting the local side of 10a's diff needs no new local-Python dependency
+either — `@vscode/python-extension`'s `resolveEnvironment()` gives a
+`sysPrefix` to read `*.dist-info` metadata from directly, the same
+no-subprocess shape `environment.ts`'s own Viya-side probe already uses via
+`importlib.metadata`. **What's still open, and deliberately not settled
+here**: whether 3e's plain-text `Show environment` document should gain a
+filterable `QuickPick` sibling rather than being replaced (3e's own
+documented rationale for plain text — editor-native search, split view —
+still stands for the "read the whole thing" case); and a hands-on spike,
+10b's own first task, confirming whether a changed `stubPath` is picked up
+live and whether a workspace-settings write is safe to make without
+clobbering a user's own keys — this sandbox has no interactive VS Code
+window to run that spike itself. See `docs/phases/phase-10.md` for the full
+account, including why the newer `ms-python.vscode-python-envs` extension's
+own environment-registration API is named as an optional future
+enhancement rather than a dependency, the same way Phase 9 treated
+`ms-toolsai.jupyter`.
+
+**5c-iv started 2026-09-04 — S1 done, but `release-checklist.md` had it
+wrong.** Working through the one-time publish setup live (Marketplace,
+Open VSX, GitHub) with Sean found that `--oidc` trusted publishing
+(ADR-0023's original decision) has never been usable: the Marketplace has
+no policy-registration UI for it, confirmed against the live `shai-alit`
+publisher's own Manage page and an open, unanswered upstream question
+([microsoft/vscode-vsce#1291](https://github.com/microsoft/vscode-vsce/pull/1291)).
+Switched to `vsce publish --azure-credential`, reusing an Entra ID identity
+this repo already had live (kept when Foundry was walked back from
+`claude-review.yml`) via a new federated credential scoped to a new
+`release` GitHub Environment — so S3's environment half is also done in the
+same pass. Two non-obvious findings recorded in
+[ADR-0023](adr/0023-release-publishing.md)'s 2026-09-04 amendment:
+GitHub's OIDC subject claim already defaults to the immutable owner/repo-id
+form for this repo, and the Marketplace's Members search needs the
+identity's Azure DevOps profile id (obtained via a throwaway
+`workflow_dispatch` helper, [PR #117](https://github.com/Shai-Alit/sas-py-vscode/pull/117)),
+not any Entra identifier. The actual rewrite — `release.yml`, the ADR
+amendment, `release-checklist.md`, `docs/dev/ci.md`, and reverting
+`@vscode/vsce` from the `3.9.3` prerelease pin back to stable `3.9.2` —
+merged as [PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118)
+(`278eac7`); local `main` fast-forwarded, matches `origin/main`. **Still
+open before the real v0.1.0 tag:** S2 (Open VSX), S3's separate
+repository-level `v*` tag ruleset, and the `workflow_dispatch` dry run. See
+`docs/phases/phase-5.md`'s own 5c-iv Runbook entry for the full account.
+
+**S2, S3, and the dry run all closed the same day, 2026-09-04.** Open VSX:
+Publisher Agreement signed, `OVSX_PAT` set, `shai-alit` namespace created.
+S3: a `release-tags` repository ruleset (target `refs/tags/v*`, `creation`/
+`deletion`/`non_fast_forward` all active) — confirmed via
+`gh api repos/Shai-Alit/sas-py-vscode/rulesets`. Dry run: `release.yml`
+dispatched manually on `main`
+([run 33916176665](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/33916176665)),
+`build` green in 1m9s, `publish` correctly skipped. **All of S1–S4 and the
+dry run are done — nothing left before the real v0.1.0 tag except Section D
+itself.** See `docs/phases/phase-5.md`'s 5c-iv Runbook entry for the full
+account.
+
+**Section D run 2026-09-08 — v0.1.0 and a v0.1.1 listing-text patch both
+shipped. D7/D8 and three held Dependabot PRs remain.**
+
+**D1–D4** landed pre-weekend as
+[PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121) (`432b4e7`,
+2026-09-04): `CHANGELOG.md` finalised to `## [0.1.0] - 2026-09-04`,
+`package.json` → `0.1.0` with `"preview": true`. **D3 (replace the stopgap
+icon) deliberately skipped** — ships the generated `Py`-wordmark icon, Sean's
+call; `release-checklist.md` D3 carried to a later release. After the long
+weekend `main` was still at `432b4e7` with no tag pushed.
+
+**D5/D6 for v0.1.0, 2026-09-08.** The first `git push origin v0.1.0` was
+**rejected by the `release-tags` ruleset** — S3 set its `creation` /
+`deletion` / `non_fast_forward` rules but left `bypass_actors` empty, so the
+`creation` rule blocked _everyone_, admins included, from ever cutting a
+release tag. Fixed via the GitHub UI by adding the **Repository admin** role
+as an always-bypass actor (`gh api …/rulesets/22299037` confirms
+`bypass_actors:[{actor_id:5,actor_type:RepositoryRole,bypass_mode:always}]`) —
+the guard against ordinary write collaborators pushing arbitrary `v*` tags is
+kept, admins can now tag. S3's guard is only actually complete as of this fix;
+its earlier "confirmed via `gh api`" note was checking the rules, not the
+bypass list. Tag re-pushed (Sean chose to tag `432b4e7` exactly, not `main`
+HEAD, so #122 rides the next release). Release workflow
+[run 34277110735](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/34277110735):
+`build` green, `publish` approved on the `release` environment, all steps
+green — Marketplace `vsce publish --azure-credential`, Open VSX `ovsx publish`
+(the failure-note step _skipped_, i.e. it succeeded), and the GitHub Release
+`v0.1.0` with the `.vsix` attached. VS Marketplace listing live within ~15 min,
+publisher flag `verified`.
+
+**Open VSX namespace warning — expected, one open follow-up.** Every version in
+the `shai-alit` namespace shows ⚠️ _"Shai-Alit is not a verified publisher of
+the namespace shai-alit"_ — `ovsx create-namespace` (S2) only reserves the
+name, it does not make you a verified owner (`"verified": false` on the
+namespace and every release). It blocks neither publishing nor installing; it
+is a trust-signal only. Removed by a one-time public namespace claim: an issue
+on `EclipseFdn/open-vsx.org` (the "Request ownership of a namespace" template —
+namespace `shai-alit`, the Eclipse Foundation account that signed the S2
+Publisher Agreement, proof via `package.json` `publisher` + the Open VSX
+profile + the extension page). An Eclipse admin grants `owner`; the ⚠️ then
+becomes a shield on the existing release and all future ones, no republish.
+**Not yet filed — carried as a post-release item.**
+
+**v0.1.1 (`e76e8e0`), 2026-09-08 — a docs-only patch to fix the store
+listing.** `README.md`'s status blockquote, which ships _inside_ the `.vsix`
+and renders on both listing pages, still read **"Nothing is published to the
+marketplace yet"** and linked `STATUS.md` / `PRODUCTION_PLAN.md` (both
+`.vscodeignore`d out of the package). Rewritten to state the preview status
+and link `CHANGELOG.md` (in the package) + the issue tracker.
+[PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127) — `README.md` +
+`version` → `0.1.1` (`npm version --no-git-tag-version`) + a
+`## [0.1.1] - 2026-09-08` CHANGELOG section; **no `src/` change, extension
+byte-identical to 0.1.0**, so no adversarial review pass (docs-only). Local
+`prettier` / `check:docs` / `check:secrets` green; CI + both reviewers green.
+Tagged `v0.1.1` (the ruleset bypass let it through, "Bypassed rule violations"
+noted in the push output as designed). Release
+[run 34281281390](https://github.com/Shai-Alit/sas-py-vscode/actions/runs/34281281390):
+`build` + `publish` all steps green, same three targets. GitHub Release live;
+both registries re-indexing at time of writing (~15 min like 0.1.0).
+
+**Dependabot's 2026-09-07 weekly run — four PRs, triaged 2026-09-08, none
+release-related.** [PR #122](https://github.com/Shai-Alit/sas-py-vscode/pull/122)
+**merged** (`5fd67c2`) — dev-tooling minor bumps (`eslint` 10.9.1→10.10.0,
+`globals` 17.11→17.12, `typescript-eslint` 8.68→8.69); CI green incl.
+`verify`, dev tree only, no `.vsix` impact. **#123, #124, #125 held until
+after the release:**
+- **#123** (`mocha` 11.8.0 → **12.0.0**) — suite green on all eight `test`
+  jobs, but `supply-chain` fails _correctly_: mocha 12 moves off `diff@^7`
+  onto `diff@^9`, clearing **GHSA-73RR-HH4G-FPGX** so the sole
+  `scripts/advisory-allowlist.json` entry matches nothing (`check-audit.mjs`'s
+  `stale` arm — the entry's own `why` foresaw exactly this). Fix = delete the
+  entry + sweep its four doc citations (this file's line ~342, `docs/dev/ci.md`,
+  `docs/adr/0005-supply-chain-policy.md`, `docs/phases/phase-5.md`); its own
+  small PR, since Dependabot can't make that change.
+- **#124** (`azure/login` v2 → **v3**; Node 20→24) and **#125**
+  (`actions/download-artifact` v7 → **v8**; breaking — ESM, digest-mismatch
+  now errors, no auto-unzip of non-zips) — both touch **only**
+  `.github/workflows/release.yml`, which no PR exercises, so their green checks
+  don't cover the release path. Merge after the release, then re-run the
+  `workflow_dispatch` rehearsal to validate.
+
+**D7 confirmed 2026-09-08** (Sean) — the 0.1.1 listing renders on the live
+Marketplace / Open VSX pages with the corrected blockquote (no more "nothing
+published"); no full `manual-test-pass.md` re-run, zero `src/` delta across
+0.1.0→0.1.1. **D8** is [PR #128](https://github.com/Shai-Alit/sas-py-vscode/pull/128) —
+`version` → `0.1.2-dev`, fresh `## [Unreleased]` in `CHANGELOG.md`; docs-only,
+no publish. **With D8 merged, Section D (and slice 5c-iv, and Phase 5's
+release track) is complete — v0.1.1 is the first published release.**
+
+**The three held Dependabot PRs, 2026-09-08.** **#123** superseded by
+**[PR #129](https://github.com/Shai-Alit/sas-py-vscode/pull/129)** (`c12ee64`) —
+`mocha` 12 taken directly (exact pin `12.0.0`), which drops `diff@^7` for
+`diff@^9` and so clears **GHSA-73RR-HH4G-FPGX** _and_, as a bonus, a fresh
+**high** advisory **GHSA-2883-XCG3-V3HH** (`js-yaml`) that npm published
+against the tree the same day and that had started reddening `supply-chain`
+on every open PR. `scripts/advisory-allowlist.json` `allowed` is now empty
+and its four doc citations (`docs/dev/ci.md`, ADR-0005, this file's
+2026-09-02 housekeeping entry, `phase-5.md`'s `ovsx@1.1.1` bullet) are swept;
+`check:audit` green. **#124** (`azure/login` v2→v3) **merged** (`e72a458`).
+**#125** (`actions/download-artifact` v7→v8) is rebased and green but **not
+yet merged** — this session's `gh` token lacks the `workflow` OAuth scope
+needed to merge a PR that edits `.github/workflows/`, so #125 needs a merge
+from Sean's own session (one click; it's `CLEAN`). v8 is the intended pairing
+for `upload-artifact@v7` (no v8 of that action exists) and is validated by
+the next real tag push, not the `workflow_dispatch` rehearsal, since
+`download-artifact` runs only in the push-only `publish` job.
+
+**CI note — the `review` (Claude) reviewer workflow is currently broken.** On
+a non-`[skip-review]` PR (seen on #129) it fails with `Claude Code native
+binary not found at /home/runner/.local/bin/claude` — `anthropics/claude-code-action@v1`
+failing its own install step on the runner. `@v1` floats, so a bad upstream
+release breaks it with no change on our side; `claude-review.yml` itself was
+last touched 2026-09-03. Not an auth problem: the workflow authenticates with
+`secrets.CLAUDE_CODE_OAUTH_TOKEN` (intact, last updated 2026-08-27), not an
+API key — an earlier note here that read the blank `ANTHROPIC_API_KEY` env
+line as a symptom was wrong; that variable is simply unset because this repo
+uses OAuth-token auth. It is not a required check (`main` gates only on
+`analyze`, `changes`, `ci-required`) and `Codex review` still runs, so no
+merge was blocked. Fix: pin `anthropics/claude-code-action` off `@v1` to a
+known-good version in `claude-review.yml` (and `ai-review.yml` if it uses the
+same action).
+
+**Carried past the release:** (1) the **Open VSX namespace claim** — file the
+"Request ownership of a namespace" issue on `EclipseFdn/open-vsx.org` for
+`shai-alit` (Sean's Eclipse Foundation account) to clear the ⚠️
+unverified-publisher warning; (2) the **Phase 5→6 between-phase housekeeping**
+(`HOUSEKEEPING.md`) — its own session.
+
+**Phase 5→6 between-phase housekeeping ran 2026-09-09.** Landed as a docs-only
+`[skip-review]` commit. **Findings, by `HOUSEKEEPING.md` checklist item:**
+- **ADRs.** ADR-0023's title and index row still said "over OIDC" though the
+  body was properly amended 2026-09-04 to `vsce publish --azure-credential` —
+  its Status line and `docs/adr/README.md` row now carry that pointer. No other
+  ADR needed a change; Phase 5 owed no new ADR (5c-iii already produced
+  ADR-0023; 5d-i amended ADR-0003/0008).
+- **Punch list (`phase-5.md`).** The `5c` header box was the only unticked one
+  though 5c-i–5c-iv all merged — ticked. Stale 5c-iv sub-items closed with a
+  dated closeout note: #125 (`download-artifact` v7→v8) merged from Sean's
+  session (`c383430`); #123→#129 and #124 merged; the 5c-iii "checks … pending"
+  note closed; the detailed `release.yml` bullet's `--oidc` design marked
+  superseded. phase-4.md's two deferred diagnostics-lifecycle gaps confirmed
+  closed by 5d-iv.
+- **RUNBOOK / PRODUCTION_PLAN.** Both current — `RUNBOOK.md` is cross-cutting
+  only; `PRODUCTION_PLAN.md`'s coverage figures match `.c8rc.json` (94/94/93/95)
+  and defer to it. `phase-3.md`'s orphaned "Phases 6–12" bash-stub (stale
+  guessed branch names, flagged for a sweep "whenever Phase 5 starts") retired
+  to a redirect, the same as the Phase 4 / Phase 5 stubs already were.
+- **This file.** The phase-index row for Phase 5 moves to ✅ done in this same
+  commit (see the table below).
+- **Scratch files.** None outstanding — `phase-3-runbook-pending.md`'s holding
+  role was retired during Phase 5 scoping; nothing in the repo, the project
+  folder, or `.claude/` to reconcile.
+- **Manual tests.** **No full `manual-test-pass.md` run since 2026-08-27 (end of
+  Phase 3)** — all of Phase 4 and Phase 5, including v0.1.0 / v0.1.1, had only
+  targeted live re-checks. Sean's call: run a full pass against `verde` /
+  `Innov` with the published `.vsix` **before Phase 6 coding starts**, together
+  with the still-`[ ]` 5d-i user-provided-CA row (needs a deployment the OS does
+  not already trust). Documented in `manual-test-pass.md`'s header.
+- **Dependency advisories.** Clean — **0 open GitHub Dependabot alerts**;
+  `scripts/advisory-allowlist.json` `allowed` is empty (no `expires` date can
+  lapse mid-Phase-6); all four PRs from the 2026-09-07 Dependabot run resolved.
+  No production-tree advisories.
+- **Cross-cutting, carried:** the **`review` (Claude) CI workflow** is broken
+  (`anthropics/claude-code-action@v1` fails its own install step) — fix is a
+  version pin in `claude-review.yml`; matters before a code-heavy Phase 6. Its
+  own small follow-up, as is the Open VSX namespace claim.
+
+**Finding 74 closed by a live probe during this pass — Finding 93 in
+`docs/phases/phase-5.md`.** Probed `verde` 2026-09-09: `PROC PYTHON`'s full
+option list (from the deployment's own syntax-error enumeration) is
+`COMMAND ECHO INFILE RESTART SRC TERMINATE TIMEOUT`, and **none suppresses the
+CPython startup banner or the `>>>` prompt markers** — the banner is the
+embedded interpreter's own startup line (emitted on every init: every Run File,
+first Run Selection after connect/reset), `>>>` is the REPL prompt on every run.
+No `PAGESIZE=MAX`-style source-side fix exists. Decision (Sean, 2026-09-09):
+**accept and document** — `manual-test-pass.md` §6 and the user docs
+(`running-python.md`, `troubleshooting.md`) are reconciled to treat the
+banner/`>>>` as inherent `PROC PYTHON` output. A narrow position-anchored
+client-side filter stays a possible future enhancement gated on its own ADR,
+not a tracked item.
+
+**Phase 6 (SAS Content explorer) is next — scoped 2026-09-03,
+`docs/phases/phase-6.md`.** Before its first slice: the full manual-test pass
+above, the `claude-review.yml` fix, and a re-read of `PRODUCTION_PLAN.md` §3 to
+confirm the 6→12 order against real post-v0.1.0 demand.
+
+**Phase 5→6 checkpoint closeout, 2026-09-09.**
+- **Manual test pass — done, Sean's run.** Full pass against `verde` (SSO) /
+  `Innov` (SAS corporate creds) with the published `.vsix`. Everything passed
+  **except the 5d-i user-provided-CA row** — no reachable deployment whose chain
+  the OS distrusts; stays deferred, as `phase-5.md`'s 5d-i entry records. Three
+  notes (`docs/dev/manual-test-pass.md` §3/§4):
+  - **Fileref collision after a full VS Code restart — real bug, `fix/` PR
+    before Phase 6.** `src/compute/fileref.ts`'s `listFilerefNames` reads only
+    the first page of the session's fileref collection, so Finding 72's
+    `seedFilerefCounter` under-seeds when a reattached session holds >1 page of
+    `PYnnnnnn` names and the 16-attempt retry can't close the gap
+    (`The fileref "py000026" already exists … 16 names tried`). Disconnect →
+    Connect clears it (new session). Fix = paginate the listing. Standalone
+    `fix/` PR, not a phase slice.
+  - **Reload-reconnect may re-prompt for auth** on a password-backed profile
+    (profile B did; SSO profile A did not) — expected IdP behaviour, not a
+    defect; §4 wording updated.
+  - **Accounts menu shows both profiles as separate rows** when their auth
+    flows differ — refines [#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42)
+    (collapse is `account.label`-keyed), and the rows don't identify the
+    extension or the profile (`Sean Ford (SAS Viya)` vs `sean.ford@sas.com
+    (Microsoft)`). Carried to **Phase 11** (`docs/phases/phase-11.md`).
+- **Hosted docs site — not planned.** It was in 5c's original scope but never
+  built; the last 10% (Pages deploy, `base` path, `srcExclude` for `phases/**`,
+  a canonical-URL ADR) is an independently-breakable surface not worth it pre-1.0.
+  Recorded as a standalone task, not a phase slice; the misleading "slice 5c"
+  notes in `docs/.vitepress/config.mjs` and `docs/dev/ci.md` are corrected.
+- **`claude-review.yml` fix — dropped.** Both AI reviewers ran clean on #133;
+  the earlier install-step failure was a one-off, not worth chasing.
+- **New issues held.** Per Sean, no new GitHub issues filed while the project is
+  pre-release / invite-only — the fileref bug is a `fix/` PR, the accounts-menu
+  gap lives in `phase-11.md`. Revisit issue tracking once past "preview".

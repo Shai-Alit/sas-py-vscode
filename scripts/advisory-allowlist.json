@@ -48,7 +48,7 @@
     "diff@^9, out of the vulnerable range, so the advisory cleared on its own (as",
     "that entry's own `why` predicted) and check-audit.mjs then flagged the entry",
     "as stale. `allowed` is now empty: the dev tree carries no accepted",
-    "advisories. See STATUS.md's 2026-09-08 entry and ADR-0005."
+    "advisories. See docs/status-archive.md (2026-09-08 Section D entry) and ADR-0005."
   ],
   "allowed": []
 }

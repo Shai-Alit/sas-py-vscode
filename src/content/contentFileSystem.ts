@@ -64,11 +64,15 @@ export class SasContentFileSystemProvider
   readonly onDidChangeFile = this.changed.event;
 
   /**
-   * Per-resource `{ etag, contentType }` for every file `readFile` has served,
-   * keyed by the `/files/files/{id}` href. `writeFile` reads it for the
-   * `If-Match` that makes the lost-update guard real — see the class doc.
+   * What `readFile` learned about each resource it has served, keyed by the
+   * `/files/files/{id}` href: a {@link WritePrecondition} when the read carried
+   * an `ETag`, or `null` when it succeeded without one (a proxy stripping the
+   * header, or a resource type that does not issue one — finding 6.1 only
+   * confirms the header for `.py`). `writeFile` needs the distinction: `null`
+   * means "opened, but there is no tag to be conditional against", which is a
+   * different refusal from "never opened".
    */
-  private readonly opened = new Map<string, WritePrecondition>();
+  private readonly opened = new Map<string, WritePrecondition | null>();
 
   /**
    * @param currentAdapter Returns the adapter for the active profile, or
@@ -107,12 +111,12 @@ export class SasContentFileSystemProvider
     const { adapter, href } = this.resolve(uri);
     const result = await adapter.readFileContent(href);
     if (!result.ok) throw this.toFileSystemError(result.problem);
-    if (result.value.etag !== undefined) {
-      this.opened.set(href, {
-        etag: result.value.etag,
-        contentType: result.value.contentType,
-      });
-    }
+    this.opened.set(
+      href,
+      result.value.etag === undefined
+        ? null
+        : { etag: result.value.etag, contentType: result.value.contentType },
+    );
     return result.value.bytes;
   }
 
@@ -123,12 +127,21 @@ export class SasContentFileSystemProvider
     const { adapter, href } = this.resolve(uri);
     const precondition = this.opened.get(href);
     if (precondition === undefined) {
-      // No read populated the guard — a save with nothing to be conditional
-      // against. Should not happen (VS Code reads before it lets you edit); if
-      // it does, a blind overwrite is exactly what the guard exists to stop.
+      // No read at all — nothing to be conditional against. Should not happen
+      // (VS Code reads before it lets you edit); a blind overwrite is exactly
+      // what the guard exists to stop.
       throw new vscode.FileSystemError(
         vscode.l10n.t(
           "Open this file from the SAS Content view before saving it.",
+        ),
+      );
+    }
+    if (precondition === null) {
+      // Opened, but SAS Viya sent no version tag for it, so a conditional
+      // write is not possible — refuse rather than overwrite blindly.
+      throw new vscode.FileSystemError(
+        vscode.l10n.t(
+          "SAS Viya did not return a version tag for this file, so it cannot be saved safely from here. Reopen it and try again, or edit it in SAS Studio.",
         ),
       );
     }

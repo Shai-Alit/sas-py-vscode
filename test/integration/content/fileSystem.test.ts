@@ -227,6 +227,32 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     assert.equal(called, false, "no PUT is attempted without a precondition");
   });
 
+  it("refuses a save distinctly when readFile succeeded but carried no ETag", async () => {
+    let called = false;
+    const { provider } = providerWith({
+      readFileContent: () =>
+        Promise.resolve(
+          ok<FileContent>({
+            bytes: new Uint8Array(),
+            etag: undefined,
+            contentType: "application/x-python",
+          }),
+        ),
+      writeFileContent: () => {
+        called = true;
+        return Promise.resolve(ok({ etag: undefined }));
+      },
+    });
+    await provider.readFile(A_CONTENT_URI);
+    const error = await rejectionOf(
+      provider.writeFile(A_CONTENT_URI, new Uint8Array()),
+    );
+    assert.match(error.message, /did not return a version tag/);
+    // Not the "you never opened it" wording — the user did open it.
+    assert.doesNotMatch(error.message, /Open this file from the SAS Content/);
+    assert.equal(called, false, "no blind PUT without a tag");
+  });
+
   it("maps a 404 content-rejected to FileNotFound with the localised message", async () => {
     const { provider, errors } = providerWith({
       statFile: () =>

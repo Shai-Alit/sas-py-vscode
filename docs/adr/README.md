@@ -64,3 +64,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0022](0022-drop-viya-35-support.md) | Viya 3.5 support is dropped | Accepted |
 | [0023](0023-release-publishing.md) | Releases publish from a tag to the VS Marketplace and Open VSX | Accepted — its Marketplace-auth decision is amended 2026-09-04: `--oidc` has no policy-registration UI, so the release uses `vsce publish --azure-credential` (see the ADR's own amendments) |
 | [0024](0024-notebooks-are-ipynb-native.md) | Notebooks are ipynb-native, not a bespoke format | Accepted |
+| [0025](0025-shared-wire-layer.md) | Hypermedia link and error-envelope helpers move to a shared `src/wire/` layer | Accepted |

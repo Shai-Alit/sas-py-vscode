@@ -10,7 +10,7 @@ import {
 } from "../../src/compute/client";
 import { resolveContext } from "../../src/compute/contexts";
 import { createFileref, writeFilerefContent } from "../../src/compute/fileref";
-import { findLink } from "../../src/compute/links";
+import { findLink } from "../../src/wire/links";
 import { type ComputeProblem } from "../../src/compute/problems";
 import {
   type ComputeSession,

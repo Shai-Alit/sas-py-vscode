@@ -77,8 +77,8 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "../compute/client";
-import { findLinkOfType, readLinks, type Link } from "../compute/links";
-import type { ViyaError } from "../compute/problems";
+import { findLinkOfType, readLinks, type Link } from "../wire/links";
+import type { ViyaError } from "../wire/viyaError";
 import type { CadenceSignal } from "./resolve";
 
 /**

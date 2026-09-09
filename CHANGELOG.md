@@ -12,6 +12,12 @@ called out under **Changed** with a migration note.
 
 ### Changed
 
+- Internal: the Viya hypermedia link helpers (`readLinks`/`findLink`/
+  `resolveHref`/…) and the `application/vnd.sas.error+json` reader moved from
+  `src/compute/` to a new service-agnostic `src/wire/` layer, so the Phase 6
+  SAS Content explorer can share them rather than carry a second copy
+  ([ADR-0025](docs/adr/0025-shared-wire-layer.md)). No effect on the published
+  extension.
 - Dev tooling: `mocha` 11 → 12. Its move from `diff@^7` to `diff@^9` clears two
   advisories in the development dependency tree (`GHSA-73RR-HH4G-FPGX` low,
   `GHSA-2883-XCG3-V3HH` high in `js-yaml`); `scripts/advisory-allowlist.json` is

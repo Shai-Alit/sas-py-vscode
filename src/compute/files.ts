@@ -89,7 +89,7 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "./client";
-import { findLink, readLinks, type Link } from "./links";
+import { findLink, readLinks, type Link } from "../wire/links";
 import { asSessionGone, type ComputeSession } from "./session";
 
 /** The relation on a session that resolves to its working directory's own

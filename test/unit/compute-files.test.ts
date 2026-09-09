@@ -20,7 +20,7 @@ import {
   readFileContent,
   type SessionFile,
 } from "../../src/compute/files";
-import { type Link } from "../../src/compute/links";
+import { type Link } from "../../src/wire/links";
 import { type ComputeSession } from "../../src/compute/session";
 
 /**

@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Links — how every Compute request after the first one is addressed.
+ * Links — how every SAS Viya request after the first one is addressed.
  *
  * **This module must never import `vscode`.**
  *
- * The Compute service is hypermedia-driven. A representation arrives carrying a
- * `links` array, and each entry says what may be done next, by which method, at
- * which URL, with which media types:
+ * Every Viya REST service this extension talks to — Compute, and from Phase 6
+ * the Folders and Files services behind the SAS Content explorer — is
+ * hypermedia-driven and uses the same envelope. A representation arrives
+ * carrying a `links` array, and each entry says what may be done next, by which
+ * method, at which URL, with which media types:
  *
  * ```json
  * { "rel": "execute", "method": "POST",
@@ -18,13 +20,18 @@
  * ```
  *
  * That is why ADR-0010 could reject a generated client without much regret. A
- * generated client's contribution is 136 URL builders; the service hands us the
+ * generated client's contribution is URL builders; the service hands us the
  * URLs. What it does *not* hand us is the two rules below, which are properties
  * of the responses rather than of any specification — which is also why upstream
- * had to hand-write this layer to sit alongside its generated one.
+ * had to hand-write a link layer to sit alongside its generated one.
  *
- * Everything here is grounded in `PROBE-FINDINGS.md` findings 13 and 14, taken
- * from a live Viya 4 deployment on 2026-08-14.
+ * This module started life as `src/compute/links.ts`, grounded in
+ * `PROBE-FINDINGS.md` findings 13 and 14 from a live Viya 4 deployment on
+ * 2026-08-14. It moved here in Phase 6a-i (ADR-0025) when `src/content/` needed
+ * the identical helpers: the `Link` shape and the two rules are the Viya
+ * hypermedia envelope, not anything Compute-specific, and a second copy of
+ * {@link findLink} under `src/content/` is exactly the name-collision problem
+ * this module exists to avoid.
  */
 
 /**
@@ -43,6 +50,10 @@
  * deployment. It is kept because JSON permits it, it costs one union member, and
  * a media type that is `null` and one that is absent mean the same thing to every
  * reader below. Do not restate it as something the service does.
+ *
+ * The Folders service (Phase 6) adds `uri` (a duplicate of `href`), `itemType`
+ * and `title` to some link entries. None of them is read here — `href` is the
+ * address this project follows — and {@link readLinks} drops them on the way in.
  */
 export interface Link {
   readonly rel: string;
@@ -149,7 +160,7 @@ export function findLink(
  *
  * The comparison is on the **essence**, normalised: parameters dropped, case
  * folded, and a `+json` suffix ignored. That last part is not laxity, it is
- * {@link computeMediaType}'s rule read backwards — Viya advertises its vendor
+ * {@link sasMediaType}'s rule read backwards — Viya advertises its vendor
  * types bare and serves them suffixed, so a deployment that one day advertises
  * `…cadence.version+json` is saying the same thing as one that advertises
  * `…cadence.version`, and a probe that failed on the difference would report the
@@ -196,8 +207,9 @@ export function linkMethod(link: Link): string {
  *
  * Every `href` the service produces is relative to the deployment root and
  * **already carries the service prefix** — `/compute/sessions/<id>/jobs`, not
- * `/sessions/<id>/jobs`. Keep the root as the only stored base and a link is
- * followed by joining the two, exactly as sent.
+ * `/sessions/<id>/jobs` — and, from Phase 6, `/folders/folders/<id>/members`.
+ * Keep the root as the only stored base and a link is followed by joining the
+ * two, exactly as sent.
  *
  * This is the single design choice that deletes upstream's acknowledged wart
  * rather than fixing it. Upstream sets its generated client's `basePath` to
@@ -252,7 +264,7 @@ const SAS_VENDOR_PREFIX = "application/vnd.sas";
  * `+json` structured suffix on the wire. A link says
  * `application/vnd.sas.compute.job.request`; a request that sends that verbatim
  * as `Content-Type` is not sending what the service wants. So this appends
- * `+json`, which is the entire job of upstream's `computeMediaType()` and the
+ * `+json`, which is the entire job of upstream's `sasMediaType()` and the
  * only reason that file depends on `media-typer`.
  *
  * We take no dependency for it. The rule is three predicates:
@@ -273,7 +285,7 @@ const SAS_VENDOR_PREFIX = "application/vnd.sas";
  * what it might be handed, and `…session; charset=utf-8` becoming
  * `…session+json; charset=utf-8` is the only sane reading of it.
  */
-export function computeMediaType(
+export function sasMediaType(
   type: string | null | undefined,
 ): string | undefined {
   if (type === null || type === undefined) return undefined;

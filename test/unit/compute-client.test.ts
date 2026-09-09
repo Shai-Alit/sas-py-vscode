@@ -9,7 +9,7 @@ import type {
   TransportResponse,
 } from "../../src/auth/transport";
 import { createComputeClient } from "../../src/compute/client";
-import type { Link } from "../../src/compute/links";
+import type { Link } from "../../src/wire/links";
 
 /**
  * The one request helper every other Compute module goes through.

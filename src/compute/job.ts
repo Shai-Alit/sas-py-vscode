@@ -85,7 +85,7 @@ import {
   type ComputeResponse,
   type ComputeResult,
 } from "./client";
-import { findLink, type Link, readLinks } from "./links";
+import { findLink, type Link, readLinks } from "../wire/links";
 import {
   asSessionGone,
   type ComputeSession,

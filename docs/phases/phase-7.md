@@ -57,7 +57,9 @@ all already built and, in principle, already reusable as-is.
   purely off `LibraryItem.type`; `PaginatedResultSet` is a generic
   start/end/sort/query callback wrapper with nothing in it that assumes SAS.
 - The wire shape itself: `GET /sessions/{sessionId}/data` (libraries), `GET
-  /sessions/{sessionId}/data/{libref}` (tables in a libref), `GET
+  /sessions/{sessionId}/data/{libref}` (per-library detail by default, or the
+  tables-in-a-libref listing under a different `Accept` on the same URI — see
+  the note below), `GET
   /sessions/{sessionId}/data/{libref}/{tableName}` (table info, `rowCount`
   etc.), `GET …/{tableName}/columns` (paged column metadata), and `GET
   …/{tableName}/rows` (paged row data, `start`/`limit`/`where`/
@@ -385,9 +387,11 @@ generated client and `RestLibraryAdapter.ts` claim, on this deployment.**
 `…/data/{libref}#tables` are not real, requestable paths — see Finding 95
 for the corrected `Accept`-header content-negotiation mechanism. The rest of
 this finding (the field shapes themselves) stands.**
-`GET /compute/sessions/{id}/data` (libraries), `…/data/{libref}#summary`
-(per-library `readOnly`/engine detail), `…/data/{libref}#tables` (tables in a
-libref), `…/data/{libref}/{tableName}` (table info), `…/{tableName}/columns`,
+`GET /compute/sessions/{id}/data` (libraries), `…/data/{libref}` with the
+default `library+json` media type (per-library `readOnly`/engine detail — the
+rich representation, not the `summary` one; see Finding 95), `…/data/{libref}`
+with the tables media type (tables in a libref), `…/data/{libref}/{tableName}`
+(table info), `…/{tableName}/columns`,
 and `…/{tableName}/rows` all returned `200` with exactly the fields
 `RestLibraryAdapter.ts`/`TablePropertiesViewer.ts` read. `GET …/data` listed
 14 libraries including `WORK`, `SASHELP`, and `SASUSER` alongside several
@@ -405,22 +409,28 @@ by hand the way upstream's adapter does.
 
 **Finding 84 — the plain `getLibraries`/`getTables` collections carry no
 per-item detail; the `readOnly`/size fields only appear on the singular
-`#summary`/item `GET`.** **Superseded in part by Finding 95, below: the
-`#summary` notation names a media type reached by `Accept`-header content
-negotiation on the *same* bare URI, not a separate `#summary`-suffixed
-resource. The practical conclusion — the list is sparse, a per-item
-follow-up is needed — stands; the mechanism described here does not.** The
-default `GET …/data` and `GET …/data/{libref}#tables`
+per-item detail `GET`, not on the list.** **Superseded in part by Finding 95,
+below: the `#summary` notation is not a real path — the per-item detail comes
+from the *default* `library+json` representation, reached by `Accept`-header
+content negotiation on the *same* bare URI (the `summary` media type is
+actually the *sparse* one; see Finding 95), not from a separate
+`#summary`-suffixed resource. The practical conclusion — the list is sparse, a
+per-item follow-up is needed — stands; the mechanism described here does not.** The
+default `GET …/data` and the tables-media-type read on `…/data/{libref}`
 responses return `type: null`, `rowCount: null`, `columnCount: null` on every
 item, exactly matching upstream's own two-tier fetch (list, then a per-item
 `getLibrarySummary`/`getTable` for the fields the UI actually needs) — not a
 gap in the probe, a confirmed reason `RestLibraryAdapter.getLibraries` makes
-one follow-up request per library. Measured directly:
-`GET …/data/WORK#summary` → `readOnly: false`; `GET …/data/SASHELP#summary` →
-`readOnly: true`, `concatenationCount: 4` (four physical paths concatenated
-into one libref) — confirms the read-only/writable distinction the tree's
-icon and context-menu gating depend on is real and populated, not merely
-documented.
+one follow-up request per library. Measured directly (via the bare
+`…/data/{libref}` URI with the default `library+json` `Accept` — the rich
+representation; the `summary` media type is the sparse one, and the
+`#summary`-suffixed URL notation an earlier draft of this sentence showed was
+never what curl actually requested, since it silently strips the `#…` fragment
+before the wire, per Finding 95): `GET …/data/WORK` → `readOnly: false`;
+`GET …/data/SASHELP` → `readOnly: true`, `concatenationCount: 4` (four physical
+paths concatenated into one libref) — confirms the read-only/writable
+distinction the tree's icon and context-menu gating depend on is real and
+populated, not merely documented.
 
 **Finding 85 — a `DataAccessApi` call blocks behind a running job in the same
 session; it does not error and does not run concurrently.** With no job

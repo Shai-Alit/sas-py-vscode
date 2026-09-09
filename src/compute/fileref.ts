@@ -182,48 +182,82 @@ export async function createFileref(
 }
 
 /**
- * Lists the names of the filerefs currently assigned in a session.
+ * Enough pages of the `files` collection to hold every fileref a live session
+ * could have. Viya pages it at `limit=10` by default (Finding 94, measured
+ * 2026-09-09), and a session accumulates one `PYnnnnnn` fileref per Run File.
+ * 100 pages is 1000 filerefs — far more Run File invocations than a session the
+ * idle reaper has not already taken will ever see. This is a runaway guard, not
+ * an expected limit; hitting it returns the names gathered so far rather than
+ * failing (see {@link listFilerefNames}). Exported for the test that pins the
+ * guard.
+ */
+export const MAX_FILEREF_PAGES = 100;
+
+/**
+ * Lists the names of the filerefs currently assigned in a session, following
+ * the collection's `next` link to the end.
  *
- * One `GET` of the session's `files` relation. The only reader is
- * `procPython.ts`, seeding its per-run counter past a reattached session's
- * existing `PYnnnnnn` filerefs — see this module's own doc comment and
- * Finding 72.
+ * The only reader is `procPython.ts`, seeding its per-run counter past a
+ * reattached session's existing `PYnnnnnn` filerefs — see this module's own doc
+ * comment and Finding 72. **Every page matters:** Viya returns the `files`
+ * collection 10 items at a time (Finding 94), and a reattached session can hold
+ * more than one page of names. Reading only the first page seeds the counter
+ * too low, and `procPython.ts`'s bounded retry-on-collision then cannot walk
+ * past a gap wider than its own attempt cap — the collision the manual pass hit
+ * on 2026-09-09 after a full restart (`the fileref "py000026" already exists`).
  *
- * Only each item's `id` is read; finding 36 recorded a fileref's `id` equal
- * to its assigned name. A body that is not a collection with an `items`
- * array is returned as an **empty list, not a failure** — the caller's
- * fallback is a bounded retry-on-collision, and failing the seed would turn
- * a merely slow first run into a broken one. A transport failure still
- * propagates (mapped through {@link asSessionGone}, as every call here is),
- * so a genuinely dead session is not hidden behind an empty list.
+ * Only each item's `id` is read; finding 36 recorded a fileref's `id` equal to
+ * its assigned name. Best-effort throughout, because the caller's fallback is a
+ * bounded retry and failing the seed would turn a merely slow first run into a
+ * broken one:
+ *
+ * - A transport failure on the **first** page propagates (mapped through
+ *   {@link asSessionGone}), so a genuinely dead session is not hidden behind an
+ *   empty list and `seedFilerefCounter` retries on the next run.
+ * - A failure or a non-collection body on a **later** page stops the walk and
+ *   returns what came back so far — still a better seed than page one alone.
+ * - The `MAX_FILEREF_PAGES` guard does the same rather than erroring.
  */
 export async function listFilerefNames(
   client: ComputeClient,
   session: ComputeSession,
   options?: { signal?: AbortSignal | undefined },
 ): Promise<ComputeResult<readonly string[]>> {
-  const link = findLink(session.links, FILEREF_LIST_REL);
+  let link = findLink(session.links, FILEREF_LIST_REL);
   if (link === undefined) {
     return linkMissing("compute session", session.id, FILEREF_LIST_REL);
   }
 
-  const result = await client.send({ link, signal: options?.signal });
-  if (!result.ok) return asSessionGone(result);
-
-  const body: unknown = result.value.body;
-  const items =
-    typeof body === "object" &&
-    body !== null &&
-    Array.isArray((body as { items?: unknown }).items)
-      ? (body as { items: readonly unknown[] }).items
-      : [];
-
   const names: string[] = [];
-  for (const item of items) {
-    if (typeof item !== "object" || item === null) continue;
-    const { id } = item as { id?: unknown };
-    if (typeof id === "string" && id !== "") names.push(id);
+  for (
+    let page = 0;
+    link !== undefined && page < MAX_FILEREF_PAGES;
+    page += 1
+  ) {
+    const result = await client.send({ link, signal: options?.signal });
+    if (!result.ok) {
+      if (page === 0) return asSessionGone(result);
+      break;
+    }
+
+    const body: unknown = result.value.body;
+    const items =
+      typeof body === "object" &&
+      body !== null &&
+      Array.isArray((body as { items?: unknown }).items)
+        ? (body as { items: readonly unknown[] }).items
+        : undefined;
+    if (items === undefined) break;
+
+    for (const item of items) {
+      if (typeof item !== "object" || item === null) continue;
+      const { id } = item as { id?: unknown };
+      if (typeof id === "string" && id !== "") names.push(id);
+    }
+
+    link = findLink(readLinks(body), "next");
   }
+
   return { ok: true, value: names };
 }
 

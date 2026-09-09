@@ -21,6 +21,13 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **The first run after reopening VS Code on a folder with a long-lived Viya
+  session could fail** with `The fileref "PYnnnnnn" already exists` and not
+  recover until you ran **Disconnect** then **Connect**. On reconnect the
+  extension reads the session's existing filerefs to pick a non-colliding name,
+  but only read the first page of that list; a session with many past runs holds
+  several pages, so the check under-counted and the fallback retry could not
+  catch up. It now reads every page.
 - The **Python on Viya: Output** channel's placeholder line for an image or
   HTML-table output no longer claims the viewer "ships in a later slice" — the
   Result panel has shown these since the diagnostics work landed. It now reads

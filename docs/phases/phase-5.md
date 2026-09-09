@@ -1178,8 +1178,8 @@ Probed against `verde` (Viya 4), SAS Studio compute context, via the
 `viya-api-probe` skill against `creds.json`. Continues the numbering from
 `phase-4.md` (last was Finding 76). **Findings 78–92 are in the Phase 6/7/8
 files** — those phases were scoped (and probed) in parallel with Phase 5's own
-work, so the global counter skips ahead here: Finding 77 (below) then
-Finding 93 (the Phase 5→6 housekeeping probe).
+work, so the global counter skips ahead here: Finding 77 (below), then
+Findings 93 and 94 (the Phase 5→6 housekeeping probes).
 
 ### Finding 77 — A UTF-8 BOM in the uploaded file does not break `PROC PYTHON infile=`
 
@@ -1323,3 +1323,37 @@ own ADR. It is **not** a tracked follow-up.
 any side effect on output framing (not exercised — none is plausibly a
 verbosity control), and whether a future SAS release adds a quiet mode (re-check
 against the option enumeration if the banner behaviour ever matters again).
+
+### Finding 94 — The compute session `files` (fileref) collection pages at `limit=10` and carries a `next` link
+
+Probed 2026-09-09 against `verde` (Viya 4, SAS Studio compute context), during
+the Phase 5→6 housekeeping, to settle the fileref collision the manual test pass
+hit after a full VS Code restart (`the fileref "py000026" already exists … 16
+names tried, all already assigned`). One throwaway session, 15 filerefs
+(`PY000001`–`PY000015`) assigned in it, session `DELETE`d and confirmed gone by
+a `404`.
+
+**Measured.**
+
+- `GET /compute/sessions/{id}/filerefs` (the session's `files` relation) with
+  no query returns **`count=15, start=0, limit=10, items=10`** — the deployment
+  default page size is **10**. `count` is **populated and correct** here (15),
+  unlike some Viya collections where it comes back `null` (the general pager
+  should still terminate on `next`, not on `count`).
+- The first page carries a **`next`** link
+  (`?limit=10&start=10`); following it returns the remaining 5 items and a page
+  with `prev`/`first` and **no `next`** — the chain terminates cleanly.
+- `?limit=1000` returns all 15 in one page with no `next` — Viya honours a large
+  explicit limit, so "one big request" is also viable, but following `next` is
+  the version-agnostic choice and matches `listContexts`.
+
+**What this settles.** `src/compute/fileref.ts`'s `listFilerefNames` did a
+single `GET` and read only `body.items`, so on a reattached session holding more
+than 10 `PYnnnnnn` filerefs — routine after a corpus run — `procPython.ts`'s
+`seedFilerefCounter` (Finding 72's fix) seeded the counter from a truncated
+list, and the 16-attempt `createRunFileref` retry could not close a gap wider
+than 16. Fixed by making `listFilerefNames` follow `next` to the end (bounded by
+`MAX_FILEREF_PAGES = 100`, best-effort — a mid-walk failure returns the names
+gathered so far rather than failing the seed). Landed as a standalone `fix/` PR
+at the Phase 5→6 boundary; Finding 72's own entry in `phase-3.md` still
+describes the seed mechanism, now complete.

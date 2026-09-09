@@ -34,8 +34,9 @@
  * (ADR-0012), so the counter restarts while the session still holds the
  * names the previous backend assigned, and `assign` answers `400` on each
  * until the counter climbs past them (Finding 72). {@link
- * ProcPythonBackend.seedFilerefCounter} skips that whole range in one `GET`
- * on the first run after connecting; {@link
+ * ProcPythonBackend.seedFilerefCounter} skips that whole range on the first
+ * run after connecting, reading the session's fileref collection to its end
+ * (`listFilerefNames` follows every page — Finding 94); {@link
  * ProcPythonBackend.createRunFileref}'s bounded retry is the backstop for
  * what a single seed cannot cover — two windows sharing one session, each
  * counting on its own.
@@ -257,13 +258,14 @@ const FILEREF_NAME_PATTERN = /^PY(\d{6})$/i;
 /** How many fileref names one run will try before giving up.
  *
  * {@link ProcPythonBackend.seedFilerefCounter} normally skips a reattached
- * session's existing `PYnnnnnn` filerefs in a single request, so this bounded
- * retry only ever engages for the residual case: two windows sharing one
- * session (ADR-0012), each with its own counter, drifting onto the same name,
- * or a seed request that failed. Sixteen is far more than that race can
- * realistically need and still a hard stop, so a deployment that answers
- * every `assign` with a `4xx` for some unrelated reason fails the run rather
- * than looping. */
+ * session's existing `PYnnnnnn` filerefs by reading the fileref collection to
+ * its end (`listFilerefNames` pages through `next` — Finding 94), so this
+ * bounded retry only ever engages for the residual case: two windows sharing
+ * one session (ADR-0012), each with its own counter, drifting onto the same
+ * name, or a seed that returned nothing usable (a failed or cancelled listing).
+ * Sixteen is far more than that race can realistically need and still a hard
+ * stop, so a deployment that answers every `assign` with a `4xx` for some
+ * unrelated reason fails the run rather than looping. */
 const MAX_FILEREF_ASSIGN_ATTEMPTS = 16;
 
 /**
@@ -1315,10 +1317,11 @@ export class ProcPythonBackend implements ExecutionBackend {
    * still holds earlier `PYnnnnnn` names (Finding 72).
    *
    * {@link seedFilerefCounter} runs first, once per connection, moving the
-   * counter past whatever the session already holds in a single `GET`. The
-   * loop is the backstop for what that cannot cover — two windows sharing
-   * one session (ADR-0012), each counting independently — and for a seed
-   * request that failed: on a retriable `4xx` from `assign`
+   * counter past whatever the session already holds by reading its fileref
+   * collection to the end (`listFilerefNames` pages through `next` — Finding
+   * 94). The loop is the backstop for what that cannot cover — two windows
+   * sharing one session (ADR-0012), each counting independently — and for a
+   * seed that returned nothing usable: on a retriable `4xx` from `assign`
    * ({@link isRetriableFilerefName}) it advances to the next name and tries
    * again, up to {@link MAX_FILEREF_ASSIGN_ATTEMPTS} times. Any other
    * failure, or a cancel, returns straight away.
@@ -1364,8 +1367,9 @@ export class ProcPythonBackend implements ExecutionBackend {
    * it was built against is one an earlier extension host already used (a
    * window reload re-attaches rather than restarts, ADR-0012), that session
    * still holds `PY000001…`, and each `createFileref` would collide until the
-   * counter climbed past them by failing — Finding 72. One `GET` of the
-   * fileref collection moves it past the highest number in a single step.
+   * counter climbed past them by failing — Finding 72. Reading the fileref
+   * collection to its end (`listFilerefNames` pages through `next` — Finding
+   * 94) moves the counter past the highest number in one seed.
    *
    * Best-effort: a malformed listing (returned as an empty list by
    * {@link listFilerefNames}) leaves the counter untouched and

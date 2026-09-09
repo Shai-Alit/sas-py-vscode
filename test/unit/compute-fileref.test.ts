@@ -17,6 +17,7 @@ import {
   FILEREF_UPLOAD_REL,
   type Fileref,
   listFilerefNames,
+  MAX_FILEREF_PAGES,
   writeFilerefContent,
 } from "../../src/compute/fileref";
 import { type Link } from "../../src/compute/links";
@@ -410,5 +411,102 @@ describe("listFilerefNames", () => {
 
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "session-gone");
+  });
+
+  it("follows the collection's next link to the end (Finding 94)", async () => {
+    // Viya pages the files collection at limit=10; a reattached session can
+    // hold more than one page of PYnnnnnn names. Reading only the first page
+    // under-seeds procPython.ts's counter — Finding 72's fix, incomplete until
+    // this walk was added.
+    const nextHref = `${SESSION_PATH}/filerefs?start=10&limit=10`;
+    const scripted = fake([
+      ok({
+        items: [{ id: "PY000001" }, { id: "PY000002" }],
+        links: [{ rel: "next", href: nextHref, method: "GET" }],
+      }),
+      ok({ items: [{ id: "PY000003" }, { id: "PY000004" }] }),
+    ]);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, [
+      "PY000001",
+      "PY000002",
+      "PY000003",
+      "PY000004",
+    ]);
+    assert.equal(scripted.requests.length, 2);
+    assert.equal(scripted.requests[0]?.link.rel, FILEREF_LIST_REL);
+    const second = scripted.requests[1];
+    assert.ok(second);
+    assert.equal(second.link.rel, "next");
+    assert.equal(second.link.href, nextHref);
+  });
+
+  it("keeps the names it already has when a later page fails", async () => {
+    const scripted = fake([
+      ok({
+        items: [{ id: "PY000001" }],
+        links: [
+          {
+            rel: "next",
+            href: `${SESSION_PATH}/filerefs?start=10`,
+            method: "GET",
+          },
+        ],
+      }),
+      rejected(500),
+    ]);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, ["PY000001"]);
+  });
+
+  it("keeps the names it already has when a later page is malformed", async () => {
+    const scripted = fake([
+      ok({
+        items: [{ id: "PY000001" }],
+        links: [
+          {
+            rel: "next",
+            href: `${SESSION_PATH}/filerefs?start=10`,
+            method: "GET",
+          },
+        ],
+      }),
+      ok({ count: 1 }),
+    ]);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, ["PY000001"]);
+  });
+
+  it("stops at the page guard rather than paging forever", async () => {
+    // A collection that never stops offering `next`. The guard returns what it
+    // has instead of erroring — the seed must never fail a run.
+    const everMore = Array.from({ length: MAX_FILEREF_PAGES + 5 }, (_, i) =>
+      ok({
+        items: [{ id: `PY${String(i + 1).padStart(6, "0")}` }],
+        links: [
+          {
+            rel: "next",
+            href: `${SESSION_PATH}/filerefs?p=${String(i + 1)}`,
+            method: "GET",
+          },
+        ],
+      }),
+    );
+    const scripted = fake(everMore);
+
+    const result = await listFilerefNames(scripted.client, session());
+
+    assert.ok(result.ok);
+    assert.equal(scripted.requests.length, MAX_FILEREF_PAGES);
+    assert.equal(result.value.length, MAX_FILEREF_PAGES);
   });
 });

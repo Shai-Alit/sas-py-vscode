@@ -225,10 +225,35 @@ changes a documented invariant**, the finished diff gets a manual adversarial
 pass. Skip it for docs-only pull requests and dependency bumps, where the diff
 is its own evidence.
 
+**The pass happens BEFORE the branch is pushed and the PR is opened. Always.
+No exceptions.** The section title is literal: the review comes *before the PR
+exists*. There is no "open the PR and review in parallel", no "push now, fold in
+findings later", no "it's a small fix". If the change is in scope for the pass
+(adds source or changes a documented invariant), then `git push` and
+`gh pr create` do not happen until the pass is done and every real finding is
+folded into the branch. Opening the PR first is the exact mistake this rule
+exists to stop — it converts a finding that would have cost one local commit
+into a finding that re-runs the full required CI matrix **and** both AI
+reviewers, which is this project's single largest time sink.
+
+**The order, every time:**
+
+1. Finish the diff — not a draft, the real thing, checks green locally.
+2. Hand the developer the scoped `git diff` command and the review prompt
+   below. Stop. The PR does not exist yet.
+3. Wait for the developer's review summary.
+4. Verify each finding independently (see "How to apply the findings"), fold
+   the real ones into the **local** branch, re-run the checks.
+5. Only now: `git push`, then `gh pr create`.
+
+If you catch yourself about to push or open a PR for an in-scope change and
+step 3 has not happened, stop and hand over the review instead.
+
 **How to hand it over:** once the diff is finished — not a draft — stop and
 give the developer exactly two things: the `git diff` command scoped to the changed
 files, and the review prompt below to paste into the VS Code window as-is.
-Don't review the diff from this session.
+Don't review the diff from this session. Do not open the PR to "make review
+easier" — the review is against the local branch.
 
 **The review prompt to hand over:**
 
@@ -260,8 +285,9 @@ Don't review the diff from this session.
 **How to apply the findings:** verify every finding independently before
 acting on it — the mechanism this replaced raised six findings on 2c-i, of
 which four were real and two were wrong on inspection, and that same
-discipline applies here. Never describe a slice as "reviewed" when only that
-pass has seen it; say which review it's had.
+discipline applies here. Fold the real ones into the branch **before it is
+pushed** — that is the whole point of doing the pass first. Never describe a
+slice as "reviewed" when only that pass has seen it; say which review it's had.
 
 **Why the review step itself matters:** a defect caught before the push costs
 one more commit _locally_. The same defect caught by a reviewer costs a round
@@ -270,7 +296,10 @@ every required CI context** — which is why review cycles, not the test suite,
 have been this project's real time sink. Settled 2026-08-17, when this step
 (then an in-session subagent) found a blocking cursor-desync defect in 2c-i
 that no test, typecheck or lint could have caught, because the buggy path had
-no caller yet.
+no caller yet. Reaffirmed 2026-09-09, when a source PR was opened before its
+adversarial pass: the pass then found a stale doc claim, and fixing it on the
+open PR re-ran the entire required matrix and both AI reviewers for a
+one-line comment change — precisely the waste this rule is written to prevent.
 
 ## Between-phase housekeeping
 

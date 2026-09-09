@@ -266,8 +266,8 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     assert.equal(errors.length, 1, "the technical sentence is logged");
   });
 
-  it("maps a 412 conflict to the reopen wording and clears the stale ETag", async () => {
-    let attempts = 0;
+  it("maps a 412 conflict to the reopen wording, and a retry gets the same (never a blind overwrite)", async () => {
+    const sentTags: string[] = [];
     const { provider } = providerWith({
       readFileContent: () =>
         Promise.resolve(
@@ -277,8 +277,8 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
             contentType: undefined,
           }),
         ),
-      writeFileContent: () => {
-        attempts += 1;
+      writeFileContent: (_href, _bytes, p) => {
+        sentTags.push(p.etag);
         return Promise.resolve(
           fail({ code: "content-rejected", error: { status: 412 } }),
         );
@@ -290,13 +290,15 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     );
     assert.match(conflict.message, /changed on the server/);
     assert.match(conflict.message, /open it again/);
-    // The cached tag is now known-stale: a retry without reopening is refused
-    // here, not sent to the server with a tag that would only 412 again.
+    // The buffer is still the pre-conflict version, so its tag stays the right
+    // thing to send: the retry is another conditional PUT that 412s the same
+    // way — the truthful message — not a blind overwrite and not a misleading
+    // "you never opened this".
     const retry = await rejectionOf(
       provider.writeFile(A_CONTENT_URI, new Uint8Array()),
     );
-    assert.match(retry.message, /Open this file from the SAS Content view/);
-    assert.equal(attempts, 1);
+    assert.match(retry.message, /changed on the server/);
+    assert.deepEqual(sentTags, ['"e1"', '"e1"']);
   });
 
   it("maps forbidden to NoPermissions and unauthorized/unreachable to Unavailable", async () => {

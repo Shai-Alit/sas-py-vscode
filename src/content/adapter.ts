@@ -111,6 +111,15 @@ const UPDATE_CONTENT_REL = "updateContent";
  */
 export const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
 
+/**
+ * The per-request timeout for the two calls that move file bytes, rather than
+ * `client.ts`'s 15s default — that was sized for the small JSON listing reads
+ * this client used to make exclusively, and a file near {@link MAX_FILE_CONTENT_BYTES}
+ * over a slow or proxied link can take longer, which would otherwise surface as
+ * a bare "could not reach SAS Viya".
+ */
+const CONTENT_TRANSFER_TIMEOUT_MS = 60_000;
+
 /** The `Content-Type` sent on a write when the preceding read did not report
  * one. Finding 6.2: the Files service does not validate it, so this only has to
  * be a sane default, not the true type. */
@@ -331,6 +340,7 @@ export class ContentAdapter {
     const result = await this.client.send({
       link: { rel: CONTENT_REL, href: `${resourceHref}/content` },
       maxBodyBytes: MAX_FILE_CONTENT_BYTES,
+      timeoutMs: CONTENT_TRANSFER_TIMEOUT_MS,
       ...withSignal(signal),
     });
     if (!result.ok) return result;
@@ -387,6 +397,7 @@ export class ContentAdapter {
       rawBody: bytes,
       contentType: precondition.contentType ?? DEFAULT_CONTENT_TYPE,
       etag: precondition.etag,
+      timeoutMs: CONTENT_TRANSFER_TIMEOUT_MS,
       ...withSignal(signal),
     });
     if (!put.ok) return put;

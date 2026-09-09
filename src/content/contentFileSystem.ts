@@ -35,8 +35,10 @@
  * **not** touch {@link opened}: VS Code also calls `stat` at save time, and a
  * tag captured then would already reflect the other person's edit. A `200`
  * refreshes the entry from the `PUT` response so a second save in the same
- * session needs no re-read; a `412`/`428` clears it so the retry-after-reopen
- * starts clean.
+ * session needs no re-read. A `412` is left in place: the buffer is still the
+ * pre-conflict version, so its tag is still the right thing to send — a retry
+ * without reopening just `412`s again with the same "reopen it" message,
+ * which is the truth, and never a blind overwrite.
  *
  * ## What this slice does not do
  *
@@ -127,9 +129,9 @@ export class SasContentFileSystemProvider
     const { adapter, href } = this.resolve(uri);
     const precondition = this.opened.get(href);
     if (precondition === undefined) {
-      // No read at all — nothing to be conditional against. Should not happen
-      // (VS Code reads before it lets you edit); a blind overwrite is exactly
-      // what the guard exists to stop.
+      // No read ever populated the guard. VS Code reads before it lets a file
+      // be edited, so this is the pathological "save into a `sasContent:` URI
+      // that was never opened" case — refuse rather than overwrite blindly.
       throw new vscode.FileSystemError(
         vscode.l10n.t(
           "Open this file from the SAS Content view before saving it.",
@@ -146,10 +148,7 @@ export class SasContentFileSystemProvider
       );
     }
     const result = await adapter.writeFileContent(href, content, precondition);
-    if (!result.ok) {
-      if (isPreconditionFailure(result.problem)) this.opened.delete(href);
-      throw this.toFileSystemError(result.problem);
-    }
+    if (!result.ok) throw this.toFileSystemError(result.problem);
     // Advance the guard to the tag the server just assigned, so a second save
     // in this session does not need a re-read.
     if (result.value.etag !== undefined) {
@@ -230,14 +229,4 @@ export class SasContentFileSystemProvider
         return new vscode.FileSystemError(message);
     }
   }
-}
-
-/** Whether a failed write means the file changed on the server since it was
- * opened — a `412` (stale `If-Match`) or, defensively, a `428` (the guard
- * somehow sent no `If-Match` at all). */
-function isPreconditionFailure(problem: ContentProblem): boolean {
-  return (
-    problem.code === "content-rejected" &&
-    (problem.error.status === 412 || problem.error.status === 428)
-  );
 }

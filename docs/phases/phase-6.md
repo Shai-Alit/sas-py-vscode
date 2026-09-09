@@ -323,8 +323,10 @@ lines below.
   session's files; a SAS Content file is editable concurrently, so the guard
   only bites if the tag predates the other edit. A `412`/`428` surfaces to the
   user as a "changed on the server, reopen it" conflict through the returning
-  `localiseContentProblem` seam (`src/content/messages.ts`), and clears the
-  stale cached tag; a `200` advances it to the tag the `PUT` returned.
+  `localiseContentProblem` seam (`src/content/messages.ts`); the cached tag is
+  left in place, so a retry without reopening is another conditional `PUT` that
+  `412`s the same way rather than a blind overwrite. A `200` advances the
+  cached tag to the one the `PUT` returned.
 - ☑ `workspace.registerFileSystemProvider("sasContent", …)` + the
   `onFileSystem:sasContent` activation event. A tree file leaf
   (`NodePresentation.openable` — an ordinary `file`, never a `dataFlow`) gets a

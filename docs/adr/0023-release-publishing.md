@@ -1,6 +1,11 @@
 # ADR-0023 — Releases publish from a tag, over OIDC, to two registries
 
-- **Status:** Accepted
+- **Status:** Accepted — the Marketplace-authentication decision is amended
+  2026-09-04 (see the dated blockquotes on the Decision, Alternatives and
+  Consequences sections): `vsce publish --oidc` has no policy-registration UI on
+  the Marketplace, so the release authenticates with `vsce publish
+  --azure-credential` and `@vscode/vsce` stays on stable. The title's "over
+  OIDC" wording predates that amendment; everything else in this ADR stands.
 - **Date:** 2026-09-03
 - **Decides:** what triggers a publish, how `release.yml` authenticates to the VS
   Marketplace, whether Open VSX is a target and how hard its failure is, and how

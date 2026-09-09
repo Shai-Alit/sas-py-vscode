@@ -87,6 +87,18 @@ so §6's "Hello world streams clean" no longer holds for Run File. Not a
 5d-iii regression (the stream is untouched); folded into that §6 box's note
 and the live-Viya probe.
 
+**Phase 5→6 between-phase housekeeping, 2026-09-09.** The Finding 74 / §6
+banner-and-`>>>` question is now **closed** — probed against `verde`
+(Finding 93, `docs/phases/phase-5.md`): no `PROC PYTHON` option suppresses the
+interpreter banner or the `>>>` prompts, so it is accepted as known behaviour
+and the §6 boxes are reworded, not left as open contradictions. **Still
+outstanding: a full pass has not run since 2026-08-27** (end of Phase 3). All
+of Phase 4 and Phase 5 — including the first published releases v0.1.0 / v0.1.1
+— had only targeted re-checks (4c, 4d, 5d-iii, 5d-iv). A full re-run against
+`verde` / `Innov` with the published `.vsix`, plus the still-`[ ]` 5d-i
+user-provided-CA row (needs a deployment the OS does not already trust), is
+Sean's to run before Phase 6 coding starts.
+
 ## How to use this
 
 - The lists are GitHub task lists. Tick them in a preview, or copy a section into
@@ -316,19 +328,22 @@ unconfigured workspace is Local and contributes nothing to the editor
 - [x] **(live) Hello world streams clean** — a file that is
   `print("hello from viya")` → **Run File**.
   **Expect:** a run header, then `hello from viya` as plain stdout, then a
-  “Finished” line. No SAS NOTEs, no page-break banners, no `>>>` markers.
-  **Contradicted 2026-09-02 (5d-iii live pass, against `verde`):** a
-  successful **Run File** run now shows the interpreter startup banner
-  (`Python 3.12.12 … / Type "help" …`) **and** bare `>>>` prompt markers in
-  the stream. The banner tracks the `restart` the Run File path issues
-  (`proc python restart infile=`); `>>>` appears on every run, Run File or
-  Run Selection, success or failure. This is Finding 74's sub-finding (a) —
-  it is **not** error-path-specific as first recorded, and **not** touched
-  by 5d-iii (which changes only the parsed-traceback message and the
-  outcome echo, never the stream). Deferred to the live-Viya probe; a
-  client-side scrub of `normal`-typed lines is the wrong fix. Re-verify
-  this box's "no banner / no `>>>`" claim once that probe lands a
-  source-side answer (as `PAGESIZE=MAX` was for the `title` banner).
+  “Finished” line, with **no SAS NOTEs** and **no page-break banners**
+  (`PAGESIZE=MAX`, 3f). The interpreter startup banner
+  (`Python 3.12.12 … / Type "help" …`) **does** appear on a **Run File** (which
+  restarts the interpreter first) and on the **first Run Selection after
+  connect / Reset Python State**; bare `>>>` prompt markers appear on **every**
+  run of either command. Both are `PROC PYTHON`'s own interactive-REPL output —
+  **known, accepted, not a defect.**
+  **Settled 2026-09-09 (Finding 93, `docs/phases/phase-5.md`; Phase 5→6
+  housekeeping):** this is Finding 74's sub-finding (a). A live probe pulled
+  `PROC PYTHON`'s full option list off the deployment's own syntax-error
+  enumeration — `COMMAND ECHO INFILE RESTART SRC TERMINATE TIMEOUT` — and
+  **none suppresses the banner or `>>>`** (`ECHO` only adds a source echo).
+  There is no `PAGESIZE=MAX`-style fix. Decision: accept and document rather
+  than filter `normal`-typed lines client-side (a program may legitimately
+  `print(">>> …")`). This box's assertion is reworded accordingly; do not
+  re-flag the banner/`>>>` as a regression.
 - [x] **(live) Submission fidelity — run the whole corpus.** Open each file under
   `test/fixtures/submission-corpus/` and **Run File**:
 
@@ -368,17 +383,14 @@ unconfigured workspace is Local and contributes nothing to the editor
 - [x] **(live) Failure is detected, not swallowed** — run a file whose top level
   raises (`raise RuntimeError("nope")`).
   **Expect:** reported as failed, not “Finished”; the error text is in the log.
-  **Open, 2026-08-31:** the §7 recursion run showed a *failing* run's
-  output stream also carrying the Python interpreter banner
-  (`Python 3.x … Type "help" …`) and `>>>` prompt markers — which the
-  "Hello world streams clean" item above says should never appear. Only
-  observed on the error path so far (successful runs stay clean). Split
-  out as its own item in Phase 3's **3f** slice; carried through 4c's
-  triage (Finding 74) and into Phase 5's **5d-iii**, which fixed the
-  *redundant-echo* half and left this *transcript-noise* half open as a
-  live-Viya probe follow-up (a client-side scrub of `normal`-typed output
-  is the wrong fix; the success/error asymmetry points at `PROC PYTHON`
-  itself).
+  The interpreter banner and `>>>` markers may appear here too — same known
+  `PROC PYTHON` behaviour as the "Hello world streams clean" item above, not
+  error-path-specific (the earlier "only observed on the error path" reading
+  was wrong — see the 5d-iii refinement and Finding 93). **Closed
+  2026-09-09:** the redundant-echo half was fixed in **5d-iii**; the
+  transcript-noise half is settled by **Finding 93** — no `PROC PYTHON` option
+  suppresses it, accepted and documented rather than filtered. Finding 74 is
+  fully closed.
 - [x] **(live) Large output stays clean** — run `for i in range(5000): print(i)`.
   **Expect:** all 5000 lines, in order, no pagination header bleeding into the
   stream. **Failed, 2026-08-27** — the "The SAS System …" page-break banner

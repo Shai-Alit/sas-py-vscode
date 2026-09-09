@@ -1406,6 +1406,64 @@ same action).
 unverified-publisher warning; (2) the **Phase 5→6 between-phase housekeeping**
 (`HOUSEKEEPING.md`) — its own session.
 
+**Phase 5→6 between-phase housekeeping ran 2026-09-09.** Landed as a docs-only
+`[skip-review]` commit. **Findings, by `HOUSEKEEPING.md` checklist item:**
+- **ADRs.** ADR-0023's title and index row still said "over OIDC" though the
+  body was properly amended 2026-09-04 to `vsce publish --azure-credential` —
+  its Status line and `docs/adr/README.md` row now carry that pointer. No other
+  ADR needed a change; Phase 5 owed no new ADR (5c-iii already produced
+  ADR-0023; 5d-i amended ADR-0003/0008).
+- **Punch list (`phase-5.md`).** The `5c` header box was the only unticked one
+  though 5c-i–5c-iv all merged — ticked. Stale 5c-iv sub-items closed with a
+  dated closeout note: #125 (`download-artifact` v7→v8) merged from Sean's
+  session (`c383430`); #123→#129 and #124 merged; the 5c-iii "checks … pending"
+  note closed; the detailed `release.yml` bullet's `--oidc` design marked
+  superseded. phase-4.md's two deferred diagnostics-lifecycle gaps confirmed
+  closed by 5d-iv.
+- **RUNBOOK / PRODUCTION_PLAN.** Both current — `RUNBOOK.md` is cross-cutting
+  only; `PRODUCTION_PLAN.md`'s coverage figures match `.c8rc.json` (94/94/93/95)
+  and defer to it. `phase-3.md`'s orphaned "Phases 6–12" bash-stub (stale
+  guessed branch names, flagged for a sweep "whenever Phase 5 starts") retired
+  to a redirect, the same as the Phase 4 / Phase 5 stubs already were.
+- **This file.** The phase-index row for Phase 5 moves to ✅ done in this same
+  commit (see the table below).
+- **Scratch files.** None outstanding — `phase-3-runbook-pending.md`'s holding
+  role was retired during Phase 5 scoping; nothing in the repo, the project
+  folder, or `.claude/` to reconcile.
+- **Manual tests.** **No full `manual-test-pass.md` run since 2026-08-27 (end of
+  Phase 3)** — all of Phase 4 and Phase 5, including v0.1.0 / v0.1.1, had only
+  targeted live re-checks. Sean's call: run a full pass against `verde` /
+  `Innov` with the published `.vsix` **before Phase 6 coding starts**, together
+  with the still-`[ ]` 5d-i user-provided-CA row (needs a deployment the OS does
+  not already trust). Documented in `manual-test-pass.md`'s header.
+- **Dependency advisories.** Clean — **0 open GitHub Dependabot alerts**;
+  `scripts/advisory-allowlist.json` `allowed` is empty (no `expires` date can
+  lapse mid-Phase-6); all four PRs from the 2026-09-07 Dependabot run resolved.
+  No production-tree advisories.
+- **Cross-cutting, carried:** the **`review` (Claude) CI workflow** is broken
+  (`anthropics/claude-code-action@v1` fails its own install step) — fix is a
+  version pin in `claude-review.yml`; matters before a code-heavy Phase 6. Its
+  own small follow-up, as is the Open VSX namespace claim.
+
+**Finding 74 closed by a live probe during this pass — Finding 93 in
+`docs/phases/phase-5.md`.** Probed `verde` 2026-09-09: `PROC PYTHON`'s full
+option list (from the deployment's own syntax-error enumeration) is
+`COMMAND ECHO INFILE RESTART SRC TERMINATE TIMEOUT`, and **none suppresses the
+CPython startup banner or the `>>>` prompt markers** — the banner is the
+embedded interpreter's own startup line (emitted on every init: every Run File,
+first Run Selection after connect/reset), `>>>` is the REPL prompt on every run.
+No `PAGESIZE=MAX`-style source-side fix exists. Decision (Sean, 2026-09-09):
+**accept and document** — `manual-test-pass.md` §6 and the user docs
+(`running-python.md`, `troubleshooting.md`) are reconciled to treat the
+banner/`>>>` as inherent `PROC PYTHON` output. A narrow position-anchored
+client-side filter stays a possible future enhancement gated on its own ADR,
+not a tracked item.
+
+**Phase 6 (SAS Content explorer) is next — scoped 2026-09-03,
+`docs/phases/phase-6.md`.** Before its first slice: the full manual-test pass
+above, the `claude-review.yml` fix, and a re-read of `PRODUCTION_PLAN.md` §3 to
+confirm the 6→12 order against real post-v0.1.0 demand.
+
 > Update this file when a slice lands, not just at phase boundaries — in the
 > same PR that does the work. It is the
 > only file every session should need to open to know where to start — open the
@@ -1420,9 +1478,9 @@ unverified-publisher warning; (2) the **Phase 5→6 between-phase housekeeping**
 | 1 — Auth & connection profiles | ✅ done | `docs/phases/phase-1.md` |
 | 2a — Compute core & VS Code shell | ✅ done | `docs/phases/phase-2a.md` |
 | 2b — Backend seam, dialects, job log & the pump (covers 2b and 2c) | ✅ done | `docs/phases/phase-2b.md` |
-| 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, resolved in 5d-iii (echo fixed; banner/`>>>` sent to a live probe) | `docs/phases/phase-3.md` |
+| 3 — Run Python (vertical slice) | ✅ **done, 3a–3f** (3d-i [PR #63](https://github.com/Shai-Alit/sas-py-vscode/pull/63), 3d-ii [PR #65](https://github.com/Shai-Alit/sas-py-vscode/pull/65), 3e [PR #67](https://github.com/Shai-Alit/sas-py-vscode/pull/67), 3f [PR #77](https://github.com/Shai-Alit/sas-py-vscode/pull/77)) — Finding 74 deferred to Phase 4, triaged in 4c, echo fixed in 5d-iii, fully closed 2026-09-09 by a live probe (Finding 93: no `PROC PYTHON` option suppresses the banner/`>>>` — accepted and documented) | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d** (4a [PR #78](https://github.com/Shai-Alit/sas-py-vscode/pull/78); 4b probed and closed 2026-09-01, no code change, Findings 75–76 folded into 4c; 4c [PR #81](https://github.com/Shai-Alit/sas-py-vscode/pull/81); 4d [PR #83](https://github.com/Shai-Alit/sas-py-vscode/pull/83)) — Phase 4→5 between-phase housekeeping ran 2026-09-02 (`baacf3c`); see this file's own entry above | `docs/phases/phase-4.md` |
-| 5 — Hardening & first release | **in progress** — 5d done, 5d-i–5d-iv all merged (5d-i [PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88), 5d-ii [PR #89](https://github.com/Shai-Alit/sas-py-vscode/pull/89), 5d-iii [PR #92](https://github.com/Shai-Alit/sas-py-vscode/pull/92), 5d-iv [PR #94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a merged ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b merged ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c split into 5c-i…5c-iv, 5c-i (feature docs) merged ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102), `bce3dc3`); 5c-ii (troubleshooting guide) merged ([PR #104](https://github.com/Shai-Alit/sas-py-vscode/pull/104), `1f073e4`); 5c-iii (release engineering) merged ([PR #106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), `e70c682`, ADR-0023); 5c-iv (v0.1.0 release): **v0.1.0 published 2026-09-08** ([PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121), tag `v0.1.0`), plus a **v0.1.1** docs patch ([PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127), tag `v0.1.1`) fixing stale "nothing published" text in the shipped README; S1–S4 + dry run done earlier ([PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118), ADR-0023). Section D D7 confirmed 2026-09-08, D8 in [PR #128](https://github.com/Shai-Alit/sas-py-vscode/pull/128) (`0.1.2-dev` + fresh `[Unreleased]`). **With #128 merged, all Phase 5 slices are merged and v0.1.1 is the first published release** — the Phase 5→6 between-phase housekeeping is the next trigger (not yet run). Carried past the release: Open VSX namespace claim, Dependabot #123–125 — see phase-5.md's own Runbook | `docs/phases/phase-5.md` |
+| 5 — Hardening & first release | ✅ **done — all slices merged, v0.1.1 is the first published release.** 5d-i–5d-iv ([PR #88](https://github.com/Shai-Alit/sas-py-vscode/pull/88)/[#89](https://github.com/Shai-Alit/sas-py-vscode/pull/89)/[#92](https://github.com/Shai-Alit/sas-py-vscode/pull/92)/[#94](https://github.com/Shai-Alit/sas-py-vscode/pull/94)); 5a ([PR #97](https://github.com/Shai-Alit/sas-py-vscode/pull/97), `f0e55b8`); 5b ([PR #99](https://github.com/Shai-Alit/sas-py-vscode/pull/99), `a3b89ce`); Viya 3.5 dropped ([PR #101](https://github.com/Shai-Alit/sas-py-vscode/pull/101), `c2c5b2b`, ADR-0022); 5c-i–5c-iv ([PR #102](https://github.com/Shai-Alit/sas-py-vscode/pull/102)/[#104](https://github.com/Shai-Alit/sas-py-vscode/pull/104)/[#106](https://github.com/Shai-Alit/sas-py-vscode/pull/106), ADR-0023; v0.1.0 [PR #121](https://github.com/Shai-Alit/sas-py-vscode/pull/121)/tag `v0.1.0`, v0.1.1 docs patch [PR #127](https://github.com/Shai-Alit/sas-py-vscode/pull/127)/tag `v0.1.1`, S1–S4 + dry run [PR #118](https://github.com/Shai-Alit/sas-py-vscode/pull/118); Section D D7/D8 [PR #128](https://github.com/Shai-Alit/sas-py-vscode/pull/128)). **Phase 5→6 between-phase housekeeping ran 2026-09-09** (Finding 74 closed by a live probe → Finding 93; docs-only commit — see this file's own entry above). Carried past this checkpoint: Open VSX namespace claim, `claude-review.yml` fix, and a full manual-test pass before Phase 6 coding. Dependabot #123–125 all merged. | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **scoped 2026-09-03**, not started | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |

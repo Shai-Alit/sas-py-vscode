@@ -168,12 +168,13 @@ this looks.
 ## Known rough edges
 
 **The transcript carries the interpreter's startup banner and `>>>` prompt
-markers.** A run's output currently includes a `Python 3.x … / Type "help" …`
-banner and bare `>>>` lines that `PROC PYTHON` emits around the code. They are
-harmless but they are noise, and removing them cleanly needs a change on the
-SAS side rather than the extension guessing which lines to hide — a program
-that legitimately prints `>>>` must not have it stripped. Tracked as a live
-probe follow-up.
+markers.** A run's output includes a `Python 3.x … / Type "help" …` banner (on
+a Run File, and on the first Run Selection after connecting or resetting) and
+bare `>>>` lines that `PROC PYTHON` emits around the code. They are harmless
+but they are noise. This is inherent to `PROC PYTHON` — it runs your code
+through an interactive interpreter and has no option to suppress the banner or
+the prompts — and the extension deliberately does not strip them, since a
+program that legitimately prints `>>>` must not have it removed.
 
 ## What is not here yet
 

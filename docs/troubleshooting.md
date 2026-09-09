@@ -143,9 +143,10 @@ broken state that inline submission can
 **The transcript carries a `Python 3.x …` banner and bare `>>>` lines.**
 `PROC PYTHON` emits these around your code — the banner on a Run File, which
 restarts the interpreter first, and `>>>` markers on essentially every run.
-They are harmless noise. Removing them cleanly needs a change on the SAS side
-rather than the extension guessing which lines to hide, because a program may
-legitimately print `>>>`. Tracked as a probe follow-up.
+They are harmless. This is inherent to how `PROC PYTHON` runs your code (an
+interactive interpreter): it has no option to turn the banner or the prompts
+off, and the extension deliberately does not strip them, because a program may
+legitimately print `>>>` itself. Expect them; they are not an error.
 
 **A figure or table never appears in the Result panel.** Rich output is
 captured by noticing files your script *writes* to the session's working

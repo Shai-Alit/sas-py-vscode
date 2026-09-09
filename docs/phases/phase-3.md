@@ -1847,21 +1847,20 @@ hardening slice. See `docs/phases/phase-5.md` for what actually landed there.
 
 ### Phases 6–12 — Breadth toward parity
 
-☐ **Track parity against `PRODUCTION_PLAN.md` §3.1.** That table is the checklist;
-tick capabilities off as phases land, and revise it when a decision changes.
-
-Same loop. Branches: `phase-6a-content-adapter`, `phase-7a-library-adapter`,
-`phase-8a-cas-browsing`, `phase-9a-notebook-format`, `phase-10a-package-listing`.
-Phase 11 (remaining parity gaps) is sized when reached. Phase 12 (a second
-execution backend) has no punch list by design — it is conditional on real usage
-showing that `PROC PYTHON` hurts.
-
-☐ **Before starting Phase 6**, re-read `PRODUCTION_PLAN.md` §3 and reorder 6–12
-based on what users actually asked for after v0.1.0. The listed order is a
-recommendation, not a dependency chain.
-
-☐ **Phase 9a is a decision, not code.** Settle ipynb-compatible vs bespoke format
-before writing the serializer.
+Moved to the per-phase files, which are now the source of truth: Phases 6–10 are
+each scoped and lettered in their own `docs/phases/phase-N.md` (see `STATUS.md`'s
+phase index), Phase 11 (remaining parity gaps) is sized when reached, and
+Phase 12 (a second execution backend) has no punch list by design — it is
+conditional on real usage showing that `PROC PYTHON` hurts. This stub's guessed
+branch names (`phase-10a-package-listing` etc.) predated that scoping and never
+matched — removed here the same way the Phase 4 and Phase 5 stubs above were,
+during the Phase 5→6 housekeeping (2026-09-09). Two cross-cutting reminders it
+carried are still live and now belong in `HOUSEKEEPING.md` / each phase's own
+scoping session: **track parity against `PRODUCTION_PLAN.md` §3.1** as phases
+land, and **before Phase 6 starts, re-read `PRODUCTION_PLAN.md` §3 and reorder
+6–12** against real post-v0.1.0 demand (the listed order is a recommendation,
+not a dependency chain). "Phase 9a is a decision, not code" is settled —
+[ADR-0024](../adr/0024-notebooks-are-ipynb-native.md), ipynb-native.
 
 ---
 
@@ -2759,3 +2758,21 @@ Full account in `phase-5.md`'s Runbook item 3.
   (`manual-test-pass.md` §6 carries the contradiction). The probe's job is a
   source-side answer — a `PROC PYTHON` option or invocation change — the way
   `PAGESIZE=MAX` answered the `title` page-break banner.
+
+**Closed 2026-09-09 (Phase 5→6 housekeeping) — there is no source-side
+answer.** The probe ran against `verde` and is written up as
+**Finding 93 in `docs/phases/phase-5.md`**. `PROC PYTHON`'s full option list
+on this deployment — pulled from the server's own syntax-error enumeration — is
+`COMMAND ECHO INFILE RESTART SRC TERMINATE TIMEOUT`, and **none of them
+suppresses the CPython startup banner or the `>>>` prompt markers** (`ECHO`
+only adds a source echo). The banner is the embedded interpreter's own startup
+line, emitted on every init (so: every Run File, which restarts; and the first
+Run Selection after connect/reset); `>>>` is the REPL prompt and shows on every
+run. Unlike the `title` page-break banner (`PAGESIZE=MAX`), this has no knob.
+Decision (Sean, 2026-09-09): **accept and document, do not filter** — a
+client-side scrub of `normal`-typed output stays ruled out (findings 52, 63;
+`print(">>> …")` collision). `manual-test-pass.md` §6 and the user-facing
+`docs/running-python.md` / `docs/troubleshooting.md` are reconciled to describe
+the banner/`>>>` as inherent `PROC PYTHON` behaviour. A narrow,
+position-anchored output filter remains a *possible* future enhancement gated on
+its own ADR, not a tracked item. **Finding 74 is fully closed.**

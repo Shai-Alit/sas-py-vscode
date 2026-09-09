@@ -15,6 +15,7 @@ import { registerAuthUriHandler } from "./auth/uriHandler";
 import { SessionBindingStore } from "./compute/bindingStore";
 import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
+import { registerContentExplorer } from "./content/contentExplorer";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
 import { registerRunCommands } from "./run/commands";
@@ -217,6 +218,22 @@ export function activate(context: vscode.ExtensionContext): void {
     // menu), not on `onDidChangeSessions`'s diff, which also drops a profile a
     // slow renewal missed for one poll.
     { onDidSignOut: auth.onDidSignOut },
+  );
+
+  // Phase 6a-ii: the read-only SAS Content tree in its own activity-bar view.
+  // Independent of the compute session — it talks to the Folders/Files
+  // services with the active profile's endpoint and a silent token — so it is
+  // registered from here with the same `transport` (the 5d-i CA agent) and the
+  // auth events it refreshes on, not threaded through `sessions`.
+  registerContentExplorer(
+    context,
+    profiles,
+    output,
+    {
+      onDidChangeSessions: auth.onDidChangeSessions,
+      onDidSignOut: auth.onDidSignOut,
+    },
+    { transport },
   );
 }
 

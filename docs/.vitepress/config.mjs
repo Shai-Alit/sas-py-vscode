@@ -71,6 +71,7 @@ export default defineConfig({
           { text: "Signing in", link: "/signing-in" },
           { text: "Connecting to Viya", link: "/connecting" },
           { text: "Running Python", link: "/running-python" },
+          { text: "Browsing SAS Content", link: "/browsing-sas-content" },
           { text: "Diagnostics", link: "/diagnostics" },
           { text: "The Python environment", link: "/python-environment" },
           { text: "Troubleshooting", link: "/troubleshooting" },

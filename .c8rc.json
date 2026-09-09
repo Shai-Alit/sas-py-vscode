@@ -14,6 +14,8 @@
     "src/compute/commands.ts",
     "src/compute/messages.ts",
     "src/compute/sessionManager.ts",
+    "src/content/contentExplorer.ts",
+    "src/content/contentTree.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",

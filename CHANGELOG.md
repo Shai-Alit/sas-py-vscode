@@ -10,6 +10,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **A read-only SAS Content explorer.** The Python on Viya activity-bar icon now
+  opens a **SAS Content** view showing My Favorites, My Folder, SAS Content and
+  Recycle Bin, read from the Viya Folders and Files services. Expand a folder to
+  list its sub-folders and files; a refresh button on the view reloads it.
+  Opening, creating, renaming, moving and deleting content are later releases.
+  See [Browsing SAS Content](docs/browsing-sas-content.md) and
+  [ADR-0026](docs/adr/0026-content-adapter-shape.md).
+
 ### Changed
 
 - Internal: the Viya hypermedia link helpers (`readLinks`/`findLink`/

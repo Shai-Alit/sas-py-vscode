@@ -188,6 +188,15 @@ a live cadence-shaped difference, the question of where that logic goes gets
 a real decision (and probably an ADR) rather than an inline string compare
 slipping in under time pressure.
 
+**Resolved for 6a-ii by not having the branch.** 6a-ii's probe pass
+(findings 97–101) reproduced no cadence-shaped difference in the member
+listing, and the adapter omits `sortBy` entirely — it orders the listing
+client-side (folders first, then name). So upstream's `viyaCadence ===
+"2023.03"` check has no analogue here to gate.
+[ADR-0026](../adr/0026-content-adapter-shape.md) records this. The question
+above stays open for any later slice whose own probing *does* turn up a live
+cadence difference.
+
 *Slices, refined from `PRODUCTION_PLAN.md`'s original one-line sketch:*
 
 - **6a — Adapter + read-only tree.** *Medium/Large* — the structural lift
@@ -236,13 +245,19 @@ resolves URIs the tree hands it; mutations before the favourites/recycle-bin
 affordances that are themselves particular mutations). Nothing here is a
 hard technical barrier — this is a recommendation, not a dependency lock._
 
-☐ **6a — `ContentAdapter` + read-only tree.**
+☑ **6a — `ContentAdapter` + read-only tree.** Split 6a-i (`src/wire/`
+promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
+`phase-6a-ii-content-tree`.
 
-- ☐ Read `RestContentAdapter.ts` in full for what it does (not what it is) —
+- ☑ Read `RestContentAdapter.ts` in full for what it does (not what it is) —
   the Viya-REST/SAS-Content half only, per the "no adapter factory" decision
-  above. Audit rather than transcribe, per this project's own ported-code
-  rule; note anything that looks like an upstream defect the way Phase 1's
-  `auth.ts`/`AuthProvider.ts` audits did.
+  above. **Done in 6a-ii.** Audited, not transcribed. Notes:
+  `getResourceIdFromItem`'s `self`-link fallback is load-bearing on the first
+  level the tree renders (confirmed, finding 98); a folder *member* carries no
+  `members` link, so listing its children means composing `${uri}/members`
+  (finding 99), which upstream also does; upstream's `deleteResource` swallows
+  a `404`/`403` from its follow-up member delete and returns it as success —
+  noted for 6c, not ported here.
 - ☑ Settle the `links.ts` promotion question (see Plan) before writing
   content-side wire code against either copy of it. **Resolved in 6a-i:**
   promoted to a new session-agnostic `src/wire/` layer
@@ -250,19 +265,40 @@ hard technical barrier — this is a recommendation, not a dependency lock._
   `src/content/` both import it. [ADR-0025](../adr/0025-shared-wire-layer.md).
   `computeMediaType` renamed `sasMediaType` in the move. Zero behaviour change;
   the moved unit suites pass unchanged.
-- ☐ Build `ContentItem`/`ContentAdapter`/`ContentModel`(if kept)/
-  `ContentDataProvider` under a new `src/content/` module, paralleling
-  `src/compute/`/`src/auth/` in shape.
-- ☐ Add the `viewsContainers`/`activitybar`/`views` contributions to
-  `package.json` — this repo's first. Command ids follow the existing flat
-  `pythonOnViya.<verb>` convention, not upstream's `SAS.content.<verb>`
-  grouping.
-- ☐ A second live probe of `/types/types?filter=contains('extensions','py')`
-  against a different Viya 4 cadence than `verde`'s, to check Finding 79's
-  "confirmed on one cadence" caveat before depending on `file_py` existing
-  everywhere.
-- ☐ `test/helpers/recorded-content.ts` + `test/fixtures/content/`, built
-  from Findings 78/82's scrubbed shapes.
+- ☑ Build the `src/content/` module — **done in 6a-ii.** `vscode`-free and in
+  the coverage denominator: `types.ts`, `problems.ts`, `client.ts`,
+  `adapter.ts`, `contentSession.ts` (adapter lifecycle — endpoint cache,
+  sign-out clear, the silent token flow), `presentation.ts` (icon /
+  `contextValue` / collapsible mapping). Thin `vscode` shells (excluded):
+  `contentTree.ts` (`TreeDataProvider`), `contentExplorer.ts` (the registrar).
+  **No `ContentModel`, no `ContentAdapterFactory`, and no `messages.ts` yet** —
+  the read-only tree only logs, so the `l10n.t()` renderer had no caller and
+  returns with 6b; [ADR-0026](../adr/0026-content-adapter-shape.md). The
+  HTTP-boundary test seam is a fake `ContentClient`
+  (`test/helpers/recorded-content.ts`); `contentSession`/`presentation` are
+  unit-tested directly, and `test/integration/content/` smoke-tests the two
+  shells in the extension host. (Splitting the logic out of the shells and
+  adding the integration suite folded in the two AI-review findings on PR #139
+  before merge.)
+- ☑ Add the `viewsContainers`/`activitybar`/`views` contributions to
+  `package.json` — this repo's first. **Done in 6a-ii:** view container
+  `pythonOnViya`, view `pythonOnViya.contentExplorer`, `viewsWelcome` for the
+  no-profile / signed-out states, command `pythonOnViya.refreshContentExplorer`
+  (flat convention, not upstream's `SAS.content.<verb>`), a `view/title`
+  refresh button, and `media/activity-bar.svg`.
+- ☑ ~~A second live probe of `/types/types?filter=contains('extensions','py')`~~
+  **Moved to 6c.** That endpoint is only read by *create file*
+  (`getTypeDefinition`), a mutation; nothing in the read-only 6a-ii path calls
+  it. The read-only slice's own probe pass (findings 97–101) confirmed the tree
+  shapes instead. Finding 79's "confirmed on one cadence" caveat stands until
+  6c re-probes it. (A side observation from finding 99: a `.py` file *member*
+  already carries `typeDefName: "file_py"` inline on read — so 6c may not need
+  a `/types/types` round trip at all, only a probe to confirm that.)
+- ☑ `test/helpers/recorded-content.ts` + `test/fixtures/content/`, built
+  from findings 97–99's scrubbed shapes. **Done in 6a-ii:** six fixtures
+  (delegate folders, `isNull(parent)` root, member listing with a `.py` file
+  and a child folder, nested folder). Real user name, folder GUIDs and
+  hostname replaced with synthetic-but-faithful values.
 
 ☐ **6b — Open/save via `FileSystemProvider`.**
 
@@ -281,6 +317,14 @@ hard technical barrier — this is a recommendation, not a dependency lock._
   confirmed-live link relations from Finding 78 (`createChild`, `update`,
   `deleteResource`, `deleteRecursively`, `validateRename`,
   `validateNewMemberName`).
+- ☐ **The `/types/types?filter=contains('extensions','py')` probe, moved here
+  from 6a.** Create-file (`getTypeDefinition`) is the only path that reads it.
+  Probe against a Viya 4 cadence other than `verde`'s to check Finding 79's
+  one-cadence caveat, **and** check whether the inline `typeDefName` a `.py`
+  member already carries on read (finding 99) removes the need for the lookup
+  on the create path too. Upstream's `deleteResource` also swallows a
+  `404`/`403` from its follow-up member-delete — decide whether to keep that
+  or surface it (6a-ii's audit flagged it).
 - ☐ Decide the upload/download scope question (Plan, above): in 6c, or
   deferred to Phase 11.
 - ☐ Drag-and-drop move/create-from-local-file, mirroring
@@ -372,6 +416,81 @@ constructs for the top-level "SAS Content" pseudo-root) returned items with
 fallback to a `self` link, documented upstream only as "Only members have
 `uri` attribute," is load-bearing for the very first root the tree renders,
 not a defensive branch for an edge case that never occurs.
+
+---
+
+_Findings 97–101 ran 2026-09-09 against `verde` (Viya 4), read-only (`GET`
+only), via the `viya-api-probe` skill, to build 6a-ii's fixtures from a
+current capture and reconfirm findings 78/82 before depending on them. They
+take numbers 97+ because the global sequence had reached Finding 96 by then
+(Phase 5→6 housekeeping used 93–94, Phase 7's library probes 83–86 and
+95–96)._
+
+**Finding 97 — the delegate folders resolve as finding 78 recorded, and a bad
+delegate name is a 400.**
+`GET /folders/folders/@myFolder`, `@myFavorites`, `@myRecycleBin` each
+returned `200` as `application/vnd.sas.content.folder+json` **with no `Accept`
+header needed**, `type` of `myFolder` / `favoritesFolder` / `trashFolder`, and
+the link set `self`, `members` (`type: application/vnd.sas.collection`),
+`addMember`, `up`, `ancestors`, `createChild`, `validateNewMemberName`,
+`delete`, `deleteRecursively`, `transferExport`/`transferImportUpdate`/
+`transferImport`. Delegate folders carry **no** `update`, `validateRename` or
+`getResource` — those appear on ordinary folders and on member records, not on
+a delegate. `GET /folders/folders/@notAThing` → **400**, not 404.
+
+**Finding 98 — the `isNull(parent)` root listing: full folder representations,
+`uri` and `contentType` simply absent.**
+`GET /folders/folders?filter=isNull(parent)&limit=5` → `200`
+`application/vnd.sas.collection+json`, envelope `{ version, accept, start,
+limit, count, name, items, links }` with `count` **populated** (14 on this
+deployment — not the `null` the generic collection-count warning describes).
+Each item is a full folder representation: `type: "folder"`, a `self` link
+(`/folders/folders/{id}`) plus `members`, `update`, `validateRename`,
+`createChild`, `ancestors`, timestamps, `memberCount`, `iconUri` — but the
+`uri` and `contentType` **keys are not present at all** (not `null`). Reading
+the address therefore *must* fall back to the `self` link, confirming
+finding 82. `and(isNull(parent),in(type,'file','dataFlow','folder',…))` also
+returns `200` — the combined filter 6a-ii composes for the root works.
+
+**Finding 99 — folder member listing: `type: "child"` records, kind in
+`contentType`, and no `members` link on a folder member.**
+`GET /folders/folders/{id}/members?limit=N&filter=in(contentType,'file',
+'folder','dataFlow')` → `application/vnd.sas.collection+json`. Every item has
+`type: "child"`; `contentType` is `folder` or `file` and is what says whether
+the tree can descend. A member's `uri` points at the underlying resource —
+`/folders/folders/{id}` for a folder, `/files/files/{id}` for a file — and
+`parentFolderUri` is present. A `.py` file member carries `typeDefName:
+"file_py"` **inline** (a `.sas` file: `typeDefName: "file"`). Member link set:
+`self` (the member record, `/folders/folders/{parent}/members/{memberId}`),
+`getResource`/`putResource`/`deleteResource` (the underlying resource),
+`update`/`delete` (the member), `up`, `ancestors`, `validateRename`,
+`transfer*`; a folder member additionally has `addMember`, `createChild`,
+`validateNewMemberName`. **A folder member has no `members` link** — to list
+its children, compose `${member.uri}/members` (upstream does the same). The
+collection's own links are `self` and `createMember` only; a 38-member folder
+came back whole with no `next`, so pagination past `limit` is still unprobed
+(6a-ii keeps upstream's `limit=1000000`).
+
+**Finding 100 — `Accept` sensitivity, and the error envelope on a real miss.**
+Sending `Accept: application/vnd.sas.error+json` on a folder `GET` → **406
+Not Acceptable**, with an envelope listing the types the endpoint *will*
+serve. Sending no `Accept`, or `application/json`, returns the default
+representation. A genuine miss — `GET /folders/folders/{unknown-guid}` with a
+valid `Accept` — → **404** `application/vnd.sas.error+json;charset=utf-8;
+version=2`, body `{ version, httpStatusCode: 404, errorCode: 11500, message,
+details: ["path: …", "correlator: …"] }` — the finding-17 envelope
+`src/wire/viyaError.ts` already reads. So `src/content/client.ts` sends only
+the link-derived `Accept` (or none) and reads the error envelope from
+whatever body a non-2xx carries, exactly as `src/compute/client.ts` does.
+
+**Finding 101 — `ancestors` shape not pinned; `getParent` deferred to 6b.**
+`GET /folders/ancestors?childUri=…` (the `ancestors` relation) answered **406**
+under `Accept: application/vnd.sas.collection+json` and, under `Accept:
+application/json`, returned an **empty object `{}`** for a file directly under
+My Folder — not the array upstream's `getParentOfItem` iterates. 6a-ii does
+**not** implement `getParent` (only `TreeView.reveal` needs it, and nothing
+reveals in a read-only tree), so this is left for 6b to pin with its own
+probe when `reveal` is actually wired.
 
 **Not probed this session, left open:** the Files service's `rawUpload`
 `POST` (file creation) — a mutating call, out of scope for a read-only

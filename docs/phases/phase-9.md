@@ -371,5 +371,8 @@ Code spike named in 9a's own punch-list item instead. If 9a's implementation
 turns up a genuine Viya-side question (for example, whether rapid
 notebook-cell-at-a-time execution produces working-directory-diff races
 ADR-0019's design didn't anticipate at Run File's slower cadence), that
-would be the first probe recorded here, continuing this project's global
-finding numbering from Finding 92 (`phase-8.md`).
+would be the first probe recorded here — numbered `9.1`, per the
+phase-scoped finding-numbering scheme adopted 2026-09-09 (`STATUS.md`,
+repo-root `CLAUDE.md`), not a continuation of the project's old global
+sequence (which this phase file's scoping session originally assumed would
+run from Finding 92, `phase-8.md`).

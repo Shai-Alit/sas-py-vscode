@@ -11,11 +11,8 @@ slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 befo
 starting. **6a is done** (split 6a-i + 6a-ii) and **6b is done**; **6c is
 next.**
 
-**Probe finding numbers changed 2026-09-09.** New findings are numbered
-`<phase>.<n>` (`Finding 6.1`, `Finding 7.3`) so phases worked in parallel can't
-collide. Findings 1–101 keep their flat numbers. Full rule in `CLAUDE.md`
-("Don't guess about Viya — probe it") and `RUNBOOK.md`. Phase 7's existing
-findings are being renumbered to `7.n` on that branch.
+(Probe finding numbers are now phase-scoped `N.x` — see the "Finding-numbering
+scheme changed 2026-09-09" section below and `CLAUDE.md`.)
 
 - **6a-i — `src/wire/` promotion.** Done. The Viya hypermedia link helpers and
   the `application/vnd.sas.error+json` reader moved from `src/compute/` to a
@@ -101,6 +98,19 @@ No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
 issue tracking once past "preview".
 
+## Finding-numbering scheme changed 2026-09-09
+
+Probe findings are now numbered per-phase (`N.x`), not one continuing global
+sequence — see `CLAUDE.md`'s "Don't guess about Viya — probe it" section for
+the full rationale (this project now works phases in parallel from separate
+clones, and a continuing global counter can't be claimed safely by two
+sessions at once) and the rules for applying it. Phase 7's findings were
+renumbered `7.1`–`7.7` (previously the global 83, 84, 85, 86, 95, 96, 102) as
+part of this change. Phases 0–6, and any already-recorded phase 8–10
+findings from their original scoping sessions, keep their old global
+numbers — renumber a phase's own findings to its `N.x` scheme when that
+phase is actually picked up, not preemptively.
+
 ## History
 
 `docs/status-archive.md` holds the slice-by-slice narrative for Phase 3f
@@ -128,7 +138,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); 6b done (open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2); 6c (mutations) next. | `docs/phases/phase-6.md` |
-| 7 — Libraries and data viewer | **scoped 2026-09-03**, not started | `docs/phases/phase-7.md` |
+| 7 — Libraries and data viewer | **scoped 2026-09-03**; pre-implementation work done — dialect risk (deployment *and* cadence axes) closed for the endpoints probed (Finding 7.7), and 7a's adapter shape/session-ownership/busy-UI design settled as [ADR-0027](docs/adr/0027-library-adapter-shape.md); 7a code (`src/data/`, tree view) not yet started | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |

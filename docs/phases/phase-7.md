@@ -294,18 +294,20 @@ hard technical barrier — this is a recommendation, not a dependency lock._
 
 ☐ **7a — `LibraryAdapter` + read-only tree.**
 
-- ☑ A second-cadence/second-**deployment** probe of `GET /sessions/{sessionId}/data`,
-  the summary/tables content-negotiation Finding 95 corrected, `…/{tableName}`,
+- ☑ A second-**deployment** probe of `GET /sessions/{sessionId}/data`, the
+  summary/tables content-negotiation Finding 95 corrected, `…/{tableName}`,
   `…/columns`, `…/rows`. Finding 95 (2026-09-09) re-ran the full set against
   `verde` again and reconfirmed Findings 83–85's practical shape (correcting
   83/84's URL-suffix mechanism to `Accept`-header content negotiation) and
   Finding 86 (session-state is bare `text/plain` regardless of `Accept` —
   stronger/simpler than originally stated). Finding 96 (2026-09-09) then
-  re-ran the same set against a second, distinct deployment (`innov`) and
-  every mechanism reproduced identically. The remaining dialect-risk
-  question is narrower now: not "no second deployment probed" but "no
-  different Viya 4 *cadence* probed" (Viya 3.5 is out of scope per
-  ADR-0022, not an open question here) — see Finding 96's closing note.
+  re-ran the same set against a second, distinct deployment (`Innov`) and
+  every mechanism reproduced identically. **Done** for the second-deployment
+  axis specifically.
+- ☐ A second-**cadence** probe (still outstanding — Findings 95/96 used two
+  deployments, but nothing establishes they are different Viya 4 cadences).
+  Not settled by the item above; Viya 3.5 is out of scope per ADR-0022 and
+  is not what this bullet is asking about — see Finding 96's closing note.
 - ☐ Design the "session busy" UI 7a needs as a result of Finding 85 — block
   the tree, queue the request, or surface a visible wait state — rather than
   let a browse action hang silently behind an active run the way the raw
@@ -516,13 +518,13 @@ finding numbering continues from Finding 94 (`phase-5.md`).
   would not work at all** (confirmed: 400, not merely suboptimal) — this is
   a correctness-affecting correction, not a style note.
 
-**Finding 96 — second deployment (`innov`), 2026-09-09: every part of
+**Finding 96 — second deployment (`Innov`), 2026-09-09: every part of
 Finding 95 reproduces identically; the dialect-risk item for these endpoints
-is closed.** Sean added an `innov` section to `creds.json`
-(`C:\certs\creds.json`) after the Finding 95 checkpoint. Re-ran the same
-probe set via `viya-api-probe` against a fresh throwaway `SAS Studio compute
-context` session on `innov` (created and deleted; `404` read-back
-confirmed):
+is closed.** Sean added an `innov` section (deployment `Innov`) to
+`creds.json` (`C:\certs\creds.json`) after the Finding 95 checkpoint. Re-ran
+the same probe set via `viya-api-probe` against a fresh throwaway `SAS
+Studio compute context` session on `Innov` (created and deleted; `404`
+read-back confirmed):
 
 - Session-state endpoint: `text/plain;charset=UTF-8` with a bare unquoted
   word for **both** generic and specific `Accept`, exactly as Finding 95

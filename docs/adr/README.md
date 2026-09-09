@@ -66,3 +66,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0024](0024-notebooks-are-ipynb-native.md) | Notebooks are ipynb-native, not a bespoke format | Accepted |
 | [0025](0025-shared-wire-layer.md) | Hypermedia link and error-envelope helpers move to a shared `src/wire/` layer | Accepted |
 | [0026](0026-content-adapter-shape.md) | The SAS Content adapter is one concrete class — no factory, no `ContentModel`, no `sortBy` | Accepted |
+| [0027](0027-library-adapter-shape.md) | `LibraryAdapter` is one concrete class, session-scoped through `ComputeSessionManager`, not a self-owned connection | Accepted |

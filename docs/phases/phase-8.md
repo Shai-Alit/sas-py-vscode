@@ -301,8 +301,13 @@ lock._
 ## Probe findings
 
 All probes below ran 2026-09-03 against `verde` (Viya 4), via the
-`viya-api-probe` skill. Continuing this project's global finding numbering
-from Finding 86 (`phase-7.md`). All but one (Finding 91's decisive live test)
+`viya-api-probe` skill. This phase predates the 2026-09-09 switch to
+phase-scoped `N.x` finding numbers (`STATUS.md`, repo-root `CLAUDE.md`) and
+keeps its own findings under the project's old global sequence, continuing
+from Finding 86 (`phase-7.md`, since renumbered `7.4` under the new scheme —
+see that file's own note). If this phase records a new finding after being
+picked up, number it `8.1` onward instead of continuing this sequence. All
+but one (Finding 91's decisive live test)
 were plain, read-only `GET`s with a bare bearer token; Finding 91 required a
 throwaway Compute session, created via `POST /compute/contexts/{id}/sessions`
 against the "SAS Studio compute context" and deleted immediately after,

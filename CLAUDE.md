@@ -198,6 +198,29 @@ findings** section, in the same pull request as the code relying on it. A value
 it supersedes gets swept out of every place it was written down — see "Every
 claim carries its evidence" below.
 
+**Finding numbers are phase-scoped (`N.x`), not one continuing global
+sequence.** Settled 2026-09-09, after two agents working different phases
+from separate clones (this project's own concurrent-phase workflow — see
+"How to hand over a command" isn't the only place two Claude sessions run at
+once) risked claiming the same next number at the same time, and after two
+already-scoped-but-not-started phase files (9 and 10) turned out to both
+assume they'd continue from the same prior number — a live, if latent,
+collision that predates any actual concurrent editing. Each phase's findings
+now number independently as `<phase>.<n>` (Phase 7's are `7.1`–`7.7`; Phase
+8 would start its own findings at `8.1`, not continue any other phase's
+count), so two sessions working different phases in parallel can never
+collide on a finding number without coordinating anything. **This applies
+going forward from Phase 7 onward.** Phases 0–6, and any already-recorded
+findings in phases 8–10 from their original scoping sessions, keep their old
+global numbers as a historical record — renumbering settled, merged findings
+in a phase another session may be actively editing is its own hazard this
+change is meant to avoid, not a job to do reflexively. Renumber a still-
+legacy-numbered phase's findings to its own `N.x` scheme at the point that
+phase is actually picked up, not preemptively. A phase file's own **Probe
+findings** section intro states which numbering scheme it uses and what it
+continues from (or doesn't) — read that line before adding a new finding to
+an existing phase file.
+
 ## Verification is proportional to the change
 
 Run only the checks a change can plausibly fail. A prose, comment or doc-string

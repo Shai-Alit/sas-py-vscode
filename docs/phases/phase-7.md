@@ -56,16 +56,27 @@ all already built and, in principle, already reusable as-is.
   SAS-specific. `LibraryModel.getChildren` dispatches libraries vs. tables
   purely off `LibraryItem.type`; `PaginatedResultSet` is a generic
   start/end/sort/query callback wrapper with nothing in it that assumes SAS.
-- The wire shape itself: `GET /sessions/{sessionId}/data` (libraries,
-  `#summary`-suffixed variants for the `readOnly` flag), `GET
-  /sessions/{sessionId}/data/{libref}#tables` (tables in a libref), `GET
+- The wire shape itself: `GET /sessions/{sessionId}/data` (libraries), `GET
+  /sessions/{sessionId}/data/{libref}` (per-library detail by default, or the
+  tables-in-a-libref listing under a different `Accept` on the same URI — see
+  the note below), `GET
   /sessions/{sessionId}/data/{libref}/{tableName}` (table info, `rowCount`
   etc.), `GET …/{tableName}/columns` (paged column metadata), and `GET
   …/{tableName}/rows` (paged row data, `start`/`limit`/`where`/
   `formatMissingValues`/`includeIndex` query params) — all standard
   `application/vnd.sas.collection+json` collections with the same
   `start`/`limit`/`count` paging shape `src/compute/contexts.ts` and
-  `job.ts` already handle for other Compute collections.
+  `job.ts` already handle for other Compute collections. **Superseded in part
+  by Finding 95:** an earlier draft of this bullet wrote the `readOnly`/tables
+  detail as `#summary`- and `#tables`-suffixed URL segments
+  (`.../data/{libref}#summary`, `.../data/{libref}#tables`), mirroring
+  upstream's `compute.ts` template strings. Those are not requestable paths —
+  the `#` is a URL fragment stripped before the wire, and a properly
+  percent-encoded `WORK%23summary` returns HTTP 400. The rich-detail and
+  tables views are selected by `Accept`-header content negotiation on the
+  bare `.../data/{libref}` URI, which this project's `src/wire/links.ts` +
+  `src/compute/client.ts` link-following already produces from the item's own
+  links (see Finding 95).
 - The read-only/actionable distinction (`LibraryItem.readOnly`, inherited from
   the owning library unless a table overrides it) is the same shape as Phase
   6's folder/file `readOnly` handling — a second application of a convention
@@ -219,15 +230,21 @@ avoids naming the site-registered libraries the probe's `getLibraries` call
 returned beyond `WORK`/`SASHELP`/`SASUSER`, since several of the others read as
 customer- or business-identifying and have no bearing on the confirmed shape).
 
-**Dialect risk, flagged not resolved.** Unlike Phase 6 (which found one
-inline cadence check in upstream's content adapter), nothing in
-`RestLibraryAdapter.ts` or the generated `DataAccessApi` client carries a
-visible version branch, and this session's probe — one cadence, one
-deployment — didn't contradict that. Still open: whether a different Viya 4
-cadence or generation shows any difference in these endpoints. 7a's own probe
-pass should check that the same way 6a's punch list already commits to for
-its own endpoints, rather than assuming none exists because none was visible
-in the client source or turned up on the one cadence probed here.
+**Dialect risk, narrowed but not resolved (updated by Findings 95/96,
+2026-09-09 — superseding the "one cadence, one deployment" framing this
+paragraph originally had).** Unlike Phase 6 (which found one inline cadence
+check in upstream's content adapter), nothing in `RestLibraryAdapter.ts` or
+the generated `DataAccessApi` client carries a visible version branch. This
+phase's probing has since covered **two independent Viya 4 deployments**
+(`verde` and `Innov`, Findings 83–86/95/96), and every mechanism agreed
+between them — the deployment axis of this risk is closed. What remains
+open is narrower: whether a **different Viya 4 cadence** (not merely a
+different deployment) shows any difference in these endpoints. Nothing so
+far establishes that `verde` and `Innov` run different cadences, so two
+deployments agreeing is not the same evidence as two cadences agreeing.
+7a's own probe pass should check the cadence question directly the same way
+6a's punch list already commits to for its own endpoints, rather than
+treating the deployment-level agreement above as settling it.
 
 **The earlier network failure was a VPN outage on the deployment side, not a
 sandbox limitation.** This session's first probe attempt failed identically
@@ -294,11 +311,20 @@ hard technical barrier — this is a recommendation, not a dependency lock._
 
 ☐ **7a — `LibraryAdapter` + read-only tree.**
 
-- ☐ A second-cadence/second-deployment probe of `GET /sessions/{sessionId}/data`,
-  `…/{libref}#tables`, `…/{libref}/{tableName}`, `…/columns`, `…/rows` —
-  Findings 83–86 confirm the shape on one Viya 4 deployment (`verde`); the
-  dialect-risk note in the Plan section above still wants a second one before
-  depending on it everywhere.
+- ☑ A second-**deployment** probe of `GET /sessions/{sessionId}/data`, the
+  summary/tables content-negotiation Finding 95 corrected, `…/{tableName}`,
+  `…/columns`, `…/rows`. Finding 95 (2026-09-09) re-ran the full set against
+  `verde` again and reconfirmed Findings 83–85's practical shape (correcting
+  83/84's URL-suffix mechanism to `Accept`-header content negotiation) and
+  Finding 86 (session-state is bare `text/plain` regardless of `Accept` —
+  stronger/simpler than originally stated). Finding 96 (2026-09-09) then
+  re-ran the same set against a second, distinct deployment (`Innov`) and
+  every mechanism reproduced identically. **Done** for the second-deployment
+  axis specifically.
+- ☐ A second-**cadence** probe (still outstanding — Findings 95/96 used two
+  deployments, but nothing establishes they are different Viya 4 cadences).
+  Not settled by the item above; Viya 3.5 is out of scope per ADR-0022 and
+  is not what this bullet is asking about — see Finding 96's closing note.
 - ☐ Design the "session busy" UI 7a needs as a result of Finding 85 — block
   the tree, queue the request, or surface a visible wait state — rather than
   let a browse action hang silently behind an active run the way the raw
@@ -357,9 +383,15 @@ global finding numbering from Finding 82 (`phase-6.md`).
 
 **Finding 83 — the core `DataAccessApi` read shapes are exactly what the
 generated client and `RestLibraryAdapter.ts` claim, on this deployment.**
-`GET /compute/sessions/{id}/data` (libraries), `…/data/{libref}#summary`
-(per-library `readOnly`/engine detail), `…/data/{libref}#tables` (tables in a
-libref), `…/data/{libref}/{tableName}` (table info), `…/{tableName}/columns`,
+**Superseded in part by Finding 95, below: `…/data/{libref}#summary` and
+`…/data/{libref}#tables` are not real, requestable paths — see Finding 95
+for the corrected `Accept`-header content-negotiation mechanism. The rest of
+this finding (the field shapes themselves) stands.**
+`GET /compute/sessions/{id}/data` (libraries), `…/data/{libref}` with the
+default `library+json` media type (per-library `readOnly`/engine detail — the
+rich representation, not the `summary` one; see Finding 95), `…/data/{libref}`
+with the tables media type (tables in a libref), `…/data/{libref}/{tableName}`
+(table info), `…/{tableName}/columns`,
 and `…/{tableName}/rows` all returned `200` with exactly the fields
 `RestLibraryAdapter.ts`/`TablePropertiesViewer.ts` read. `GET …/data` listed
 14 libraries including `WORK`, `SASHELP`, and `SASUSER` alongside several
@@ -377,17 +409,28 @@ by hand the way upstream's adapter does.
 
 **Finding 84 — the plain `getLibraries`/`getTables` collections carry no
 per-item detail; the `readOnly`/size fields only appear on the singular
-`#summary`/item `GET`.** The default `GET …/data` and `GET …/data/{libref}#tables`
+per-item detail `GET`, not on the list.** **Superseded in part by Finding 95,
+below: the `#summary` notation is not a real path — the per-item detail comes
+from the *default* `library+json` representation, reached by `Accept`-header
+content negotiation on the *same* bare URI (the `summary` media type is
+actually the *sparse* one; see Finding 95), not from a separate
+`#summary`-suffixed resource. The practical conclusion — the list is sparse, a
+per-item follow-up is needed — stands; the mechanism described here does not.** The
+default `GET …/data` and the tables-media-type read on `…/data/{libref}`
 responses return `type: null`, `rowCount: null`, `columnCount: null` on every
 item, exactly matching upstream's own two-tier fetch (list, then a per-item
 `getLibrarySummary`/`getTable` for the fields the UI actually needs) — not a
 gap in the probe, a confirmed reason `RestLibraryAdapter.getLibraries` makes
-one follow-up request per library. Measured directly:
-`GET …/data/WORK#summary` → `readOnly: false`; `GET …/data/SASHELP#summary` →
-`readOnly: true`, `concatenationCount: 4` (four physical paths concatenated
-into one libref) — confirms the read-only/writable distinction the tree's
-icon and context-menu gating depend on is real and populated, not merely
-documented.
+one follow-up request per library. Measured directly (via the bare
+`…/data/{libref}` URI with the default `library+json` `Accept` — the rich
+representation; the `summary` media type is the sparse one, and the
+`#summary`-suffixed URL notation an earlier draft of this sentence showed was
+never what curl actually requested, since it silently strips the `#…` fragment
+before the wire, per Finding 95): `GET …/data/WORK` → `readOnly: false`;
+`GET …/data/SASHELP` → `readOnly: true`, `concatenationCount: 4` (four physical
+paths concatenated into one libref) — confirms the read-only/writable
+distinction the tree's icon and context-menu gating depend on is real and
+populated, not merely documented.
 
 **Finding 85 — a `DataAccessApi` call blocks behind a running job in the same
 session; it does not error and does not run concurrently.** With no job
@@ -406,7 +449,11 @@ probed: whether a *second* concurrent `DataAccessApi` call (no job involved)
 queues the same way, or whether only a running job causes this.
 
 **Finding 86 — the session `state` endpoint needs its own media type, not a
-bare `Accept: application/json`.** `GET /compute/sessions/{id}/state` with a
+bare `Accept: application/json`.** **Superseded by Finding 95, below: on
+re-probe, the specific media type did *not* return cleanly-parseable JSON
+either — both `Accept` values return the identical bare `text/plain` word.
+Treat this endpoint as always plain text regardless of `Accept`, not as
+media-type-sensitive.** `GET /compute/sessions/{id}/state` with a
 generic `Accept` returned a bare unquoted word (`idle`) that broke `jq`
 parsing; requesting `Accept: application/vnd.sas.compute.session.state+json`
 returned the same content cleanly. Incidental — not part of this phase's own
@@ -422,3 +469,140 @@ deliberately out of scope for this pass); and the CSV (`rowsAsCSV`) and
 `promptContent` relations `getTable`'s link set surfaced but
 `RestLibraryAdapter.ts` reaches by composed URL rather than by link. All are
 7a/7c implementation-time probes, not settled here.
+
+**Finding 95 — re-probe against `verde`, 2026-09-09 (no second deployment was
+available this session — see below): Finding 85 reconfirmed as measured;
+Finding 86 does not reproduce as stated; Findings 83/84's mechanism was
+wrong, though their practical conclusion holds.** Run via `viya-api-probe`
+against a fresh throwaway `SAS Studio compute context` session (created and
+deleted per-check below; each read back `404` after its `DELETE`). Global
+finding numbering continues from Finding 94 (`phase-5.md`).
+
+- **Finding 85 — reconfirmed, same magnitude.** Idle baseline `GET
+  …/data/SASHELP/CLASS/rows?start=0&limit=2` → **0.547s**. Immediately after
+  submitting `data _null_; x=sleep(15,1); run;` (async, no wait), the
+  identical call → **15.003s** — again a wait matching the job's own sleep
+  almost exactly, not a fast race or an error. The blocking-not-erroring
+  behaviour this phase's busy-submission UI design depends on is stable
+  across sessions on this deployment.
+- **Finding 86 — does not reproduce; corrected.** Today, `GET
+  …/sessions/{id}/state` returned **`Content-Type: text/plain;charset=UTF-8`**
+  with the bare unquoted body `idle` for **both** a generic `Accept:
+  application/json` **and** the specific
+  `Accept: application/vnd.sas.compute.session.state+json` — neither parses
+  as JSON (`jq` fails identically on both). The original finding's claim that
+  the specific media type "returned the same content cleanly" (i.e.
+  JSON-parseable) did not hold this time; both requests behave identically,
+  and neither is JSON. Treat the session-state endpoint as **always** a bare
+  text/plain state word regardless of `Accept`, not as a media-type-sensitive
+  endpoint — a stronger and simpler statement than Finding 86 made, and the
+  one to design against.
+- **Findings 83/84 — the mechanism they describe does not exist; the
+  practical conclusion they drew is still correct.** `{libref}#summary` and
+  `{libref}#tables` are not real URL path segments. Directly confirmed:
+  requesting the properly percent-encoded path
+  `…/data/WORK%23summary` returns **HTTP 400**, `errorCode 5334`, "The
+  library name included in the path is invalid. It contains too many
+  characters" — the server parsed the literal string `WORK#summary` as an
+  (invalid, >8-char) libref, meaning no such suffixed resource exists to
+  request in the first place. (The original probe's `#summary`/`#tables`
+  writing almost certainly reflects curl silently stripping an unencoded
+  `#…` as a URL fragment before sending, landing on the **bare** `…/data/{libref}`
+  URL by accident and getting the rich response from a plain GET — not from
+  a `#summary` resource that was never actually requested.)
+
+  **The real mechanism is `Accept`-header content negotiation on the same
+  bare URI**, and it inverts which media type is "rich" versus "sparse" from
+  what Finding 84's naming implied:
+  - `GET …/data/WORK` with the default/bare `Accept` (equivalently,
+    explicit `Accept: application/vnd.sas.compute.library+json`) returns the
+    **rich** shape — `readOnly`, `concatenationCount`, `engineName`,
+    `physicalName`, `fileFormat`, `links`, etc. Reconfirmed unchanged:
+    `WORK` → `readOnly: false, concatenationCount: 0`; `SASHELP` →
+    `readOnly: true, concatenationCount: 4` — same numbers Finding 84
+    measured, just obtained by the correct request.
+  - `GET …/data/WORK` with `Accept: application/vnd.sas.compute.library.summary+json`
+    on the **identical URI** returns the **sparse** shape (`id`, `name`,
+    `links`, `version` only, everything else absent) — "summary" is the lean
+    representation, not the detailed one; this is the reverse of what the
+    word suggested and the reverse of how Finding 84 characterized it.
+  - The plain collection `GET …/data` (all libraries) already negotiates to
+    this same sparse per-item media type by default — its own envelope says
+    `"accept":"application/vnd.sas.compute.library.summary"`. That is *why*
+    list items arrive with `type`/`rowCount`/`readOnly` absent: it's the
+    collection's default per-item media type being the sparse one, not a
+    separate "list truncates fields" behaviour.
+  - Tables-in-a-library ("`#tables`") work the same way: `GET
+    …/data/WORK` with `Accept:
+    application/vnd.sas.collection+json;itemtype=application/vnd.sas.compute.data.table.summary`
+    on the **same bare library URI** returns the tables collection (`count:
+    0, items: []` for empty `WORK` in a fresh session) — again
+    content-negotiated on one URI, not a second URL.
+  - The bare library response's own `links[]` already carries this as data:
+    a `rel:"self"` entry (`type: application/vnd.sas.compute.library`) and a
+    `rel:"tables"` entry (`itemType:
+    application/vnd.sas.compute.data.table.summary`, `type:
+    application/vnd.sas.collection`) both pointing at the **same href** —
+    the link set is telling the client which `Accept` to send, not which
+    URL to build.
+
+  **Implementation consequence for 7a:** a `LibraryAdapter`'s per-item
+  detail follow-up must be built as an `Accept`-header request against the
+  same URI the list item's own link already names — exactly the
+  link-following discipline `src/wire/links.ts` already applies elsewhere
+  in this project (promoted there from `src/compute/links.ts` in 6a-i,
+  ADR-0025, merged before this branch), and the same discipline Finding 83
+  already flagged as worth adopting here. **Composing a `#summary`/`#tables`-suffixed URL by
+  hand, the way the original finding's wording could be read to suggest,
+  would not work at all** (confirmed: 400, not merely suboptimal) — this is
+  a correctness-affecting correction, not a style note.
+
+**Finding 96 — second deployment (`Innov`), 2026-09-09: every part of
+Finding 95 reproduces identically; the dialect-risk item for these endpoints
+is closed.** Sean added an `innov` section (deployment `Innov`) to
+`creds.json` after the Finding 95 checkpoint. Re-ran the same probe set via
+`viya-api-probe` against a fresh throwaway `SAS Studio compute context`
+session on `Innov` (created and deleted; `404` read-back confirmed):
+
+- Session-state endpoint: `text/plain;charset=UTF-8` with a bare unquoted
+  word for **both** generic and specific `Accept`, exactly as Finding 95
+  corrected. The word itself differed — `pending` rather than `idle` — but
+  that's the state of a just-created session at the instant checked, not a
+  media-type or version difference; both requests still agree with each
+  other, which is the property that matters.
+- `GET …/data` (library list): sparse per-item shape, envelope reports
+  `"accept": "application/vnd.sas.compute.library.summary"`, identical to
+  `verde`.
+- Bare `GET …/data/WORK` with default/`library+json` `Accept` → rich detail
+  (`readOnly: false, concatenationCount: 0, engineName: "V9"`). Same URI
+  with `Accept: application/vnd.sas.compute.library.summary+json` → sparse
+  (`id`/`name`/`links`/`version` only). Same URI with
+  `Accept: application/vnd.sas.collection+json;itemtype=…table.summary` →
+  tables collection (empty, fresh `WORK`). All three exactly reproduce the
+  content-negotiation mechanism Finding 95 established on `verde` — this
+  was the main thing worth re-confirming on a second deployment, and it did.
+- `SASHELP` → `readOnly: true, concatenationCount: 4`, same values as
+  `verde`.
+- The literal percent-encoded `WORK%23summary` path → **HTTP 400**,
+  `errorCode 5334`, same message, confirming the "`#summary` is not a real
+  path segment" conclusion isn't a `verde`-specific quirk.
+- Finding 85 (busy-blocking): idle baseline **0.452s**; immediately after
+  submitting the same 15s sleep job, the identical `getRows` call →
+  **15.039s**. Same magnitude and shape as both `verde` runs.
+
+**Net effect on the Plan section's "Dialect risk, flagged not resolved"
+note:** for the specific endpoints and mechanisms Findings 83–86/95/96
+cover (library/table list and detail shapes, the summary/tables
+content-negotiation mechanism, the busy-blocking behaviour, and the
+session-state media type), two independent Viya 4 deployments now agree in
+every particular except a session-state *value* that differs for an
+unrelated, expected reason (session age at time of check). Nothing here
+found a version-conditioned branch. Still open, and not something two
+same-cadence-class deployments can settle: whether an older or newer Viya 4
+*cadence* behaves differently — that remains a genuine gap, just no longer
+blocked on having a second deployment at all to probe with. (Viya 3.5 is out
+of scope entirely — ADR-0022 dropped it; not a question this phase carries.)
+
+Whether a *second* concurrent `DataAccessApi` call (no job involved) queues
+the same way a job does remains unprobed, as does the `createView` sort
+round trip — both deliberately out of scope for a read-only pass.

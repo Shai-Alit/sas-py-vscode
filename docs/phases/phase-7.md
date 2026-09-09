@@ -366,6 +366,10 @@ global finding numbering from Finding 82 (`phase-6.md`).
 
 **Finding 83 — the core `DataAccessApi` read shapes are exactly what the
 generated client and `RestLibraryAdapter.ts` claim, on this deployment.**
+**Superseded in part by Finding 95, below: `…/data/{libref}#summary` and
+`…/data/{libref}#tables` are not real, requestable paths — see Finding 95
+for the corrected `Accept`-header content-negotiation mechanism. The rest of
+this finding (the field shapes themselves) stands.**
 `GET /compute/sessions/{id}/data` (libraries), `…/data/{libref}#summary`
 (per-library `readOnly`/engine detail), `…/data/{libref}#tables` (tables in a
 libref), `…/data/{libref}/{tableName}` (table info), `…/{tableName}/columns`,
@@ -386,7 +390,12 @@ by hand the way upstream's adapter does.
 
 **Finding 84 — the plain `getLibraries`/`getTables` collections carry no
 per-item detail; the `readOnly`/size fields only appear on the singular
-`#summary`/item `GET`.** The default `GET …/data` and `GET …/data/{libref}#tables`
+`#summary`/item `GET`.** **Superseded in part by Finding 95, below: the
+`#summary` notation names a media type reached by `Accept`-header content
+negotiation on the *same* bare URI, not a separate `#summary`-suffixed
+resource. The practical conclusion — the list is sparse, a per-item
+follow-up is needed — stands; the mechanism described here does not.** The
+default `GET …/data` and `GET …/data/{libref}#tables`
 responses return `type: null`, `rowCount: null`, `columnCount: null` on every
 item, exactly matching upstream's own two-tier fetch (list, then a per-item
 `getLibrarySummary`/`getTable` for the fields the UI actually needs) — not a
@@ -415,7 +424,11 @@ probed: whether a *second* concurrent `DataAccessApi` call (no job involved)
 queues the same way, or whether only a running job causes this.
 
 **Finding 86 — the session `state` endpoint needs its own media type, not a
-bare `Accept: application/json`.** `GET /compute/sessions/{id}/state` with a
+bare `Accept: application/json`.** **Superseded by Finding 95, below: on
+re-probe, the specific media type did *not* return cleanly-parseable JSON
+either — both `Accept` values return the identical bare `text/plain` word.
+Treat this endpoint as always plain text regardless of `Accept`, not as
+media-type-sensitive.** `GET /compute/sessions/{id}/state` with a
 generic `Accept` returned a bare unquoted word (`idle`) that broke `jq`
 parsing; requesting `Accept: application/vnd.sas.compute.session.state+json`
 returned the same content cleanly. Incidental — not part of this phase's own
@@ -511,9 +524,10 @@ finding numbering continues from Finding 94 (`phase-5.md`).
   **Implementation consequence for 7a:** a `LibraryAdapter`'s per-item
   detail follow-up must be built as an `Accept`-header request against the
   same URI the list item's own link already names — exactly the
-  link-following discipline `src/compute/links.ts` already applies elsewhere
-  in this project, and the same discipline Finding 83 already flagged as
-  worth adopting here. **Composing a `#summary`/`#tables`-suffixed URL by
+  link-following discipline `src/wire/links.ts` already applies elsewhere
+  in this project (promoted there from `src/compute/links.ts` in 6a-i,
+  ADR-0025, merged before this branch), and the same discipline Finding 83
+  already flagged as worth adopting here. **Composing a `#summary`/`#tables`-suffixed URL by
   hand, the way the original finding's wording could be read to suggest,
   would not work at all** (confirmed: 400, not merely suboptimal) — this is
   a correctness-affecting correction, not a style note.
@@ -521,10 +535,9 @@ finding numbering continues from Finding 94 (`phase-5.md`).
 **Finding 96 — second deployment (`Innov`), 2026-09-09: every part of
 Finding 95 reproduces identically; the dialect-risk item for these endpoints
 is closed.** Sean added an `innov` section (deployment `Innov`) to
-`creds.json` (`C:\certs\creds.json`) after the Finding 95 checkpoint. Re-ran
-the same probe set via `viya-api-probe` against a fresh throwaway `SAS
-Studio compute context` session on `Innov` (created and deleted; `404`
-read-back confirmed):
+`creds.json` after the Finding 95 checkpoint. Re-ran the same probe set via
+`viya-api-probe` against a fresh throwaway `SAS Studio compute context`
+session on `Innov` (created and deleted; `404` read-back confirmed):
 
 - Session-state endpoint: `text/plain;charset=UTF-8` with a bare unquoted
   word for **both** generic and specific `Accept`, exactly as Finding 95

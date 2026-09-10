@@ -256,6 +256,20 @@ account in `phase-7.md`'s 7b Runbook entry.
   (squash `60a944e`), after a profile-scoping panel-key fix and a
   reconciliation against `main` (6c-ii had merged while this PR was open) —
   see `phase-7.md`'s 7b Runbook for the full account.
+- **Three small PR #150 follow-up findings closed 2026-09-10**, from the
+  `sas-py-vscode-cowork` clone, ahead of 7c proper: `pythonOnViya.openTable`
+  hidden from the global Command Palette (a `commandPalette` `"when": "false"`
+  entry, matching the four content commands); the dead `data-title` attribute
+  (and its now-unused `escapeHtmlAttribute` helper and `buildHtml`
+  parameter) removed from the data viewer's HTML shell; and a JSX test case
+  added for `check-coverage-scope.mjs`'s `scriptKindFor`, feeding
+  `importsHostModule` a real, ag-grid-shaped `.tsx` element. See
+  `phase-7.md`'s 7c punch list for the full account, including why the JSX
+  test's own investigation found this particular check doesn't actually
+  depend on `scriptKindFor` for any well-formed input. `npm run test:unit`
+  (1443 passing), `test:integration` (305 passing), and `npm run coverage`
+  (95.29/95.37/94.95/95.29, all thresholds met) all green; `build`/lint/
+  typecheck/copyright/secrets/contracts all clean.
 - **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
   Scoped 2026-09-04 from a separate session; that session's doc edits were
   stashed rather than committed and sat unmerged until found and resurrected

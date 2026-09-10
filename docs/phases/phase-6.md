@@ -204,9 +204,10 @@ cadence difference.
   implementation, the `links.ts` promotion decision) lands here even though
   the wire calls themselves (Findings 78, 82) are already confirmed working.
 - **6b — Open/save via `FileSystemProvider`.** *Medium* — `readFile`/
-  `writeFile`/`stat` plus the ETag round trip (findings 6.1/6.2). **Done**,
-  merged as `phase-6b-open-save`, scoped to the open/save core — see the
-  Runbook block for the three items moved out. The drag-and-drop "insert a
+  `writeFile`/`stat` plus the ETag round trip (findings 6.1/6.2). **Done** —
+  [PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash
+  `1c13854`, 2026-09-10; scoped to the open/save core — see the Runbook block
+  for the three items moved out. The drag-and-drop "insert a
   snippet referencing this file" behavior (`getFileStatement`) has no direct
   Python equivalent (a `filename … filesrvc …;` statement is SAS syntax);
   **decision (Sean, 2026-09-09): build a Python-shaped equivalent, gated on a
@@ -303,10 +304,15 @@ promotion, merged) and 6a-ii (adapter + read-only tree). 6a-ii merged as
   and a child folder, nested folder). Real user name, folder GUIDs and
   hostname replaced with synthetic-but-faithful values.
 
-☑ **6b — Open/save via `FileSystemProvider`.** Merged as `phase-6b-open-save`.
-Scoped down at slice start (Sean, 2026-09-09) to the open/save core; three
-items moved to the slices that give them a reason to exist — see the struck
-lines below.
+☑ **6b — Open/save via `FileSystemProvider`.** Merged 2026-09-10 —
+[PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash
+`1c13854`. `npm run verify` green (1347 unit + 280 integration passing;
+coverage 94.93% lines / 95.22% branches / 94.53% functions / 94.93%
+statements). Adversarial pass done before the PR; Codex + Claude PR reviews
+clean, all threads resolved (one finding deferred to 6c — see the 6c punch
+list). Scoped down at slice start (Sean, 2026-09-09) to the open/save core;
+three items moved to the slices that give them a reason to exist — see the
+struck lines below.
 
 - ☑ `readFile`/`writeFile`/`stat` via a new `sasContent:` `FileSystemProvider`
   (`src/content/contentFileSystem.ts`, a `vscode` shell) over three new

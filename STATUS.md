@@ -27,17 +27,23 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
   cadence branch — [ADR-0026](docs/adr/0026-content-adapter-shape.md). Live
   Folders/Files findings 97–101 in `phase-6.md`; the `.py`-type second-cadence
   probe moved to 6c (it only feeds create-file).
-- **6b — open/save via `FileSystemProvider`.** Done. A new `sasContent:`
-  `FileSystemProvider` (`src/content/contentFileSystem.ts`) over three
-  `vscode`-free `ContentAdapter` methods (`statFile`/`readFileContent`/
-  `writeFileContent`) and the mutating arm added to `src/content/client.ts`:
-  clicking a file leaf opens it, saving writes it back with an `If-Match`
-  round trip, and a lost-update `412` surfaces as a "reopen for the current
-  version" conflict via the returning `localiseContentProblem` seam. Findings
-  6.1–6.2. Scoped to the open/save core — `getParent`/`reveal` + the
-  finding-101 `ancestors` probe moved to 6c, the `sasContentReadOnly`
-  recycle-bin scheme to 6d, and the drag-into-editor snippet (Python-shaped,
-  probe-gated — Sean's call) to 6c.
+- **6b — open/save via `FileSystemProvider`.** Done and merged 2026-09-10
+  ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash
+  `1c13854`). A new `sasContent:` `FileSystemProvider`
+  (`src/content/contentFileSystem.ts`) over three `vscode`-free
+  `ContentAdapter` methods (`statFile`/`readFileContent`/`writeFileContent`)
+  and the mutating arm added to `src/content/client.ts`: clicking a file leaf
+  opens it, saving writes it back with an `If-Match` round trip, and a
+  lost-update `412` surfaces as a "reopen for the current version" conflict
+  via the returning `localiseContentProblem` seam. Findings 6.1–6.2. Scoped
+  to the open/save core — `getParent`/`reveal` + the finding-101 `ancestors`
+  probe moved to 6c, the `sasContentReadOnly` recycle-bin scheme to 6d, and
+  the drag-into-editor snippet (Python-shaped, probe-gated — Sean's call) to
+  6c. `npm run verify` green (1347 unit + 280 integration passing; coverage
+  94.93% lines / 95.22% branches / 94.53% functions / 94.93% statements);
+  adversarial pass done before the PR, Codex + Claude PR reviews clean, all
+  threads resolved. One review finding deferred to 6c (an oversized-file read
+  surfaces as a network error, not a size error).
 - **6c — mutations (create/rename/move/delete).** Next. Also picks up the
   three items moved out of 6b above, and the `.py` type / `/types/types`
   probe deferred from 6a.
@@ -139,7 +145,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); 6b done (open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2); 6c (mutations) next. | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing); 6c (mutations) next. | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). 7b (data viewer webview) next, not started. | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

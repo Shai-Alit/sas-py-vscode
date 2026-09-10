@@ -30,6 +30,7 @@ import * as vscode from "vscode";
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import type { HttpTransport } from "../auth/transport";
 import type { ProfileStore } from "../profile/store";
+import { registerContentCommands } from "./contentCommands";
 import {
   ContentSession,
   type ContentSessionDeps,
@@ -110,6 +111,17 @@ export function registerContentExplorer(
 
   const view = vscode.window.createTreeView(CONTENT_VIEW_ID, {
     treeDataProvider: provider,
+  });
+
+  // The tree context-menu mutations (6c-i). They read the same
+  // per-active-deployment adapter the tree does, and reload through the tree.
+  registerContentCommands(context, {
+    adapter: () => session.adapterFor(activeEndpoint()),
+    refresh: (item) => {
+      provider.refresh(item);
+    },
+    log,
+    viewId: CONTENT_VIEW_ID,
   });
 
   context.subscriptions.push(

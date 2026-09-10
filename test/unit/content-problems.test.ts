@@ -53,6 +53,18 @@ describe("content/problems describeContentProblem", () => {
       /larger than the 10485760-byte limit/,
     ],
     [
+      {
+        code: "content-name-rejected",
+        message: 'An item named "x" already exists.',
+        suggestion: "x (1)",
+      },
+      /rejected the name: An item named "x" already exists\. \(suggested "x \(1\)"\)/,
+    ],
+    [
+      { code: "content-name-rejected", message: "reserved name" },
+      /rejected the name: reserved name$/,
+    ],
+    [
       { code: "response-malformed", detail: "carried no items array" },
       /answered with something unexpected: carried no items array/,
     ],

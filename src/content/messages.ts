@@ -72,6 +72,17 @@ export function localiseContentProblem(problem: ContentProblem): string {
         String(problem.error.status),
         detailSuffix(problem.error.detail),
       );
+    case "content-name-rejected":
+      // The deployment's own sentence is the useful part (it names the clash and
+      // the item type); the localised wrapper just frames it and, when SAS Viya
+      // offered one, the free alternative name.
+      return problem.suggestion === undefined
+        ? vscode.l10n.t("That name can't be used. {0}", problem.message)
+        : vscode.l10n.t(
+            'That name can\'t be used. {0} Try "{1}" instead.',
+            problem.message,
+            problem.suggestion,
+          );
     case "response-malformed":
       return vscode.l10n.t(
         "SAS Viya answered with something this extension could not read. See the Python on Viya log for details.",

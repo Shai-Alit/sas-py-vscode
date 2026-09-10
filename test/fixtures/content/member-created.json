@@ -1,0 +1,55 @@
+{
+  "creationTimeStamp": "2026-01-08T14:05:00.000Z",
+  "createdBy": "user",
+  "modifiedTimeStamp": "2026-01-08T14:05:00.000Z",
+  "modifiedBy": "user",
+  "version": 2,
+  "id": "aaaa1111-0000-4000-8000-00000000000c",
+  "name": "model.py",
+  "added": "2026-01-08T14:05:00.500000Z",
+  "parentFolderUri": "/folders/folders/ffff0000-0000-4000-8000-000000000009",
+  "uri": "/files/files/bbbb2222-0000-4000-8000-00000000000d",
+  "type": "child",
+  "contentType": "file",
+  "typeDefName": "file_py",
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c",
+      "uri": "/folders/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c",
+      "type": "application/vnd.sas.content.folder.member"
+    },
+    {
+      "method": "GET",
+      "rel": "getResource",
+      "href": "/files/files/bbbb2222-0000-4000-8000-00000000000d",
+      "uri": "/files/files/bbbb2222-0000-4000-8000-00000000000d",
+      "type": "application/vnd.sas.summary"
+    },
+    {
+      "method": "DELETE",
+      "rel": "deleteResource",
+      "href": "/files/files/bbbb2222-0000-4000-8000-00000000000d"
+    },
+    {
+      "method": "PUT",
+      "rel": "update",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c",
+      "uri": "/folders/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c",
+      "type": "application/vnd.sas.content.folder.member"
+    },
+    {
+      "method": "DELETE",
+      "rel": "delete",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c"
+    },
+    {
+      "method": "PUT",
+      "rel": "validateRename",
+      "href": "/folders/commons/validations/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c/name?value={newname}&type={newtype}",
+      "uri": "/folders/commons/validations/folders/ffff0000-0000-4000-8000-000000000009/members/aaaa1111-0000-4000-8000-00000000000c/name?value={newname}&type={newtype}",
+      "type": "application/vnd.sas.validation"
+    }
+  ]
+}

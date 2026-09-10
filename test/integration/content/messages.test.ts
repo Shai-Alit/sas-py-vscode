@@ -37,6 +37,12 @@ const PROBLEMS: ContentProblem[] = [
   { code: "content-rejected", error: { status: 412, errorCode: 0 } },
   { code: "content-rejected", error: { status: 404, errorCode: 11500 } },
   { code: "content-rejected", error: { status: 500 } },
+  {
+    code: "content-name-rejected",
+    message: 'An item named "reports" already exists in the folder.',
+    suggestion: "reports (1)",
+  },
+  { code: "content-name-rejected", message: "that name is reserved" },
   { code: "response-malformed", detail: "a file representation with no size" },
   {
     code: "link-missing",
@@ -118,6 +124,23 @@ describe("content problem messages under the real l10n", () => {
     assert.ok(message.includes(VIYA_ERROR.detail), message);
     assert.ok(!message.includes(String(VIYA_ERROR.errorCode)), message);
     assert.ok(!message.includes(VIYA_ERROR.correlator), message);
+  });
+
+  it("relays the deployment's own name-rejection sentence and its suggestion", () => {
+    const withSuggestion = localiseContentProblem({
+      code: "content-name-rejected",
+      message: 'An item named "reports" already exists.',
+      suggestion: "reports (1)",
+    });
+    assert.match(withSuggestion, /An item named "reports" already exists\./);
+    assert.match(withSuggestion, /reports \(1\)/);
+
+    const withoutSuggestion = localiseContentProblem({
+      code: "content-name-rejected",
+      message: "that name is reserved",
+    });
+    assert.match(withoutSuggestion, /that name is reserved/);
+    assert.doesNotMatch(withoutSuggestion, /Try "/);
   });
 
   it("adds no stray punctuation when a forbidden has no detail", () => {

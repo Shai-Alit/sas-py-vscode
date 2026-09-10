@@ -15,25 +15,30 @@
  * `src/content/` gets its own small follower built on `src/wire/` and
  * `src/auth/transport.ts`.
  *
- * ## Read plus write content, not yet mutate structure
+ * ## Read plus write content and structure
  *
- * 6a-ii shipped this `GET`-only. 6b adds exactly one mutating arm — a
+ * 6a-ii shipped this `GET`-only. 6b added one mutating arm — a
  * `PUT`/`rawBody`/`If-Match` request against a file's `content` sub-resource
- * (findings 6.1/6.2) — so a remote `.py` opens and saves in place. Folder and
- * member mutations (create/rename/move/delete) are still 6c and are still
- * absent here. The `PUT` shape is the one the live probe measured: `If-Match`
- * with the file's current ETag is required (a bare `PUT` is `428`, a stale one
- * `412` — finding 6.2), the response carries a fresh `ETag`/`Last-Modified`,
- * and the sent `Content-Type` is not validated but is echoed back for
- * correctness.
+ * (findings 6.1/6.2) — so a remote `.py` opens and saves in place. 6c-i adds
+ * the structural mutations (folder/file create, rename, delete) behind the tree
+ * context menu, which need a **JSON** request body ({@link ContentRequest.jsonBody})
+ * and, for file create, a `Content-Disposition`
+ * ({@link ContentRequest.contentDisposition}) — findings 6.3–6.8. The `PUT`
+ * content shape is the one the live probe measured: `If-Match` with the file's
+ * current ETag is required (a bare `PUT` is `428`, a stale one `412` — finding
+ * 6.2), the response carries a fresh `ETag`/`Last-Modified`, and the sent
+ * `Content-Type` is not validated but is echoed back for correctness.
  *
  * The transport-outcome mapping follows the one the Compute client carries and
  * that has been through review: unreachable, a response body past the size cap
  * (`content-too-large`, so a file over `readFileContent`'s 10 MiB reads as too
  * large rather than as an unreachable host), 401 (via slice 1c's challenge
  * reading), 403, any other non-2xx (read as an `application/vnd.sas.error+json`
- * envelope — findings 100 and 6.2 — so `412`/`428` arrive as `content-rejected`
- * carrying `error.status`), and a JSON body that will not parse.
+ * envelope — findings 100 and 6.2 — so `409`/`412`/`428` arrive as
+ * `content-rejected` carrying `error.status`), and a JSON body that will not
+ * parse. A `200` body that is itself a wrapped error — the name-validation
+ * endpoints answer `200` with `{valid:false, error:{…}}` (finding 6.6) — is not
+ * this layer's to unwrap; `src/content/adapter.ts` reads that shape.
  *
  * ## Why a link and not a path
  *
@@ -113,17 +118,35 @@ export interface ContentRequest {
   /** The link to follow. Its `method` and media types drive the request. */
   link: Link;
   /**
-   * The request body, sent exactly as given — no decode, no re-encode. Only a
+   * A raw request body, sent exactly as given — no decode, no re-encode. Only a
    * non-`GET` link carries one. Mirrors `ComputeRequest.rawBody`: a file's
    * bytes go to `PUT .../content` verbatim (finding 6.1's `updateContent`
-   * relation), and byte fidelity is the whole point.
+   * relation), and byte fidelity is the whole point. Mutually exclusive with
+   * {@link ContentRequest.jsonBody}.
    */
   rawBody?: Uint8Array | undefined;
   /**
-   * The `Content-Type` for {@link ContentRequest.rawBody}. Finding 6.2: the
-   * Files service does not validate it against the registered type, but the
-   * file's own media type is echoed back for correctness. Defaults to
-   * `application/octet-stream` when a raw body is sent without one.
+   * A JSON request body — `JSON.stringify`'d and sent under the link's media
+   * type (or `application/json`). The 6c-i structural mutations use it: the
+   * folder-create `{name}` payload, the `addMember` `{uri,type,name,contentType}`
+   * payload, the rename `{name}` payload (finding 6.5 — a *minimal* body; the
+   * full representation echoed back is rejected `400`/`errorCode 1177` on
+   * Stable 2026.06, finding 6.7). Mutually exclusive with
+   * {@link ContentRequest.rawBody}.
+   */
+  jsonBody?: unknown;
+  /**
+   * Sent as `Content-Disposition`. File create needs
+   * `filename*=UTF-8''<name>` so the Files service names the new resource
+   * (finding 6.4); nothing else sets it.
+   */
+  contentDisposition?: string | undefined;
+  /**
+   * The `Content-Type` for {@link ContentRequest.rawBody} (or an override for a
+   * {@link ContentRequest.jsonBody}). Finding 6.2: the Files service does not
+   * validate it against the registered type, but the file's own media type is
+   * echoed back for correctness. Defaults to `application/octet-stream` for a
+   * raw body, or the link's media type for a JSON one.
    */
   contentType?: string | undefined;
   /**
@@ -233,21 +256,32 @@ async function sendRequest(
   // Only what the link declares. Finding 100: asking for a media type the
   // endpoint does not serve — `application/vnd.sas.error+json` among them — is
   // a 406, whereas sending no `Accept` yields the default representation the
-  // link intended.
+  // link intended. Sent on a mutating call too: `POST /folders/folders` and
+  // `addMember` return their new representation, and finding 6.6 saw the wrong
+  // `Accept` 406 there as well. A link with no media type (the `updateContent`
+  // PUT, the raw content GET) still sends no `Accept`.
   const accept = sasMediaType(link.responseType) ?? sasMediaType(link.type);
-  if (method === "GET" && accept !== undefined) headers.accept = accept;
+  if (accept !== undefined) headers.accept = accept;
 
-  // The write arm. `rawBody` only — this client never serialises a JSON body,
-  // because the one mutation it makes (finding 6.1's `updateContent`) sends a
-  // file's bytes. `If-Match` is set only when the caller passes an `etag`, and
-  // the caller always does: finding 6.2 measured a bare `PUT .../content` as
-  // `428`, and `src/content/contentFileSystem.ts` keeps that from happening by
-  // refusing the save outright when it holds no ETag for the file — it never
-  // lets a preconditionless `PUT` reach this point.
-  let body: Uint8Array | undefined;
+  // The write arm. A request carries at most one of `rawBody` (a file's bytes,
+  // verbatim — finding 6.1's `updateContent`) or `jsonBody` (the 6c-i
+  // structural mutations — `JSON.stringify`'d under the link's media type).
+  // `If-Match` is set only when the caller passes an `etag`: finding 6.2
+  // measured a bare `PUT .../content` as `428`, and
+  // `src/content/contentFileSystem.ts` keeps that from happening by refusing the
+  // save when it holds no ETag; the folder rename PUT is unconditional
+  // (finding 6.5 — `If-Match` optional there, a stale one still `412`).
+  let body: string | Uint8Array | undefined;
   if (request.rawBody !== undefined) {
     body = request.rawBody;
     headers["content-type"] = request.contentType ?? "application/octet-stream";
+  } else if (request.jsonBody !== undefined) {
+    body = JSON.stringify(request.jsonBody);
+    headers["content-type"] =
+      request.contentType ?? sasMediaType(link.type) ?? "application/json";
+  }
+  if (request.contentDisposition !== undefined) {
+    headers["content-disposition"] = request.contentDisposition;
   }
   if (request.etag !== undefined) headers["if-match"] = request.etag;
 

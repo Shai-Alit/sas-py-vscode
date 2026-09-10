@@ -33,3 +33,7 @@ under their category.
 | Refresh Environment Info | `Python on Viya: Refresh Environment Info` | `pythonOnViya.refreshEnvironment` |
 | Refresh SAS Content | `Python on Viya: Refresh SAS Content` | `pythonOnViya.refreshContentExplorer` |
 | Refresh SAS Libraries | `Python on Viya: Refresh SAS Libraries` | `pythonOnViya.refreshDataExplorer` |
+| New Folder | `Python on Viya: New Folder` | `pythonOnViya.createContentFolder` |
+| New File | `Python on Viya: New File` | `pythonOnViya.createContentFile` |
+| Rename | `Python on Viya: Rename` | `pythonOnViya.renameContentItem` |
+| Delete | `Python on Viya: Delete` | `pythonOnViya.deleteContentItem` |

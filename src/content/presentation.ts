@@ -3,30 +3,52 @@
 
 /**
  * How a {@link ContentItem} presents in the tree — its label, whether it
- * expands, which theme icon it takes, and the `contextValue` a future
- * context-menu `when` clause keys on.
+ * expands, which theme icon it takes, and the `contextValue` a context-menu
+ * `when` clause keys on.
  *
  * **This module must never import `vscode`.**
  *
  * `src/content/contentTree.ts` maps this shape onto a `vscode.TreeItem` and
  * does nothing else with a branch in it, so the mapping decisions are all
  * unit-testable here rather than only reachable through the extension host.
+ *
+ * ## Five `contextValue`s, because five things the menu treats differently
+ *
+ * 6c-i adds create / rename / delete to the tree's context menu, and the
+ * `when` clauses need to tell apart:
+ *
+ * - `sasContent:root` — the synthetic "SAS Content" node. No action: it has no
+ *   service representation to create under, and cannot be renamed or deleted.
+ * - `sasContent:myFolder` — the "My Folder" delegate. Create inside it; do not
+ *   rename or delete it.
+ * - `sasContent:delegate` — the "My Favorites" / "Recycle Bin" delegates.
+ *   None of create / rename / delete (favourites are references; the recycle
+ *   bin is 6d).
+ * - `sasContent:folder` — an ordinary folder (a root-listing folder or a
+ *   folder member). All three actions.
+ * - `sasContent:file` — a file or other leaf member. Rename and delete.
  */
 
 import {
   FILE_CONTENT_TYPE,
   isContainer,
+  isDelegateFolder,
+  isMyFolderDelegate,
   isSasContentRoot,
   typeNameOf,
   type ContentItem,
 } from "./types";
 
-/** A folder-shaped item the tree can descend into. */
+/** An ordinary folder the tree can descend into — create, rename, delete. */
 export const CONTEXT_FOLDER = "sasContent:folder";
-/** A leaf — a file or other non-navigable member. */
+/** A leaf — a file or other non-navigable member. Rename, delete. */
 export const CONTEXT_FILE = "sasContent:file";
-/** The synthetic "SAS Content" root. */
+/** The synthetic "SAS Content" root. No actions. */
 export const CONTEXT_ROOT = "sasContent:root";
+/** The "My Folder" delegate — create inside it, but do not rename or delete. */
+export const CONTEXT_MY_FOLDER = "sasContent:myFolder";
+/** The "My Favorites" / "Recycle Bin" delegates — no create/rename/delete. */
+export const CONTEXT_DELEGATE = "sasContent:delegate";
 
 export interface NodePresentation {
   readonly label: string;
@@ -51,12 +73,15 @@ export function nodePresentationOf(item: ContentItem): NodePresentation {
     expandable: container,
     openable: !container && typeNameOf(item) === FILE_CONTENT_TYPE,
     icon: iconIdFor(item, container),
-    contextValue: isSasContentRoot(item)
-      ? CONTEXT_ROOT
-      : container
-        ? CONTEXT_FOLDER
-        : CONTEXT_FILE,
+    contextValue: contextValueFor(item, container),
   };
+}
+
+function contextValueFor(item: ContentItem, container: boolean): string {
+  if (isSasContentRoot(item)) return CONTEXT_ROOT;
+  if (isMyFolderDelegate(item)) return CONTEXT_MY_FOLDER;
+  if (isDelegateFolder(item)) return CONTEXT_DELEGATE;
+  return container ? CONTEXT_FOLDER : CONTEXT_FILE;
 }
 
 function iconIdFor(item: ContentItem, container: boolean): string {

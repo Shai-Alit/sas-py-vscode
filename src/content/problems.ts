@@ -76,9 +76,23 @@ export type ContentProblem =
    * Any other non-2xx. `error.status` carries which. A 404 lands here (a
    * folder removed between one expand and the next), as does a 400 from a
    * malformed delegate name (finding 97) — the tree treats both as "there is
-   * nothing to show here" rather than surfacing them as errors.
+   * nothing to show here" rather than surfacing them as errors. From 6c-i the
+   * mutation paths also produce it: a `409` name collision on create, a `409
+   * errorCode 11516` deleting a folder that is somehow still not empty, a
+   * `412` from a stale folder-rename `If-Match` (finding 6.5).
    */
   | { code: "content-rejected"; error: ViyaError }
+  /**
+   * A name the user typed was rejected *before* the mutation ran — the
+   * `validateRename` / `validateNewMemberName` endpoint answered `200` with
+   * `{valid:false}` (finding 6.6), most often because a sibling of that name
+   * already exists. `message` is the deployment's own sentence (e.g. *An item
+   * named "x" of type "Folder" already exists…*); `suggestion` is the free
+   * alternative it offers in `details` (*Suggestion: x (1)*), when it does.
+   * Distinct from `content-rejected` because nothing was attempted and the
+   * remedy is simply a different name.
+   */
+  | { code: "content-name-rejected"; message: string; suggestion?: string }
   /** A 2xx whose body was not the representation it should have been — no
    * `items` array on a listing, no object at all. */
   | { code: "response-malformed"; detail: string }
@@ -118,6 +132,8 @@ export function describeContentProblem(problem: ContentProblem): string {
       return `not permitted to read this content${describeViyaError(problem.error)}`;
     case "content-rejected":
       return `the SAS Content service returned HTTP ${String(problem.error.status)}${describeViyaError(problem.error)}`;
+    case "content-name-rejected":
+      return `SAS Viya rejected the name: ${problem.message}${problem.suggestion === undefined ? "" : ` (suggested "${problem.suggestion}")`}`;
     case "response-malformed":
       return `the SAS Content service answered with something unexpected: ${problem.detail}`;
     case "link-missing":

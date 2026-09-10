@@ -10,6 +10,7 @@ import {
 import { type ContentRequest } from "../../src/content/client";
 import {
   isSasContentRoot,
+  readContentItem,
   SAS_CONTENT_ROOT,
   type ContentItem,
 } from "../../src/content/types";
@@ -486,4 +487,982 @@ describe("content/adapter", () => {
       });
     });
   });
+
+  describe("6c-i mutations (findings 6.3–6.9)", () => {
+    const PARENT = "/folders/folders/ffff0000-0000-4000-8000-000000000009";
+    const VALIDATE_NEW =
+      "/folders/commons/validations/folders/ffff0000-0000-4000-8000-000000000009/members/@new/name";
+
+    /** A folder item carrying the links `createChild` / `addMember` /
+     * `validateNewMemberName` need (the shape `createFolder` returns, minus the
+     * validate link unless `withValidate`). */
+    function parentFolder(withValidate = true): ContentItem {
+      const links = [
+        { rel: "self", href: PARENT, method: "GET" },
+        {
+          rel: "createChild",
+          href: `/folders/folders?parentFolderUri=${PARENT}`,
+          method: "POST",
+          type: "application/vnd.sas.content.folder",
+        },
+        {
+          rel: "addMember",
+          href: `${PARENT}/members`,
+          method: "POST",
+          type: "application/vnd.sas.content.folder.member",
+        },
+      ];
+      if (withValidate) {
+        links.push({
+          rel: "validateNewMemberName",
+          href: `${VALIDATE_NEW}?value={newname}&type={newtype}`,
+          method: "PUT",
+          type: "application/vnd.sas.validation",
+        });
+      }
+      return { id: "p", name: "My Folder", type: "folder", links };
+    }
+
+    const fileRep = () => readJsonFixture("content", "file-python.json");
+    const FILE_SELF = "/files/files/dddddddd-0000-4000-8000-000000000001";
+
+    describe("createFolder", () => {
+      it("validates the name, then POSTs {name} to the createChild link", async () => {
+        let body: unknown;
+        const { adapter, calls } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true, version: 1 }) },
+          {
+            when: "/folders/folders",
+            reply: (request) => {
+              body = request.jsonBody;
+              return contentFixture("folder-created.json");
+            },
+          },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "reports");
+        assert.ok(result.ok);
+        assert.equal(result.value.name, "reports");
+        assert.deepEqual(body, { name: "reports" });
+        assert.deepEqual(
+          calls.map((c) => `${c.method} ${c.href.split("?")[0] ?? ""}`),
+          [
+            "PUT /folders/commons/validations/folders/ffff0000-0000-4000-8000-000000000009/members/@new/name",
+            "POST /folders/folders",
+          ],
+        );
+        // The templated validate href had its placeholders filled.
+        assert.match(calls[0]?.href ?? "", /value=reports&type=folder/);
+      });
+
+      it("returns content-name-rejected on a taken name, without creating", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: VALIDATE_NEW,
+            reply: contentFixture("validate-name-taken.json"),
+          },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "reports");
+        assert.ok(!result.ok);
+        assert.ok(result.problem.code === "content-name-rejected");
+        assert.match(result.problem.message, /already exists/);
+        assert.equal(result.problem.suggestion, "reports (1)");
+        assert.equal(
+          calls.some((c) => c.method === "POST"),
+          false,
+        );
+      });
+
+      it("still creates when the parent offers no validateNewMemberName link", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders",
+            reply: contentFixture("folder-created.json"),
+          },
+        ]);
+        const result = await adapter.createFolder(
+          parentFolder(false),
+          "reports",
+        );
+        assert.ok(result.ok);
+        assert.deepEqual(
+          calls.map((c) => c.method),
+          ["POST"],
+        );
+      });
+
+      it("reports link-missing when the parent has no createChild link", async () => {
+        const { adapter } = adapterWith([]);
+        const result = await adapter.createFolder(
+          { id: "p", name: "x", type: "folder", links: [] },
+          "reports",
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(result.problem.rel, "createChild");
+      });
+
+      it("reports response-malformed when the create body is not a folder", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/folders/folders", reply: contentOk({ nope: true }) },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "reports");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+    });
+
+    describe("createFile", () => {
+      const routesFor = (
+        over: readonly RecordedContentRoute[] = [],
+      ): readonly RecordedContentRoute[] => [
+        ...over,
+        { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+        {
+          when: "/types/types",
+          reply: contentFixture("types-python.json"),
+        },
+        {
+          when: "/files/files",
+          reply: contentOk(fileRep(), { status: 201, etag: '"new"' }),
+        },
+        {
+          when: `${PARENT}/members`,
+          reply: contentFixture("member-created.json"),
+        },
+      ];
+
+      it("resolves the type, POSTs an empty file with a Content-Disposition, then addMember", async () => {
+        let filePost: ContentRequest | undefined;
+        let memberBody: unknown;
+        const { adapter, calls } = adapterWith(
+          routesFor([
+            {
+              when: (href, method) =>
+                href.startsWith("/files/files?") && method === "POST",
+              reply: (request) => {
+                filePost = request;
+                return contentOk(fileRep(), { status: 201 });
+              },
+            },
+            {
+              when: (href, method) =>
+                href === `${PARENT}/members` && method === "POST",
+              reply: (request) => {
+                memberBody = request.jsonBody;
+                return contentFixture("member-created.json");
+              },
+            },
+          ]),
+        );
+        const result = await adapter.createFile(parentFolder(), "model.py");
+        assert.ok(result.ok);
+        assert.equal(result.value.name, "model.py");
+        assert.ok(filePost);
+        assert.match(filePost.link.href, /typeDefName=file_py/);
+        assert.equal(filePost.contentDisposition, "filename*=UTF-8''model.py");
+        assert.equal(filePost.contentType, "application/x-python");
+        assert.deepEqual(memberBody, {
+          uri: FILE_SELF,
+          type: "CHILD",
+          name: "model.py",
+          contentType: "file_py",
+        });
+        assert.ok(calls.some((c) => c.href.startsWith("/types/types")));
+      });
+
+      it("short-circuits .sas to programFile with no /types/types lookup", async () => {
+        let filePost: ContentRequest | undefined;
+        const { adapter, calls } = adapterWith(
+          routesFor([
+            {
+              when: (href, method) =>
+                href.startsWith("/files/files?") && method === "POST",
+              reply: (request) => {
+                filePost = request;
+                return contentOk(fileRep(), { status: 201 });
+              },
+            },
+          ]),
+        );
+        const result = await adapter.createFile(parentFolder(), "notes.sas");
+        assert.ok(result.ok);
+        assert.match(filePost?.link.href ?? "", /typeDefName=programFile/);
+        assert.equal(
+          calls.some((c) => c.href.startsWith("/types/types")),
+          false,
+        );
+      });
+
+      it("falls back to typeDefName=file when the lookup finds nothing", async () => {
+        let filePost: ContentRequest | undefined;
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentOk({ count: 0, items: [] }) },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: (request) => {
+              filePost = request;
+              return contentOk(fileRep(), { status: 201 });
+            },
+          },
+          {
+            when: `${PARENT}/members`,
+            reply: contentFixture("member-created.json"),
+          },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "data.weird");
+        assert.ok(result.ok);
+        assert.match(filePost?.link.href ?? "", /typeDefName=file(&|$)/);
+      });
+
+      it("caches the type lookup per extension across calls", async () => {
+        const { adapter, calls } = adapterWith(routesFor());
+        await adapter.createFile(parentFolder(), "a.py");
+        await adapter.createFile(parentFolder(), "b.py");
+        assert.equal(
+          calls.filter((c) => c.href.startsWith("/types/types")).length,
+          1,
+        );
+      });
+
+      it("deletes the orphan file resource when addMember fails", async () => {
+        const { adapter, calls } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: contentOk(fileRep(), { status: 201 }),
+          },
+          {
+            when: (href, method) =>
+              href === `${PARENT}/members` && method === "POST",
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+          { when: FILE_SELF, reply: contentOk({}, { status: 204 }) },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "model.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+        assert.ok(
+          calls.some((c) => c.method === "DELETE" && c.href === FILE_SELF),
+          "expected a rollback DELETE of the created file",
+        );
+      });
+
+      it("rolls the orphan back even when the caller's signal is already aborted", async () => {
+        // The most likely reason addMember fails partway is the caller's signal
+        // firing. The rollback DELETE must not carry that aborted signal, or it
+        // rejects before it reaches the network and the file is orphaned.
+        let rollback: ContentRequest | undefined;
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: contentOk(fileRep(), { status: 201 }),
+          },
+          {
+            when: (href, method) =>
+              href === `${PARENT}/members` && method === "POST",
+            reply: contentFail({
+              code: "content-unreachable",
+              detail: "aborted",
+            }),
+          },
+          {
+            when: (href, method) => href === FILE_SELF && method === "DELETE",
+            reply: (request) => {
+              rollback = request;
+              return contentOk({}, { status: 204 });
+            },
+          },
+        ]);
+        const result = await adapter.createFile(
+          parentFolder(),
+          "model.py",
+          AbortSignal.abort(),
+        );
+        assert.ok(!result.ok);
+        assert.ok(rollback, "the rollback DELETE was not attempted");
+        assert.equal(
+          rollback.signal,
+          undefined,
+          "the rollback must not forward the caller's aborted signal",
+        );
+      });
+    });
+
+    describe("renameItem", () => {
+      it("PUTs a minimal {name} body for a folder read directly", async () => {
+        let body: unknown;
+        const folder: ContentItem = {
+          id: "d",
+          name: "old",
+          type: "folder",
+          links: [
+            { rel: "self", href: PARENT, method: "GET" },
+            {
+              rel: "update",
+              href: PARENT,
+              method: "PUT",
+              type: "application/vnd.sas.content.folder",
+            },
+          ],
+        };
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === PARENT && method === "PUT",
+            reply: (request) => {
+              body = request.jsonBody;
+              return contentFixture("folder-created.json");
+            },
+          },
+        ]);
+        const result = await adapter.renameItem(folder, "reports");
+        assert.ok(result.ok);
+        assert.deepEqual(body, { name: "reports" });
+      });
+
+      it("reads then PUTs the whole representation for a member, name changed", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        assert.ok(memberSelf);
+        let body: Record<string, unknown> | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: (href) => href.includes("/validations/"),
+            reply: contentOk({ valid: true }),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: (request) => {
+              body = request.jsonBody as Record<string, unknown>;
+              return contentFixture("member-created.json");
+            },
+          },
+        ]);
+        const result = await adapter.renameItem(member, "renamed.py");
+        assert.ok(result.ok);
+        assert.ok(body);
+        assert.equal(body.name, "renamed.py");
+        assert.equal(body.id, member.id); // carried from the read
+        assert.deepEqual(
+          calls.map((c) => c.method),
+          ["PUT", "GET", "PUT"],
+        );
+      });
+
+      it("returns content-name-rejected on a rename collision, without the PUT", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const { adapter, calls } = adapterWith([
+          {
+            when: (href) => href.includes("/validations/"),
+            reply: contentFixture("validate-name-taken.json"),
+          },
+        ]);
+        const result = await adapter.renameItem(member, "reports");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-name-rejected");
+        assert.equal(
+          calls.some(
+            (c) => c.method === "PUT" && !c.href.includes("validation"),
+          ),
+          false,
+        );
+      });
+    });
+
+    describe("deleteItem", () => {
+      it("deletes a leaf's resource then tidies its member record", async () => {
+        const leaf = readContentItemFixture("member-created.json");
+        const resourceHref = leaf.links.find(
+          (l) => l.rel === "deleteResource",
+        )?.href;
+        const memberHref = leaf.links.find((l) => l.rel === "delete")?.href;
+        assert.ok(resourceHref);
+        assert.ok(memberHref);
+        const { adapter, calls } = adapterWith([
+          { when: resourceHref, reply: contentOk({}, { status: 204 }) },
+          { when: memberHref, reply: contentOk({}, { status: 204 }) },
+        ]);
+        const result = await adapter.deleteItem(leaf);
+        assert.ok(result.ok);
+        assert.deepEqual(
+          calls.map((c) => `${c.method} ${c.href}`),
+          [`DELETE ${resourceHref}`, `DELETE ${memberHref}`],
+        );
+      });
+
+      it("treats a 404 on the trailing member delete as success", async () => {
+        const leaf = readContentItemFixture("member-created.json");
+        const resourceHref = leaf.links.find(
+          (l) => l.rel === "deleteResource",
+        )?.href;
+        const { adapter } = adapterWith([
+          { when: resourceHref ?? "", reply: contentOk({}, { status: 204 }) },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href.includes("/members/"),
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 404 },
+            }),
+          },
+        ]);
+        const result = await adapter.deleteItem(leaf);
+        assert.ok(result.ok);
+      });
+
+      it("propagates a failure on the resource delete itself", async () => {
+        const leaf = readContentItemFixture("member-created.json");
+        const resourceHref = leaf.links.find(
+          (l) => l.rel === "deleteResource",
+        )?.href;
+        const { adapter, calls } = adapterWith([
+          {
+            when: resourceHref ?? "",
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+        ]);
+        const result = await adapter.deleteItem(leaf);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+        assert.equal(calls.length, 1); // no trailing member delete
+      });
+
+      /** A folder to delete, plus the members-collection reply listing two file
+       * children that each carry `deleteResource` + `delete` links. */
+      const doomedFolder = (): ContentItem => ({
+        id: "fdel",
+        name: "doomed",
+        type: "folder",
+        links: [
+          { rel: "self", href: PARENT, method: "GET" },
+          {
+            rel: "members",
+            href: `${PARENT}/members`,
+            method: "GET",
+            type: "application/vnd.sas.collection",
+          },
+          {
+            rel: "deleteRecursively",
+            href: `${PARENT}?recursive=true`,
+            method: "DELETE",
+          },
+        ],
+      });
+      const childMember = (suffix: string) => ({
+        id: `child-${suffix}`,
+        name: `c${suffix}.py`,
+        type: "child",
+        contentType: "file",
+        uri: `/files/files/child00${suffix}`,
+        links: [
+          {
+            rel: "self",
+            href: `${PARENT}/members/child-${suffix}`,
+            method: "GET",
+          },
+          {
+            rel: "deleteResource",
+            href: `/files/files/child00${suffix}`,
+            method: "DELETE",
+          },
+          {
+            rel: "delete",
+            href: `${PARENT}/members/child-${suffix}`,
+            method: "DELETE",
+          },
+        ],
+      });
+      const twoChildren = contentOk({
+        count: 2,
+        items: [childMember("1"), childMember("2")],
+      });
+
+      it("empties a folder before deleting it, children first", async () => {
+        const order: string[] = [];
+        const { adapter } = adapterWith([
+          { when: `${PARENT}/members`, reply: twoChildren },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href.startsWith("/files/files/child"),
+            reply: () => {
+              order.push("child");
+              return contentOk({}, { status: 204 });
+            },
+          },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href.includes("/members/child-"),
+            reply: contentOk({}, { status: 204 }),
+          },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href === `${PARENT}?recursive=true`,
+            reply: () => {
+              order.push("folder");
+              return contentOk({}, { status: 204 });
+            },
+          },
+        ]);
+        const result = await adapter.deleteItem(doomedFolder());
+        assert.ok(result.ok);
+        assert.deepEqual(order, ["child", "child", "folder"]);
+      });
+
+      it("stops and propagates when a child delete fails", async () => {
+        let folderDeleted = false;
+        const { adapter } = adapterWith([
+          { when: `${PARENT}/members`, reply: twoChildren },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href.startsWith("/files/files/child"),
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href === `${PARENT}?recursive=true`,
+            reply: () => {
+              folderDeleted = true;
+              return contentOk({}, { status: 204 });
+            },
+          },
+        ]);
+        const result = await adapter.deleteItem(doomedFolder());
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+        assert.equal(folderDeleted, false);
+      });
+    });
+
+    describe("defensive paths", () => {
+      const fileRepJson = () => readJsonFixture("content", "file-python.json");
+
+      it("createFolder passes a create failure straight through", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          {
+            when: "/folders/folders",
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "x");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+      });
+
+      it("createFolder proceeds when the validate call itself fails", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: VALIDATE_NEW,
+            reply: contentFail({
+              code: "content-unreachable",
+              detail: "ECONNRESET",
+            }),
+          },
+          {
+            when: "/folders/folders",
+            reply: contentFixture("folder-created.json"),
+          },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "x");
+        assert.ok(result.ok);
+        assert.ok(calls.some((c) => c.method === "POST"));
+      });
+
+      it("createFolder names a bare valid:false with no error object", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: false }) },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "x");
+        assert.ok(!result.ok);
+        assert.ok(result.problem.code === "content-name-rejected");
+        assert.match(result.problem.message, /cannot be used/);
+        assert.equal(result.problem.suggestion, undefined);
+      });
+
+      it("createFolder keeps a valid:false message but drops a details list with no suggestion", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: VALIDATE_NEW,
+            reply: contentOk({
+              valid: false,
+              error: { message: "reserved", details: ["not a suggestion"] },
+            }),
+          },
+        ]);
+        const result = await adapter.createFolder(parentFolder(), "x");
+        assert.ok(!result.ok);
+        assert.ok(result.problem.code === "content-name-rejected");
+        assert.equal(result.problem.message, "reserved");
+        assert.equal(result.problem.suggestion, undefined);
+      });
+
+      it("createFile reports link-missing when the parent has no addMember link", async () => {
+        const parent: ContentItem = {
+          id: "p",
+          name: "x",
+          type: "folder",
+          links: [{ rel: "self", href: PARENT, method: "GET" }],
+        };
+        const result = await adapterWith([]).adapter.createFile(parent, "a.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(result.problem.rel, "addMember");
+      });
+
+      it("createFile passes a file-create failure straight through", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: "/files/files",
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "a.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+      });
+
+      it("createFile reports response-malformed when the created file has no self link", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: "/files/files",
+            reply: contentOk({ id: "x", name: "a.py" }, { status: 201 }),
+          },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "a.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("createFile reports response-malformed when addMember returns a non-member", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: contentOk(fileRepJson(), { status: 201 }),
+          },
+          { when: `${PARENT}/members`, reply: contentOk({ nope: true }) },
+          { when: FILE_SELF, reply: contentOk({}, { status: 204 }) },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "a.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("createFile falls back to typeDefName=file when the /types/types lookup errors", async () => {
+        let filePost: ContentRequest | undefined;
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          {
+            when: "/types/types",
+            reply: contentFail({
+              code: "content-unreachable",
+              detail: "ETIMEDOUT",
+            }),
+          },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: (request) => {
+              filePost = request;
+              return contentOk(fileRepJson(), { status: 201 });
+            },
+          },
+          {
+            when: `${PARENT}/members`,
+            reply: contentFixture("member-created.json"),
+          },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "a.py");
+        assert.ok(result.ok);
+        assert.ok(filePost);
+        assert.match(filePost.link.href, /typeDefName=file(&|$)/);
+      });
+
+      it("createFile reports response-malformed when the created file's links carry no usable self", async () => {
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: "/files/files",
+            reply: contentOk(
+              {
+                id: "x",
+                name: "a.py",
+                links: [
+                  null,
+                  { rel: "alternate", href: "/y" },
+                  { rel: "self" },
+                ],
+              },
+              { status: 201 },
+            ),
+          },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "a.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("createFile uses typeDefName=file for a name with no extension, no lookup", async () => {
+        let filePost: ContentRequest | undefined;
+        const { adapter, calls } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: (request) => {
+              filePost = request;
+              return contentOk(fileRepJson(), { status: 201 });
+            },
+          },
+          {
+            when: `${PARENT}/members`,
+            reply: contentFixture("member-created.json"),
+          },
+        ]);
+        const result = await adapter.createFile(parentFolder(), "Makefile");
+        assert.ok(result.ok);
+        assert.ok(filePost);
+        assert.match(filePost.link.href, /typeDefName=file(&|$)/);
+        assert.equal(
+          calls.some((c) => c.href.startsWith("/types/types")),
+          false,
+        );
+      });
+
+      it("renameItem reports link-missing when the item has no update or self link", async () => {
+        const result = await adapterWith([]).adapter.renameItem(
+          { id: "x", name: "x", type: "folder", links: [] },
+          "y",
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+      });
+
+      it("renameItem passes a member-read failure straight through", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        assert.ok(memberSelf);
+        const { adapter } = adapterWith([
+          {
+            when: (href) => href.includes("/validations/"),
+            reply: contentOk({ valid: true }),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 404 },
+            }),
+          },
+        ]);
+        const result = await adapter.renameItem(member, "y.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+
+      it("renameItem reports response-malformed when the member read is not an object", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        assert.ok(memberSelf);
+        const { adapter } = adapterWith([
+          {
+            when: (href) => href.includes("/validations/"),
+            reply: contentOk({ valid: true }),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentOk("just a string"),
+          },
+        ]);
+        const result = await adapter.renameItem(member, "y.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("renameItem reports response-malformed when the rename PUT body is not readable", async () => {
+        const folder: ContentItem = {
+          id: "d",
+          name: "old",
+          type: "folder",
+          links: [
+            { rel: "self", href: PARENT, method: "GET" },
+            { rel: "update", href: PARENT, method: "PUT" },
+          ],
+        };
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === PARENT && method === "PUT",
+            reply: contentOk({ not: "an item" }),
+          },
+        ]);
+        const result = await adapter.renameItem(folder, "new");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("renameItem passes a rename PUT failure straight through", async () => {
+        const folder: ContentItem = {
+          id: "d",
+          name: "old",
+          type: "folder",
+          links: [{ rel: "update", href: PARENT, method: "PUT" }],
+        };
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === PARENT && method === "PUT",
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 412 },
+            }),
+          },
+        ]);
+        const result = await adapter.renameItem(folder, "new");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+
+      it("deleteItem reports link-missing for a leaf with no deleteResource link", async () => {
+        const result = await adapterWith([]).adapter.deleteItem({
+          id: "f",
+          name: "a.py",
+          type: "child",
+          contentType: "file",
+          links: [{ rel: "self", href: "/x", method: "GET" }],
+        });
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(result.problem.rel, "deleteResource");
+      });
+
+      it("deleteItem reports link-missing for a folder with no delete link, after emptying it", async () => {
+        const folder: ContentItem = {
+          id: "d",
+          name: "d",
+          type: "folder",
+          links: [
+            {
+              rel: "members",
+              href: `${PARENT}/members`,
+              method: "GET",
+              type: "application/vnd.sas.collection",
+            },
+          ],
+        };
+        const { adapter } = adapterWith([
+          { when: `${PARENT}/members`, reply: contentOk({ items: [] }) },
+        ]);
+        const result = await adapter.deleteItem(folder);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+      });
+
+      it("deleteItem propagates a failed child listing", async () => {
+        const folder: ContentItem = {
+          id: "d",
+          name: "d",
+          type: "folder",
+          links: [
+            {
+              rel: "members",
+              href: `${PARENT}/members`,
+              method: "GET",
+              type: "application/vnd.sas.collection",
+            },
+            {
+              rel: "deleteRecursively",
+              href: `${PARENT}?recursive=true`,
+              method: "DELETE",
+            },
+          ],
+        };
+        const { adapter } = adapterWith([
+          {
+            when: `${PARENT}/members`,
+            reply: contentFail({ code: "forbidden", error: { status: 403 } }),
+          },
+        ]);
+        const result = await adapter.deleteItem(folder);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "forbidden");
+      });
+
+      it("deleteItem deletes a sub-folder member by its resource and tidies the member record", async () => {
+        // A folder *member* (type "child", contentType "folder") carries
+        // deleteResource + delete, not deleteRecursively (finding 99).
+        const subFolder: ContentItem = {
+          id: "sf",
+          name: "sub",
+          type: "child",
+          contentType: "folder",
+          uri: "/folders/folders/sf",
+          links: [
+            {
+              rel: "members",
+              href: "/folders/folders/sf/members",
+              method: "GET",
+              type: "application/vnd.sas.collection",
+            },
+            {
+              rel: "deleteResource",
+              href: "/folders/folders/sf",
+              method: "DELETE",
+            },
+            {
+              rel: "delete",
+              href: `${PARENT}/members/sf`,
+              method: "DELETE",
+            },
+          ],
+        };
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders/sf/members",
+            reply: contentOk({ items: [] }),
+          },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href === "/folders/folders/sf",
+            reply: contentOk({}, { status: 204 }),
+          },
+          {
+            when: (href, method) =>
+              method === "DELETE" && href === `${PARENT}/members/sf`,
+            reply: contentOk({}, { status: 204 }),
+          },
+        ]);
+        const result = await adapter.deleteItem(subFolder);
+        assert.ok(result.ok);
+        assert.deepEqual(
+          calls.filter((c) => c.method === "DELETE").map((c) => c.href),
+          ["/folders/folders/sf", `${PARENT}/members/sf`],
+        );
+      });
+    });
+  });
 });
+
+/** A `ContentItem` parsed from a fixture the way the adapter would see it —
+ * for the mutation tests that need a realistic member/folder link set. */
+function readContentItemFixture(name: string): ContentItem {
+  const item = readContentItem(readJsonFixture("content", name));
+  assert.ok(item, `fixture ${name} is not a content item`);
+  return item;
+}

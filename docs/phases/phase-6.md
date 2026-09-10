@@ -402,50 +402,102 @@ struck lines below.
   the first real caller is "select the item you just created or moved", so the
   `ancestors` probe rides with 6c's probe pass.
 
-☐ **6c — Mutations (create/rename/move/delete).**
+☐ **6c — Mutations (create/rename/move/delete).** Split into three sub-slices
+(Sean, 2026-09-10): **6c-i** create/rename/delete for folders and files from
+the tree context menu; **6c-ii** move + drag-and-drop (the repo's first
+`TreeDragAndDropController`) + the Python-shaped drag-into-editor snippet;
+**6c-iii** `getParent`/`TreeView.reveal` + the finding-101 `ancestors` probe.
+**Upload/download to local disk is deferred to Phase 11** (Sean, 2026-09-10) —
+it was never in the 6a–6d breakdown and is a Phase 11 parity item, not a 6c
+mutation.
 
-- ☐ Folder create/rename/delete; file create/rename/delete/move —
-  confirmed-live link relations from Finding 78 (`createChild`, `update`,
-  `deleteResource`, `deleteRecursively`, `validateRename`,
-  `validateNewMemberName`).
-- ☐ **The `/types/types?filter=contains('extensions','py')` probe, moved here
-  from 6a.** Create-file (`getTypeDefinition`) is the only path that reads it.
-  Probe against a Viya 4 cadence other than `verde`'s to check Finding 79's
-  one-cadence caveat, **and** check whether the inline `typeDefName` a `.py`
-  member already carries on read (finding 99) removes the need for the lookup
-  on the create path too. Upstream's `deleteResource` also swallows a
-  `404`/`403` from its follow-up member-delete — decide whether to keep that
-  or surface it (6a-ii's audit flagged it).
-- ☐ Decide the upload/download scope question (Plan, above): in 6c, or
-  deferred to Phase 11.
-- ☐ Drag-and-drop move/create-from-local-file, mirroring
-  `handleContentItemDrop`/`handleFolderDrop`/`uploadUrisToTarget` in shape.
-- ☐ **Drag-a-file-into-the-editor snippet (moved from 6b).** Python-shaped
-  equivalent of upstream's `getFileStatement` (`filename … filesrvc …;`).
-  **Probe first:** how does Python running under `PROC PYTHON` read a
-  `filesrvc` fileref / a SAS Content file — a resolvable path in the Python
-  process, or bytes handed across the `SAS` bridge? No unprobed guess goes in
-  the snippet template. Shares the `DataTransfer` wiring with the move item
-  above.
-- ☐ **`getParent` / `TreeView.reveal` + the finding-101 `ancestors` probe
-  (moved from 6b).** The first caller is "reveal the item just created or
-  moved". `GET /folders/ancestors?childUri=…` returned `406` under the
-  collection media type and `{}` under `application/json` in finding 101 —
-  pin the real shape here before iterating it the way upstream's
-  `getParentOfItem` does.
-- ☑ **Oversized-file read surfaces as a network error (PR #141 review,
-  2026-09-10).** Done ahead of 6c-i as a standalone `fix/content-oversized-read`
-  branch (Sean's call, 2026-09-10 — it touches `src/auth/transport.ts`, shared
-  with compute, so it stays out of the content-mutation diffs). `nodeHttpTransport`
-  now rejects an over-cap body with a typed `ResponseTooLargeError` (carrying the
-  `capBytes`) instead of a plain `Error`; `src/content/client.ts` catches that
-  and returns a new `content-too-large` `ContentProblem` (`limitBytes`), which
-  `messages.ts` renders as "This file is too large to open in the editor (limit
-  10 MB). Open it in SAS Studio instead." and `contentFileSystem.ts` maps to a
-  plain `FileSystemError` (retrying will not help). Compute is unaffected — the
-  error is an `Error` subclass with the same message, and its rich-output fetch
-  already pre-checks size via `exceedsCaptureCap`. Adversarial pass before the
-  PR; `npm run verify` green.
+☑ **Oversized-file read surfaces as a network error (PR #141 review,
+2026-09-10).** Done ahead of 6c-i as a standalone `fix/content-oversized-read`
+branch (Sean's call, 2026-09-10 — it touches `src/auth/transport.ts`, shared
+with compute, so it stays out of the content-mutation diffs). Merged as
+[PR #147](https://github.com/Shai-Alit/sas-py-vscode/pull/147), squash
+`79e10b0`. `nodeHttpTransport` now rejects an over-cap body with a typed
+`ResponseTooLargeError` (carrying the `capBytes`) instead of a plain `Error`;
+`src/content/client.ts` catches that and returns a new `content-too-large`
+`ContentProblem` (`limitBytes`), which `messages.ts` renders as "This file is
+too large to open in the editor (limit 10 MB). Open it in SAS Studio instead."
+and `contentFileSystem.ts` maps to a plain `FileSystemError` (retrying will not
+help). Compute is unaffected — the error is an `Error` subclass with the same
+message, and its rich-output fetch already pre-checks size via
+`exceedsCaptureCap`. Adversarial pass before the PR; `npm run verify` green;
+Codex + Claude PR reviews clean.
+
+☐ **6c-i — create / rename / delete from the tree context menu.** Findings
+6.3–6.9 (both a `verde` LTS 2026.03 and an `innov` Stable 2026.06 deployment).
+
+- ☑ **Folder create / file create / rename / delete on `ContentAdapter`**
+  (`src/content/adapter.ts`, `vscode`-free), each driven by a link the parent
+  or item handed back — `createChild` (finding 6.3), `addMember` (6.4),
+  `update` (6.5), `deleteResource`/`deleteRecursively`/`delete` (6.8). File
+  create is two calls (`POST /files/files?typeDefName=…` then `addMember`) with
+  the orphan file resource deleted if the `addMember` fails. Rename sends a
+  **minimal `{name}`** body for a folder read directly and the **full member
+  representation** with `name` changed for a member — finding 6.7: the full
+  folder representation echoed back is `400`/`errorCode 1177` on Stable
+  2026.06. Delete empties a folder child-by-child first — finding 6.8:
+  `deleteRecursively` still `409`s on a non-empty folder on both cadences — and
+  swallows the `404`/`403` on the trailing member-record delete (decision:
+  keep upstream's swallow; the member is usually already gone).
+- ☑ **JSON request-body arm on `ContentClient`** (`jsonBody` +
+  `contentDisposition`, `Accept` now sent on a mutating call too). The write
+  path was `rawBody`-only through 6b.
+- ☑ **`content-name-rejected` `ContentProblem`** — the `validateNewMemberName`
+  / `validateRename` endpoints answer `200` with `{valid:false,error:{…}}`
+  (finding 6.6), so a name clash is caught before the mutation and rendered
+  with the deployment's own "already exists" sentence and its
+  `Suggestion: <name>` alternative.
+- ☑ **`getTypeDefinition`** (cached per extension): `.sas` → `programFile`,
+  else `GET /types/types?filter=contains('extensions','<ext>')` first item,
+  else `file`. Finding 6.9 clears Finding 79's one-cadence caveat — `.py`
+  resolves to `file_py` on both cadences — and confirms the create path still
+  needs the lookup (omitting `typeDefName` does **not** infer the type from the
+  filename; finding 6.4). The inline `typeDefName` on a *read* member
+  (finding 99) does not help the *create* path.
+- ☑ **Delegate `contextValue`s** in `src/content/presentation.ts` —
+  `sasContent:myFolder` (create inside, no rename/delete) and
+  `sasContent:delegate` (My Favorites / Recycle Bin — none of the three), so
+  the `view/item/context` `when` clauses never offer a rename or delete on
+  something that has no representation to rename or delete.
+- ☑ **Four flat commands** (`pythonOnViya.createContentFolder` /
+  `createContentFile` / `renameContentItem` / `deleteContentItem`) in
+  `src/content/contentCommands.ts` — a thin `vscode` shell (input box with a
+  local `validateInput`, modal confirm on delete, a cancellable view-progress
+  spinner), hidden from the command palette (`menus.commandPalette`,
+  `when:false`) because they need a tree item. `SasContentTreeProvider.refresh`
+  grew an optional parent argument so a create reloads just that folder.
+- ☑ Tests: `content-adapter.test.ts` (+18 — create/rename/delete branches,
+  collision, non-empty-folder recursion, orphan rollback, swallowed 404,
+  `getTypeDefinition` cache/shortcut/fallback), `content-client.test.ts` (JSON
+  body / `Content-Disposition` / `Accept`), `content-problems.test.ts` +
+  `content-presentation.test.ts` + `test/integration/content/`
+  (`messages.test.ts`, `explorer.test.ts` — command + menu wiring). New
+  fixtures `folder-created` / `member-created` / `types-python` /
+  `validate-name-taken`.
+
+☐ **6c-ii — move + drag-and-drop + drag-into-editor snippet.**
+
+- ☐ Drag-and-drop move (the repo's first `TreeDragAndDropController`),
+  mirroring `handleContentItemDrop`/`handleFolderDrop` in shape.
+- ☐ **Drag-a-file-into-the-editor snippet.** Python-shaped equivalent of
+  upstream's `getFileStatement` (`filename … filesrvc …;`). **Probe first:**
+  how does Python running under `PROC PYTHON` read a `filesrvc` fileref / a SAS
+  Content file — a resolvable path in the Python process, or bytes handed
+  across the `SAS` bridge? No unprobed guess goes in the snippet template.
+  Shares the `DataTransfer` wiring with the move item above.
+
+☐ **6c-iii — `getParent` / `TreeView.reveal` + the `ancestors` probe.**
+
+- ☐ **`getParent` / `TreeView.reveal` + the finding-101 `ancestors` probe.**
+  The first caller is "reveal the item just created or moved" — 6c-i does a
+  parent refresh instead of a reveal, so this is genuinely 6c-iii's.
+  `GET /folders/ancestors?childUri=…` returned `406` under the collection media
+  type and `{}` under `application/json` in finding 101 — pin the real shape
+  here before iterating it the way upstream's `getParentOfItem` does.
 
 ☐ **6d — Favourites and recycle bin.**
 
@@ -687,3 +739,120 @@ not occur while the provider always sends `If-Match`, but is handled for
 defence. Creating a file (`POST /files/files?typeDefName=file_py` with
 `Content-Disposition` + raw body) returns `201` with the same representation
 shape — noted for 6c; the `#rawUpload` fragment upstream uses is not required.
+
+---
+
+_Findings 6.3–6.9 ran 2026-09-10 against **both** `verde` (Viya 4, Long-Term
+Support **2026.03**) and `innov` (Viya 4, Stable **2026.06**) via the
+`viya-api-probe` skill, for 6c-i's create/rename/delete paths. Read probes
+(`GET`) were run directly; the mutating probes (`POST` folder/file create,
+`PUT` rename, `DELETE`) ran against a single throwaway `czprobe-<ts>` folder
+tree created under **My Folder** and torn down in the same shell under a
+`trap`, verified `404` after. Sean approved the mutating run. Two cadences on
+purpose: finding 6.9 clears Finding 79's "one cadence only" caveat, and finding
+6.7 is a real difference between them._
+
+**Finding 6.3 — folder create is `POST` the `createChild` link with a `{name}`
+body; `201`.**
+Every real folder — the three delegates (finding 97) and every ordinary folder
+— carries a `createChild` link, `POST`, `type
+application/vnd.sas.content.folder`, whose href **is exactly**
+`/folders/folders?parentFolderUri={that folder's self href}`. So following the
+relation and composing the string agree, and there is no ADR-0010 tension in
+composing it — but the implementation follows the link. Body `{"name":"<n>"}` →
+**`201`** with the full new-folder representation (`self`, `update`, `delete`,
+`deleteRecursively`, `members`, `addMember`, `createChild`, `validateRename`
+templated, `validateNewMemberName` templated). Identical on both cadences. The
+synthetic "SAS Content" pseudo-root has no `createChild` (it has no
+representation), so create is offered on delegates and ordinary folders only.
+
+**Finding 6.4 — file create is two calls, and the type is not inferred from the
+name.**
+`POST /files/files?typeDefName=<typeDefName>` with `Content-Disposition:
+filename*=UTF-8''<name>` and an (empty) body → **`201`**
+`application/vnd.sas.file+json`, `ETag` in a **response header**, body carrying
+`typeDefName`, `contentType`. The `#rawUpload` URL fragment upstream sends is
+**not** required. Then `POST {parent}/members` (the `addMember` link, `type
+application/vnd.sas.content.folder.member`) with
+`{"uri":"<file self href>","type":"CHILD","name":"<name>","contentType":"<typeDefName>"}`
+→ **`201`** member record (`type "child"`, `contentType "file"`, `typeDefName`,
+`uri` → the file resource). **Omitting `typeDefName`** on the `POST /files/files`
+still returns `201` but with `typeDefName: null` and `contentType` taken only
+from the request `Content-Type` — so the create path genuinely needs the
+`/types/types` lookup (finding 6.9); the inline `typeDefName` a member carries
+on *read* (finding 99) is no help here, because there is no member yet. If the
+`addMember` fails the file resource is an orphan in the user's Files store —
+6c-i deletes it and reports the `addMember` failure.
+
+**Finding 6.5 — rename is `PUT {self}` with a minimal `{name}` body; `200`.**
+`PUT` the `update`/`self` href with `{"name":"<newname>"}` → **`200`** with the
+updated representation, on both cadences. `If-Match` is **optional** on a folder
+(`PUT` with none → `200`); a **stale** `If-Match` → **`412`** (weak-ETag
+compare, `verde`). Renaming a file *member* changes the **member record's**
+`name` only — the underlying `/files/files/{id}` resource keeps its original
+`name` (the tree shows the member name, so this matches the UX, but a "rename"
+is not a rename of the file resource). See finding 6.7 for why the body must be
+minimal for a folder but is the full representation for a member.
+
+**Finding 6.6 — the name-validation endpoints answer `200` with a body verdict,
+not an HTTP error.**
+`validateNewMemberName` (`PUT
+.../members/@new/name?value={newname}&type={newtype}`, templated) and
+`validateRename` (`PUT .../{memberId}/name?value={newname}&type={newtype}`) both
+return **HTTP `200`** always. A free name → `{"valid":true,"version":1}`. A
+clash → `{"valid":false,"error":{"version":2,"httpStatusCode":409,"errorCode":11552,"message":"An
+item named \"x\" of type \"Folder\" already exists in the folder \"y\".","details":["Existing
+member: ","/folders/folders/…","Suggestion: x (1)"]},"version":1}`. A folder's
+`validateRename` template has `type=folder` already substituted; a file
+member's has `{newtype}` templated too (fill with the member's `typeDefName`,
+e.g. `file_py`). 6c-i turns a `valid:false` into a `content-name-rejected`
+`ContentProblem` carrying `error.message` and the `Suggestion:` alternative.
+
+**Finding 6.7 — cross-cadence difference: a folder rejects its own full
+representation on `PUT` on Stable 2026.06.**
+`PUT /folders/folders/{id}` with the **full GET'd folder representation** and
+just `name` changed → **`200` on `verde` (LTS 2026.03)** but **`400`
+`errorCode 1177` "The folder was not valid." on `innov` (Stable 2026.06)**. A
+**minimal** body — `{"name":"x"}` or `{"id","name","type"}` — → `200` on
+**both**. A file *member* `PUT` accepts the full member representation on both
+cadences (not confirmed for a minimal member body). So 6c-i sends a minimal
+`{name}` for a folder read directly and the full echoed representation for a
+member — no `src/dialects/` branch, because the minimal body is a superset-safe
+choice that works everywhere. _Also observed on `innov` only:_ a folder that
+has been `PUT`-renamed can no longer be `DELETE`d **or `GET`** by the same
+account — `403 "Forbidden / Unauthorized"`, not a race (persists after a wait);
+a folder only ever created deletes fine. This looks like an authorization-rule
+re-evaluation on modify specific to `innov`'s policy configuration rather than a
+Viya-version behaviour, and it is **non-blocking** for 6c-i — a `403` already
+maps to the `forbidden` `ContentProblem` ("ask your SAS administrator"). Worth a
+follow-up probe if it recurs on another deployment.
+
+**Finding 6.8 — delete: `deleteRecursively` does not recurse past a non-folder
+member; the trailing member delete is usually a `404`.**
+File: `DELETE /files/files/{id}` → **`204`**, `GET` after → `404`. Folder still
+holding a non-folder member: `DELETE {folder}?recursive=true` (the
+`deleteRecursively` link) → **`409` `errorCode 11516` "You cannot delete the
+folder because it is not empty."** on **both** cadences — the "recursively" is
+not literal. So 6c-i deletes a folder's listed children one at a time (upstream
+does the same) before deleting the folder; an empty folder `DELETE`s `204`.
+After deleting a file resource that was a folder member, the follow-up `DELETE
+{folder}/members/{memberId}` → **`404` `errorCode 11501`** (the Folders service
+removed the member with the resource). 6c-i **keeps upstream's swallow**: a
+`404`/`403` on that trailing call is success, not failure — the delete the user
+asked for has happened. (Answers the 6a-ii audit's open question.) A folder
+that contains an *unlisted* member type — a report, a job — will still `409` on
+the final `DELETE`; that surfaces as `content-rejected` and the user deletes
+those in SAS Studio, same as upstream.
+
+**Finding 6.9 — `/types/types` resolves `.py` to `file_py` on both cadences —
+Finding 79's caveat cleared.**
+`GET /types/types?filter=contains('extensions','py')` → exactly one item,
+`name: "file_py"`, `label: "Python code"`, `mediaType: "application/x-python"`,
+`resourceUri: "/files/files"`, `defaultContentType: null`, on **both** `verde`
+(LTS 2026.03) and `innov` (Stable 2026.06). The `sas` query → `programFile` on
+both (sanity check against upstream's hard-coded special case). So upstream's
+generic fallback resolves this project's primary extension correctly with no
+`.py`-specific special case, on two different Viya 4 cadences a release apart.
+The `defaultContentType: "file"` fallback stays in `getTypeDefinition` as a
+guard for an older or freshly-installed deployment that has not registered
+`file_py`, not a path either probed deployment takes.

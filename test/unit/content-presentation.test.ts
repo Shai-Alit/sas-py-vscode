@@ -4,8 +4,10 @@
 import assert from "node:assert/strict";
 
 import {
+  CONTEXT_DELEGATE,
   CONTEXT_FILE,
   CONTEXT_FOLDER,
+  CONTEXT_MY_FOLDER,
   CONTEXT_ROOT,
   nodePresentationOf,
 } from "../../src/content/presentation";
@@ -44,6 +46,23 @@ describe("content/presentation nodePresentationOf", () => {
     assert.equal(
       nodePresentationOf(item({ type: "myFolder" })).icon,
       "folder-active",
+    );
+  });
+
+  it("gives the delegates a contextValue that gates the mutation menu", () => {
+    // My Folder: create inside it, but no rename/delete.
+    assert.equal(
+      nodePresentationOf(item({ type: "myFolder" })).contextValue,
+      CONTEXT_MY_FOLDER,
+    );
+    // Favorites / Recycle Bin: none of create/rename/delete.
+    assert.equal(
+      nodePresentationOf(item({ type: "favoritesFolder" })).contextValue,
+      CONTEXT_DELEGATE,
+    );
+    assert.equal(
+      nodePresentationOf(item({ type: "trashFolder" })).contextValue,
+      CONTEXT_DELEGATE,
     );
   });
 

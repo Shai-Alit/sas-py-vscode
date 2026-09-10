@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "accept": "application/vnd.sas.type.definition",
+  "count": 1,
+  "start": 0,
+  "limit": 10,
+  "name": "types",
+  "items": [
+    {
+      "creationTimeStamp": "2021-01-01T00:00:00.000Z",
+      "createdBy": "sas",
+      "modifiedBy": "sas",
+      "id": "file_py",
+      "name": "file_py",
+      "label": "Python code",
+      "description": "Python source file",
+      "extensions": ["py"],
+      "mediaType": "application/x-python",
+      "resourceUri": "/files/files",
+      "version": 1,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/types/types/file_py",
+          "uri": "/types/types/file_py",
+          "type": "application/vnd.sas.type.definition"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/types/types?filter=contains('extensions','py')",
+      "uri": "/types/types?filter=contains('extensions','py')",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

@@ -287,6 +287,11 @@ export class SasContentFileSystemProvider
       case "link-missing":
       case "foreign-link":
       case "response-malformed":
+      // `content-name-rejected` is a create/rename verdict from the tree
+      // context menu (`src/content/adapter.ts`), not something an open or save
+      // through this provider produces — but the problem type is shared, so it
+      // is handled here for exhaustiveness rather than left to fall through.
+      case "content-name-rejected":
         return new vscode.FileSystemError(message);
     }
   }

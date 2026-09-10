@@ -1,0 +1,88 @@
+{
+  "creationTimeStamp": "2026-01-05T12:00:00.000Z",
+  "modifiedTimeStamp": "2026-01-06T09:30:00.000Z",
+  "createdBy": "user",
+  "modifiedBy": "user",
+  "id": "dddddddd-0000-4000-8000-000000000001",
+  "name": "analysis.py",
+  "properties": {},
+  "contentType": "application/x-python; charset=UTF-8",
+  "encoding": "UTF-8",
+  "size": 42,
+  "searchable": true,
+  "fileStatus": "unlocked",
+  "fileVersion": 3,
+  "typeDefName": "file_py",
+  "version": 4,
+  "virusDetected": false,
+  "urlDetected": false,
+  "quarantine": false,
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "type": "application/vnd.sas.file"
+    },
+    {
+      "method": "GET",
+      "rel": "alternate",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "type": "application/vnd.sas.summary"
+    },
+    {
+      "method": "PATCH",
+      "rel": "patch",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "type": "application/vnd.sas.file",
+      "responseType": "application/vnd.sas.file"
+    },
+    {
+      "method": "PUT",
+      "rel": "update",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "type": "application/vnd.sas.file",
+      "responseType": "application/vnd.sas.file"
+    },
+    {
+      "method": "DELETE",
+      "rel": "delete",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001"
+    },
+    {
+      "method": "GET",
+      "rel": "content",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001/content",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001/content",
+      "type": "application/x-python; charset=UTF-8"
+    },
+    {
+      "method": "PUT",
+      "rel": "updateContent",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001/content",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001/content",
+      "type": "*/*",
+      "responseType": "application/vnd.sas.file"
+    },
+    {
+      "method": "POST",
+      "rel": "copyFile",
+      "href": "/files/files/dddddddd-0000-4000-8000-000000000001/copy",
+      "uri": "/files/files/dddddddd-0000-4000-8000-000000000001/copy",
+      "responseType": "application/vnd.sas.file"
+    },
+    {
+      "method": "POST",
+      "rel": "create",
+      "href": "/files/files",
+      "uri": "/files/files",
+      "type": "*/*",
+      "responseType": "application/vnd.sas.file"
+    }
+  ]
+}

@@ -59,7 +59,7 @@ describe("content/ContentSession", () => {
     assert.equal(configs[0]?.root, ENDPOINT);
   });
 
-  it("rebuilds when the endpoint changes", () => {
+  it("serves a distinct adapter per endpoint and keeps each one", () => {
     const { session, configs } = harness();
     const a = session.adapterFor(ENDPOINT);
     const b = session.adapterFor(OTHER_ENDPOINT);
@@ -68,14 +68,18 @@ describe("content/ContentSession", () => {
       configs.map((c) => c.root),
       [ENDPOINT, OTHER_ENDPOINT],
     );
+    // Going back to the first endpoint reuses its adapter — a file still open
+    // from it survives a profile switch.
+    assert.equal(session.adapterFor(ENDPOINT), a);
+    assert.equal(configs.length, 2);
   });
 
-  it("clears the adapter for an absent endpoint, and rebuilds afterwards", () => {
+  it("returns undefined for an absent endpoint without dropping the cache", () => {
     const { session, configs } = harness();
-    session.adapterFor(ENDPOINT);
+    const a = session.adapterFor(ENDPOINT);
     assert.equal(session.adapterFor(undefined), undefined);
-    session.adapterFor(ENDPOINT);
-    assert.equal(configs.length, 2);
+    assert.equal(session.adapterFor(ENDPOINT), a);
+    assert.equal(configs.length, 1);
   });
 
   it("clear() forces the next adapterFor to rebuild", () => {

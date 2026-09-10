@@ -209,17 +209,20 @@ collision that predates any actual concurrent editing. Each phase's findings
 now number independently as `<phase>.<n>` (Phase 7's are `7.1`–`7.7`; Phase
 8 would start its own findings at `8.1`, not continue any other phase's
 count), so two sessions working different phases in parallel can never
-collide on a finding number without coordinating anything. **This applies
-going forward from Phase 7 onward.** Phases 0–6, and any already-recorded
-findings in phases 8–10 from their original scoping sessions, keep their old
-global numbers as a historical record — renumbering settled, merged findings
-in a phase another session may be actively editing is its own hazard this
-change is meant to avoid, not a job to do reflexively. Renumber a still-
-legacy-numbered phase's findings to its own `N.x` scheme at the point that
-phase is actually picked up, not preemptively. A phase file's own **Probe
-findings** section intro states which numbering scheme it uses and what it
-continues from (or doesn't) — read that line before adding a new finding to
-an existing phase file.
+collide on a finding number without coordinating anything. **This applies to
+every finding recorded from Phase 6 onward** — Phase 6's own 6b-and-later
+findings are `6.1`, `6.2`, … Findings already written under the old flat
+sequence keep their global numbers as a historical record — that sequence
+ran through **Finding 101** (Phase 6's 78–82 and 97–101 among them), and
+those are not renumbered. Phase 7's findings were renumbered `7.1`–`7.7`.
+Any already-recorded findings in phases 8–10 from their original scoping
+sessions keep their old global numbers until that phase is actually picked
+up, at which point its findings move to `N.x` — not preemptively, because
+renumbering settled, merged findings in a phase another session may be
+editing is its own hazard this change is meant to avoid. A phase file's own
+**Probe findings** section intro states which numbering scheme it uses and
+what it continues from (or doesn't) — read that line before adding a new
+finding to an existing phase file.
 
 ## Verification is proportional to the change
 

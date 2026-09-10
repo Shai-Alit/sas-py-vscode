@@ -18,11 +18,11 @@
  * VS Code `TreeDataProvider` in `src/content/contentTree.ts` talks to this
  * class directly; the HTTP-boundary test seam is a fake {@link ContentClient}.
  *
- * ## Two paths this module composes, and why that is not an ADR-0010 breach
+ * ## Three paths this module composes, and why that is not an ADR-0010 breach
  *
  * ADR-0010 says navigate by relation, not by a path this project wrote. This
- * module composes exactly two, both of which the Folders service's own link
- * documents make load-bearing and upstream relies on identically:
+ * module composes exactly three, each of which a link the deployment hands back
+ * makes load-bearing and upstream relies on identically:
  *
  * - **`GET /folders/folders/@myFavorites`** (and `@myFolder`, `@myRecycleBin`)
  *   — the delegate-folder mechanism. There is no link to these; the `@name`
@@ -32,11 +32,21 @@
  *   followed; a folder *member* record does not (finding 99), and its
  *   children are reached by composing `members` onto its `uri`, exactly as
  *   `RestContentAdapter.generatedMembersUrlForParentItem` does.
+ * - **`${fileResourceHref}/content`** for a file's bytes. The tree *member*
+ *   record carries only `getResource` → the file resource (finding 99); the
+ *   file resource representation itself carries `content` (GET) and
+ *   `updateContent` (PUT) relations, both at exactly `${self}/content`
+ *   (finding 6.1). {@link ContentAdapter.readFileContent} /
+ *   {@link ContentAdapter.writeFileContent} compose that suffix rather than
+ *   spend a round trip reading the representation first — the same trade
+ *   `${uri}/members` above makes, and upstream's `getContentOfUri` composes
+ *   the identical string.
  *
- * The query string (`limit`, `filter`) is appended to whichever href results.
- * The filter value is sent **raw** — `in(contentType,'file',…)` with its
- * quotes and parentheses intact — matching upstream and what the live probe
- * accepted (findings 98/99); `resolveHref` deliberately does not re-encode it.
+ * On the folder paths the query string (`limit`, `filter`) is appended to
+ * whichever href results. The filter value is sent **raw** —
+ * `in(contentType,'file',…)` with its quotes and parentheses intact — matching
+ * upstream and what the live probe accepted (findings 98/99); `resolveHref`
+ * deliberately does not re-encode it.
  *
  * ## No `sortBy`, so no cadence branch
  *
@@ -83,6 +93,68 @@ import {
  * not a case this tree is sized for.
  */
 const MEMBER_LIMIT = 1_000_000;
+
+/** The relation a file resource representation carries for reading its bytes,
+ * and — composed the same way — the suffix this module appends to a member's
+ * own `uri` to reach them (finding 6.1). `GET`. */
+const CONTENT_REL = "content";
+
+/** The relation a file resource representation carries for replacing its bytes
+ * (finding 6.1). `PUT`, at `${self}/content`. */
+const UPDATE_CONTENT_REL = "updateContent";
+
+/**
+ * The response-body cap for a file read, well above the transport's 1 MiB
+ * default. A `.py` past 10 MiB is not something this extension can usefully put
+ * in an editor, and the transport rejecting it there surfaces as a clear
+ * "could not read" rather than a silently truncated buffer.
+ */
+export const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * The per-request timeout for the two calls that move file bytes, rather than
+ * `client.ts`'s 15s default — that was sized for the small JSON listing reads
+ * this client used to make exclusively, and a file near {@link MAX_FILE_CONTENT_BYTES}
+ * over a slow or proxied link can take longer, which would otherwise surface as
+ * a bare "could not reach SAS Viya".
+ */
+const CONTENT_TRANSFER_TIMEOUT_MS = 60_000;
+
+/** The `Content-Type` sent on a write when the preceding read did not report
+ * one. Finding 6.2: the Files service does not validate it, so this only has to
+ * be a sane default, not the true type. */
+const DEFAULT_CONTENT_TYPE = "text/plain";
+
+/** A file's size and timestamps, for a `vscode.FileStat`. Epoch milliseconds;
+ * `undefined` where the representation gave nothing parseable. */
+export interface FileStat {
+  readonly size: number;
+  readonly createdAt: number | undefined;
+  readonly modifiedAt: number | undefined;
+}
+
+/** A file's bytes plus the entity tag a later conditional write sends back. */
+export interface FileContent {
+  readonly bytes: Uint8Array;
+  readonly etag: string | undefined;
+  readonly contentType: string | undefined;
+}
+
+/**
+ * What {@link ContentAdapter.writeFileContent} needs to write safely — the
+ * `etag` and `contentType` from the read that populated the editor buffer,
+ * carried by the caller (the `FileSystemProvider`), **not** re-fetched at save
+ * time. Re-reading the ETag immediately before the `PUT` would hand the server
+ * a tag it considers current no matter who changed the file in between, so the
+ * `412` the lost-update guard depends on could never fire.
+ */
+export interface WritePrecondition {
+  /** The `ETag` from the file read the editor is showing. Sent as `If-Match`. */
+  readonly etag: string;
+  /** That read's `Content-Type`. Not validated server-side (finding 6.2), sent
+   * for correctness; {@link DEFAULT_CONTENT_TYPE} stands in when absent. */
+  readonly contentType: string | undefined;
+}
 
 export class ContentAdapter {
   constructor(private readonly client: ContentClient) {}
@@ -209,6 +281,136 @@ export class ContentAdapter {
 
     return undefined;
   }
+
+  /**
+   * A file's size and timestamps — `GET` on the file resource itself.
+   *
+   * `vscode` calls `stat` before every open and before every save, so this is
+   * the request that keeps the editor's "changed on disk" detection honest: the
+   * `modifiedAt` it returns comes from the `Last-Modified` header when the
+   * deployment sent one (finding 6.1), falling back to the representation's own
+   * `modifiedTimeStamp`.
+   */
+  async statFile(
+    resourceHref: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<FileStat>> {
+    const result = await this.client.send({
+      link: { rel: SELF_REL, href: resourceHref },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    const body: unknown = result.value.body;
+    if (typeof body !== "object" || body === null) {
+      return malformed(
+        result.value,
+        "a file representation",
+        "and the body was not an object",
+      );
+    }
+    const raw = body as Record<string, unknown>;
+    return {
+      ok: true,
+      value: {
+        size: typeof raw.size === "number" ? raw.size : 0,
+        createdAt: parseTimestamp(raw.creationTimeStamp),
+        modifiedAt:
+          parseTimestamp(result.value.lastModified) ??
+          parseTimestamp(raw.modifiedTimeStamp),
+      },
+    };
+  }
+
+  /**
+   * A file's bytes, exactly as the deployment sent them.
+   *
+   * Composes `${resourceHref}/content` (finding 6.1's `content` relation) and
+   * reads `rawBody`, never `.text` — a file this tree opens is usually text,
+   * but the transport's UTF-8 decode is lossy for one that is not, and the
+   * editor is entitled to the real bytes. The returned `etag` is the tag for
+   * exactly these bytes; the caller keeps it and hands it back as the
+   * {@link WritePrecondition} on save. Re-fetching it at save time instead
+   * would defeat the lost-update guard — see {@link ContentAdapter.writeFileContent}.
+   */
+  async readFileContent(
+    resourceHref: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<FileContent>> {
+    const result = await this.client.send({
+      link: { rel: CONTENT_REL, href: `${resourceHref}/content` },
+      maxBodyBytes: MAX_FILE_CONTENT_BYTES,
+      timeoutMs: CONTENT_TRANSFER_TIMEOUT_MS,
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    if (result.value.rawBody === undefined) {
+      return malformed(
+        result.value,
+        "a file's content",
+        "and the transport returned no raw bytes for it",
+      );
+    }
+    return {
+      ok: true,
+      value: {
+        bytes: result.value.rawBody,
+        etag: result.value.etag,
+        contentType: result.value.contentType,
+      },
+    };
+  }
+
+  /**
+   * Replace a file's bytes, guarded by the ETag the editor opened with.
+   *
+   * One request: `PUT ${resourceHref}/content` carrying `precondition.etag` as
+   * `If-Match`. That tag has to be the one {@link ContentAdapter.readFileContent}
+   * returned for the bytes now in the editor — **not** a freshly-fetched one.
+   * `src/compute/files.ts` and `fileref.ts` re-read their ETag immediately
+   * before mutating, but they act on a session's private working directory that
+   * `PROC PYTHON`'s serial execution (ADR-0015) guarantees nothing else touches;
+   * a SAS Content file is editable at the same time from SAS Studio, the web
+   * client, or another editor, so the guard only means something if the tag
+   * predates those edits.
+   *
+   * Finding 6.2: a bare `PUT` is `428`, a stale `If-Match` is `412` — both
+   * come back unchanged as `content-rejected` for the caller to localise as
+   * "reopen it". A `200` carries a fresh `ETag`; it is returned so the caller
+   * can update what it holds and let a second save in the same session through
+   * without a re-read. The sent `Content-Type` is not validated (finding 6.2)
+   * but is echoed for correctness.
+   */
+  async writeFileContent(
+    resourceHref: string,
+    bytes: Uint8Array,
+    precondition: WritePrecondition,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<{ etag: string | undefined }>> {
+    const put = await this.client.send({
+      link: {
+        rel: UPDATE_CONTENT_REL,
+        href: `${resourceHref}/content`,
+        method: "PUT",
+      },
+      rawBody: bytes,
+      contentType: precondition.contentType ?? DEFAULT_CONTENT_TYPE,
+      etag: precondition.etag,
+      timeoutMs: CONTENT_TRANSFER_TIMEOUT_MS,
+      ...withSignal(signal),
+    });
+    if (!put.ok) return put;
+    return { ok: true, value: { etag: put.value.etag } };
+  }
+}
+
+/** An ISO-8601 or HTTP-date string as epoch milliseconds, or `undefined` if it
+ * is neither a string nor a date `Date.parse` understands. */
+function parseTimestamp(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? undefined : ms;
 }
 
 /** Folders before files; within a group, by name, case-insensitively. */

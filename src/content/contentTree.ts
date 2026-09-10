@@ -14,22 +14,25 @@
  * never throws out of `getChildren` (VS Code renders a thrown error as an angry
  * inline node).
  *
- * The adapter is read through a getter rather than held, because
- * `src/content/contentExplorer.ts` rebuilds it when the active deployment
- * changes. When there is no adapter (no profile, or not signed in),
- * `getChildren` returns nothing and the view's `viewsWelcome` content shows.
+ * The adapter is read through a getter rather than held, because the tree
+ * follows the active profile and `src/content/contentExplorer.ts` can switch
+ * the deployment under the view. When there is no adapter (no profile, or not
+ * signed in), `getChildren` returns nothing and the view's `viewsWelcome`
+ * content shows.
  *
  * ## What this slice does not do
  *
- * No `command` on a file node (opening a remote file needs a
- * `FileSystemProvider`, slice 6b), no `resourceUri`, no `getParent` (only
- * `TreeView.reveal` needs it, and nothing reveals yet), no context-menu
- * actions (mutations are 6c). `contextValue` is set now so 6c's menu `when`
- * clauses do not require touching this file. A failed listing is logged, not
- * shown as a notification per expand — a per-click toast for a folder you
- * cannot read would be noise. The user-facing localisation seam
- * (`localiseContentProblem`) returns with 6b, when an action the user took
- * directly (open, save) can actually fail.
+ * No `getParent` (only `TreeView.reveal` needs it, and nothing reveals yet), no
+ * context-menu actions (mutations are 6c). `contextValue` is set now so 6c's
+ * menu `when` clauses do not require touching this file. A failed *listing* is
+ * logged, not shown as a notification per expand — a per-click toast for a
+ * folder you cannot read would be noise; a failed *open or save* is the
+ * `FileSystemProvider`'s to surface, through `localiseContentProblem`.
+ *
+ * 6b does wire one thing here: an openable file leaf
+ * ({@link NodePresentation.openable}) gets a `resourceUri` and a `vscode.open`
+ * command pointed at its `sasContent:` URI, so a single click opens the remote
+ * file through `src/content/contentFileSystem.ts`.
  */
 
 import * as vscode from "vscode";
@@ -37,7 +40,8 @@ import * as vscode from "vscode";
 import { type ContentAdapter } from "./adapter";
 import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
-import { type ContentItem } from "./types";
+import { resourceHrefOf, type ContentItem } from "./types";
+import { contentUriString } from "./uri";
 
 export class SasContentTreeProvider
   implements vscode.TreeDataProvider<ContentItem>, vscode.Disposable
@@ -52,11 +56,15 @@ export class SasContentTreeProvider
   /**
    * @param currentAdapter Returns the adapter for the active profile, or
    *   `undefined` when the view has nothing to show (no profile / signed out).
+   * @param currentEndpoint The active profile's deployment root, stamped into
+   *   the `sasContent:` URI of each openable leaf so the file keeps talking to
+   *   this deployment even after a later profile switch.
    * @param log The extension's shared channel — a failed listing is logged
    *   here, not shown as a notification.
    */
   constructor(
     private readonly currentAdapter: () => ContentAdapter | undefined,
+    private readonly currentEndpoint: () => string | undefined,
     private readonly log: vscode.LogOutputChannel,
   ) {}
 
@@ -81,6 +89,26 @@ export class SasContentTreeProvider
     // id and a member-record id never collide — and the synthetic root's id is
     // a fixed sentinel.
     node.id = item.id;
+
+    // An openable file leaf: one click opens it through the `sasContent:`
+    // FileSystemProvider. `resourceHrefOf` is the member's own `uri`; a member
+    // that carries neither `uri` nor a `self` link, or a view with no active
+    // deployment, is left inert rather than pointed at a URI missing a part.
+    const endpoint = this.currentEndpoint();
+    if (shape.openable && endpoint !== undefined) {
+      const href = resourceHrefOf(item);
+      if (href !== undefined) {
+        const uri = vscode.Uri.parse(
+          contentUriString(item.name, href, endpoint),
+        );
+        node.resourceUri = uri;
+        node.command = {
+          command: "vscode.open",
+          title: vscode.l10n.t("Open SAS Content File"),
+          arguments: [uri],
+        };
+      }
+    }
     return node;
   }
 

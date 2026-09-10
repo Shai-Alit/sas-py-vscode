@@ -8,7 +8,11 @@ along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 **Phase 6 (SAS Content explorer) is in progress — open
 [`docs/phases/phase-6.md`](docs/phases/phase-6.md).** Scoped 2026-09-03 (4
 slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 before
-starting. **6a is done** (split 6a-i + 6a-ii); **6b is next.**
+starting. **6a is done** (split 6a-i + 6a-ii) and **6b is done**; **6c is
+next.**
+
+(Probe finding numbers are now phase-scoped `N.x` — see the "Finding-numbering
+scheme changed 2026-09-09" section below and `CLAUDE.md`.)
 
 - **6a-i — `src/wire/` promotion.** Done. The Viya hypermedia link helpers and
   the `application/vnd.sas.error+json` reader moved from `src/compute/` to a
@@ -23,10 +27,20 @@ starting. **6a is done** (split 6a-i + 6a-ii); **6b is next.**
   cadence branch — [ADR-0026](docs/adr/0026-content-adapter-shape.md). Live
   Folders/Files findings 97–101 in `phase-6.md`; the `.py`-type second-cadence
   probe moved to 6c (it only feeds create-file).
-- **6b — open/save via `FileSystemProvider`.** Next: `readFile`/`writeFile`/
-  `stat` and the ETag round trip so a remote `.py` opens and saves in place.
-  `getParent`/`TreeView.reveal` and the `ancestors` shape (finding 101, not
-  pinned) land here too.
+- **6b — open/save via `FileSystemProvider`.** Done. A new `sasContent:`
+  `FileSystemProvider` (`src/content/contentFileSystem.ts`) over three
+  `vscode`-free `ContentAdapter` methods (`statFile`/`readFileContent`/
+  `writeFileContent`) and the mutating arm added to `src/content/client.ts`:
+  clicking a file leaf opens it, saving writes it back with an `If-Match`
+  round trip, and a lost-update `412` surfaces as a "reopen for the current
+  version" conflict via the returning `localiseContentProblem` seam. Findings
+  6.1–6.2. Scoped to the open/save core — `getParent`/`reveal` + the
+  finding-101 `ancestors` probe moved to 6c, the `sasContentReadOnly`
+  recycle-bin scheme to 6d, and the drag-into-editor snippet (Python-shaped,
+  probe-gated — Sean's call) to 6c.
+- **6c — mutations (create/rename/move/delete).** Next. Also picks up the
+  three items moved out of 6b above, and the `.py` type / `/types/types`
+  probe deferred from 6a.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 2026-09-09 — nothing else gates Phase 6.
@@ -90,12 +104,14 @@ Probe findings are now numbered per-phase (`N.x`), not one continuing global
 sequence — see `CLAUDE.md`'s "Don't guess about Viya — probe it" section for
 the full rationale (this project now works phases in parallel from separate
 clones, and a continuing global counter can't be claimed safely by two
-sessions at once) and the rules for applying it. Phase 7's findings were
-renumbered `7.1`–`7.7` (previously the global 83, 84, 85, 86, 95, 96, 102) as
-part of this change. Phases 0–6, and any already-recorded phase 8–10
-findings from their original scoping sessions, keep their old global
-numbers — renumber a phase's own findings to its `N.x` scheme when that
-phase is actually picked up, not preemptively.
+sessions at once) and the rules for applying it. **Applies from Phase 6
+onward:** Phase 6's 6b-and-later findings are `6.1`, `6.2`, …; Phase 7's were
+renumbered `7.1`–`7.7` (previously the global 83–86, 95, 96, 102). The old
+flat sequence ran through **Finding 101** — findings written under it
+(including Phase 6's 78–82 and 97–101) keep their global numbers. Any
+already-recorded phase 8–10 findings from their scoping sessions keep their
+global numbers until that phase is picked up, then move to `N.x` — not
+preemptively.
 
 ## History
 
@@ -123,7 +139,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **in progress.** 6a done — 6a-i (`src/wire/` promotion, [ADR-0025](docs/adr/0025-shared-wire-layer.md)) and 6a-ii (content adapter + read-only tree, [ADR-0026](docs/adr/0026-content-adapter-shape.md)); 6b (open/save via `FileSystemProvider`) next. | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); 6b done (open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2); 6c (mutations) next. | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). 7b (data viewer webview) next, not started. | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

@@ -15,17 +15,24 @@
  * `src/content/` gets its own small follower built on `src/wire/` and
  * `src/auth/transport.ts`.
  *
- * ## Read-only, deliberately
+ * ## Read plus write content, not yet mutate structure
  *
- * This slice (6a-ii) is a browse-only tree, so `send` has no `body`, no
- * `If-Match`, no raw upload arm — every request it makes is a `GET`. The
- * mutating arms arrive with 6b/6c when a `readFile`/`writeFile`/create first
- * needs them, added against a probe rather than guessed at now. What is here is
- * the same transport-outcome mapping the Compute client already carries and
- * that has already been through review: unreachable, 401 (via slice 1c's
- * challenge reading), 403, any other non-2xx (read as an
- * `application/vnd.sas.error+json` envelope — finding 100), and a JSON body that
- * will not parse.
+ * 6a-ii shipped this `GET`-only. 6b adds exactly one mutating arm — a
+ * `PUT`/`rawBody`/`If-Match` request against a file's `content` sub-resource
+ * (findings 6.1/6.2) — so a remote `.py` opens and saves in place. Folder and
+ * member mutations (create/rename/move/delete) are still 6c and are still
+ * absent here. The `PUT` shape is the one the live probe measured: `If-Match`
+ * with the file's current ETag is required (a bare `PUT` is `428`, a stale one
+ * `412` — finding 6.2), the response carries a fresh `ETag`/`Last-Modified`,
+ * and the sent `Content-Type` is not validated but is echoed back for
+ * correctness.
+ *
+ * The transport-outcome mapping is unchanged from 6a-ii and is the same one the
+ * Compute client carries and that has been through review: unreachable, 401
+ * (via slice 1c's challenge reading), 403, any other non-2xx (read as an
+ * `application/vnd.sas.error+json` envelope — findings 100 and 6.2 — so
+ * `412`/`428` arrive as `content-rejected` carrying `error.status`), and a JSON
+ * body that will not parse.
  *
  * ## Why a link and not a path
  *
@@ -103,6 +110,33 @@ export interface ContentClientConfig {
 export interface ContentRequest {
   /** The link to follow. Its `method` and media types drive the request. */
   link: Link;
+  /**
+   * The request body, sent exactly as given — no decode, no re-encode. Only a
+   * non-`GET` link carries one. Mirrors `ComputeRequest.rawBody`: a file's
+   * bytes go to `PUT .../content` verbatim (finding 6.1's `updateContent`
+   * relation), and byte fidelity is the whole point.
+   */
+  rawBody?: Uint8Array | undefined;
+  /**
+   * The `Content-Type` for {@link ContentRequest.rawBody}. Finding 6.2: the
+   * Files service does not validate it against the registered type, but the
+   * file's own media type is echoed back for correctness. Defaults to
+   * `application/octet-stream` when a raw body is sent without one.
+   */
+  contentType?: string | undefined;
+  /**
+   * Sent as `If-Match`, and only when held. Finding 6.2: `PUT .../content` with
+   * no precondition is `428`, and with a stale ETag is `412` — so a write path
+   * that means to be safe always carries one.
+   */
+  etag?: string | undefined;
+  /**
+   * Overrides the transport's 1 MiB default response-body cap
+   * (`MAX_BODY_BYTES`) for this one request. {@link ContentAdapter.readFileContent}
+   * passes one so a large `.py` still opens; every other Content call is a small
+   * JSON read and leaves it at the default.
+   */
+  maxBodyBytes?: number | undefined;
   /** Cancels the request. Combined with the timeout, not replaced by it. */
   signal?: AbortSignal | undefined;
   /** Overrides {@link ContentClientConfig.timeoutMs} for this one request. */
@@ -112,10 +146,27 @@ export interface ContentRequest {
 export interface ContentResponse {
   readonly status: number;
   readonly contentType?: string | undefined;
+  /**
+   * The `ETag` response header, when present. On a file read or a successful
+   * `PUT .../content` this is the file's current entity tag (findings 6.1/6.2)
+   * — the value the next conditional write sends back as `If-Match`.
+   */
+  readonly etag?: string | undefined;
+  /** The `Last-Modified` response header, when present — the `mtime` a
+   * `vscode.FileStat` reports and the fallback precondition the Files service
+   * also accepts (`If-Unmodified-Since`, finding 6.2). */
+  readonly lastModified?: string | undefined;
   /** The raw response text, whether or not it parsed. */
   readonly text: string;
   /** The parsed body when the response was JSON, `undefined` otherwise. */
   readonly body: unknown;
+  /**
+   * The response body as raw bytes, when the transport provided them —
+   * {@link ContentAdapter.readFileContent} reads this rather than {@link text},
+   * whose UTF-8 decode is lossy for a file that is not text. The same choice
+   * `src/compute/files.ts` documents for `rawBody`.
+   */
+  readonly rawBody?: Uint8Array | undefined;
 }
 
 export interface ContentClient {
@@ -157,11 +208,20 @@ async function sendRequest(
   } catch (error) {
     // The message only: the thrown value came from the sign-in machinery.
     // `not-authenticated` rather than `session-expired` because nothing was
-    // presented to the deployment at all.
+    // presented to the deployment at all. `noSession` marks *this* origin —
+    // no token was ever obtained — apart from a 401 the deployment answered
+    // with a bare challenge, which `challengeProblem` below also reads as
+    // `not-authenticated`: `src/content/contentFileSystem.ts` shows a sign-in
+    // prompt for the former and the auth layer's "please report this" for the
+    // latter.
     return {
       ok: false,
       reason: `could not obtain an access token: ${messageOf(error)}`,
-      problem: { code: "unauthorized", problem: { code: "not-authenticated" } },
+      problem: {
+        code: "unauthorized",
+        problem: { code: "not-authenticated" },
+        noSession: true,
+      },
     };
   }
 
@@ -174,6 +234,20 @@ async function sendRequest(
   // link intended.
   const accept = sasMediaType(link.responseType) ?? sasMediaType(link.type);
   if (method === "GET" && accept !== undefined) headers.accept = accept;
+
+  // The write arm. `rawBody` only — this client never serialises a JSON body,
+  // because the one mutation it makes (finding 6.1's `updateContent`) sends a
+  // file's bytes. `If-Match` is set only when the caller passes an `etag`, and
+  // the caller always does: finding 6.2 measured a bare `PUT .../content` as
+  // `428`, and `src/content/contentFileSystem.ts` keeps that from happening by
+  // refusing the save outright when it holds no ETag for the file — it never
+  // lets a preconditionless `PUT` reach this point.
+  let body: Uint8Array | undefined;
+  if (request.rawBody !== undefined) {
+    body = request.rawBody;
+    headers["content-type"] = request.contentType ?? "application/octet-stream";
+  }
+  if (request.etag !== undefined) headers["if-match"] = request.etag;
 
   const transport = config.transport ?? nodeHttpTransport;
   const timeout = AbortSignal.timeout(
@@ -190,9 +264,20 @@ async function sendRequest(
 
   let response: TransportResponse;
   let text: string;
+  let rawBody: Uint8Array | undefined;
   try {
-    response = await transport(url, { method, headers, signal });
+    response = await transport(url, {
+      method,
+      headers,
+      body,
+      signal,
+      maxBodyBytes: request.maxBodyBytes,
+    });
     text = await response.text();
+    // Read from the same already-buffered response as `text` — no extra network
+    // cost (see `TransportResponse.bytes`) — so a caller that only reads `body`
+    // never pays for it. `readFileContent` is the one caller that needs it.
+    rawBody = await response.bytes?.();
   } catch (error) {
     // The message only. An injected transport's rejection can carry the
     // request that produced it, and this request's headers contain a token.
@@ -207,6 +292,8 @@ async function sendRequest(
   }
 
   const contentType = response.headers["content-type"];
+  const etag = response.headers.etag;
+  const lastModified = response.headers["last-modified"];
 
   if (response.status === 401) {
     const challenge = parseBearerChallenge(
@@ -269,8 +356,11 @@ async function sendRequest(
     value: {
       status: response.status,
       ...(contentType === undefined ? {} : { contentType }),
+      ...(etag === undefined ? {} : { etag }),
+      ...(lastModified === undefined ? {} : { lastModified }),
       text,
       body: parsed,
+      ...(rawBody === undefined ? {} : { rawBody }),
     },
   };
 }

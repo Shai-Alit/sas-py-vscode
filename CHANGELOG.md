@@ -16,9 +16,15 @@ called out under **Changed** with a migration note.
   opens a **SAS Content** view showing My Favorites, My Folder, SAS Content and
   Recycle Bin, read from the Viya Folders and Files services. Expand a folder to
   list its sub-folders and files; a refresh button on the view reloads it.
-  Opening, creating, renaming, moving and deleting content are later releases.
+  Creating, renaming, moving and deleting content are later releases.
   See [Browsing SAS Content](docs/browsing-sas-content.md) and
   [ADR-0026](docs/adr/0026-content-adapter-shape.md).
+- **Open and save SAS Content files in place.** Clicking a file in the SAS
+  Content view opens it in an editor; saving writes it straight back to SAS
+  Viya. The save is guarded against a lost update — if the file changed on the
+  server since it was opened, the save is refused with a note to reopen it for
+  the current version. Only ordinary files open this way (not data flows), and
+  folder-level actions are still a later release.
 
 ### Changed
 

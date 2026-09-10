@@ -71,6 +71,16 @@ function clientWith(
   return { client, seen, urls };
 }
 
+/** The single request the transport saw, non-nullably — the same helper
+ * `compute-client.test.ts` uses so an assertion need not optional-chain a
+ * `noUncheckedIndexedAccess` element type. */
+function only(requests: readonly TransportRequest[]): TransportRequest {
+  assert.equal(requests.length, 1);
+  const [request] = requests;
+  assert.ok(request !== undefined);
+  return request;
+}
+
 describe("content/client", () => {
   it("returns the parsed body and metadata on a 2xx JSON response", async () => {
     const { client, seen, urls } = clientWith({
@@ -146,7 +156,7 @@ describe("content/client", () => {
     assert.equal(result.problem.problem.code, "session-expired");
   });
 
-  it("reads a bare Bearer 401 as not-authenticated", async () => {
+  it("reads a bare Bearer 401 as not-authenticated, without noSession", async () => {
     const { client } = clientWith({
       status: 401,
       headers: { "www-authenticate": "Bearer" },
@@ -155,6 +165,10 @@ describe("content/client", () => {
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
     assert.equal(result.problem.problem.code, "not-authenticated");
+    // The deployment answered this 401 — a dropped Authorization header, per the
+    // auth layer — so it is *not* the "no session at all" origin, and the
+    // file-system layer must keep the "please report this" wording for it.
+    assert.equal(result.problem.noSession, undefined);
   });
 
   it("maps a 403 to forbidden and reads the error envelope", async () => {
@@ -223,7 +237,7 @@ describe("content/client", () => {
     }
   });
 
-  it("reports a token function that throws as not-authenticated", async () => {
+  it("reports a token function that throws as not-authenticated with noSession", async () => {
     const { client } = clientWith(
       { status: 200 },
       {
@@ -236,6 +250,9 @@ describe("content/client", () => {
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
     assert.equal(result.problem.problem.code, "not-authenticated");
+    // No token was ever obtained — nothing reached the deployment — so this is
+    // the origin the file-system layer answers with a sign-in prompt.
+    assert.equal(result.problem.noSession, true);
   });
 
   it("survives a non-Error rejection from the transport", async () => {
@@ -264,5 +281,95 @@ describe("content/client", () => {
     const result = await client.send({ link: SELF });
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
+    assert.equal(result.problem.noSession, true);
+  });
+
+  describe("write arm (6b — findings 6.1/6.2)", () => {
+    const UPDATE_CONTENT: Link = {
+      rel: "updateContent",
+      href: "/files/files/1/content",
+      method: "PUT",
+    };
+    const CONTENT: Link = { rel: "content", href: "/files/files/1/content" };
+
+    it("sends the raw body, its content-type and If-Match on a PUT link", async () => {
+      const { client, seen } = clientWith({
+        status: 200,
+        headers: { etag: '"new"' },
+      });
+      const bytes = new TextEncoder().encode("print('v2')\n");
+      await client.send({
+        link: UPDATE_CONTENT,
+        rawBody: bytes,
+        contentType: "application/x-python",
+        etag: '"old"',
+      });
+      const call = only(seen);
+      assert.equal(call.method, "PUT");
+      assert.deepEqual(call.body, bytes);
+      assert.equal(call.headers["content-type"], "application/x-python");
+      assert.equal(call.headers["if-match"], '"old"');
+      // No Accept on a non-GET — the response representation is not read.
+      assert.equal(call.headers.accept, undefined);
+    });
+
+    it("defaults a raw body's content-type to octet-stream", async () => {
+      const { client, seen } = clientWith({ status: 200 });
+      await client.send({
+        link: UPDATE_CONTENT,
+        rawBody: new Uint8Array([1, 2, 3]),
+      });
+      const call = only(seen);
+      assert.equal(call.headers["content-type"], "application/octet-stream");
+      assert.equal(call.headers["if-match"], undefined);
+    });
+
+    it("returns the ETag and Last-Modified response headers on a 2xx", async () => {
+      const { client } = clientWith({
+        status: 200,
+        headers: {
+          etag: '"v2"',
+          "last-modified": "Wed, 07 Jan 2026 08:15:00 GMT",
+          "content-type": "application/x-python;charset=UTF-8",
+        },
+        body: "print('hi')\n",
+      });
+      const result = await client.send({ link: CONTENT });
+      assert.ok(result.ok);
+      assert.equal(result.value.etag, '"v2"');
+      assert.equal(result.value.lastModified, "Wed, 07 Jan 2026 08:15:00 GMT");
+      assert.equal(
+        new TextDecoder().decode(result.value.rawBody),
+        "print('hi')\n",
+      );
+    });
+
+    it("passes maxBodyBytes through to the transport", async () => {
+      const { client, seen } = clientWith({ status: 200 });
+      await client.send({ link: CONTENT, maxBodyBytes: 5_000_000 });
+      assert.equal(only(seen).maxBodyBytes, 5_000_000);
+    });
+
+    it("maps a 412 precondition failure to content-rejected carrying the status", async () => {
+      const { client } = clientWith({
+        status: 412,
+        headers: { "content-type": "application/vnd.sas.error+json;version=2" },
+        body: JSON.stringify({
+          httpStatusCode: 412,
+          errorCode: 0,
+          message:
+            'The values for the request header field "If-Match" and the resource\'s entity tag are not the same.',
+          details: ["path: /files/files/1/content"],
+        }),
+      });
+      const result = await client.send({
+        link: UPDATE_CONTENT,
+        rawBody: new Uint8Array(),
+        etag: '"stale"',
+      });
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "content-rejected");
+      assert.equal(result.problem.error.status, 412);
+    });
   });
 });

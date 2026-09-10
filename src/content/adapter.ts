@@ -313,6 +313,11 @@ export class ContentAdapter {
     return {
       ok: true,
       value: {
+        // Finding 6.1 saw a numeric `size` on the `.py` file resource it
+        // probed. The `: 0` is a deliberate defensive default for a
+        // representation that arrives without one — the object-shape check
+        // just above already rejects a non-object body as response-malformed —
+        // not a silent mask for a parsing bug.
         size: typeof raw.size === "number" ? raw.size : 0,
         createdAt: parseTimestamp(raw.creationTimeStamp),
         modifiedAt:

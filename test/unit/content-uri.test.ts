@@ -26,9 +26,19 @@ describe("content/uri", () => {
     );
   });
 
-  it("escapes only # and ? in the name segment; the href rides raw", () => {
+  it("percent-encodes # and ? in the name segment; the href rides raw", () => {
     const uri = contentUriString("a#b?c.py", HREF, ROOT);
     assert.ok(uri.startsWith(`${CONTENT_SCHEME}:/a%23b%3Fc.py?id=${HREF}&r=`));
+  });
+
+  it("encodes a bare % in the name, escaping it before # and ? so neither is double-encoded", () => {
+    const uri = contentUriString("100% done #x ?y.py", HREF, ROOT);
+    assert.ok(
+      uri.startsWith(
+        `${CONTENT_SCHEME}:/100%25 done %23x %3Fy.py?id=${HREF}&r=`,
+      ),
+      uri,
+    );
   });
 
   it("round-trips the href and the deployment root out of the query", () => {

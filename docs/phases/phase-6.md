@@ -404,8 +404,11 @@ struck lines below.
 
 ☐ **6c — Mutations (create/rename/move/delete).** Split into three sub-slices
 (Sean, 2026-09-10): **6c-i** create/rename/delete for folders and files from
-the tree context menu; **6c-ii** move + drag-and-drop (the repo's first
-`TreeDragAndDropController`) + the Python-shaped drag-into-editor snippet;
+the tree context menu; **6c-ii** drag-and-drop move (the repo's first
+`TreeDragAndDropController`) — the Python-shaped drag-into-editor snippet was
+scoped into this slice but is now **deferred to future work** (Sean,
+2026-09-10; finding 6.11 — no idiomatic Python equivalent of upstream's
+`filename … filesrvc …;` one-liner, and a low-priority nice-to-have);
 **6c-iii** `getParent`/`TreeView.reveal` + the finding-101 `ancestors` probe.
 **Upload/download to local disk is deferred to Phase 11** (Sean, 2026-09-10) —
 it was never in the 6a–6d breakdown and is a Phase 11 parity item, not a 6c
@@ -494,16 +497,64 @@ threads resolved. **6c-ii is next.**
   fixtures `folder-created` / `member-created` / `types-python` /
   `validate-name-taken`.
 
-☐ **6c-ii — move + drag-and-drop + drag-into-editor snippet.**
+☐ **6c-ii — drag-and-drop move.** Scoped to the move (Sean, 2026-09-10): the
+drag-into-editor snippet is **deferred to future work** — finding 6.11 measured
+that a `filesrvc` fileref has no OS path the `PROC PYTHON` subprocess can
+`open()`, so the only Python-shaped equivalent of upstream's one-line
+`filename … filesrvc …;` is a multi-line `SAS.submit(… fcopy …)` blob with a
+hard-coded server path, and it is a low-priority nice-to-have. `npm run verify`
+green (1417 unit + 296 integration passing; coverage 95.18 lines / 95.25
+branches / 94.79 functions / 95.18 statements). Adversarial pass before the PR
+(a runtime `Array.isArray` check on the one `any` boundary; the recycled-item
+guard). [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151) review —
+Codex clean; the Claude reviewer raised a multi-item drag test gap (fixed with
+two mixed-outcome integration tests) and that `canSelectMany` left the 6c-i
+Rename/Delete/Create context commands able to act on just the clicked item of a
+multi-selection — their `when` clauses now carry `&& !listMultiSelection` so
+they hide during a multi-select rather than silently acting on one.
 
-- ☐ Drag-and-drop move (the repo's first `TreeDragAndDropController`),
-  mirroring `handleContentItemDrop`/`handleFolderDrop` in shape.
-- ☐ **Drag-a-file-into-the-editor snippet.** Python-shaped equivalent of
-  upstream's `getFileStatement` (`filename … filesrvc …;`). **Probe first:**
-  how does Python running under `PROC PYTHON` read a `filesrvc` fileref / a SAS
-  Content file — a resolvable path in the Python process, or bytes handed
-  across the `SAS` bridge? No unprobed guess goes in the snippet template.
-  Shares the `DataTransfer` wiring with the move item above.
+- ☑ **Drag-and-drop move** — `src/content/contentDragAndDrop.ts`, the repo's
+  first `TreeDragAndDropController`. `handleDrag` puts the draggable selection
+  (`NodePresentation.draggable`) on a private MIME (checked with `Array.isArray`
+  on the way back out — the one `any` boundary); `handleDrop` runs
+  `ContentAdapter.moveItem` per item behind a cancellable view-progress spinner,
+  then a full-tree refresh (the moved member keeps its `id` — finding 6.10 — so
+  expansion state survives). `moveItem` reads the member record then `PUT`s it
+  back to its `self` link with `parentFolderUri` changed — one extra `GET`, the
+  read-then-write shape `renameItem`'s member branch already uses; no `If-Match`
+  (same "a re-parent has no reopen-it recovery" reasoning). Guards in a
+  `vscode`-free `src/content/contentMove.ts` (`moveObjection`): dragged item is
+  a member, target is an ordinary folder or My Folder (not the synthetic root,
+  not the Favorites/Recycle delegates — those are 6d), **neither side is a
+  recycled item** (a drag out of the Recycle Bin is a restore — 6d's), not a
+  drop onto itself or its own current parent. A folder-into-its-own-descendant
+  drop is left to the server's `400` (finding 6.10). The recycled-item check
+  reads a synthetic `ContentItem.inRecycleBin` flag that `getChildItems` stamps
+  on the Recycle Bin delegate's direct children — `previousParent` cannot stand
+  in for it (finding 6.10: every once-moved member carries that link too);
+  `presentation.ts` also drops `draggable` for a flagged item so the drag never
+  starts. `canSelectMany` on the view for multi-drag; the 6c-i create / rename /
+  delete context commands each act on the clicked item only, so their
+  `view/item/context` `when` clauses gained `&& !listMultiSelection` — they are
+  simply not offered while more than one item is selected (PR #151 review).
+  `parentFolderUri` added to `ContentItem` (read for the no-op guard).
+  `src/content/contentDragAndDrop.ts` added to `.c8rc.json`'s exclude list (a
+  `vscode` shell, like `contentCommands.ts`); `contentMove.ts` is `vscode`-free
+  and unit-tested. Tests: `content-move.test.ts` (guard matrix incl.
+  recycle-bin), `content-adapter.test.ts` (`moveItem` happy / `link-missing` /
+  malformed / passthrough; the recycle-bin child stamp),
+  `content-presentation.test.ts` (`draggable`),
+  `test/integration/content/dragAndDrop.test.ts` (controller wiring). New
+  fixture `member-moved`.
+- ☐ ~~Drag-a-file-into-the-editor snippet~~ — **deferred to future work**
+  (Sean, 2026-09-10). Finding 6.11: Python under `PROC PYTHON` cannot open a
+  `filesrvc` fileref (no OS path; `SAS.sasfnc("pathname", fr)` returns the bare
+  filename), and there is no `SAS.*` callback that hands file bytes to Python.
+  The one working mechanism is a `SAS.submit` that assigns the fileref and
+  `fcopy`s it into the session run directory — which is the `PROC PYTHON`
+  subprocess's cwd — for Python to `open()`. It works, but it is a fragile
+  multi-line blob, not the idiomatic one-liner upstream inserts, and the
+  feature is a low-priority nice-to-have. Revisit if users ask.
 
 ☐ **6c-iii — `getParent` / `TreeView.reveal` + the `ancestors` probe.**
 
@@ -871,3 +922,82 @@ generic fallback resolves this project's primary extension correctly with no
 The `defaultContentType: "file"` fallback stays in `getTypeDefinition` as a
 guard for an older or freshly-installed deployment that has not registered
 `file_py`, not a path either probed deployment takes.
+
+---
+
+_Findings 6.10–6.11 ran 2026-09-10 for 6c-ii, via the `viya-api-probe` skill.
+Finding 6.10's mutating probes were a throwaway `czmv-<ts>` folder tree under
+My Folder (create folders/a file, `PUT`-move, `DELETE`), torn down child-by-child
+under a `trap` and verified gone; run against **both** `verde` (Viya 4, LTS
+2026.03) and `innov` (Viya 4, Stable 2026.06), matching. Finding 6.11's read was
+a `PROC PYTHON` job in a throwaway compute session (created and `DELETE`d in the
+same probe, `404` after) and is **`verde`-only** — the `innov` token had expired
+at probe time; the follow-up is non-blocking because the feature it was for is
+deferred. Sean approved the mutating runs._
+
+**Finding 6.10 — a SAS Content "move" is `PUT` the member record's `update`
+link with `parentFolderUri` changed; `200` on both cadences.**
+- The `PUT` body must carry `uri` (the underlying `/files/files/{id}` or
+  `/folders/folders/{id}`), `type: "child"` and `name` alongside the new
+  `parentFolderUri`. Omitting `uri` → `400 errorCode 1177` "Each folder member
+  must have a valid URI"; omitting `type` → `400 errorCode 1177` "The member
+  type must be \"child\" or \"reference\"." A body of just the reduced
+  `ContentItem` fields (`{id,name,type,contentType,typeDefName,uri,
+  parentFolderUri}`) is accepted for a **file** member on both cadences;
+  echoing the whole GET'd representation with `parentFolderUri` changed is
+  accepted for a **file and a folder** member on both cadences — unlike a
+  folder read directly (finding 6.7). `moveItem` sends the whole representation
+  (one `GET` then `PUT`, the shape `renameItem`'s member branch already uses),
+  so one path covers both member kinds without a further probe.
+- The member `id` is **stable** across the move; the member `self`/`update`
+  href changes (the `/folders/folders/{parent}/` segment updates); the
+  underlying `uri` is unchanged. The moved member gains a `previousParent`
+  link → its old parent — and it **persists on a subsequent members listing**,
+  not just the `PUT` response (probed `verde`: a freshly-created member's
+  listing has no `previousParent`; after one move, its re-listed record has
+  one). So `previousParent` marks "moved at least once, ever", **not** "in the
+  Recycle Bin" — the drag guard cannot use it to spot a recycled item (it would
+  then also block re-moving a just-moved file). `getChildItems` stamps a
+  synthetic `inRecycleBin` on the Recycle Bin delegate's direct children
+  instead. (`verde`'s `@myRecycleBin` had 17 members, all `type: "child"`;
+  filtered to the tree's `file`/`folder`/`dataFlow` set, two recycled folders
+  with live `update` links — i.e. reachable by drag today without this guard.)
+- A **no-op** move (`parentFolderUri` unchanged) → `200`, tolerated; `moveItem`
+  is still guarded client-side to skip the request. A **self-move** or a move
+  into a **descendant** → `400 errorCode 1177` "A folder cannot be moved or
+  copied into itself" — the server guards cycles, so `contentMove.ts`'s
+  same-target / ancestor concerns are UX only, not a correctness requirement.
+- No `If-Match` on the `PUT` (the endpoint honours one — a stale tag → `412`),
+  the same reasoning `renameItem` gives: a lost-update race on a re-parent has
+  no "reopen it" recovery.
+- Name-collision on a move (the destination already holds that name) is
+  **unprobed**; the `PUT`'s own failure surfaces as `content-rejected`,
+  matching upstream, which also does not pre-check.
+- `innov`-only: `GET` on a torn-down throwaway folder returned `403`, not
+  `404` — finding 6.7's known `innov` authorization-reevaluation-on-modify
+  quirk, non-blocking.
+
+**Finding 6.11 — Python under `PROC PYTHON` cannot open a `filesrvc` fileref;
+the only bridge is `SAS.submit` + `fcopy` into the session run directory.**
+This settled the drag-into-editor snippet question and, with Sean, deferred the
+snippet (there is no idiomatic Python equivalent of upstream's
+`filename … filesrvc …;`).
+- The `PROC PYTHON` subprocess's `os.getcwd()` is the compute session **run**
+  directory (`/opt/sas/viya/config/var/run/compsrv/default/<sessionId>`) — not
+  `WORK`. A relative `open("./name")` on the Python side and a relative
+  `filename loc "./name";` on the SAS side resolve to the **same** directory.
+- `SAS.sasfnc("pathname", "<fr>")` on an assigned `FILENAME … FILESRVC` fileref
+  returns the **bare filename**, not an OS path; `open()` on it fails. No
+  `SAS.*` callback reads a file's bytes into Python (checked against the
+  callback-method docs).
+- The working mechanism: `SAS.submit("filename fr filesrvc folderpath='…'
+  filename='…' recfm=n; filename loc './…' recfm=n; data _null_;
+  rc=fcopy('fr','loc'); run;")`, then `open("./…","rb")` from Python — `fcopy`
+  returned `rc=0` and the bytes matched. `recfm=n` on both filerefs for a
+  byte-faithful copy.
+- `FILENAME FILESRVC` accepts `folderpath=`+`filename=` (upstream's form) and
+  `parenturi=`+`filename=`; `contenturi=` is rejected ("ERROR 23-2: Invalid
+  option name").
+- **`verde`-only** (LTS 2026.03), one small UTF-8 text file. A second-cadence
+  check and binary / large-file behaviour are unprobed — acceptable while the
+  snippet stays deferred.

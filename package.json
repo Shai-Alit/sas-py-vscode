@@ -283,22 +283,22 @@
       "view/item/context": [
         {
           "command": "pythonOnViya.createContentFolder",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder)",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder) && !listMultiSelection",
           "group": "1_new@1"
         },
         {
           "command": "pythonOnViya.createContentFile",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder)",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder) && !listMultiSelection",
           "group": "1_new@2"
         },
         {
           "command": "pythonOnViya.renameContentItem",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file)",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file) && !listMultiSelection",
           "group": "7_modify@1"
         },
         {
           "command": "pythonOnViya.deleteContentItem",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file)",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file) && !listMultiSelection",
           "group": "7_modify@2"
         }
       ],

@@ -134,6 +134,13 @@ describe("SAS Content explorer", () => {
         /viewItem == sasContent:/,
         `${entry.command ?? "?"} not gated on a contextValue`,
       );
+      // 6c-ii added `canSelectMany` to the tree; these commands only act on the
+      // clicked item, so they must not offer themselves during a multi-select.
+      assert.match(
+        entry.when ?? "",
+        /!listMultiSelection/,
+        `${entry.command ?? "?"} not guarded against a multi-selection`,
+      );
     }
     // Create is offered on folders and My Folder; rename/delete on folders and
     // files. Neither touches the synthetic root or the read-only delegates.

@@ -81,6 +81,7 @@ import {
   FILES_COLLECTION,
   FOLDERS_COLLECTION,
   isContainer,
+  isRecycleBinDelegate,
   isSasContentRoot,
   MEMBERS_REL,
   memberTypeFilter,
@@ -287,6 +288,17 @@ export class ContentAdapter {
       if (item !== undefined) children.push(item);
     }
     children.sort(byFolderThenName);
+
+    // Flag the Recycle Bin's own children so 6c-ii's drag-and-drop move can
+    // refuse to re-parent a recycled item (that is a restore — 6d's). Only the
+    // direct children are flagged; descending into a recycled folder is a 6d
+    // concern.
+    if (isRecycleBinDelegate(parent)) {
+      return {
+        ok: true,
+        value: children.map((child) => ({ ...child, inRecycleBin: true })),
+      };
+    }
     return { ok: true, value: children };
   }
 
@@ -679,6 +691,75 @@ export class ContentAdapter {
       );
     }
     return { ok: true, value: renamed };
+  }
+
+  /**
+   * Move a member — a folder or file below the top level — into another folder.
+   * 6c-ii.
+   *
+   * `GET` the member record, then `PUT` it back to the same `self` link with
+   * `parentFolderUri` changed to `destinationHref`. Finding 6.10: a member
+   * `PUT` needs `uri`, `type` and `name` in the body, and echoing the whole
+   * representation back is what both probed cadences accept for a **file and a
+   * folder** member alike — unlike a folder read directly (finding 6.7). This
+   * is the same read-then-write `renameItem`'s member branch takes, and for the
+   * same reason: a move only ever applies to a member.
+   *
+   * The member `id` is stable across the move, but its `self`/`update` href
+   * changes (the parent segment updates), so the caller re-reads links from the
+   * returned item rather than the one it dragged.
+   *
+   * **No `If-Match`.** The server rejects a self-move or a move into a
+   * descendant with `400` (finding 6.10 — "A folder cannot be moved or copied
+   * into itself"), which passes through as `content-rejected`; a lost-update
+   * race on a move has no "reopen it" recovery to offer, the same reasoning
+   * `renameItem` gives.
+   */
+  async moveItem(
+    item: ContentItem,
+    destinationHref: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<ContentItem>> {
+    const self =
+      findLink(item.links, SELF_REL) ?? findLink(item.links, UPDATE_REL);
+    if (self === undefined) {
+      return linkMissing(`"${item.name}"`, SELF_REL);
+    }
+    // `self` and `update` address the same member record; when only `update`
+    // was found it carries `method: "PUT"`, so the read is pinned to `GET`
+    // rather than inheriting it.
+    const read = await this.client.send({
+      link: { ...self, method: "GET" },
+      ...withSignal(signal),
+    });
+    if (!read.ok) return read;
+    if (typeof read.value.body !== "object" || read.value.body === null) {
+      return malformed(
+        read.value,
+        "the item to move",
+        "and the body was not an object",
+      );
+    }
+
+    const result = await this.client.send({
+      link: { ...self, method: "PUT" },
+      jsonBody: {
+        ...(read.value.body as Record<string, unknown>),
+        parentFolderUri: destinationHref,
+      },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    const moved = readContentItem(result.value.body);
+    if (moved === undefined) {
+      return malformed(
+        result.value,
+        "the moved item",
+        "and the body was not a member representation",
+      );
+    }
+    return { ok: true, value: moved };
   }
 
   /**

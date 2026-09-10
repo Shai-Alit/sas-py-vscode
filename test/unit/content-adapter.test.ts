@@ -262,6 +262,34 @@ describe("content/adapter", () => {
       assert.ok(!result.ok);
       assert.equal(result.problem.code, "content-rejected");
     });
+
+    it("flags the Recycle Bin's direct children inRecycleBin, but not My Folder's (6c-ii)", async () => {
+      const { adapter } = adapterWith([
+        ...delegateRoutes,
+        {
+          when: `${MY_FOLDER}/members`,
+          reply: contentFixture("my-folder-members.json"),
+        },
+        {
+          when: "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members",
+          reply: contentFixture("my-folder-members.json"),
+        },
+      ]);
+      const roots = await adapter.getRootItems();
+      assert.ok(roots.ok);
+      const recycleBin = roots.value.find((i) => i.name === "Recycle Bin");
+      const myFolder = roots.value.find((i) => i.name === "My Folder");
+      assert.ok(recycleBin && myFolder);
+
+      const recycled = await adapter.getChildItems(recycleBin);
+      assert.ok(recycled.ok);
+      assert.ok(recycled.value.length > 0);
+      assert.ok(recycled.value.every((c) => c.inRecycleBin === true));
+
+      const mine = await adapter.getChildItems(myFolder);
+      assert.ok(mine.ok);
+      assert.ok(mine.value.every((c) => c.inRecycleBin === undefined));
+    });
   });
 
   describe("statFile / readFileContent / writeFileContent (findings 6.1/6.2)", () => {
@@ -877,6 +905,161 @@ describe("content/adapter", () => {
           ),
           false,
         );
+      });
+    });
+
+    describe("moveItem (finding 6.10)", () => {
+      const DEST = "/folders/folders/cccc3333-0000-4000-8000-00000000000e";
+
+      it("reads the member, then PUTs it back with parentFolderUri changed", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        assert.ok(memberSelf);
+        let body: Record<string, unknown> | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: (request) => {
+              body = request.jsonBody as Record<string, unknown>;
+              return contentFixture("member-moved.json");
+            },
+          },
+        ]);
+
+        const result = await adapter.moveItem(member, DEST);
+        assert.ok(result.ok);
+        assert.ok(body);
+        assert.equal(body.parentFolderUri, DEST);
+        assert.equal(body.id, member.id); // whole representation echoed back
+        assert.equal(body.uri, member.uri); // the field the server requires
+        assert.deepEqual(
+          calls.map((c) => c.method),
+          ["GET", "PUT"],
+        );
+        // The returned item is the server's, re-read: same id, new parent.
+        assert.equal(result.value.id, member.id);
+        assert.equal(result.value.parentFolderUri, DEST);
+      });
+
+      it("uses the update link when the item carries no self link", async () => {
+        const updateHref = "/folders/folders/p/members/m";
+        const item: ContentItem = {
+          id: "m",
+          name: "thing.py",
+          type: "child",
+          uri: "/files/files/x",
+          links: [{ rel: "update", href: updateHref, method: "PUT" }],
+        };
+        const seen: string[] = [];
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === updateHref && method === "GET",
+            reply: () => {
+              seen.push("GET");
+              return contentOk({ id: "m", name: "thing.py", links: [] });
+            },
+          },
+          {
+            when: (href, method) => href === updateHref && method === "PUT",
+            reply: () => {
+              seen.push("PUT");
+              return contentFixture("member-moved.json");
+            },
+          },
+        ]);
+        const result = await adapter.moveItem(item, DEST);
+        assert.ok(result.ok);
+        assert.deepEqual(seen, ["GET", "PUT"]);
+      });
+
+      it("reports link-missing when the item has no self or update link", async () => {
+        const item: ContentItem = {
+          id: "m",
+          name: "orphan",
+          type: "child",
+          links: [
+            { rel: "getResource", href: "/files/files/x", method: "GET" },
+          ],
+        };
+        const { adapter, calls } = adapterWith([]);
+        const result = await adapter.moveItem(item, DEST);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(calls.length, 0);
+      });
+
+      it("reports response-malformed when the read body is not an object", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentOk("not an object"),
+          },
+        ]);
+        const result = await adapter.moveItem(member, DEST);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("reports response-malformed when the PUT does not return a member", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: contentOk({ nope: true }),
+          },
+        ]);
+        const result = await adapter.moveItem(member, DEST);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("passes a read failure straight through", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFail({ code: "content-unreachable", detail: "down" }),
+          },
+        ]);
+        const result = await adapter.moveItem(member, DEST);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-unreachable");
+      });
+
+      it("passes a PUT rejection (a cycle / self-move 400) straight through", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: contentFail({
+              code: "content-rejected",
+              error: {
+                status: 400,
+                detail: "A folder cannot be moved or copied into itself.",
+              },
+            }),
+          },
+        ]);
+        const result = await adapter.moveItem(member, DEST);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
       });
     });
 

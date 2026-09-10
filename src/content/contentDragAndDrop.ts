@@ -23,11 +23,13 @@
  *
  * ## Refresh is a full reload
  *
- * A move changes two folders — the source and the destination — and the tree
- * has no `getParent` before 6c-iii to refresh them individually. The moved
- * member keeps its `id` across the move (finding 6.10), so a full
- * `onDidChangeTreeData` still lets VS Code keep the rest of the user's
- * expansion state. Upstream refreshes the whole tree here too.
+ * A move changes two folders — the source and the destination — so a full
+ * `onDidChangeTreeData` is fired rather than two targeted ones. The moved
+ * member keeps its `id` across the move (finding 6.10), so VS Code still keeps
+ * the rest of the user's expansion state. Upstream refreshes the whole tree
+ * here too. After the reload the first item moved is revealed (6c-iii): its id
+ * is stable, so `TreeView.reveal` places it under its new parent, expanding the
+ * destination if it was collapsed.
  */
 
 import * as vscode from "vscode";
@@ -50,6 +52,9 @@ export interface ContentDragAndDropDeps {
   adapter: () => ContentAdapter | undefined;
   /** Reload the tree after a move (or an attempt that failed partway). */
   refresh: () => void;
+  /** Show and select a node after a move (6c-iii). Best-effort — resolves
+   * whether or not `TreeView.reveal` could place it. */
+  reveal: (item: ContentItem) => Thenable<void>;
   /** The shared channel; the technical sentence for every failure goes here. */
   log: vscode.LogOutputChannel;
   /** The tree view id, for the progress spinner's location. */
@@ -109,7 +114,7 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
     const [firstItem] = movable;
     if (firstItem === undefined) return;
 
-    const failures = await vscode.window.withProgress(
+    const { problems, firstMoved } = await vscode.window.withProgress(
       {
         location: { viewId: this.deps.viewId },
         title:
@@ -132,6 +137,7 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
           }),
         ];
         const problems: string[] = [];
+        let firstMoved: ContentItem | undefined;
         try {
           for (const item of movable) {
             if (cancelled()) break;
@@ -140,7 +146,10 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
               destination,
               controller.signal,
             );
-            if (result.ok) continue;
+            if (result.ok) {
+              firstMoved ??= result.value;
+              continue;
+            }
             // A failure whose cause is that cancel stays silent — the user
             // asked to stop. Every other failure is logged and collected.
             if (cancelled()) break;
@@ -155,15 +164,16 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
         } finally {
           for (const sub of subs) sub.dispose();
         }
-        return problems;
+        return { problems, firstMoved };
       },
     );
 
     // A multi-item move that failed partway has still changed the server, so
     // reload whatever the outcome.
     this.deps.refresh();
-    if (failures.length > 0) {
-      void vscode.window.showErrorMessage(failures[0] ?? "");
+    if (firstMoved !== undefined) await this.deps.reveal(firstMoved);
+    if (problems.length > 0) {
+      void vscode.window.showErrorMessage(problems[0] ?? "");
     }
   }
 }

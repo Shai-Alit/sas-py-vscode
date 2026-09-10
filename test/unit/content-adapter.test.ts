@@ -19,6 +19,7 @@ import {
   contentBytes,
   contentFail,
   contentFixture,
+  contentNoBody,
   contentOk,
   recordedContentClient,
   type RecordedContentRoute,
@@ -289,6 +290,118 @@ describe("content/adapter", () => {
       const mine = await adapter.getChildItems(myFolder);
       assert.ok(mine.ok);
       assert.ok(mine.value.every((c) => c.inRecycleBin === undefined));
+    });
+  });
+
+  describe("getParentOfItem (finding 6.12)", () => {
+    const ANCESTORS =
+      "/folders/ancestors?childUri=/files/files/cccccccc-0000-4000-8000-0000000000a1";
+
+    /** A member record carrying the `ancestors` link the adapter follows. */
+    function memberWithAncestors(): ContentItem {
+      return {
+        id: "member-1",
+        name: "analysis.py",
+        type: "child",
+        contentType: "file",
+        uri: "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+        links: [
+          {
+            rel: "ancestors",
+            href: ANCESTORS,
+            method: "GET",
+            type: "application/vnd.sas.content.folder.ancestor",
+          },
+        ],
+      };
+    }
+
+    it("follows the ancestors link and returns the immediate parent", async () => {
+      const { adapter, calls } = adapterWith([
+        { when: ANCESTORS, reply: contentFixture("ancestors-my-folder.json") },
+      ]);
+      const result = await adapter.getParentOfItem(memberWithAncestors());
+      assert.ok(result.ok);
+      assert.ok(result.value);
+      // ancestors[0] — My Folder, carrying its own folder id (not the member's).
+      assert.equal(result.value.id, "aaaaaaaa-0000-4000-8000-000000000001");
+      assert.equal(result.value.name, "My Folder");
+      assert.equal(result.value.type, "myFolder");
+      assert.deepEqual(
+        calls.map((c) => `${c.method} ${c.href}`),
+        [`GET ${ANCESTORS}`],
+      );
+    });
+
+    it("returns undefined, with no request, when the item has no ancestors link", async () => {
+      const { adapter, calls } = adapterWith([]);
+      const result = await adapter.getParentOfItem({
+        id: "x",
+        name: "x",
+        type: "folder",
+        links: [{ rel: "self", href: "/folders/folders/x", method: "GET" }],
+      });
+      assert.ok(result.ok);
+      assert.equal(result.value, undefined);
+      assert.equal(calls.length, 0);
+    });
+
+    it("returns undefined for an empty ancestors array (a folder under the root)", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: ANCESTORS,
+          reply: contentOk({
+            childUri: "/folders/folders/top",
+            ancestors: [],
+            version: 1,
+          }),
+        },
+      ]);
+      const result = await adapter.getParentOfItem(memberWithAncestors());
+      assert.ok(result.ok);
+      assert.equal(result.value, undefined);
+    });
+
+    it("returns undefined for a 204 (an unknown childUri)", async () => {
+      const { adapter } = adapterWith([
+        { when: ANCESTORS, reply: contentNoBody() },
+      ]);
+      const result = await adapter.getParentOfItem(memberWithAncestors());
+      assert.ok(result.ok);
+      assert.equal(result.value, undefined);
+    });
+
+    it("reports response-malformed when the 200 body carries no ancestors array", async () => {
+      const { adapter } = adapterWith([
+        { when: ANCESTORS, reply: contentOk({ childUri: "x", version: 1 }) },
+      ]);
+      const result = await adapter.getParentOfItem(memberWithAncestors());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "response-malformed");
+    });
+
+    it("reports response-malformed when the first ancestor is not a folder representation", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: ANCESTORS,
+          reply: contentOk({ childUri: "x", ancestors: [{}], version: 1 }),
+        },
+      ]);
+      const result = await adapter.getParentOfItem(memberWithAncestors());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "response-malformed");
+    });
+
+    it("passes a transport failure straight through", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: ANCESTORS,
+          reply: contentFail({ code: "content-unreachable", detail: "down" }),
+        },
+      ]);
+      const result = await adapter.getParentOfItem(memberWithAncestors());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "content-unreachable");
     });
   });
 

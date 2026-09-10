@@ -91,6 +91,16 @@ export function contentBytes(
   };
 }
 
+/**
+ * A `204 No Content` reply — an empty body, no `Content-Type`. What
+ * `GET /folders/ancestors` returns for a `childUri` it does not recognise as a
+ * child anywhere (finding 6.12); the real client leaves `body` and `text`
+ * empty.
+ */
+export function contentNoBody(): ContentResult<ContentResponse> {
+  return { ok: true, value: { status: 204, text: "", body: undefined } };
+}
+
 /** A failure the client would have produced for a non-2xx or transport error. */
 export function contentFail(
   problem: ContentProblem,

@@ -10,6 +10,7 @@ import {
   memberTypeFilter,
   readContentItem,
   resourceHrefOf,
+  sameResource,
   SAS_CONTENT_ROOT,
   typeNameOf,
   type ContentItem,
@@ -159,6 +160,42 @@ describe("content/types", () => {
     it("is undefined when neither is available", () => {
       assert.equal(resourceHrefOf(item({ links: [] })), undefined);
       assert.equal(resourceHrefOf(item({ uri: "", links: [] })), undefined);
+    });
+  });
+
+  describe("sameResource", () => {
+    it("matches a create response's folder self link to the member listing's uri", () => {
+      // A folder create returns the folder's own representation (folder id,
+      // address in the self link); the listing renders it as a member (member
+      // id, address in `uri`). Both name /folders/folders/new.
+      const created = item({
+        id: "folder-own-id",
+        links: [{ rel: "self", href: "/folders/folders/new" }],
+      });
+      const listed = [
+        item({ id: "member-a", uri: "/folders/folders/other", links: [] }),
+        item({ id: "member-b", uri: "/folders/folders/new", links: [] }),
+      ];
+      assert.equal(sameResource(created, listed)?.id, "member-b");
+    });
+
+    it("matches a file member by its uri", () => {
+      const created = item({ id: "m1", uri: "/files/files/x", links: [] });
+      const listed = [item({ id: "m1", uri: "/files/files/x", links: [] })];
+      assert.equal(sameResource(created, listed)?.id, "m1");
+    });
+
+    it("is undefined when the target has no resolvable href", () => {
+      assert.equal(
+        sameResource(item({ links: [] }), [item({ links: [] })]),
+        undefined,
+      );
+    });
+
+    it("is undefined when nothing in the list shares the resource", () => {
+      const created = item({ uri: "/files/files/x", links: [] });
+      const listed = [item({ uri: "/files/files/y", links: [] })];
+      assert.equal(sameResource(created, listed), undefined);
     });
   });
 

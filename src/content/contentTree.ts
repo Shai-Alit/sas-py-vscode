@@ -20,11 +20,22 @@
  * signed in), `getChildren` returns nothing and the view's `viewsWelcome`
  * content shows.
  *
- * ## What this slice does not do
+ * ## `getParent`, for reveal (6c-iii)
  *
- * No `getParent` — only `TreeView.reveal` needs it, and that is 6c-iii. The
- * 6c-i context-menu actions (create/rename/delete) are commands registered in
- * `src/content/contentCommands.ts` and keyed on the `contextValue`
+ * {@link SasContentTreeProvider.getParent} lets `TreeView.reveal` walk from a
+ * node up to a root, which the create (6c-i) and drag-and-drop move (6c-ii)
+ * commands use to show and select the item they just landed. A top-level node
+ * (the synthetic root, a delegate folder) has no parent; a folder directly
+ * under the synthetic root reports none from the service (finding 6.12) and is
+ * mapped back to {@link SAS_CONTENT_ROOT}; every other item asks the adapter.
+ * The identity a rendered *member* node carries (its member-record id) and the
+ * one an `ancestors` response carries for the same folder (its folder id)
+ * differ, so `reveal` selects precisely only where the two agree — a delegate,
+ * a root-listing folder, or a node taken straight from a fresh listing — and
+ * otherwise just expands the chain, which is what `reveal` is for.
+ *
+ * The 6c-i context-menu actions (create/rename/delete) are commands registered
+ * in `src/content/contentCommands.ts` and keyed on the `contextValue`
  * `src/content/presentation.ts` sets; this class only grew a {@link
  * SasContentTreeProvider.refresh} argument so one of those mutations can reload
  * just the folder it changed. A failed *listing* is logged, not shown as a
@@ -44,8 +55,24 @@ import * as vscode from "vscode";
 import { type ContentAdapter } from "./adapter";
 import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
-import { resourceHrefOf, type ContentItem } from "./types";
+import {
+  isDelegateFolder,
+  isSasContentRoot,
+  resourceHrefOf,
+  SAS_CONTENT_ROOT,
+  type ContentItem,
+} from "./types";
 import { contentUriString } from "./uri";
+
+/**
+ * The per-request bound on a {@link SasContentTreeProvider.getParent} fetch,
+ * shorter than the client's 15s default. `getParent` has no `CancellationToken`
+ * to thread (VS Code does not pass one), and a `reveal` walk can touch the
+ * network once per ancestor level, so a slow deployment must not be able to
+ * stack full-length timeouts behind a best-effort UI affordance. The client
+ * still enforces its own default too — this only tightens it.
+ */
+const GET_PARENT_TIMEOUT_MS = 8_000;
 
 export class SasContentTreeProvider
   implements vscode.TreeDataProvider<ContentItem>, vscode.Disposable
@@ -143,5 +170,44 @@ export class SasContentTreeProvider
       return [];
     }
     return [...result.value];
+  }
+
+  /**
+   * The parent of a node, for `TreeView.reveal`. VS Code walks this upward from
+   * a reveal target, expanding each level.
+   *
+   * The synthetic root and the delegate folders are top-level — return
+   * `undefined` so the walk stops. A folder read directly (`type: "folder"` —
+   * the `isNull(parent)` listing) sits under the synthetic root, so when the
+   * service reports it has no ancestors (finding 6.12) it is mapped back to
+   * {@link SAS_CONTENT_ROOT} rather than read as top-level. Everything else
+   * asks the adapter, on a {@link GET_PARENT_TIMEOUT_MS} bound since there is no
+   * cancellation token to thread; a failure there is logged like a failed
+   * listing and the walk stops.
+   */
+  async getParent(item: ContentItem): Promise<ContentItem | undefined> {
+    if (isSasContentRoot(item) || isDelegateFolder(item)) return undefined;
+
+    const adapter = this.currentAdapter();
+    if (adapter === undefined) return undefined;
+
+    const result = await adapter.getParentOfItem(
+      item,
+      AbortSignal.timeout(GET_PARENT_TIMEOUT_MS),
+    );
+    if (!result.ok) {
+      this.log.error(
+        vscode.l10n.t(
+          "SAS Content: {0}",
+          describeContentProblem(result.problem),
+        ),
+      );
+      return undefined;
+    }
+    if (result.value !== undefined) return result.value;
+
+    // No ancestors from the service. A folder read directly is a child of the
+    // synthetic root; anything else with no ancestors is genuinely top-level.
+    return item.type === "folder" ? SAS_CONTENT_ROOT : undefined;
   }
 }

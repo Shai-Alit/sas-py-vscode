@@ -72,6 +72,7 @@ import {
 } from "./client";
 import {
   ADD_MEMBER_REL,
+  ANCESTORS_REL,
   CREATE_CHILD_REL,
   DELEGATE_FOLDERS,
   DELETE_RECURSIVELY_REL,
@@ -328,6 +329,64 @@ export class ContentAdapter {
     }
 
     return undefined;
+  }
+
+  /**
+   * The folder an item currently lives in, for `TreeView.reveal` (6c-iii).
+   *
+   * `GET` the item's `ancestors` link, whose response is
+   * `{ childUri, ancestors: [<folder>…] }` with the immediate parent first
+   * (finding 6.12), and return that first ancestor. The link advertises its
+   * media type, so `src/content/client.ts` sends the matching `Accept` and gets
+   * the object form — the bare array `application/json` yields instead also
+   * `404`s for a folder directly under the invisible root, which is a legitimate
+   * "no parent", not an error.
+   *
+   * `{ ok: true, value: undefined }` for an item with no `ancestors` link, an
+   * empty `ancestors` array (a folder directly under the SAS Content root), or a
+   * `204` (an unknown `childUri`). The returned folder representation has
+   * `uri`/`contentType` absent, like a root-listing folder (finding 98), so
+   * {@link resourceHrefOf} falls back to its `self` link.
+   */
+  async getParentOfItem(
+    item: ContentItem,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<ContentItem | undefined>> {
+    const link = findLink(item.links, ANCESTORS_REL);
+    if (link === undefined) return { ok: true, value: undefined };
+
+    const result = await this.client.send({
+      link: { ...link, method: "GET" },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    // A 204 carries no body — the service's answer for a `childUri` it does not
+    // recognise as a child anywhere (finding 6.12). Treated as "no parent".
+    if (result.value.body === undefined) return { ok: true, value: undefined };
+
+    const ancestors = readAncestors(result.value.body);
+    if (ancestors === undefined) {
+      return malformed(
+        result.value,
+        "the item's ancestors",
+        'and the body carried no "ancestors" array',
+      );
+    }
+    // An empty chain is the folders directly under the invisible root — the
+    // children of this tree's synthetic "SAS Content" node.
+    const [first] = ancestors;
+    if (first === undefined) return { ok: true, value: undefined };
+
+    const parent = readContentItem(first);
+    if (parent === undefined) {
+      return malformed(
+        result.value,
+        "the item's ancestors",
+        "and its first entry was not a folder representation",
+      );
+    }
+    return { ok: true, value: parent };
   }
 
   /**
@@ -954,6 +1013,17 @@ function byFolderThenName(a: ContentItem, b: ContentItem): number {
   const bFolder = isContainer(b);
   if (aFolder !== bFolder) return aFolder ? -1 : 1;
   return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+}
+
+/** The `ancestors` array of an `application/vnd.sas.content.folder.ancestor+json`
+ * body (finding 6.12), or `undefined` when the parsed body is not that shape.
+ * An empty `ancestors: []` is a valid answer and comes back as `[]`. */
+function readAncestors(body: unknown): readonly unknown[] | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const ancestors: unknown = (body as { ancestors?: unknown }).ancestors;
+  return Array.isArray(ancestors)
+    ? (ancestors as readonly unknown[])
+    : undefined;
 }
 
 /** The `items` of a collection body, or `undefined` if there is no array. */

@@ -111,6 +111,18 @@ export const MEMBERS_REL = "members";
  * onto the current parent (6c-ii). */
 export const UP_REL = "up";
 
+/**
+ * `GET` the flat ancestor chain of a resource — `/folders/ancestors?childUri=…`,
+ * immediate parent first, up to the top-most visible folder (finding 6.12).
+ * Carried by every folder read directly and every member record, and it
+ * advertises `type: application/vnd.sas.content.folder.ancestor`, so the client
+ * asks for the object form `{ childUri, ancestors: [<folder>…] }` — not the
+ * bare array `application/json` yields, which also 404s for a top-level folder.
+ * {@link ContentAdapter.getParentOfItem} follows it for `TreeView.reveal`
+ * (6c-iii).
+ */
+export const ANCESTORS_REL = "ancestors";
+
 /** `POST` a `{name}` body to create a sub-folder. Its href is
  * `/folders/folders?parentFolderUri={this folder}` — the same string the
  * adapter would compose, so following the relation and composing agree
@@ -347,6 +359,29 @@ export function resourceHrefOf(item: ContentItem): string | undefined {
   if (item.uri !== undefined && item.uri !== "") return item.uri;
   const self = item.links.find((link) => link.rel === SELF_REL);
   return self?.href;
+}
+
+/**
+ * The item in `siblings` that denotes the same underlying resource as `target`,
+ * matched on {@link resourceHrefOf}.
+ *
+ * A create or move response is the new resource's own representation (a folder
+ * carries its folder id) or its member record (a file carries the member id),
+ * while a folder's members listing is member records throughout — so the two
+ * disagree on `id` but agree on the `/folders/folders/{id}` or
+ * `/files/files/{id}` the member's `uri` and the folder's `self` link both name
+ * (finding 99). 6c-iii's reveal-after-create uses this to hand
+ * `TreeView.reveal` the node the tree actually rendered rather than one whose
+ * id will not match. Returns `undefined` when `target` has no resolvable href
+ * or nothing in `siblings` shares it.
+ */
+export function sameResource(
+  target: ContentItem,
+  siblings: readonly ContentItem[],
+): ContentItem | undefined {
+  const href = resourceHrefOf(target);
+  if (href === undefined) return undefined;
+  return siblings.find((sibling) => resourceHrefOf(sibling) === href);
 }
 
 /**

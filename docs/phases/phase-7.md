@@ -1219,25 +1219,45 @@ this could share). **7c-i is next.**
 
 ☐ **7c-i — Sort + filter.**
 
-- ☐ Live-probe the `createView` mechanism against `verde`/`Innov` — request
-  media type and `sortBy` body shape, response shape, and whether a `where=`
-  filter composes onto the created view's own `rows` link or the base
-  table's — before porting upstream's create-read-delete sequence
-  unexamined. `TableDetail.links` already carries a probed `createView`
-  relation (Finding 7.1); this project follows it the way every other
-  `LibraryAdapter` call does, not by composing a URL.
+- ☑ Live-probe the `createView` mechanism against `verde` — **done**,
+  Findings 7.15–7.18. Settled, correcting this bullet's own original
+  framing: `where=` does **not** compose onto an already-created view's own
+  `rows` link (Finding 7.16 — silently ignored, no error); it must be baked
+  into the same `createView` body as `sortBy` instead, meaning a filter
+  change while a sort is active requires recreating the view. A filter
+  change with **no** sort active needs no view at all — `where=` applies
+  directly to the base table's own `rows` link (confirmed working there).
+  `TableDetail.links` carries a real `createView` relation (`POST`) and a
+  real `delete` relation (`DELETE`) — both followed the way every other
+  `LibraryAdapter` call already does, no hand-composed URL. Also settled:
+  `count` (Finding 7.10's total-row-count field) is present only on a plain,
+  unfiltered base-table read — **absent** the instant a filter or a view is
+  involved (Finding 7.17), so the grid must fall back to the "short page ⇒
+  last page" heuristic whenever sort or filter is active. An invalid
+  `where=` is a `400` in the standard error envelope with the real parser
+  message nested in `errors[0].details` (Finding 7.18) — surface that
+  nested text, not just the generic top-level message. **Not done**:
+  a second-deployment (`Innov`) cross-check — `Innov`'s stored token had
+  expired this session; left open, not blocking (see Finding 7.18's own
+  "not probed" paragraph).
 - ☐ Fix, not port, upstream's orphan-view bug: `RestLibraryAdapter.
   getSortedRows` (`vscode-sas-extension`) calls `createView` → `getRows` on
   the view → `deleteTable`, with no try/finally — a throwing read leaves the
   view orphaned in the session until the session itself is torn down, with
   no cleanup-on-dispose anywhere in that codebase. This project's own
-  version must guarantee the delete fires on every exit path (success,
-  thrown error, or an aborted signal).
+  version reuses one view across every page fetch for as long as the same
+  sort+filter state is active (a real improvement over upstream's own
+  per-page-fetch create/delete churn, confirmed wasteful but harmless by
+  Finding 7.15) and must guarantee the delete fires whenever that state
+  changes (a new sort, a new filter while sorted, sort turned off) or the
+  panel disposes — on every exit path, not just the success path.
 - ☐ `where=`-clause text filter, matching `TableFilter.tsx`'s upstream shape:
   one free-text "expression" box (a raw SAS `WHERE` clause), committed on
-  Enter or an explicit action, never live-typed — appended to the rows
-  request the same way `getRows` already appends `start=`/`limit=` via
-  `withQuery`, not a new query-building mechanism.
+  Enter or an explicit action, never live-typed. No sort active: appended
+  directly to the base table's own `rows` link the same way `getRows`
+  already appends `start=`/`limit=` via `withQuery`. Sort active: baked into
+  the `createView` body alongside `sortBy` (Finding 7.16), not applied as a
+  query parameter.
 - ☐ New host↔webview messages for a combined sort+filter re-fetch, following
   `dataViewerModel.ts`'s existing `requestId`-echo pattern (`requestRows`/
   `rows`/`rowsError` today carry no sort/filter state at all).
@@ -1912,3 +1932,132 @@ SAS column type besides `CHAR`/`VARCHAR`/`FLOAT` exists on this API (e.g. an
 integer-only storage subtype) — SAS's own numeric storage is always a double
 internally, so none is expected, but this finding only speaks to what
 `SASHELP.CLASS` actually returned.
+
+**Finding 7.15 — implementation-time probe, 2026-09-10 (`verde`, ahead of
+7c-i's own code): `createView`'s real request/response shape, and two link
+relations settling both 7c-i's and 7c-iii's mechanism questions in one
+pass.** Documented shape checked first: the upstream generated client
+(`vscode-sas-extension`'s `compute.ts`) types the request body as
+`ViewRequest` (`version?`, `where?`, `fileProtection?`,
+`fileProtectionEncoding?`, `includeColumns?`, `columnNaturalOrder?`,
+`sortBy?: SortByRequest[]`, `distinct?`) with
+`Content-Type: application/vnd.sas.compute.data.table.view.request+json`, and
+reads the response as a plain `TableInfo`. Probed directly: created a
+throwaway writable table (`work.probe7ci`, via `data work.probe7ci; set
+sashelp.class; run;` in a throwaway session) rather than probing against
+read-only `SASHELP.CLASS`, since `createView` is a mutation.
+
+- **The rich table-detail response's own `links` (`GET
+  …/data/WORK/PROBE7CI`) already carries everything 7c-i and 7c-iii need,
+  confirming the link-following discipline Findings 7.5/7.8/7.9 already
+  established applies here too, with no hand-composed URL required**: `rows`
+  (`GET`, `application/vnd.sas.collection`), **`rowsAsCSV` — a real, distinct
+  link relation, `GET`, `text/csv`, carrying the *identical href* as
+  `rows`** (settles 7c-iii's mechanism question: CSV is `Accept`-header
+  content negotiation on the same URI, exactly like the summary/tables
+  mechanism Finding 7.5 found for libraries — **not** upstream's
+  hand-composed `.../rows#CSV` suffix, which Finding 7.5's own `#`-fragment
+  lesson already made suspect), `columns` (`GET`, `collection`),
+  `createView` (`POST`,
+  `application/vnd.sas.compute.data.table.view.request`), and **a real
+  `delete` link (`DELETE`, no `type`)** — this project's `LibraryAdapter`
+  needs no hand-composed delete URL for either a table or a view, following
+  `findLink(detail.links, "delete")` the same way `src/content/adapter.ts`
+  already does for content deletes.
+- **`POST` the `createView` link with `{"sortBy":[{"key":"Age",
+  "direction":"descending"}]}`, `Content-Type:
+  application/vnd.sas.compute.data.table.view.request+json` → `201`, body is
+  a `TableInfo` for the new view**: `libref: "WORK"` but a **system-generated
+  name in a synthetic `$VIEWS` libref-like segment** (percent-encoded
+  `%24VIEWS` in every link href — e.g.
+  `.../data/%24VIEWS/T0D749FF8_3AC5_3143_049A352FF1A8`), `type: "VIEW"`,
+  `rowCount: -1` (not yet known — a view's row count is never populated at
+  creation, unlike a real table), and its own full link set (`self`,
+  `rows`, `rowsAsCSV`, `rowSet`, `rowSetView`, `columns`, `createView` —
+  views can themselves be re-sorted, though this project has no reason to
+  chain that — and `delete`). No dialect branch needed: the response shape
+  matches `TableDetail`'s existing reader with the addition of the `type`
+  field this project's `TableDetail` does not currently read (not needed —
+  nothing distinguishes a view from a table by consumption, only by
+  cleanup obligation).
+- **`DELETE` the `delete` link on both the view and the base table returned
+  `204`; a follow-up `GET` on each returned `404`.** Confirms deletion is
+  real and immediate, not just conceptual — no orphan risk from a *successful*
+  delete; Finding 7.16 below is about a *skipped* delete.
+
+**Finding 7.16 — `where=` is silently ignored on a created view's own rows
+read; it must be baked into the `createView` request body instead, not
+applied as a query parameter the way it works on a real table.** This
+contradicts the plausible assumption (and this phase's own Plan-section
+prose before this probe) that a view, once created, behaves exactly like any
+other readable table for every purpose including query-time filtering.
+Probed directly, same throwaway session: created a view sorted by `Age`
+descending with no `where` in the body, then read its `rows` link with
+`?...&where=Sex%3D%27F%27` appended (`Accept:
+application/vnd.sas.collection+json`) — returned all **19** rows,
+identical to the unfiltered read, with **no error, no warning, silent
+non-application of the filter**. The identical `where=Sex%3D%27F%27` query
+param applied directly to the *base table's* own `rows` link (no view
+involved) correctly returned **9** rows (all female). **The fix**: a second
+view was created with `{"sortBy":[...],"where":"Sex='F'"}` **both fields in
+the one `createView` body** — reading that view's `rows` correctly returned
+9 rows, sorted by age descending. **Net effect for 7c-i**: `LibraryAdapter`'s
+sort-view creation must always include the *current* filter value (if any)
+in the same `createView` call that sets `sortBy`, and a filter-only change
+(no active sort) can skip view creation entirely and apply `where=` directly
+to the base table's own `rows` link — but a filter change **while a sort is
+already active** requires recreating the view (delete old, create new with
+both `sortBy` and the new `where`), it cannot be layered onto an
+already-created view's rows read after the fact. This is a real,
+correctness-affecting finding, not a style preference: porting `where=` as a
+plain per-request query parameter unconditionally (the naive read of
+`getRows`'s own existing `withQuery` pattern) would silently show unfiltered
+results the instant a sort was also active, with no error to signal it.
+
+**Finding 7.17 — the rows collection's `count` field, which Finding 7.10
+found populated at any `limit` on a plain, unfiltered base-table read, is
+**absent** the moment either a `where=` filter or a view is involved — even
+on the base table.** Probed directly, same throwaway session and table:
+plain `GET …/data/WORK/PROBE7CI/rows?start=0&limit=5` (no filter) →
+`count: 19`, present, matching Finding 7.10's shape exactly. The *identical*
+request with `where=Sex%3D%27F%27` added → `count` **absent from the
+envelope entirely** (not `null` — the key itself is missing, the same
+absent-vs-null distinction Finding 14 established for link `type`). Every
+view-backed read probed (sorted-only, sorted+filtered) also came back with
+`count` absent, regardless of whether a `where` was involved. **Net effect:
+7b's own datasource (Finding 7.10, `LibraryAdapter.getRows`) can only trust
+`count` as an exact total when neither a filter nor a sort is active.** The
+moment 7c-i's filter or sort is in play, the grid must fall back to
+upstream's own "fewer rows came back than the page size requested → this is
+the last page" heuristic (`useDataViewer.ts`'s own fallback, which Finding
+7.10 said this project's *base* case did not need) — this is now a real
+requirement for 7c-i specifically, not a hypothetical upstream compatibility
+concern.
+
+**Finding 7.18 — an invalid `where=` clause returns a `400` in this
+project's already-handled `application/vnd.sas.error+json` shape, with the
+real SAS parser message nested one level down.** Probed: `where=` set to a
+column name (`NoSuchColumn`) that does not exist on the table → `400`,
+`errorCode: 5316`, top-level `message: "Failed to open Data Table"`, and a
+nested `errors[0].details`:
+`["ERROR: Variable NoSuchColumn is not on file WORK.PROBE7CI."]` — the
+actual actionable text. This is the standard error envelope `src/wire/`
+already reads elsewhere in this project (no new parsing needed), but 7c-i's
+filter-commit UI should surface the *nested* `errors[0].details`/`message`
+text (a real, specific parser complaint) rather than only the generic
+top-level `"Failed to open Data Table"`, or a user who fat-fingers a column
+name gets a useless error.
+
+**Not probed, left open for 7c-i's own implementation session**: a second
+deployment/cadence cross-check for Findings 7.15–7.18 (matching Findings
+7.6/7.7's practice for 7a's own endpoints) — `Innov`'s stored token had
+expired (`401`) mid-session and was not refreshed for this pass; not treated
+as blocking, since Findings 7.5–7.9 already closed the dialect-risk question
+for every other `DataAccessApi` mechanism this phase touches and nothing
+about `createView`'s shape (a plain, typed `ViewRequest`/`TableInfo` pair, no
+free-form content negotiation) suggests a different risk profile. Also not
+probed: whether a `createView` call itself can fail with a *malformed*
+`sortBy` key (e.g. a column that does not exist) the same way an invalid
+`where=` does — worth a quick check while 7c-i's own error-handling code is
+being written, since it is one line to add to the same throwaway-session
+pass.

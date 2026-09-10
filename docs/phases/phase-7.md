@@ -194,33 +194,180 @@ all already built and, in principle, already reusable as-is.
 **What is genuinely undecided — not one of 7a–7c, not a settled non-goal
 either:**
 
-- **The drag-and-drop "insert a reference" behavior.** Upstream's
-  `LibraryDataProvider.handleDrag` puts a table's `uid` (a `libref.tablename`
-  string) on the data transfer as plain text, so dropping a table onto a
-  `.sas` editor inserts a bare `libref.tablename` reference — meaningful
-  because `set libref.tablename;` and similar SAS syntax read a libref
-  directly. Python has no equivalent implicit binding to a SAS libref; a
-  meaningful analogue would have to synthesize something like a
-  `pd.read_csv`-via-Compute call or a snippet naming the table, which is a
-  real design question rather than a mechanical port. Left open for 7a,
-  mirroring how Phase 6 left its own drag-and-drop snippet question open for
-  6b.
-- **React + ag-grid as this project's first React dependency.** Upstream's
-  data viewer is a `ag-grid-react`/`ag-grid-community` grid (`^36.0.2`)
-  rendered from a `.tsx` webview entry point built by its own esbuild
-  context. This project's one existing webview (`src/webview/entry.ts`,
-  ADR-0021) is hand-rolled DOM manipulation with no framework, no `.tsx`
-  loader, and `tsconfig.webview.json`'s own `"types": []` carve-out — adding
-  ag-grid means adding React, `ag-grid-community`, `ag-grid-react`, a `.tsx`
-  type space, and a JSX loader to `esbuild.mjs`'s existing webview context
-  (checked directly: today's context has no `jsx` option set at all). That
-  is a real, first-of-its-kind dependency and toolchain decision, not a
-  detail — weighed against hand-rolling a lighter paginated/virtualized table
-  in the existing DOM style, which would need to reimplement column
-  resize/pin, sort-indicator UI, a filter popover, and row virtualization for
-  large tables from nothing. **Not decided this session** — flagged the same
-  way Phase 6 flagged its `links.ts` promotion question, as the one decision
-  7b's own author should make deliberately rather than defaulting into.
+- **The drag-and-drop "insert a reference" behavior — resolved by 7d,
+  below.** Upstream's `LibraryDataProvider.handleDrag` puts a table's `uid`
+  (a `libref.tablename` string) on the data transfer as plain text, so
+  dropping a table onto a `.sas` editor inserts a bare `libref.tablename`
+  reference — meaningful because `set libref.tablename;` and similar SAS
+  syntax read a libref directly. Python has no equivalent *implicit* binding
+  to a SAS libref, but it has an equivalent *explicit* one: the new **7d**
+  slice below (scoped 2026-09-04, resurrected and live-probed 2026-09-10)
+  confirms `PROC PYTHON`'s own `SAS.sd2df` bridge method is the documented,
+  already-available mechanism (Finding 2, `phase-1.md`; confirmed working
+  end-to-end by Finding 7.11) for exactly this — a drop should insert
+  `SAS.sd2df("libref.tablename")` assigned to a name derived from the table,
+  not a `pd.read_csv`-shaped synthesis that this project would have to
+  invent and maintain itself. Still left to whoever writes the actual drag
+  handler (7d's own punch list, gated on 7a's tree, which now exists): the
+  exact assigned-variable-name heuristic, and whether the drop offers a
+  choice between `sd2df` (read into memory) and a `SAS.submit`-based
+  `PROC SQL` snippet (push a filter down to the engine first) — both
+  documented options per 7d's own findings below.
+- **React + ag-grid as this project's first React dependency — decided
+  2026-09-10, with Sean, before any 7b code was written.** Upstream's data
+  viewer is a `ag-grid-react`/`ag-grid-community` grid (`^36.0.2`) rendered
+  from a `.tsx` webview entry point built by its own esbuild context. This
+  project's one existing webview (`src/webview/entry.ts`, ADR-0021) is
+  hand-rolled DOM manipulation with no framework, no `.tsx` loader, and
+  `tsconfig.webview.json`'s own `"types": []` carve-out — adding ag-grid
+  means adding React, `ag-grid-community`, `ag-grid-react`, a `.tsx` type
+  space, and a JSX loader to `esbuild.mjs`'s existing webview context
+  (checked directly: today's context has no `jsx` option set at all).
+  Weighed directly against hand-rolling a lighter paginated/virtualized
+  table in the existing DOM style. **Decision: React + ag-grid-community.**
+  The reasoning ADR-0021 gave for hand-rolling the result panel does not
+  transfer cleanly to this panel: that decision's hard problem was a
+  security one (never let a user's own arbitrary `to_html()` output execute
+  as script), which a five-line DOM port solved cheaply; a data viewer's
+  hard problem is an interactive, stateful one (windowed virtualization over
+  a paginated REST source, scroll-triggered fetching, resizable columns,
+  keyboard navigation, screen-reader row/column semantics) with no
+  untrusted-HTML dimension at all — table cells are typed SAS values, not
+  arbitrary markup. That category of UI problem is exactly where a small
+  team reinventing a mature library tends to lose over time on the long
+  tail of polish (scroll jank, focus loss on re-render, resize-drag
+  physics), and ag-grid-community's Infinite Row Model — the free,
+  MIT-licensed tier, not an Enterprise feature — covers what 7b/7c need with
+  no license cost. Bundle cost is real but bounded and one-time: roughly
+  250–450 KB gzip added to the *webview* bundle specifically (not the main
+  extension bundle loaded at activation), paid only the first time a user
+  opens a data viewer panel. What this decision does reopen, and what 7b's
+  own ADR must settle explicitly rather than silently: the CSP threat model
+  for an *interactive* panel (ag-grid's own runtime inline-styles its row
+  positioning, needing a `style-src 'unsafe-inline'` exception rederived
+  from scratch, not copied from ADR-0021's read-only-panel reasoning), and
+  the testing-boundary question ADR-0021 settled against `jsdom` for a
+  different reason (extending the existing port-and-fake pattern one layer
+  further) — likely resolved the same way `src/webview/entry.ts` already is,
+  treating the React/ag-grid wiring itself as a browser-only layer excluded
+  from the unit coverage tier and verified by the integration tier instead,
+  while the `getRows`/`getColumns` adapter and pagination logic stay
+  ordinary, `vscode`-free, unit-tested code as usual. Recorded as its own
+  ADR once 7b's code is written, per this project's own architecture-decision
+  convention — not decided informally and left unwritten.
+
+**7d — Python data exchange with SAS libraries (`SAS.sd2df`/`df2sd`/`submit`),
+scoped 2026-09-04, resurrected and live-probed 2026-09-10.** A separate ask
+from a third `sas-py-vscode-cowork` scoping session, run while Phase 5's
+release work continued on the primary copy: can a user's own Python code —
+not just this extension's tree/viewer UI — transparently read (and write) a
+SAS library's data, including a table behind a SAS/ACCESS engine LIBNAME
+(e.g. a site-registered MySQL library), the same way SAS code already can,
+without installing a local DB driver or handling a second credential? That
+2026-09-04 session found the mechanism already exists but could not reach
+`verde` to confirm it end to end (the same VPN-outage signature this phase's
+own Findings 83–86 probe had already hit) or settle the log-echo risk it
+flagged by analogy; its doc edits were stashed rather than committed and sat
+unmerged until this session found and resurrected them, live-probing what
+had been left open.
+
+- **The mechanism: `PROC PYTHON`'s own `SAS` bridge object, not a new REST
+  call.** `phase-1.md`'s Finding 2 already confirmed `'SAS' in dir()` is
+  `True` inside every submitted block, without pinning down which methods
+  work. SAS's own documentation of the Python procedure names four callback
+  methods — `SAS.sd2df("libref.table")` (SAS dataset/view → pandas
+  `DataFrame`), `SAS.df2sd(df, "libref.table")` (the write direction),
+  `SAS.submit("<SAS code>")` (run arbitrary SAS, including `PROC SQL`, from
+  inside the Python cell), and `SAS.symget`/`SAS.symput` (macro-variable
+  exchange). None of these are this project's own code; they ship with
+  `PROC PYTHON` on any Viya 4 deployment recent enough to have the procedure
+  at all (introduced 2021.1.3). This project has been running every user's
+  Python through exactly this procedure since Phase 3 — **the capability has
+  existed, unannounced, since 3a.**
+- **Finding 7.11 confirms all three methods work end to end, not merely that
+  the bridge object is present.** A live job against `verde` (2026-09-10)
+  read `sashelp.class` via `SAS.sd2df` (`shape (19, 5)`), wrote a fresh
+  `DataFrame` back via `SAS.df2sd` into `work`, and ran `SAS.submit` — all
+  three completing successfully inside one `PROC PYTHON` invocation on this
+  project's own execution path. Finding 2 established presence; Finding 7.11
+  is the first confirmation any of the three actually work here.
+- **Why this answers the SAS/ACCESS/MySQL case specifically, with no new
+  design.** A SAS/ACCESS engine LIBNAME (to MySQL or any other supported
+  DBMS) is, from the SAS session's point of view, just another assigned
+  libref — the engine is a detail of how the libref resolves a table read,
+  invisible above that layer. `SAS.sd2df("mysqllib.sometable")` needs to
+  know nothing about MySQL: the already-configured LIBNAME (assigned however
+  it got assigned — site autoexec, or a prior `SAS.submit("libname ...;")`
+  call) does the rest. A SQL-style query against a connected database
+  becomes `SAS.submit("proc sql; create view work.v as select * from
+  mysqllib.sometable where …; quit;")` then `SAS.sd2df("work.v")` — ordinary
+  `PROC SQL` pass-through, filter pushed to the engine rather than pulled
+  client-side. This project ships none of that SQL generation itself; it
+  only needs to make the pattern discoverable and safe to use.
+- **Finding 7.12 corrects the stash's speculative risk, rather than
+  confirming it.** The 2026-09-04 session, by direct analogy to Finding 92
+  (Phase 8's `CASTOKEN` leak), guessed that a credential-bearing `LIBNAME`
+  statement passed to `SAS.submit()` would land in the job log the same way.
+  A live, isolated probe (2026-09-10, `verde`) found the opposite for the
+  mechanism it actually tested: a `LIBNAME` statement assembled from a
+  runtime-built string (so the credential never appeared as a literal in the
+  submitted Python source) and executed via `SAS.submit()` was logged as
+  `password=XXXXXXXXXXXXXXXXXXXXXXXXX` — SAS's own standard `PASSWORD=`
+  masking applied to the statement `SAS.submit()` itself echoes, exactly as
+  it would for a top-level `LIBNAME`. **This does not reopen or replace
+  Finding 92.** That finding's own mechanism — the *outer* job-source echo
+  reproducing a user's submitted Python verbatim (Finding 2/93's documented,
+  unconditional source-echo behaviour) — is untouched by this result and
+  still applies regardless of `SAS.submit()`: a credential written as a
+  literal string anywhere in the submitted Python cell leaks via that outer
+  echo before `SAS.submit()`'s own masking ever gets a chance to run. The
+  practical guidance this settles for documentation: never write a
+  credential as a literal in the Python source at all, whether or not
+  `SAS.submit()` is involved; source it from a runtime value (an environment
+  variable, a prior `SAS.symget`), and prefer a site-assigned libref over an
+  ad hoc `SAS.submit("libname ...")` carrying any credential in the first
+  place.
+- **A second, still-unprobed risk: `sd2df`'s memory shape.** `sd2df` reads a
+  whole SAS table into an in-process pandas `DataFrame` inside the same
+  container ADR-0019 already found can be OOM-killed by rich-output
+  generation (Finding 73, Phase 3f). A large external table pulled whole via
+  `sd2df` with no `WHERE` pushed down first is the same failure shape with a
+  different trigger. Worth a doc-level warning (push filters into the
+  `PROC SQL` step, per the bullet above, rather than filtering in pandas
+  after `sd2df`) rather than a code change — this project has no lever to
+  cap what a user's own `sd2df` call pulls back, the same way it has no
+  lever over the size of a user's own `print()`.
+- **Relationship to Phase 7a–7c and Phase 8: complementary, not
+  overlapping.** 7a–7c give a read-only tree and paged viewer *without*
+  running any Python — a second lens onto the session's `DataAccessApi`.
+  Phase 8 gives CAS access, via `swat`, to a *different* resource (CAS
+  tables, not Compute-session librefs). 7d is the missing third piece:
+  letting a user's own Python *code* read and write the same
+  Compute-session libref data 7a's tree displays, which had no scoped phase
+  at all despite being possible since Phase 3. It ships as part of Phase 7
+  rather than standing alone because it reuses 7a's exact substrate (the
+  same session, the same libref/table identity a `LibraryItem`'s own naming
+  already assumes) and because it is what actually answers 7a's own
+  drag-and-drop question, above.
+- **What this is not.** Not a new `ExecutionBackend` capability, not a new
+  REST integration, not a new authentication path — `SAS.sd2df`/`df2sd`/
+  `submit` run inside the same `PROC PYTHON` invocation this project already
+  submits, using the same session. The work is documentation, a tested
+  example, the probe above, and (once a drag handler is written) a
+  drag-and-drop snippet — not new backend plumbing.
+
+*7d slice, in addition to 7a–7c above:*
+
+- **7d — Document, probe, and snippet-ize `SAS.sd2df`/`df2sd`/`submit`.**
+  *Small* — no new backend code. The live probe (`SASHELP.CLASS` against
+  `verde`) and the log-echo question are now settled (Findings 7.11/7.12).
+  What remains: ship a documented example (a new `docs/data-access.md`, or
+  an addition to whatever 7a/7b's own docs become) covering the
+  `SAS.sd2df`/`PROC SQL`-pass-through pattern and an explicit warning
+  against writing a credential literal anywhere in submitted Python, and —
+  now that 7a's tree exists — the drag-and-drop snippet insertion
+  (`SAS.sd2df("libref.table")`) the Plan section above resolves in
+  principle but does not itself build.
 
 **Testing.** Same shape this project already committed to for Phase 6: a
 new `test/helpers/recorded-data-access.ts` (or similar) plus fixtures under
@@ -231,6 +378,8 @@ own rule before anything becomes a committed fixture (this phase file already
 avoids naming the site-registered libraries the probe's `getLibraries` call
 returned beyond `WORK`/`SASHELP`/`SASUSER`, since several of the others read as
 customer- or business-identifying and have no bearing on the confirmed shape).
+7d's own fixtures (job-log text confirming the masking/echo behaviour) are a
+separate, smaller set — no `DataAccessApi` involved, just a job log.
 
 **Dialect risk, closed for the endpoints this phase has probed (updated by
 Finding 7.7, 2026-09-09 — superseding the "narrowed but not resolved"
@@ -269,11 +418,14 @@ sandbox's egress in general.
   whatever cadence/version differences a second-deployment probe turns up.
   `SASHELP`/`WORK` are enough to exercise every read-only path without
   creating anything.
-- **7b — Data viewer webview.** *Medium/Large* — the React+ag-grid decision
-  lands here, one way or the other; whichever is chosen, this is the
-  paginated grid backed by `getRows`/`getColumns`, following
-  `useDataViewer.ts`'s virtualized-datasource shape if ag-grid is adopted, or
-  a hand-rolled equivalent if not.
+- **7b — Data viewer webview.** *Medium/Large* — decided 2026-09-10: React +
+  ag-grid-community, following `useDataViewer.ts`'s virtualized-datasource
+  shape (infinite row model), backed by `getRows`/`getColumns`. Finding 7.10
+  settles a real implementation question in 7b's favour before any code was
+  written: the rows collection's `count` is populated even at a small
+  `limit`, so the grid can show an exact total row count from the first
+  page rather than needing upstream's "fewer than a full page came back,
+  assume this is the last one" heuristic.
 - **7c — Sort, filter, CSV export, table properties.** *Medium* — the
   `createView`-based sort (with its orphan-view cleanup question),
   `TableFilter`'s `where=`-clause text filter, `downloadTable`'s CSV
@@ -281,13 +433,26 @@ sandbox's egress in general.
   static properties/columns viewer (`TablePropertiesViewer.ts` — a much
   smaller webview than the grid, no ag-grid dependency either way since it's
   two static HTML tables).
+- **7d — Document, probe, and snippet-ize Python↔library data exchange.**
+  *Small* — no new backend code. `SAS.sd2df`/`df2sd`/`submit` confirmed
+  working end to end (Finding 7.11) and the credential-echo question settled
+  (Finding 7.12); what remains is the documented example and, once 7a's
+  tree exists (it does), the drag-and-drop snippet.
 
 *Exit:* a user can browse SAS libraries and tables from the same session
 their Python already runs in (My Libraries-equivalent, `WORK`, `SASHELP`,
 and any site-registered libraries), open a table in a paged, sortable,
 filterable grid, view its properties and column metadata, and export it to
 CSV — the same library-browsing workflow the SAS extension offers today, for
-a Python-on-Viya session.
+a Python-on-Viya session. **With 7d:** the user can also drop a library
+table straight into their Python — a `.py` cell reading `SAS.sd2df(...)` or
+writing `SAS.df2sd(...)` against `WORK`, `SASHELP`, or a site-registered
+SAS/ACCESS-connected external database — using the same Viya connection an
+administrator already provisioned, with no local driver and no second
+credential to manage. This is a capability upstream's SAS extension has no
+equivalent of at all (its users write SAS, which already reads a libref
+directly), and it needed no new Viya-side work to reach — only surfacing,
+documenting, and confirming what `PROC PYTHON` already provides.
 
 ---
 
@@ -300,14 +465,17 @@ actually ask for once v0.1.0 is in their hands.
 
 ## Runbook
 
-_Scoped 2026-09-03, before any code was written — technical grounding (what
-ports closely vs. what needs rework vs. what is a deliberate non-goal) came
-from the codebase survey described in the Plan section above and six live
-probes against `verde` (Findings 7.1–7.4 below). **Recommended execution order:
-7a → 7b → 7c**, matching the dependency chain `PRODUCTION_PLAN.md`'s original
-sketch already implies (an adapter and tree before a viewer that opens from
-it; sort/filter/export as refinements on a working viewer). Nothing here is a
-hard technical barrier — this is a recommendation, not a dependency lock._
+_Scoped 2026-09-03 (7a–7c), before any code was written — technical grounding
+(what ports closely vs. what needs rework vs. what is a deliberate non-goal)
+came from the codebase survey described in the Plan section above and six live
+probes against `verde` (Findings 7.1–7.4 below). 7d was scoped 2026-09-04 from
+a separate session, stashed rather than committed, and resurrected and
+live-probed 2026-09-10 (Findings 7.11/7.12). **Recommended execution order:
+7a → 7b → 7c, with 7d startable independently** — 7d needs none of 7a–7c's
+session/tree/viewer work except its very last item (the drag-and-drop
+snippet, which needs 7a's tree to drop *from*, and 7a is now done). Nothing
+here is a hard technical barrier — this is a recommendation, not a
+dependency lock._
 
 ☑ **7a — `LibraryAdapter` + read-only tree.** Code written 2026-09-09 (this
 session, from the `sas-py-vscode-cowork` clone), adversarially reviewed before
@@ -489,16 +657,138 @@ merged 2026-09-10 via [PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/
   `npx tsc --noEmit`/`npx prettier --check` clean on every file the two
   folded-in fixes touched.
 
-☐ **7b — Data viewer webview.**
+☐ **7b — Data viewer webview.** Architecture decided and the whole slice
+implemented 2026-09-10, then adversarially reviewed the same day (see the
+review bullet below) with three real findings folded in; `npx tsc -p
+tsconfig.webview.json --noEmit` is now clean against the actually-installed
+`ag-grid-community`/`ag-grid-react`/`react`/`react-dom` packages, closing the
+one gap nothing in the sandbox this was written in could check. Sean's own
+`npm run verify` and `npm run test:integration` are both green (see the
+verify/integration bullet below for the two real gaps that round surfaced
+and closed). What remains before this box ticks is Sean's own manual visual
+check (see the last bullet) — nothing has run inside a real `WebviewPanel`
+yet, only against `tsc`/`prettier` and the fakes
+`test/integration/data/data-viewer-panel.test.ts` drives.
 
-- ☐ Decide React + ag-grid vs. a hand-rolled paginated/virtualized table
-  (Plan, above) — a real architecture decision, not a default.
-- ☐ If ag-grid: add `ag-grid-community`/`ag-grid-react`/`react`/`react-dom`,
-  a `.tsx` type space alongside `tsconfig.webview.json`'s existing carve-out,
-  and a JSX loader on `esbuild.mjs`'s webview context.
-- ☐ Paginated datasource backed by `getRows`, following
-  `useDataViewer.ts`'s shape if ag-grid is adopted.
-- ☐ Column metadata from `getColumns`, mapped to grid column defs.
+- ☑ Decide React + ag-grid vs. a hand-rolled paginated/virtualized table
+  (Plan, above) — a real architecture decision, not a default. **Done**,
+  2026-09-10, with Sean: React + ag-grid-community. See the Plan section's
+  updated bullet for the full reasoning.
+- ☑ Add `ag-grid-community`/`ag-grid-react`/`react`/`react-dom`, a `.tsx`
+  type space alongside `tsconfig.webview.json`'s existing carve-out, and a
+  JSX loader on `esbuild.mjs`'s webview context. **Done** — all four as exact
+  version-pinned `devDependencies` (never `dependencies`, ADR-0005's
+  invariant unchanged); `tsconfig.webview.json` gained `jsx: "react-jsx"` and
+  `src/webview/**/*.tsx` in its own `include`; `esbuild.mjs` gained a third
+  context (`dataViewerContext`) bundling `src/webview/dataViewerEntry.tsx` to
+  `dist/webview/dataViewer.js`. **Caveat resolved 2026-09-10**: none of the
+  library-specific API usage in `dataViewerEntry.tsx` could be typechecked
+  from the sandbox this was written in (`npm install` is off-limits there),
+  so this box's own honesty required saying so explicitly. Sean ran
+  `npm install` in the real clone and `npx tsc -p tsconfig.webview.json
+  --noEmit` came back clean on the first pass after two small fixes the
+  install itself surfaced (not found by review, since neither package was
+  installed for it either): an ambient `declare module "*.css"` shim
+  (`src/webview/css.d.ts`) `ag-grid-community`'s own stylesheet imports need
+  because the package ships no types for its CSS exports, and dropping an
+  explicit `rowCount: undefined` in favour of omitting the key entirely
+  (`exactOptionalPropertyTypes: true` rejects the former; `IDatasource`'s own
+  doc comment confirms the latter is the intended "no upfront total" signal).
+- ☑ Write the new ADR (next number after 0027) recording the grid-library
+  decision, the rederived CSP threat model for an interactive panel, and the
+  testing-boundary call (React/ag-grid wiring excluded from unit coverage
+  like `src/webview/entry.ts`; adapter/pagination logic stays ordinary
+  unit-tested code) — before, not after, the code that depends on it. **Done**
+  — [ADR-0028](../adr/0028-data-viewer-is-react-and-ag-grid.md), with a dated
+  amendment to [ADR-0005](../adr/0005-supply-chain-policy.md) recording that
+  its "still zero runtime dependencies" invariant survives this change
+  because the four packages above land as `devDependencies`.
+- ☑ Paginated datasource backed by `getRows`, following `useDataViewer.ts`'s
+  infinite-row-model shape. Finding 7.10 settles the total-row-count
+  question: `count` is populated even at a small `limit`, so no "last page"
+  guessing heuristic is needed. **Done** — `LibraryAdapter.openTable`/
+  `getRows` (`src/data/adapter.ts`), unit-tested against recorded fixtures in
+  `test/unit/data-adapter.test.ts`; `getRows` never follows a returned `next`
+  link (Finding 7.13 confirms the rows collection's own `next` is typed
+  correctly on this deployment, but the method does not depend on that
+  holding true elsewhere).
+- ☑ Column metadata from `getColumns`, mapped to grid column defs. **Done** —
+  `LibraryAdapter.getColumns` (`src/data/adapter.ts`) and
+  `toWireColumns`/`toWireRows` (`src/data/dataViewerModel.ts`, the
+  `vscode`-free host↔webview message module both sides of the panel import
+  from), unit-tested in `test/unit/data-adapter.test.ts`.
+- ☑ Host-side panel wiring: `DataViewerPanelManager`/`OpenTablePanel`
+  (`src/data/dataViewerPanel.ts`) — one panel per open table, the buffered
+  `init`/`failure`-only opening-state handshake, per-panel CSP rederived for
+  this threat model (no `img-src`, `style-src 'unsafe-inline'` for a
+  different, narrower reason than the result panel's own), and the new
+  `<link rel="stylesheet">` esbuild's companion `dataViewer.css` needs.
+  **Done**, integration-tested (a real `LibraryAdapter` against recorded
+  fixtures, a fake `DataWebviewPanel`) in
+  `test/integration/data/data-viewer-panel.test.ts`; added to `.c8rc.json`'s
+  exclude list, which required teaching `scripts/check-coverage-scope.mjs`
+  about `.tsx` files at all — its own `walk()` only ever matched `.ts`, a
+  gap this project's first JSX source file exposed.
+- ☑ Wire the command: `pythonOnViya.openTable`, bound to a table tree item's
+  own `command` (`src/data/dataTree.ts`) and its `view/item/context` menu
+  entry (`package.json`), registered in `src/data/dataExplorer.ts` and
+  constructed once in `src/extension.ts`.
+- ☑ **Adversarial review before the PR exists** (`CLAUDE.md`'s standing
+  rule), 2026-09-10, against the finished diff. Three real findings, all
+  folded into the branch before any push: (1) `dataViewerModel.ts` had no
+  unit test of its own — exercising it only through the integration test
+  does not count toward the unit-tier coverage gate, since that tier runs
+  outside `c8`'s measurement; added `test/unit/data-viewer-model.test.ts`.
+  (2) A `requestId` collision across a webview reload: `retainContextWhenHidden:
+  false` means a hide/show reloads the document and resets its own
+  `nextRequestId`/`pendingRowRequests`, but the host's `ready` flag and
+  buffered-reply logic do not know a reload happened, so a pre-reload
+  `getRows` resolving late could resolve the *new* document's same-numbered
+  pending request with rows for the wrong window — fixed by switching to
+  `crypto.randomUUID()`, globally unique regardless of how many times the
+  document reloads. (3) None of `OpenTablePanel`'s three adapter calls
+  carried an `AbortSignal`, so closing the panel mid-load did not cancel the
+  in-flight compute request — added a per-panel `AbortController`, aborted on
+  `onDidDispose`. Two minor nits also folded in: an unused `gridRef` removed,
+  and `WireColumn.type` actually wired into `toColumnDefs` (right-aligning
+  `NUM` columns via `ag-right-aligned-cell`/`-header`, delivering on a claim
+  the model's own doc comment had made since 7b started but nothing read).
+- ☑ **Sean's own `npm run verify` and `npm run test:integration`**,
+  2026-09-10, surfaced two real gaps the review pass could not have caught
+  (it predates both `npm install` and a full local test run). (1) Three
+  `DataViewerPanelManager` integration tests called `fake.sendReady()`
+  before `manager.open(...)` had been invoked at all, so the fake panel's
+  message listener did not exist yet and `sendReady()` was a silent no-op —
+  `this.ready` stayed `false`, and `post()`'s guard swallowed every message.
+  Fixed by starting `open(...)` without awaiting it, calling `sendReady()`
+  synchronously (valid because `open()`→`start()` runs synchronously up to
+  its first `await`), then awaiting the result — applied to all three
+  affected tests in `test/integration/data/data-viewer-panel.test.ts`.
+  (2) Branch coverage fell to 94.82% against the 95% global gate, traced to
+  `src/data/types.ts` at 76.47%: `readTableDetail`/`readColumnItem`/
+  `readRowItem` (written for 7b, before the review round) had several
+  defensive branches no fixture had ever exercised — both counts absent, a
+  non-empty label/format/informat, a non-number count, a non-array `cells`.
+  Closed with three new `describe` blocks in `test/unit/data-types.test.ts`.
+  While in there, one more genuinely-reachable gap in `src/data/adapter.ts`
+  was closed the same way: every existing `getRows` test used a bare
+  `.../rows` link, so `withQuery`'s `?`-already-present → `&`-joined branch
+  had never fired; one test added in `test/unit/data-adapter.test.ts`.
+  `readCount`'s own non-object-body guard was traced and deliberately left
+  alone — `getRows` only reaches it after `readItems` has already applied
+  the identical object/null check, so that branch is unreachable dead code
+  from this call site, not a real gap. `npx tsc -p tsconfig.test.json
+  --noEmit` and `npx prettier --check` clean on every touched file; Sean's
+  own re-run of `npm run verify && npm run test:integration` came back
+  green.
+- ☐ **Sean's own local build (`npm run build` or the watch task) plus a
+  manual visual check of a real panel** — light, dark, and high-contrast
+  themes; confirm ag-grid's icon set actually renders (this panel's CSP
+  declares no `img-src`, on the prediction that ag-grid needs none — see
+  `dataViewerPanel.ts`'s own doc comment on `buildHtml`, which names the
+  narrow CSP fix if that prediction is wrong); confirm scrolling actually
+  pages new rows in. This is the one check nothing in this sandbox could
+  perform, and the reason the box at the top of this section is still ☐.
 
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
@@ -510,6 +800,36 @@ merged 2026-09-10 via [PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/
   Phase 6's own (undecided) download command.
 - ☐ Table properties/columns static viewer (`TablePropertiesViewer.ts`'s
   shape — two static tables, no grid dependency).
+
+☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
+Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting
+unmerged in a stash — see the Plan section's 7d entry for the full account.
+
+- ☑ A live probe against `SASHELP.CLASS` exercising `SAS.sd2df`, `SAS.df2sd`,
+  and `SAS.submit` from inside a real `PROC PYTHON` job on this project's
+  own execution path. **Done** — Finding 7.11 (2026-09-10, `verde`): all
+  three completed successfully in one job (`sd2df` shape `(19, 5)`, `df2sd`
+  into `work`, `submit` ran without error).
+- ☑ Settle the log-echo question: does `SAS.submit()`'s SQL/DDL text, or a
+  credential passed through it, appear in the job log the way Finding 92
+  (Phase 8) found for an inline `CASTOKEN` literal? **Done** — Finding 7.12
+  (2026-09-10, `verde`): a `LIBNAME` statement assembled from a
+  runtime-built string and executed via `SAS.submit()` was logged with SAS's
+  standard `password=XXXXXXXXXXXXXXXXXXXXXXXXX` masking, not the resolved
+  value — the stash's speculative "worse than Finding 92" risk does not
+  hold for this mechanism specifically. Finding 92's own mechanism (the
+  outer job-source echo reproducing submitted Python verbatim) is untouched
+  and still applies to a credential written as a literal, regardless of
+  `SAS.submit()`.
+- ☐ Write the documented example (`docs/data-access.md` or folded into
+  7a/7b's own docs) — the `SAS.sd2df`/`PROC SQL`-pass-through pattern above,
+  and an explicit warning against writing a credential literal anywhere in
+  submitted Python.
+- ☐ Wire the drag-and-drop snippet (`SAS.sd2df("libref.table")`) the Plan
+  section's discussion resolves — 7a's tree now exists, so this is
+  unblocked.
+- ☐ A small fixture set for the log-echo probe's own confirmed shape — no
+  `DataAccessApi` involved, so no dependency on 7a–7c's own fixtures.
 
 ---
 
@@ -862,3 +1182,143 @@ Whether a *second* concurrent `DataAccessApi` call (no job involved) queues
 the same way a job does remains unprobed, as does the `createView` sort
 round trip — both deliberately out of scope for a read-only pass, and
 neither bears on 7a, which issues no such call and does not sort.
+
+**Finding 7.10 — implementation-time probe, 2026-09-10 (`verde`, ahead of
+7b's own code): the rows collection's `count` is populated at any `limit`,
+not left `null` the way other Compute collections sometimes are.**
+Documented shape checked first: `RestLibraryAdapter`/upstream's own
+`useDataViewer.ts` treat a paginated rows response's `count` as
+authoritative when present, falling back to "fewer than a full page came
+back, assume this is the last one" only when it is absent — the same
+count-is-sometimes-null caution this project's own "Compute wire facts"
+findings (Phase 2b) already established for a different collection. Probed
+directly against a fresh throwaway `SAS Studio compute context` session
+(created and deleted; `404` read-back confirmed): `GET
+…/data/SASHELP/CLASS/rows?start=0&limit=2` → `count: 19` (the table's true
+row count), `itemCount: 2`; the identical request at `limit=1000` (larger
+than the table) → `count: 19`, `itemCount: 19`. **`count` is exact and
+present at both a small and an over-large `limit`, on this deployment.** 7b's
+own datasource can read `count` directly as the grid's total row count and
+does not need upstream's "assume last page" heuristic — worth reconfirming
+against a second deployment if 7b's own implementation session has time,
+the same way 7a's own findings did, but not blocking: the mechanism is a
+plain field read, not a branch this project would dialect-gate.
+
+**Correction, 2026-09-10 (later the same day, `verde`): this finding's own
+`itemCount: 2` claim does not reproduce.** A fresh, independent re-probe of
+the identical request (`GET …/data/SASHELP/CLASS/rows?start=0&limit=2`, a
+new throwaway session, created and deleted, `404` read-back confirmed)
+returned `count: 19` exactly as recorded above, but no `itemCount` field at
+all — absent, not `null`. Nothing in this codebase reads `itemCount`
+(`src/data/adapter.ts`'s `readCount` only ever looks at `count`), so this does
+not change 7b's implementation, but the earlier prose's specific mention of
+it is corrected here rather than left standing uncorrected, per this
+project's own rule that a superseded value gets swept rather than quietly
+left beside its correction. `count`'s own behaviour — populated, exact, at
+both a small and an over-large `limit` — is unaffected and reconfirmed by
+this same re-probe.
+
+**Finding 7.11 — implementation-time probe, 2026-09-10 (`verde`): `SAS.sd2df`,
+`SAS.df2sd`, and `SAS.submit` all complete successfully inside one `PROC
+PYTHON` job on this project's own execution path.** `phase-1.md`'s Finding 2
+confirmed only that `'SAS' in dir()` is `True`; no prior finding had actually
+invoked any of the bridge object's methods. Documented shape checked first
+(SAS's own Python-procedure documentation, cross-referenced against public
+SAS blog/community material describing the same four callback methods —
+see the Plan section's 7d entry). Probed via a job submitted to a fresh
+throwaway `SAS Studio compute context` session (created and deleted; `404`
+read-back confirmed): a single `PROC PYTHON` block called `df =
+SAS.sd2df("sashelp.class")` (returned `shape (19, 5)`, matching the table's
+known row/column count from Findings 7.1/7.5), built a small `DataFrame` and
+wrote it back via `SAS.df2sd(newdf, "work.probe_df2sd_out")`, then called
+`SAS.submit(stmt)` for a `LIBNAME` statement (see Finding 7.12) — all three
+completed without error and their own print markers all appeared in the job
+log in the expected order. **This is the first confirmation any of the
+three methods actually work on this project's own path, not merely that the
+bridge object is present.**
+
+**Finding 7.12 — implementation-time probe, 2026-09-10 (`verde`): a
+`LIBNAME` statement executed via `SAS.submit()` gets SAS's standard
+`PASSWORD=` masking in its own log echo; this corrects, rather than
+confirms, the 2026-09-04 stash's speculative risk.** Documented shape
+checked first (SAS's own LIBNAME-statement documentation, via web search):
+`PASSWORD=`/`PASS=`/`PWD=`/`PW=` values are, by default, replaced with `X`
+characters in the SAS log wherever a `LIBNAME` statement is logged. The
+2026-09-04 scoping session, unable to reach `verde`, guessed by analogy to
+Finding 92 (Phase 8's plaintext `CASTOKEN` leak) that a credential passed to
+`SAS.submit()` would leak the same way. This session probed it directly,
+designed to isolate `SAS.submit()`'s own behaviour from the already-known
+outer-echo mechanism: a submitted Python block assembled a `LIBNAME`
+statement's password from a list of string fragments joined at runtime
+(`"".join([...])`), specifically so the resolved value never appeared as a
+literal anywhere in the submitted Python source, then passed the assembled
+statement to `SAS.submit(stmt)`. **Observed:** the job log's echo of the
+Python source (the outer, already-documented mechanism — Finding 2/93) shows
+only the *code* that builds the string (`parts = ["FAKE","PW", …]`, `stmt =
+"libname … password='" + pw + "' schema='test';"`) — never the resolved
+value, because the value never existed as source text. The log's *separate*
+echo of the statement `SAS.submit()` actually executed reads
+`libname mysqllib mysql server='fake-host-not-real.example'
+user='fakeuser' password=XXXXXXXXXXXXXXXXXXXXXXXXX schema='test';` — masked,
+exactly as a top-level `LIBNAME` would be. (The statement itself then failed
+downstream with `ERROR: The SAS/ACCESS Interface to MYSQL cannot be
+loaded.`, expected since no such engine/host exists in this deployment —
+irrelevant to the masking question, which concerns the log echo, not
+whether the connection succeeded.)
+
+**Documented vs. observed, stated explicitly:** the 2026-09-04 stash
+documented a *hypothesis* ("`SAS.submit()` likely leaks a credential the way
+Finding 92 did"), not a probed fact. The observation refutes that specific
+hypothesis for the mechanism actually tested — `SAS.submit()`'s own
+statement-level echo inherits SAS's ordinary option-masking. **What this
+does not settle, and what remains exactly as risky as Finding 92 already
+established:** the *outer* job-source echo (Finding 2/93's documented,
+unconditional behaviour) reproduces a user's submitted Python verbatim
+regardless of what it does — so a credential written as a Python string
+*literal* anywhere in a submitted cell (including as an argument to
+`SAS.submit()` itself, if typed directly rather than assembled at runtime)
+still leaks in full, before `SAS.submit()`'s own masking ever has a chance
+to run. This session's probe deliberately avoided that literal-in-source
+case to isolate `SAS.submit()`'s own behaviour; it does not claim the
+literal case is safe — Finding 92 already established it is not, and
+nothing here changes that. **The practical guidance 7d's documentation
+should give:** never write a credential as a literal string in submitted
+Python, whether or not `SAS.submit()` is involved; source it from a runtime
+value if one is genuinely needed, and prefer a site-assigned, pre-provisioned
+libref over an ad hoc `SAS.submit("libname ...")` carrying any credential at
+all — the same shape of answer Phase 8 reached for CAS tokens (`8b`'s own
+punch list), generalized to this call site.
+
+Not probed this session, left open for whoever writes 7d's documentation or
+its drag-and-drop snippet: `SAS.symget`/`SAS.symput` (the fourth bridge
+method, not exercised here since 7d's own scoping never named a use case for
+it); whether `sd2df`'s in-memory pull against a genuinely large external
+table produces the OOM failure shape the Plan section's own risk bullet
+above predicts (no such table was available to test against this session);
+and a second-deployment (`Innov`) rerun of Findings 7.10–7.12, which would
+close the dialect-risk question for these mechanisms the same way Findings
+7.5–7.7 did for 7a's own wire shapes.
+
+**Finding 7.13 — implementation-time probe, 2026-09-10 (`verde`, while
+writing `LibraryAdapter.getRows`): the `rows` collection's own `next`,
+`last`, `self`, and `collection` links all carry an explicit `type` and
+`itemType` — unlike the `data/{libref}` URI's untyped `next` (Finding 7.9),
+this is not a representation trap.** Documented shape checked first: no SAS
+reference documents this collection's link set field-by-field, so the check
+was direct rather than doc-first, the same as Finding 7.9 itself. Probed via
+a fresh throwaway `SAS Studio compute context` session (created and deleted;
+`404` read-back confirmed): `GET
+…/data/SASHELP/CLASS/rows?start=0&limit=2` returned a `links` array of five
+entries — `self`, `collection`, `next`, and `last` each carrying
+`type: "application/vnd.sas.collection"` and
+`itemType: "application/vnd.sas.compute.data.table.row"`; `up` (pointing back
+at the table itself, not a page of it) carrying
+`type: "application/vnd.sas.compute.data.table"` and no `itemType`, which is
+expected for a link to a single resource rather than a collection. **This
+does not license `getRows` to follow the collection's own `next` instead of
+re-deriving each window from the table's own `rows` link** — the method's own
+doc comment is explicit that it does not depend on this being true to stay
+correct, and Finding 7.9's caution about the *tables* collection's untyped
+`next` stands unchanged, scoped to that URI. This finding only closes the
+question of whether the *rows* collection carries the same trap: on this
+deployment, it does not.

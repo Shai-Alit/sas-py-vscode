@@ -1,0 +1,57 @@
+{
+  "name": "CLASS",
+  "rowCount": 19,
+  "columnCount": 5,
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.compute.data.table"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS",
+      "method": "GET",
+      "rel": "alternate",
+      "type": "application/vnd.sas.compute.data.table.summary"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rows",
+      "method": "GET",
+      "rel": "rows",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.row"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rowsAsCSV",
+      "method": "GET",
+      "rel": "rowsAsCSV",
+      "type": "text/csv"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rowSet",
+      "method": "POST",
+      "rel": "rowSet",
+      "type": "application/vnd.sas.compute.data.table.row.set"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/promptContent",
+      "method": "GET",
+      "rel": "promptContent",
+      "type": "application/vnd.sas.compute.data.table.prompt.content.request"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns",
+      "method": "GET",
+      "rel": "columns",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.column"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/createView",
+      "method": "POST",
+      "rel": "createView",
+      "type": "application/vnd.sas.compute.data.table.view.request"
+    }
+  ]
+}

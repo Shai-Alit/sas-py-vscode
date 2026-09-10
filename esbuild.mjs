@@ -83,12 +83,40 @@ const webviewContext = await esbuild.context({
   plugins: [problemMatcherPlugin],
 });
 
+// The data viewer's own bundle (7b, ADR-0028) — a third, independent context,
+// for the same reason the result panel's is: a browser target, never Node.
+// Unlike `webviewContext` above, this one actually needs a JSX loader —
+// `src/webview/dataViewerEntry.tsx` is this project's first `.tsx` file, and
+// `tsconfig.webview.json`'s own `jsx: "react-jsx"` only governs typechecking;
+// esbuild has to be told the same transform separately, since it does not
+// read tsconfig for this. `jsx: "automatic"` is esbuild's name for the same
+// "no `import React` needed" transform, matched to keep the two build tools
+// agreeing about what a bare `<Foo />` compiles to.
+const dataViewerContext = await esbuild.context({
+  entryPoints: ["src/webview/dataViewerEntry.tsx"],
+  bundle: true,
+  outfile: "dist/webview/dataViewer.js",
+
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  jsx: "automatic",
+
+  sourcemap: production ? false : "linked",
+  minify: production,
+  logLevel: "warning",
+  plugins: [problemMatcherPlugin],
+});
+
 if (watch) {
   await context.watch();
   await webviewContext.watch();
+  await dataViewerContext.watch();
 } else {
   await context.rebuild();
   await webviewContext.rebuild();
+  await dataViewerContext.rebuild();
   await context.dispose();
   await webviewContext.dispose();
+  await dataViewerContext.dispose();
 }

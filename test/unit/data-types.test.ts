@@ -6,9 +6,13 @@ import assert from "node:assert/strict";
 import {
   isLibrary,
   isTable,
+  readColumnItem,
   readLibraryItem,
+  readRowItem,
+  readTableDetail,
   readTableItem,
   type LibraryItem,
+  type TableItem,
 } from "../../src/data/types";
 import { readJsonFixture } from "../helpers/fixtures";
 
@@ -129,6 +133,134 @@ describe("data/types", () => {
     it("drops a non-object or null value outright", () => {
       assert.equal(readTableItem("not an object", readOnlyLibrary), undefined);
       assert.equal(readTableItem(null, readOnlyLibrary), undefined);
+    });
+  });
+
+  describe("readTableDetail", () => {
+    const table: TableItem = {
+      kind: "table",
+      libref: "SASHELP",
+      name: "CLASS",
+      readOnly: true,
+      links: [],
+    };
+
+    it("reads name from the body and libref from the caller's table, with both counts present", () => {
+      const detail = readTableDetail(
+        { name: "CLASS", rowCount: 19, columnCount: 5, links: [] },
+        table,
+      );
+      assert.deepEqual(detail, {
+        kind: "tableDetail",
+        libref: "SASHELP",
+        name: "CLASS",
+        rowCount: 19,
+        columnCount: 5,
+        links: [],
+      });
+    });
+
+    it("omits rowCount/columnCount rather than carrying undefined when absent — caught in review: never exercised before, only ever tested with both present", () => {
+      const detail = readTableDetail({ name: "CLASS" }, table);
+      assert.deepEqual(detail, {
+        kind: "tableDetail",
+        libref: "SASHELP",
+        name: "CLASS",
+        links: [],
+      });
+    });
+
+    it("ignores a non-number rowCount/columnCount the same way it ignores an absent one", () => {
+      const detail = readTableDetail(
+        { name: "CLASS", rowCount: "19", columnCount: null },
+        table,
+      );
+      assert.deepEqual(detail, {
+        kind: "tableDetail",
+        libref: "SASHELP",
+        name: "CLASS",
+        links: [],
+      });
+    });
+
+    it("drops a value with no usable name", () => {
+      assert.equal(readTableDetail({}, table), undefined);
+      assert.equal(readTableDetail({ name: "" }, table), undefined);
+    });
+
+    it("drops a non-object or null value outright", () => {
+      assert.equal(readTableDetail("not an object", table), undefined);
+      assert.equal(readTableDetail(null, table), undefined);
+    });
+  });
+
+  describe("readColumnItem", () => {
+    it("reads name and type, with no length/label/format/informat when the body carries none", () => {
+      const column = readColumnItem({ name: "Age", type: "NUM" });
+      assert.deepEqual(column, { name: "Age", type: "NUM" });
+    });
+
+    it("reads length, label, format and informat when the deployment supplied real, non-empty values — caught in review: no fixture had ever exercised this path, only the empty-string-drops-to-absent one below", () => {
+      const column = readColumnItem({
+        name: "Age",
+        type: "NUM",
+        length: 8,
+        label: "Age (years)",
+        format: "BEST12.",
+        informat: "BEST32.",
+      });
+      assert.deepEqual(column, {
+        name: "Age",
+        type: "NUM",
+        length: 8,
+        label: "Age (years)",
+        format: "BEST12.",
+        informat: "BEST32.",
+      });
+    });
+
+    it("treats an empty-string label/format/informat as absent, same as a missing one", () => {
+      const column = readColumnItem({
+        name: "Age",
+        type: "NUM",
+        label: "",
+        format: "",
+        informat: "",
+      });
+      assert.deepEqual(column, { name: "Age", type: "NUM" });
+    });
+
+    it("defaults type to an empty string when absent or not a string", () => {
+      assert.equal(readColumnItem({ name: "Age" })?.type, "");
+      assert.equal(readColumnItem({ name: "Age", type: 8 })?.type, "");
+    });
+
+    it("drops a value with no usable name", () => {
+      assert.equal(readColumnItem({}), undefined);
+      assert.equal(readColumnItem({ name: "" }), undefined);
+    });
+
+    it("drops a non-object or null value outright", () => {
+      assert.equal(readColumnItem("not an object"), undefined);
+      assert.equal(readColumnItem(null), undefined);
+    });
+  });
+
+  describe("readRowItem", () => {
+    it("reads a cells array", () => {
+      assert.deepEqual(readRowItem({ cells: ["Alfred", "M", 14] }), {
+        cells: ["Alfred", "M", 14],
+      });
+    });
+
+    it("drops a value with no cells array", () => {
+      assert.equal(readRowItem({ version: 1 }), undefined);
+      assert.equal(readRowItem({ cells: "not an array" }), undefined);
+    });
+
+    it("drops a non-object or null value outright", () => {
+      assert.equal(readRowItem("not an object"), undefined);
+      assert.equal(readRowItem(null), undefined);
     });
   });
 

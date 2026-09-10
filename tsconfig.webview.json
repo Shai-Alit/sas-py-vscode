@@ -27,12 +27,20 @@
   // this config never uses.
   "compilerOptions": {
     "lib": ["ES2022", "DOM"],
-    "types": []
+    "types": [],
+    // 7b (ADR-0028): this project's first `.tsx` file. `react-jsx` is the
+    // modern transform — no `import React from "react"` needed in every
+    // file, unlike the classic `"react"` mode upstream's own `tsconfig` still
+    // carries. `jsxImportSource` defaults to `"react"`, which is what this
+    // project actually installed, so it is not repeated here.
+    "jsx": "react-jsx"
   },
   "include": [
     "src/webview/**/*.ts",
+    "src/webview/**/*.tsx",
     "src/run/resultPanelDom.ts",
-    "src/run/resultPanelModel.ts"
+    "src/run/resultPanelModel.ts",
+    "src/data/dataViewerModel.ts"
   ],
   "exclude": ["node_modules", "dist", "out"]
 }

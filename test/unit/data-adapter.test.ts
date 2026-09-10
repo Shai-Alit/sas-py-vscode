@@ -9,7 +9,13 @@ import {
   type ConnectedSession,
   type LibrarySessionSource,
 } from "../../src/data/adapter";
-import { readLibraryItem, type LibraryItem } from "../../src/data/types";
+import {
+  readLibraryItem,
+  readTableDetail,
+  type LibraryItem,
+  type TableDetail,
+  type TableItem,
+} from "../../src/data/types";
 import {
   dataFail,
   dataFixture,
@@ -77,6 +83,60 @@ function libraryItem(name: string, readOnly: boolean): LibraryItem {
   const rich = readLibraryItem({ name, readOnly, links: [] });
   assert.ok(rich);
   return rich;
+}
+
+const CLASS_HREF = `${LIBREFS_HREF}/SASHELP/CLASS`;
+
+/** A `TableItem` whose own `self` link `openTable` follows — the sparse
+ * shape Finding 7.8 established a tables-collection entry actually carries. */
+function tableItem(overrides: Partial<TableItem> = {}): TableItem {
+  return {
+    kind: "table",
+    libref: "SASHELP",
+    name: "CLASS",
+    readOnly: true,
+    links: [
+      {
+        rel: "self",
+        href: CLASS_HREF,
+        method: "GET",
+        type: "application/vnd.sas.compute.data.table",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+/** The rich `TableDetail` `openTable` would have returned, for tests of
+ * `getColumns`/`getRows` that do not themselves need to exercise the `self`
+ * follow-up. */
+function tableDetail(): TableDetail {
+  const detail = readTableDetail(
+    {
+      name: "CLASS",
+      rowCount: 19,
+      columnCount: 5,
+      links: [
+        {
+          rel: "columns",
+          href: `${CLASS_HREF}/columns`,
+          method: "GET",
+          type: "application/vnd.sas.collection",
+          itemType: "application/vnd.sas.compute.data.table.column",
+        },
+        {
+          rel: "rows",
+          href: `${CLASS_HREF}/rows`,
+          method: "GET",
+          type: "application/vnd.sas.collection",
+          itemType: "application/vnd.sas.compute.data.table.row",
+        },
+      ],
+    },
+    tableItem(),
+  );
+  assert.ok(detail);
+  return detail;
 }
 
 describe("data/adapter LibraryAdapter", () => {
@@ -492,6 +552,362 @@ describe("data/adapter LibraryAdapter", () => {
       assert.ok(!result.ok);
       assert.deepEqual(result.problem, { code: "session-busy" });
       assert.deepEqual(calls, []);
+    });
+  });
+
+  describe("openTable", () => {
+    it("follows the table's own self link to its rich detail, carrying rows/columns links", async () => {
+      const { adapter, calls } = adapterWith([
+        { when: CLASS_HREF, reply: dataFixture("table-detail-class.json") },
+      ]);
+      const result = await adapter.openTable(tableItem());
+      assert.ok(result.ok);
+      assert.equal(result.value.rowCount, 19);
+      assert.equal(result.value.columnCount, 5);
+      assert.equal(result.value.libref, "SASHELP");
+      assert.ok(
+        result.value.links.some(
+          (l) => l.rel === "rows" && l.href === `${CLASS_HREF}/rows`,
+        ),
+      );
+      assert.ok(
+        result.value.links.some(
+          (l) => l.rel === "columns" && l.href === `${CLASS_HREF}/columns`,
+        ),
+      );
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [CLASS_HREF],
+      );
+    });
+
+    it("reports link-missing when the table carries no self relation", async () => {
+      const { adapter } = adapterWith([]);
+      const result = await adapter.openTable(tableItem({ links: [] }));
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: {
+          code: "link-missing",
+          rel: "self",
+          resource: 'table "SASHELP.CLASS"',
+        },
+      });
+    });
+
+    it("reports response-malformed when the self follow-up does not answer with a table representation", async () => {
+      const { adapter } = adapterWith([
+        { when: CLASS_HREF, reply: dataOk({ not: "a table" }) },
+      ]);
+      const result = await adapter.openTable(tableItem());
+      assert.ok(!result.ok);
+      const { problem } = result;
+      assert.ok(problem.code === "compute");
+      assert.equal(problem.problem.code, "response-malformed");
+    });
+
+    it("rewrites a session-gone 404 through the compute vocabulary", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: CLASS_HREF,
+          reply: dataFail({ code: "compute-rejected", error: { status: 404 } }),
+        },
+      ]);
+      const result = await adapter.openTable(tableItem());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: { code: "session-gone", error: { status: 404 } },
+      });
+    });
+
+    it("refuses with session-busy without sending any request", async () => {
+      const { adapter, calls } = adapterWith([], { isBusy: true });
+      const result = await adapter.openTable(tableItem());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "session-busy" });
+      assert.deepEqual(calls, []);
+    });
+
+    it("reports not-connected when the active profile has no session", async () => {
+      const { adapter } = adapterWith([], { connected: false });
+      const result = await adapter.openTable(tableItem());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "not-connected" });
+    });
+  });
+
+  describe("getColumns", () => {
+    it("reads a table's column metadata, dropping the empty-string label", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/columns`,
+          reply: dataFixture("columns-class.json"),
+        },
+      ]);
+      const result = await adapter.getColumns(tableDetail());
+      assert.ok(result.ok);
+      assert.deepEqual(
+        result.value.map((c) => [c.name, c.type, c.length, c.label]),
+        [
+          ["Name", "CHAR", 8, undefined],
+          ["Sex", "CHAR", 1, undefined],
+          ["Age", "NUM", 8, undefined],
+          ["Height", "NUM", 8, undefined],
+          ["Weight", "NUM", 8, undefined],
+        ],
+      );
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/columns`],
+      );
+    });
+
+    it("reports link-missing when the table detail carries no columns relation", async () => {
+      const { adapter } = adapterWith([]);
+      const bare = tableDetail();
+      const result = await adapter.getColumns({ ...bare, links: [] });
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: {
+          code: "link-missing",
+          rel: "columns",
+          resource: 'table "SASHELP.CLASS"',
+        },
+      });
+    });
+
+    it("drops a column entry with no usable name", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/columns`,
+          reply: dataOk({ items: [{ id: "x" }], links: [] }),
+        },
+      ]);
+      const result = await adapter.getColumns(tableDetail());
+      assert.ok(result.ok);
+      assert.deepEqual(result.value, []);
+    });
+
+    it("propagates a failure from the columns collection fetch itself", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/columns`,
+          reply: dataFail({ code: "compute-rejected", error: { status: 500 } }),
+        },
+      ]);
+      const result = await adapter.getColumns(tableDetail());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: { code: "compute-rejected", error: { status: 500 } },
+      });
+    });
+
+    it("refuses with session-busy before consulting the table's own link", async () => {
+      const { adapter, calls } = adapterWith([], { isBusy: true });
+      const result = await adapter.getColumns(tableDetail());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "session-busy" });
+      assert.deepEqual(calls, []);
+    });
+  });
+
+  describe("getRows", () => {
+    it("requests one window, appending start/limit to the table's own rows link", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+      ]);
+      const result = await adapter.getRows(tableDetail(), {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(result.ok);
+      assert.equal(result.value.count, 19);
+      assert.deepEqual(
+        result.value.rows.map((r) => r.cells),
+        [
+          ["Alfred", "M", 14, 69, 112.5],
+          ["Alice", "F", 13, 56.5, 84],
+        ],
+      );
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/rows?start=0&limit=2`],
+      );
+    });
+
+    it("never follows a returned next link — a fresh window is a fresh request from the table's own rows link", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+        {
+          when: `${CLASS_HREF}/rows?start=2&limit=2`,
+          reply: dataOk({ count: 19, items: [], links: [] }),
+        },
+      ]);
+      await adapter.getRows(tableDetail(), { start: 0, limit: 2 });
+      const second = await adapter.getRows(tableDetail(), {
+        start: 2,
+        limit: 2,
+      });
+      assert.ok(second.ok);
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [
+          `${CLASS_HREF}/rows?start=0&limit=2`,
+          `${CLASS_HREF}/rows?start=2&limit=2`,
+        ],
+      );
+    });
+
+    it("appends start/limit with & when the table's own rows link already carries a query string", async () => {
+      // `withQuery`'s two-separator branches — caught in review's coverage
+      // follow-up: every other case in this file uses `tableDetail()`'s own
+      // bare `${CLASS_HREF}/rows` link, so the `?`-already-present path was
+      // never exercised.
+      const detail = tableDetail();
+      const rowsLink = detail.links.find((l) => l.rel === "rows");
+      assert.ok(rowsLink);
+      const withQueryAlready = {
+        ...detail,
+        links: [
+          ...detail.links.filter((l) => l.rel !== "rows"),
+          { ...rowsLink, href: `${rowsLink.href}?foo=bar` },
+        ],
+      };
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?foo=bar&start=0&limit=2`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+      ]);
+      const result = await adapter.getRows(withQueryAlready, {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(result.ok);
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/rows?foo=bar&start=0&limit=2`],
+      );
+    });
+
+    it("returns count undefined when the collection body carries none", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataOk({ items: [], links: [] }),
+        },
+      ]);
+      const result = await adapter.getRows(tableDetail(), {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(result.ok);
+      assert.equal(result.value.count, undefined);
+    });
+
+    it("drops a row entry with no cells array", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataOk({ items: [{ version: 1 }], links: [] }),
+        },
+      ]);
+      const result = await adapter.getRows(tableDetail(), {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(result.ok);
+      assert.deepEqual(result.value.rows, []);
+    });
+
+    it("reports link-missing when the table detail carries no rows relation", async () => {
+      const { adapter } = adapterWith([]);
+      const bare = tableDetail();
+      const result = await adapter.getRows(
+        { ...bare, links: [] },
+        { start: 0, limit: 2 },
+      );
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: {
+          code: "link-missing",
+          rel: "rows",
+          resource: 'table "SASHELP.CLASS"',
+        },
+      });
+    });
+
+    it("reports response-malformed when the page carries no items array", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataOk({ count: 19 }),
+        },
+      ]);
+      const result = await adapter.getRows(tableDetail(), {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(!result.ok);
+      const { problem } = result;
+      assert.ok(problem.code === "compute");
+      assert.equal(problem.problem.code, "response-malformed");
+    });
+
+    it("rewrites a session-gone 404 through the compute vocabulary", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFail({ code: "compute-rejected", error: { status: 404 } }),
+        },
+      ]);
+      const result = await adapter.getRows(tableDetail(), {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: { code: "session-gone", error: { status: 404 } },
+      });
+    });
+
+    it("refuses with session-busy without sending any request", async () => {
+      const { adapter, calls } = adapterWith([], { isBusy: true });
+      const result = await adapter.getRows(tableDetail(), {
+        start: 0,
+        limit: 2,
+      });
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "session-busy" });
+      assert.deepEqual(calls, []);
+    });
+
+    it("threads a caller's AbortSignal through to the request", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataOk({ items: [], links: [] }),
+        },
+      ]);
+      const controller = new AbortController();
+      const result = await adapter.getRows(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        controller.signal,
+      );
+      assert.ok(result.ok);
+      assert.ok(calls.every((c) => c.hadSignal));
     });
   });
 });

@@ -21,6 +21,7 @@
     "src/content/messages.ts",
     "src/data/dataExplorer.ts",
     "src/data/dataTree.ts",
+    "src/data/dataViewerPanel.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",
@@ -33,6 +34,8 @@
     "src/run/resultPanel.ts",
     "src/run/statusBar.ts",
     "src/run/targetStore.ts",
+    "src/webview/css.d.ts",
+    "src/webview/dataViewerEntry.tsx",
     "src/webview/entry.ts",
     "test/**"
   ],

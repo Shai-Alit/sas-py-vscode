@@ -68,12 +68,20 @@ import { asSessionGone, type ComputeSession } from "../compute/session";
 import { findLink, readLinks, type Link } from "../wire/links";
 import { type DataProblem } from "./problems";
 import {
+  COLUMNS_REL,
   LIBREFS_REL,
+  readColumnItem,
   readLibraryItem,
+  readRowItem,
+  readTableDetail,
   readTableItem,
+  ROWS_REL,
   SELF_REL,
   TABLES_REL,
+  type Column,
   type LibraryItem,
+  type RowItem,
+  type TableDetail,
   type TableItem,
 } from "./types";
 
@@ -109,6 +117,30 @@ export interface ConnectedSession {
 export interface LibrarySessionSource {
   current(profileId: string): ConnectedSession | undefined;
   isBusy(profileId: string): boolean;
+}
+
+/** The window of rows {@link LibraryAdapter.getRows} requests — `start` and
+ * `limit` map straight onto the `rows` collection's own query parameters
+ * (Finding 7.1), zero-based. */
+export interface RowWindow {
+  readonly start: number;
+  readonly limit: number;
+}
+
+/** One window of row data, as {@link LibraryAdapter.getRows} returns it. */
+export interface RowsPage {
+  readonly rows: readonly RowItem[];
+  /**
+   * The collection's own total row count, when the deployment supplied one.
+   * Finding 7.10 found this populated even at a small `limit` on every probe
+   * this phase ran (`SASHELP.CLASS`, `verde`) — unlike some other Compute
+   * collections' sometimes-`null` `count` (Phase 2b's own finding on that
+   * trap). Still optional at the type level: nothing guarantees every
+   * deployment behaves the same on a table this project has not probed, and
+   * a caller (7b's datasource) must have a defined answer for "no total
+   * known" regardless of how reliable this has been so far.
+   */
+  readonly count: number | undefined;
 }
 
 export class LibraryAdapter {
@@ -200,6 +232,139 @@ export class LibraryAdapter {
       if (table !== undefined) tables.push(table);
     }
     return { ok: true, value: tables };
+  }
+
+  /**
+   * Follows `table`'s own `self` link to its rich per-item detail —
+   * `rowCount`, `columnCount`, and, load-bearing, the `rows`/`columns` links
+   * {@link getColumns}/{@link getRows} need (Finding 7.1). 7a never called
+   * this: Finding 7.8 found no caller in the read-only tree needs a table's
+   * fields beyond its name, so no per-table detail fetch existed before 7b.
+   * Opening a table for viewing is this project's first reason to make one.
+   */
+  async openTable(
+    table: TableItem,
+    signal?: AbortSignal,
+  ): Promise<DataResult<TableDetail>> {
+    const required = this.require();
+    if (!required.ok) return required;
+    const { client } = required.value;
+
+    const link = findLink(table.links, SELF_REL);
+    if (link === undefined) {
+      return linkMissing(`table "${table.libref}.${table.name}"`, SELF_REL);
+    }
+
+    const result = await client.send({ link, ...withSignal(signal) });
+    if (!result.ok) return wrapCompute(asSessionGone(result));
+
+    const detail = readTableDetail(result.value.body, table);
+    if (detail === undefined) {
+      return malformed(
+        result.value,
+        `table "${table.libref}.${table.name}"`,
+        "and it did not carry a usable table representation",
+      );
+    }
+    return { ok: true, value: detail };
+  }
+
+  /**
+   * A table's columns, paginated to completion via {@link collectPages} —
+   * the same shape {@link getTables} already uses for a library's tables.
+   * Unlike rows, a table's column count is small enough (`SASHELP.CLASS`: 5;
+   * nothing this project has probed suggests columns run to the hundreds the
+   * way a library's own table count can) that reading the whole collection
+   * once, at open time, to populate a grid's column definitions is the right
+   * shape — there is no reason to window column metadata the way {@link
+   * getRows} windows row data.
+   */
+  async getColumns(
+    table: TableDetail,
+    signal?: AbortSignal,
+  ): Promise<DataResult<readonly Column[]>> {
+    const required = this.require();
+    if (!required.ok) return required;
+    const { client } = required.value;
+
+    const link = findLink(table.links, COLUMNS_REL);
+    if (link === undefined) {
+      return linkMissing(`table "${table.libref}.${table.name}"`, COLUMNS_REL);
+    }
+
+    const pages = await this.collectPages(client, link, signal);
+    if (!pages.ok) return pages;
+
+    const columns: Column[] = [];
+    for (const raw of pages.value) {
+      const column = readColumnItem(raw);
+      if (column !== undefined) columns.push(column);
+    }
+    return { ok: true, value: columns };
+  }
+
+  /**
+   * One window of a table's row data — a single request, never a walk to
+   * completion. A virtualized grid (7b) asks for the window it needs as the
+   * user scrolls; there is no reason to hold a whole table's rows in memory
+   * the way {@link getColumns}/{@link getTables} reasonably do for
+   * collections this project has only ever observed to be small.
+   *
+   * **Built from `table`'s own `rows` link with `start`/`limit` appended —
+   * never by following a returned `next` link.** Finding 7.9 found that a
+   * `next` link on the *`data/{libref}`* URI can carry no type at all and
+   * silently switch representations if followed literally; this method does
+   * not carry that risk in the first place, because it never reads a page's
+   * own `next` — every request is re-derived fresh from the table's own
+   * `rows` link (fixed `type`/`itemType`), varying only the `start`/`limit`
+   * query. Finding 7.13 (`docs/phases/phase-7.md`) confirms the `rows`
+   * collection's own `next`/`last`/`self` links are, unlike the overloaded
+   * library URI, always properly typed regardless — but this method does not
+   * depend on that being true to stay correct.
+   */
+  async getRows(
+    table: TableDetail,
+    window: RowWindow,
+    signal?: AbortSignal,
+  ): Promise<DataResult<RowsPage>> {
+    const required = this.require();
+    if (!required.ok) return required;
+    const { client } = required.value;
+
+    const link = findLink(table.links, ROWS_REL);
+    if (link === undefined) {
+      return linkMissing(`table "${table.libref}.${table.name}"`, ROWS_REL);
+    }
+
+    const windowed: Link = {
+      ...link,
+      href: withQuery(link.href, [
+        `start=${String(window.start)}`,
+        `limit=${String(window.limit)}`,
+      ]),
+    };
+
+    const result = await client.send({
+      link: windowed,
+      ...withSignal(signal),
+    });
+    if (!result.ok) return wrapCompute(asSessionGone(result));
+
+    const items = readItems(result.value);
+    if (items === undefined) {
+      return malformed(
+        result.value,
+        `table "${table.libref}.${table.name}"'s rows`,
+        'and it carried no "items" array',
+      );
+    }
+
+    const rows: RowItem[] = [];
+    for (const raw of items) {
+      const row = readRowItem(raw);
+      if (row !== undefined) rows.push(row);
+    }
+    return { ok: true, value: { rows, count: readCount(result.value.body) } };
   }
 
   /**
@@ -312,6 +477,22 @@ function readItems(response: ComputeResponse): readonly unknown[] | undefined {
  * never carries an explicit `signal: undefined`. */
 function withSignal(signal: AbortSignal | undefined): { signal?: AbortSignal } {
   return signal === undefined ? {} : { signal };
+}
+
+/** Adds query parameters to an href, keeping any query already there — the
+ * same small helper `compute/job.ts` and `compute/variables.ts` each carry
+ * their own copy of, for the same `start=`/`limit=` shape. */
+function withQuery(href: string, parameters: readonly string[]): string {
+  const separator = href.includes("?") ? "&" : "?";
+  return `${href}${separator}${parameters.join("&")}`;
+}
+
+/** A collection body's own `count`, or `undefined` if absent or not a
+ * number — the same defensive read `readItems` gives `items`. */
+function readCount(body: unknown): number | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const count = (body as { count?: unknown }).count;
+  return typeof count === "number" ? count : undefined;
 }
 
 /** Rewrites a `ComputeFailure` as a `DataFailure`, delegating the vocabulary

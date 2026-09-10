@@ -823,7 +823,161 @@ global state, refreshed explicitly.
   the previous wording gave no concrete way to reach "a big list"; use the
   profile/package guidance above.)*
 
-## 10. Trust, enablement and the rest
+## 10. SAS Libraries — browsing your session (phase 7a)
+
+A second, independent tree in the same activity-bar container Phase 6 added,
+reading the *active compute session's* own libraries and tables
+([ADR-0027](../adr/0027-library-adapter-shape.md)) — unlike SAS Content
+(Phase 6), which reads a deployment-wide Folders/Files service and needs no
+session at all. **Not yet run** — this section and §11 are new for Phase
+7a/7b and have no prior pass to compare against; every box below is a first
+assertion, not a re-check.
+
+**Pre-work:** a Viya connection, the same one §4 sets up — sign in and
+**Connect to SAS Viya** first, so a compute session actually exists. You do
+not need any table of your own: **SASHELP**, a system library, ships with
+every Viya deployment and is what every example below uses. If your
+deployment happens to lack it, substitute any library/table you can see.
+
+- [ ] **The view exists and reflects connection state** — open the **Python
+  on Viya** icon in the Activity Bar.
+  **Expect:** two views stacked in the same container — **SAS Content**
+  (Phase 6) above, **SAS Libraries** below. Before any profile is configured,
+  SAS Libraries shows "Add a SAS Viya connection profile to browse
+  libraries." with a clickable **Add Connection Profile** link. Signed out
+  with a profile configured, it instead reads "Sign in to SAS Viya to browse
+  libraries." Signed in but not connected, it reads "Connect to SAS Viya to
+  browse libraries in your session." Each message's link does what it says.
+- [ ] **Connecting populates the tree** — with a profile signed in, run
+  **Connect to SAS Viya** (§4).
+  **Expect:** SAS Libraries now lists at least **SASHELP** and **WORK**, each
+  with a database icon and a collapsed expand chevron — no welcome text
+  remains.
+- [ ] **Expanding a library lists its tables** — click the chevron next to
+  **SASHELP** to expand it.
+  **Expect:** a list of tables appears, each with a different icon than the
+  library had (no database icon, no expand chevron — a table is always a
+  leaf this phase). SASHELP alone can hold several hundred tables on a stock
+  deployment; if the list is long, that is expected, not a bug.
+- [ ] **Refresh reloads the tree** — click the refresh icon in the SAS
+  Libraries title bar (hover the view's header if you don't see it), or run
+  **Refresh SAS Libraries** from the Command Palette.
+  **Expect:** the tree reloads. If nothing changed on the server, the visible
+  list looks the same — that is a pass, not a no-op failure.
+- [ ] **The tree follows connection changes on its own** — with SAS
+  Libraries populated, run **Disconnect from SAS Viya**, then **Connect to
+  SAS Viya** again (optionally to a different profile, if you have two).
+  **Expect:** the tree updates by itself — empty (welcome text) right after
+  Disconnect, repopulated after Connect — without you pressing Refresh.
+- [ ] **A busy session refuses browsing instead of hanging** — start a
+  long-running selection first: open a `.py` file, type `import time;
+  time.sleep(30)`, select it, and **Run Selection** (§6 has the mechanics if
+  this is unfamiliar). While that run is still going, run **Refresh SAS
+  Libraries**, then try expanding a library you have not yet expanded this
+  session.
+  **Expect:** nothing new appears, and neither action hangs for the run's
+  30 seconds — it returns immediately with nothing changed. Open **Show
+  Log**: you should see a line reading `SAS Libraries: the compute session is
+  running Python and cannot be browsed right now`. Once the run finishes,
+  repeat the refresh/expand and confirm it now works normally.
+- [ ] **Disconnecting empties the tree cleanly** — run **Disconnect from SAS
+  Viya**.
+  **Expect:** SAS Libraries returns to its "Connect to SAS Viya…" welcome
+  text; no stale library or table entries are left showing.
+
+## 11. Data viewer webview (phase 7b)
+
+Clicking a table in SAS Libraries (§10) opens it in a scrollable grid — a
+second webview panel this project ships, built with React and
+`ag-grid-community` rather than hand-rolled DOM
+([ADR-0028](../adr/0028-data-viewer-is-react-and-ag-grid.md)), reading
+through `LibraryAdapter.openTable`/`getColumns`/`getRows`
+(`docs/phases/phase-7.md`). **Not yet run** — no prior pass exists for this
+section either; see §10's own note.
+
+**Pre-work:** the same live connection as §10 — SAS Libraries populated,
+**SASHELP** expanded. This section's running example is **SASHELP.CLASS**: a
+small, standard table (19 rows; columns Name and Sex as text, Age, Height and
+Weight as numbers) that every live probe and automated test in this phase
+already uses, so its exact shape is known ahead of time. If you'd like to
+also see a grid actually page (§11's fourth box), pick a second, larger
+SASHELP table too — anything with more than a couple hundred rows will do.
+
+- [ ] **Clicking a table opens it** — expand **SASHELP**, then click
+  **CLASS** (a plain click, the same as opening a file — not a right-click
+  action).
+  **Expect:** a new tab opens in the editor area titled `SASHELP.CLASS`.
+  Briefly nothing is visible, then a grid appears with five columns — Name,
+  Sex, Age, Height, Weight — populated with data, 19 rows in total.
+- [ ] **The right-click menu does the same thing** — right-click a
+  *different* table and choose **Open Table**.
+  **Expect:** identical result to the box above, just reached from the
+  context menu instead of a click.
+- [ ] **Numbers are right-aligned, text is not** — look at the open
+  **SASHELP.CLASS** grid.
+  **Expect:** the Age, Height and Weight columns are right-aligned; Name and
+  Sex are left-aligned — the ordinary spreadsheet convention, and something
+  this phase's own review added (the column's type was being carried across
+  the wire from the start, but nothing actually read it to align anything
+  until caught in review).
+- [ ] **Every row is really there** — scroll the **SASHELP.CLASS** grid all
+  the way to the bottom.
+  **Expect:** exactly 19 rows, no gaps, no blank rows, nothing repeated. The
+  scrollbar should already be sized as though the grid knows the true total
+  from the start, not growing in size as you scroll further down.
+- [ ] **A larger table actually pages as you scroll (slow)** — open your
+  second, larger table (see this section's pre-work) and scroll down steadily
+  past the first couple hundred rows.
+  **Expect:** new rows keep appearing smoothly as you reach the bottom of
+  what's loaded so far; there is a brief pause the first time each new block
+  loads, but no permanent stop partway through, and no error.
+- [ ] **Opening an already-open table reveals it, not a duplicate** — with
+  **SASHELP.CLASS** already open, click **CLASS** again from the tree.
+  **Expect:** VS Code switches focus to the existing tab; no second
+  `SASHELP.CLASS` tab is created.
+- [ ] **Two different tables stay independent** — open a second, different
+  table alongside **SASHELP.CLASS**.
+  **Expect:** two separate tabs, each showing its own data; closing one
+  leaves the other exactly as it was, still scrolled where you left it.
+- [ ] **A busy session shows the reason in the panel, not a blank grid** —
+  start the same `time.sleep(30)` selection as §10's busy-session box, and
+  while it runs, open a table you have **not** already opened this session.
+  **Expect:** the tab opens, but instead of a grid you see a short message
+  explaining that the session is busy running Python and cannot be browsed —
+  in the panel itself, not only in the log.
+- [ ] **Closing a panel while it is still loading does not error** — open a
+  table you have not opened before, and close its tab immediately (within
+  about a second, before the grid has had time to appear).
+  **Expect:** no error notification, nothing alarming in **Show Log**; open a
+  different table afterward to confirm the extension is still working
+  normally.
+- [ ] **Switching away and back does not scramble the data** — with a table
+  open and scrolled partway down, click into a code editor tab (so the panel
+  is hidden), then click straight back to the table's own tab quickly — within
+  a second or two, ideally while a scroll-triggered fetch might still be in
+  flight.
+  **Expect:** the grid visibly reloads (a brief flash/refetch is expected —
+  the panel does not preserve its state while hidden) and then shows the
+  correct rows for wherever you land — never rows that belong to a different
+  scroll position. This is the hand-run version of a `requestId`-collision
+  defect found and fixed in code review; rows that don't match where you
+  scrolled to is exactly that regression coming back.
+- [ ] **Legible in every theme** — with a table open, switch VS Code between
+  a light theme, a dark theme, and a high-contrast theme (Command Palette →
+  **Preferences: Color Theme**).
+  **Expect:** text and grid lines stay readable in all three, and nothing in
+  the grid (column headers, the loading indicator, resize handles) shows as a
+  visibly broken/missing icon — this panel's Content-Security-Policy
+  deliberately allows no image loading at all, on the prediction that
+  `ag-grid` needs none; a broken icon here means that prediction was wrong,
+  which is itself worth reporting, not just a cosmetic nit.
+- [ ] **(known gap) No sort, filter, CSV export or table properties yet** —
+  look for any of these on an open table.
+  **Expect:** none exist. Sorting, filtering, CSV export and a table
+  properties view are Phase 7c, not this slice — their absence is not a
+  defect to report.
+
+## 12. Trust, enablement and the rest
 
 - [x] **Untrusted workspace posture** — set the folder Restricted via
   **Workspaces: Manage Workspace Trust**.
@@ -853,7 +1007,7 @@ global state, refreshed explicitly.
   failure paths in `src/run/commands.ts` never call `log.*` before showing
   that message. Tracked in Phase 3's **3f** slice.
 
-## 11. Regression spot-checks
+## 13. Regression spot-checks
 
 Each of these was a real defect caught in review. Quick to confirm now that you
 are set up.
@@ -889,15 +1043,17 @@ are set up.
 
 This page is meant to be re-run every phase, so it has to grow with the product.
 
-- **Sections 0–1 and 10–11 are phase-agnostic.** Pre-flight, activation, trust,
+- **Sections 0–1 and 12–13 are phase-agnostic.** Pre-flight, activation, trust,
   enablement and the regression spot-checks apply to every build. The regression
   section grows by one bullet each time review catches a defect worth
   re-confirming by hand.
-- **Sections 2–9 map to phases 1–3.** When a phase closes, add a section (or
-  extend one) for its user-visible behaviour, and cite the slice and ADR in the
-  heading the same way the existing sections do. Phase 4's traceback
-  editor-position mapping, for instance, turns the `ModuleNotFoundError`
-  **(known gap)** row in §7 into a real assertion.
+- **Sections 2–11 map to phases 1–3 and 7a–7b.** When a phase closes, add a
+  section (or extend one) for its user-visible behaviour, and cite the slice
+  and ADR in the heading the same way the existing sections do. Phase 4's
+  traceback editor-position mapping, for instance, turns the
+  `ModuleNotFoundError` **(known gap)** row in §7 into a real assertion.
+  Phase 6 (SAS Content) has none yet — added when that phase gets its own
+  live pass, not folded in here.
 - **Retire a gap when it closes.** A **(known gap)** row is a promise to update
   it, not a permanent excuse. When the behaviour lands, rewrite the row as a
   normal **Expect**.

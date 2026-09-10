@@ -83,6 +83,69 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 2026-09-09 — nothing else gates Phase 6.
 
+**Phase 7 (Libraries and data viewer) is in progress, worked from the
+separate `sas-py-vscode-cowork` clone — open
+[`docs/phases/phase-7.md`](docs/phases/phase-7.md).** Scoped 2026-09-03
+(7a–7c); **7a is done and merged** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142));
+**7b (data viewer webview) is implemented and adversarially reviewed, three
+real findings folded in; only Sean's own manual visual check of a real panel
+remains before a PR is opened.**
+
+- **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
+  `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new
+  `onDidChangeConnection` — see this file's Phase index row for the full
+  verify numbers.
+- **7b — Data viewer webview.** Decided 2026-09-10, with Sean: React +
+  `ag-grid-community`, not a hand-rolled grid — [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)
+  records the reasoning, the re-derived CSP threat model 7b's own code must
+  write, the testing-boundary call (browser-only exclusion, no `jsdom`), and
+  the dependency-classification decision (`devDependencies`, preserving
+  [ADR-0005](docs/adr/0005-supply-chain-policy.md)'s zero-runtime-dependency
+  invariant — see that ADR's own 2026-09-10 amendment). Finding 7.10
+  (`phase-7.md`) settles a real implementation question in 7b's favour: the
+  rows collection's `count` is populated even at a small `limit`, so no
+  "assume last page" heuristic is needed (a same-day re-probe corrected that
+  finding's own `itemCount` detail; unused by any code, see `phase-7.md`).
+  Finding 7.13 confirms the rows collection's own `next`/`last`/`self` links
+  are properly typed, unlike the tables collection's (Finding 7.9). **Code
+  complete 2026-09-10**: `LibraryAdapter.openTable`/`getColumns`/`getRows`
+  (unit-tested), `DataViewerPanelManager`/`OpenTablePanel`
+  (integration-tested against a fake panel and the real adapter), the
+  `pythonOnViya.openTable` command, and the React/ag-grid webview bootstrap
+  (`src/webview/dataViewerEntry.tsx`) — see `phase-7.md`'s 7b punch list for
+  the full file-by-file account. **Adversarially reviewed 2026-09-10,
+  before any push** (per `CLAUDE.md`'s standing rule): three real findings
+  folded in — no unit test for `dataViewerModel.ts` (added), a `requestId`
+  collision across a webview reload that could resolve the wrong row window
+  (fixed with `crypto.randomUUID()`), and no `AbortSignal` on any of the
+  panel's three adapter calls (fixed with a per-panel `AbortController`).
+  Sean's own `npm install` + `npx tsc -p tsconfig.webview.json --noEmit`
+  then came back clean — the one thing nothing in the sandbox this was
+  written in could check — after two small fixes the install itself
+  surfaced (an ambient `*.css` module shim; an `exactOptionalPropertyTypes`
+  conflict on an intentionally-omitted `rowCount`). Sean's own
+  `npm run verify` and `npm run test:integration` then surfaced two more
+  real gaps the review pass predates: a test-ordering bug in three
+  `DataViewerPanelManager` integration tests (`sendReady()` called before
+  `open()` had registered the fake panel's listener), and a branch-coverage
+  shortfall traced to under-tested `src/data/types.ts` parser functions.
+  Both fixed and re-verified — `phase-7.md`'s 7b punch list has the full
+  account — and Sean's re-run of both commands is green. **One remaining,
+  explicitly-called-out gap**: nobody has built this in a real
+  `WebviewPanel` yet — needs Sean's own manual visual check before this box
+  ticks.
+- **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
+  Scoped 2026-09-04 from a separate session; that session's doc edits were
+  stashed rather than committed and sat unmerged until found and resurrected
+  2026-09-10. Live-probed this session (Findings 7.11/7.12): all three
+  bridge methods work end to end, and the credential-echo risk the stash
+  had only guessed at (by analogy to Phase 8's Finding 92) turned out to be
+  more nuanced than feared — `SAS.submit()`'s own log echo applies SAS's
+  standard `PASSWORD=` masking; Finding 92's own mechanism (the outer
+  job-source echo) is untouched and still the real risk for a credential
+  written as a literal. Remaining work: the documented example and the
+  drag-and-drop snippet (7a's tree now exists to drop from).
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:
@@ -178,7 +241,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9, `npm run verify` green (1395 unit + 287 integration); 6c-ii/iii next. | `docs/phases/phase-6.md` |
-| 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). 7b (data viewer webview) next, not started. | `docs/phases/phase-7.md` |
+| 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). **7b: architecture decided and code complete 2026-09-10** (React + `ag-grid-community`, [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)) — `LibraryAdapter.openTable`/`getColumns`/`getRows`, `DataViewerPanelManager`, the `pythonOnViya.openTable` command, and the webview bootstrap all written and typechecked; Findings 7.10/7.13 settled the row-count and link-typing questions the datasource needed. **Adversarially reviewed 2026-09-10** — three real findings folded in (no unit test for `dataViewerModel.ts`; a `requestId` collision across a webview reload; no `AbortSignal` on the panel's adapter calls) — and Sean's own `npm install` + `tsc -p tsconfig.webview.json` now come back clean. Sean's own `npm run verify`/`npm run test:integration` then surfaced and closed two more real gaps (an integration-test ordering bug; a `types.ts` branch-coverage shortfall) — both green on re-run. Not yet merged: needs Sean's own manual visual check of a real panel before a PR opens. **7d resurrected from a 2026-09-04 stash and live-probed 2026-09-10** (Findings 7.11/7.12: bridge methods confirmed end to end; credential-echo risk narrower than feared). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |

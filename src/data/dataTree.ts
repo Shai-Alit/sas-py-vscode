@@ -18,11 +18,20 @@
  * adapter reports `not-connected`, `getChildren` returns nothing and the
  * view's `viewsWelcome` content shows instead.
  *
- * ## What this slice does not do
+ * ## 7b: a table node now opens the data viewer
  *
- * No `command` on a table node (opening one needs the data-viewer webview,
- * 7b), no context-menu actions (7c), no `getParent` (nothing reveals yet) —
- * the same scope line `src/content/contentTree.ts` drew for 6a-ii.
+ * A table's `vscode.TreeItem` carries a `command` (`pythonOnViya.openTable`,
+ * `package.json`'s own `view/item/context` entry mirrors it for the
+ * right-click menu), fired with the item itself as its argument — the same
+ * one-argument shape `src/data/dataExplorer.ts`'s command handler expects, so
+ * this class stays free of knowing anything about `DataViewerPanelManager`
+ * or `LibraryAdapter.openTable`/`getColumns`/`getRows` itself.
+ *
+ * ## What this slice still does not do
+ *
+ * No further context-menu actions beyond "Open" (sort/filter/export/
+ * properties are 7c), no `getParent` (nothing reveals yet) — the same scope
+ * line `src/content/contentTree.ts` drew for 6a-ii.
  */
 
 import * as vscode from "vscode";
@@ -80,6 +89,19 @@ export class SasLibraryTreeProvider
     node.id = isLibrary(item)
       ? `library:${item.name}`
       : `table:${item.libref}.${item.name}`;
+    if (isTable(item)) {
+      // Opening is a click, not just a context-menu action — matching how a
+      // file in `src/content/contentTree.ts` opens. The command receives the
+      // `TableItem` itself; `src/data/dataExplorer.ts`'s registration is what
+      // turns that into a `LibraryAdapter.openTable`/`getColumns` call and a
+      // `DataViewerPanelManager.open`, so this class stays exactly as thin as
+      // it was before 7b.
+      node.command = {
+        command: "pythonOnViya.openTable",
+        title: vscode.l10n.t("Open Table"),
+        arguments: [item],
+      };
+    }
     return node;
   }
 

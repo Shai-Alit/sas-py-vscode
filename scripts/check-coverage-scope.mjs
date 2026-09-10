@@ -78,11 +78,27 @@ function walk(root, dir) {
     const full = join(root, dir, entry);
     if (statSync(full).isDirectory()) {
       found.push(...walk(root, join(dir, entry)));
-    } else if (entry.endsWith(".ts")) {
+    } else if (entry.endsWith(".ts") || entry.endsWith(".tsx")) {
+      // `.tsx` joined the walk on 2026-09-10 (7b, ADR-0028): this project's
+      // first JSX source file, `src/webview/dataViewerEntry.tsx`. Before this,
+      // a `.tsx` file was invisible to both directions of the check below —
+      // not flagged if wrongly excluded, and not required to be excluded if
+      // it should be — purely because this loop's own suffix test named one
+      // extension. `.endsWith(".ts")` does not also match `.tsx` (the last
+      // character differs), so this was a silent gap, not a deliberate
+      // narrowing.
       found.push(relative(root, full).split(sep).join("/"));
     }
   }
   return found;
+}
+
+/** `ts.createSourceFile` needs to be told when a file's syntax includes JSX —
+ * `<div>` parses as an old-style type assertion under `ScriptKind.TS`, not as
+ * an element, and a `.tsx` file that happens to use that syntax would parse
+ * into the wrong tree under the wrong kind. */
+function scriptKindFor(fileName) {
+  return fileName.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
 }
 
 /**
@@ -116,7 +132,7 @@ export function importsHostModule(source, fileName = "input.ts") {
     source,
     ts.ScriptTarget.ES2022,
     /* setParentNodes */ false,
-    ts.ScriptKind.TS,
+    scriptKindFor(fileName),
   );
 
   let found = false;
@@ -190,7 +206,7 @@ export function isTypesOnly(source, fileName = "input.ts") {
     source,
     ts.ScriptTarget.ES2022,
     /* setParentNodes */ false,
-    ts.ScriptKind.TS,
+    scriptKindFor(fileName),
   );
 
   const isDeclared = (node) =>

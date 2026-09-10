@@ -197,6 +197,11 @@
         "title": "%command.deleteContentItem.title%",
         "category": "%extension.category%",
         "icon": "$(trash)"
+      },
+      {
+        "command": "pythonOnViya.openTable",
+        "title": "%command.openTable.title%",
+        "category": "%extension.category%"
       }
     ],
     "viewsContainers": {
@@ -300,6 +305,11 @@
           "command": "pythonOnViya.deleteContentItem",
           "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file)",
           "group": "7_modify@2"
+        },
+        {
+          "command": "pythonOnViya.openTable",
+          "when": "view == pythonOnViya.dataExplorer && viewItem == sasData:table",
+          "group": "navigation"
         }
       ],
       "editor/title/run": [
@@ -419,11 +429,15 @@
     "@eslint/js": "10.0.1",
     "@types/mocha": "10.0.10",
     "@types/node": "22.18.13",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
     "@types/sinon": "22.0.0",
     "@types/vscode": "1.104.0",
     "@vscode/l10n-dev": "0.0.35",
     "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "3.9.2",
+    "ag-grid-community": "36.0.2",
+    "ag-grid-react": "36.0.2",
     "c8": "12.0.0",
     "esbuild": "0.28.2",
     "eslint": "10.10.0",
@@ -434,6 +448,8 @@
     "msw": "2.15.0",
     "ovsx": "1.1.1",
     "prettier": "3.9.6",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "sinon": "22.1.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.69.0",

@@ -1,0 +1,101 @@
+{
+  "accept": "application/vnd.sas.compute.data.table.column",
+  "count": 5,
+  "start": 0,
+  "limit": 5,
+  "items": [
+    {
+      "id": "Name",
+      "name": "Name",
+      "type": "CHAR",
+      "length": 8,
+      "label": "",
+      "index": 0,
+      "version": 2,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns/Name",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table.column"
+        }
+      ]
+    },
+    {
+      "id": "Sex",
+      "name": "Sex",
+      "type": "CHAR",
+      "length": 1,
+      "label": "",
+      "index": 1,
+      "version": 2,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns/Sex",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table.column"
+        }
+      ]
+    },
+    {
+      "id": "Age",
+      "name": "Age",
+      "type": "NUM",
+      "length": 8,
+      "label": "",
+      "index": 2,
+      "version": 2,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns/Age",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table.column"
+        }
+      ]
+    },
+    {
+      "id": "Height",
+      "name": "Height",
+      "type": "NUM",
+      "length": 8,
+      "label": "",
+      "index": 3,
+      "version": 2,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns/Height",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table.column"
+        }
+      ]
+    },
+    {
+      "id": "Weight",
+      "name": "Weight",
+      "type": "NUM",
+      "length": 8,
+      "label": "",
+      "index": 4,
+      "version": 2,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns/Weight",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table.column"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/columns?limit=5&start=0",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

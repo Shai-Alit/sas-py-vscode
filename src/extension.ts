@@ -17,6 +17,7 @@ import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerContentExplorer } from "./content/contentExplorer";
 import { registerDataExplorer } from "./data/dataExplorer";
+import { DataViewerPanelManager } from "./data/dataViewerPanel";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
 import { registerRunCommands } from "./run/commands";
@@ -233,6 +234,13 @@ export function activate(context: vscode.ExtensionContext): void {
     { transport },
   );
 
+  // Phase 7b: the data viewer's own panel manager — one `WebviewPanel` per
+  // open table (`src/data/dataViewerPanel.ts`, ADR-0028), constructed here so
+  // its lifetime is the extension's own and every panel it opens is disposed
+  // on deactivation via `context.subscriptions` (wired inside
+  // `registerDataExplorer`, which owns the command that calls `.open`).
+  const dataViewerPanels = new DataViewerPanelManager(context.extensionUri);
+
   // Phase 7a: the read-only "SAS Libraries" tree, a second view inside the
   // same activity-bar container 6a-ii created (the phase file's own
   // coordination note — 6a landed first). Unlike SAS Content, this is
@@ -241,11 +249,18 @@ export function activate(context: vscode.ExtensionContext): void {
   // `onDidChangeConnection`, which `registerComputeCommands` above fires
   // whenever connect, disconnect or a run's own `forgetProfile` changes what
   // the active profile's session is.
-  registerDataExplorer(context, profiles, sessions, output, {
-    onDidChangeSessions: auth.onDidChangeSessions,
-    onDidSignOut: auth.onDidSignOut,
-    onDidChangeConnection,
-  });
+  registerDataExplorer(
+    context,
+    profiles,
+    sessions,
+    output,
+    {
+      onDidChangeSessions: auth.onDidChangeSessions,
+      onDidSignOut: auth.onDidSignOut,
+      onDidChangeConnection,
+    },
+    dataViewerPanels,
+  );
 }
 
 export function deactivate(): void {

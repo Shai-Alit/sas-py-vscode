@@ -445,7 +445,7 @@ change that landed left the tree unrefreshed; `run()` now acts on the adapter's
 actual `ContentResult` and only suppresses output when the abort fired *during*
 the work. Claude's PR review clean (one non-blocking note: the command handlers
 have no `.catch`, matching the existing `src/*/commands.ts` convention). All
-threads resolved. **6c-ii is next.**
+threads resolved. **6c-ii followed, then 6c-iii; all three merged 2026-09-10.**
 
 - ☑ **Folder create / file create / rename / delete on `ContentAdapter`**
   (`src/content/adapter.ts`, `vscode`-free), each driven by a link the parent
@@ -560,7 +560,8 @@ resolved.
   feature is a low-priority nice-to-have. Revisit if users ask.
 
 ☑ **6c-iii — `getParent` / `TreeView.reveal` + the `ancestors` probe.** Done
-2026-09-10. `npm run verify` green (1480 unit passing; coverage 95.31 lines /
+and merged 2026-09-10 — [PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154),
+squash `507155e`. `npm run verify` green (1480 unit passing; coverage 95.31 lines /
 95.37 branches / 94.98 functions / 95.31 statements). Integration 318 passing
 (run with the VS Code env vars stripped — the `ELECTRON_RUN_AS_NODE` launch
 quirk, unchanged). Adversarial pass before the PR: **no blocking findings** —

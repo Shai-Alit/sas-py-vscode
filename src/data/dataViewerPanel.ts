@@ -266,7 +266,11 @@ class OpenTablePanel implements vscode.Disposable {
           void this.adapter.deleteView(staleView).then((result) => {
             if (!result.ok) {
               this.log?.warn(
-                `python-on-viya: could not delete a sort/filter view over "${staleView.libref}.${staleView.name}" on panel dispose (${describeDataProblem(result.problem)}) — it will be orphaned until the session ends`,
+                vscode.l10n.t(
+                  'SAS Libraries: could not delete a sort/filter view over "{0}" on panel dispose ({1}) — it will be orphaned until the session ends',
+                  `${staleView.libref}.${staleView.name}`,
+                  describeDataProblem(result.problem),
+                ),
               );
             }
           });
@@ -362,7 +366,11 @@ class OpenTablePanel implements vscode.Disposable {
       // failed filter left nothing in the log at all to confirm anything had
       // even been attempted.
       this.log?.warn(
-        `python-on-viya: could not prepare a sort/filter read over "${table.libref}.${table.name}" (${describeDataProblem(target.problem)})`,
+        vscode.l10n.t(
+          'SAS Libraries: could not prepare a sort/filter read over "{0}" ({1})',
+          `${table.libref}.${table.name}`,
+          describeDataProblem(target.problem),
+        ),
       );
       this.post({
         type: "rowsError",
@@ -422,7 +430,11 @@ class OpenTablePanel implements vscode.Disposable {
       // filter-with-no-sort — see that method's own doc comment). Logged for
       // the same reason as the `target.ok` branch above.
       this.log?.warn(
-        `python-on-viya: a row request over "${table.libref}.${table.name}" failed (${describeDataProblem(result.problem)})`,
+        vscode.l10n.t(
+          'SAS Libraries: a row request over "{0}" failed ({1})',
+          `${table.libref}.${table.name}`,
+          describeDataProblem(result.problem),
+        ),
       );
       this.post({
         type: "rowsError",
@@ -549,7 +561,11 @@ class OpenTablePanel implements vscode.Disposable {
     const deleted = await this.adapter.deleteView(view, this.controller.signal);
     if (!deleted.ok) {
       this.log?.warn(
-        `python-on-viya: could not delete a superseded sort/filter view over "${view.libref}.${view.name}" (${describeDataProblem(deleted.problem)}) — it will be orphaned until the session ends`,
+        vscode.l10n.t(
+          'SAS Libraries: could not delete a superseded sort/filter view over "{0}" ({1}) — it will be orphaned until the session ends',
+          `${view.libref}.${view.name}`,
+          describeDataProblem(deleted.problem),
+        ),
       );
     }
   }

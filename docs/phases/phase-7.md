@@ -1487,6 +1487,30 @@ test:integration` green (321 passing — the jump from 313 includes 6c-iii's
 own new tests picked up by the `main` reconciliation, plus this round's 2
 new dispose tests); `check:docs`/`build` clean.
 
+**A third finding arrived from the same review pass, against the fix
+commit above (Major, github-actions bot): all four of `dataViewerPanel.ts`'s
+own `log?.warn` calls — the two this round added, plus two pre-existing
+ones from 7c-i's original commit (the dispose-time and the supersede-path
+view-delete-failure warnings) — were hard-coded English, not run through
+`vscode.l10n.t()`.** Verified against this project's own established
+convention before fixing: `dataTree.ts`/`contentTree.ts`/
+`contentFileSystem.ts`/`sessionManager.ts` all wrap a `describeXProblem()`
+log fragment in `vscode.l10n.t("<area>: {0}", describeXProblem(...))` — the
+outer sentence is localised even though the inner fragment stays English by
+design (`describeDataProblem`'s own doc comment). This file's four
+`log?.warn` calls never did, missed since the original 7c-i commit. Fixed:
+all four now wrap in `vscode.l10n.t()`, `"SAS Libraries: {0}"` prefix
+(matching `dataTree.ts`'s own precedent for this exact `DataProblem`
+vocabulary), with the table/view name and the `describeDataProblem`
+fragment passed as `{0}`/`{1}` placeholder arguments rather than
+interpolated into the message string itself, so `npm run l10n:extract`
+picks them up (confirmed: 212 strings extracted, up from 208, 5 total
+carrying the "SAS Libraries" prefix). No test changes needed — every
+existing assertion on these lines matches a substring of the rendered
+English text (e.g. `/could not delete/`), unaffected by the wrapping.
+`npm run verify` green (1479 unit passing, coverage unchanged); `npm run
+test:integration` green (321 passing, unchanged).
+
 ☐ **7c-ii — Table properties / columns static viewer.**
 
 - ☐ Extend `TableDetail`/`readTableDetail` (or add a new type) with the full

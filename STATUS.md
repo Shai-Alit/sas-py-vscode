@@ -9,8 +9,8 @@ along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 [`docs/phases/phase-6.md`](docs/phases/phase-6.md).** Scoped 2026-09-03 (4
 slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 before
 starting. **6a is done** (split 6a-i + 6a-ii) and **6b is done**; **6c** is
-split into 6c-i/ii/iii — the oversized-read fix and 6c-i are done (6c-i in
-adversarial review), 6c-ii next.
+split into 6c-i/ii/iii — the oversized-read fix (PR #147) and **6c-i are done
+and merged** (PR #148, squash `c63feaf`); **6c-ii is next.**
 
 (Probe finding numbers are now phase-scoped `N.x` — see the "Finding-numbering
 scheme changed 2026-09-09" section below and `CLAUDE.md`.)
@@ -63,8 +63,9 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     (squash `79e10b0`) — `content-too-large` `ContentProblem` + a typed
     `ResponseTooLargeError` from `src/auth/transport.ts`. Adversarial pass
     before the PR; Codex + Claude reviews clean.
-  - **6c-i is built and in adversarial review** (branch `feat/content-6c-i`,
-    not yet pushed). `ContentAdapter` gains `createFolder`/`createFile`/
+  - **6c-i is done and merged** 2026-09-10 as
+    [PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148) (squash
+    `c63feaf`). `ContentAdapter` gains `createFolder`/`createFile`/
     `renameItem`/`deleteItem` over a new JSON-body arm on `ContentClient`;
     `content-name-rejected` `ContentProblem`; delegate `contextValue`s; four
     flat commands in a new `src/content/contentCommands.ts`. Findings 6.3–6.9
@@ -72,6 +73,11 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     finding 6.9 clears Finding 79's one-cadence caveat; finding 6.7 is a real
     cadence difference (a folder rejects its own full representation on `PUT`
     on 2026.06 — 6c-i sends a minimal `{name}` body, no dialect branch).
+    `npm run verify` green (1395 unit + 287 integration). Adversarial pass
+    before the PR (found the `createFile` rollback-signal Major); Codex PR
+    review found one further Major (a post-completion Cancel click hiding a
+    landed mutation) — both fixed on the branch; Claude PR review clean; all
+    threads resolved.
   - **6c-ii** and **6c-iii** are next, in order.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
@@ -171,7 +177,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) built and in adversarial review**, findings 6.3–6.9; 6c-ii/iii next. | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9, `npm run verify` green (1395 unit + 287 integration); 6c-ii/iii next. | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). 7b (data viewer webview) next, not started. | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

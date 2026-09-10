@@ -60,6 +60,16 @@ export interface NodePresentation {
    * `file` member qualifies; a folder, the root, and a `dataFlow` leaf do not.
    */
   readonly openable: boolean;
+  /**
+   * `true` → the drag-and-drop controller (6c-ii) may pick this item up. A
+   * `type: "child"` member — a folder or a file below the four delegates —
+   * qualifies, **except** one flagged {@link ContentItem.inRecycleBin}: a
+   * recycled item's drag is a restore, which is 6d's. A delegate folder, a
+   * top-level root-listing folder, and the synthetic root never qualify (no
+   * member record to re-parent). Whether a given *drop* is a valid move is
+   * `src/content/contentMove.ts`'s call — this only pre-filters the drag.
+   */
+  readonly draggable: boolean;
   /** A `vscode.ThemeIcon` id — no bundled SVGs. */
   readonly icon: string;
   readonly contextValue: string;
@@ -72,6 +82,7 @@ export function nodePresentationOf(item: ContentItem): NodePresentation {
     label: item.name,
     expandable: container,
     openable: !container && typeNameOf(item) === FILE_CONTENT_TYPE,
+    draggable: item.type === "child" && item.inRecycleBin !== true,
     icon: iconIdFor(item, container),
     contextValue: contextValueFor(item, container),
   };

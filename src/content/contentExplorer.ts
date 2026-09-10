@@ -31,6 +31,7 @@ import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import type { HttpTransport } from "../auth/transport";
 import type { ProfileStore } from "../profile/store";
 import { registerContentCommands } from "./contentCommands";
+import { SasContentDragAndDropController } from "./contentDragAndDrop";
 import {
   ContentSession,
   type ContentSessionDeps,
@@ -109,8 +110,27 @@ export function registerContentExplorer(
     log,
   );
 
+  // 6c-ii: drag a folder or file member onto another folder to move it. The
+  // controller is a thin shell — `contentMove.ts` decides which drops are
+  // moves, `adapter.moveItem` does the wire work. `canSelectMany` lets a user
+  // drag several at once; the 6c-i context-menu commands (create / rename /
+  // delete) only ever act on the clicked item, so their `view/item/context`
+  // `when` clauses in `package.json` carry `&& !listMultiSelection` — they
+  // simply don't offer themselves while more than one item is selected, rather
+  // than silently acting on one of several.
+  const dragAndDrop = new SasContentDragAndDropController({
+    adapter: () => session.adapterFor(activeEndpoint()),
+    refresh: () => {
+      provider.refresh();
+    },
+    log,
+    viewId: CONTENT_VIEW_ID,
+  });
+
   const view = vscode.window.createTreeView(CONTENT_VIEW_ID, {
     treeDataProvider: provider,
+    dragAndDropController: dragAndDrop,
+    canSelectMany: true,
   });
 
   // The tree context-menu mutations (6c-i). They read the same

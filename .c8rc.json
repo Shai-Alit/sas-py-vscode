@@ -15,6 +15,7 @@
     "src/compute/messages.ts",
     "src/compute/sessionManager.ts",
     "src/content/contentCommands.ts",
+    "src/content/contentDragAndDrop.ts",
     "src/content/contentExplorer.ts",
     "src/content/contentFileSystem.ts",
     "src/content/contentTree.ts",

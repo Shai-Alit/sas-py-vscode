@@ -170,11 +170,7 @@ class OpenTablePanel implements vscode.Disposable {
   }
 
   async start(): Promise<void> {
-    this.panel.webview.html = buildHtml(
-      this.panel.webview,
-      this.table,
-      this.extensionUri,
-    );
+    this.panel.webview.html = buildHtml(this.panel.webview, this.extensionUri);
 
     this.subscriptions.push(
       this.panel.webview.onDidReceiveMessage((message) => {
@@ -410,7 +406,6 @@ function createRealPanel(
  */
 function buildHtml(
   webview: DataWebviewPanel["webview"],
-  table: TableItem,
   extensionUri: vscode.Uri,
 ): string {
   const scriptUri = webview.asWebviewUri(
@@ -426,8 +421,6 @@ function buildHtml(
     `script-src 'nonce-${nonce}';`,
     `font-src ${webview.cspSource} data:;`,
   ].join(" ");
-
-  const title = `${table.libref}.${table.name}`;
 
   // Same validated read `resultPanel.ts` uses: filtered to the BCP-47 shape
   // `env.language` documents ("en", "pt-br", …), "en" as the fallback for
@@ -453,16 +446,8 @@ function buildHtml(
 </style>
 </head>
 <body>
-<div id="root" data-title="${escapeHtmlAttribute(title)}"></div>
+<div id="root"></div>
 <script nonce="${nonce}" src="${scriptUri.toString()}"></script>
 </body>
 </html>`;
-}
-
-function escapeHtmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }

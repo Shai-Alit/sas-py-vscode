@@ -667,12 +667,22 @@ before the PR.
   `getChildItems`); **`isFavoritesDelegate`** / **`FAVORITE_MEMBER_TYPE`**
   (`"reference"`) in `types.ts`.
 - ☑ **`presentation.ts`** — a `favoriteAction: "add" | "remove" | "none"` on
-  `NodePresentation`, and a **`.fav` suffix** on the `sasContent:folder` /
-  `sasContent:file` `contextValue` for an already-favourited item. Not
-  favouritable: the synthetic root, every delegate, My Folder, and anything shown
-  inside the Recycle Bin. This is the one place the otherwise-discrete
-  `contextValue` set carries item state, so the content `when` clauses in
-  `package.json` moved from `==` to `=~ /^sasContent:(folder|file)(\.fav)?$/`.
+  `NodePresentation`, and **two mutually exclusive state suffixes** on the
+  `sasContent:folder` / `sasContent:file` `contextValue`: **`.fav`** for an
+  already-favourited item (menu offers Remove, not Add) and **`.recycled`** for
+  an item shown inside the Recycle Bin (`ContentItem.inRecycleBin`). This is the
+  one place the otherwise-discrete `contextValue` set carries item state, so the
+  content `when` clauses in `package.json` moved from `==` to `=~` on
+  `$`-anchored patterns (`/^sasContent:(folder|file)(\.fav)?$/`). Because every
+  such pattern is anchored, a `.recycled` item matches **none** of them —
+  create, rename, delete and add/remove-favourite are all withheld from bin
+  content (its own restore / permanent-delete actions are 6d-ii's). **This
+  incidentally tightens the 6c-i menu**, which until 6d-i offered rename/delete
+  on a Recycle Bin child — PR review finding (Codex, 2 × Major, one root cause:
+  a bin child kept a bare `sasContent:folder`/`:file` value, so the new
+  add-favourite command showed on it). The `favorite()` command handler also
+  early-outs with a message when `item.inRecycleBin === true`, in case it is
+  ever invoked programmatically.
 - ☑ **Two flat commands** `pythonOnViya.addContentToFavorites` /
   `removeContentFromFavorites` in `contentCommands.ts` — no prompt, no confirm
   (a one-click reversible toggle); a full tree reload after, which re-marks every
@@ -687,7 +697,7 @@ before the PR.
   `FAVORITE_MEMBER_TYPE`), `test/integration/content/explorer.test.ts` (+1 —
   command + menu wiring; the 6c-i menu assertion relaxed for the `=~` form). New
   fixture `favorites-members.json`. `npm run verify` green (1503 unit; coverage
-  95.37 lines / 95.31 branches / 95.06 functions / 95.37 statements), 319
+  95.37 lines / 95.31 branches / 95.06 functions / 95.37 statements), 320
   integration passing.
 - ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i.** A drop onto the
   My Favorites delegate already no-ops (`moveObjection` → `target-not-a-folder`);

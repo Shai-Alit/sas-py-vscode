@@ -12,7 +12,7 @@
  * does nothing else with a branch in it, so the mapping decisions are all
  * unit-testable here rather than only reachable through the extension host.
  *
- * ## Five kinds, two of them favourite-state-aware
+ * ## Five kinds, and two state suffixes
  *
  * 6c-i adds create / rename / delete to the tree's context menu; 6d-i adds
  * add-to / remove-from My Favorites. The `when` clauses tell apart:
@@ -28,12 +28,20 @@
  *   folder member). Create, rename, delete, and favourite.
  * - `sasContent:file` — a file or other leaf member. Rename, delete, favourite.
  *
- * The last two take a **`.fav` suffix** (`sasContent:folder.fav`) when the item
- * is already in My Favorites, so the menu offers "Remove from My Favorites"
- * instead of "Add" — the one place this project's otherwise-discrete
- * `contextValue` set carries item state, and the reason `package.json`'s
- * content `when` clauses match with `=~ /^sasContent:(folder|file)(\.fav)?$/`
- * rather than `==`.
+ * `sasContent:folder` / `sasContent:file` take **one** of two mutually exclusive
+ * suffixes, so the one place this project's otherwise-discrete `contextValue`
+ * set carries item state, and the reason `package.json`'s content `when` clauses
+ * match with `=~` on an anchored pattern rather than `==`:
+ *
+ * - **`.fav`** (`sasContent:folder.fav`) — the item is already in My Favorites,
+ *   so the menu offers "Remove from My Favorites" instead of "Add".
+ * - **`.recycled`** (`sasContent:file.recycled`) — the item is shown inside the
+ *   Recycle Bin ({@link ContentItem.inRecycleBin}). Every content `when` clause
+ *   is `$`-anchored after its optional `.fav`, so a `.recycled` item matches
+ *   **none** of them — create, rename, delete and favourite are all withheld
+ *   from bin content, whose real actions (restore / permanently delete) are
+ *   6d-ii's. This also tightens the 6c-i menu, which until 6d-i offered
+ *   rename/delete on a bin child.
  */
 
 import {
@@ -59,8 +67,14 @@ export const CONTEXT_MY_FOLDER = "sasContent:myFolder";
 /** The "My Favorites" / "Recycle Bin" delegates — no create/rename/delete. */
 export const CONTEXT_DELEGATE = "sasContent:delegate";
 /** Appended to {@link CONTEXT_FOLDER} / {@link CONTEXT_FILE} for an item already
- * in My Favorites (6d-i). */
+ * in My Favorites (6d-i). Mutually exclusive with {@link RECYCLED_SUFFIX}. */
 export const FAVORITE_SUFFIX = ".fav";
+/** Appended to {@link CONTEXT_FOLDER} / {@link CONTEXT_FILE} for an item shown
+ * inside the Recycle Bin ({@link ContentItem.inRecycleBin}), so every content
+ * `when` clause — all `$`-anchored — withholds itself (6d-i; the bin's own
+ * actions are 6d-ii). Mutually exclusive with {@link FAVORITE_SUFFIX}: a bin
+ * item is never favouritable. */
+export const RECYCLED_SUFFIX = ".recycled";
 
 export interface NodePresentation {
   readonly label: string;
@@ -108,9 +122,25 @@ export function nodePresentationOf(item: ContentItem): NodePresentation {
     draggable: item.type === "child" && item.inRecycleBin !== true,
     favoriteAction,
     icon: iconIdFor(item, container),
-    contextValue:
-      favoriteAction === "remove" ? `${base}${FAVORITE_SUFFIX}` : base,
+    contextValue: contextValueWithState(item, base, favoriteAction),
   };
+}
+
+/**
+ * The `base` `contextValue` plus at most one state suffix. `.fav` and
+ * `.recycled` never co-occur (a bin item's {@link favoriteActionFor} is always
+ * `"none"`), and both apply only to {@link CONTEXT_FOLDER} / {@link CONTEXT_FILE}
+ * — a delegate or the root keeps its bare value.
+ */
+function contextValueWithState(
+  item: ContentItem,
+  base: string,
+  favoriteAction: "add" | "remove" | "none",
+): string {
+  if (base !== CONTEXT_FOLDER && base !== CONTEXT_FILE) return base;
+  if (favoriteAction === "remove") return `${base}${FAVORITE_SUFFIX}`;
+  if (item.inRecycleBin === true) return `${base}${RECYCLED_SUFFIX}`;
+  return base;
 }
 
 function contextValueFor(item: ContentItem, container: boolean): string {

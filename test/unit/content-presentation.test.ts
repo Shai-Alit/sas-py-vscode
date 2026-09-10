@@ -10,6 +10,7 @@ import {
   CONTEXT_MY_FOLDER,
   CONTEXT_ROOT,
   FAVORITE_SUFFIX,
+  RECYCLED_SUFFIX,
   nodePresentationOf,
 } from "../../src/content/presentation";
 import { SAS_CONTENT_ROOT, type ContentItem } from "../../src/content/types";
@@ -192,17 +193,26 @@ describe("content/presentation nodePresentationOf", () => {
       }
     });
 
-    it("offers no favourite action on an item shown inside the Recycle Bin", () => {
-      const p = nodePresentationOf(
+    it("suffixes a Recycle Bin item .recycled and offers it no favourite action", () => {
+      const file = nodePresentationOf(
         item({
           type: "child",
           contentType: "file",
           inRecycleBin: true,
+          // even if some earlier pass stamped it, a bin item is never favourite
           isInMyFavorites: true,
         }),
       );
-      assert.equal(p.favoriteAction, "none");
-      assert.equal(p.contextValue, CONTEXT_FILE);
+      assert.equal(file.favoriteAction, "none");
+      assert.equal(file.contextValue, `${CONTEXT_FILE}${RECYCLED_SUFFIX}`);
+
+      const folder = nodePresentationOf(
+        item({ type: "child", contentType: "folder", inRecycleBin: true }),
+      );
+      assert.equal(folder.favoriteAction, "none");
+      assert.equal(folder.contextValue, `${CONTEXT_FOLDER}${RECYCLED_SUFFIX}`);
+      // the two state suffixes never co-occur
+      assert.ok(!folder.contextValue.includes(FAVORITE_SUFFIX));
     });
   });
 });

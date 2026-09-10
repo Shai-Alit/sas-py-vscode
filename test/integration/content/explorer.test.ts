@@ -225,4 +225,42 @@ describe("SAS Content explorer", () => {
     );
     assert.equal(hidden.length, 2, "both should be hidden from the palette");
   });
+
+  it("withholds every content command from a .recycled item (6d-i)", () => {
+    const extension = vscode.extensions.getExtension(extensionId());
+    assert.ok(extension);
+    const context = (
+      (
+        extension.packageJSON as {
+          contributes?: {
+            menus?: { "view/item/context"?: MenuContribution[] };
+          };
+        }
+      ).contributes?.menus?.["view/item/context"] ?? []
+    ).filter((m) =>
+      [...MUTATION_COMMANDS, ...FAVORITE_COMMANDS].includes(m.command ?? ""),
+    );
+    assert.equal(context.length, 6, "expected all six content menu entries");
+
+    // Every `viewItem =~ /.../` pattern in each content `when` clause, run
+    // against the contextValue presentation.ts gives a Recycle Bin folder/file.
+    for (const entry of context) {
+      const patterns = [
+        ...(entry.when ?? "").matchAll(/viewItem =~ \/([^/]+)\//g),
+      ].map(([, body]) => new RegExp(body ?? ""));
+      assert.ok(patterns.length > 0, `${entry.command ?? "?"}: no viewItem =~`);
+      for (const suffix of [
+        "sasContent:folder.recycled",
+        "sasContent:file.recycled",
+      ]) {
+        for (const re of patterns) {
+          assert.equal(
+            re.test(suffix),
+            false,
+            `${entry.command ?? "?"} would still match a ${suffix} item`,
+          );
+        }
+      }
+    }
+  });
 });

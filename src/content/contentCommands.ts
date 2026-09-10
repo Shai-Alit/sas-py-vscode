@@ -236,6 +236,11 @@ async function remove(
  * confirmation — it is a one-click, fully reversible toggle. `run` reloads the
  * whole tree afterwards, which re-marks every visible row and refreshes the My
  * Favorites folder itself.
+ *
+ * A Recycle Bin item is not favouritable — `presentation.ts` gives it a
+ * `.recycled` `contextValue` the menu `when` clauses exclude, so this handler is
+ * only reached for one programmatically; it early-outs with a message rather
+ * than referencing bin content from My Favorites.
  */
 async function favorite(
   deps: ContentCommandDeps,
@@ -245,6 +250,14 @@ async function favorite(
   const adapter = deps.adapter();
   if (adapter === undefined || item === undefined) {
     reportNoTarget(adapter);
+    return;
+  }
+  if (item.inRecycleBin === true) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t(
+        "Restore this item from the Recycle Bin before adding it to My Favorites.",
+      ),
+    );
     return;
   }
 

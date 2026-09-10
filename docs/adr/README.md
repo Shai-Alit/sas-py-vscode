@@ -67,3 +67,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0025](0025-shared-wire-layer.md) | Hypermedia link and error-envelope helpers move to a shared `src/wire/` layer | Accepted |
 | [0026](0026-content-adapter-shape.md) | The SAS Content adapter is one concrete class — no factory, no `ContentModel`, no `sortBy` | Accepted |
 | [0027](0027-library-adapter-shape.md) | `LibraryAdapter` is one concrete class, session-scoped through `ComputeSessionManager`, not a self-owned connection | Accepted |
+| [0028](0028-data-viewer-is-react-and-ag-grid.md) | The data viewer webview is React + ag-grid-community, not a hand-rolled grid; the dependency stays dev-only | Accepted |

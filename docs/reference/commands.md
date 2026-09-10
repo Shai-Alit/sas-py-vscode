@@ -37,3 +37,4 @@ under their category.
 | New File | `Python on Viya: New File` | `pythonOnViya.createContentFile` |
 | Rename | `Python on Viya: Rename` | `pythonOnViya.renameContentItem` |
 | Delete | `Python on Viya: Delete` | `pythonOnViya.deleteContentItem` |
+| Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` |

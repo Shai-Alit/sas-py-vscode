@@ -55,6 +55,15 @@ export const TABLES_REL = "tables";
 /** `GET` a library's own rich representation, or a table's. */
 export const SELF_REL = "self";
 
+/** The relation on a table's own rich detail that reaches its row data —
+ * a collection, paged with `start`/`limit` (Finding 7.1; confirmed again at
+ * implementation time, `docs/phases/phase-7.md`'s Finding 7.10/7.13). */
+export const ROWS_REL = "rows";
+
+/** The relation on a table's own rich detail that reaches its column
+ * metadata — a collection, paged (Finding 7.1). */
+export const COLUMNS_REL = "columns";
+
 /** A SAS library (a libref) — `WORK`, `SASHELP`, and any site-registered
  * library the active session's compute context can see. */
 export interface LibraryItem {
@@ -156,4 +165,110 @@ export function readTableItem(
     ...(library.readOnly === undefined ? {} : { readOnly: library.readOnly }),
     links: readLinks(value),
   };
+}
+
+/**
+ * A table's rich per-item detail — reached by following a {@link TableItem}'s
+ * own `self` link (`src/data/adapter.ts`'s `openTable`), distinct from
+ * `TableItem` itself, which is what the read-only tree holds (sparse, or with
+ * an inherited `readOnly`). 7a never needed this; opening a table for
+ * viewing (7b) is the first caller, since that is the first time this
+ * project needs the `rows`/`columns` links only the rich detail carries
+ * (Finding 7.1).
+ */
+export interface TableDetail {
+  readonly kind: "tableDetail";
+  readonly libref: string;
+  readonly name: string;
+  readonly rowCount?: number | undefined;
+  readonly columnCount?: number | undefined;
+  readonly links: readonly Link[];
+}
+
+/** Reads a table's rich detail response. `table` supplies the libref, since
+ * the response body itself never repeats it. */
+export function readTableDetail(
+  value: unknown,
+  table: TableItem,
+): TableDetail | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const name = raw.name;
+  if (typeof name !== "string" || name === "") return undefined;
+
+  return {
+    kind: "tableDetail",
+    libref: table.libref,
+    name,
+    ...(typeof raw.rowCount === "number" ? { rowCount: raw.rowCount } : {}),
+    ...(typeof raw.columnCount === "number"
+      ? { columnCount: raw.columnCount }
+      : {}),
+    links: readLinks(value),
+  };
+}
+
+/**
+ * One column's metadata — `name`/`type` always read from a real deployment
+ * (Finding 7.1); `length`/`label`/`format`/`informat` are each read only when
+ * present, since a probed column (`SASHELP.CLASS`) carried an empty-string
+ * `label` and no `format`/`informat` at all, and an empty string is treated
+ * the same as absent — a grid column header falls back to `name` either way,
+ * and a blank label carries no information a caller should have to check for
+ * itself.
+ */
+export interface Column {
+  readonly name: string;
+  readonly type: string;
+  readonly length?: number | undefined;
+  readonly label?: string | undefined;
+  readonly format?: string | undefined;
+  readonly informat?: string | undefined;
+}
+
+/** Reads one entry of a table's `columns` collection. An entry with no
+ * usable `name` is dropped by the caller ({@link
+ * import("./adapter").LibraryAdapter.getColumns}), the same tolerance
+ * `readTableItem` gives a nameless table entry. */
+export function readColumnItem(value: unknown): Column | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const name = raw.name;
+  if (typeof name !== "string" || name === "") return undefined;
+  const type = raw.type;
+
+  return {
+    name,
+    type: typeof type === "string" ? type : "",
+    ...(typeof raw.length === "number" ? { length: raw.length } : {}),
+    ...(typeof raw.label === "string" && raw.label !== ""
+      ? { label: raw.label }
+      : {}),
+    ...(typeof raw.format === "string" && raw.format !== ""
+      ? { format: raw.format }
+      : {}),
+    ...(typeof raw.informat === "string" && raw.informat !== ""
+      ? { informat: raw.informat }
+      : {}),
+  };
+}
+
+/** One row of table data — an ordered array of cell values, positionally
+ * matching the table's own column order (Finding 7.1: `{ cells: [...],
+ * version }`), not a name-keyed record. The grid maps `cells[index]` onto
+ * `getColumns`'s own ordering, the same positional contract upstream's
+ * `useDataViewer.ts` assumes of `TableData.rows[].cells`. */
+export interface RowItem {
+  readonly cells: readonly unknown[];
+}
+
+/** Reads one entry of a table's `rows` collection. An entry with no `cells`
+ * array is dropped by the caller, the same per-item tolerance every other
+ * collection reader in this module gives a malformed member. */
+export function readRowItem(value: unknown): RowItem | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const cells = raw.cells;
+  if (!Array.isArray(cells)) return undefined;
+  return { cells: cells as readonly unknown[] };
 }

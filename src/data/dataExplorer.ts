@@ -24,12 +24,27 @@
  * added for exactly this: connecting, disconnecting or a run discovering its
  * own session gone (`forgetProfile`) all change what the tree should show,
  * and none of those already fired an event the content tree needed.
+ *
+ * ## 7b: `pythonOnViya.openTable`
+ *
+ * The command `src/data/dataTree.ts`'s table nodes now carry, and
+ * `package.json`'s `view/item/context` entry mirrors for the right-click
+ * menu. Builds the same `currentAdapter()` a tree refresh would and hands it,
+ * together with the clicked `TableItem`, to `panels.open` — so opening a
+ * table always uses the adapter for whichever profile is active *at the
+ * moment of the click*, the same "read fresh, never cached" rule
+ * `currentAdapter` already applies to the tree. No adapter (no active
+ * profile) is a silent no-op: a table node cannot exist without one already
+ * having populated the tree, so this is unreachable in practice, not a state
+ * this command has to explain to the user.
  */
 
 import * as vscode from "vscode";
 
 import { LibraryAdapter, type LibrarySessionSource } from "./adapter";
 import { SasLibraryTreeProvider } from "./dataTree";
+import type { DataViewerPanelManager } from "./dataViewerPanel";
+import { isTable, type DataItem } from "./types";
 import type { ProfileStore } from "../profile/store";
 
 /** The id of the tree view, matching `package.json`'s `contributes.views`. */
@@ -59,6 +74,7 @@ export function registerDataExplorer(
   sessions: LibrarySessionSource,
   log: vscode.LogOutputChannel,
   events: DataExplorerEvents,
+  panels: DataViewerPanelManager,
 ): void {
   const currentAdapter = (): LibraryAdapter | undefined => {
     const profileId = profiles.active()?.profile.id;
@@ -76,9 +92,35 @@ export function registerDataExplorer(
   context.subscriptions.push(
     provider,
     view,
+    panels,
     vscode.commands.registerCommand("pythonOnViya.refreshDataExplorer", () => {
       provider.refresh();
     }),
+    vscode.commands.registerCommand(
+      "pythonOnViya.openTable",
+      (item?: DataItem) => {
+        if (item === undefined || !isTable(item)) return;
+        const adapter = currentAdapter();
+        if (adapter === undefined) return;
+        // Fire-and-forget from a command handler — `open`'s own promise
+        // exists for an integration test to await, not for this call site.
+        // Caught, though, not bare `void`: every failure `LibraryAdapter`
+        // itself anticipates comes back as a typed `Result` the panel already
+        // surfaces in its own UI, but `open` calls through to
+        // `ComputeClient.send`, which rethrows whatever `resolveHref` throws
+        // that is not a `ForeignLinkError` — the same real, if narrow, gap
+        // `sessionManager.ts`'s own `deleteSession` call already has to guard
+        // against for exactly this reason. An uncaught rejection here would
+        // land in the extension host as an unhandled rejection, visible to
+        // no one — logged instead, so an unexpected failure to open a table
+        // is at least diagnosable.
+        void panels.open(item, adapter).catch((error: unknown) => {
+          log.error(
+            `could not open the data viewer panel for "${item.libref}.${item.name}": ${String(error)}`,
+          );
+        });
+      },
+    ),
     // A signed-in window may not have connected yet when the view first
     // opens; reloading on the first reveal populates the tree without
     // waiting for the user to press refresh — the same reasoning

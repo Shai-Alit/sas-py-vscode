@@ -67,6 +67,21 @@ available, and a policy had to exist for the case where it is not.
 > three that remain, and it is the reason the four that were fixed had to be
 > deleted from the allow-list in the same change rather than left to lapse.
 
+> **Amended 2026-09-10 ([ADR-0028](0028-data-viewer-is-react-and-ag-grid.md)).**
+> Phase 7b adds `react`, `react-dom`, `ag-grid-community`, and `ag-grid-react`
+> for the data viewer webview. **They land as `devDependencies`, not
+> `dependencies` — the tree is still empty by this ADR's own definition.**
+> Like `esbuild` (already a `devDependency` despite being load-bearing for
+> every build), these are consumed only at build time: `esbuild.mjs`'s
+> webview context bundles them into `dist/webview/*.js` with no `external`
+> list, and nothing in `node_modules` is required once the extension is
+> packaged. ADR-0028 records this as a deliberate classification choice, not
+> an oversight — the alternative (`dependencies`) would have silently
+> activated this ADR's currently-vacuous production `npm audit --omit=dev`
+> gate as a side effect of a UI/framework decision. **The revisit trigger
+> below — "the first time a runtime dependency is added" — has still not
+> fired.**
+
 > **Amended 2026-08-27.** One remains now, not three. The lesson from 2026-08-16
 > was written down and then not applied to the other two entries on the same
 > list: both `serialize-javascript` advisories carried the same "mocha pins

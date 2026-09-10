@@ -12,6 +12,14 @@ called out under **Changed** with a migration note.
 
 ### Added
 
+- **A SAS Libraries explorer, and a data viewer for any table in it.** The
+  activity bar now also shows a **SAS Libraries** view of the active compute
+  session's libraries and their tables ([ADR-0027](docs/adr/0027-library-adapter-shape.md)).
+  Clicking a table — or running **Open Table** from its context menu — opens
+  it in a scrollable, virtualized grid showing every row and column, backed
+  by [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)'s React +
+  `ag-grid-community` webview. Sorting, filtering, CSV export and a table
+  properties view are later releases.
 - **A SAS Content explorer.** The Python on Viya activity-bar icon now opens a
   **SAS Content** view showing My Favorites, My Folder, SAS Content and Recycle
   Bin, read from the Viya Folders and Files services. Expand a folder to list

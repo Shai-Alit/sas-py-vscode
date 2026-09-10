@@ -1,0 +1,46 @@
+{
+  "accept": "application/vnd.sas.compute.data.table.row",
+  "count": 19,
+  "start": 0,
+  "limit": 2,
+  "items": [
+    { "cells": ["Alfred", "M", 14, 69, 112.5], "version": 1 },
+    { "cells": ["Alice", "F", 13, 56.5, 84], "version": 1 }
+  ],
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rows?limit=2&start=0",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.row"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rows",
+      "method": "GET",
+      "rel": "collection",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.row"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rows?limit=2&start=2",
+      "method": "GET",
+      "rel": "next",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.row"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS/rows?limit=2&start=18",
+      "method": "GET",
+      "rel": "last",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.row"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS",
+      "method": "GET",
+      "rel": "up",
+      "type": "application/vnd.sas.compute.data.table"
+    }
+  ]
+}

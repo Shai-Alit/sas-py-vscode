@@ -194,33 +194,180 @@ all already built and, in principle, already reusable as-is.
 **What is genuinely undecided — not one of 7a–7c, not a settled non-goal
 either:**
 
-- **The drag-and-drop "insert a reference" behavior.** Upstream's
-  `LibraryDataProvider.handleDrag` puts a table's `uid` (a `libref.tablename`
-  string) on the data transfer as plain text, so dropping a table onto a
-  `.sas` editor inserts a bare `libref.tablename` reference — meaningful
-  because `set libref.tablename;` and similar SAS syntax read a libref
-  directly. Python has no equivalent implicit binding to a SAS libref; a
-  meaningful analogue would have to synthesize something like a
-  `pd.read_csv`-via-Compute call or a snippet naming the table, which is a
-  real design question rather than a mechanical port. Left open for 7a,
-  mirroring how Phase 6 left its own drag-and-drop snippet question open for
-  6b.
-- **React + ag-grid as this project's first React dependency.** Upstream's
-  data viewer is a `ag-grid-react`/`ag-grid-community` grid (`^36.0.2`)
-  rendered from a `.tsx` webview entry point built by its own esbuild
-  context. This project's one existing webview (`src/webview/entry.ts`,
-  ADR-0021) is hand-rolled DOM manipulation with no framework, no `.tsx`
-  loader, and `tsconfig.webview.json`'s own `"types": []` carve-out — adding
-  ag-grid means adding React, `ag-grid-community`, `ag-grid-react`, a `.tsx`
-  type space, and a JSX loader to `esbuild.mjs`'s existing webview context
-  (checked directly: today's context has no `jsx` option set at all). That
-  is a real, first-of-its-kind dependency and toolchain decision, not a
-  detail — weighed against hand-rolling a lighter paginated/virtualized table
-  in the existing DOM style, which would need to reimplement column
-  resize/pin, sort-indicator UI, a filter popover, and row virtualization for
-  large tables from nothing. **Not decided this session** — flagged the same
-  way Phase 6 flagged its `links.ts` promotion question, as the one decision
-  7b's own author should make deliberately rather than defaulting into.
+- **The drag-and-drop "insert a reference" behavior — resolved by 7d,
+  below.** Upstream's `LibraryDataProvider.handleDrag` puts a table's `uid`
+  (a `libref.tablename` string) on the data transfer as plain text, so
+  dropping a table onto a `.sas` editor inserts a bare `libref.tablename`
+  reference — meaningful because `set libref.tablename;` and similar SAS
+  syntax read a libref directly. Python has no equivalent *implicit* binding
+  to a SAS libref, but it has an equivalent *explicit* one: the new **7d**
+  slice below (scoped 2026-09-04, resurrected and live-probed 2026-09-10)
+  confirms `PROC PYTHON`'s own `SAS.sd2df` bridge method is the documented,
+  already-available mechanism (Finding 2, `phase-1.md`; confirmed working
+  end-to-end by Finding 7.11) for exactly this — a drop should insert
+  `SAS.sd2df("libref.tablename")` assigned to a name derived from the table,
+  not a `pd.read_csv`-shaped synthesis that this project would have to
+  invent and maintain itself. Still left to whoever writes the actual drag
+  handler (7d's own punch list, gated on 7a's tree, which now exists): the
+  exact assigned-variable-name heuristic, and whether the drop offers a
+  choice between `sd2df` (read into memory) and a `SAS.submit`-based
+  `PROC SQL` snippet (push a filter down to the engine first) — both
+  documented options per 7d's own findings below.
+- **React + ag-grid as this project's first React dependency — decided
+  2026-09-10, with Sean, before any 7b code was written.** Upstream's data
+  viewer is a `ag-grid-react`/`ag-grid-community` grid (`^36.0.2`) rendered
+  from a `.tsx` webview entry point built by its own esbuild context. This
+  project's one existing webview (`src/webview/entry.ts`, ADR-0021) is
+  hand-rolled DOM manipulation with no framework, no `.tsx` loader, and
+  `tsconfig.webview.json`'s own `"types": []` carve-out — adding ag-grid
+  means adding React, `ag-grid-community`, `ag-grid-react`, a `.tsx` type
+  space, and a JSX loader to `esbuild.mjs`'s existing webview context
+  (checked directly: today's context has no `jsx` option set at all).
+  Weighed directly against hand-rolling a lighter paginated/virtualized
+  table in the existing DOM style. **Decision: React + ag-grid-community.**
+  The reasoning ADR-0021 gave for hand-rolling the result panel does not
+  transfer cleanly to this panel: that decision's hard problem was a
+  security one (never let a user's own arbitrary `to_html()` output execute
+  as script), which a five-line DOM port solved cheaply; a data viewer's
+  hard problem is an interactive, stateful one (windowed virtualization over
+  a paginated REST source, scroll-triggered fetching, resizable columns,
+  keyboard navigation, screen-reader row/column semantics) with no
+  untrusted-HTML dimension at all — table cells are typed SAS values, not
+  arbitrary markup. That category of UI problem is exactly where a small
+  team reinventing a mature library tends to lose over time on the long
+  tail of polish (scroll jank, focus loss on re-render, resize-drag
+  physics), and ag-grid-community's Infinite Row Model — the free,
+  MIT-licensed tier, not an Enterprise feature — covers what 7b/7c need with
+  no license cost. Bundle cost is real but bounded and one-time: roughly
+  250–450 KB gzip added to the *webview* bundle specifically (not the main
+  extension bundle loaded at activation), paid only the first time a user
+  opens a data viewer panel. What this decision does reopen, and what 7b's
+  own ADR must settle explicitly rather than silently: the CSP threat model
+  for an *interactive* panel (ag-grid's own runtime inline-styles its row
+  positioning, needing a `style-src 'unsafe-inline'` exception rederived
+  from scratch, not copied from ADR-0021's read-only-panel reasoning), and
+  the testing-boundary question ADR-0021 settled against `jsdom` for a
+  different reason (extending the existing port-and-fake pattern one layer
+  further) — likely resolved the same way `src/webview/entry.ts` already is,
+  treating the React/ag-grid wiring itself as a browser-only layer excluded
+  from the unit coverage tier and verified by the integration tier instead,
+  while the `getRows`/`getColumns` adapter and pagination logic stay
+  ordinary, `vscode`-free, unit-tested code as usual. Recorded as its own
+  ADR once 7b's code is written, per this project's own architecture-decision
+  convention — not decided informally and left unwritten.
+
+**7d — Python data exchange with SAS libraries (`SAS.sd2df`/`df2sd`/`submit`),
+scoped 2026-09-04, resurrected and live-probed 2026-09-10.** A separate ask
+from a third `sas-py-vscode-cowork` scoping session, run while Phase 5's
+release work continued on the primary copy: can a user's own Python code —
+not just this extension's tree/viewer UI — transparently read (and write) a
+SAS library's data, including a table behind a SAS/ACCESS engine LIBNAME
+(e.g. a site-registered MySQL library), the same way SAS code already can,
+without installing a local DB driver or handling a second credential? That
+2026-09-04 session found the mechanism already exists but could not reach
+`verde` to confirm it end to end (the same VPN-outage signature this phase's
+own Findings 83–86 probe had already hit) or settle the log-echo risk it
+flagged by analogy; its doc edits were stashed rather than committed and sat
+unmerged until this session found and resurrected them, live-probing what
+had been left open.
+
+- **The mechanism: `PROC PYTHON`'s own `SAS` bridge object, not a new REST
+  call.** `phase-1.md`'s Finding 2 already confirmed `'SAS' in dir()` is
+  `True` inside every submitted block, without pinning down which methods
+  work. SAS's own documentation of the Python procedure names four callback
+  methods — `SAS.sd2df("libref.table")` (SAS dataset/view → pandas
+  `DataFrame`), `SAS.df2sd(df, "libref.table")` (the write direction),
+  `SAS.submit("<SAS code>")` (run arbitrary SAS, including `PROC SQL`, from
+  inside the Python cell), and `SAS.symget`/`SAS.symput` (macro-variable
+  exchange). None of these are this project's own code; they ship with
+  `PROC PYTHON` on any Viya 4 deployment recent enough to have the procedure
+  at all (introduced 2021.1.3). This project has been running every user's
+  Python through exactly this procedure since Phase 3 — **the capability has
+  existed, unannounced, since 3a.**
+- **Finding 7.11 confirms all three methods work end to end, not merely that
+  the bridge object is present.** A live job against `verde` (2026-09-10)
+  read `sashelp.class` via `SAS.sd2df` (`shape (19, 5)`), wrote a fresh
+  `DataFrame` back via `SAS.df2sd` into `work`, and ran `SAS.submit` — all
+  three completing successfully inside one `PROC PYTHON` invocation on this
+  project's own execution path. Finding 2 established presence; Finding 7.11
+  is the first confirmation any of the three actually work here.
+- **Why this answers the SAS/ACCESS/MySQL case specifically, with no new
+  design.** A SAS/ACCESS engine LIBNAME (to MySQL or any other supported
+  DBMS) is, from the SAS session's point of view, just another assigned
+  libref — the engine is a detail of how the libref resolves a table read,
+  invisible above that layer. `SAS.sd2df("mysqllib.sometable")` needs to
+  know nothing about MySQL: the already-configured LIBNAME (assigned however
+  it got assigned — site autoexec, or a prior `SAS.submit("libname ...;")`
+  call) does the rest. A SQL-style query against a connected database
+  becomes `SAS.submit("proc sql; create view work.v as select * from
+  mysqllib.sometable where …; quit;")` then `SAS.sd2df("work.v")` — ordinary
+  `PROC SQL` pass-through, filter pushed to the engine rather than pulled
+  client-side. This project ships none of that SQL generation itself; it
+  only needs to make the pattern discoverable and safe to use.
+- **Finding 7.12 corrects the stash's speculative risk, rather than
+  confirming it.** The 2026-09-04 session, by direct analogy to Finding 92
+  (Phase 8's `CASTOKEN` leak), guessed that a credential-bearing `LIBNAME`
+  statement passed to `SAS.submit()` would land in the job log the same way.
+  A live, isolated probe (2026-09-10, `verde`) found the opposite for the
+  mechanism it actually tested: a `LIBNAME` statement assembled from a
+  runtime-built string (so the credential never appeared as a literal in the
+  submitted Python source) and executed via `SAS.submit()` was logged as
+  `password=XXXXXXXXXXXXXXXXXXXXXXXXX` — SAS's own standard `PASSWORD=`
+  masking applied to the statement `SAS.submit()` itself echoes, exactly as
+  it would for a top-level `LIBNAME`. **This does not reopen or replace
+  Finding 92.** That finding's own mechanism — the *outer* job-source echo
+  reproducing a user's submitted Python verbatim (Finding 2/93's documented,
+  unconditional source-echo behaviour) — is untouched by this result and
+  still applies regardless of `SAS.submit()`: a credential written as a
+  literal string anywhere in the submitted Python cell leaks via that outer
+  echo before `SAS.submit()`'s own masking ever gets a chance to run. The
+  practical guidance this settles for documentation: never write a
+  credential as a literal in the Python source at all, whether or not
+  `SAS.submit()` is involved; source it from a runtime value (an environment
+  variable, a prior `SAS.symget`), and prefer a site-assigned libref over an
+  ad hoc `SAS.submit("libname ...")` carrying any credential in the first
+  place.
+- **A second, still-unprobed risk: `sd2df`'s memory shape.** `sd2df` reads a
+  whole SAS table into an in-process pandas `DataFrame` inside the same
+  container ADR-0019 already found can be OOM-killed by rich-output
+  generation (Finding 73, Phase 3f). A large external table pulled whole via
+  `sd2df` with no `WHERE` pushed down first is the same failure shape with a
+  different trigger. Worth a doc-level warning (push filters into the
+  `PROC SQL` step, per the bullet above, rather than filtering in pandas
+  after `sd2df`) rather than a code change — this project has no lever to
+  cap what a user's own `sd2df` call pulls back, the same way it has no
+  lever over the size of a user's own `print()`.
+- **Relationship to Phase 7a–7c and Phase 8: complementary, not
+  overlapping.** 7a–7c give a read-only tree and paged viewer *without*
+  running any Python — a second lens onto the session's `DataAccessApi`.
+  Phase 8 gives CAS access, via `swat`, to a *different* resource (CAS
+  tables, not Compute-session librefs). 7d is the missing third piece:
+  letting a user's own Python *code* read and write the same
+  Compute-session libref data 7a's tree displays, which had no scoped phase
+  at all despite being possible since Phase 3. It ships as part of Phase 7
+  rather than standing alone because it reuses 7a's exact substrate (the
+  same session, the same libref/table identity a `LibraryItem`'s own naming
+  already assumes) and because it is what actually answers 7a's own
+  drag-and-drop question, above.
+- **What this is not.** Not a new `ExecutionBackend` capability, not a new
+  REST integration, not a new authentication path — `SAS.sd2df`/`df2sd`/
+  `submit` run inside the same `PROC PYTHON` invocation this project already
+  submits, using the same session. The work is documentation, a tested
+  example, the probe above, and (once a drag handler is written) a
+  drag-and-drop snippet — not new backend plumbing.
+
+*7d slice, in addition to 7a–7c above:*
+
+- **7d — Document, probe, and snippet-ize `SAS.sd2df`/`df2sd`/`submit`.**
+  *Small* — no new backend code. The live probe (`SASHELP.CLASS` against
+  `verde`) and the log-echo question are now settled (Findings 7.11/7.12).
+  What remains: ship a documented example (a new `docs/data-access.md`, or
+  an addition to whatever 7a/7b's own docs become) covering the
+  `SAS.sd2df`/`PROC SQL`-pass-through pattern and an explicit warning
+  against writing a credential literal anywhere in submitted Python, and —
+  now that 7a's tree exists — the drag-and-drop snippet insertion
+  (`SAS.sd2df("libref.table")`) the Plan section above resolves in
+  principle but does not itself build.
 
 **Testing.** Same shape this project already committed to for Phase 6: a
 new `test/helpers/recorded-data-access.ts` (or similar) plus fixtures under
@@ -231,6 +378,8 @@ own rule before anything becomes a committed fixture (this phase file already
 avoids naming the site-registered libraries the probe's `getLibraries` call
 returned beyond `WORK`/`SASHELP`/`SASUSER`, since several of the others read as
 customer- or business-identifying and have no bearing on the confirmed shape).
+7d's own fixtures (job-log text confirming the masking/echo behaviour) are a
+separate, smaller set — no `DataAccessApi` involved, just a job log.
 
 **Dialect risk, closed for the endpoints this phase has probed (updated by
 Finding 7.7, 2026-09-09 — superseding the "narrowed but not resolved"
@@ -269,11 +418,14 @@ sandbox's egress in general.
   whatever cadence/version differences a second-deployment probe turns up.
   `SASHELP`/`WORK` are enough to exercise every read-only path without
   creating anything.
-- **7b — Data viewer webview.** *Medium/Large* — the React+ag-grid decision
-  lands here, one way or the other; whichever is chosen, this is the
-  paginated grid backed by `getRows`/`getColumns`, following
-  `useDataViewer.ts`'s virtualized-datasource shape if ag-grid is adopted, or
-  a hand-rolled equivalent if not.
+- **7b — Data viewer webview.** *Medium/Large* — decided 2026-09-10: React +
+  ag-grid-community, following `useDataViewer.ts`'s virtualized-datasource
+  shape (infinite row model), backed by `getRows`/`getColumns`. Finding 7.10
+  settles a real implementation question in 7b's favour before any code was
+  written: the rows collection's `count` is populated even at a small
+  `limit`, so the grid can show an exact total row count from the first
+  page rather than needing upstream's "fewer than a full page came back,
+  assume this is the last one" heuristic.
 - **7c — Sort, filter, CSV export, table properties.** *Medium* — the
   `createView`-based sort (with its orphan-view cleanup question),
   `TableFilter`'s `where=`-clause text filter, `downloadTable`'s CSV
@@ -281,13 +433,26 @@ sandbox's egress in general.
   static properties/columns viewer (`TablePropertiesViewer.ts` — a much
   smaller webview than the grid, no ag-grid dependency either way since it's
   two static HTML tables).
+- **7d — Document, probe, and snippet-ize Python↔library data exchange.**
+  *Small* — no new backend code. `SAS.sd2df`/`df2sd`/`submit` confirmed
+  working end to end (Finding 7.11) and the credential-echo question settled
+  (Finding 7.12); what remains is the documented example and, once 7a's
+  tree exists (it does), the drag-and-drop snippet.
 
 *Exit:* a user can browse SAS libraries and tables from the same session
 their Python already runs in (My Libraries-equivalent, `WORK`, `SASHELP`,
 and any site-registered libraries), open a table in a paged, sortable,
 filterable grid, view its properties and column metadata, and export it to
 CSV — the same library-browsing workflow the SAS extension offers today, for
-a Python-on-Viya session.
+a Python-on-Viya session. **With 7d:** the user can also drop a library
+table straight into their Python — a `.py` cell reading `SAS.sd2df(...)` or
+writing `SAS.df2sd(...)` against `WORK`, `SASHELP`, or a site-registered
+SAS/ACCESS-connected external database — using the same Viya connection an
+administrator already provisioned, with no local driver and no second
+credential to manage. This is a capability upstream's SAS extension has no
+equivalent of at all (its users write SAS, which already reads a libref
+directly), and it needed no new Viya-side work to reach — only surfacing,
+documenting, and confirming what `PROC PYTHON` already provides.
 
 ---
 
@@ -300,14 +465,17 @@ actually ask for once v0.1.0 is in their hands.
 
 ## Runbook
 
-_Scoped 2026-09-03, before any code was written — technical grounding (what
-ports closely vs. what needs rework vs. what is a deliberate non-goal) came
-from the codebase survey described in the Plan section above and six live
-probes against `verde` (Findings 7.1–7.4 below). **Recommended execution order:
-7a → 7b → 7c**, matching the dependency chain `PRODUCTION_PLAN.md`'s original
-sketch already implies (an adapter and tree before a viewer that opens from
-it; sort/filter/export as refinements on a working viewer). Nothing here is a
-hard technical barrier — this is a recommendation, not a dependency lock._
+_Scoped 2026-09-03 (7a–7c), before any code was written — technical grounding
+(what ports closely vs. what needs rework vs. what is a deliberate non-goal)
+came from the codebase survey described in the Plan section above and six live
+probes against `verde` (Findings 7.1–7.4 below). 7d was scoped 2026-09-04 from
+a separate session, stashed rather than committed, and resurrected and
+live-probed 2026-09-10 (Findings 7.11/7.12). **Recommended execution order:
+7a → 7b → 7c, with 7d startable independently** — 7d needs none of 7a–7c's
+session/tree/viewer work except its very last item (the drag-and-drop
+snippet, which needs 7a's tree to drop *from*, and 7a is now done). Nothing
+here is a hard technical barrier — this is a recommendation, not a
+dependency lock._
 
 ☑ **7a — `LibraryAdapter` + read-only tree.** Code written 2026-09-09 (this
 session, from the `sas-py-vscode-cowork` clone), adversarially reviewed before
@@ -489,16 +657,552 @@ merged 2026-09-10 via [PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/
   `npx tsc --noEmit`/`npx prettier --check` clean on every file the two
   folded-in fixes touched.
 
-☐ **7b — Data viewer webview.**
+☑ **7b — Data viewer webview.** Architecture decided and the whole slice
+implemented 2026-09-10, then adversarially reviewed the same day (see the
+review bullet below) with three real findings folded in; `npx tsc -p
+tsconfig.webview.json --noEmit` is now clean against the actually-installed
+`ag-grid-community`/`ag-grid-react`/`react`/`react-dom` packages, closing the
+one gap nothing in the sandbox this was written in could check. Sean's own
+`npm run verify` and `npm run test:integration` are both green (see the
+verify/integration bullet below for the two real gaps that round surfaced
+and closed). Sean's own manual visual check of a real panel then ran
+**twice**, 2026-09-10 — see the last bullet for the full account of both
+passes, the Finding 7.14 fix, the second adversarial review, and the two
+items left open at Sean's own direction (a busy-session recovery gap; the
+grid's light-only theme) as documented, non-blocking follow-ups rather than
+things this box waits on.
 
-- ☐ Decide React + ag-grid vs. a hand-rolled paginated/virtualized table
-  (Plan, above) — a real architecture decision, not a default.
-- ☐ If ag-grid: add `ag-grid-community`/`ag-grid-react`/`react`/`react-dom`,
-  a `.tsx` type space alongside `tsconfig.webview.json`'s existing carve-out,
-  and a JSX loader on `esbuild.mjs`'s webview context.
-- ☐ Paginated datasource backed by `getRows`, following
-  `useDataViewer.ts`'s shape if ag-grid is adopted.
-- ☐ Column metadata from `getColumns`, mapped to grid column defs.
+- ☑ Decide React + ag-grid vs. a hand-rolled paginated/virtualized table
+  (Plan, above) — a real architecture decision, not a default. **Done**,
+  2026-09-10, with Sean: React + ag-grid-community. See the Plan section's
+  updated bullet for the full reasoning.
+- ☑ Add `ag-grid-community`/`ag-grid-react`/`react`/`react-dom`, a `.tsx`
+  type space alongside `tsconfig.webview.json`'s existing carve-out, and a
+  JSX loader on `esbuild.mjs`'s webview context. **Done** — all four as exact
+  version-pinned `devDependencies` (never `dependencies`, ADR-0005's
+  invariant unchanged); `tsconfig.webview.json` gained `jsx: "react-jsx"` and
+  `src/webview/**/*.tsx` in its own `include`; `esbuild.mjs` gained a third
+  context (`dataViewerContext`) bundling `src/webview/dataViewerEntry.tsx` to
+  `dist/webview/dataViewer.js`. **Caveat resolved 2026-09-10**: none of the
+  library-specific API usage in `dataViewerEntry.tsx` could be typechecked
+  from the sandbox this was written in (`npm install` is off-limits there),
+  so this box's own honesty required saying so explicitly. Sean ran
+  `npm install` in the real clone and `npx tsc -p tsconfig.webview.json
+  --noEmit` came back clean on the first pass after two small fixes the
+  install itself surfaced (not found by review, since neither package was
+  installed for it either): an ambient `declare module "*.css"` shim
+  (`src/webview/css.d.ts`) `ag-grid-community`'s own stylesheet imports need
+  because the package ships no types for its CSS exports, and dropping an
+  explicit `rowCount: undefined` in favour of omitting the key entirely
+  (`exactOptionalPropertyTypes: true` rejects the former; `IDatasource`'s own
+  doc comment confirms the latter is the intended "no upfront total" signal).
+- ☑ Write the new ADR (next number after 0027) recording the grid-library
+  decision, the rederived CSP threat model for an interactive panel, and the
+  testing-boundary call (React/ag-grid wiring excluded from unit coverage
+  like `src/webview/entry.ts`; adapter/pagination logic stays ordinary
+  unit-tested code) — before, not after, the code that depends on it. **Done**
+  — [ADR-0028](../adr/0028-data-viewer-is-react-and-ag-grid.md), with a dated
+  amendment to [ADR-0005](../adr/0005-supply-chain-policy.md) recording that
+  its "still zero runtime dependencies" invariant survives this change
+  because the four packages above land as `devDependencies`.
+- ☑ Paginated datasource backed by `getRows`, following `useDataViewer.ts`'s
+  infinite-row-model shape. Finding 7.10 settles the total-row-count
+  question: `count` is populated even at a small `limit`, so no "last page"
+  guessing heuristic is needed. **Done** — `LibraryAdapter.openTable`/
+  `getRows` (`src/data/adapter.ts`), unit-tested against recorded fixtures in
+  `test/unit/data-adapter.test.ts`; `getRows` never follows a returned `next`
+  link (Finding 7.13 confirms the rows collection's own `next` is typed
+  correctly on this deployment, but the method does not depend on that
+  holding true elsewhere).
+- ☑ Column metadata from `getColumns`, mapped to grid column defs. **Done** —
+  `LibraryAdapter.getColumns` (`src/data/adapter.ts`) and
+  `toWireColumns`/`toWireRows` (`src/data/dataViewerModel.ts`, the
+  `vscode`-free host↔webview message module both sides of the panel import
+  from), unit-tested in `test/unit/data-adapter.test.ts`.
+- ☑ Host-side panel wiring: `DataViewerPanelManager`/`OpenTablePanel`
+  (`src/data/dataViewerPanel.ts`) — one panel per open table, the buffered
+  `init`/`failure`-only opening-state handshake, per-panel CSP rederived for
+  this threat model (no `img-src`, `style-src 'unsafe-inline'` for a
+  different, narrower reason than the result panel's own), and the new
+  `<link rel="stylesheet">` esbuild's companion `dataViewer.css` needs.
+  **Done**, integration-tested (a real `LibraryAdapter` against recorded
+  fixtures, a fake `DataWebviewPanel`) in
+  `test/integration/data/data-viewer-panel.test.ts`; added to `.c8rc.json`'s
+  exclude list, which required teaching `scripts/check-coverage-scope.mjs`
+  about `.tsx` files at all — its own `walk()` only ever matched `.ts`, a
+  gap this project's first JSX source file exposed.
+- ☑ Wire the command: `pythonOnViya.openTable`, bound to a table tree item's
+  own `command` (`src/data/dataTree.ts`) and its `view/item/context` menu
+  entry (`package.json`), registered in `src/data/dataExplorer.ts` and
+  constructed once in `src/extension.ts`.
+- ☑ **Adversarial review before the PR exists** (`CLAUDE.md`'s standing
+  rule), 2026-09-10, against the finished diff. Three real findings, all
+  folded into the branch before any push: (1) `dataViewerModel.ts` had no
+  unit test of its own — exercising it only through the integration test
+  does not count toward the unit-tier coverage gate, since that tier runs
+  outside `c8`'s measurement; added `test/unit/data-viewer-model.test.ts`.
+  (2) A `requestId` collision across a webview reload: `retainContextWhenHidden:
+  false` means a hide/show reloads the document and resets its own
+  `nextRequestId`/`pendingRowRequests`, but the host's `ready` flag and
+  buffered-reply logic do not know a reload happened, so a pre-reload
+  `getRows` resolving late could resolve the *new* document's same-numbered
+  pending request with rows for the wrong window — fixed by switching to
+  `crypto.randomUUID()`, globally unique regardless of how many times the
+  document reloads. (3) None of `OpenTablePanel`'s three adapter calls
+  carried an `AbortSignal`, so closing the panel mid-load did not cancel the
+  in-flight compute request — added a per-panel `AbortController`, aborted on
+  `onDidDispose`. Two minor nits also folded in: an unused `gridRef` removed,
+  and `WireColumn.type` actually wired into `toColumnDefs` (right-aligning
+  `NUM` columns via `ag-right-aligned-cell`/`-header`, delivering on a claim
+  the model's own doc comment had made since 7b started but nothing read).
+- ☑ **Sean's own `npm run verify` and `npm run test:integration`**,
+  2026-09-10, surfaced two real gaps the review pass could not have caught
+  (it predates both `npm install` and a full local test run). (1) Three
+  `DataViewerPanelManager` integration tests called `fake.sendReady()`
+  before `manager.open(...)` had been invoked at all, so the fake panel's
+  message listener did not exist yet and `sendReady()` was a silent no-op —
+  `this.ready` stayed `false`, and `post()`'s guard swallowed every message.
+  Fixed by starting `open(...)` without awaiting it, calling `sendReady()`
+  synchronously (valid because `open()`→`start()` runs synchronously up to
+  its first `await`), then awaiting the result — applied to all three
+  affected tests in `test/integration/data/data-viewer-panel.test.ts`.
+  (2) Branch coverage fell to 94.82% against the 95% global gate, traced to
+  `src/data/types.ts` at 76.47%: `readTableDetail`/`readColumnItem`/
+  `readRowItem` (written for 7b, before the review round) had several
+  defensive branches no fixture had ever exercised — both counts absent, a
+  non-empty label/format/informat, a non-number count, a non-array `cells`.
+  Closed with three new `describe` blocks in `test/unit/data-types.test.ts`.
+  While in there, one more genuinely-reachable gap in `src/data/adapter.ts`
+  was closed the same way: every existing `getRows` test used a bare
+  `.../rows` link, so `withQuery`'s `?`-already-present → `&`-joined branch
+  had never fired; one test added in `test/unit/data-adapter.test.ts`.
+  `readCount`'s own non-object-body guard was traced and deliberately left
+  alone — `getRows` only reaches it after `readItems` has already applied
+  the identical object/null check, so that branch is unreachable dead code
+  from this call site, not a real gap. `npx tsc -p tsconfig.test.json
+  --noEmit` and `npx prettier --check` clean on every touched file; Sean's
+  own re-run of `npm run verify && npm run test:integration` came back
+  green.
+- ☑ **Sean's own local build (`npm run build` or the watch task) plus a
+  manual visual check of a real panel** — light, dark, and high-contrast
+  themes; confirm ag-grid's icon set actually renders (this panel's CSP
+  declares no `img-src`, on the prediction that ag-grid needs none — see
+  `dataViewerPanel.ts`'s own doc comment on `buildHtml`, which names the
+  narrow CSP fix if that prediction is wrong); confirm scrolling actually
+  pages new rows in. This was the one check nothing in this sandbox could
+  perform, and ran twice — a first pass and, after the Finding 7.14 fixes
+  below, a second pass against a confirmed-fresh build.
+  **First pass, 2026-09-10,** against a real panel (`manual-test-pass.md` §10/§11, all
+  boxes ticked in that file's own diff, committed in the same change as the
+  fixes below) — most of both sections pass as documented
+  (tree/connection-state behaviour in §10;
+  open/scroll/paging/independent-tabs/reveal-not-duplicate/switch-away-and-back
+  in §11). **Three real findings surfaced. A second pass, against a
+  confirmed-fresh build, then confirmed one fix end-to-end, refined the
+  second into a more specific and deliberately deferred gap, and left the
+  third exactly as an open design decision:**
+  1. **Fixed, and confirmed by Sean's own re-test.** Numeric columns were not
+     right-aligning — `Age`/`Height`/`Weight` in `SASHELP.CLASS` rendered
+     left-aligned, contradicting §11's own expected result and the alignment
+     fix the 7b adversarial review folded in (`toColumnDefs`,
+     `src/webview/dataViewerEntry.tsx`, only applied
+     `ag-right-aligned-cell`/`-header` when `column.type === "NUM"`).
+     **Confirmed live** (Finding 7.14, below, `verde`, 2026-09-10): a real
+     `GET …/SASHELP/CLASS/columns` returns `type: "FLOAT"` for every numeric
+     column and `type: "CHAR"` for every character one — `"NUM"` never
+     appears, matching SAS's own `getColumns` reference example exactly.
+     `toColumnDefs` now compares against `"FLOAT"`. The same wrong value had
+     also been baked into `test/fixtures/data/columns-class.json` (labelled
+     as probe-derived when it was not) and the assertions in
+     `test/unit/data-adapter.test.ts` and
+     `test/integration/data/data-viewer-panel.test.ts` that read it — all
+     three swept to `"FLOAT"` in the same change, per this project's own
+     "every claim carries its evidence" rule. Sean's own rebuilt-panel
+     re-test confirms numbers render right-aligned now.
+  2. **A real fix landed (kept), but it was not the whole story — Sean's own
+     re-test against a confirmed-fresh build surfaced a second, deliberately
+     deferred gap.** Opening a table while the session is busy showed a blank
+     grid with no message, contradicting §11's own expected result (a message
+     in the panel, not just the log). One real defect was found and fixed:
+     `buildHtml`'s own `<style>` block (`src/data/dataViewerPanel.ts`) set
+     `color: var(--vscode-foreground)` on `body` but never set a
+     `background-color` — VS Code does not give a webview a themed background
+     for free, and a same-shaped public defect report
+     (`MoonshotAI/kimi-agent-sdk#225`, "webview ignores VS Code dark theme,
+     renders with a white background") confirms this is a known failure mode,
+     not a one-off guess. `background-color: var(--vscode-editor-background);`
+     was added to that rule and is a correct fix in its own right.
+     **Sean re-tested against a fresh, updated, installed build (ruling out
+     the stale-build theory) and reported a second, more specific behaviour**:
+     while Python runs, both the SAS Libraries tree and an open data-viewer
+     panel go blank, and **neither recovers on its own once the run
+     finishes** — the tree needs a manual refresh, and the panel has no
+     equivalent affordance at all, so it is left showing its busy-session
+     state indefinitely; only closing and reopening the tab loads it again.
+     For the tree, this is not a new defect: 7a's own Runbook entry already
+     recorded it explicitly — *"The tree does not refresh on an `isBusy`
+     transition: … and stays empty until a manual refresh after the run
+     ends — acceptable for a read-only tree, but a real gap if a later slice
+     adds anything that depends on catching the session becoming idle
+     again."* 7b's data viewer panel is exactly that later slice, so this
+     finding turns 7a's hedge into a concrete yes for the panel too. **Left
+     open, deliberately, at Sean's own direction** — not blocking this slice,
+     and not addressed by anything already planned in 7c's punch list
+     (sort/filter/CSV export/table properties touches none of this), so it
+     needs its own future slice or a dedicated decision, not an assumption
+     that a later phase absorbs it for free. Whether the busy-session failure
+     message itself is legible now (the original contrast question) was not
+     independently reconfirmed this pass — Sean's report described the
+     recovery gap, not text legibility specifically — so treat that narrower
+     point as fixed-and-applied-but-not-re-confirmed, separate from the
+     recovery gap, which is confirmed and open.
+     **Related, not investigated**: `src/run/resultPanel.ts`'s own `buildHtml`
+     has the identical `color`-without-`background-color` gap and was not
+     touched — same shape, different panel, out of this slice's scope either
+     way.
+  3. **Open — a design decision for Sean, not fixed.** The grid always
+     renders with `ag-grid`'s light-only `ag-theme-alpine`
+     (`src/webview/dataViewerEntry.tsx`), with no dark counterpart or
+     theme-detection logic. Sean confirmed text stays legible against it
+     either way, so this is not blocking, but it is a real, undecided gap
+     ADR-0028 did not address: whether 7b should switch ag-grid themes to
+     track VS Code's active theme before this box ticks, or accept a
+     light-themed grid inside an otherwise theme-following panel as a known,
+     documented limitation. Left alone pending that decision.
+
+  **Adversarial review, 2026-09-10 (Sean, against `origin/main`, covering
+  commit `7b111fc` plus the Finding 7.14 fixes above): no blocking findings.**
+  Confirmed: every adapter call threads an `AbortSignal` and returns a typed
+  `Result` rather than throwing; CSP is nonce-only for scripts with a
+  specifically-justified `style-src 'unsafe-inline'` (ag-grid's own inline
+  row-positioning styles, not user-controlled HTML); no secrets in any
+  fixture; React/ag-grid correctly land as `devDependencies` with ADR-0005
+  amended so its dormant production `npm audit` gate doesn't silently apply;
+  no `any`/unchecked casts/`console.log`; tests mock at the HTTP/message
+  boundary and cover every error branch rather than copying the logic under
+  test. Two non-blocking observations, neither a new finding: (a) no test
+  directly asserts that disposing a panel aborts its in-flight
+  `AbortController` — folded in below; (b) the ag-grid `img-src`-omission and
+  light-only-theme items are already tracked above, nothing new.
+
+  **(a) is now folded in and verified**: a new
+  `test/integration/data/data-viewer-panel.test.ts` case captures the
+  `AbortSignal` a real adapter call carried during `loadTable`, disposes the
+  panel, and asserts that exact signal flips to `aborted`, closing the gap
+  between "every call threads a signal" and "disposal actually aborts the
+  same controller those calls used." `npx tsc -p tsconfig.test.json --noEmit`
+  and `npx prettier --check` clean.
+
+  **The prior session's networking trouble did not reproduce.** That session
+  (also from the `sas-py-vscode-cowork` clone) could not reach `verde` at all
+  — every `curl`/Python attempt failed mid-TLS-handshake while a public host
+  succeeded. This session reached both `verde` (200/302, `viya-api-probe`
+  ran cleanly) and `Innov` on the first attempt; `Innov`'s stored token had
+  since expired (401, unrelated to the earlier failure) and was not
+  refreshed, since `verde` alone already settled the question with
+  documented-shape agreement. Confirms the earlier problem really was a
+  transient, session-specific quirk, not the deployment, the VPN, or the
+  skill.
+
+  Two untracked scratch files sit at the repo root, reviewed this session and
+  left untouched: `.pr-body-phase-10-scoping.md`/`.pr-body-phase-7d-scoping.md`
+  are pre-written PR bodies for other, unrelated scoping slices (Phase 10 and
+  7d), not part of this change.
+
+  **A real, pre-existing localisation gap, found while writing this PR's own
+  body and fixed at Sean's direction, 2026-09-10**: `dataViewerPanel.ts` had
+  been passing `describeDataProblem`'s own log fragment (`src/data/problems.ts`,
+  explicitly documented as "the English sentence for a log") straight into the
+  webview's `FailureMessage`/`RowsErrorMessage` — the exact busy-session and
+  link-missing text this whole Runbook entry is about — with no `l10n.t()`
+  anywhere in the path. Every other panel in this project keeps that split:
+  `resultPanel.ts` calls a dedicated `localiseBackendProblem`
+  (`src/backend/messages.ts`), and `contentFileSystem.ts` calls
+  `localiseContentProblem` (`src/content/messages.ts`) for exactly the same
+  reason — a `describe...Problem` function is for the log and stays
+  `vscode`-free; a `localise...Problem` function is for the one place a
+  failure reaches the user directly, and needs `vscode.l10n.t()`, which lives
+  on a module `problems.ts` must never import. `src/data/` had no such module.
+  Added `src/data/messages.ts` with `localiseDataProblem`, matching that
+  pattern exactly (delegating a wrapped `ComputeProblem` to
+  `compute/messages.ts`'s own `localiseComputeProblem` rather than
+  re-wording it); `dataViewerPanel.ts`'s three call sites, plus its one raw
+  literal (`"the table is not open yet"`, in the race-guard `handleRequestRows`
+  hits if a row request somehow arrives before `init`), now go through it.
+  Neither adversarial review caught this — it is not a correctness or
+  security defect, just an inconsistency with the project's own
+  localisation-boundary convention. New integration coverage in
+  `test/integration/data/messages.test.ts` (the same suite shape as
+  `compute/messages.test.ts`), and `.c8rc.json`'s exclude list gained
+  `src/data/messages.ts` alongside the project's other `messages.ts` files —
+  all `vscode`-importing, so none is reachable from the unit tier
+  (`check-coverage-scope: OK — 92 source files, 35 unreachable`). One existing
+  integration assertion (`data-viewer-panel.test.ts`, "posts failure... when
+  openTable finds no self link") was checking for the word "link" in the old
+  log-fragment text; updated to match `localiseComputeProblem`'s own
+  deliberately link-free wording instead. `npx tsc --noEmit` / `-p
+  tsconfig.test.json`, `npx prettier --check`, `check-secrets`,
+  `check-copyright`, and `check-coverage-scope` all clean. **Sean's own call:
+  this specific fix skipped the standing pre-push manual adversarial pass**,
+  relying on Codex + Claude's automated PR reviews to catch anything further
+  — a deliberate, one-off exception, not a change to the standing rule. No
+  `CHANGELOG.md` entry — the English text shown to the user is materially
+  unchanged (still a plain-language explanation of the same failure), so
+  this is an internal-correctness/i18n-infrastructure fix, not a user-facing
+  behaviour
+  change.
+
+  **[PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150) opened
+  2026-09-10** — four commits (the original implementation, the Finding
+  7.14 fix, the docs-only reconciliation of `STATUS.md`/this file with both
+  manual-test passes, and the l10n fix above), against `main` at `58f60ec`
+  (post-6c-i).
+
+  **github-advanced-security (CodeQL) finding on PR #150, `js/missing-origin-check`,
+  2026-09-10: real, fixed — in two attempts.** `dataViewerEntry.tsx`'s
+  `window.addEventListener("message", …)` trusted `event.data` with no check
+  on who posted it — the same class of gap CVE-2021-43908 exploited in a
+  real VS Code webview (an arbitrary page, loaded in an `<iframe>` pointed at
+  the webview, could post a message the handler would process as if the
+  extension host had sent it).
+
+  The first fix checked `event.origin` against bare `vscode-webview:`/`https:`
+  prefixes, following a Microsoft community thread
+  (`microsoft/vscode-discussions#1061`) that suggested the `https:` fallback
+  so a future web-hosted (`vscode.dev`) build wouldn't silently break.
+  **Codex's automated PR review caught that this was itself broken**: a bare
+  `https:` prefix matches essentially every HTTPS origin on the web, so any
+  attacker-controlled page loaded in an `<iframe>` pointed at the webview
+  still passes the check — it defeats the purpose of having one at all. The
+  community thread's suggestion, taken at face value, was wrong; this project
+  should have verified it independently rather than citing it as the answer.
+
+  The corrected fix narrows the check to the two concrete origins VS Code
+  actually issues a webview: `vscode-webview://<uuid>` for the desktop host,
+  confirmed via community-reported `location.origin` values, and
+  `https://<uuid>.vscode-webview.net` for a web/`vscode.dev`-hosted build,
+  confirmed via the `vscode-resource.vscode-webview.net` domain referenced in
+  the CVE-2021-43908 writeup:
+
+  ```ts
+  if (
+    !event.origin.startsWith("vscode-webview://") &&
+    !event.origin.endsWith(".vscode-webview.net")
+  ) {
+    return;
+  }
+  ```
+
+  This is narrower than CodeQL's own suggested one-liner would have left it
+  if taken as a ceiling (`vscode-webview://` only) in that it still allows a
+  future web-hosted build to work, but does not allow an arbitrary HTTPS
+  origin the way the first attempt did.
+  **Third manual pass, 2026-09-10: confirmed.** Neither of Sean's first two
+  passes covered this — both predate the fix — so a dedicated check was
+  handed over: open a real table, confirm the grid renders past its initial
+  frame, and check the main window's own DevTools console for anything
+  naming `postMessage` or `origin`. Sean's console export (a real VS Code
+  log, not paraphrased) showed no such error, and the two webview URLs in it
+  carry `origin=<uuid>` / `parentOrigin=vscode-file://vscode-app` query
+  params consistent with the webview's own origin being
+  `vscode-webview://<uuid>` — matching what the check expects. Sean then
+  confirmed directly: the grid showed column headers and rows for a real
+  table. The failure mode this check exists to catch (every host→webview
+  message silently dropped, panel stuck on its initial blank frame) did not
+  occur. Closed.
+  **Related, not fixed here**: `src/webview/entry.ts` (the result panel's own
+  message listener, already shipped) has the identical gap and was not
+  touched — a different, already-merged file, out of this PR's diff; worth
+  its own decision, not a silent piggyback fix.
+
+  **New finding, incidental to the console check above, 2026-09-10: real,
+  not fixed, needs a decision.** Sean's console export also showed, twice:
+
+  ```
+  Loading the font 'data:font/woff2;...' violates the following Content
+  Security Policy directive: "default-src 'none'". Note that 'font-src' was
+  not explicitly set, so 'default-src' is used as a fallback. The action has
+  been blocked.
+  ```
+
+  Confirmed the source: `node_modules/ag-grid-community/styles/ag-theme-alpine.css`
+  itself declares an `@font-face` with a base64 `woff2` payload (ag-grid's
+  own bundled icon font for the legacy/classic theming path this project
+  uses — see ADR-0028). `buildHtml`'s CSP (`src/data/dataViewerPanel.ts`)
+  has no `font-src` directive, so `default-src 'none'` blocks it. This is
+  the same class of gap that same file's own doc comment already flagged
+  for `img-src` and predicted might need a fix — but the actual break is a
+  font, not an image, so the comment's specific prediction was half right:
+  right that *something* CSP-adjacent would need attention, wrong about
+  which directive.
+
+  **Currently latent, not visibly broken**: `toColumnDefs` ships
+  `sortable: false` and no filter (7c's own scope, not 7b's), so nothing in
+  today's grid currently renders an icon glyph from that font — consistent
+  with Sean's own observation that no sort/filter icons appear at all (that
+  absence is 7b's documented scope, not this CSP gap). The gap becomes a
+  real, visible defect (missing/broken icons) the moment 7c turns on
+  anything ag-grid renders an icon for. **First decision, 2026-09-10: defer
+  to 7c** — out of this PR's original scope (verifying the origin check),
+  flagged rather than silently folded in, tracked as a 7c punch-list item.
+
+  **Superseded same day.** A second adversarial review (prompted with this
+  exact deferral, asked to weigh in) agreed the deferral was *reasonable*
+  given 7b's actual behavior, but flagged that the fix is a single directive,
+  already confirmed real, and cheaper to fold in now than to keep carrying as
+  a tracked item — a judgment call, not a correctness objection. **Sean's
+  final call: fix it now.** Added `font-src {cspSource} data:;` to
+  `buildHtml`'s CSP — `data:` because the font itself is a data-URI payload
+  inside the bundled CSS, `{cspSource}` alongside it for the same reason
+  `style-src` already carries it. `buildHtml`'s own doc comment now explains
+  this as a correction to its earlier `img-src` prediction (right that
+  something CSP-adjacent would need attention, wrong about which directive).
+  The integration test that already asserts every other CSP directive
+  (`data-viewer-panel.test.ts`) now asserts `font-src` too. The 7c punch-list
+  item this created is removed below — there is nothing left for 7c to pick
+  up here. `tsc --noEmit` / `-p tsconfig.test.json` and `prettier --check`
+  clean.
+
+  **github-actions Bot finding on PR #150, 2026-09-10: real, fixed.**
+  `dataExplorer.ts`'s `pythonOnViya.openTable` command handler dropped
+  `panels.open(item, adapter)`'s promise with a bare `void`, justified by a
+  comment claiming it was "the same shape `provider.refresh()` already is in
+  this file." Verified and found the comparison false: `provider.refresh()`
+  (`dataTree.ts`) is synchronous and returns `void` — it can never reject.
+  `panels.open()` returns a real `Promise<void>` that runs through
+  `ComputeClient.send` (`src/compute/client.ts`), which has one narrow, real
+  rethrow gap — `resolveHref` throwing anything that is not a
+  `ForeignLinkError` propagates rather than becoming a typed `Result` — the
+  exact hazard `sessionManager.ts`'s own `deleteSession` call already guards
+  against, in an almost identically worded comment, for the same reason.
+  Every failure `LibraryAdapter` itself anticipates (busy session, missing
+  link, unauthorized, unreachable) already comes back as a `Result` the
+  panel surfaces in its own UI; the gap is only the narrow rethrow path,
+  plus whatever `buildHtml`/`createWebviewPanel` could throw synchronously.
+  Fixed to match the existing `sessionManager.ts` precedent exactly:
+  `void panels.open(item, adapter).catch((error) => log.error(...))`, using
+  the `log: vscode.LogOutputChannel` already in scope. `src/data/dataExplorer.ts`
+  is already excluded from the coverage gate (imports `vscode`), so no new
+  test is owed here. `tsc --noEmit` / `-p tsconfig.test.json` and `prettier
+  --check` both clean.
+
+  **Second adversarial review, 2026-09-10** (prompted with the font-src
+  deferral specifically, per the process above): no blocking findings across
+  the full 7b diff (11 files across the 7b commits). Endorsed the origin
+  check as sound after the Codex-caught tightening, the `AbortSignal`
+  wiring, the `dataExplorer.ts` `.catch`-logging fix above, the HTTP-boundary
+  test mocks, the licensing headers, and the build/config changes. Two low,
+  non-blocking findings — **both fixed, 2026-09-10, Sean's call to fold them
+  in alongside the CSP fix**:
+  - `dataViewerEntry.tsx`'s message-listener guard (`typeof message !==
+    "object"`) let a `null` `event.data` through, since
+    `typeof null === "object"` — `message.type` would then throw. Practically
+    unreachable (the origin check already restricts who can post, and
+    nothing this project's own host code sends is `null`), and this file is
+    structurally excluded from every test tier, so nothing would have caught
+    it either way. Fixed with an explicit `message === null` arm in the
+    guard.
+  - `dataViewerModel.ts`'s doc comment for `WireColumn.type` still read
+    "`CHAR`, `NUM`, …" — the literal value Finding 7.14 replaced with
+    `"FLOAT"` everywhere else. A documentation-only miss of this project's
+    own "sweep the superseded value out of every place it was written down"
+    rule. Fixed to read `` `CHAR`, `FLOAT`, … `` with a pointer to Finding
+    7.14.
+
+  `dataViewerEntry.tsx` is structurally excluded from every test tier
+  (browser-only webview code), so no new test is owed there. `dataViewerModel.ts`
+  is not excluded and already has unit coverage (`test/unit/data-viewer-model.test.ts`) —
+  a doc-comment-only fix needs no new test, but that same fixture file is
+  worth its own look later: it still uses `"NUM"` as its sample type-string
+  value in several cases (the field is opaque passthrough there, never
+  compared, so this is not a correctness bug the way `toColumnDefs`'s old
+  check was — just a stale-looking example value). Not touched here, out of
+  this fix's actual scope; flagged rather than silently swept.
+  `tsc --noEmit` (root, `-p tsconfig.webview.json`, `-p tsconfig.test.json`)
+  and `prettier --check` all clean.
+
+  **CodeQL "Commit suggestion" applied directly to the PR branch, 2026-09-10,
+  commit `03e6caec` — origin check rewritten again, real gap flagged, fixed
+  by re-verifying.** After the third manual pass above confirmed the
+  `startsWith("vscode-webview://")` / `endsWith(".vscode-webview.net")`
+  check, GitHub's Advanced Security "Copilot Autofix" suggestion for the same
+  `js/missing-origin-check` alert was applied via the code-scanning UI's
+  "Commit suggestion" button, landing as its own commit without going through
+  local review first. It replaced the check with:
+
+  ```ts
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(event.origin);
+  } catch {
+    return;
+  }
+  const isTrustedOrigin =
+    parsedOrigin.protocol === "vscode-webview:" ||
+    (parsedOrigin.protocol === "https:" &&
+      parsedOrigin.hostname.endsWith(".vscode-webview.net"));
+  if (!isTrustedOrigin) {
+    return;
+  }
+  ```
+
+  A subsequent automated PR review correctly caught that this exact
+  implementation had never itself been run against a real panel — the third
+  manual pass verified the previous `startsWith`/`endsWith` version, not this
+  rewrite, and `STATUS.md`/this file hadn't been updated to say so. On
+  inspection the logic is at least as strict as the version it replaced
+  (proper `URL` parsing instead of raw-string matching, and an explicit
+  `protocol === "https:"` requirement that the old `endsWith` check never
+  pinned), so this was not treated as a suspected regression, but the
+  project's own standing rule for this file — confirm against a real panel
+  before merge, every time the check changes — still applied.
+  **Fourth manual pass, 2026-09-10: confirmed**, against `03e6caec`
+  specifically. Sean opened a real table on this branch; DevTools showed no
+  `postMessage`/`origin` error, and the grid rendered column headers and
+  rows. A separate console log from opening another table the same session
+  showed only `Unrecognized feature: 'local-network-access'` and `An iframe
+  which has both allow-scripts and allow-same-origin for its sandbox
+  attribute can escape its sandboxing` — both traced to VS Code's own
+  `webviewElement.ts`/`overlayWebview.ts` internals (present in every VS Code
+  webview panel, including this project's existing result panel), not to
+  anything in this PR's diff. Closed.
+
+  **Automated review finding on PR #150, 2026-09-10: real, fixed —
+  `DataViewerPanelManager`'s panel key was not profile-scoped.**
+  `open()`'s reuse key was `` `${table.libref}.${table.name}` `` alone.
+  `ComputeSessionManager.live` (`src/compute/sessionManager.ts:227`)
+  explicitly supports two profiles holding sessions at once, and a table
+  name like `SASHELP.CLASS` exists under virtually every deployment.
+  Concretely: open `SASHELP.CLASS` under profile A, switch the active
+  profile to B (A's session can remain live), open `SASHELP.CLASS` again —
+  `open()` found the existing panel under the same key and called
+  `existing.reveal()` without ever re-binding it to the newly-passed
+  adapter, so the tab kept scrolling/paging against profile A's session
+  under a title that looked like it belonged to B. If A had since
+  disconnected this would surface as `not-connected`, but with both
+  connected (the supported case) it was a silent cross-deployment mix-up —
+  the same shape of bug the 6b review already caught and fixed for the
+  `sasContent:` `FileSystemProvider`'s `ETag` guard (keyed by href alone,
+  now deployment root + href).
+
+  Fixed by exposing `LibraryAdapter`'s already-private `profileId`
+  (`src/data/adapter.ts`, constructor parameter changed from `private
+  readonly` to `readonly`) and folding it into the panel key:
+  `` `${adapter.profileId}\n${table.libref}.${table.name}` ``, `\n`-joined
+  for the same reason the `sasContent:` guard's key is — neither a profile
+  id nor `libref.name` can contain one, so the two parts can never collide
+  across the join. A new regression test ("opens a fresh panel, not the
+  other profile's, for the same table under a different profile",
+  `test/integration/data/data-viewer-panel.test.ts`) opens the same table
+  under two different profiles and asserts each gets its own panel (its own
+  `openTable`/`getColumns` requests, neither `reveal()`ed). The reviewer's
+  suggestion to also scope the panel/tab *title* by profile (so two
+  profiles' same-named tables are visually distinguishable, not just
+  correctly isolated) is not done here — `LibraryAdapter` has a raw
+  `profileId`, not a human-readable label, and plumbing one through is a
+  separate, cosmetic follow-up, not the correctness fix this finding was
+  about. `npm run verify` (1419 unit passing) and `npm run test:integration`
+  (296 passing) both green.
 
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
@@ -510,6 +1214,42 @@ merged 2026-09-10 via [PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/
   Phase 6's own (undecided) download command.
 - ☐ Table properties/columns static viewer (`TablePropertiesViewer.ts`'s
   shape — two static tables, no grid dependency).
+- ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
+  instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
+  the full account). Nothing left for 7c to pick up on this; the same
+  `buildHtml` doc comment's still-open `img-src` question is worth
+  resolving whenever 7c actually exercises an ag-grid icon, in case the
+  SVG-icon path needs it too.
+
+☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
+Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting
+unmerged in a stash — see the Plan section's 7d entry for the full account.
+
+- ☑ A live probe against `SASHELP.CLASS` exercising `SAS.sd2df`, `SAS.df2sd`,
+  and `SAS.submit` from inside a real `PROC PYTHON` job on this project's
+  own execution path. **Done** — Finding 7.11 (2026-09-10, `verde`): all
+  three completed successfully in one job (`sd2df` shape `(19, 5)`, `df2sd`
+  into `work`, `submit` ran without error).
+- ☑ Settle the log-echo question: does `SAS.submit()`'s SQL/DDL text, or a
+  credential passed through it, appear in the job log the way Finding 92
+  (Phase 8) found for an inline `CASTOKEN` literal? **Done** — Finding 7.12
+  (2026-09-10, `verde`): a `LIBNAME` statement assembled from a
+  runtime-built string and executed via `SAS.submit()` was logged with SAS's
+  standard `password=XXXXXXXXXXXXXXXXXXXXXXXXX` masking, not the resolved
+  value — the stash's speculative "worse than Finding 92" risk does not
+  hold for this mechanism specifically. Finding 92's own mechanism (the
+  outer job-source echo reproducing submitted Python verbatim) is untouched
+  and still applies to a credential written as a literal, regardless of
+  `SAS.submit()`.
+- ☐ Write the documented example (`docs/data-access.md` or folded into
+  7a/7b's own docs) — the `SAS.sd2df`/`PROC SQL`-pass-through pattern above,
+  and an explicit warning against writing a credential literal anywhere in
+  submitted Python.
+- ☐ Wire the drag-and-drop snippet (`SAS.sd2df("libref.table")`) the Plan
+  section's discussion resolves — 7a's tree now exists, so this is
+  unblocked.
+- ☐ A small fixture set for the log-echo probe's own confirmed shape — no
+  `DataAccessApi` involved, so no dependency on 7a–7c's own fixtures.
 
 ---
 
@@ -862,3 +1602,170 @@ Whether a *second* concurrent `DataAccessApi` call (no job involved) queues
 the same way a job does remains unprobed, as does the `createView` sort
 round trip — both deliberately out of scope for a read-only pass, and
 neither bears on 7a, which issues no such call and does not sort.
+
+**Finding 7.10 — implementation-time probe, 2026-09-10 (`verde`, ahead of
+7b's own code): the rows collection's `count` is populated at any `limit`,
+not left `null` the way other Compute collections sometimes are.**
+Documented shape checked first: `RestLibraryAdapter`/upstream's own
+`useDataViewer.ts` treat a paginated rows response's `count` as
+authoritative when present, falling back to "fewer than a full page came
+back, assume this is the last one" only when it is absent — the same
+count-is-sometimes-null caution this project's own "Compute wire facts"
+findings (Phase 2b) already established for a different collection. Probed
+directly against a fresh throwaway `SAS Studio compute context` session
+(created and deleted; `404` read-back confirmed): `GET
+…/data/SASHELP/CLASS/rows?start=0&limit=2` → `count: 19` (the table's true
+row count), `itemCount: 2`; the identical request at `limit=1000` (larger
+than the table) → `count: 19`, `itemCount: 19`. **`count` is exact and
+present at both a small and an over-large `limit`, on this deployment.** 7b's
+own datasource can read `count` directly as the grid's total row count and
+does not need upstream's "assume last page" heuristic — worth reconfirming
+against a second deployment if 7b's own implementation session has time,
+the same way 7a's own findings did, but not blocking: the mechanism is a
+plain field read, not a branch this project would dialect-gate.
+
+**Correction, 2026-09-10 (later the same day, `verde`): this finding's own
+`itemCount: 2` claim does not reproduce.** A fresh, independent re-probe of
+the identical request (`GET …/data/SASHELP/CLASS/rows?start=0&limit=2`, a
+new throwaway session, created and deleted, `404` read-back confirmed)
+returned `count: 19` exactly as recorded above, but no `itemCount` field at
+all — absent, not `null`. Nothing in this codebase reads `itemCount`
+(`src/data/adapter.ts`'s `readCount` only ever looks at `count`), so this does
+not change 7b's implementation, but the earlier prose's specific mention of
+it is corrected here rather than left standing uncorrected, per this
+project's own rule that a superseded value gets swept rather than quietly
+left beside its correction. `count`'s own behaviour — populated, exact, at
+both a small and an over-large `limit` — is unaffected and reconfirmed by
+this same re-probe.
+
+**Finding 7.11 — implementation-time probe, 2026-09-10 (`verde`): `SAS.sd2df`,
+`SAS.df2sd`, and `SAS.submit` all complete successfully inside one `PROC
+PYTHON` job on this project's own execution path.** `phase-1.md`'s Finding 2
+confirmed only that `'SAS' in dir()` is `True`; no prior finding had actually
+invoked any of the bridge object's methods. Documented shape checked first
+(SAS's own Python-procedure documentation, cross-referenced against public
+SAS blog/community material describing the same four callback methods —
+see the Plan section's 7d entry). Probed via a job submitted to a fresh
+throwaway `SAS Studio compute context` session (created and deleted; `404`
+read-back confirmed): a single `PROC PYTHON` block called `df =
+SAS.sd2df("sashelp.class")` (returned `shape (19, 5)`, matching the table's
+known row/column count from Findings 7.1/7.5), built a small `DataFrame` and
+wrote it back via `SAS.df2sd(newdf, "work.probe_df2sd_out")`, then called
+`SAS.submit(stmt)` for a `LIBNAME` statement (see Finding 7.12) — all three
+completed without error and their own print markers all appeared in the job
+log in the expected order. **This is the first confirmation any of the
+three methods actually work on this project's own path, not merely that the
+bridge object is present.**
+
+**Finding 7.12 — implementation-time probe, 2026-09-10 (`verde`): a
+`LIBNAME` statement executed via `SAS.submit()` gets SAS's standard
+`PASSWORD=` masking in its own log echo; this corrects, rather than
+confirms, the 2026-09-04 stash's speculative risk.** Documented shape
+checked first (SAS's own LIBNAME-statement documentation, via web search):
+`PASSWORD=`/`PASS=`/`PWD=`/`PW=` values are, by default, replaced with `X`
+characters in the SAS log wherever a `LIBNAME` statement is logged. The
+2026-09-04 scoping session, unable to reach `verde`, guessed by analogy to
+Finding 92 (Phase 8's plaintext `CASTOKEN` leak) that a credential passed to
+`SAS.submit()` would leak the same way. This session probed it directly,
+designed to isolate `SAS.submit()`'s own behaviour from the already-known
+outer-echo mechanism: a submitted Python block assembled a `LIBNAME`
+statement's password from a list of string fragments joined at runtime
+(`"".join([...])`), specifically so the resolved value never appeared as a
+literal anywhere in the submitted Python source, then passed the assembled
+statement to `SAS.submit(stmt)`. **Observed:** the job log's echo of the
+Python source (the outer, already-documented mechanism — Finding 2/93) shows
+only the *code* that builds the string (`parts = ["FAKE","PW", …]`, `stmt =
+"libname … password='" + pw + "' schema='test';"`) — never the resolved
+value, because the value never existed as source text. The log's *separate*
+echo of the statement `SAS.submit()` actually executed reads
+`libname mysqllib mysql server='fake-host-not-real.example'
+user='fakeuser' password=XXXXXXXXXXXXXXXXXXXXXXXXX schema='test';` — masked,
+exactly as a top-level `LIBNAME` would be. (The statement itself then failed
+downstream with `ERROR: The SAS/ACCESS Interface to MYSQL cannot be
+loaded.`, expected since no such engine/host exists in this deployment —
+irrelevant to the masking question, which concerns the log echo, not
+whether the connection succeeded.)
+
+**Documented vs. observed, stated explicitly:** the 2026-09-04 stash
+documented a *hypothesis* ("`SAS.submit()` likely leaks a credential the way
+Finding 92 did"), not a probed fact. The observation refutes that specific
+hypothesis for the mechanism actually tested — `SAS.submit()`'s own
+statement-level echo inherits SAS's ordinary option-masking. **What this
+does not settle, and what remains exactly as risky as Finding 92 already
+established:** the *outer* job-source echo (Finding 2/93's documented,
+unconditional behaviour) reproduces a user's submitted Python verbatim
+regardless of what it does — so a credential written as a Python string
+*literal* anywhere in a submitted cell (including as an argument to
+`SAS.submit()` itself, if typed directly rather than assembled at runtime)
+still leaks in full, before `SAS.submit()`'s own masking ever has a chance
+to run. This session's probe deliberately avoided that literal-in-source
+case to isolate `SAS.submit()`'s own behaviour; it does not claim the
+literal case is safe — Finding 92 already established it is not, and
+nothing here changes that. **The practical guidance 7d's documentation
+should give:** never write a credential as a literal string in submitted
+Python, whether or not `SAS.submit()` is involved; source it from a runtime
+value if one is genuinely needed, and prefer a site-assigned, pre-provisioned
+libref over an ad hoc `SAS.submit("libname ...")` carrying any credential at
+all — the same shape of answer Phase 8 reached for CAS tokens (`8b`'s own
+punch list), generalized to this call site.
+
+Not probed this session, left open for whoever writes 7d's documentation or
+its drag-and-drop snippet: `SAS.symget`/`SAS.symput` (the fourth bridge
+method, not exercised here since 7d's own scoping never named a use case for
+it); whether `sd2df`'s in-memory pull against a genuinely large external
+table produces the OOM failure shape the Plan section's own risk bullet
+above predicts (no such table was available to test against this session);
+and a second-deployment (`Innov`) rerun of Findings 7.10–7.12, which would
+close the dialect-risk question for these mechanisms the same way Findings
+7.5–7.7 did for 7a's own wire shapes.
+
+**Finding 7.13 — implementation-time probe, 2026-09-10 (`verde`, while
+writing `LibraryAdapter.getRows`): the `rows` collection's own `next`,
+`last`, `self`, and `collection` links all carry an explicit `type` and
+`itemType` — unlike the `data/{libref}` URI's untyped `next` (Finding 7.9),
+this is not a representation trap.** Documented shape checked first: no SAS
+reference documents this collection's link set field-by-field, so the check
+was direct rather than doc-first, the same as Finding 7.9 itself. Probed via
+a fresh throwaway `SAS Studio compute context` session (created and deleted;
+`404` read-back confirmed): `GET
+…/data/SASHELP/CLASS/rows?start=0&limit=2` returned a `links` array of five
+entries — `self`, `collection`, `next`, and `last` each carrying
+`type: "application/vnd.sas.collection"` and
+`itemType: "application/vnd.sas.compute.data.table.row"`; `up` (pointing back
+at the table itself, not a page of it) carrying
+`type: "application/vnd.sas.compute.data.table"` and no `itemType`, which is
+expected for a link to a single resource rather than a collection. **This
+does not license `getRows` to follow the collection's own `next` instead of
+re-deriving each window from the table's own `rows` link** — the method's own
+doc comment is explicit that it does not depend on this being true to stay
+correct, and Finding 7.9's caution about the *tables* collection's untyped
+`next` stands unchanged, scoped to that URI. This finding only closes the
+question of whether the *rows* collection carries the same trap: on this
+deployment, it does not.
+
+**Finding 7.14 — implementation-time probe, 2026-09-10 (`verde`, chasing
+Sean's own manual-test finding that numeric columns were not right-aligning
+in the data viewer): a real numeric column's `type` is `"FLOAT"`, never
+`"NUM"`.** Documented shape checked first: SAS's own `getColumns` reference
+(`developer.sas.com/rest-apis/compute/getColumns`) worked example returns
+`type: "FLOAT"` for every numeric column in its `MAPSGFK.AFGHANISTAN` sample
+(`SEGMENT`, `X`, `Y`, …) and `type: "CHAR"`/`"VARCHAR"` for its character
+ones — `"NUM"` does not appear anywhere in that reference. Probed directly
+via a fresh throwaway `SAS Studio compute context` session against `verde`
+(created and deleted; `404` read-back confirmed): `GET
+…/data/SASHELP/CLASS/columns` returned `type: "CHAR"` for `Name`/`Sex` and
+`type: "FLOAT"` for `Age`/`Height`/`Weight` — documentation and this
+deployment agree exactly. `Innov` was not reachable this session (stored
+token had expired, `401`) to repeat the dialect-risk cross-check Findings
+7.5–7.8 ran for other endpoints in this family; not treated as a gap worth
+blocking on, since `type` is a fixed SAS metadata vocabulary rather than
+version- or cadence-sensitive behaviour, and the documented example already
+agrees independently. **Net effect**: `toColumnDefs`
+(`src/webview/dataViewerEntry.tsx`) compared against `"NUM"` — a value
+nothing had ever confirmed against a real deployment before this finding —
+and now compares against `"FLOAT"` instead; `test/fixtures/data/columns-class.json`
+and the tests reading it are corrected to match. **Not probed**: whether any
+SAS column type besides `CHAR`/`VARCHAR`/`FLOAT` exists on this API (e.g. an
+integer-only storage subtype) — SAS's own numeric storage is always a double
+internally, so none is expected, but this finding only speaks to what
+`SASHELP.CLASS` actually returned.

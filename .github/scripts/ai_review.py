@@ -386,26 +386,86 @@ def post_review(
         )
 
 
-def head_commit_has_skip_flag(repo: str, pr: str, token: str) -> bool:
-    """Return True when the PR head commit message carries a skip flag.
+def _commit_message(repo: str, sha: str, token: str) -> str | None:
+    """A commit's own message, or ``None`` if it could not be read."""
+    try:
+        commit = _gh_request(
+            "GET", f"/repos/{repo}/commits/{sha}", token, accept="application/vnd.github+json"
+        )
+        return str(commit["commit"]["message"])
+    except (urllib.error.URLError, KeyError, TypeError):
+        return None
 
-    Read via the API (not ``git log``) so the flag is taken from the real head
-    commit rather than a synthetic merge commit, and so this works without
-    checking out the pull-request branch.
+
+def _event_payload() -> dict[str, Any]:
+    """The `pull_request` webhook payload GitHub Actions wrote to disk for
+    this run, or ``{}`` if it cannot be read — a missing/malformed event file
+    is treated as "nothing to add", not a reason to fail the run."""
+    path = os.environ.get("GITHUB_EVENT_PATH")
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def should_skip_review(repo: str, pr: str, token: str) -> bool:
+    """Whether this run should skip review entirely.
+
+    A head commit carrying the skip flag only earns a real skip when the
+    commit immediately before this push (the webhook's own ``before`` SHA,
+    meaningful only on a ``synchronize`` action) was **also** skip-flagged —
+    otherwise a trivial fast-follow commit (this one) lets this workflow's own
+    ``cancel-in-progress`` concurrency group kill an in-flight review of a
+    still-unreviewed substantive commit, then this run skips itself, leaving
+    that commit never actually reviewed by anything. Real gap found
+    2026-09-10 on PR #155 (sas-py-vscode): a `[skip-review]` docs commit
+    pushed right after a real `fix(data): ...` commit did exactly this — both
+    AI reviewers showed "pass" on the PR's checks with neither one having
+    reviewed the fix.
+
+    **Known residual limit**: this looks only one commit back. A chain of two
+    or more *consecutive* skip-tagged commits landing right after a real one
+    (each its own push) could still slip through, if each link's own review
+    was itself cancelled by the very next push in the chain — not fixed here,
+    since that did not happen and closing it needs tracking whether a review
+    actually *completed* for a given commit (the Checks API), not just
+    reading commit messages, for a narrower case than the one observed.
     """
     try:
         pull = _gh_request(
             "GET", f"/repos/{repo}/pulls/{pr}", token, accept="application/vnd.github+json"
         )
         head_sha = pull["head"]["sha"]
-        commit = _gh_request(
-            "GET", f"/repos/{repo}/commits/{head_sha}", token, accept="application/vnd.github+json"
-        )
-        message = commit["commit"]["message"]
     except (urllib.error.URLError, KeyError, TypeError) as exc:
-        print(f"ai_review: could not read head commit message ({exc}); not skipping.")
+        print(f"ai_review: could not read the PR head sha ({exc}); not skipping.")
         return False
-    return bool(SKIP_RE.search(str(message)))
+
+    message = _commit_message(repo, head_sha, token)
+    if message is None:
+        print("ai_review: could not read head commit message; not skipping.")
+        return False
+    if not SKIP_RE.search(message):
+        return False
+
+    event = _event_payload()
+    if event.get("action") == "synchronize":
+        before = event.get("before")
+        if isinstance(before, str) and before:
+            prev_message = _commit_message(repo, before, token)
+            if prev_message is not None and not SKIP_RE.search(prev_message):
+                print(
+                    "ai_review: head commit carries a skip flag, but the "
+                    "commit immediately before this push does not — not "
+                    "skipping, so that commit's own changes are not left "
+                    "unreviewed."
+                )
+                return False
+
+    return True
 
 
 def post_failure_note(repo: str, pr: str, token: str, exc: Exception) -> None:
@@ -433,7 +493,7 @@ def main() -> int:
     pr = _env("PR_NUMBER")
     token = _env("GITHUB_TOKEN")
 
-    if head_commit_has_skip_flag(repo, pr, token):
+    if should_skip_review(repo, pr, token):
         print("ai_review: skip flag found in the head commit message; skipping review.")
         return 0
 

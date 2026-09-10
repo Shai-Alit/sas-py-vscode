@@ -32,6 +32,21 @@ jobs:
       # Opt-out via the head commit message, mirroring the Codex reviewer's
       # SKIP_RE. The message isn't in the event payload, so read it via the API;
       # when it carries a flag, the review steps below are skipped.
+      #
+      # **A skip-tagged head only earns a real skip when the commit
+      # immediately before this push (`before`, meaningful only on a
+      # "synchronize" action) was *also* skip-flagged.** Otherwise a trivial
+      # fast-follow commit (this one) lets this workflow's own
+      # `cancel-in-progress` concurrency group kill an in-flight review of a
+      # still-unreviewed substantive commit, then this run skips itself,
+      # leaving that commit never actually reviewed. Real gap found
+      # 2026-09-10 on PR #155 (sas-py-vscode): a `[skip-review]` docs commit
+      # pushed right after a real `fix(data): ...` commit did exactly this —
+      # both AI reviewers showed "pass" with neither having reviewed the fix.
+      # Mirrors the identical fix in `ai_review.py`'s own `should_skip_review`
+      # — see that function's own doc comment for the one commit it does not
+      # look back past (a chain of two or more consecutive skip-tagged
+      # commits after a real one).
       - name: Check for a skip flag in the head commit
         id: guard
         env:
@@ -40,7 +55,20 @@ jobs:
           message=$(gh api \
             "repos/${{ github.repository }}/commits/${{ github.event.pull_request.head.sha }}" \
             --jq '.commit.message' 2>/dev/null || true)
+          skip=false
           if printf '%s' "$message" | grep -qiE '\[(skip[- ]review|no[- ]review|skip ai[- ]?review)\]'; then
+            skip=true
+            if [ "${{ github.event.action }}" = "synchronize" ] && [ -n "${{ github.event.before }}" ]; then
+              prev_message=$(gh api \
+                "repos/${{ github.repository }}/commits/${{ github.event.before }}" \
+                --jq '.commit.message' 2>/dev/null || true)
+              if ! printf '%s' "$prev_message" | grep -qiE '\[(skip[- ]review|no[- ]review|skip ai[- ]?review)\]'; then
+                skip=false
+                echo "::notice::Head commit carries a skip flag, but the commit immediately before this push does not; not skipping."
+              fi
+            fi
+          fi
+          if [ "$skip" = "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice::Skip flag in head commit message; skipping Claude review."
           else

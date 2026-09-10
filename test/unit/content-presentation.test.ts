@@ -29,6 +29,7 @@ describe("content/presentation nodePresentationOf", () => {
       label: "SAS Content",
       expandable: true,
       openable: false,
+      draggable: false,
       icon: "root-folder",
       contextValue: CONTEXT_ROOT,
     });
@@ -72,6 +73,7 @@ describe("content/presentation nodePresentationOf", () => {
       label: "Products",
       expandable: true,
       openable: false,
+      draggable: false,
       icon: "folder",
       contextValue: CONTEXT_FOLDER,
     });
@@ -94,9 +96,43 @@ describe("content/presentation nodePresentationOf", () => {
       label: "analysis.py",
       expandable: false,
       openable: true,
+      draggable: true,
       icon: "file",
       contextValue: CONTEXT_FILE,
     });
+  });
+
+  it("marks only member records draggable (6c-ii)", () => {
+    // Every `type: "child"` member — folder or file — can be picked up.
+    assert.equal(
+      nodePresentationOf(item({ type: "child", contentType: "folder" }))
+        .draggable,
+      true,
+    );
+    assert.equal(
+      nodePresentationOf(item({ type: "child", contentType: "file" }))
+        .draggable,
+      true,
+    );
+    // A delegate, a top-level root-listing folder, and the synthetic root have
+    // no member record to re-parent.
+    assert.equal(
+      nodePresentationOf(item({ type: "myFolder" })).draggable,
+      false,
+    );
+    assert.equal(
+      nodePresentationOf(item({ type: "favoritesFolder" })).draggable,
+      false,
+    );
+    assert.equal(nodePresentationOf(item({ type: "folder" })).draggable, false);
+    assert.equal(nodePresentationOf(SAS_CONTENT_ROOT).draggable, false);
+    // A recycled member's drag would be a restore — 6d's, not 6c-ii's.
+    assert.equal(
+      nodePresentationOf(
+        item({ type: "child", contentType: "folder", inRecycleBin: true }),
+      ).draggable,
+      false,
+    );
   });
 
   it("does not mark a folder or a dataFlow leaf openable", () => {

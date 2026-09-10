@@ -75,6 +75,21 @@ export interface ContentItem {
    * back to the `self` link — see {@link resourceHrefOf}.
    */
   readonly uri?: string | undefined;
+  /**
+   * The folder this item currently lives in. A member record carries it
+   * (finding 99/6.10); a folder or delegate read directly does not. Read by the
+   * drag-and-drop move (6c-ii) to skip a no-op drop back onto the current
+   * parent without a request.
+   */
+  readonly parentFolderUri?: string | undefined;
+  /**
+   * Set by {@link ContentAdapter.getChildItems} on the direct children of the
+   * Recycle Bin delegate — **not** a wire field. 6c-ii's drag-and-drop move
+   * refuses to re-parent a recycled item (that would be a restore, which is
+   * 6d's); `previousParent` cannot stand in for this, since finding 6.10 showed
+   * every once-moved member carries that link too.
+   */
+  readonly inRecycleBin?: boolean | undefined;
   /** The Folders service's own count of members. Not read for any UI
    * decision — finding 80 recorded it disagreeing with the filtered
    * collection — kept only so a future slice need not re-add it. */
@@ -90,6 +105,11 @@ export const SELF_REL = "self";
  * folders; **absent** on a folder *member* record (finding 99), where the
  * tree composes `${uri}/members` instead. */
 export const MEMBERS_REL = "members";
+
+/** `GET` the folder a member currently lives in. Carried by every member
+ * record (finding 99); the drag-and-drop move reads it to skip a no-op drop
+ * onto the current parent (6c-ii). */
+export const UP_REL = "up";
 
 /** `POST` a `{name}` body to create a sub-folder. Its href is
  * `/folders/folders?parentFolderUri={this folder}` — the same string the
@@ -260,6 +280,16 @@ export function isMyFolderDelegate(item: ContentItem): boolean {
   return item.type === "myFolder";
 }
 
+/** The delegate `type` of the Recycle Bin — `@myRecycleBin` resolves to this
+ * (finding 97). Its direct children are flagged {@link ContentItem.inRecycleBin}
+ * by {@link ContentAdapter.getChildItems}. */
+export const TRASH_FOLDER_TYPE = "trashFolder";
+
+/** Whether an item is the Recycle Bin delegate. */
+export function isRecycleBinDelegate(item: ContentItem): boolean {
+  return item.type === TRASH_FOLDER_TYPE;
+}
+
 /**
  * The lower-cased extension of a file name (no leading dot), or `undefined`
  * when the name has no `.` or ends with one. `getTypeDefinition` keys the
@@ -348,6 +378,9 @@ export function readContentItem(value: unknown): ContentItem | undefined {
       ? { typeDefName: raw.typeDefName }
       : {}),
     ...(typeof raw.uri === "string" ? { uri: raw.uri } : {}),
+    ...(typeof raw.parentFolderUri === "string"
+      ? { parentFolderUri: raw.parentFolderUri }
+      : {}),
     ...(typeof raw.memberCount === "number"
       ? { memberCount: raw.memberCount }
       : {}),

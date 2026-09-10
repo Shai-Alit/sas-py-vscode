@@ -657,7 +657,7 @@ merged 2026-09-10 via [PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/
   `npx tsc --noEmit`/`npx prettier --check` clean on every file the two
   folded-in fixes touched.
 
-☐ **7b — Data viewer webview.** Architecture decided and the whole slice
+☑ **7b — Data viewer webview.** Architecture decided and the whole slice
 implemented 2026-09-10, then adversarially reviewed the same day (see the
 review bullet below) with three real findings folded in; `npx tsc -p
 tsconfig.webview.json --noEmit` is now clean against the actually-installed
@@ -665,10 +665,12 @@ tsconfig.webview.json --noEmit` is now clean against the actually-installed
 one gap nothing in the sandbox this was written in could check. Sean's own
 `npm run verify` and `npm run test:integration` are both green (see the
 verify/integration bullet below for the two real gaps that round surfaced
-and closed). What remains before this box ticks is Sean's own manual visual
-check (see the last bullet) — nothing has run inside a real `WebviewPanel`
-yet, only against `tsc`/`prettier` and the fakes
-`test/integration/data/data-viewer-panel.test.ts` drives.
+and closed). Sean's own manual visual check of a real panel then ran
+**twice**, 2026-09-10 — see the last bullet for the full account of both
+passes, the Finding 7.14 fix, the second adversarial review, and the two
+items left open at Sean's own direction (a busy-session recovery gap; the
+grid's light-only theme) as documented, non-blocking follow-ups rather than
+things this box waits on.
 
 - ☑ Decide React + ag-grid vs. a hand-rolled paginated/virtualized table
   (Plan, above) — a real architecture decision, not a default. **Done**,
@@ -781,23 +783,24 @@ yet, only against `tsc`/`prettier` and the fakes
   --noEmit` and `npx prettier --check` clean on every touched file; Sean's
   own re-run of `npm run verify && npm run test:integration` came back
   green.
-- ☐ **Sean's own local build (`npm run build` or the watch task) plus a
+- ☑ **Sean's own local build (`npm run build` or the watch task) plus a
   manual visual check of a real panel** — light, dark, and high-contrast
   themes; confirm ag-grid's icon set actually renders (this panel's CSP
   declares no `img-src`, on the prediction that ag-grid needs none — see
   `dataViewerPanel.ts`'s own doc comment on `buildHtml`, which names the
   narrow CSP fix if that prediction is wrong); confirm scrolling actually
-  pages new rows in. This is the one check nothing in this sandbox could
-  perform, and the reason the box at the top of this section is still ☐.
-  **Run 2026-09-10** against a real panel (`manual-test-pass.md` §10/§11, all
+  pages new rows in. This was the one check nothing in this sandbox could
+  perform, and ran twice — a first pass and, after the Finding 7.14 fixes
+  below, a second pass against a confirmed-fresh build.
+  **First pass, 2026-09-10,** against a real panel (`manual-test-pass.md` §10/§11, all
   boxes ticked in that file's own diff, committed in the same change as the
   fixes below) — most of both sections pass as documented
   (tree/connection-state behaviour in §10;
   open/scroll/paging/independent-tabs/reveal-not-duplicate/switch-away-and-back
-  in §11). **Three real findings surfaced. One fixed and confirmed end-to-end
-  by Sean's own re-test; one has a real, defensible fix applied but Sean's own
-  re-test still shows the original symptom, so it is not being called fixed;
-  the third is an open design decision, not a defect:**
+  in §11). **Three real findings surfaced. A second pass, against a
+  confirmed-fresh build, then confirmed one fix end-to-end, refined the
+  second into a more specific and deliberately deferred gap, and left the
+  third exactly as an open design decision:**
   1. **Fixed, and confirmed by Sean's own re-test.** Numeric columns were not
      right-aligning — `Age`/`Height`/`Weight` in `SASHELP.CLASS` rendered
      left-aligned, contradicting §11's own expected result and the alignment
@@ -881,6 +884,14 @@ yet, only against `tsc`/`prettier` and the fakes
   directly asserts that disposing a panel aborts its in-flight
   `AbortController` — folded in below; (b) the ag-grid `img-src`-omission and
   light-only-theme items are already tracked above, nothing new.
+
+  **(a) is now folded in and verified**: a new
+  `test/integration/data/data-viewer-panel.test.ts` case captures the
+  `AbortSignal` a real adapter call carried during `loadTable`, disposes the
+  panel, and asserts that exact signal flips to `aborted`, closing the gap
+  between "every call threads a signal" and "disposal actually aborts the
+  same controller those calls used." `npx tsc -p tsconfig.test.json --noEmit`
+  and `npx prettier --check` clean.
 
   **The prior session's networking trouble did not reproduce.** That session
   (also from the `sas-py-vscode-cowork` clone) could not reach `verde` at all

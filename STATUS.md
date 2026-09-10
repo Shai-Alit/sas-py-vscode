@@ -105,9 +105,10 @@ list**, so it is flagged for its own future slice rather than assumed away;
 the grid's light-only theme remains a separate open design decision for
 Sean, not a defect. One minor gap from the second review (no test asserts
 panel-dispose aborts its `AbortController`) has been folded in and verified.
-See `phase-7.md`'s 7b Runbook entry for the full account. Ready for a PR
-once Sean confirms the deferred busy-recovery gap and light-theme decision
-are acceptable to ship as documented follow-ups rather than blockers.
+See `phase-7.md`'s 7b Runbook entry for the full account. **Sean has
+confirmed the deferred busy-recovery gap and the light-theme decision are
+acceptable to ship as documented follow-ups rather than blockers — ready
+for a PR.**
 
 - **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
   `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new
@@ -148,10 +149,31 @@ are acceptable to ship as documented follow-ups rather than blockers.
   `open()` had registered the fake panel's listener), and a branch-coverage
   shortfall traced to under-tested `src/data/types.ts` parser functions.
   Both fixed and re-verified — `phase-7.md`'s 7b punch list has the full
-  account — and Sean's re-run of both commands is green. **One remaining,
-  explicitly-called-out gap**: nobody has built this in a real
-  `WebviewPanel` yet — needs Sean's own manual visual check before this box
-  ticks.
+  account — and Sean's re-run of both commands is green. **Sean's own
+  manual visual check of a real panel then ran twice, 2026-09-10.** First
+  pass (`manual-test-pass.md` §10/§11) found three real findings: numeric
+  columns not right-aligning, a busy-session table-open showing a blank
+  panel with no message, and the grid always rendering in ag-grid's
+  light-only theme. A live probe against `verde` (Finding 7.14) settled the
+  first — real numeric columns report `type: "FLOAT"`, never `"NUM"` — and
+  `toColumnDefs` was fixed to match, along with a stale fixture and two
+  tests that had baked in the same unprobed `"NUM"` value. A
+  `background-color` rule was added to the panel's `<style>` block for the
+  second. **Second pass**, against a confirmed-fresh installed build,
+  confirmed the alignment fix and surfaced a different, more specific
+  finding in its place: neither the SAS Libraries tree nor an open
+  data-viewer panel recovers on its own once a busy session frees up — the
+  tree needs a manual refresh (already an accepted 7a limitation; this
+  confirms it extends to the panel too), and the panel has no equivalent
+  affordance at all. A second adversarial review (against `origin/main`,
+  covering the original 7b commit plus the Finding 7.14 fixes) found no
+  blocking findings; its one real minor observation — no test asserted that
+  disposing a panel aborts its in-flight `AbortController` — is now folded
+  in and verified. **Left open, at Sean's own direction, not blocking**: the
+  busy-recovery gap (not covered by 7c's planned scope, needs its own future
+  slice) and the light-only-theme decision (ADR-0028 didn't address it).
+  `phase-7.md`'s 7b punch list and Probe findings section have the full
+  account.
 - **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
   Scoped 2026-09-04 from a separate session; that session's doc edits were
   stashed rather than committed and sat unmerged until found and resurrected
@@ -259,7 +281,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
 | 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9, `npm run verify` green (1395 unit + 287 integration); 6c-ii/iii next. | `docs/phases/phase-6.md` |
-| 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). **7b: architecture decided and code complete 2026-09-10** (React + `ag-grid-community`, [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)) — `LibraryAdapter.openTable`/`getColumns`/`getRows`, `DataViewerPanelManager`, the `pythonOnViya.openTable` command, and the webview bootstrap all written and typechecked; Findings 7.10/7.13 settled the row-count and link-typing questions the datasource needed. **Adversarially reviewed 2026-09-10** — three real findings folded in (no unit test for `dataViewerModel.ts`; a `requestId` collision across a webview reload; no `AbortSignal` on the panel's adapter calls) — and Sean's own `npm install` + `tsc -p tsconfig.webview.json` now come back clean. Sean's own `npm run verify`/`npm run test:integration` then surfaced and closed two more real gaps (an integration-test ordering bug; a `types.ts` branch-coverage shortfall) — both green on re-run. Not yet merged: needs Sean's own manual visual check of a real panel before a PR opens. **7d resurrected from a 2026-09-04 stash and live-probed 2026-09-10** (Findings 7.11/7.12: bridge methods confirmed end to end; credential-echo risk narrower than feared). | `docs/phases/phase-7.md` |
+| 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). **7b: architecture decided and code complete 2026-09-10** (React + `ag-grid-community`, [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)) — `LibraryAdapter.openTable`/`getColumns`/`getRows`, `DataViewerPanelManager`, the `pythonOnViya.openTable` command, and the webview bootstrap all written and typechecked; Findings 7.10/7.13 settled the row-count and link-typing questions the datasource needed. **Adversarially reviewed 2026-09-10** — three real findings folded in (no unit test for `dataViewerModel.ts`; a `requestId` collision across a webview reload; no `AbortSignal` on the panel's adapter calls) — and Sean's own `npm install` + `tsc -p tsconfig.webview.json` now come back clean. Sean's own `npm run verify`/`npm run test:integration` then surfaced and closed two more real gaps (an integration-test ordering bug; a `types.ts` branch-coverage shortfall) — both green on re-run. **Sean's own manual visual check of a real panel then ran twice, 2026-09-10.** First pass found three real findings; a live probe (Finding 7.14, `verde`) confirmed real numeric columns report `type: "FLOAT"` (never the unprobed `"NUM"` the code checked for) and the alignment check, a stale fixture, and two tests were all corrected; a missing `background-color` on the panel's `<style>` block was also fixed. Second pass, against a confirmed-fresh build, confirmed the alignment fix and surfaced a more specific, deliberately-deferred finding: neither the SAS Libraries tree nor an open data-viewer panel recovers on its own once a busy session frees up (extends an already-accepted 7a limitation to the panel; not addressed by 7c's planned scope, needs its own future slice). A second adversarial review (against `origin/main`) found no blocking findings; its one real minor observation (no test for abort-on-dispose) is folded in and verified. Left open at Sean's own direction, not blocking: the busy-recovery gap and the grid's light-only `ag-theme-alpine` (a design decision ADR-0028 didn't address). Ready for a PR. **7d resurrected from a 2026-09-04 stash and live-probed 2026-09-10** (Findings 7.11/7.12: bridge methods confirmed end to end; credential-echo risk narrower than feared). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |

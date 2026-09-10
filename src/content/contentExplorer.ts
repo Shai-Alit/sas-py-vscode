@@ -113,8 +113,11 @@ export function registerContentExplorer(
   // 6c-ii: drag a folder or file member onto another folder to move it. The
   // controller is a thin shell — `contentMove.ts` decides which drops are
   // moves, `adapter.moveItem` does the wire work. `canSelectMany` lets a user
-  // drag several at once; the 6c-i context-menu commands only read the invoked
-  // item (arg 0), so a multi-selection does not disturb them.
+  // drag several at once; the 6c-i context-menu commands (create / rename /
+  // delete) only ever act on the clicked item, so their `view/item/context`
+  // `when` clauses in `package.json` carry `&& !listMultiSelection` — they
+  // simply don't offer themselves while more than one item is selected, rather
+  // than silently acting on one of several.
   const dragAndDrop = new SasContentDragAndDropController({
     adapter: () => session.adapterFor(activeEndpoint()),
     refresh: () => {

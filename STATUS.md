@@ -12,8 +12,9 @@ starting. **6a is done** (split 6a-i + 6a-ii) and **6b is done**; **6c** is
 split into 6c-i/ii/iii — the oversized-read fix (PR #147) and **6c-i are done
 and merged** (PR #148, squash `c63feaf`); **6c-ii (drag-and-drop move) is open
 as [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151)** — adversarial
-pass done before the PR; Codex review clean, Claude review's one finding (a
-multi-item drag test gap) folded in. The drag-into-editor snippet that was
+pass done before the PR; Codex review clean; Claude review's findings folded in
+(multi-item drag tests; `&& !listMultiSelection` on the 6c-i context commands so
+`canSelectMany` can't leave them acting on one of several; a comment reword). The drag-into-editor snippet that was
 scoped into 6c-ii is **deferred to future work** (Sean, 2026-09-10; finding
 6.11). **6c-iii is next after 6c-ii.**
 
@@ -91,15 +92,18 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     link, `parentFolderUri` changed — finding 6.10); `vscode`-free
     `contentMove.ts` guard (incl. a recycled-item block — a drag out of the
     Recycle Bin is a restore, 6d's); `parentFolderUri` + synthetic
-    `inRecycleBin` on `ContentItem`; `canSelectMany` on the view. The
-    **drag-into-editor snippet is deferred** (Sean, 2026-09-10) — finding
-    6.11: no idiomatic Python equivalent of `filename … filesrvc …;`, only a
-    fragile `SAS.submit(… fcopy …)` blob, and a low-priority nice-to-have.
+    `inRecycleBin` on `ContentItem`; `canSelectMany` on the view, with
+    `&& !listMultiSelection` added to the 6c-i create / rename / delete
+    context-menu `when` clauses so they hide during a multi-select rather than
+    acting on just the clicked item. The **drag-into-editor snippet is
+    deferred** (Sean, 2026-09-10) — finding 6.11: no idiomatic Python
+    equivalent of `filename … filesrvc …;`, only a fragile
+    `SAS.submit(… fcopy …)` blob, and a low-priority nice-to-have.
     Adversarial pass done before the PR (one Minor cast fixed; the recycled-item
     guard was that pass's one call for Sean, folded in). Open as
     [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151); Codex review
-    clean, Claude review's one finding (multi-item drag untested) folded in with
-    two mixed-outcome integration tests.
+    clean; Claude review's three findings folded in (multi-item drag tests, the
+    `!listMultiSelection` guard, a comment reword).
   - **6c-iii** is next after 6c-ii.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed

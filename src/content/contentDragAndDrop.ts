@@ -85,11 +85,14 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
     const adapter = this.deps.adapter();
     if (adapter === undefined) return;
 
-    // `DataTransferItem.value` is `any`; this is the one external boundary in
-    // this file, so it gets the same runtime check every other `src/content/`
-    // boundary crossing does (`readContentItem`) rather than a bare cast. The
-    // payload only ever comes from this controller's own `handleDrag`, but a
-    // wrong shape here should drop the drop, not throw into VS Code's DnD host.
+    // `DataTransferItem.value` is `any`. This is not a wire boundary — the
+    // payload only ever comes from this controller's own `handleDrag` under a
+    // private MIME within one window, and those items already passed through
+    // `readContentItem` when the tree built them (and carry the synthetic
+    // `inRecycleBin` flag, which `readContentItem` would strip). So the guard
+    // is a shallow one: confirm it is a non-empty array so a malformed payload
+    // drops the drop rather than throwing into VS Code's DnD host; the elements
+    // are not re-validated per item.
     const payload: unknown = dataTransfer.get(CONTENT_MIME)?.value;
     if (!Array.isArray(payload) || payload.length === 0) return;
     const dragged = payload as ContentItem[];

@@ -504,9 +504,14 @@ that a `filesrvc` fileref has no OS path the `PROC PYTHON` subprocess can
 `filename … filesrvc …;` is a multi-line `SAS.submit(… fcopy …)` blob with a
 hard-coded server path, and it is a low-priority nice-to-have. `npm run verify`
 green (1417 unit + 296 integration passing; coverage 95.18 lines / 95.25
-branches / 94.79 functions / 95.18 statements). Adversarial pass before the PR;
-one review finding folded in (a runtime `Array.isArray` check on the one `any`
-boundary), one review call from Sean folded in (the recycled-item guard above).
+branches / 94.79 functions / 95.18 statements). Adversarial pass before the PR
+(a runtime `Array.isArray` check on the one `any` boundary; the recycled-item
+guard). [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151) review —
+Codex clean; the Claude reviewer raised a multi-item drag test gap (fixed with
+two mixed-outcome integration tests) and that `canSelectMany` left the 6c-i
+Rename/Delete/Create context commands able to act on just the clicked item of a
+multi-selection — their `when` clauses now carry `&& !listMultiSelection` so
+they hide during a multi-select rather than silently acting on one.
 
 - ☑ **Drag-and-drop move** — `src/content/contentDragAndDrop.ts`, the repo's
   first `TreeDragAndDropController`. `handleDrag` puts the draggable selection
@@ -528,8 +533,10 @@ boundary), one review call from Sean folded in (the recycled-item guard above).
   on the Recycle Bin delegate's direct children — `previousParent` cannot stand
   in for it (finding 6.10: every once-moved member carries that link too);
   `presentation.ts` also drops `draggable` for a flagged item so the drag never
-  starts. `canSelectMany` on the view for multi-drag — the 6c-i context-menu
-  commands read only the invoked item, so it does not disturb them.
+  starts. `canSelectMany` on the view for multi-drag; the 6c-i create / rename /
+  delete context commands each act on the clicked item only, so their
+  `view/item/context` `when` clauses gained `&& !listMultiSelection` — they are
+  simply not offered while more than one item is selected (PR #151 review).
   `parentFolderUri` added to `ContentItem` (read for the no-op guard).
   `src/content/contentDragAndDrop.ts` added to `.c8rc.json`'s exclude list (a
   `vscode` shell, like `contentCommands.ts`); `contentMove.ts` is `vscode`-free

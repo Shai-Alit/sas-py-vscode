@@ -392,6 +392,13 @@ describe("DataViewerPanelManager", () => {
     assert.match(styleSrcDirective, /unsafe-inline/);
     assert.match(html, /default-src 'none'/);
 
+    // font-src: ag-theme-alpine.css's own bundled icon font is a base64
+    // `data:` URI, blocked without this (a real console export showed the
+    // violation before this directive existed — see buildHtml's own doc
+    // comment).
+    const fontSrcDirective = /font-src[^;]*/.exec(html)?.[0] ?? "";
+    assert.match(fontSrcDirective, /data:/);
+
     // The companion CSS esbuild emits alongside dataViewer.js (ag-grid's own
     // stylesheets, bundled by dataViewerEntry.tsx) needs its own <link>, not
     // just the inline <style> block every panel already carries.

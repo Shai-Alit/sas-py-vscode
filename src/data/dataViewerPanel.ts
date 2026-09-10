@@ -328,6 +328,7 @@ function createRealPanel(
  * default-src 'none';
  * style-src {cspSource} 'unsafe-inline';
  * script-src 'nonce-{nonce}';
+ * font-src {cspSource} data:;
  * ```
  *
  * **`script-src 'nonce-{nonce}'`, never `'unsafe-inline'`** — unchanged from
@@ -358,6 +359,24 @@ function createRealPanel(
  * is checked by hand, that is this comment's own prediction being wrong, and
  * the fix is adding a narrow `img-src {cspSource} data:;` the same way the
  * result panel already carries one, not loosening `default-src`.
+ *
+ * **`font-src {cspSource} data:;` — added 2026-09-10, real and confirmed, not
+ * predicted.** This comment's own `img-src` prediction above was half right:
+ * something CSP-adjacent did need attention once a real panel was checked,
+ * but the actual break was a font, not an image. `ag-theme-alpine.css` (the
+ * bundled theme `dataViewerEntry.tsx` imports) declares its own icon font via
+ * `@font-face` with a base64 `woff2` payload, and a real console export
+ * showed it being blocked (`"default-src 'none'"` with no `font-src` to fall
+ * back on). Confirmed genuinely latent in 7b — `toColumnDefs` sets
+ * `sortable: false` and no filter is configured, so nothing in 7b's own grid
+ * currently draws a glyph from that font — but real: 7c is the slice that
+ * turns sort/filter (and therefore icons) on, at which point the missing
+ * font would otherwise surface as a fresh bug rather than a known one. Fixed
+ * now rather than left on 7c's punch list, since the fix is this cheap and
+ * already this well-confirmed — `data:` because the font itself is a
+ * data-URI payload inside the bundled CSS, `{cspSource}` alongside it for
+ * the same reason `style-src` already carries it, in case a later theme
+ * change serves a font as a real extension resource instead of inlining it.
  *
  * **A `<link rel="stylesheet">`, not just the inline `<style>` block.**
  * `src/webview/dataViewerEntry.tsx` imports `ag-grid-community`'s own two
@@ -390,6 +409,7 @@ function buildHtml(
     "default-src 'none';",
     `style-src ${webview.cspSource} 'unsafe-inline';`,
     `script-src 'nonce-${nonce}';`,
+    `font-src ${webview.cspSource} data:;`,
   ].join(" ");
 
   const title = `${table.libref}.${table.name}`;

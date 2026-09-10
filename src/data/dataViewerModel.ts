@@ -37,9 +37,10 @@ export interface WireColumn {
   /** `label` when the deployment supplied a non-empty one, else `name` —
    * decided once here rather than by every renderer independently. */
   readonly headerName: string;
-  /** The SAS column type (`CHAR`, `NUM`, …), carried through unmodified so
+  /** The SAS column type (`CHAR`, `FLOAT`, …), carried through unmodified so
    * the grid can right-align a numeric column — a detail 7b's own datasource
-   * setup, not this module, decides what to do with. */
+   * setup, not this module, decides what to do with. Real numeric columns
+   * report `FLOAT`, never `NUM` (Finding 7.14, live-probed). */
   readonly type: string;
 }
 

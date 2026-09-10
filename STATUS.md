@@ -133,10 +133,18 @@ unrelated, real gap: the panel's CSP has no `font-src`, so ag-grid's own
 bundled icon font (an `@font-face` inside `ag-theme-alpine.css`) is
 blocked — currently invisible (7b ships `sortable: false` and no filter, so
 nothing draws an icon from it yet) but will show as broken/missing icons
-the moment 7c turns sort or filter on. **Not fixed here — deferred to 7c,
-Sean's decision**, tracked as its own punch-list item there rather than an
-implicit assumption. Full account in `phase-7.md`'s 7b Runbook entry and
-7c's punch list.
+the moment 7c turns sort or filter on. First deferred to 7c as its own
+punch-list item; **superseded same day** — a second adversarial review
+(prompted with that deferral) agreed it was reasonable but flagged the fix
+as cheap and already confirmed, so **Sean's final call was to fix it now**
+rather than carry it forward: `font-src {cspSource} data:;` added to
+`buildHtml`'s CSP, with a matching new test assertion. Nothing left on 7c's
+punch list for this. That same review found no blocking issues across the
+full 7b diff (11 files); two low, non-blocking findings — a `null`
+message-listener gap (practically unreachable, file untested by any tier
+either way) and a stale `NUM` doc-comment example Finding 7.14 should have
+swept — **both fixed too, Sean's call to fold them in alongside the CSP
+fix**. Full account in `phase-7.md`'s 7b Runbook entry.
 
 - **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
   `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new

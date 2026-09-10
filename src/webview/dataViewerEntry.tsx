@@ -227,7 +227,17 @@ function DataViewerApp() {
         return;
       }
       const message = event.data as DataViewerHostMessage | undefined;
-      if (message === undefined || typeof message !== "object") return;
+      // `typeof null === "object"`, so `null` passes a bare `typeof`
+      // check — nothing this project's own host code ever posts, and the
+      // origin check above already restricts who gets this far, but the
+      // `as` cast masks it as a latent gap rather than a checked one.
+      if (
+        message === undefined ||
+        message === null ||
+        typeof message !== "object"
+      ) {
+        return;
+      }
 
       switch (message.type) {
         case "init":

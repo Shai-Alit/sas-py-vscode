@@ -1042,12 +1042,26 @@ things this box waits on.
   with Sean's own observation that no sort/filter icons appear at all (that
   absence is 7b's documented scope, not this CSP gap). The gap becomes a
   real, visible defect (missing/broken icons) the moment 7c turns on
-  anything ag-grid renders an icon for. **Not fixed in this PR** — out of
-  its original scope (verifying the origin check), flagged rather than
-  silently folded in. **Sean's decision, 2026-09-10: defer to 7c**, since 7c
-  is the slice that turns sort/filter on and would otherwise rediscover this
-  as a fresh bug — tracked as its own punch-list item under 7c below, not
-  left as an implicit assumption.
+  anything ag-grid renders an icon for. **First decision, 2026-09-10: defer
+  to 7c** — out of this PR's original scope (verifying the origin check),
+  flagged rather than silently folded in, tracked as a 7c punch-list item.
+
+  **Superseded same day.** A second adversarial review (prompted with this
+  exact deferral, asked to weigh in) agreed the deferral was *reasonable*
+  given 7b's actual behavior, but flagged that the fix is a single directive,
+  already confirmed real, and cheaper to fold in now than to keep carrying as
+  a tracked item — a judgment call, not a correctness objection. **Sean's
+  final call: fix it now.** Added `font-src {cspSource} data:;` to
+  `buildHtml`'s CSP — `data:` because the font itself is a data-URI payload
+  inside the bundled CSS, `{cspSource}` alongside it for the same reason
+  `style-src` already carries it. `buildHtml`'s own doc comment now explains
+  this as a correction to its earlier `img-src` prediction (right that
+  something CSP-adjacent would need attention, wrong about which directive).
+  The integration test that already asserts every other CSP directive
+  (`data-viewer-panel.test.ts`) now asserts `font-src` too. The 7c punch-list
+  item this created is removed below — there is nothing left for 7c to pick
+  up here. `tsc --noEmit` / `-p tsconfig.test.json` and `prettier --check`
+  clean.
 
   **github-actions Bot finding on PR #150, 2026-09-10: real, fixed.**
   `dataExplorer.ts`'s `pythonOnViya.openTable` command handler dropped
@@ -1072,6 +1086,41 @@ things this box waits on.
   test is owed here. `tsc --noEmit` / `-p tsconfig.test.json` and `prettier
   --check` both clean.
 
+  **Second adversarial review, 2026-09-10** (prompted with the font-src
+  deferral specifically, per the process above): no blocking findings across
+  the full 7b diff (11 files across the 7b commits). Endorsed the origin
+  check as sound after the Codex-caught tightening, the `AbortSignal`
+  wiring, the `dataExplorer.ts` `.catch`-logging fix above, the HTTP-boundary
+  test mocks, the licensing headers, and the build/config changes. Two low,
+  non-blocking findings — **both fixed, 2026-09-10, Sean's call to fold them
+  in alongside the CSP fix**:
+  - `dataViewerEntry.tsx`'s message-listener guard (`typeof message !==
+    "object"`) let a `null` `event.data` through, since
+    `typeof null === "object"` — `message.type` would then throw. Practically
+    unreachable (the origin check already restricts who can post, and
+    nothing this project's own host code sends is `null`), and this file is
+    structurally excluded from every test tier, so nothing would have caught
+    it either way. Fixed with an explicit `message === null` arm in the
+    guard.
+  - `dataViewerModel.ts`'s doc comment for `WireColumn.type` still read
+    "`CHAR`, `NUM`, …" — the literal value Finding 7.14 replaced with
+    `"FLOAT"` everywhere else. A documentation-only miss of this project's
+    own "sweep the superseded value out of every place it was written down"
+    rule. Fixed to read `` `CHAR`, `FLOAT`, … `` with a pointer to Finding
+    7.14.
+
+  `dataViewerEntry.tsx` is structurally excluded from every test tier
+  (browser-only webview code), so no new test is owed there. `dataViewerModel.ts`
+  is not excluded and already has unit coverage (`test/unit/data-viewer-model.test.ts`) —
+  a doc-comment-only fix needs no new test, but that same fixture file is
+  worth its own look later: it still uses `"NUM"` as its sample type-string
+  value in several cases (the field is opaque passthrough there, never
+  compared, so this is not a correctness bug the way `toColumnDefs`'s old
+  check was — just a stale-looking example value). Not touched here, out of
+  this fix's actual scope; flagged rather than silently swept.
+  `tsc --noEmit` (root, `-p tsconfig.webview.json`, `-p tsconfig.test.json`)
+  and `prettier --check` all clean.
+
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
 - ☐ Server-side sort via `createView` — decide the orphan-view cleanup
@@ -1082,20 +1131,12 @@ things this box waits on.
   Phase 6's own (undecided) download command.
 - ☐ Table properties/columns static viewer (`TablePropertiesViewer.ts`'s
   shape — two static tables, no grid dependency).
-- ☐ **Add `font-src {cspSource};` to the data viewer panel's CSP**
-  (`src/data/dataViewerPanel.ts`'s `buildHtml`). Deferred here from 7b, Sean's
-  own call, 2026-09-10: `ag-theme-alpine.css`'s bundled `@font-face` (a
-  base64 `woff2` icon font) is blocked today by `default-src 'none'` with no
-  `font-src` — confirmed via a real console export (see 7b's Runbook entry
-  above for the full trace). Invisible in 7b because `sortable: false` and
-  no filter means nothing currently asks the grid to draw an icon from that
-  font; **this item exists because 7c is exactly the slice that turns
-  sort/filter on**, at which point the missing icons would otherwise surface
-  as a fresh, rediscovered bug rather than a known one. Fix by adding the
-  directive, not by loosening `default-src`; the same `buildHtml` doc
-  comment already has an open `img-src` question worth resolving in the same
-  pass, in case ag-grid's SVG-icon path needs it too once icons are actually
-  exercised.
+- ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
+  instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
+  the full account). Nothing left for 7c to pick up on this; the same
+  `buildHtml` doc comment's still-open `img-src` question is worth
+  resolving whenever 7c actually exercises an ag-grid icon, in case the
+  SVG-icon path needs it too.
 
 ☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
 Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting

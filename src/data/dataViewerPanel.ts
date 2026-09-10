@@ -4,11 +4,15 @@
 /**
  * Owns the data viewer's `WebviewPanel`s — 7b, ADR-0028.
  *
- * One panel per open table, keyed by `libref.name`, not a singleton the way
- * `src/run/resultPanel.ts`'s result panel is: browsing two tables side by
- * side is an ordinary thing to want, unlike a run's result, which only ever
- * has one current instance. Opening an already-open table reveals the
- * existing panel rather than creating a second one.
+ * One panel per open table, keyed by profile id and `libref.name` together,
+ * not a singleton the way `src/run/resultPanel.ts`'s result panel is:
+ * browsing two tables side by side is an ordinary thing to want, unlike a
+ * run's result, which only ever has one current instance. Opening an
+ * already-open table reveals the existing panel rather than creating a
+ * second one — the profile id is part of the key so that two profiles with
+ * live sessions at once (`ComputeSessionManager.live` supports exactly this)
+ * each get their own panel for a same-named table instead of one silently
+ * revealing the other's, still bound to its original adapter.
  *
  * This is the second webview this project ships, and the first built with
  * React + `ag-grid-community` rather than hand-rolled DOM — ADR-0028 records
@@ -87,7 +91,18 @@ export class DataViewerPanelManager implements vscode.Disposable {
    * but an integration test driving this class directly needs a point to
    * await before it can observe what the panel posted. */
   async open(table: TableItem, adapter: LibraryAdapter): Promise<void> {
-    const key = `${table.libref}.${table.name}`;
+    // Scoped by profile, not just libref.name: `ComputeSessionManager.live`
+    // (src/compute/sessionManager.ts) explicitly supports two profiles
+    // holding sessions at once, and a table name like SASHELP.CLASS exists
+    // under virtually every deployment. Without the profile in the key,
+    // switching profiles and reopening a same-named table would reveal the
+    // other profile's panel — still bound to its own adapter — instead of
+    // opening a fresh one; the same class of cross-deployment leak the 6b
+    // review caught and fixed for the sasContent: FileSystemProvider's ETag
+    // guard (keyed by href alone, now deployment root + href). `\n`-joined
+    // because neither a profile id nor `libref.name` can contain one, so the
+    // two parts can never collide across the join.
+    const key = `${adapter.profileId}\n${table.libref}.${table.name}`;
     const existing = this.panels.get(key);
     if (existing !== undefined) {
       existing.reveal();

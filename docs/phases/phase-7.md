@@ -1167,6 +1167,43 @@ things this box waits on.
   webview panel, including this project's existing result panel), not to
   anything in this PR's diff. Closed.
 
+  **Automated review finding on PR #150, 2026-09-10: real, fixed —
+  `DataViewerPanelManager`'s panel key was not profile-scoped.**
+  `open()`'s reuse key was `` `${table.libref}.${table.name}` `` alone.
+  `ComputeSessionManager.live` (`src/compute/sessionManager.ts:227`)
+  explicitly supports two profiles holding sessions at once, and a table
+  name like `SASHELP.CLASS` exists under virtually every deployment.
+  Concretely: open `SASHELP.CLASS` under profile A, switch the active
+  profile to B (A's session can remain live), open `SASHELP.CLASS` again —
+  `open()` found the existing panel under the same key and called
+  `existing.reveal()` without ever re-binding it to the newly-passed
+  adapter, so the tab kept scrolling/paging against profile A's session
+  under a title that looked like it belonged to B. If A had since
+  disconnected this would surface as `not-connected`, but with both
+  connected (the supported case) it was a silent cross-deployment mix-up —
+  the same shape of bug the 6b review already caught and fixed for the
+  `sasContent:` `FileSystemProvider`'s `ETag` guard (keyed by href alone,
+  now deployment root + href).
+
+  Fixed by exposing `LibraryAdapter`'s already-private `profileId`
+  (`src/data/adapter.ts`, constructor parameter changed from `private
+  readonly` to `readonly`) and folding it into the panel key:
+  `` `${adapter.profileId}\n${table.libref}.${table.name}` ``, `\n`-joined
+  for the same reason the `sasContent:` guard's key is — neither a profile
+  id nor `libref.name` can contain one, so the two parts can never collide
+  across the join. A new regression test ("opens a fresh panel, not the
+  other profile's, for the same table under a different profile",
+  `test/integration/data/data-viewer-panel.test.ts`) opens the same table
+  under two different profiles and asserts each gets its own panel (its own
+  `openTable`/`getColumns` requests, neither `reveal()`ed). The reviewer's
+  suggestion to also scope the panel/tab *title* by profile (so two
+  profiles' same-named tables are visually distinguishable, not just
+  correctly isolated) is not done here — `LibraryAdapter` has a raw
+  `profileId`, not a human-readable label, and plumbing one through is a
+  separate, cosmetic follow-up, not the correctness fix this finding was
+  about. `npm run verify` (1419 unit passing) and `npm run test:integration`
+  (296 passing) both green.
+
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
 - ☐ Server-side sort via `createView` — decide the orphan-view cleanup

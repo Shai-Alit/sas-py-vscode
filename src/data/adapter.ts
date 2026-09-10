@@ -146,7 +146,7 @@ export interface RowsPage {
 export class LibraryAdapter {
   constructor(
     private readonly sessions: LibrarySessionSource,
-    private readonly profileId: string,
+    readonly profileId: string,
   ) {}
 
   /**

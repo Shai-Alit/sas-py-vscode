@@ -366,6 +366,47 @@ describe("DataViewerPanelManager", () => {
     assert.equal(fake.revealed.length, 1);
   });
 
+  it("opens a fresh panel, not the other profile's, for the same table under a different profile", async () => {
+    // Regression for a real cross-deployment leak: `ComputeSessionManager`
+    // supports two profiles holding live sessions at once, and a table name
+    // like SASHELP.CLASS exists under virtually every deployment. Before the
+    // panel key was scoped by profile id, reopening the same-named table
+    // after switching profiles revealed the *other* profile's panel — still
+    // bound to its original adapter — instead of opening a fresh one.
+    const firstPanel = fakePanel();
+    const secondPanel = fakePanel();
+    let call = 0;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => (call++ === 0 ? firstPanel.panel : secondPanel.panel),
+    });
+
+    const firstProfile = libraryAdapter(OPEN_ROUTES);
+    await manager.open(tableItem(), firstProfile);
+
+    const { client, calls } = recordedDataClient(OPEN_ROUTES);
+    const session: ComputeSession = {
+      id: SESSION_ID,
+      state: "idle",
+      links: [],
+    };
+    const secondProfile = new LibraryAdapter(
+      {
+        isBusy: () => false,
+        current: (): ConnectedSession => ({ client, session }),
+      },
+      "profile-2",
+    );
+    await manager.open(tableItem(), secondProfile);
+
+    assert.equal(
+      calls.length,
+      2,
+      "second profile issues its own openTable/getColumns, not a reveal",
+    );
+    assert.equal(firstPanel.revealed.length, 0);
+    assert.equal(secondPanel.revealed.length, 0);
+  });
+
   it("builds an HTML shell whose CSP nonce matches the script tag's own nonce, and links the panel's stylesheet", async () => {
     const fake = fakePanel();
     const manager = new DataViewerPanelManager(extensionUri, {

@@ -1,0 +1,159 @@
+// Copyright © 2026, Sean Ford and the Python on Viya contributors
+// SPDX-License-Identifier: Apache-2.0
+
+/**
+ * The SAS Libraries tree's own vocabulary: a library and a table, reduced to
+ * what a read-only browse needs.
+ *
+ * **This module must never import `vscode`.**
+ *
+ * Structure follows: `client/src/components/LibraryNavigator/types.ts` in
+ * sassoftware/vscode-sas-extension (Apache-2.0). No code was copied — read
+ * for what it does, per [ADR-0027](../../docs/adr/0027-library-adapter-shape.md),
+ * which also settles why there is one concrete shape here rather than
+ * upstream's `LibraryItem`/`LibraryAdapterFactory` layering.
+ *
+ * ## Two shapes, and the two-tier fetch that produces them
+ *
+ * Findings 7.1/7.2/7.5 (`docs/phases/phase-7.md`) established that the
+ * session's `librefs` collection and a library's own `tables` collection
+ * both answer **sparse**: `{ id, name, version, links }`, with the fields a
+ * tree actually renders (`readOnly` on a library) absent. `readLibraryItem`
+ * below is deliberately used for *both* the sparse list entry and the rich
+ * per-item follow-up — the shapes agree on every field this module reads,
+ * they differ only in which of the optional ones are present, and
+ * `src/data/adapter.ts` is what performs the follow-up
+ * (`client.send({ link: self })`) that turns one into the other.
+ *
+ * ## Why `readOnly` is inherited, not fetched, for a table
+ *
+ * A verde probe of `SASHELP`'s (394-table) `tables` collection (2026-09-09,
+ * recorded in Finding 7.8 alongside this slice's other findings) found each
+ * table entry carries only `{ id, name, version, links }` — no `readOnly` of
+ * its own. Upstream's own `LibraryItem.readOnly` is documented as "inherited
+ * from the owning library unless a table overrides it"; since no override has
+ * ever been observed on this deployment, {@link readTableItem} inherits the
+ * library's `readOnly` unconditionally rather than adding a per-table `GET`
+ * this slice's read-only tree does not otherwise need — a per-table detail
+ * read is 7b/7c's problem, when opening a table or showing its properties
+ * needs one anyway.
+ */
+
+import { readLinks, type Link } from "../wire/links";
+
+/** The relation on a compute session that lists its libraries (the session's
+ * `DataAccessApi` entry point). `GET`, a collection. Verified against the
+ * session's own `links[]` (Finding 21, `phase-2a.md`; re-confirmed for this
+ * phase in Finding 7.1). */
+export const LIBREFS_REL = "librefs";
+
+/** The relation on a library's own representation that reaches its tables,
+ * on the **same href** as the library itself — content-negotiated, not a
+ * different URL (Finding 7.5). */
+export const TABLES_REL = "tables";
+
+/** `GET` a library's own rich representation, or a table's. */
+export const SELF_REL = "self";
+
+/** A SAS library (a libref) — `WORK`, `SASHELP`, and any site-registered
+ * library the active session's compute context can see. */
+export interface LibraryItem {
+  readonly kind: "library";
+  /** The libref itself — this is the "name" a session's `librefs` collection
+   * and a library's own representation both carry; there is no separate
+   * display name. */
+  readonly name: string;
+  /**
+   * Whether this library refuses writes. Optional at the type level on
+   * purpose: genuinely absent on the sparse list entry (Finding 7.2), always
+   * present once `src/data/adapter.ts` has performed its per-item follow-up —
+   * callers that only ever see a `LibraryItem` returned from
+   * `LibraryAdapter.getLibraries` can treat it as present in practice, but
+   * nothing in this module manufactures a `false` default for an entry that
+   * never said so.
+   */
+  readonly readOnly?: boolean | undefined;
+  /** How many physical libraries are concatenated into this libref — `4` for
+   * `SASHELP` on every deployment probed (Findings 7.2/7.6). Not read for any
+   * UI decision in this slice; carried so a later one (a tooltip) need not
+   * re-add it. */
+  readonly concatenationCount?: number | undefined;
+  /** The hypermedia links, already narrowed by {@link readLinks} — this is
+   * what lets the adapter follow `self` (rich detail) and `tables` (the
+   * table listing) by relation rather than composing a URL (ADR-0010,
+   * ADR-0027). */
+  readonly links: readonly Link[];
+}
+
+/** A table within a library. Read-only browsing only in this slice — no
+ * column or row detail, which is 7b/7c's problem. */
+export interface TableItem {
+  readonly kind: "table";
+  /** The owning library's libref, so a caller need not carry the parent
+   * `LibraryItem` alongside every `TableItem` it holds. */
+  readonly libref: string;
+  readonly name: string;
+  /** Inherited from the owning library — see this module's own doc comment
+   * for why a per-table fetch is not performed to obtain one. */
+  readonly readOnly?: boolean | undefined;
+  readonly links: readonly Link[];
+}
+
+export type DataItem = LibraryItem | TableItem;
+
+export function isLibrary(item: DataItem): item is LibraryItem {
+  return item.kind === "library";
+}
+
+export function isTable(item: DataItem): item is TableItem {
+  return item.kind === "table";
+}
+
+/**
+ * Reads a library out of a parsed `DataAccessApi` response — either the
+ * sparse list entry or the rich per-item detail; see this module's own doc
+ * comment for why one function reads both.
+ *
+ * Takes `unknown` because it is handed the output of `JSON.parse`. An entry
+ * with no string `name` cannot be shown or expanded, so it is dropped rather
+ * than carried as a half-item that fails later with less context — the same
+ * shape `src/content/types.ts`'s `readContentItem` takes.
+ */
+export function readLibraryItem(value: unknown): LibraryItem | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const name = raw.name;
+  if (typeof name !== "string" || name === "") return undefined;
+
+  return {
+    kind: "library",
+    name,
+    ...(typeof raw.readOnly === "boolean" ? { readOnly: raw.readOnly } : {}),
+    ...(typeof raw.concatenationCount === "number"
+      ? { concatenationCount: raw.concatenationCount }
+      : {}),
+    links: readLinks(value),
+  };
+}
+
+/**
+ * Reads a table out of one entry of a library's `tables` collection,
+ * inheriting `readOnly` from `library` — see this module's own doc comment.
+ */
+export function readTableItem(
+  value: unknown,
+  library: LibraryItem,
+): TableItem | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const name = raw.name;
+  if (typeof name !== "string" || name === "") return undefined;
+
+  return {
+    kind: "table",
+    libref: library.name,
+    name,
+    ...(library.readOnly === undefined ? {} : { readOnly: library.readOnly }),
+    links: readLinks(value),
+  };
+}

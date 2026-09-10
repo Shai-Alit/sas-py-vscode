@@ -1,0 +1,29 @@
+{
+  "accept": "application/vnd.sas.compute.library.summary",
+  "count": 14,
+  "start": 10,
+  "limit": 10,
+  "items": [
+    {
+      "id": "WORK",
+      "name": "WORK",
+      "version": 1,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/WORK",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.library"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data?limit=10&start=10",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

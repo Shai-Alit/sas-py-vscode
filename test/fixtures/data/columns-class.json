@@ -41,7 +41,7 @@
     {
       "id": "Age",
       "name": "Age",
-      "type": "NUM",
+      "type": "FLOAT",
       "length": 8,
       "label": "",
       "index": 2,
@@ -58,7 +58,7 @@
     {
       "id": "Height",
       "name": "Height",
-      "type": "NUM",
+      "type": "FLOAT",
       "length": 8,
       "label": "",
       "index": 3,
@@ -75,7 +75,7 @@
     {
       "id": "Weight",
       "name": "Weight",
-      "type": "NUM",
+      "type": "FLOAT",
       "length": 8,
       "label": "",
       "index": 4,

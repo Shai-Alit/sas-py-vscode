@@ -652,9 +652,9 @@ describe("data/adapter LibraryAdapter", () => {
         [
           ["Name", "CHAR", 8, undefined],
           ["Sex", "CHAR", 1, undefined],
-          ["Age", "NUM", 8, undefined],
-          ["Height", "NUM", 8, undefined],
-          ["Weight", "NUM", 8, undefined],
+          ["Age", "FLOAT", 8, undefined],
+          ["Height", "FLOAT", 8, undefined],
+          ["Weight", "FLOAT", 8, undefined],
         ],
       );
       assert.deepEqual(

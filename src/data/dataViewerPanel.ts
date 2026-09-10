@@ -413,6 +413,7 @@ function buildHtml(
   body {
     font-family: var(--vscode-font-family);
     color: var(--vscode-foreground);
+    background-color: var(--vscode-editor-background);
   }
 </style>
 </head>

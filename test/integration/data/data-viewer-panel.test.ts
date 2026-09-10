@@ -201,9 +201,9 @@ describe("DataViewerPanelManager", () => {
       [
         ["Name", "Name", "CHAR"],
         ["Sex", "Sex", "CHAR"],
-        ["Age", "Age", "NUM"],
-        ["Height", "Height", "NUM"],
-        ["Weight", "Weight", "NUM"],
+        ["Age", "Age", "FLOAT"],
+        ["Height", "Height", "FLOAT"],
+        ["Weight", "Weight", "FLOAT"],
       ],
     );
   });
@@ -416,5 +416,46 @@ describe("DataViewerPanelManager", () => {
     manager.dispose();
     assert.deepEqual(first.disposed, [true]);
     assert.deepEqual(second.disposed, [true]);
+  });
+
+  it("aborts the panel's own AbortController when the panel is disposed", async () => {
+    // Caught in the 7b adversarial review's second pass (2026-09-10): every
+    // adapter call was already threading a `signal` (`hadSignal` in
+    // `RecordedDataCall`), and `OpenTablePanel`'s own `onDidDispose` handler
+    // already called `this.controller.abort()` — but nothing asserted the
+    // two were actually the same controller. Capturing the signal a real
+    // adapter call carried, then disposing the panel and checking that exact
+    // signal flips to aborted, is what closes that gap.
+    let capturedSignal: AbortSignal | undefined;
+    const routes: readonly RecordedDataRoute[] = [
+      { when: CLASS_HREF, reply: dataFixture("table-detail-class.json") },
+      {
+        when: `${CLASS_HREF}/columns`,
+        reply: (request) => {
+          capturedSignal = request.signal;
+          return dataFixture("columns-class.json");
+        },
+      },
+    ];
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+
+    await manager.open(tableItem(), libraryAdapter(routes));
+
+    assert.ok(
+      capturedSignal !== undefined,
+      "getColumns should have carried a signal",
+    );
+    assert.equal(capturedSignal.aborted, false, "not aborted before dispose");
+
+    fake.panel.dispose();
+
+    assert.equal(
+      capturedSignal.aborted,
+      true,
+      "disposing the panel should abort the same controller its adapter calls used",
+    );
   });
 });

@@ -87,9 +87,27 @@ The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 separate `sas-py-vscode-cowork` clone — open
 [`docs/phases/phase-7.md`](docs/phases/phase-7.md).** Scoped 2026-09-03
 (7a–7c); **7a is done and merged** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142));
-**7b (data viewer webview) is implemented and adversarially reviewed, three
-real findings folded in; only Sean's own manual visual check of a real panel
-remains before a PR is opened.**
+**7b (data viewer webview) is implemented, adversarially reviewed twice — no
+blocking findings either time — and Sean's own manual visual check of a real
+panel ran 2026-09-10, twice: once before this round's fixes, once after.**
+Of the three findings the first check surfaced: column alignment is fixed
+and confirmed by Sean's own re-test (Finding 7.14, live-probed against
+`verde`); the busy-session blank-grid panel got a real, defensible fix
+(`buildHtml` was missing a `background-color` rule, kept) but Sean's re-test
+against a confirmed-fresh build surfaced a second, deliberately deferred gap
+instead — neither the SAS Libraries tree nor an open data-viewer panel
+recovers on its own once a busy run finishes; the tree needs a manual
+refresh (already an accepted 7a limitation, now confirmed to extend to the
+panel too, per 7a's own Runbook hedge), and the panel has no equivalent
+affordance at all. **Deliberately left open at Sean's own direction — not
+blocking this slice, and not addressed by anything in 7c's current punch
+list**, so it is flagged for its own future slice rather than assumed away;
+the grid's light-only theme remains a separate open design decision for
+Sean, not a defect. One minor gap from the second review (no test asserts
+panel-dispose aborts its `AbortController`) has been folded in and verified.
+See `phase-7.md`'s 7b Runbook entry for the full account. Ready for a PR
+once Sean confirms the deferred busy-recovery gap and light-theme decision
+are acceptable to ship as documented follow-ups rather than blockers.
 
 - **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
   `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new

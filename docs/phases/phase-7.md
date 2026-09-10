@@ -789,6 +789,114 @@ yet, only against `tsc`/`prettier` and the fakes
   narrow CSP fix if that prediction is wrong); confirm scrolling actually
   pages new rows in. This is the one check nothing in this sandbox could
   perform, and the reason the box at the top of this section is still ☐.
+  **Run 2026-09-10** against a real panel (`manual-test-pass.md` §10/§11, all
+  boxes ticked in that file's own diff, committed in the same change as the
+  fixes below) — most of both sections pass as documented
+  (tree/connection-state behaviour in §10;
+  open/scroll/paging/independent-tabs/reveal-not-duplicate/switch-away-and-back
+  in §11). **Three real findings surfaced. One fixed and confirmed end-to-end
+  by Sean's own re-test; one has a real, defensible fix applied but Sean's own
+  re-test still shows the original symptom, so it is not being called fixed;
+  the third is an open design decision, not a defect:**
+  1. **Fixed, and confirmed by Sean's own re-test.** Numeric columns were not
+     right-aligning — `Age`/`Height`/`Weight` in `SASHELP.CLASS` rendered
+     left-aligned, contradicting §11's own expected result and the alignment
+     fix the 7b adversarial review folded in (`toColumnDefs`,
+     `src/webview/dataViewerEntry.tsx`, only applied
+     `ag-right-aligned-cell`/`-header` when `column.type === "NUM"`).
+     **Confirmed live** (Finding 7.14, below, `verde`, 2026-09-10): a real
+     `GET …/SASHELP/CLASS/columns` returns `type: "FLOAT"` for every numeric
+     column and `type: "CHAR"` for every character one — `"NUM"` never
+     appears, matching SAS's own `getColumns` reference example exactly.
+     `toColumnDefs` now compares against `"FLOAT"`. The same wrong value had
+     also been baked into `test/fixtures/data/columns-class.json` (labelled
+     as probe-derived when it was not) and the assertions in
+     `test/unit/data-adapter.test.ts` and
+     `test/integration/data/data-viewer-panel.test.ts` that read it — all
+     three swept to `"FLOAT"` in the same change, per this project's own
+     "every claim carries its evidence" rule. Sean's own rebuilt-panel
+     re-test confirms numbers render right-aligned now.
+  2. **A real fix landed (kept), but it was not the whole story — Sean's own
+     re-test against a confirmed-fresh build surfaced a second, deliberately
+     deferred gap.** Opening a table while the session is busy showed a blank
+     grid with no message, contradicting §11's own expected result (a message
+     in the panel, not just the log). One real defect was found and fixed:
+     `buildHtml`'s own `<style>` block (`src/data/dataViewerPanel.ts`) set
+     `color: var(--vscode-foreground)` on `body` but never set a
+     `background-color` — VS Code does not give a webview a themed background
+     for free, and a same-shaped public defect report
+     (`MoonshotAI/kimi-agent-sdk#225`, "webview ignores VS Code dark theme,
+     renders with a white background") confirms this is a known failure mode,
+     not a one-off guess. `background-color: var(--vscode-editor-background);`
+     was added to that rule and is a correct fix in its own right.
+     **Sean re-tested against a fresh, updated, installed build (ruling out
+     the stale-build theory) and reported a second, more specific behaviour**:
+     while Python runs, both the SAS Libraries tree and an open data-viewer
+     panel go blank, and **neither recovers on its own once the run
+     finishes** — the tree needs a manual refresh, and the panel has no
+     equivalent affordance at all, so it is left showing its busy-session
+     state indefinitely; only closing and reopening the tab loads it again.
+     For the tree, this is not a new defect: 7a's own Runbook entry already
+     recorded it explicitly — *"The tree does not refresh on an `isBusy`
+     transition: … and stays empty until a manual refresh after the run
+     ends — acceptable for a read-only tree, but a real gap if a later slice
+     adds anything that depends on catching the session becoming idle
+     again."* 7b's data viewer panel is exactly that later slice, so this
+     finding turns 7a's hedge into a concrete yes for the panel too. **Left
+     open, deliberately, at Sean's own direction** — not blocking this slice,
+     and not addressed by anything already planned in 7c's punch list
+     (sort/filter/CSV export/table properties touches none of this), so it
+     needs its own future slice or a dedicated decision, not an assumption
+     that a later phase absorbs it for free. Whether the busy-session failure
+     message itself is legible now (the original contrast question) was not
+     independently reconfirmed this pass — Sean's report described the
+     recovery gap, not text legibility specifically — so treat that narrower
+     point as fixed-and-applied-but-not-re-confirmed, separate from the
+     recovery gap, which is confirmed and open.
+     **Related, not investigated**: `src/run/resultPanel.ts`'s own `buildHtml`
+     has the identical `color`-without-`background-color` gap and was not
+     touched — same shape, different panel, out of this slice's scope either
+     way.
+  3. **Open — a design decision for Sean, not fixed.** The grid always
+     renders with `ag-grid`'s light-only `ag-theme-alpine`
+     (`src/webview/dataViewerEntry.tsx`), with no dark counterpart or
+     theme-detection logic. Sean confirmed text stays legible against it
+     either way, so this is not blocking, but it is a real, undecided gap
+     ADR-0028 did not address: whether 7b should switch ag-grid themes to
+     track VS Code's active theme before this box ticks, or accept a
+     light-themed grid inside an otherwise theme-following panel as a known,
+     documented limitation. Left alone pending that decision.
+
+  **Adversarial review, 2026-09-10 (Sean, against `origin/main`, covering
+  commit `7b111fc` plus the Finding 7.14 fixes above): no blocking findings.**
+  Confirmed: every adapter call threads an `AbortSignal` and returns a typed
+  `Result` rather than throwing; CSP is nonce-only for scripts with a
+  specifically-justified `style-src 'unsafe-inline'` (ag-grid's own inline
+  row-positioning styles, not user-controlled HTML); no secrets in any
+  fixture; React/ag-grid correctly land as `devDependencies` with ADR-0005
+  amended so its dormant production `npm audit` gate doesn't silently apply;
+  no `any`/unchecked casts/`console.log`; tests mock at the HTTP/message
+  boundary and cover every error branch rather than copying the logic under
+  test. Two non-blocking observations, neither a new finding: (a) no test
+  directly asserts that disposing a panel aborts its in-flight
+  `AbortController` — folded in below; (b) the ag-grid `img-src`-omission and
+  light-only-theme items are already tracked above, nothing new.
+
+  **The prior session's networking trouble did not reproduce.** That session
+  (also from the `sas-py-vscode-cowork` clone) could not reach `verde` at all
+  — every `curl`/Python attempt failed mid-TLS-handshake while a public host
+  succeeded. This session reached both `verde` (200/302, `viya-api-probe`
+  ran cleanly) and `Innov` on the first attempt; `Innov`'s stored token had
+  since expired (401, unrelated to the earlier failure) and was not
+  refreshed, since `verde` alone already settled the question with
+  documented-shape agreement. Confirms the earlier problem really was a
+  transient, session-specific quirk, not the deployment, the VPN, or the
+  skill.
+
+  Two untracked scratch files sit at the repo root, reviewed this session and
+  left untouched: `.pr-body-phase-10-scoping.md`/`.pr-body-phase-7d-scoping.md`
+  are pre-written PR bodies for other, unrelated scoping slices (Phase 10 and
+  7d), not part of this change.
 
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
@@ -1322,3 +1430,30 @@ correct, and Finding 7.9's caution about the *tables* collection's untyped
 `next` stands unchanged, scoped to that URI. This finding only closes the
 question of whether the *rows* collection carries the same trap: on this
 deployment, it does not.
+
+**Finding 7.14 — implementation-time probe, 2026-09-10 (`verde`, chasing
+Sean's own manual-test finding that numeric columns were not right-aligning
+in the data viewer): a real numeric column's `type` is `"FLOAT"`, never
+`"NUM"`.** Documented shape checked first: SAS's own `getColumns` reference
+(`developer.sas.com/rest-apis/compute/getColumns`) worked example returns
+`type: "FLOAT"` for every numeric column in its `MAPSGFK.AFGHANISTAN` sample
+(`SEGMENT`, `X`, `Y`, …) and `type: "CHAR"`/`"VARCHAR"` for its character
+ones — `"NUM"` does not appear anywhere in that reference. Probed directly
+via a fresh throwaway `SAS Studio compute context` session against `verde`
+(created and deleted; `404` read-back confirmed): `GET
+…/data/SASHELP/CLASS/columns` returned `type: "CHAR"` for `Name`/`Sex` and
+`type: "FLOAT"` for `Age`/`Height`/`Weight` — documentation and this
+deployment agree exactly. `Innov` was not reachable this session (stored
+token had expired, `401`) to repeat the dialect-risk cross-check Findings
+7.5–7.8 ran for other endpoints in this family; not treated as a gap worth
+blocking on, since `type` is a fixed SAS metadata vocabulary rather than
+version- or cadence-sensitive behaviour, and the documented example already
+agrees independently. **Net effect**: `toColumnDefs`
+(`src/webview/dataViewerEntry.tsx`) compared against `"NUM"` — a value
+nothing had ever confirmed against a real deployment before this finding —
+and now compares against `"FLOAT"` instead; `test/fixtures/data/columns-class.json`
+and the tests reading it are corrected to match. **Not probed**: whether any
+SAS column type besides `CHAR`/`VARCHAR`/`FLOAT` exists on this API (e.g. an
+integer-only storage subtype) — SAS's own numeric storage is always a double
+internally, so none is expected, but this finding only speaks to what
+`SASHELP.CLASS` actually returned.

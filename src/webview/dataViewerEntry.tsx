@@ -23,16 +23,18 @@
  * `resultPanelModel.ts` (ADR-0021), so this stays a browser-only bundle with
  * no accidental dependency on anything that assumes a Node module graph.
  *
- * **Not yet visually verified against a real panel.** This is the one file
- * in this slice neither `tsc` (the `ag-grid-community`/`ag-grid-react`
- * packages are devDependencies added by this same change, and cannot be
- * typechecked against in the sandbox this was written in — see this
- * project's own Claude Desktop rule against installing packages) nor the
- * unit tier can check — it is structurally excluded from both, the same way
- * `src/webview/entry.ts` already is (ADR-0009's `isBrowserOnly`). Confirming
- * it actually renders, paginates, and reads legibly against VS Code's own
- * light/dark/high-contrast themes is 7b's own manual verification step,
- * before merge.
+ * **Visually verified against a real panel 2026-09-10** (Sean's own manual
+ * test pass, `manual-test-pass.md` §10/§11) — rendering, scrolling, paging,
+ * independent tabs, and legibility across VS Code's light/dark/high-contrast
+ * themes all confirmed. This remains the one file in this slice neither
+ * `tsc` (the `ag-grid-community`/`ag-grid-react` packages are devDependencies
+ * added by this same change, and cannot be typechecked against in the
+ * sandbox this was written in — see this project's own Claude Desktop rule
+ * against installing packages) nor the unit tier can check — it is
+ * structurally excluded from both, the same way `src/webview/entry.ts`
+ * already is (ADR-0009's `isBrowserOnly`), which is why that same manual pass
+ * is what caught {@link toColumnDefs}'s wrong `"NUM"` comparison (Finding
+ * 7.14) — nothing else in this project's own tiers could have.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -121,25 +123,32 @@ function requestRows(
  * round trip is a server-side mutation, not something this grid does on its
  * own, so nothing here claims a sort affordance it cannot honour yet.
  *
- * **A `NUM` column gets ag-grid's own right-aligned cell/header classes —
- * caught in review as a claim this function was not honouring**:
- * `WireColumn.type`'s own doc comment (`dataViewerModel.ts`) says this SAS
- * type is "carried through unmodified so the grid can right-align a numeric
- * column", but nothing here read it before now. `ag-right-aligned-cell`/
- * `ag-right-aligned-header` are plain CSS classes this panel's own imported
- * stylesheets (`ag-grid.css`) already define — not `type: "numericColumn"`,
- * ag-grid's built-in provided column type, which pulls in a default numeric
- * filter this project has no way to verify behaves correctly against a SAS
- * `NUM` value in the sandbox this was written in (packages not installed —
- * see this file's own top doc comment). Applying only the alignment classes
- * keeps this fix inside what a plain, already-loaded stylesheet can be
- * trusted to do. */
+ * **A `FLOAT` column gets ag-grid's own right-aligned cell/header classes —
+ * caught in review as a claim this function was not honouring, then caught
+ * again in Sean's own manual test pass (`manual-test-pass.md` §11,
+ * 2026-09-10) as testing the wrong string.** `WireColumn.type`'s own doc
+ * comment (`dataViewerModel.ts`) says this SAS type is "carried through
+ * unmodified so the grid can right-align a numeric column", but the
+ * original check compared against `"NUM"` — a value never confirmed against
+ * a real deployment, and wrong: Finding 7.14 (`docs/phases/phase-7.md`) live-
+ * probed `GET …/SASHELP/CLASS/columns` against `verde` and got `"FLOAT"` for
+ * every numeric column (`Age`/`Height`/`Weight`) and `"CHAR"` for every
+ * character one (`Name`/`Sex`), matching the worked example on SAS's own
+ * `getColumns` reference (`developer.sas.com/rest-apis/compute/getColumns`)
+ * exactly. `ag-right-aligned-cell`/`ag-right-aligned-header` are plain CSS
+ * classes this panel's own imported stylesheets (`ag-grid.css`) already
+ * define — not `type: "numericColumn"`, ag-grid's built-in provided column
+ * type, which pulls in a default numeric filter this project has no way to
+ * verify behaves correctly against a SAS numeric value in the sandbox this
+ * was written in (packages not installed — see this file's own top doc
+ * comment). Applying only the alignment classes keeps this fix inside what a
+ * plain, already-loaded stylesheet can be trusted to do. */
 function toColumnDefs(columns: readonly WireColumn[]): ColDef[] {
   return columns.map((column) => ({
     field: column.field,
     headerName: column.headerName,
     sortable: false,
-    ...(column.type === "NUM"
+    ...(column.type === "FLOAT"
       ? {
           cellClass: "ag-right-aligned-cell",
           headerClass: "ag-right-aligned-header",

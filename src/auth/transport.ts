@@ -82,6 +82,28 @@ import { type Agent, request as httpsRequest } from "node:https";
  */
 export const MAX_BODY_BYTES = 1_048_576;
 
+/**
+ * Rejected by {@link createNodeHttpTransport} when a response body grows past
+ * the cap in force for the request — {@link MAX_BODY_BYTES}, or the larger
+ * {@link TransportRequest.maxBodyBytes} a caller set for a resource it expects
+ * to be big.
+ *
+ * A named type rather than a bare `Error` so the callers that *raise* the cap
+ * for a legitimately large resource — `src/content/adapter.ts`'s file read
+ * (10 MiB), `src/compute/files.ts`'s rich-output fetch (ADR-0019) — can tell
+ * "this resource is genuinely too large to handle" apart from "the host is
+ * unreachable". Both land in the same `catch`, and mean very different things
+ * to the user: one is a limit to explain, the other a connection to retry.
+ * Every other consumer reads `.message` through `instanceof Error` and is
+ * unaffected — the message is unchanged from the plain `Error` this replaced.
+ */
+export class ResponseTooLargeError extends Error {
+  constructor(readonly capBytes: number) {
+    super(`the response body exceeded ${String(capBytes)} bytes`);
+    this.name = "ResponseTooLargeError";
+  }
+}
+
 /** The subset of a response this project reads. */
 export interface TransportResponse {
   /** True for 2xx. Redirects are not followed, so a 3xx is not `ok`. */
@@ -355,9 +377,7 @@ export function createNodeHttpTransport(
             // not to trust. `destroy` here ends the response, not the process.
             response.destroy();
             finish(() => {
-              reject(
-                new Error(`the response body exceeded ${String(cap)} bytes`),
-              );
+              reject(new ResponseTooLargeError(cap));
             });
             return;
           }

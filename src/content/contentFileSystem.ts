@@ -279,6 +279,11 @@ export class SasContentFileSystemProvider
         return vscode.FileSystemError.Unavailable(message);
       case "content-unreachable":
         return vscode.FileSystemError.Unavailable(message);
+      case "content-too-large":
+        // Not `Unavailable` — retrying will not help; the file is over the cap
+        // this extension reads into an editor. A plain error carries the
+        // "open it in SAS Studio" message.
+        return new vscode.FileSystemError(message);
       case "link-missing":
       case "foreign-link":
       case "response-malformed":

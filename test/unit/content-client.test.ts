@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 
 import {
+  ResponseTooLargeError,
   type HttpTransport,
   type TransportRequest,
   type TransportResponse,
@@ -212,6 +213,23 @@ describe("content/client", () => {
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "content-unreachable");
     assert.ok(result.problem.detail.includes("GET /folders/folders/@myFolder"));
+  });
+
+  it("maps a ResponseTooLargeError to content-too-large, not content-unreachable", async () => {
+    // A body over the cap got an answer — it was just too big to read. It must
+    // not read as an unreachable host, or the user is told to check their proxy
+    // for a file that is simply large.
+    const failing: HttpTransport = () =>
+      Promise.reject(new ResponseTooLargeError(10 * 1024 * 1024));
+    const client = createContentClient({
+      root: "https://viya.example.com",
+      token: () => "tok",
+      transport: failing,
+    });
+    const result = await client.send({ link: SELF });
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "content-too-large");
+    assert.equal(result.problem.limitBytes, 10 * 1024 * 1024);
   });
 
   it("reports a JSON content-type with an unparseable body as malformed", async () => {

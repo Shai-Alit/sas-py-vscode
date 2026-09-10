@@ -49,6 +49,10 @@ describe("content/problems describeContentProblem", () => {
       /returned HTTP 404 \(Not Found, error code 11500\)/,
     ],
     [
+      { code: "content-too-large", limitBytes: 10485760 },
+      /larger than the 10485760-byte limit/,
+    ],
+    [
       { code: "response-malformed", detail: "carried no items array" },
       /answered with something unexpected: carried no items array/,
     ],

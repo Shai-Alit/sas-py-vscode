@@ -31,6 +31,7 @@ const PROBLEMS: ContentProblem[] = [
     code: "content-unreachable",
     detail: "GET /files/files/x/content — ETIMEDOUT",
   },
+  { code: "content-too-large", limitBytes: 10 * 1024 * 1024 },
   { code: "unauthorized", problem: { code: "state-mismatch" } },
   { code: "forbidden", error: VIYA_ERROR },
   { code: "content-rejected", error: { status: 412, errorCode: 0 } },
@@ -89,6 +90,16 @@ describe("content problem messages under the real l10n", () => {
     });
     assert.match(message, /HTTP 500/);
     assert.match(message, /the folder service is unavailable/);
+  });
+
+  it("tells the user a too-large file is a size limit, with the limit in MB", () => {
+    const message = localiseContentProblem({
+      code: "content-too-large",
+      limitBytes: 10 * 1024 * 1024,
+    });
+    assert.match(message, /too large/);
+    assert.match(message, /10 MB/);
+    assert.doesNotMatch(message, /proxy/);
   });
 
   it("delegates a 401 to the sign-in wording rather than rewording it", () => {

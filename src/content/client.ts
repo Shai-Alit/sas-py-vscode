@@ -27,12 +27,13 @@
  * and the sent `Content-Type` is not validated but is echoed back for
  * correctness.
  *
- * The transport-outcome mapping is unchanged from 6a-ii and is the same one the
- * Compute client carries and that has been through review: unreachable, 401
- * (via slice 1c's challenge reading), 403, any other non-2xx (read as an
- * `application/vnd.sas.error+json` envelope — findings 100 and 6.2 — so
- * `412`/`428` arrive as `content-rejected` carrying `error.status`), and a JSON
- * body that will not parse.
+ * The transport-outcome mapping follows the one the Compute client carries and
+ * that has been through review: unreachable, a response body past the size cap
+ * (`content-too-large`, so a file over `readFileContent`'s 10 MiB reads as too
+ * large rather than as an unreachable host), 401 (via slice 1c's challenge
+ * reading), 403, any other non-2xx (read as an `application/vnd.sas.error+json`
+ * envelope — findings 100 and 6.2 — so `412`/`428` arrive as `content-rejected`
+ * carrying `error.status`), and a JSON body that will not parse.
  *
  * ## Why a link and not a path
  *
@@ -54,6 +55,7 @@
 import { challengeProblem, parseBearerChallenge } from "../auth/challenge";
 import {
   nodeHttpTransport,
+  ResponseTooLargeError,
   type HttpTransport,
   type TransportResponse,
 } from "../auth/transport";
@@ -279,6 +281,17 @@ async function sendRequest(
     // never pays for it. `readFileContent` is the one caller that needs it.
     rawBody = await response.bytes?.();
   } catch (error) {
+    // A body over the cap is not an unreachable host — the request got an
+    // answer, it was just too big to read (`readFileContent` raises the cap to
+    // 10 MiB and the transport enforces it). Kept apart so the user is told the
+    // file is too large rather than to check their proxy.
+    if (error instanceof ResponseTooLargeError) {
+      return {
+        ok: false,
+        reason: `${method} ${link.href} answered with a body over ${String(error.capBytes)} bytes`,
+        problem: { code: "content-too-large", limitBytes: error.capBytes },
+      };
+    }
     // The message only. An injected transport's rejection can carry the
     // request that produced it, and this request's headers contain a token.
     return {

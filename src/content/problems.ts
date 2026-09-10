@@ -38,6 +38,18 @@ export type ContentProblem =
   /** The request never got an answer — DNS, TLS, proxy, timeout, abort. */
   | { code: "content-unreachable"; detail: string }
   /**
+   * The response body was larger than this extension will read for an editor —
+   * `src/content/adapter.ts`'s {@link MAX_FILE_CONTENT_BYTES} (10 MiB). The
+   * transport stopped reading at `limitBytes` and rejected with a
+   * `ResponseTooLargeError`; without this variant that landed in
+   * `content-unreachable` and the user was told to check their proxy for a
+   * file that is simply too big. `limitBytes` is the cap that was exceeded,
+   * for the message — the same number as the transport's
+   * `ResponseTooLargeError.capBytes`, named for this layer ("limit") rather
+   * than the transport's ("cap").
+   */
+  | { code: "content-too-large"; limitBytes: number }
+  /**
    * A 401, or no token to send at all. Not re-diagnosed here — the variant
    * carries slice 1c's verdict (`AuthProblem`), the same delegation
    * `compute/problems.ts` makes and for the same reason: the challenge
@@ -96,6 +108,8 @@ export function describeContentProblem(problem: ContentProblem): string {
   switch (problem.code) {
     case "content-unreachable":
       return `could not reach the SAS Content service: ${problem.detail}`;
+    case "content-too-large":
+      return `the file is larger than the ${String(problem.limitBytes)}-byte limit this extension reads into an editor`;
     case "unauthorized":
       return problem.noSession === true
         ? "no active SAS Viya session for this deployment"

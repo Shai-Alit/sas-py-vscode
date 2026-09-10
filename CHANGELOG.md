@@ -43,6 +43,11 @@ called out under **Changed** with a migration note.
 
 ### Fixed
 
+- **Trying to open a SAS Content file larger than 10 MB now says so.** The read
+  was cut off at the size limit and the failure was reported as "could not reach
+  SAS Viya — check your proxy", which pointed at the wrong thing. It now reads
+  "This file is too large to open in the editor (limit 10 MB). Open it in SAS
+  Studio instead."
 - **The first run after reopening VS Code on a folder with a long-lived Viya
   session could fail** with `The fileref "PYnnnnnn" already exists` and not
   recover until you ran **Disconnect** then **Connect**. On reconnect the

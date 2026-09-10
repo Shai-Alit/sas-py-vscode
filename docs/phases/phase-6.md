@@ -353,12 +353,12 @@ struck lines below.
   stripping proxy / non-`verde` release — finding 6.2 says a `200` always
   carries one), so a later save gets the accurate "no version tag, reopen it"
   refusal instead of sending the consumed tag and drawing a spurious `412`.
-- ☑ **PR #141 post-merge review findings (2026-09-10).** Raised on the merged
-  PR by the Codex/Claude passes; fixed here on
-  `fix/content-etag-guard-per-deployment`, with an adversarial pass before the
-  follow-up PR was opened. `npm run verify` was run locally on the branch:
-  green, 1348 unit + 281 integration passing, coverage unchanged (94.93 lines /
-  95.22 branches / 94.53 functions / 94.93 statements). One Major, two Minor:
+- ☑ **PR #141 post-merge review findings — [PR #145](https://github.com/Shai-Alit/sas-py-vscode/pull/145),
+  squash `0449caa`, 2026-09-10.** Raised on the merged #141 by the Codex/Claude
+  passes; fixed with an adversarial pass before #145 was opened, `npm run
+  verify` green (1348 unit + 281 integration passing; coverage unchanged, 94.93
+  lines / 95.22 branches / 94.53 functions / 94.93 statements), Codex + Claude
+  PR reviews clean. One Major, two Minor:
   - **Major — the `opened` ETag guard was keyed by the `/files/files/{id}`
     href alone**, so the same Files service id opened on two Viya roots shared
     one entry: a `readFile` against root B overwrote the tag root A recorded,
@@ -368,9 +368,11 @@ struck lines below.
     per-URI adapter resolution the URI's `r=` already drives. New integration
     test: "keeps the ETag guard per deployment".
   - **Minor — `adapter.ts` `statFile`'s `size: … : 0` fallback** now carries a
-    comment that the `0` is a deliberate defensive default for a shape finding
-    6.1 says this deployment never sends (the object-shape check above already
-    rejects a non-object body), not a masked parse bug.
+    comment that the `0` is a deliberate defensive default for a representation
+    that arrives without a numeric `size` (the object-shape check above already
+    rejects a non-object body), not a masked parse bug — worded to what finding
+    6.1 actually established (a numeric `size` on the one `.py` file resource it
+    probed), after the adversarial pass flagged the first wording as broader.
   - **Minor — `contentUriString` now percent-encodes a bare `%`** in the name
     segment, escaped before `#`/`?` so those escapes are not themselves
     double-encoded, so a legal SAS Content name like `100% done.py` round-trips

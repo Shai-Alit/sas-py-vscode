@@ -46,10 +46,10 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
   surfaces as a network error, not a size error). A post-merge review pass
   raised one Major — the `opened` ETag guard was keyed by the file href alone,
   so it leaked across deployments; now keyed by deployment root + href — plus
-  two Minor doc/robustness findings, addressed on
-  `fix/content-etag-guard-per-deployment` (adversarial pass done; `npm run
-  verify` green locally on the branch, 1348 unit + 281 integration passing) and
-  headed for a follow-up PR.
+  two Minor doc/robustness findings, all fixed in
+  [PR #145](https://github.com/Shai-Alit/sas-py-vscode/pull/145) (squash
+  `0449caa`; adversarial pass before the PR, `npm run verify` green, 1348 unit
+  + 281 integration passing, coverage unchanged).
 - **6c — mutations (create/rename/move/delete).** Next. Also picks up the
   three items moved out of 6b above, and the `.py` type / `/types/types`
   probe deferred from 6a.

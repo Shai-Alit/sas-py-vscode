@@ -102,10 +102,23 @@ export function registerDataExplorer(
         if (item === undefined || !isTable(item)) return;
         const adapter = currentAdapter();
         if (adapter === undefined) return;
-        // Fire-and-forget from a command handler, the same shape
-        // `provider.refresh()` already is in this file — `open`'s own promise
+        // Fire-and-forget from a command handler — `open`'s own promise
         // exists for an integration test to await, not for this call site.
-        void panels.open(item, adapter);
+        // Caught, though, not bare `void`: every failure `LibraryAdapter`
+        // itself anticipates comes back as a typed `Result` the panel already
+        // surfaces in its own UI, but `open` calls through to
+        // `ComputeClient.send`, which rethrows whatever `resolveHref` throws
+        // that is not a `ForeignLinkError` — the same real, if narrow, gap
+        // `sessionManager.ts`'s own `deleteSession` call already has to guard
+        // against for exactly this reason. An uncaught rejection here would
+        // land in the extension host as an unhandled rejection, visible to
+        // no one — logged instead, so an unexpected failure to open a table
+        // is at least diagnosable.
+        void panels.open(item, adapter).catch((error: unknown) => {
+          log.error(
+            `could not open the data viewer panel for "${item.libref}.${item.name}": ${String(error)}`,
+          );
+        });
       },
     ),
     // A signed-in window may not have connected yet when the view first

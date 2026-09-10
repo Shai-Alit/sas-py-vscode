@@ -1049,6 +1049,29 @@ things this box waits on.
   as a fresh bug — tracked as its own punch-list item under 7c below, not
   left as an implicit assumption.
 
+  **github-actions Bot finding on PR #150, 2026-09-10: real, fixed.**
+  `dataExplorer.ts`'s `pythonOnViya.openTable` command handler dropped
+  `panels.open(item, adapter)`'s promise with a bare `void`, justified by a
+  comment claiming it was "the same shape `provider.refresh()` already is in
+  this file." Verified and found the comparison false: `provider.refresh()`
+  (`dataTree.ts`) is synchronous and returns `void` — it can never reject.
+  `panels.open()` returns a real `Promise<void>` that runs through
+  `ComputeClient.send` (`src/compute/client.ts`), which has one narrow, real
+  rethrow gap — `resolveHref` throwing anything that is not a
+  `ForeignLinkError` propagates rather than becoming a typed `Result` — the
+  exact hazard `sessionManager.ts`'s own `deleteSession` call already guards
+  against, in an almost identically worded comment, for the same reason.
+  Every failure `LibraryAdapter` itself anticipates (busy session, missing
+  link, unauthorized, unreachable) already comes back as a `Result` the
+  panel surfaces in its own UI; the gap is only the narrow rethrow path,
+  plus whatever `buildHtml`/`createWebviewPanel` could throw synchronously.
+  Fixed to match the existing `sessionManager.ts` precedent exactly:
+  `void panels.open(item, adapter).catch((error) => log.error(...))`, using
+  the `log: vscode.LogOutputChannel` already in scope. `src/data/dataExplorer.ts`
+  is already excluded from the coverage gate (imports `vscode`), so no new
+  test is owed here. `tsc --noEmit` / `-p tsconfig.test.json` and `prettier
+  --check` both clean.
+
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
 - ☐ Server-side sort via `createView` — decide the orphan-view cleanup

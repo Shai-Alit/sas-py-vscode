@@ -1,0 +1,47 @@
+{
+  "accept": "application/vnd.sas.compute.data.table.summary",
+  "count": 394,
+  "start": 0,
+  "limit": 2,
+  "items": [
+    {
+      "id": "AACOMP",
+      "name": "AACOMP",
+      "version": 1,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/AACOMP",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table"
+        }
+      ]
+    },
+    {
+      "id": "ADSMSG",
+      "name": "ADSMSG",
+      "version": 1,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/ADSMSG",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP?limit=2&start=0",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.collection"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP?limit=2&start=2",
+      "method": "GET",
+      "rel": "next"
+    }
+  ]
+}

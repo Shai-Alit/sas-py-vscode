@@ -40,11 +40,18 @@ interface CheckCoverageScope {
  * unexplained drop in a percentage.
  */
 describe("check-coverage-scope", function () {
-  // The "this repository" case below walks and parses every source file through
-  // the TypeScript compiler. Native that is sub-second; under `c8` in a process
-  // already holding whole-suite coverage data it lands on mocha's 2s budget and
-  // flakes. Bounded budget for the compiler work it genuinely does, mirroring
-  // `eslint-ignores.test.ts`'s timeout for loading ESLint.
+  // The 2s unit budget assumes a no-I/O pure-function test, where slow means
+  // stuck. Two things in this file break that assumption, both genuine bounded
+  // CPU work: the before-all hook `import`s check-coverage-scope.mjs, which
+  // loads the whole `typescript` module graph, and the final "this repository"
+  // case walks and parses every source file with that compiler. Native, both
+  // finish in well under a second; under c8 — in a process that by this point
+  // holds V8 coverage data for the entire suite — they run several times slower
+  // and land right on the 2s line, so they pass one run and time out the next.
+  // Give this suite a real, bounded budget for that work, exactly as
+  // eslint-ignores.test.ts does for loading ESLint. The pure-function cases
+  // below still finish in milliseconds; this only lifts the ceiling, it does
+  // not slow anything down.
   this.timeout(30_000);
 
   let script: CheckCoverageScope;

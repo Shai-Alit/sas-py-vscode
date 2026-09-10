@@ -18,6 +18,8 @@
     "src/content/contentFileSystem.ts",
     "src/content/contentTree.ts",
     "src/content/messages.ts",
+    "src/data/dataExplorer.ts",
+    "src/data/dataTree.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",

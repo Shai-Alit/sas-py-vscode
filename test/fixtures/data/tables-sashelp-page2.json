@@ -1,0 +1,29 @@
+{
+  "accept": "application/vnd.sas.compute.data.table.summary",
+  "count": 394,
+  "start": 2,
+  "limit": 2,
+  "items": [
+    {
+      "id": "CLASS",
+      "name": "CLASS",
+      "version": 1,
+      "links": [
+        {
+          "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS",
+          "method": "GET",
+          "rel": "self",
+          "type": "application/vnd.sas.compute.data.table"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP?limit=2&start=2",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

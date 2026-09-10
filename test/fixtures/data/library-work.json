@@ -1,0 +1,32 @@
+{
+  "name": "WORK",
+  "readOnly": false,
+  "concatenationCount": 0,
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/WORK",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.compute.library"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/WORK",
+      "method": "GET",
+      "rel": "alternate",
+      "type": "application/vnd.sas.compute.library.summary"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/WORK",
+      "method": "DELETE",
+      "rel": "delete",
+      "type": "application/vnd.sas.compute.library.summary"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/WORK",
+      "method": "GET",
+      "rel": "tables",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.summary"
+    }
+  ]
+}

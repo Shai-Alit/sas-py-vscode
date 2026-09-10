@@ -168,6 +168,12 @@
         "title": "%command.refreshContentExplorer.title%",
         "category": "%extension.category%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "pythonOnViya.refreshDataExplorer",
+        "title": "%command.refreshDataExplorer.title%",
+        "category": "%extension.category%",
+        "icon": "$(refresh)"
       }
     ],
     "viewsContainers": {
@@ -185,6 +191,11 @@
           "id": "pythonOnViya.contentExplorer",
           "name": "%views.contentExplorer.name%",
           "contextualTitle": "%views.contentExplorer.name%"
+        },
+        {
+          "id": "pythonOnViya.dataExplorer",
+          "name": "%views.dataExplorer.name%",
+          "contextualTitle": "%views.dataExplorer.name%"
         }
       ]
     },
@@ -198,6 +209,21 @@
         "view": "pythonOnViya.contentExplorer",
         "when": "pythonOnViya.hasProfiles && !pythonOnViya.authorized",
         "contents": "%viewsWelcome.contentExplorer.signedOut%"
+      },
+      {
+        "view": "pythonOnViya.dataExplorer",
+        "when": "!pythonOnViya.hasProfiles",
+        "contents": "%viewsWelcome.dataExplorer.noProfile%"
+      },
+      {
+        "view": "pythonOnViya.dataExplorer",
+        "when": "pythonOnViya.hasProfiles && !pythonOnViya.authorized",
+        "contents": "%viewsWelcome.dataExplorer.signedOut%"
+      },
+      {
+        "view": "pythonOnViya.dataExplorer",
+        "when": "pythonOnViya.hasProfiles && pythonOnViya.authorized && !pythonOnViya.connected",
+        "contents": "%viewsWelcome.dataExplorer.notConnected%"
       }
     ],
     "menus": {
@@ -205,6 +231,11 @@
         {
           "command": "pythonOnViya.refreshContentExplorer",
           "when": "view == pythonOnViya.contentExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.refreshDataExplorer",
+          "when": "view == pythonOnViya.dataExplorer",
           "group": "navigation"
         }
       ],

@@ -1,0 +1,32 @@
+{
+  "name": "SASHELP",
+  "readOnly": true,
+  "concatenationCount": 4,
+  "links": [
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP",
+      "method": "GET",
+      "rel": "self",
+      "type": "application/vnd.sas.compute.library"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP",
+      "method": "GET",
+      "rel": "alternate",
+      "type": "application/vnd.sas.compute.library.summary"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP",
+      "method": "DELETE",
+      "rel": "delete",
+      "type": "application/vnd.sas.compute.library.summary"
+    },
+    {
+      "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP",
+      "method": "GET",
+      "rel": "tables",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.compute.data.table.summary"
+    }
+  ]
+}

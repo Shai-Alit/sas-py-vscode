@@ -24,7 +24,7 @@
  * because nothing here needs to.
  */
 
-import type { Column, RowItem } from "./types";
+import type { Column, RowItem, SortSpec } from "./types";
 
 /** One column, reduced to what the grid's column definitions need. `field` is
  * the key a row's positional `cells` array is mapped onto by index — see
@@ -69,11 +69,15 @@ export function toWireRows(rows: readonly RowItem[]): readonly unknown[][] {
 
 /** Host → webview: the column definitions and the table's own known row
  * count (or `undefined`, if this deployment did not supply one), sent once
- * after `openTable`/`getColumns` resolve. */
+ * after `openTable`/`getColumns` resolve. `filterPlaceholder` is host-decided
+ * (`vscode.l10n.t()`) rather than a literal the webview would otherwise have
+ * to translate itself — the same localisation-boundary discipline this
+ * module's own top doc comment already describes for every other string. */
 export interface InitMessage {
   readonly type: "init";
   readonly columns: readonly WireColumn[];
   readonly rowCount: number | undefined;
+  readonly filterPlaceholder: string;
 }
 
 /** Host → webview: one requested row window, answered. */
@@ -118,12 +122,24 @@ export interface ReadyMessage {
  * one window of rows. `requestId` lets the host's reply be matched back to
  * the specific `getRows` call ag-grid made, since more than one can be in
  * flight at once (a fast scroll can trigger several before the first
- * answers). */
+ * answers).
+ *
+ * **`sort`/`filter` travel on every request, not as separate change
+ * messages** — the same combined-payload shape upstream's own
+ * `useDataViewer.ts` uses (ag-grid's own header-sort state and this file's
+ * free-text filter box are merged into one request every time a row window
+ * is asked for), rather than a `sortChanged`/`filterChanged` message this
+ * project would have to keep in sync with `requestRows` separately. An
+ * "off" state is an empty array/empty string, never `undefined` — avoiding
+ * optional fields here means the host never has to ask "was this omitted or
+ * explicitly cleared". */
 export interface RequestRowsMessage {
   readonly type: "requestRows";
   readonly requestId: string;
   readonly start: number;
   readonly limit: number;
+  readonly sort: readonly SortSpec[];
+  readonly filter: string;
 }
 
 export function isReadyMessage(message: unknown): message is ReadyMessage {
@@ -134,11 +150,26 @@ export function isRequestRowsMessage(
   message: unknown,
 ): message is RequestRowsMessage {
   if (!isRecordWithType(message, "requestRows")) return false;
-  const { requestId, start, limit } = message as Record<string, unknown>;
+  const { requestId, start, limit, sort, filter } = message as Record<
+    string,
+    unknown
+  >;
   return (
     typeof requestId === "string" &&
     typeof start === "number" &&
-    typeof limit === "number"
+    typeof limit === "number" &&
+    Array.isArray(sort) &&
+    sort.every(isSortSpec) &&
+    typeof filter === "string"
+  );
+}
+
+function isSortSpec(value: unknown): value is SortSpec {
+  if (typeof value !== "object" || value === null) return false;
+  const { key, direction } = value as Record<string, unknown>;
+  return (
+    typeof key === "string" &&
+    (direction === "ascending" || direction === "descending")
   );
 }
 

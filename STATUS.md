@@ -277,7 +277,23 @@ account in `phase-7.md`'s 7b Runbook entry.
   it); **7c-ii** table properties/columns static viewer; **7c-iii** CSV
   export to local disk (standalone — Phase 6 deferred its own
   upload/download to Phase 11 entirely, so there's no helper to share).
-  **7c-i is next**, worked from the `sas-py-vscode-cowork` clone.
+  **7c-i (sort + filter) is code-complete 2026-09-10** (`sas-py-vscode-cowork`
+  clone) — live-probed first (Findings 7.15–7.18: `createView`'s real
+  request/response shape and its own `delete`/`rowsAsCSV` links; `where=` is
+  silently ignored on a created view's own rows read, so a filter must be
+  baked into the same `createView` body as `sortBy`; `count` disappears the
+  instant a filter or view is involved, not just sometimes null); design
+  recorded in [ADR-0029](docs/adr/0029-sort-view-lifecycle.md) (one view
+  reused per (sort, filter) state across pagination, not recreated per page
+  the way upstream's own un-cleaned-up `getSortedRows` does; guaranteed
+  cleanup on every state change and on dispose; a serialised
+  `ensureReadTarget` closing a real concurrent-view-creation race). A shared
+  fix also landed in `src/wire/viyaError.ts` (a nested `errors[0].details`
+  fallback, Finding 7.18). **Not yet verified on a real machine** (`npm run
+  verify`/`test:integration`/`coverage`, `npm run l10n:extract`) and **the
+  adversarial pre-PR review has not run** — nothing pushed, no PR opened.
+  `docs/dev/manual-test-pass.md` gained an unrun §12 for Sean's own visual
+  check of the new filter bar and sort-icon rendering.
 - **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
   Scoped 2026-09-04 from a separate session; that session's doc edits were
   stashed rather than committed and sat unmerged until found and resurrected

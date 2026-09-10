@@ -179,6 +179,101 @@ describe("readViyaError", () => {
     });
   });
 
+  it("Finding 7.18: falls back to errors[0].details when the top-level details carries no human sentence", () => {
+    // A createView/getRows validation failure (invalid where=/sortBy) — the
+    // top-level details carries only path:/correlator: machine entries, and
+    // the actual SAS parser message sits nested one level down.
+    const error = readViyaError(
+      400,
+      JSON.stringify({
+        version: 2,
+        httpStatusCode: 400,
+        errorCode: 5316,
+        message: "Failed to open Data Table",
+        details: [
+          "path: /compute/sessions/S/data/WORK/PROBE7CI/rows",
+          "correlator: cca95fbe-0000-4000",
+        ],
+        errors: [
+          {
+            version: 2,
+            httpStatusCode: 400,
+            errorCode: 5316,
+            message: "Failed to open Data Table",
+            details: [
+              "ERROR: Variable NoSuchColumn is not on file WORK.PROBE7CI.",
+            ],
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(error, {
+      status: 400,
+      message: "Failed to open Data Table",
+      errorCode: 5316,
+      correlator: "cca95fbe-0000-4000",
+      detail: "ERROR: Variable NoSuchColumn is not on file WORK.PROBE7CI.",
+    });
+  });
+
+  it("does not consult errors[] when the top-level details already has a human sentence", () => {
+    const error = readViyaError(
+      404,
+      JSON.stringify({
+        details: ["the top-level sentence"],
+        errors: [{ details: ["a nested sentence that should not win"] }],
+      }),
+    );
+    assert.equal(error.detail, "the top-level sentence");
+  });
+
+  it("skips path:/correlator: entries inside a nested errors[0].details too", () => {
+    const error = readViyaError(
+      400,
+      JSON.stringify({
+        details: ["path: /top", "correlator: top-correlator"],
+        errors: [
+          {
+            details: [
+              "path: /compute/sessions/S/data/WORK/PROBE7CI/rows",
+              "correlator: nested-correlator",
+              "ERROR: Variable NoSuchColumn is not on file WORK.PROBE7CI.",
+            ],
+          },
+        ],
+      }),
+    );
+    assert.deepEqual(error, {
+      status: 400,
+      correlator: "top-correlator",
+      detail: "ERROR: Variable NoSuchColumn is not on file WORK.PROBE7CI.",
+    });
+  });
+
+  it("skips a non-string entry inside a nested errors[0].details", () => {
+    const error = readViyaError(
+      400,
+      JSON.stringify({
+        details: ["path: /top"],
+        errors: [{ details: [7, "the real message"] }],
+      }),
+    );
+    assert.equal(error.detail, "the real message");
+  });
+
+  it("tolerates a malformed errors[] entry rather than throwing", () => {
+    for (const body of [
+      '{"errors": "not an array"}',
+      '{"errors": [null]}',
+      '{"errors": [{"details": "not an array"}]}',
+      '{"errors": []}',
+    ]) {
+      const error = readViyaError(400, body);
+      assert.equal(error.status, 400, body);
+      assert.equal(error.detail, undefined, body);
+    }
+  });
+
   it("skips details entries that are not strings", () => {
     assert.deepEqual(
       readViyaError(404, JSON.stringify({ details: [null, 7, ["x"], "real"] })),

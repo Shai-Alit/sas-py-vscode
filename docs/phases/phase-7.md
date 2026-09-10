@@ -1217,7 +1217,24 @@ host-side-only, local-disk-write feature, standalone since Phase 6 deferred
 its own upload/download to Phase 11 entirely rather than shipping a helper
 this could share). **7c-i is next.**
 
-☐ **7c-i — Sort + filter.**
+☑ **7c-i — Sort + filter.** Code written 2026-09-10 (`sas-py-vscode-cowork`
+clone), following the live-probed shape Findings 7.15–7.18 established.
+Design decisions (view-per-(sort,filter)-state reuse across pagination, a
+filter baked into `createView`'s own body whenever a sort is active, a
+serialised `ensureReadTarget` closing a real concurrent-view-creation race,
+guaranteed cleanup on every state change and on dispose) recorded in
+[ADR-0029](../adr/0029-sort-view-lifecycle.md), written alongside this code
+per this project's own convention. `src/wire/viyaError.ts`'s `readViyaError`
+also gained a fallback to a nested `errors[0].details` sentence (Finding
+7.18) — a shared-module fix, not scoped narrowly to this slice, since any
+future caller hitting the same envelope shape benefits. New
+`docs/dev/manual-test-pass.md` §12 (unrun — Sean's own manual check of the
+filter-bar layout and sort-icon rendering is still needed, per this slice's
+own "not yet visually confirmed" notes in `dataViewerEntry.tsx`); §11's own
+"no sort/filter" known-gap row updated to point at it. `CHANGELOG.md`
+updated. **Not yet verified**: `npm run verify`/`test:integration`/`coverage`
+on a real machine, `npm run l10n:extract` (a new `vscode.l10n.t()` call in
+`dataViewerPanel.ts`), the adversarial pre-PR review.
 
 - ☑ Live-probe the `createView` mechanism against `verde` — **done**,
   Findings 7.15–7.18. Settled, correcting this bullet's own original
@@ -1240,7 +1257,7 @@ this could share). **7c-i is next.**
   a second-deployment (`Innov`) cross-check — `Innov`'s stored token had
   expired this session; left open, not blocking (see Finding 7.18's own
   "not probed" paragraph).
-- ☐ Fix, not port, upstream's orphan-view bug: `RestLibraryAdapter.
+- ☑ Fix, not port, upstream's orphan-view bug: `RestLibraryAdapter.
   getSortedRows` (`vscode-sas-extension`) calls `createView` → `getRows` on
   the view → `deleteTable`, with no try/finally — a throwing read leaves the
   view orphaned in the session until the session itself is torn down, with
@@ -1251,17 +1268,17 @@ this could share). **7c-i is next.**
   Finding 7.15) and must guarantee the delete fires whenever that state
   changes (a new sort, a new filter while sorted, sort turned off) or the
   panel disposes — on every exit path, not just the success path.
-- ☐ `where=`-clause text filter, matching `TableFilter.tsx`'s upstream shape:
+- ☑ `where=`-clause text filter, matching `TableFilter.tsx`'s upstream shape:
   one free-text "expression" box (a raw SAS `WHERE` clause), committed on
   Enter or an explicit action, never live-typed. No sort active: appended
   directly to the base table's own `rows` link the same way `getRows`
   already appends `start=`/`limit=` via `withQuery`. Sort active: baked into
   the `createView` body alongside `sortBy` (Finding 7.16), not applied as a
   query parameter.
-- ☐ New host↔webview messages for a combined sort+filter re-fetch, following
+- ☑ New host↔webview messages for a combined sort+filter re-fetch, following
   `dataViewerModel.ts`'s existing `requestId`-echo pattern (`requestRows`/
   `rows`/`rowsError` today carry no sort/filter state at all).
-- ☐ `toColumnDefs`'s hardcoded `sortable: false` (`dataViewerEntry.tsx`, with
+- ☑ `toColumnDefs`'s hardcoded `sortable: false` (`dataViewerEntry.tsx`, with
   an explicit comment deferring it to 7c) becomes real server-side sort,
   wired to ag-grid's own header-sort state the way upstream's `useDataViewer.
   ts` reads `params.sortModel` on every `getRows` call — not a client-side
@@ -1984,6 +2001,21 @@ read-only `SASHELP.CLASS`, since `createView` is a mutation.
   `204`; a follow-up `GET` on each returned `404`.** Confirms deletion is
   real and immediate, not just conceptual — no orphan risk from a *successful*
   delete; Finding 7.16 below is about a *skipped* delete.
+- **A pre-existing fixture (`test/fixtures/data/table-detail-class.json`,
+  built for 7a/7b, before this finding) had guessed both the `createView`
+  and `rowsAsCSV` link hrefs wrong** — `.../CLASS/createView` and
+  `.../CLASS/rowsAsCSV`, plausible-looking extrapolations from the relation
+  name that this probe shows are not what a real deployment sends: the real
+  `createView` href is `.../{tableName}/views` (this finding's own probe),
+  and `rowsAsCSV` shares the *identical* href as `rows`, differing only by
+  its own `type: text/csv`. Neither wrong value had a caller before this
+  slice (7a/7b never followed either link), so this went unnoticed until
+  7c-i's own code tried to follow `createView` and got an unmatched-route
+  test failure. Corrected in the same change as 7c-i's own code, per this
+  project's "every claim carries its evidence" rule — a fixture is exactly
+  "a place a superseded value was written down." The fixture also gained the
+  `delete` link this finding confirms every table's rich detail carries,
+  absent from it entirely before now.
 
 **Finding 7.16 — `where=` is silently ignored on a created view's own rows
 read; it must be baked into the `createView` request body instead, not

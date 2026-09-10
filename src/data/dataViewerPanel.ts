@@ -31,7 +31,7 @@
 
 import * as vscode from "vscode";
 
-import { type LibraryAdapter } from "./adapter";
+import { type DataResult, type LibraryAdapter } from "./adapter";
 import {
   isReadyMessage,
   isRequestRowsMessage,
@@ -40,7 +40,8 @@ import {
   type DataViewerHostMessage,
 } from "./dataViewerModel";
 import { localiseDataProblem } from "./messages";
-import { type TableDetail, type TableItem } from "./types";
+import { describeDataProblem } from "./problems";
+import { type SortSpec, type TableDetail, type TableItem } from "./types";
 
 const VIEW_TYPE = "pythonOnViya.dataViewer";
 
@@ -68,6 +69,12 @@ export interface DataWebviewPanel extends vscode.Disposable {
  * reliably, so panel creation is injectable and defaults to the real thing. */
 export interface DataViewerPanelDeps {
   createPanel?: ((title: string) => DataWebviewPanel) | undefined;
+  /** Where a best-effort view cleanup failure is logged (`discardView`'s own
+   * doc comment) — never surfaced to the user, since a view this project
+   * failed to delete is orphaned only until the session itself ends, not a
+   * correctness problem for anything still open. `undefined` in a test that
+   * has no reason to assert on logging. */
+  log?: vscode.LogOutputChannel | undefined;
 }
 
 export class DataViewerPanelManager implements vscode.Disposable {
@@ -117,6 +124,7 @@ export class DataViewerPanelManager implements vscode.Disposable {
         createRealPanel(this.extensionUri, title),
       this.extensionUri,
       () => this.panels.delete(key),
+      this.deps.log,
     );
     this.panels.set(key, panel);
     await panel.start();
@@ -148,6 +156,23 @@ class OpenTablePanel implements vscode.Disposable {
    * and every row request that somehow arrives before it is set answers with
    * `rowsError` rather than throwing (see {@link handleRequestRows}). */
   private tableDetail: TableDetail | undefined;
+  /** The server-side view backing the *current* sort/filter state — `applySort`'s
+   * own return value, reused across every `requestRows` while `activeSort`/
+   * `activeFilter` stay unchanged; `undefined` when no sort is active (a plain
+   * or filtered-only read goes straight against `tableDetail`). See {@link
+   * ensureReadTarget}. */
+  private activeView: TableDetail | undefined;
+  private activeSort: readonly SortSpec[] = [];
+  private activeFilter: string | undefined;
+  /** Serialises {@link ensureReadTarget}'s own body — a fast scroll can have
+   * more than one `requestRows` in flight at once, and without this, two
+   * concurrent calls deciding *together* that the (sort, filter) pairing
+   * changed would each create their own view, the second silently
+   * overwriting {@link activeView} and orphaning the first rather than
+   * either one being deleted through the ordinary supersede-or-dispose path.
+   * `.catch()` on the stored chain keeps one rejected call from poisoning
+   * every later one. */
+  private ensureReadTargetChain: Promise<unknown> = Promise.resolve();
   private readonly subscriptions: vscode.Disposable[] = [];
   /** Aborted on dispose — caught in review: none of this class's three
    * adapter calls carried a `signal` before now, even though `openTable`/
@@ -163,6 +188,7 @@ class OpenTablePanel implements vscode.Disposable {
     private readonly panel: DataWebviewPanel,
     private readonly extensionUri: vscode.Uri,
     private readonly onDisposed: () => void,
+    private readonly log?: vscode.LogOutputChannel,
   ) {}
 
   reveal(): void {
@@ -186,14 +212,31 @@ class OpenTablePanel implements vscode.Disposable {
             message.requestId,
             message.start,
             message.limit,
+            message.sort,
+            message.filter,
           );
         }
       }),
       this.panel.onDidDispose(() => {
+        // Captured before `controller.abort()`, and deleted with **no**
+        // signal of its own — reusing `this.controller.signal` here would
+        // abort the very cleanup call this is trying to make, since that is
+        // the controller being aborted on this same tick.
+        const staleView = this.activeView;
+        this.activeView = undefined;
         this.controller.abort();
         for (const subscription of this.subscriptions) subscription.dispose();
         this.subscriptions.length = 0;
         this.onDisposed();
+        if (staleView !== undefined) {
+          void this.adapter.deleteView(staleView).then((result) => {
+            if (!result.ok) {
+              this.log?.warn(
+                `python-on-viya: could not delete a sort/filter view over "${staleView.libref}.${staleView.name}" on panel dispose (${describeDataProblem(result.problem)}) — it will be orphaned until the session ends`,
+              );
+            }
+          });
+        }
       }),
     );
 
@@ -241,6 +284,9 @@ class OpenTablePanel implements vscode.Disposable {
       type: "init",
       columns: toWireColumns(columns.value),
       rowCount: opened.value.rowCount,
+      filterPlaceholder: vscode.l10n.t(
+        "Filter rows (SAS WHERE clause) — press Enter to apply",
+      ),
     });
   }
 
@@ -248,6 +294,8 @@ class OpenTablePanel implements vscode.Disposable {
     requestId: string,
     start: number,
     limit: number,
+    sort: readonly SortSpec[],
+    filter: string,
   ): Promise<void> {
     const table = this.tableDetail;
     if (table === undefined) {
@@ -264,9 +312,24 @@ class OpenTablePanel implements vscode.Disposable {
       return;
     }
 
+    const target = await this.ensureReadTarget(sort, filter);
+    if (!target.ok) {
+      this.post({
+        type: "rowsError",
+        requestId,
+        message: localiseDataProblem(target.problem),
+      });
+      return;
+    }
+
+    // A filter is applied via `where=` only against the base table — never
+    // against `target.value` when it is a sort-view, which already has any
+    // active filter baked into its own `createView` body (Finding 7.16:
+    // `where=` is silently ignored on a view's own rows read).
     const result = await this.adapter.getRows(
-      table,
+      target.value,
       { start, limit },
+      sort.length === 0 ? filter : undefined,
       this.controller.signal,
     );
     if (!result.ok) {
@@ -285,6 +348,93 @@ class OpenTablePanel implements vscode.Disposable {
       rows: toWireRows(result.value.rows),
       count: result.value.count,
     });
+  }
+
+  /**
+   * The table (no sort active) or the sort-view (sort active) the next
+   * {@link handleRequestRows} call should read from — creating, reusing, or
+   * discarding a view as `sort`/`filter` change.
+   *
+   * **A view is recreated whenever the (sort, filter) pairing changes, and
+   * reused across every page fetch while it stays the same** — one
+   * create/delete round trip per distinct sort/filter state, not one per
+   * scroll-triggered page the way upstream's own `getSortedRows` does
+   * (`applySort`'s own doc comment). Serialised via {@link
+   * ensureReadTargetChain} — see that field's own doc comment.
+   */
+  private ensureReadTarget(
+    sort: readonly SortSpec[],
+    filter: string,
+  ): Promise<DataResult<TableDetail>> {
+    const next = this.ensureReadTargetChain.then(() =>
+      this.ensureReadTargetLocked(sort, filter),
+    );
+    this.ensureReadTargetChain = next.catch(() => undefined);
+    return next;
+  }
+
+  private async ensureReadTargetLocked(
+    sort: readonly SortSpec[],
+    filter: string,
+  ): Promise<DataResult<TableDetail>> {
+    const table = this.tableDetail;
+    if (table === undefined) {
+      // Guarded by the same check `handleRequestRows` already made before
+      // calling this — kept here too so this method has no implicit
+      // dependency on call order to stay total.
+      return {
+        ok: false,
+        reason: "the table is not open yet",
+        problem: { code: "not-connected" },
+      };
+    }
+
+    if (sort.length === 0) {
+      if (this.activeView !== undefined) await this.discardView();
+      return { ok: true, value: table };
+    }
+
+    if (
+      this.activeView !== undefined &&
+      sortEquals(this.activeSort, sort) &&
+      this.activeFilter === filter
+    ) {
+      return { ok: true, value: this.activeView };
+    }
+
+    if (this.activeView !== undefined) await this.discardView();
+
+    const created = await this.adapter.applySort(
+      table,
+      sort,
+      filter === "" ? undefined : filter,
+      this.controller.signal,
+    );
+    if (!created.ok) return created;
+
+    this.activeView = created.value;
+    this.activeSort = sort;
+    this.activeFilter = filter;
+    return created;
+  }
+
+  /** Deletes the current view, if there is one, and clears this panel's own
+   * record of it regardless of whether the delete actually succeeded — a
+   * failed delete here is logged, not retried or propagated (see {@link
+   * DataViewerPanelDeps.log}'s own doc comment). */
+  private async discardView(): Promise<void> {
+    const view = this.activeView;
+    this.activeView = undefined;
+    this.activeSort = [];
+    this.activeFilter = undefined;
+    if (view === undefined) return;
+
+    const deleted = await this.adapter.deleteView(view, this.controller.signal);
+    if (!deleted.ok) {
+      this.log?.warn(
+        `python-on-viya: could not delete a superseded sort/filter view over "${view.libref}.${view.name}" (${describeDataProblem(deleted.problem)}) — it will be orphaned until the session ends`,
+      );
+    }
   }
 
   /** Sends a message that also becomes this panel's "opening state" —
@@ -307,6 +457,19 @@ class OpenTablePanel implements vscode.Disposable {
     if (!this.ready) return;
     void this.panel.webview.postMessage(message);
   }
+}
+
+/** Whether two sort specs name the same columns in the same order with the
+ * same direction — {@link OpenTablePanel.ensureReadTarget}'s own "has the
+ * sort actually changed" check, ordinary array equality rather than a set
+ * comparison since a column-order change (drag-reordering a multi-sort) is
+ * itself a real change a view must be recreated for. */
+function sortEquals(a: readonly SortSpec[], b: readonly SortSpec[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((spec, index) => {
+    const other = b[index];
+    return other?.key === spec.key && other.direction === spec.direction;
+  });
 }
 
 function createRealPanel(

@@ -52,15 +52,18 @@
  * changes.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 import {
   AllCommunityModule,
   ModuleRegistry,
   type ColDef,
+  type GridApi,
   type GridReadyEvent,
+  type IDatasource,
   type IGetRowsParams,
+  type SortModelItem,
 } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 
@@ -71,6 +74,7 @@ import type {
   DataViewerHostMessage,
   WireColumn,
 } from "../data/dataViewerModel";
+import type { SortSpec } from "../data/types";
 
 /** What this file needs from `acquireVsCodeApi()` — one method, the same
  * narrow declaration `src/webview/entry.ts` carries, since VS Code ships no
@@ -122,21 +126,64 @@ const pendingRowRequests = new Map<string, PendingRowRequest>();
  * nonce host-side (`dataViewerPanel.ts`), so it is a proven-available
  * primitive on both sides of this exact boundary.
  */
+/** ag-grid's own `SortModelItem.sort` (`"asc"`/`"desc"`) mapped onto this
+ * project's wire vocabulary (`SortSpec.direction`, `"ascending"`/
+ * `"descending"`) — the exact shape `LibraryAdapter.applySort`'s own
+ * `sortBy` body expects (`docs/phases/phase-7.md`'s Finding 7.15), so no
+ * second translation happens host-side. */
+function toSortSpecs(sortModel: readonly SortModelItem[]): readonly SortSpec[] {
+  return sortModel.map((item) => ({
+    key: item.colId,
+    direction: item.sort === "desc" ? "descending" : "ascending",
+  }));
+}
+
 function requestRows(
   start: number,
   limit: number,
+  sort: readonly SortSpec[],
+  filter: string,
 ): Promise<{ rows: readonly unknown[][]; count: number | undefined }> {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     pendingRowRequests.set(requestId, { resolve, reject });
-    vscode.postMessage({ type: "requestRows", requestId, start, limit });
+    vscode.postMessage({
+      type: "requestRows",
+      requestId,
+      start,
+      limit,
+      sort,
+      filter,
+    });
   });
 }
 
-/** Maps this project's own {@link WireColumn} onto an ag-grid `ColDef`. No
- * client-side `sortable` — 7b ships no sort at all; 7c's own `createView`
- * round trip is a server-side mutation, not something this grid does on its
- * own, so nothing here claims a sort affordance it cannot honour yet.
+/**
+ * ag-grid's own `IGetRowsParams.successCallback`'s second argument — the
+ * *known last row index*, or `undefined` if there might be more. `count`
+ * (Finding 7.10) is the exact answer when the deployment supplied one — but
+ * Findings 7.16/7.17 found `count` is **absent** the instant either a sort
+ * or a filter is active, not merely sometimes null, so this grid needs
+ * upstream's own `useDataViewer.ts` fallback for exactly that case: if fewer
+ * rows came back than the page size asked for, that short page *is* the end,
+ * full stop; otherwise there may be more, and ag-grid should ask again.
+ */
+function lastRowFor(
+  startRow: number,
+  rows: readonly unknown[][],
+  requested: number,
+  count: number | undefined,
+): number | undefined {
+  if (count !== undefined) return count;
+  return rows.length < requested ? startRow + rows.length : undefined;
+}
+
+/** Maps this project's own {@link WireColumn} onto an ag-grid `ColDef`.
+ * `sortable: true` — 7c's own server-side sort (`LibraryAdapter.applySort`,
+ * a `createView` round trip, not something this grid does locally); ag-grid
+ * still owns the header click/indicator/multi-sort UI, it just reads
+ * `params.sortModel` fresh on every `getRows` call rather than sorting rows
+ * client-side.
  *
  * **A `FLOAT` column gets ag-grid's own right-aligned cell/header classes —
  * caught in review as a claim this function was not honouring, then caught
@@ -162,7 +209,7 @@ function toColumnDefs(columns: readonly WireColumn[]): ColDef[] {
   return columns.map((column) => ({
     field: column.field,
     headerName: column.headerName,
-    sortable: false,
+    sortable: true,
     ...(column.type === "FLOAT"
       ? {
           cellClass: "ag-right-aligned-cell",
@@ -194,9 +241,50 @@ function toRowData(
   });
 }
 
+/** Builds the infinite-row-model datasource `onGridReady`/a committed filter
+ * change installs. `filterRef` is read fresh on every `getRows` call (a
+ * `useRef`, not a closed-over state value) so a filter committed after this
+ * datasource was built is still picked up without rebuilding it again —
+ * unlike `sort`, which ag-grid itself re-reads from `params.sortModel` on
+ * every call and needs no such ref. */
+function buildDatasource(
+  columns: readonly ColDef[],
+  filterRef: { readonly current: string },
+): IDatasource {
+  return {
+    getRows: (params: IGetRowsParams) => {
+      const requested = params.endRow - params.startRow;
+      requestRows(
+        params.startRow,
+        requested,
+        toSortSpecs(params.sortModel),
+        filterRef.current,
+      ).then(
+        (page) => {
+          params.successCallback(
+            toRowData(page.rows, columns),
+            lastRowFor(params.startRow, page.rows, requested, page.count),
+          );
+        },
+        () => {
+          params.failCallback();
+        },
+      );
+    },
+  };
+}
+
 function DataViewerApp() {
   const [columns, setColumns] = useState<ColDef[] | undefined>(undefined);
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [filterPlaceholder, setFilterPlaceholder] = useState<string>("");
+  const [filterInput, setFilterInput] = useState<string>("");
+  const gridApiRef = useRef<GridApi | undefined>(undefined);
+  // The *committed* filter — updated only on Enter, read by the datasource's
+  // own `getRows` closure via this ref rather than a dependency array, so a
+  // fast series of keystrokes never rebuilds the datasource or re-fetches
+  // anything until the user actually commits a value.
+  const committedFilterRef = useRef<string>("");
 
   useEffect(() => {
     const listener = (event: MessageEvent<unknown>) => {
@@ -254,6 +342,7 @@ function DataViewerApp() {
       switch (message.type) {
         case "init":
           setColumns(toColumnDefs(message.columns));
+          setFilterPlaceholder(message.filterPlaceholder);
           break;
         case "failure":
           setFailure(message.message);
@@ -280,7 +369,7 @@ function DataViewerApp() {
 
   const onGridReady = useCallback(
     (event: GridReadyEvent) => {
-      const currentColumns = columns ?? [];
+      gridApiRef.current = event.api;
       // No `rowCount` key at all — not `rowCount: undefined`, which this
       // project's own `exactOptionalPropertyTypes: true` (and `IDatasource`'s
       // own `rowCount?: number`) rejects outright once a real ag-grid install
@@ -288,26 +377,33 @@ function DataViewerApp() {
       // same "unknown total" signal ag-grid reads it as, and is the same
       // choice upstream's own `useDataViewer.ts` makes with this exact
       // library version: `successCallback`'s own second argument (Finding
-      // 7.10: reliably populated) is what tells the grid the real total, per
-      // page, never a static total supplied up front.
-      event.api.setGridOption("datasource", {
-        getRows: (params: IGetRowsParams) => {
-          requestRows(params.startRow, params.endRow - params.startRow).then(
-            (page) => {
-              params.successCallback(
-                toRowData(page.rows, currentColumns),
-                page.count,
-              );
-            },
-            () => {
-              params.failCallback();
-            },
-          );
-        },
-      });
+      // 7.10: reliably populated on a plain read; Findings 7.16/7.17 found it
+      // absent once a sort or filter is active, which is what {@link
+      // lastRowFor}'s own fallback exists for) is what tells the grid the
+      // real total, per page, never a static total supplied up front.
+      event.api.setGridOption(
+        "datasource",
+        buildDatasource(columns ?? [], committedFilterRef),
+      );
     },
     [columns],
   );
+
+  /** Commits the filter box's current value and re-installs a fresh
+   * datasource — the same `setGridOption("datasource", ...)` re-install
+   * upstream's own `refreshResults` uses, which both discards ag-grid's
+   * cached blocks (so a stale, pre-filter row never lingers) and resets
+   * scroll to row 0, matching what a newly filtered view should show. Sort
+   * needs no equivalent: ag-grid re-invokes the *existing* datasource's
+   * `getRows` itself the instant its own header-sort state changes, and that
+   * callback already reads `params.sortModel` fresh every time. */
+  const commitFilter = useCallback(() => {
+    committedFilterRef.current = filterInput;
+    gridApiRef.current?.setGridOption(
+      "datasource",
+      buildDatasource(columns ?? [], committedFilterRef),
+    );
+  }, [columns, filterInput]);
 
   // Sent once the listener above is attached — the host buffers its own
   // opening message (`init`/`failure`) until this arrives, the same
@@ -326,17 +422,46 @@ function DataViewerApp() {
     return null;
   }
 
+  // Wrapped in a flex column, rather than letting `AgGridReact` be `#root`'s
+  // sole child the way 7b left it: `dataViewerPanel.ts`'s own `<style>` block
+  // gives `#root` `height: 100%`, and the grid fills whatever the immediate
+  // parent gives it — the filter bar needs its own auto-height row above the
+  // grid's own `flex: 1 1 auto` one, not a fixed pixel guess. **Not yet
+  // visually confirmed against a real panel** — this file's own top doc
+  // comment already names every prior visual claim here that needed Sean's
+  // own manual check before it could be trusted, and this layout is the same
+  // kind of claim: it typechecks and reads correctly, but whether the filter
+  // bar and the grid actually share the panel's height the way this comment
+  // predicts is for that check to confirm, not this comment.
   return (
-    <AgGridReact
-      className="ag-theme-alpine"
-      theme="legacy"
-      columnDefs={columns}
-      rowModelType="infinite"
-      cacheBlockSize={100}
-      maxBlocksInCache={10}
-      onGridReady={onGridReady}
-      suppressDragLeaveHidesColumns
-    />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ flex: "0 0 auto", padding: "4px" }}>
+        <input
+          type="text"
+          className="python-on-viya-data-viewer-filter"
+          placeholder={filterPlaceholder}
+          aria-label={filterPlaceholder}
+          value={filterInput}
+          onChange={(event) => setFilterInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") commitFilter();
+          }}
+          style={{ width: "100%", boxSizing: "border-box" }}
+        />
+      </div>
+      <div style={{ flex: "1 1 auto", minHeight: 0 }}>
+        <AgGridReact
+          className="ag-theme-alpine"
+          theme="legacy"
+          columnDefs={columns}
+          rowModelType="infinite"
+          cacheBlockSize={100}
+          maxBlocksInCache={10}
+          onGridReady={onGridReady}
+          suppressDragLeaveHidesColumns
+        />
+      </div>
+    </div>
   );
 }
 

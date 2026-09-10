@@ -971,13 +971,70 @@ SASHELP table too — anything with more than a couple hundred rows will do.
   deliberately allows no image loading at all, on the prediction that
   `ag-grid` needs none; a broken icon here means that prediction was wrong,
   which is itself worth reporting, not just a cosmetic nit.
-- [x] **(known gap) No sort, filter, CSV export or table properties yet** —
-  look for any of these on an open table.
-  **Expect:** none exist. Sorting, filtering, CSV export and a table
-  properties view are Phase 7c, not this slice — their absence is not a
-  defect to report.
+- [x] **(known gap, closed by phase 7c-i) No sort or filter yet in this
+  slice** — look for either on an open table.
+  **Expect (7b):** neither exists — Phase 7c, not this slice. See §12 for
+  7c-i's own pass, now that sort and filter exist. CSV export and a table
+  properties view remain Phase 7c-ii/iii, still absent as of this pass.
 
-## 12. Trust, enablement and the rest
+## 12. Sort and filter in the data viewer (phase 7c-i)
+
+Adds column sort (click a header) and a free-text filter box above the grid
+to the data viewer §11 already covers — both server-side
+([ADR-0029](../adr/0029-sort-view-lifecycle.md)), neither client-side.
+**Not yet run** — no prior pass exists for this section; it is new for
+7c-i.
+
+**Pre-work:** the same live connection and open **SASHELP.CLASS** table as
+§11.
+
+- [ ] **Clicking a column header sorts the grid** — with **SASHELP.CLASS**
+  open, click the **Age** column header.
+  **Expect:** a brief pause, then the grid re-renders sorted by Age
+  (ascending — an arrow or similar indicator appears in the header). Click
+  the same header again for descending.
+- [ ] **Sorting scrolls to the top** — with the grid scrolled partway down,
+  click a different column's header to change the sort.
+  **Expect:** the grid returns to the top and shows the newly sorted rows
+  from the start, not a stale scroll position over now-reordered data.
+- [ ] **The filter box applies a SAS `WHERE` clause** — type
+  `Sex='F'` (including the quotes) into the filter box above the grid and
+  press Enter.
+  **Expect:** the grid reloads showing only the 9 female students from
+  **SASHELP.CLASS**; the row count (if visible) drops accordingly.
+- [ ] **Sort and filter combine** — with the filter from the box above still
+  applied, click the **Age** column header.
+  **Expect:** the grid shows only the filtered (female) rows, now also
+  sorted by Age — not all 19 rows, and not the filter silently dropped.
+- [ ] **Clearing the filter box restores every row** — select all the text in
+  the filter box, delete it, and press Enter.
+  **Expect:** all 19 rows return (still sorted, if a sort is still active).
+- [ ] **An invalid filter expression shows a real error, not a blank grid** —
+  type `NoSuchColumn=1` into the filter box and press Enter.
+  **Expect:** the grid shows an error (in the panel, not just the log) naming
+  the actual problem (a variable that does not exist on the table) rather
+  than a generic failure or a silently empty grid.
+- [ ] **A large table still pages correctly while sorted** — open your
+  second, larger table (§11's pre-work) and sort it by a column, then scroll
+  to the bottom.
+  **Expect:** new rows keep appearing as you scroll, exactly as an unsorted
+  large table already does (§11) — sorting does not break paging, and the
+  final row count (if the grid shows one) is not negative or obviously wrong
+  (a real risk this feature's own design flagged: a freshly created sort view
+  reports an internal placeholder row count that must never reach the UI).
+- [ ] **Closing the panel while sorted does not error** — with a sort active,
+  close the table's tab.
+  **Expect:** no error notification; open a different table afterward to
+  confirm the extension still works normally. (This exercises a background
+  cleanup of the temporary sort view the panel created — nothing about that
+  should be visible from the UI side either way.)
+- [ ] **The filter box and grid icons are legible** — with a table open,
+  switch between a light theme, a dark theme, and a high-contrast theme.
+  **Expect:** the filter box's placeholder text and any sort-direction
+  indicator in a column header are both legible and not shown as a
+  broken/missing icon in any of the three themes.
+
+## 13. Trust, enablement and the rest
 
 - [x] **Untrusted workspace posture** — set the folder Restricted via
   **Workspaces: Manage Workspace Trust**.
@@ -1007,7 +1064,7 @@ SASHELP table too — anything with more than a couple hundred rows will do.
   failure paths in `src/run/commands.ts` never call `log.*` before showing
   that message. Tracked in Phase 3's **3f** slice.
 
-## 13. Regression spot-checks
+## 14. Regression spot-checks
 
 Each of these was a real defect caught in review. Quick to confirm now that you
 are set up.
@@ -1043,11 +1100,11 @@ are set up.
 
 This page is meant to be re-run every phase, so it has to grow with the product.
 
-- **Sections 0–1 and 12–13 are phase-agnostic.** Pre-flight, activation, trust,
+- **Sections 0–1 and 13–14 are phase-agnostic.** Pre-flight, activation, trust,
   enablement and the regression spot-checks apply to every build. The regression
   section grows by one bullet each time review catches a defect worth
   re-confirming by hand.
-- **Sections 2–11 map to phases 1–3 and 7a–7b.** When a phase closes, add a
+- **Sections 2–12 map to phases 1–3 and 7a–7c-i.** When a phase closes, add a
   section (or extend one) for its user-visible behaviour, and cite the slice
   and ADR in the heading the same way the existing sections do. Phase 4's
   traceback editor-position mapping, for instance, turns the

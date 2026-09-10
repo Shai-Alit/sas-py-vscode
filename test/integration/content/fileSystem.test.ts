@@ -31,8 +31,8 @@ import { extensionId } from "../../helpers/manifest";
  *   not-supported-yet structural operations, none of which the coverage gate
  *   sees (the file imports `vscode`, so it is out of the unit denominator).
  *
- * The wire behaviour underneath — the ETag round trip, `HEAD`-before-`PUT` —
- * is `test/unit/content-adapter.test.ts`.
+ * The wire behaviour underneath — the ETag round trip — is
+ * `test/unit/content-adapter.test.ts`.
  */
 
 const HREF = "/files/files/dddddddd-0000-4000-8000-000000000001";
@@ -215,6 +215,40 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     await provider.writeFile(A_CONTENT_URI, new Uint8Array());
     await provider.writeFile(A_CONTENT_URI, new Uint8Array());
     assert.deepEqual(seen, ['"v1"', '"2"']);
+  });
+
+  it("invalidates the guard when a successful save returns no ETag, so the next save refuses distinctly", async () => {
+    let puts = 0;
+    const { provider } = providerWith({
+      readFileContent: () =>
+        Promise.resolve(
+          ok<FileContent>({
+            bytes: new Uint8Array(),
+            etag: '"v1"',
+            contentType: "application/x-python",
+          }),
+        ),
+      writeFileContent: () => {
+        puts += 1;
+        // Finding 6.2: a 200 always carries a fresh tag on the probed
+        // deployment — this is the stripping-proxy / other-release case.
+        return Promise.resolve(ok({ etag: undefined }));
+      },
+    });
+    await provider.readFile(A_CONTENT_URI);
+    await provider.writeFile(A_CONTENT_URI, new Uint8Array());
+    const error = await rejectionOf(
+      provider.writeFile(A_CONTENT_URI, new Uint8Array()),
+    );
+    // The consumed tag is gone, not left to draw a spurious 412 the user would
+    // read as someone else's edit — they get the truthful "no version tag" refusal.
+    assert.match(error.message, /did not return a version tag/);
+    assert.doesNotMatch(error.message, /changed on the server/);
+    assert.equal(
+      puts,
+      1,
+      "the second save is refused, not sent with a stale tag",
+    );
   });
 
   it("rejects a save with nothing to be conditional against (no prior read)", async () => {

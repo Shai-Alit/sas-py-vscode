@@ -338,6 +338,15 @@ lines below.
   true` tag on the `unauthorized` `ContentProblem`, set only in `client.ts`'s
   token-catch arm; `contentFileSystem.ts` shows the sign-in prompt for that
   tag and keeps `localiseAuthProblem`'s wording for every other `unauthorized`.
+- ☑ **PR #141 review follow-ups (2026-09-10).** Two Codex threads from the
+  first pass that the branch had already addressed in code were answered and
+  resolved inline (per-URI deployment-root resolution; a stale
+  `HEAD`-before-`PUT` mention in a test doc comment, now corrected). One new
+  non-blocking Claude finding folded in: `writeFile` now invalidates the
+  `opened` guard to `null` when a successful `PUT` returns no `ETag` (a
+  stripping proxy / non-`verde` release — finding 6.2 says a `200` always
+  carries one), so a later save gets the accurate "no version tag, reopen it"
+  refusal instead of sending the consumed tag and drawing a spurious `412`.
 - ☑ `workspace.registerFileSystemProvider("sasContent", …)` + the
   `onFileSystem:sasContent` activation event. A tree file leaf
   (`NodePresentation.openable` — an ordinary `file`, never a `dataFlow`) gets a

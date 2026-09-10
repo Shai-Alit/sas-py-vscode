@@ -157,12 +157,20 @@ export class SasContentFileSystemProvider
     const result = await adapter.writeFileContent(href, content, precondition);
     if (!result.ok) throw this.toFileSystemError(result.problem);
     // Advance the guard to the tag the server just assigned, so a second save
-    // in this session does not need a re-read.
+    // in this session does not need a re-read. If the `PUT` succeeded but
+    // carried no tag — finding 6.2 says a `200` always does on the probed
+    // deployment, so this is a stripping proxy or another Viya release —
+    // invalidate the entry to `null` rather than leave the now-consumed tag in
+    // place: a later save then hits the "no version tag, reopen it" refusal
+    // above, which is the truth, instead of sending the stale tag and drawing a
+    // spurious `412` the user would read as someone else's edit.
     if (result.value.etag !== undefined) {
       this.opened.set(href, {
         etag: result.value.etag,
         contentType: precondition.contentType,
       });
+    } else {
+      this.opened.set(href, null);
     }
     // No `onDidChangeFile` fire: the editor already holds the buffer it just
     // saved, and announcing a change to the URI it wrote invites a needless

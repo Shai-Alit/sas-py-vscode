@@ -1207,16 +1207,350 @@ things this box waits on.
   about. `npm run verify` (1419 unit passing) and `npm run test:integration`
   (296 passing) both green.
 
-☐ **7c — Sort, filter, CSV export, table properties.**
+☐ **7c — Sort, filter, CSV export, table properties.** Split into three
+sub-slices (Sean, 2026-09-10), mirroring 6c's own split — each is
+independently valuable and none blocks another: **7c-i** sort + filter
+(share one request payload and one probe, since upstream combines them into
+a single re-fetch); **7c-ii** table properties/columns static viewer (fully
+static, no grid interaction); **7c-iii** CSV export to local disk (the one
+host-side-only, local-disk-write feature, standalone since Phase 6 deferred
+its own upload/download to Phase 11 entirely rather than shipping a helper
+this could share). **7c-i is next.**
 
-- ☐ Server-side sort via `createView` — decide the orphan-view cleanup
-  question (a cancelled/failed delete today leaves a view behind) before
-  porting the create-read-delete sequence unexamined.
-- ☐ `where=`-clause text filter (`TableFilter.tsx`'s shape).
-- ☐ CSV export to local disk — decide whether it shares a helper with
-  Phase 6's own (undecided) download command.
-- ☐ Table properties/columns static viewer (`TablePropertiesViewer.ts`'s
-  shape — two static tables, no grid dependency).
+☑ **7c-i — Sort + filter.** [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155)
+opened 2026-09-10. Code written 2026-09-10 (`sas-py-vscode-cowork`
+clone), following the live-probed shape Findings 7.15–7.18 established.
+Design decisions (view-per-(sort,filter)-state reuse across pagination, a
+filter baked into `createView`'s own body whenever a sort is active, a
+serialised `ensureReadTarget` closing a real concurrent-view-creation race,
+guaranteed cleanup on every state change and on dispose) recorded in
+[ADR-0029](../adr/0029-sort-view-lifecycle.md), written alongside this code
+per this project's own convention. `src/wire/viyaError.ts`'s `readViyaError`
+also gained a fallback to a nested `errors[0].details` sentence (Finding
+7.18) — a shared-module fix, not scoped narrowly to this slice, since any
+future caller hitting the same envelope shape benefits. New
+`docs/dev/manual-test-pass.md` §12 (unrun — Sean's own manual check of the
+filter-bar layout and sort-icon rendering is still needed, per this slice's
+own "not yet visually confirmed" notes in `dataViewerEntry.tsx`); §11's own
+"no sort/filter" known-gap row updated to point at it. `CHANGELOG.md`
+updated. `npm run verify` green (1468 unit passing; 95.35% lines / 95.44%
+branches / 94.98% functions / 95.35% statements, every threshold met — 100%
+on every line/branch this slice touched, including two small branch-coverage
+gaps a first coverage run found and closed:
+`dataViewerModel.ts`'s `isSortSpec` guard against a `null`/non-object sort
+entry, and `viyaError.ts`'s two nested-`errors[]`-loop branches); `npm run
+test:integration` green (309 passing — three new-test failures on the first
+run traced to a pre-existing fixture bug, not a code bug, see below);
+`npm run check:docs`/`l10n:extract`/`build` all clean. **A pre-existing
+fixture bug found and fixed the same session**: `test/fixtures/data/
+table-detail-class.json` (built for 7a/7b, before this slice's own probe)
+had guessed both its `createView` and `rowsAsCSV` link hrefs wrong
+(`.../CLASS/createView` and `.../CLASS/rowsAsCSV`, plausible-looking
+extrapolations from the relation name that Finding 7.15 shows are not what a
+real deployment sends); neither had a caller before 7c-i, so it went
+unnoticed until this slice's own new tests tried to follow `createView` and
+hit an unmatched-route failure. Corrected to the real shape, and the
+fixture's missing `delete` link added.
+
+**Adversarial review ran twice before any push, per `CLAUDE.md`'s standing
+rule.** First, an independent agent pass against the finished diff (Sean's
+own call, given this session's own tool access) — no blocking findings. Two
+low-priority notes, both addressed: a doc comment added to
+`dataViewerPanel.ts`'s dispose handler working through, and rejecting on the
+merits, the "does a leak survive a createView POST still in flight at
+dispose time" question (no — `AbortSignal` wiring already guarantees an
+aborted in-flight request resolves to a failure, not a late success, so
+`ensureReadTargetLocked` never reaches the assignment that would leak it;
+already covered by `compute-client.test.ts`'s own abort tests, not something
+this file needs a new, necessarily-inaccurate-fake test for); and a
+type-level hardening suggestion (a discriminated `ReadTarget` type so
+passing a filter against a view fails to compile rather than relying on
+`getRows`'s own doc comment) noted as a real, deliberately deferred
+architecture question for a future slice, not built here — `getRows` has
+exactly one caller today and it is correct.
+
+**Second, Sean's own review** (per this project's actual standing
+requirement — the review must be handed to the developer and answered, not
+merely performed in-session), against the same `git diff main`. Also no
+blocking findings, but three further real, low-priority notes this pass
+caught that the first missed — all folded in before push:
+
+1. **The new filter `<input>` had no theme-aware styling** — it would have
+   rendered with the browser's default control chrome (a bright white box)
+   regardless of VS Code's active theme. Fixed: a CSS rule added to
+   `buildHtml`'s own `<style>` block (`dataViewerPanel.ts`) using
+   `--vscode-input-background`/`-foreground`/`-border`/
+   `-placeholderForeground` and `--vscode-focusBorder`, the same VS
+   Code-documented variables this panel's own `body` rule already uses for
+   `--vscode-foreground`/`--vscode-editor-background`. A new assertion in the
+   existing "builds an HTML shell" integration test checks for the rule.
+2. **A `getRows` call that follows a resolved `ensureReadTarget` is not
+   itself serialised against a *later* request's own state change** — a fast
+   sort/filter change could leave an earlier request's read still in flight
+   against a view a newer request has already discarded and recreated,
+   answering (say) a 404 for a request nothing is meaningfully waiting on
+   anymore. Fixed: `handleRequestRows` now compares `sort`/`filter` against
+   the panel's *current* `activeSort`/`activeFilter` immediately before
+   posting either a `rows` or a `rowsError` reply, and drops it silently if
+   they no longer match — closing this found, in fixing it, that
+   `ensureReadTargetLocked`'s own no-sort branch never updated
+   `activeFilter` at all, which would have made this exact check
+   permanently misfire against every plain filtered-no-sort request. Fixed
+   in the same change. A new integration test (`test/integration/data/
+   data-viewer-panel.test.ts`, "drops a stale reply…") reproduces the race
+   directly via a raw fake `ComputeClient` whose one held-back response is
+   resolved by hand, after a second, faster request has already superseded
+   it.
+3. **`ensureReadTarget` returned the raw, un-`catch`'d promise** — the
+   `.catch()` on the *stored* chain protects every later call from a
+   poisoned chain, but left the promise `handleRequestRows` itself awaits
+   still capable of rejecting (nothing in this codebase's adapter layer
+   actually throws today, so this was latent hardening rather than a
+   reachable gap, but a future regression would have surfaced as a silent
+   unhandled rejection through the `void this.handleRequestRows(...)`
+   fire-and-forget call, rather than an ordinary `rowsError` reply). Fixed:
+   the returned promise now also converts a rejection into an ordinary
+   `DataResult` failure.
+
+One more note from this pass was examined and needs no change:
+`encodeURIComponent` leaving `'` unencoded in a `where=` query string is
+legal and matches how Finding 7.16 was itself probed — the existing test
+asserting that exact encoded shape is intentional, not an oversight.
+`npm run verify`/`test:integration` re-run green after all three fixes
+(1468 unit passing; 95.35%/95.44%/94.98%/95.35%, unchanged; 310
+integration passing).
+
+- ☑ Live-probe the `createView` mechanism against `verde` — **done**,
+  Findings 7.15–7.18. Settled, correcting this bullet's own original
+  framing: `where=` does **not** compose onto an already-created view's own
+  `rows` link (Finding 7.16 — silently ignored, no error); it must be baked
+  into the same `createView` body as `sortBy` instead, meaning a filter
+  change while a sort is active requires recreating the view. A filter
+  change with **no** sort active needs no view at all — `where=` applies
+  directly to the base table's own `rows` link (confirmed working there).
+  `TableDetail.links` carries a real `createView` relation (`POST`) and a
+  real `delete` relation (`DELETE`) — both followed the way every other
+  `LibraryAdapter` call already does, no hand-composed URL. Also settled:
+  `count` (Finding 7.10's total-row-count field) is present only on a plain,
+  unfiltered base-table read — **absent** the instant a filter or a view is
+  involved (Finding 7.17), so the grid must fall back to the "short page ⇒
+  last page" heuristic whenever sort or filter is active. An invalid
+  `where=` is a `400` in the standard error envelope with the real parser
+  message nested in `errors[0].details` (Finding 7.18) — surface that
+  nested text, not just the generic top-level message. **Not done**:
+  a second-deployment (`Innov`) cross-check — `Innov`'s stored token had
+  expired this session; left open, not blocking (see Finding 7.18's own
+  "not probed" paragraph).
+- ☑ Fix, not port, upstream's orphan-view bug: `RestLibraryAdapter.
+  getSortedRows` (`vscode-sas-extension`) calls `createView` → `getRows` on
+  the view → `deleteTable`, with no try/finally — a throwing read leaves the
+  view orphaned in the session until the session itself is torn down, with
+  no cleanup-on-dispose anywhere in that codebase. This project's own
+  version reuses one view across every page fetch for as long as the same
+  sort+filter state is active (a real improvement over upstream's own
+  per-page-fetch create/delete churn, confirmed wasteful but harmless by
+  Finding 7.15) and must guarantee the delete fires whenever that state
+  changes (a new sort, a new filter while sorted, sort turned off) or the
+  panel disposes — on every exit path, not just the success path.
+- ☑ `where=`-clause text filter, matching `TableFilter.tsx`'s upstream shape:
+  one free-text "expression" box (a raw SAS `WHERE` clause), committed on
+  Enter or an explicit action, never live-typed. No sort active: appended
+  directly to the base table's own `rows` link the same way `getRows`
+  already appends `start=`/`limit=` via `withQuery`. Sort active: baked into
+  the `createView` body alongside `sortBy` (Finding 7.16), not applied as a
+  query parameter.
+- ☑ New host↔webview messages for a combined sort+filter re-fetch, following
+  `dataViewerModel.ts`'s existing `requestId`-echo pattern (`requestRows`/
+  `rows`/`rowsError` today carry no sort/filter state at all).
+- ☑ `toColumnDefs`'s hardcoded `sortable: false` (`dataViewerEntry.tsx`, with
+  an explicit comment deferring it to 7c) becomes real server-side sort,
+  wired to ag-grid's own header-sort state the way upstream's `useDataViewer.
+  ts` reads `params.sortModel` on every `getRows` call — not a client-side
+  ag-grid sort.
+
+**Sean's own manual test pass, 2026-09-10** (`manual-test-pass.md` §12,
+before PR #155 merged), found three real bugs, all fixed on the same branch:
+
+1. **A sort or filter was silently lost switching away from the table's tab
+   and back.** Root cause: `createRealPanel`'s `retainContextWhenHidden:
+   false` (unchanged from 7b, ADR-0021's own reasoning for the result panel)
+   means VS Code tears the webview document down and reloads it from scratch
+   on every hide/show. The freshly mounted grid sends its own `"ready"`
+   handshake again, but had no memory of a sort or filter the *previous*
+   document had applied, so its first `requestRows` read as `sort: []`,
+   `filter: ""` — which `ensureReadTargetLocked`'s own `sort.length === 0`
+   branch takes as the user having cleared both, discarding the still-wanted
+   server-side view rather than merely losing a UI indicator. **Fixed**:
+   `InitMessage` (`dataViewerModel.ts`) gained `initialSort`/`initialFilter`,
+   and `OpenTablePanel` (`dataViewerPanel.ts`) now replays its *current*
+   `activeSort`/`activeFilter` on every `"ready"` — not the state frozen at
+   `loadTable()` time — via a new `openingMessageFor` helper. On the webview
+   side, `dataViewerEntry.tsx`'s `"init"` handler now restores the filter
+   box's displayed text and seeds `committedFilterRef`, and `toColumnDefs`
+   sets a matching column's `sort`/`sortIndex` so ag-grid seeds its own
+   sort-model state at mount, the documented way to give it a default sort.
+   Two new integration tests in `data-viewer-panel.test.ts` simulate the
+   reload directly (a second `sendReady()` with no request in between) and
+   assert the replayed `init` carries the sort/filter a prior request made
+   active, for both the sorted and the filter-only cases.
+2. **An invalid filter showed a blank grid — no error, no warning, nothing in
+   the log.** Finding 7.18 had already settled that the host computes a
+   real, specific message for this (a `400` with the SAS parser's own
+   complaint nested in `errors[0].details`, surfaced through
+   `localiseComputeProblem`'s existing `compute-rejected` case) — the defect
+   was `dataViewerEntry.tsx`'s own `buildDatasource`, which discarded a
+   failed `requestRows` promise's rejection reason and called only
+   `params.failCallback()`. **Fixed**: the datasource now takes an
+   `onRowsError` callback, wired to a new `rowsError` React state rendered
+   as a small banner above the grid (themed with
+   `--vscode-inputValidation-error*`, the standard VS Code error-styling
+   variables, matching the filter box's own `--vscode-input-*` use). Also
+   added: `dataViewerPanel.ts`'s `handleRequestRows` now logs a `warn` for
+   both of its failure paths (`ensureReadTarget` failing before a read is
+   even attempted, and `getRows` itself failing) — there was no log output
+   for either before, which is what "nothing in the log" actually meant. A
+   new integration test asserts the warning; the existing "answers
+   rowsError…" test was left as-is (it already asserts the reply shape).
+
+None of the three fixes touch a code path any of §12's other, already-`[x]`
+rows exercise — `initialSort`/`initialFilter` are empty on a table's first
+open, identical to before, and the `onRowsError` callback is inert on every
+success. `npm run verify` re-run green (1468 unit passing, coverage
+unchanged — 95.35%/95.44%/94.98%/95.35%, thresholds still met); `npm run
+test:integration` green (313 passing, three new); `check:docs`/`tsc -p
+tsconfig.webview.json`/`build` all clean. `manual-test-pass.md` §12 updated:
+the invalid-filter row and two new tab-switch rows are unchecked pending
+Sean's own re-verification against a real panel; every other row in §12
+stays checked.
+
+**Also found, separately, while investigating why both AI PR reviewers
+showed "pass" on PR #155 with no actual review comment posted**: not a
+runner fluke. Both `ai-review.yml` and `claude-review.yml` share one failure
+mode — their `concurrency: cancel-in-progress` group cancelled the review
+runs against the branch's real source commits (`b309ea5`, `7d31ae7`) the
+moment a fast-follow, correctly-`[skip-review]`-tagged docs-only commit
+(`73e190f`) was pushed right after; that commit's own run then legitimately
+skipped *itself*, but the net effect is that neither reviewer ever actually
+saw the substantive diff, while the PR's checks read "pass" for both. Fixed
+in a separate PR, [#156](https://github.com/Shai-Alit/sas-py-vscode/pull/156)
+(squash), rather than folded into this branch: both `ai_review.py`'s
+`should_skip_review` and the Claude Review guard step now also require the
+commit immediately *before* a `synchronize` push to be skip-tagged before
+honouring the head's own flag, otherwise they review the current
+(complete) diff instead of skipping. Sean squash-merged #156 into `main`
+2026-09-10; this branch was then reconciled with `main` a second time
+(merge commit, no conflicts — only `.github/` files, nothing this branch
+also touches) and pushed, at which point both automated reviewers actually
+ran for the first time against this branch's real diff.
+
+**Both reviewers then found one real finding each, both fixed before any
+further push** — collected together per this project's own "fix everything
+in one local pass" rule, not pushed one at a time:
+
+1. **Blocking (github-actions bot): a stale `requestRows` reply was
+   silently dropped, never answered at all.** The staleness check
+   `handleRequestRows` added during 7c-i's own second review round (see
+   above) returned with no reply once `sort`/`filter` no longer matched the
+   panel's current state — reasoning that nothing was "meaningfully
+   waiting" on it. Verified independently before fixing, since the
+   PR-opening rule requires it: `dataViewerEntry.tsx`'s own
+   `pendingRowRequests` map is keyed by `requestId` and only ever cleared
+   when a `rows`/`rowsError` reply for that exact id arrives — a silently
+   dropped reply leaves that map entry, and the `getRows` promise it would
+   resolve, pending forever. A real, if narrow, unbounded leak across a
+   session with enough sort/filter changes, confirmed correct — this
+   project's own message protocol requires every `requestRows` to get
+   exactly one reply, with no documented exception for a stale one. Fixed:
+   the branch now posts a `rowsError` (`"This request was superseded by a
+   later sort or filter change."`) instead of returning silently. The
+   existing regression test for this path ("answers a stale request with
+   rowsError, not silence…", renamed from "drops a stale reply…") now
+   asserts the reply arrives, rather than asserting it doesn't.
+2. **Non-blocking (github-actions bot): no regression test exercised
+   `onDidDispose`'s own stale-view cleanup.** Every existing dispose test
+   ("disposes every open panel", "aborts the panel's own AbortController…")
+   disposes a panel with no active sort/filter, so `activeView` is always
+   `undefined` at dispose time in each of them — the `deleteView` call that
+   handler's own comment reasons through adversarially (does a leak survive
+   an in-flight `applySort` at dispose time — no, `AbortSignal` wiring
+   already guarantees it) had zero coverage on either its success or its
+   failure-logged path. Verified real by inspection (no other test creates
+   a view and *then* disposes, as opposed to superseding it with a new
+   sort). Fixed: two new tests — one asserts the `DELETE` fires for the
+   active view on dispose, the other asserts the existing `log?.warn`
+   fires when that `DELETE` fails, mirroring the already-covered
+   supersede-path version of the same log line.
+
+`npm run verify` re-run green (coverage unchanged, `src/data` still 100%
+lines/100% statements/99.5% branches/100% functions); `npm run
+test:integration` green (321 passing — the jump from 313 includes 6c-iii's
+own new tests picked up by the `main` reconciliation, plus this round's 2
+new dispose tests); `check:docs`/`build` clean.
+
+**A third finding arrived from the same review pass, against the fix
+commit above (Major, github-actions bot): all four of `dataViewerPanel.ts`'s
+own `log?.warn` calls — the two this round added, plus two pre-existing
+ones from 7c-i's original commit (the dispose-time and the supersede-path
+view-delete-failure warnings) — were hard-coded English, not run through
+`vscode.l10n.t()`.** Verified against this project's own established
+convention before fixing: `dataTree.ts`/`contentTree.ts`/
+`contentFileSystem.ts`/`sessionManager.ts` all wrap a `describeXProblem()`
+log fragment in `vscode.l10n.t("<area>: {0}", describeXProblem(...))` — the
+outer sentence is localised even though the inner fragment stays English by
+design (`describeDataProblem`'s own doc comment). This file's four
+`log?.warn` calls never did, missed since the original 7c-i commit. Fixed:
+all four now wrap in `vscode.l10n.t()`, `"SAS Libraries: {0}"` prefix
+(matching `dataTree.ts`'s own precedent for this exact `DataProblem`
+vocabulary), with the table/view name and the `describeDataProblem`
+fragment passed as `{0}`/`{1}` placeholder arguments rather than
+interpolated into the message string itself, so `npm run l10n:extract`
+picks them up (confirmed: 212 strings extracted, up from 208, 5 total
+carrying the "SAS Libraries" prefix). No test changes needed — every
+existing assertion on these lines matches a substring of the rendered
+English text (e.g. `/could not delete/`), unaffected by the wrapping.
+`npm run verify` green (1479 unit passing, coverage unchanged); `npm run
+test:integration` green (321 passing, unchanged).
+
+☐ **7c-ii — Table properties / columns static viewer.**
+
+- ☐ Extend `TableDetail`/`readTableDetail` (or add a new type) with the full
+  `TableInfo` field set `TablePropertiesViewer.ts` reads and 7a/7b's own
+  `TableDetail` does not carry: `label`, `engine`, `extendedType`,
+  `logicalRecordCount`, `physicalRecordCount`, `recordLength`,
+  `creationTimeStamp`/`modifiedTimeStamp`, `compressionRoutine`, `encoding`,
+  `bookmarkLength`.
+- ☐ Probe the timestamp field shape on `verde`/`Innov` before porting
+  upstream's fallback unexamined — `TablePropertiesViewer.ts`'s own
+  `formatDate` tries `new Date(value)` first and falls back to treating the
+  value as a raw SAS epoch second count (`(numVal - 315619200) * 1000`) if
+  that fails; confirm which shape (ISO string, raw SAS numeric, or both)
+  this deployment's Compute REST API actually returns for these two fields.
+- ☐ A new static webview panel — no host↔webview message loop needed beyond
+  initial render, matching `TablePropertiesViewer.ts`'s own shape (all data
+  fetched once at open time, tab-toggle purely client-side) — opened from a
+  table's tree context menu.
+
+☐ **7c-iii — CSV export.**
+
+- ☐ Probe the CSV mechanism directly rather than porting upstream's literal
+  `.../rows#CSV` URL suffix unexamined — Finding 7.5 already found `#`-suffixed
+  URLs on this deployment are stripped as fragments before the wire ever sees
+  them (the same trap that invalidated Findings 7.1/7.2's original
+  `#summary`/`#tables` mechanism), while Finding 7.1 saw a real, distinct
+  `rowsAsCSV` link relation on `TableDetail`. Confirm whether `rowsAsCSV` is
+  the real mechanism (most likely, given the link-following precedent every
+  other `LibraryAdapter` call already uses) or an `Accept`-header negotiation
+  on the base `rows` link — not upstream's hand-composed suffix.
+- ☐ Host-side only, no webview involvement — the panel's CSP
+  (`default-src 'none'`, no `connect-src`) would block an in-webview
+  `fetch` outright, and upstream's own download command bypasses its
+  webview entirely too (a separate command, not a `DataViewer.ts` message).
+  `vscode.window.showSaveDialog` + a paginated write to the chosen file,
+  same shape as upstream's `LibraryModel.writeTableContentsToStream`.
+- ☐ No shared helper with Phase 6's own download command — Phase 6 deferred
+  all upload/download to Phase 11 and never built one (`STATUS.md`,
+  2026-09-10), so this is standalone; revisit sharing if Phase 11 lands a
+  local-disk-write helper later.
 - ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
   instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
   the full account). Nothing left for 7c to pick up on this; the same
@@ -1842,3 +2176,147 @@ SAS column type besides `CHAR`/`VARCHAR`/`FLOAT` exists on this API (e.g. an
 integer-only storage subtype) — SAS's own numeric storage is always a double
 internally, so none is expected, but this finding only speaks to what
 `SASHELP.CLASS` actually returned.
+
+**Finding 7.15 — implementation-time probe, 2026-09-10 (`verde`, ahead of
+7c-i's own code): `createView`'s real request/response shape, and two link
+relations settling both 7c-i's and 7c-iii's mechanism questions in one
+pass.** Documented shape checked first: the upstream generated client
+(`vscode-sas-extension`'s `compute.ts`) types the request body as
+`ViewRequest` (`version?`, `where?`, `fileProtection?`,
+`fileProtectionEncoding?`, `includeColumns?`, `columnNaturalOrder?`,
+`sortBy?: SortByRequest[]`, `distinct?`) with
+`Content-Type: application/vnd.sas.compute.data.table.view.request+json`, and
+reads the response as a plain `TableInfo`. Probed directly: created a
+throwaway writable table (`work.probe7ci`, via `data work.probe7ci; set
+sashelp.class; run;` in a throwaway session) rather than probing against
+read-only `SASHELP.CLASS`, since `createView` is a mutation.
+
+- **The rich table-detail response's own `links` (`GET
+  …/data/WORK/PROBE7CI`) already carries everything 7c-i and 7c-iii need,
+  confirming the link-following discipline Findings 7.5/7.8/7.9 already
+  established applies here too, with no hand-composed URL required**: `rows`
+  (`GET`, `application/vnd.sas.collection`), **`rowsAsCSV` — a real, distinct
+  link relation, `GET`, `text/csv`, carrying the *identical href* as
+  `rows`** (settles 7c-iii's mechanism question: CSV is `Accept`-header
+  content negotiation on the same URI, exactly like the summary/tables
+  mechanism Finding 7.5 found for libraries — **not** upstream's
+  hand-composed `.../rows#CSV` suffix, which Finding 7.5's own `#`-fragment
+  lesson already made suspect), `columns` (`GET`, `collection`),
+  `createView` (`POST`,
+  `application/vnd.sas.compute.data.table.view.request`), and **a real
+  `delete` link (`DELETE`, no `type`)** — this project's `LibraryAdapter`
+  needs no hand-composed delete URL for either a table or a view, following
+  `findLink(detail.links, "delete")` the same way `src/content/adapter.ts`
+  already does for content deletes.
+- **`POST` the `createView` link with `{"sortBy":[{"key":"Age",
+  "direction":"descending"}]}`, `Content-Type:
+  application/vnd.sas.compute.data.table.view.request+json` → `201`, body is
+  a `TableInfo` for the new view**: `libref: "WORK"` but a **system-generated
+  name in a synthetic `$VIEWS` libref-like segment** (percent-encoded
+  `%24VIEWS` in every link href — e.g.
+  `.../data/%24VIEWS/T0D749FF8_3AC5_3143_049A352FF1A8`), `type: "VIEW"`,
+  `rowCount: -1` (not yet known — a view's row count is never populated at
+  creation, unlike a real table), and its own full link set (`self`,
+  `rows`, `rowsAsCSV`, `rowSet`, `rowSetView`, `columns`, `createView` —
+  views can themselves be re-sorted, though this project has no reason to
+  chain that — and `delete`). No dialect branch needed: the response shape
+  matches `TableDetail`'s existing reader with the addition of the `type`
+  field this project's `TableDetail` does not currently read (not needed —
+  nothing distinguishes a view from a table by consumption, only by
+  cleanup obligation).
+- **`DELETE` the `delete` link on both the view and the base table returned
+  `204`; a follow-up `GET` on each returned `404`.** Confirms deletion is
+  real and immediate, not just conceptual — no orphan risk from a *successful*
+  delete; Finding 7.16 below is about a *skipped* delete.
+- **A pre-existing fixture (`test/fixtures/data/table-detail-class.json`,
+  built for 7a/7b, before this finding) had guessed both the `createView`
+  and `rowsAsCSV` link hrefs wrong** — `.../CLASS/createView` and
+  `.../CLASS/rowsAsCSV`, plausible-looking extrapolations from the relation
+  name that this probe shows are not what a real deployment sends: the real
+  `createView` href is `.../{tableName}/views` (this finding's own probe),
+  and `rowsAsCSV` shares the *identical* href as `rows`, differing only by
+  its own `type: text/csv`. Neither wrong value had a caller before this
+  slice (7a/7b never followed either link), so this went unnoticed until
+  7c-i's own code tried to follow `createView` and got an unmatched-route
+  test failure. Corrected in the same change as 7c-i's own code, per this
+  project's "every claim carries its evidence" rule — a fixture is exactly
+  "a place a superseded value was written down." The fixture also gained the
+  `delete` link this finding confirms every table's rich detail carries,
+  absent from it entirely before now.
+
+**Finding 7.16 — `where=` is silently ignored on a created view's own rows
+read; it must be baked into the `createView` request body instead, not
+applied as a query parameter the way it works on a real table.** This
+contradicts the plausible assumption (and this phase's own Plan-section
+prose before this probe) that a view, once created, behaves exactly like any
+other readable table for every purpose including query-time filtering.
+Probed directly, same throwaway session: created a view sorted by `Age`
+descending with no `where` in the body, then read its `rows` link with
+`?...&where=Sex%3D%27F%27` appended (`Accept:
+application/vnd.sas.collection+json`) — returned all **19** rows,
+identical to the unfiltered read, with **no error, no warning, silent
+non-application of the filter**. The identical `where=Sex%3D%27F%27` query
+param applied directly to the *base table's* own `rows` link (no view
+involved) correctly returned **9** rows (all female). **The fix**: a second
+view was created with `{"sortBy":[...],"where":"Sex='F'"}` **both fields in
+the one `createView` body** — reading that view's `rows` correctly returned
+9 rows, sorted by age descending. **Net effect for 7c-i**: `LibraryAdapter`'s
+sort-view creation must always include the *current* filter value (if any)
+in the same `createView` call that sets `sortBy`, and a filter-only change
+(no active sort) can skip view creation entirely and apply `where=` directly
+to the base table's own `rows` link — but a filter change **while a sort is
+already active** requires recreating the view (delete old, create new with
+both `sortBy` and the new `where`), it cannot be layered onto an
+already-created view's rows read after the fact. This is a real,
+correctness-affecting finding, not a style preference: porting `where=` as a
+plain per-request query parameter unconditionally (the naive read of
+`getRows`'s own existing `withQuery` pattern) would silently show unfiltered
+results the instant a sort was also active, with no error to signal it.
+
+**Finding 7.17 — the rows collection's `count` field, which Finding 7.10
+found populated at any `limit` on a plain, unfiltered base-table read, is
+**absent** the moment either a `where=` filter or a view is involved — even
+on the base table.** Probed directly, same throwaway session and table:
+plain `GET …/data/WORK/PROBE7CI/rows?start=0&limit=5` (no filter) →
+`count: 19`, present, matching Finding 7.10's shape exactly. The *identical*
+request with `where=Sex%3D%27F%27` added → `count` **absent from the
+envelope entirely** (not `null` — the key itself is missing, the same
+absent-vs-null distinction Finding 14 established for link `type`). Every
+view-backed read probed (sorted-only, sorted+filtered) also came back with
+`count` absent, regardless of whether a `where` was involved. **Net effect:
+7b's own datasource (Finding 7.10, `LibraryAdapter.getRows`) can only trust
+`count` as an exact total when neither a filter nor a sort is active.** The
+moment 7c-i's filter or sort is in play, the grid must fall back to
+upstream's own "fewer rows came back than the page size requested → this is
+the last page" heuristic (`useDataViewer.ts`'s own fallback, which Finding
+7.10 said this project's *base* case did not need) — this is now a real
+requirement for 7c-i specifically, not a hypothetical upstream compatibility
+concern.
+
+**Finding 7.18 — an invalid `where=` clause returns a `400` in this
+project's already-handled `application/vnd.sas.error+json` shape, with the
+real SAS parser message nested one level down.** Probed: `where=` set to a
+column name (`NoSuchColumn`) that does not exist on the table → `400`,
+`errorCode: 5316`, top-level `message: "Failed to open Data Table"`, and a
+nested `errors[0].details`:
+`["ERROR: Variable NoSuchColumn is not on file WORK.PROBE7CI."]` — the
+actual actionable text. This is the standard error envelope `src/wire/`
+already reads elsewhere in this project (no new parsing needed), but 7c-i's
+filter-commit UI should surface the *nested* `errors[0].details`/`message`
+text (a real, specific parser complaint) rather than only the generic
+top-level `"Failed to open Data Table"`, or a user who fat-fingers a column
+name gets a useless error.
+
+**Not probed, left open for 7c-i's own implementation session**: a second
+deployment/cadence cross-check for Findings 7.15–7.18 (matching Findings
+7.6/7.7's practice for 7a's own endpoints) — `Innov`'s stored token had
+expired (`401`) mid-session and was not refreshed for this pass; not treated
+as blocking, since Findings 7.5–7.9 already closed the dialect-risk question
+for every other `DataAccessApi` mechanism this phase touches and nothing
+about `createView`'s shape (a plain, typed `ViewRequest`/`TableInfo` pair, no
+free-form content negotiation) suggests a different risk profile. Also not
+probed: whether a `createView` call itself can fail with a *malformed*
+`sortBy` key (e.g. a column that does not exist) the same way an invalid
+`where=` does — worth a quick check while 7c-i's own error-handling code is
+being written, since it is one line to add to the same throwaway-session
+pass.

@@ -47,9 +47,15 @@ import { type TableItem } from "../../../src/data/types";
 import {
   dataFail,
   dataFixture,
+  dataOk,
   recordedDataClient,
   type RecordedDataRoute,
 } from "../../helpers/recorded-data";
+import type {
+  ComputeClient,
+  ComputeResponse,
+  ComputeResult,
+} from "../../../src/compute/client";
 import type { ComputeSession } from "../../../src/compute/session";
 
 const SESSION_ID = "aaaaaaaa-0000-4000-8000-000000000001-ses0000";
@@ -111,7 +117,13 @@ function fakePanel(): {
   readonly revealed: { column: vscode.ViewColumn; preserveFocus: boolean }[];
   readonly disposed: boolean[];
   sendReady(): void;
-  sendRequestRows(requestId: string, start: number, limit: number): void;
+  sendRequestRows(
+    requestId: string,
+    start: number,
+    limit: number,
+    sort?: readonly { key: string; direction: "ascending" | "descending" }[],
+    filter?: string,
+  ): void;
 } {
   const posted: DataViewerHostMessage[] = [];
   const revealed: { column: vscode.ViewColumn; preserveFocus: boolean }[] = [];
@@ -155,8 +167,15 @@ function fakePanel(): {
     revealed,
     disposed,
     sendReady: () => messageListener?.({ type: "ready" }),
-    sendRequestRows: (requestId, start, limit) => {
-      const message = { type: "requestRows", requestId, start, limit };
+    sendRequestRows: (requestId, start, limit, sort = [], filter = "") => {
+      const message = {
+        type: "requestRows",
+        requestId,
+        start,
+        limit,
+        sort,
+        filter,
+      };
       assert.ok(isRequestRowsMessage(message), "malformed test message");
       messageListener?.(message);
     },
@@ -196,6 +215,12 @@ describe("DataViewerPanelManager", () => {
     const [init] = fake.posted;
     assert.ok(init?.type === "init");
     assert.equal(init.rowCount, 19);
+    // A table freshly opened has no sort or filter yet — see the "replays
+    // init with the panel's current sort and filter" tests below for what
+    // these two fields carry once one is active and the panel replays on a
+    // later ready.
+    assert.deepEqual(init.initialSort, []);
+    assert.equal(init.initialFilter, "");
     assert.deepEqual(
       init.columns.map((c) => [c.field, c.headerName, c.type]),
       [
@@ -292,6 +317,492 @@ describe("DataViewerPanelManager", () => {
     const [reply] = fake.posted;
     assert.ok(reply?.type === "rowsError");
     assert.equal(reply.requestId, "r7");
+  });
+
+  it("logs a warning when a row request fails, not just the reply to the webview", async () => {
+    // Sean's own manual test (`manual-test-pass.md` §12): an invalid filter
+    // left nothing in the log to show a fetch was even attempted — on top
+    // of `dataViewerEntry.tsx`'s own separate bug, that the webview's
+    // datasource discarded the `rowsError` message's own text entirely
+    // (fixed there, asserted by this project's own manual test pass since
+    // this file cannot drive a real browser).
+    const fake = fakePanel();
+    const warnings: string[] = [];
+    const log = {
+      warn: (message: string) => warnings.push(message),
+    } as unknown as vscode.LogOutputChannel;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+      log,
+    });
+    await manager.open(
+      tableItem(),
+      libraryAdapter([
+        ...OPEN_ROUTES,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFail({ code: "compute-rejected", error: { status: 400 } }),
+        },
+      ]),
+    );
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2);
+    await flush();
+
+    assert.equal(warnings.length, 1);
+    assert.match(
+      warnings[0] ?? "",
+      /a row request over "SASHELP\.CLASS" failed/,
+    );
+  });
+
+  it("creates a sort view on first sorted request and reuses it for a later page of the same sort", async () => {
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const { client, calls } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=2&limit=2`,
+        reply: dataOk({ items: [], links: [] }),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    const sort = [{ key: "Age" as const, direction: "descending" as const }];
+    fake.sendRequestRows("r1", 0, 2, sort);
+    await flush();
+    fake.sendRequestRows("r2", 2, 2, sort);
+    await flush();
+
+    assert.equal(fake.posted.length, 2);
+    assert.equal(fake.posted[0]?.type, "rows");
+    assert.equal(fake.posted[1]?.type, "rows");
+    // Exactly one createView POST for both page fetches of the same sort —
+    // the view is created once and reused, not recreated per page the way
+    // upstream's own getSortedRows does (Finding 7.15).
+    assert.equal(
+      calls.filter(
+        (c) => c.method === "POST" && c.href === `${CLASS_HREF}/views`,
+      ).length,
+      1,
+    );
+  });
+
+  it("recreates the view when the sort changes, deleting the superseded one", async () => {
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW1_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const VIEW2_HREF = `${LIBREFS_HREF}/%24VIEWS/V2`;
+    const deletedHrefs: string[] = [];
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: (request) => {
+          const body = request.body as { sortBy: { key: string }[] };
+          const key = body.sortBy[0]?.key;
+          const href = key === "Age" ? VIEW1_HREF : VIEW2_HREF;
+          return dataOk(
+            {
+              name: key === "Age" ? "V1" : "V2",
+              libref: "SASHELP",
+              links: [
+                { rel: "rows", href: `${href}/rows`, method: "GET" },
+                { rel: "delete", href, method: "DELETE" },
+              ],
+            },
+            { status: 201 },
+          );
+        },
+      },
+      {
+        when: `${VIEW1_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: (href, method) => href === VIEW1_HREF && method === "DELETE",
+        reply: (request) => {
+          deletedHrefs.push(request.link.href);
+          return dataOk({}, { status: 204 });
+        },
+      },
+      {
+        when: `${VIEW2_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    fake.sendRequestRows("r2", 0, 2, [{ key: "Name", direction: "ascending" }]);
+    await flush();
+
+    assert.deepEqual(deletedHrefs, [VIEW1_HREF]);
+  });
+
+  it("answers a stale request with rowsError, not silence, once the panel has moved past its sort/filter", async () => {
+    // Adversarial review, 2026-09-10: `ensureReadTarget` serialises *view
+    // creation*, but the `getRows` call that follows it is not itself
+    // serialised against a *later* request's own state change. A slow first
+    // read (held back here, deliberately, via a raw fake rather than
+    // `recordedDataClient`'s synchronous routing) can still be in flight
+    // against a view a second, faster request has already superseded by the
+    // time it resolves.
+    //
+    // **PR review, 2026-09-10 (a real, blocking finding on the manual-test
+    // fix commit): an earlier version of this behaviour dropped the stale
+    // reply with no message at all** — reasoning that nothing was
+    // "meaningfully waiting" on it — but `dataViewerEntry.tsx`'s own
+    // `pendingRowRequests` map only clears a `requestId` when a `rows`/
+    // `rowsError` reply for it actually arrives; a silently dropped reply
+    // leaves that promise (and map entry) pending forever. Every
+    // `requestRows` now gets exactly one reply, even a stale one.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW1_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const VIEW2_HREF = `${LIBREFS_HREF}/%24VIEWS/V2`;
+    const { client: baseClient } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: (request) => {
+          const body = request.body as { sortBy: { key: string }[] };
+          const key = body.sortBy[0]?.key;
+          const href = key === "Age" ? VIEW1_HREF : VIEW2_HREF;
+          return dataOk(
+            {
+              name: key === "Age" ? "V1" : "V2",
+              libref: "SASHELP",
+              links: [
+                { rel: "rows", href: `${href}/rows`, method: "GET" },
+                { rel: "delete", href, method: "DELETE" },
+              ],
+            },
+            { status: 201 },
+          );
+        },
+      },
+      { when: VIEW1_HREF, reply: dataOk({}, { status: 204 }) },
+      {
+        when: `${VIEW2_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+    ]);
+
+    let resolveStaleRead:
+      ((result: ComputeResult<ComputeResponse>) => void) | undefined;
+    const client: ComputeClient = {
+      send: (request) => {
+        if (request.link.href === `${VIEW1_HREF}/rows?start=0&limit=2`) {
+          return new Promise((resolve) => {
+            resolveStaleRead = resolve;
+          });
+        }
+        return baseClient.send(request);
+      },
+    };
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    // r1 sorts by Age: creates V1, then starts (and stalls on) a read
+    // against it.
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    assert.equal(fake.posted.length, 0, "r1's own read is still stalled");
+
+    // r2 changes the sort to Name before r1's read ever answers: its own
+    // ensureReadTarget is free to run (only the *subsequent* getRows was
+    // held back), discards V1, creates V2, and reads it successfully.
+    fake.sendRequestRows("r2", 0, 2, [{ key: "Name", direction: "ascending" }]);
+    await flush();
+    assert.equal(fake.posted.length, 1);
+    const [reply] = fake.posted;
+    assert.ok(reply?.type === "rows");
+    assert.equal(reply.requestId, "r2");
+
+    // Now let r1's long-stalled read against the since-deleted V1 finally
+    // answer (a 404, since V1 no longer exists) — the panel must still
+    // answer r1 (a rowsError, not the confusing 404 itself, and not
+    // silence), so the webview's own pending promise for "r1" settles.
+    assert.ok(resolveStaleRead);
+    resolveStaleRead(
+      dataFail({ code: "compute-rejected", error: { status: 404 } }),
+    );
+    await flush();
+
+    assert.equal(
+      fake.posted.length,
+      2,
+      "r1's stale request still gets a reply",
+    );
+    const [, staleReply] = fake.posted;
+    assert.ok(staleReply?.type === "rowsError");
+    assert.equal(staleReply.requestId, "r1");
+    assert.match(staleReply.message, /superseded/);
+  });
+
+  it("discards the active view and reads the base table again once sort is cleared", async () => {
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    let baseTableReadAfterSort = false;
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      { when: VIEW_HREF, reply: dataOk({}, { status: 204 }) },
+      {
+        when: `${CLASS_HREF}/rows?start=0&limit=2`,
+        reply: () => {
+          baseTableReadAfterSort = true;
+          return dataFixture("rows-class-page1.json");
+        },
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    fake.sendRequestRows("r2", 0, 2, []);
+    await flush();
+
+    assert.ok(baseTableReadAfterSort);
+  });
+
+  it("replays init with the panel's current sort and filter, not empty ones, on a later ready (a webview reload)", async () => {
+    // Sean's own manual test (`manual-test-pass.md` §12): `retainContextWhenHidden:
+    // false` (this panel's own `createRealPanel`) means VS Code tears the
+    // webview document down and reloads it on every hide/show, and the
+    // freshly mounted grid sends its own `"ready"` handshake again with no
+    // memory of a sort or filter the previous document had applied. Before
+    // `openingMessageFor` existed, the replayed `init` always carried the
+    // empty `initialSort`/`initialFilter` this panel was opened with — never
+    // the sort/filter a request had since made active — so the freshly
+    // mounted grid's own first `requestRows` read as "the user cleared
+    // both", which `ensureReadTargetLocked`'s own `sort.length === 0` branch
+    // reads as instruction to discard a still-wanted view.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    const sort = [{ key: "Age" as const, direction: "descending" as const }];
+    fake.sendRequestRows("r1", 0, 2, sort, "Sex='F'");
+    await flush();
+    fake.posted.length = 0;
+
+    // Simulate the reload: a second "ready", with no request in between.
+    fake.sendReady();
+
+    assert.equal(fake.posted.length, 1);
+    const [replay] = fake.posted;
+    assert.ok(replay?.type === "init");
+    assert.deepEqual(replay.initialSort, sort);
+    assert.equal(replay.initialFilter, "Sex='F'");
+  });
+
+  it("replays init with the current filter alone, no sort active, on a later ready", async () => {
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    await manager.open(
+      tableItem(),
+      libraryAdapter([
+        ...OPEN_ROUTES,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+      ]),
+    );
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [], "Sex='F'");
+    await flush();
+    fake.posted.length = 0;
+
+    fake.sendReady();
+
+    assert.equal(fake.posted.length, 1);
+    const [replay] = fake.posted;
+    assert.ok(replay?.type === "init");
+    assert.deepEqual(replay.initialSort, []);
+    assert.equal(replay.initialFilter, "Sex='F'");
+  });
+
+  it("logs, rather than throws, when a superseded view fails to delete", async () => {
+    const fake = fakePanel();
+    const warnings: string[] = [];
+    const log = {
+      warn: (message: string) => warnings.push(message),
+    } as unknown as vscode.LogOutputChannel;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+      log,
+    });
+    const VIEW1_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const VIEW2_HREF = `${LIBREFS_HREF}/%24VIEWS/V2`;
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: (request) => {
+          const body = request.body as { sortBy: { key: string }[] };
+          const key = body.sortBy[0]?.key;
+          const href = key === "Age" ? VIEW1_HREF : VIEW2_HREF;
+          return dataOk(
+            {
+              name: key === "Age" ? "V1" : "V2",
+              libref: "SASHELP",
+              links: [
+                { rel: "rows", href: `${href}/rows`, method: "GET" },
+                { rel: "delete", href, method: "DELETE" },
+              ],
+            },
+            { status: 201 },
+          );
+        },
+      },
+      {
+        when: `${VIEW1_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: (href, method) => href === VIEW1_HREF && method === "DELETE",
+        reply: dataFail({ code: "compute-rejected", error: { status: 500 } }),
+      },
+      {
+        when: `${VIEW2_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    fake.sendRequestRows("r2", 0, 2, [{ key: "Name", direction: "ascending" }]);
+    await flush();
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? "", /could not delete/);
   });
 
   it("posts failure, not init, when openTable finds no self link", async () => {
@@ -445,6 +956,15 @@ describe("DataViewerPanelManager", () => {
     // just the inline <style> block every panel already carries.
     assert.match(html, /<link rel="stylesheet" href="[^"]*dataViewer\.css"/);
     assert.match(html, /<script nonce="[^"]+" src="[^"]*dataViewer\.js"/);
+
+    // Real review finding, 2026-09-10: the filter box (7c-i) needs its own
+    // theme-aware styling — an unstyled <input> renders with the browser's
+    // default control chrome regardless of VS Code's active theme.
+    assert.match(
+      html,
+      /\.python-on-viya-data-viewer-filter\s*\{[^}]*var\(--vscode-input-background\)/,
+    );
+    assert.match(html, /var\(--vscode-input-foreground\)/);
   });
 
   it("disposes every open panel", async () => {
@@ -509,5 +1029,129 @@ describe("DataViewerPanelManager", () => {
       true,
       "disposing the panel should abort the same controller its adapter calls used",
     );
+  });
+
+  it("deletes the active sort view when the panel is disposed while sorted", async () => {
+    // PR review finding, 2026-09-10: every existing dispose test
+    // ("disposes every open panel", "aborts the panel's own
+    // AbortController...") disposes a panel with no active sort/filter, so
+    // `activeView` is always `undefined` at dispose time in every one of
+    // them — `onDidDispose`'s own `staleView !== undefined` cleanup (the
+    // `deleteView` call reasoned through adversarially in that handler's own
+    // comment) had no test exercising it at all, on either the success or
+    // the failure-logged path. This one covers success; the next covers the
+    // logged failure.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const deletedHrefs: string[] = [];
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: (href, method) => href === VIEW_HREF && method === "DELETE",
+        reply: (request) => {
+          deletedHrefs.push(request.link.href);
+          return dataOk({}, { status: 204 });
+        },
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    assert.deepEqual(
+      deletedHrefs,
+      [],
+      "no delete yet — the view is still active",
+    );
+
+    fake.panel.dispose();
+    await flush();
+
+    assert.deepEqual(deletedHrefs, [VIEW_HREF]);
+  });
+
+  it("logs, rather than throws, when the active sort view fails to delete on dispose", async () => {
+    const fake = fakePanel();
+    const warnings: string[] = [];
+    const log = {
+      warn: (message: string) => warnings.push(message),
+    } as unknown as vscode.LogOutputChannel;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+      log,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: (href, method) => href === VIEW_HREF && method === "DELETE",
+        reply: dataFail({ code: "compute-rejected", error: { status: 500 } }),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+
+    fake.panel.dispose();
+    await flush();
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? "", /could not delete/);
   });
 });

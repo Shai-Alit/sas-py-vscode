@@ -105,10 +105,28 @@ describe("data/dataViewerModel", () => {
   });
 
   describe("isRequestRowsMessage", () => {
-    const valid = { type: "requestRows", requestId: "r1", start: 0, limit: 2 };
+    const valid = {
+      type: "requestRows",
+      requestId: "r1",
+      start: 0,
+      limit: 2,
+      sort: [],
+      filter: "",
+    };
 
-    it("accepts a well-formed requestRows message", () => {
+    it("accepts a well-formed requestRows message with no sort/filter active", () => {
       assert.equal(isRequestRowsMessage(valid), true);
+    });
+
+    it("accepts a well-formed requestRows message with sort and a filter", () => {
+      assert.equal(
+        isRequestRowsMessage({
+          ...valid,
+          sort: [{ key: "Age", direction: "descending" }],
+          filter: "Sex='F'",
+        }),
+        true,
+      );
     });
 
     it("rejects a non-object", () => {
@@ -130,6 +148,42 @@ describe("data/dataViewerModel", () => {
 
     it("rejects a non-number limit", () => {
       assert.equal(isRequestRowsMessage({ ...valid, limit: "2" }), false);
+    });
+
+    it("rejects a non-array sort", () => {
+      assert.equal(isRequestRowsMessage({ ...valid, sort: "Age" }), false);
+    });
+
+    it("rejects a sort entry with a bad direction", () => {
+      assert.equal(
+        isRequestRowsMessage({
+          ...valid,
+          sort: [{ key: "Age", direction: "up" }],
+        }),
+        false,
+      );
+    });
+
+    it("rejects a null sort entry", () => {
+      assert.equal(isRequestRowsMessage({ ...valid, sort: [null] }), false);
+    });
+
+    it("rejects a non-object sort entry", () => {
+      assert.equal(isRequestRowsMessage({ ...valid, sort: ["Age"] }), false);
+    });
+
+    it("rejects a sort entry with a non-string key", () => {
+      assert.equal(
+        isRequestRowsMessage({
+          ...valid,
+          sort: [{ key: 1, direction: "ascending" }],
+        }),
+        false,
+      );
+    });
+
+    it("rejects a non-string filter", () => {
+      assert.equal(isRequestRowsMessage({ ...valid, filter: 1 }), false);
     });
 
     it("rejects a requestRows message missing every field beyond type", () => {

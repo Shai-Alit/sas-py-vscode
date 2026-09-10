@@ -69,6 +69,8 @@ import { findLink, readLinks, type Link } from "../wire/links";
 import { type DataProblem } from "./problems";
 import {
   COLUMNS_REL,
+  CREATE_VIEW_REL,
+  DELETE_REL,
   LIBREFS_REL,
   readColumnItem,
   readLibraryItem,
@@ -81,6 +83,7 @@ import {
   type Column,
   type LibraryItem,
   type RowItem,
+  type SortSpec,
   type TableDetail,
   type TableItem,
 } from "./types";
@@ -132,13 +135,17 @@ export interface RowsPage {
   readonly rows: readonly RowItem[];
   /**
    * The collection's own total row count, when the deployment supplied one.
-   * Finding 7.10 found this populated even at a small `limit` on every probe
-   * this phase ran (`SASHELP.CLASS`, `verde`) — unlike some other Compute
-   * collections' sometimes-`null` `count` (Phase 2b's own finding on that
-   * trap). Still optional at the type level: nothing guarantees every
-   * deployment behaves the same on a table this project has not probed, and
-   * a caller (7b's datasource) must have a defined answer for "no total
-   * known" regardless of how reliable this has been so far.
+   * Finding 7.10 found this populated even at a small `limit` on a plain,
+   * unfiltered read of a real table. **Finding 7.15/7.17 narrowed this
+   * significantly**: `count` is **absent** — not `null`, the key itself is
+   * missing — the instant either a `filter` is passed to this method or
+   * `table` is a view {@link LibraryAdapter.applySort} created, even though
+   * neither case is an error. A caller (7b/7c's datasource) must fall back to
+   * "fewer rows came back than the page size requested ⇒ this is the last
+   * page" (upstream's own `useDataViewer.ts` heuristic) whenever a sort or
+   * filter is active — it is not merely a hypothetical fallback for a
+   * deployment this project has not probed, the way 7b's own comment framed
+   * it; it is the documented behaviour for this exact one.
    */
   readonly count: number | undefined;
 }
@@ -321,10 +328,23 @@ export class LibraryAdapter {
    * collection's own `next`/`last`/`self` links are, unlike the overloaded
    * library URI, always properly typed regardless — but this method does not
    * depend on that being true to stay correct.
+   *
+   * **`filter` is a raw SAS `WHERE`-clause expression, sent as a plain
+   * `where=` query parameter — but only when `table` is a real table, not a
+   * view {@link applySort} created.** Finding 7.16 measured this directly: a
+   * `where=` query parameter is silently ignored on a created view's own
+   * `rows` read (no error — it just returns every row, as if the parameter
+   * were never sent). A filter that applies while a sort is active must
+   * instead travel inside the same `createView` body that sets `sortBy`
+   * ({@link applySort}'s own `filter` parameter) — never appended here
+   * against a view. Callers **must not** pass a non-empty `filter` alongside
+   * a `table` obtained from `applySort`; `dataViewerPanel.ts`'s own
+   * sort/filter state machine is what keeps that invariant, not this method.
    */
   async getRows(
     table: TableDetail,
     window: RowWindow,
+    filter?: string,
     signal?: AbortSignal,
   ): Promise<DataResult<RowsPage>> {
     const required = this.require();
@@ -336,12 +356,16 @@ export class LibraryAdapter {
       return linkMissing(`table "${table.libref}.${table.name}"`, ROWS_REL);
     }
 
+    const parameters = [
+      `start=${String(window.start)}`,
+      `limit=${String(window.limit)}`,
+    ];
+    if (filter !== undefined && filter !== "") {
+      parameters.push(`where=${encodeURIComponent(filter)}`);
+    }
     const windowed: Link = {
       ...link,
-      href: withQuery(link.href, [
-        `start=${String(window.start)}`,
-        `limit=${String(window.limit)}`,
-      ]),
+      href: withQuery(link.href, parameters),
     };
 
     const result = await client.send({
@@ -365,6 +389,133 @@ export class LibraryAdapter {
       if (row !== undefined) rows.push(row);
     }
     return { ok: true, value: { rows, count: readCount(result.value.body) } };
+  }
+
+  /**
+   * Creates a server-side view of `table` sorted by `sort` and, when given, a
+   * `filter` baked into the **same** `createView` call — Finding 7.16: a
+   * `where=` cannot be layered onto an already-created view's own `rows` read
+   * afterward (silently ignored), so a sort-with-filter combination must be
+   * requested together, in one `POST`.
+   *
+   * The view is left open — reusable across every subsequent {@link getRows}
+   * call against it — until the caller calls {@link deleteView}.
+   * `dataViewerPanel.ts` creates one view per distinct (sort, filter) pairing
+   * and reuses it for every page fetch while that pairing stays current, a
+   * real improvement on upstream's own `RestLibraryAdapter.getSortedRows`
+   * (Finding 7.15's own account of that code): upstream creates and deletes a
+   * fresh view on **every single row-window fetch**, including a plain
+   * scroll, with the delete not even wrapped in a `try`/`finally` — a
+   * throwing read leaves that view orphaned for the rest of the session.
+   *
+   * **The returned `TableDetail` carries `table`'s own `libref`/`name`, not
+   * the view's.** Finding 7.15: a created view's own response body reports a
+   * *misleading* `libref` matching the source table (`"WORK"`, not the
+   * synthetic `$VIEWS` segment its links actually live under) — carrying the
+   * source table's identity here is what an error message naming this "view"
+   * should show a user, not an internal, system-generated view name nobody
+   * asked for. Only the response's own `links` (`rows`/`columns`/`delete`)
+   * are taken from the view itself, since those are what every subsequent
+   * call must follow.
+   *
+   * **`rowCount`/`columnCount` are never carried over from the view's own
+   * response**, deliberately — Finding 7.15 found a freshly created view
+   * reports `rowCount: -1` (not yet known, not a real count), and passing
+   * that through would render as a nonsensical negative row count rather
+   * than the "unknown" `undefined` a caller should see instead.
+   */
+  async applySort(
+    table: TableDetail,
+    sort: readonly SortSpec[],
+    filter: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<DataResult<TableDetail>> {
+    const required = this.require();
+    if (!required.ok) return required;
+    const { client } = required.value;
+
+    const link = findLink(table.links, CREATE_VIEW_REL);
+    if (link === undefined) {
+      return linkMissing(
+        `table "${table.libref}.${table.name}"`,
+        CREATE_VIEW_REL,
+      );
+    }
+
+    const body: Record<string, unknown> = {
+      sortBy: sort.map((spec) => ({
+        key: spec.key,
+        direction: spec.direction,
+      })),
+    };
+    if (filter !== undefined && filter !== "") body.where = filter;
+
+    const result = await client.send({
+      // `responseType` is set explicitly rather than trusted from the link:
+      // `acceptFor` (`src/compute/client.ts`) only falls back to a link's own
+      // `type` on a `GET`, never a `POST`, so a `createView` link with no
+      // `responseType` of its own would send no `Accept` at all and get back
+      // whatever this deployment's server-side default happens to be for a
+      // freshly created view. Finding 7.15's own probe only got the expected
+      // `TableInfo` shape back because it set this header explicitly — this
+      // mirrors that rather than assuming an unconfirmed default.
+      link: { ...link, responseType: TABLE_RESPONSE_TYPE },
+      body,
+      ...withSignal(signal),
+    });
+    if (!result.ok) return wrapCompute(asSessionGone(result));
+
+    const links = readLinks(result.value.body);
+    if (
+      findLink(links, ROWS_REL) === undefined ||
+      findLink(links, DELETE_REL) === undefined
+    ) {
+      return malformed(
+        result.value,
+        `a sorted view over table "${table.libref}.${table.name}"`,
+        'and it did not carry both a "rows" and a "delete" link',
+      );
+    }
+
+    return {
+      ok: true,
+      value: {
+        kind: "tableDetail",
+        libref: table.libref,
+        name: table.name,
+        links,
+      },
+    };
+  }
+
+  /**
+   * Removes a view {@link applySort} created. Best-effort from the caller's
+   * point of view — `dataViewerPanel.ts` logs a failure rather than
+   * propagating it, since a view this project failed to delete is orphaned
+   * only until the session itself ends (the same bounded lifetime an
+   * upstream that never even tries gives every view it creates, per Finding
+   * 7.15/upstream's own account), not a correctness problem for anything
+   * still open in this panel.
+   */
+  async deleteView(
+    view: TableDetail,
+    signal?: AbortSignal,
+  ): Promise<DataResult<void>> {
+    const required = this.require();
+    if (!required.ok) return required;
+    const { client } = required.value;
+
+    const link = findLink(view.links, DELETE_REL);
+    if (link === undefined) {
+      return linkMissing(
+        `view over table "${view.libref}.${view.name}"`,
+        DELETE_REL,
+      );
+    }
+
+    const result = await client.send({ link, ...withSignal(signal) });
+    if (!result.ok) return wrapCompute(asSessionGone(result));
+    return { ok: true, value: undefined };
   }
 
   /**
@@ -464,6 +615,17 @@ export class LibraryAdapter {
  * not a real ceiling anyone browsing libraries is expected to reach.
  */
 export const MAX_DATA_PAGES = 500;
+
+/**
+ * The media type a table's (or a view's) own rich detail is served as —
+ * `application/vnd.sas.compute.data.table` (Finding 7.1/7.15), `+json`
+ * appended on the wire by `sasMediaType`. The one media-type literal this
+ * module writes down rather than reading off a link, needed only by {@link
+ * LibraryAdapter.applySort} — see that method's own doc comment for why
+ * `acceptFor` cannot derive it from the `createView` link on its own for a
+ * `POST`.
+ */
+const TABLE_RESPONSE_TYPE = "application/vnd.sas.compute.data.table";
 
 /** The `items` of a collection body, or `undefined` if there is no array there. */
 function readItems(response: ComputeResponse): readonly unknown[] | undefined {

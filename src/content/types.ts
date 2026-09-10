@@ -62,6 +62,13 @@ export interface ContentItem {
    */
   readonly contentType?: string | undefined;
   /**
+   * The Types-service definition name a member resolved to — `file_py` for a
+   * `.py`, `file` for a plain file, absent for a folder (finding 99). Read so
+   * the rename path can pass it as the `{newtype}` of a `validateRename`
+   * check (finding 6.6) without a second lookup.
+   */
+  readonly typeDefName?: string | undefined;
+  /**
    * The underlying resource's address, when the representation states one. A
    * member carries it (`/folders/folders/{id}` or `/files/files/{id}`); a
    * delegate or root-listing folder does not (finding 98), and the tree falls
@@ -83,6 +90,55 @@ export const SELF_REL = "self";
  * folders; **absent** on a folder *member* record (finding 99), where the
  * tree composes `${uri}/members` instead. */
 export const MEMBERS_REL = "members";
+
+/** `POST` a `{name}` body to create a sub-folder. Its href is
+ * `/folders/folders?parentFolderUri={this folder}` — the same string the
+ * adapter would compose, so following the relation and composing agree
+ * (finding 6.3). Present on delegate and ordinary folders; absent on the
+ * synthetic {@link SAS_CONTENT_ROOT}. */
+export const CREATE_CHILD_REL = "createChild";
+
+/** `POST` a `{uri,type,name,contentType}` body to link an existing resource
+ * into this folder as a member (finding 6.4 — the second half of file
+ * create). */
+export const ADD_MEMBER_REL = "addMember";
+
+/** `PUT` a `{name}` body to rename a folder, or the member representation to
+ * rename a member (findings 6.5/6.7). */
+export const UPDATE_REL = "update";
+
+/** `DELETE` the underlying resource behind a member — `/files/files/{id}` for a
+ * file, `/folders/folders/{id}` for a sub-folder (finding 6.8). */
+export const DELETE_RESOURCE_REL = "deleteResource";
+
+/** `DELETE` a member *record* (or a folder read directly). After
+ * {@link DELETE_RESOURCE_REL} the Folders service usually removes the member
+ * itself, so a follow-up here is often already a `404` — finding 6.8. */
+export const DELETE_REL = "delete";
+
+/** `DELETE` a folder and, the name notwithstanding, only its *empty* self:
+ * finding 6.8 measured a `409 errorCode 11516` on both cadences when the
+ * folder still holds a non-folder member, so the adapter empties a folder
+ * itself before following this. */
+export const DELETE_RECURSIVELY_REL = "deleteRecursively";
+
+/** `PUT` (templated `?value={newname}&type={newtype}`) to check a rename before
+ * committing it. Answers `200` with `{valid:true}` or `{valid:false,error:{…}}`
+ * — finding 6.6. */
+export const VALIDATE_RENAME_REL = "validateRename";
+
+/** `PUT` (templated `.../@new/name?value={newname}&type={newtype}`) to check a
+ * new child's name before creating it (finding 6.6). */
+export const VALIDATE_NEW_MEMBER_NAME_REL = "validateNewMemberName";
+
+/** The Files service collection new file resources are `POST`ed to. Composed,
+ * like {@link FOLDERS_COLLECTION}, because create has no representation to hang
+ * a link off yet. */
+export const FILES_COLLECTION = "/files/files";
+
+/** The Types service query the create-file path reads to resolve an extension
+ * to a `typeDefName` (`getTypeDefinition`, finding 79 / 6.9). */
+export const TYPES_COLLECTION = "/types/types";
 
 /**
  * The four delegate folders the SAS Content tree shows at its top level, in
@@ -179,6 +235,43 @@ export function isContainer(item: ContentItem): boolean {
 }
 
 /**
+ * The delegate-folder `type` values — the three fetched with
+ * `GET /folders/folders/@name` (finding 97). A delegate is a container but is
+ * **not** something the user can rename or delete, and only `@myFolder` among
+ * them is a sane create target — `src/content/presentation.ts` gives them their
+ * own `contextValue` so the context menu can say so.
+ */
+const DELEGATE_FOLDER_TYPES: ReadonlySet<string> = new Set([
+  "myFolder",
+  "favoritesFolder",
+  "trashFolder",
+]);
+
+/** Whether an item is one of the three fetched delegate folders (My Folder /
+ * My Favorites / Recycle Bin) — not the synthetic {@link SAS_CONTENT_ROOT},
+ * which {@link isSasContentRoot} covers. */
+export function isDelegateFolder(item: ContentItem): boolean {
+  return item.type !== undefined && DELEGATE_FOLDER_TYPES.has(item.type);
+}
+
+/** Whether an item is the "My Folder" delegate specifically — the one delegate
+ * a user may create content directly inside. */
+export function isMyFolderDelegate(item: ContentItem): boolean {
+  return item.type === "myFolder";
+}
+
+/**
+ * The lower-cased extension of a file name (no leading dot), or `undefined`
+ * when the name has no `.` or ends with one. `getTypeDefinition` keys the
+ * Types-service lookup on it; upstream's `fileName.split(".").pop()`.
+ */
+export function extensionOf(name: string): string | undefined {
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || dot === name.length - 1) return undefined;
+  return name.slice(dot + 1).toLowerCase();
+}
+
+/**
  * The member content types the tree asks the Folders service to include.
  *
  * Upstream's `FILE_TYPES` (`file`, `dataFlow`) plus the folder types, used to
@@ -250,6 +343,9 @@ export function readContentItem(value: unknown): ContentItem | undefined {
     ...(typeof raw.type === "string" ? { type: raw.type } : {}),
     ...(typeof raw.contentType === "string"
       ? { contentType: raw.contentType }
+      : {}),
+    ...(typeof raw.typeDefName === "string"
+      ? { typeDefName: raw.typeDefName }
       : {}),
     ...(typeof raw.uri === "string" ? { uri: raw.uri } : {}),
     ...(typeof raw.memberCount === "number"

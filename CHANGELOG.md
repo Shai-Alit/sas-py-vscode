@@ -12,19 +12,26 @@ called out under **Changed** with a migration note.
 
 ### Added
 
-- **A read-only SAS Content explorer.** The Python on Viya activity-bar icon now
-  opens a **SAS Content** view showing My Favorites, My Folder, SAS Content and
-  Recycle Bin, read from the Viya Folders and Files services. Expand a folder to
-  list its sub-folders and files; a refresh button on the view reloads it.
-  Creating, renaming, moving and deleting content are later releases.
+- **A SAS Content explorer.** The Python on Viya activity-bar icon now opens a
+  **SAS Content** view showing My Favorites, My Folder, SAS Content and Recycle
+  Bin, read from the Viya Folders and Files services. Expand a folder to list
+  its sub-folders and files; a refresh button on the view reloads it. Moving
+  content and dragging a file into the editor are a later release.
   See [Browsing SAS Content](docs/browsing-sas-content.md) and
   [ADR-0026](docs/adr/0026-content-adapter-shape.md).
 - **Open and save SAS Content files in place.** Clicking a file in the SAS
   Content view opens it in an editor; saving writes it straight back to SAS
   Viya. The save is guarded against a lost update — if the file changed on the
   server since it was opened, the save is refused with a note to reopen it for
-  the current version. Only ordinary files open this way (not data flows), and
-  folder-level actions are still a later release.
+  the current version. Only ordinary files open this way (not data flows).
+- **Create, rename and delete SAS Content from the tree.** Right-click a folder
+  for **New Folder** / **New File**, or any folder or file for **Rename** /
+  **Delete**. A new file's type is registered from its extension (a `.py`
+  becomes Python code). Deleting a folder removes everything inside it, after a
+  confirmation. A name that clashes with a sibling is caught before anything is
+  created, with SAS Viya's own suggested alternative. The read-only delegate
+  folders (My Favorites, Recycle Bin) and the "SAS Content" root have no such
+  actions.
 
 ### Changed
 

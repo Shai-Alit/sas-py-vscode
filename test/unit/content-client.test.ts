@@ -390,4 +390,73 @@ describe("content/client", () => {
       assert.equal(result.problem.error.status, 412);
     });
   });
+
+  describe("JSON write arm (6c-i — findings 6.3–6.7)", () => {
+    const CREATE_CHILD: Link = {
+      rel: "createChild",
+      href: "/folders/folders?parentFolderUri=/folders/folders/1",
+      method: "POST",
+      type: "application/vnd.sas.content.folder",
+    };
+
+    it("serialises jsonBody and sends it under the link's media type", async () => {
+      const { client, seen } = clientWith({
+        status: 201,
+        headers: { "content-type": "application/vnd.sas.content.folder+json" },
+        body: JSON.stringify({ id: "9", name: "reports", type: "folder" }),
+      });
+      const result = await client.send({
+        link: CREATE_CHILD,
+        jsonBody: { name: "reports" },
+      });
+      assert.ok(result.ok);
+      const call = only(seen);
+      assert.equal(call.method, "POST");
+      assert.equal(call.body, '{"name":"reports"}');
+      assert.equal(
+        call.headers["content-type"],
+        "application/vnd.sas.content.folder+json",
+      );
+      // The create response representation IS read, so Accept goes out on the
+      // POST — unlike the raw content PUT, whose link declares no media type.
+      assert.equal(
+        call.headers.accept,
+        "application/vnd.sas.content.folder+json",
+      );
+    });
+
+    it("defaults a jsonBody's content-type to application/json when the link has none", async () => {
+      const { client, seen } = clientWith({ status: 200, body: "{}" });
+      await client.send({
+        link: { rel: "update", href: "/folders/folders/1", method: "PUT" },
+        jsonBody: { name: "x" },
+      });
+      assert.equal(only(seen).headers["content-type"], "application/json");
+    });
+
+    it("sends a Content-Disposition when asked", async () => {
+      const { client, seen } = clientWith({
+        status: 201,
+        headers: { "content-type": "application/vnd.sas.file+json" },
+        body: "{}",
+      });
+      await client.send({
+        link: {
+          rel: "create",
+          href: "/files/files?typeDefName=file_py",
+          method: "POST",
+          type: "application/vnd.sas.file",
+        },
+        rawBody: new Uint8Array(0),
+        contentType: "application/x-python",
+        contentDisposition: "filename*=UTF-8''model.py",
+      });
+      const call = only(seen);
+      assert.equal(
+        call.headers["content-disposition"],
+        "filename*=UTF-8''model.py",
+      );
+      assert.equal(call.headers["content-type"], "application/x-python");
+    });
+  });
 });

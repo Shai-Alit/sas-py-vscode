@@ -174,6 +174,29 @@
         "title": "%command.refreshDataExplorer.title%",
         "category": "%extension.category%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "pythonOnViya.createContentFolder",
+        "title": "%command.createContentFolder.title%",
+        "category": "%extension.category%",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "pythonOnViya.createContentFile",
+        "title": "%command.createContentFile.title%",
+        "category": "%extension.category%",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "pythonOnViya.renameContentItem",
+        "title": "%command.renameContentItem.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.deleteContentItem",
+        "title": "%command.deleteContentItem.title%",
+        "category": "%extension.category%",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -227,6 +250,24 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "pythonOnViya.createContentFolder",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.createContentFile",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.renameContentItem",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.deleteContentItem",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "pythonOnViya.refreshContentExplorer",
@@ -237,6 +278,28 @@
           "command": "pythonOnViya.refreshDataExplorer",
           "when": "view == pythonOnViya.dataExplorer",
           "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "pythonOnViya.createContentFolder",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder)",
+          "group": "1_new@1"
+        },
+        {
+          "command": "pythonOnViya.createContentFile",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder)",
+          "group": "1_new@2"
+        },
+        {
+          "command": "pythonOnViya.renameContentItem",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file)",
+          "group": "7_modify@1"
+        },
+        {
+          "command": "pythonOnViya.deleteContentItem",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file)",
+          "group": "7_modify@2"
         }
       ],
       "editor/title/run": [

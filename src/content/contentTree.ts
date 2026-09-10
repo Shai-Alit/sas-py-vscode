@@ -22,12 +22,16 @@
  *
  * ## What this slice does not do
  *
- * No `getParent` (only `TreeView.reveal` needs it, and nothing reveals yet), no
- * context-menu actions (mutations are 6c). `contextValue` is set now so 6c's
- * menu `when` clauses do not require touching this file. A failed *listing* is
- * logged, not shown as a notification per expand — a per-click toast for a
- * folder you cannot read would be noise; a failed *open or save* is the
- * `FileSystemProvider`'s to surface, through `localiseContentProblem`.
+ * No `getParent` — only `TreeView.reveal` needs it, and that is 6c-iii. The
+ * 6c-i context-menu actions (create/rename/delete) are commands registered in
+ * `src/content/contentCommands.ts` and keyed on the `contextValue`
+ * `src/content/presentation.ts` sets; this class only grew a {@link
+ * SasContentTreeProvider.refresh} argument so one of those mutations can reload
+ * just the folder it changed. A failed *listing* is logged, not shown as a
+ * notification per expand — a per-click toast for a folder you cannot read
+ * would be noise; a failed *open or save* is the `FileSystemProvider`'s to
+ * surface, and a failed *mutation* is `contentCommands.ts`', both through
+ * `localiseContentProblem`.
  *
  * 6b does wire one thing here: an openable file leaf
  * ({@link NodePresentation.openable}) gets a `resourceUri` and a `vscode.open`
@@ -68,10 +72,16 @@ export class SasContentTreeProvider
     private readonly log: vscode.LogOutputChannel,
   ) {}
 
-  /** Re-reads the whole tree. Called on refresh, profile change, sign-in and
-   * sign-out. */
-  refresh(): void {
-    this.changed.fire(undefined);
+  /**
+   * Re-reads the tree. With no argument (refresh button, profile change,
+   * sign-in/out) the whole tree reloads; with an `item` — a 6c-i mutation
+   * naming the parent it changed — only that node's children are re-fetched,
+   * so the rest of the user's expansion state is left alone. VS Code matches
+   * the node by the `id` {@link SasContentTreeProvider.getTreeItem} stamped on
+   * it, which is the item's own service id.
+   */
+  refresh(item?: ContentItem): void {
+    this.changed.fire(item);
   }
 
   getTreeItem(item: ContentItem): vscode.TreeItem {

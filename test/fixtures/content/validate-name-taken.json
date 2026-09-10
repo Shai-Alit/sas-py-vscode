@@ -1,0 +1,15 @@
+{
+  "error": {
+    "version": 2,
+    "httpStatusCode": 409,
+    "errorCode": 11552,
+    "message": "An item named \"reports\" of type \"Folder\" already exists in the folder \"My Folder\".",
+    "details": [
+      "Existing member: ",
+      "/folders/folders/cccccccc-0000-4000-8000-000000000001",
+      "Suggestion: reports (1)"
+    ]
+  },
+  "valid": false,
+  "version": 1
+}

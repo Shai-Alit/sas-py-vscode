@@ -16,6 +16,7 @@ import { SessionBindingStore } from "./compute/bindingStore";
 import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerContentExplorer } from "./content/contentExplorer";
+import { registerDataExplorer } from "./data/dataExplorer";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
 import { registerRunCommands } from "./run/commands";
@@ -155,12 +156,8 @@ export function activate(context: vscode.ExtensionContext): void {
     { transport },
   );
   context.subscriptions.push(sessions);
-  const { connect, disconnect, forgetProfile } = registerComputeCommands(
-    context,
-    sessions,
-    profiles,
-    output,
-  );
+  const { connect, disconnect, forgetProfile, onDidChangeConnection } =
+    registerComputeCommands(context, sessions, profiles, output);
 
   // Registered last, and only because signing in connects (and signing out
   // disconnects, added in Phase 3's 3f slice): the commands need a way to
@@ -235,6 +232,20 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     { transport },
   );
+
+  // Phase 7a: the read-only "SAS Libraries" tree, a second view inside the
+  // same activity-bar container 6a-ii created (the phase file's own
+  // coordination note — 6a landed first). Unlike SAS Content, this is
+  // genuinely bound to the compute session (ADR-0027), so it is handed
+  // `sessions` itself — read through per call, never held — and refreshes on
+  // `onDidChangeConnection`, which `registerComputeCommands` above fires
+  // whenever connect, disconnect or a run's own `forgetProfile` changes what
+  // the active profile's session is.
+  registerDataExplorer(context, profiles, sessions, output, {
+    onDidChangeSessions: auth.onDidChangeSessions,
+    onDidSignOut: auth.onDidSignOut,
+    onDidChangeConnection,
+  });
 }
 
 export function deactivate(): void {

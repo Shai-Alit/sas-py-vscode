@@ -147,3 +147,29 @@ the active profile's Compute session rather than owning one:
   also serializes the same way a job does remains unprobed — Findings 7.3/7.5/7.6
   covered only the job-blocks-a-read case. Worth a targeted probe at
   implementation time rather than assuming either answer.
+
+## Amendment (2026-09-09) — the open UX question, resolved
+
+The Consequences section above left one question explicitly undecided: does
+a profile with no active session show a "not connected" state, or does the
+tree lazily call `connect()` on first expansion, closer to upstream's UX?
+
+**Resolved: no lazy connect. An explicit `viewsWelcome` state, matching how
+SAS Content already treats an unauthenticated profile.** Starting a compute
+session is not obtaining a token — it launches a SAS process on the
+deployment, with a real cost and a visible delay, and a tree that started
+one just because the sidebar happened to redraw would be surprising in a way
+a silent sign-in refresh is not. `pythonOnViya.dataExplorer`'s third
+`viewsWelcome` entry (`pythonOnViya.hasProfiles && pythonOnViya.authorized &&
+!pythonOnViya.connected`) invites the user to press Connect explicitly; the
+tree itself only ever reads `ComputeSessionManager.current(profileId)` and
+reports `not-connected` (`src/data/problems.ts`) when there is nothing there.
+
+This needed one small addition outside `src/data/`: `src/compute/commands.ts`
+now fires `onDidChangeConnection` alongside its existing
+`pythonOnViya.connected` context-key sync, because this is the first tree
+whose *contents* — not just its welcome banner, which the context key alone
+already drives — depend on whether a session exists. `pythonOnViya.connected`
+tells VS Code which `viewsWelcome` entry to show; `onDidChangeConnection`
+tells `SasLibraryTreeProvider` to re-query `LibraryAdapter` now that the
+session state behind that banner may have changed.

@@ -50,6 +50,19 @@
  * menu** — which talks to the provider directly and never reaches
  * `pythonOnViya.signOut` — drops the dead connection and re-syncs the key
  * too, rather than only the palette's own Sign Out command doing so.
+ *
+ * ## `onDidChangeConnection` (added Phase 7a)
+ *
+ * The SAS Libraries tree (`src/data/dataExplorer.ts`) is the first consumer
+ * outside this module of *when* `pythonOnViya.connected` changes, not just its
+ * current value — browsing libraries needs the active profile's actual
+ * session (ADR-0027), unlike the SAS Content tree, which only needs a token
+ * and never had a reason to watch this. `sync()` already re-syncs the context
+ * key on every path that can change it (`connect`, `disconnect`,
+ * `forgetProfile`, a profile switch); firing an event from the same place
+ * costs nothing and gives a session-dependent view exactly the signal it
+ * needs, rather than that view re-deriving "did the connection change" by
+ * polling the context key itself.
  */
 
 import * as vscode from "vscode";
@@ -95,6 +108,12 @@ export interface ComputeCommandHandles {
    * `BackendProblem` `backend-gone`, so Connect reappears immediately rather
    * than staying hidden until the user finds Disconnect first. */
   readonly forgetProfile: (profileId: string) => void;
+  /** Fires after every `sync()` — see this module's own doc comment. Not a
+   * re-export of `pythonOnViya.connected`'s new value: a listener that cares
+   * what it is now reads `sessions.current(profileId)` itself, the same way
+   * `LibraryAdapter` does, rather than trusting a boolean this event does not
+   * carry. */
+  readonly onDidChangeConnection: vscode.Event<void>;
 }
 
 export function registerComputeCommands(
@@ -103,8 +122,17 @@ export function registerComputeCommands(
   profiles: ComputeCommandProfiles,
   log: vscode.LogOutputChannel,
 ): ComputeCommandHandles {
+  const connectionChanged = new vscode.EventEmitter<void>();
+  context.subscriptions.push(connectionChanged);
+
   const sync = () => {
-    void syncConnectedContext(sessions, profiles);
+    // `.finally`, not `.then`: a rejected `setContext` must not also cost the
+    // event. The session-dependent view relies on this firing to re-read
+    // `sessions.current`, so a swallowed rejection here would leave it stuck
+    // on stale state until the next unrelated sync happened to fire.
+    void syncConnectedContext(sessions, profiles).finally(() => {
+      connectionChanged.fire();
+    });
   };
 
   const connect: ConnectActiveProfile = async () => {
@@ -147,7 +175,12 @@ export function registerComputeCommands(
   log.debug("registered the compute session commands");
   sync();
 
-  return { connect, disconnect, forgetProfile };
+  return {
+    connect,
+    disconnect,
+    forgetProfile,
+    onDidChangeConnection: connectionChanged.event,
+  };
 }
 
 async function syncConnectedContext(

@@ -309,7 +309,10 @@ sketch already implies (an adapter and tree before a viewer that opens from
 it; sort/filter/export as refinements on a working viewer). Nothing here is a
 hard technical barrier — this is a recommendation, not a dependency lock._
 
-☐ **7a — `LibraryAdapter` + read-only tree.**
+☑ **7a — `LibraryAdapter` + read-only tree.** Code written 2026-09-09 (this
+session, from the `sas-py-vscode-cowork` clone); not yet pushed or reviewed —
+the adversarial pass (`CLAUDE.md`) runs before a branch or PR exists, so
+nothing here should be read as "merged" until `STATUS.md` says so.
 
 - ☑ A second-**deployment** probe of `GET /sessions/{sessionId}/data`, the
   summary/tables content-negotiation Finding 7.5 corrected, `…/{tableName}`,
@@ -345,16 +348,145 @@ hard technical barrier — this is a recommendation, not a dependency lock._
   `current(profileId)`, profile-keyed, no adapter-owned connection. One UX
   call stays open on purpose (lazy `connect()` on first tree expansion vs. an
   explicit "not connected" state) — see the ADR's Consequences.
-- ☐ Build `LibraryItem`/`LibraryAdapter`/`LibraryModel`/
+- ☑ Build `LibraryItem`/`LibraryAdapter`/`LibraryModel`/
   `LibraryDataProvider`/`PaginatedResultSet` (names TBD to this project's own
   conventions) under a new `src/data/` (or similar) module, per
-  [ADR-0027](../adr/0027-library-adapter-shape.md)'s shape.
-- ☐ Add the tree view to the `viewsContainers` entry 6a-ii already created
+  [ADR-0027](../adr/0027-library-adapter-shape.md)'s shape. **Done**, with two
+  names settled differently than the plan's placeholders: no separate
+  `LibraryModel`/`LibraryDataProvider` split (`src/data/dataTree.ts` talks to
+  `LibraryAdapter` directly — a library and a table are two variants of one
+  `DataItem` union, not two dispatch layers), and no `PaginatedResultSet`
+  (`LibraryAdapter`'s private `collectPages` walks a collection's `next` link
+  to the end and returns the whole list — this slice's tree has no reason to
+  hold a page open, unlike 7b's data-viewer grid, which is where a real
+  windowed/virtualized reader belongs if one is needed). `src/data/types.ts`,
+  `problems.ts`, `adapter.ts` are `vscode`-free; `presentation.ts` maps a
+  `DataItem` to a label/icon/`contextValue`; `dataTree.ts`/`dataExplorer.ts`
+  are the thin shells, mirroring 6a-ii's own split. Two implementation-time
+  corrections to this Plan section's expectations, both probed rather than
+  assumed — Findings 7.8 and 7.9 below.
+- ☑ Add the tree view to the `viewsContainers` entry 6a-ii already created
   (6a landed first — this is no longer a coordination question, just an
   implementation step). Command ids follow the flat `pythonOnViya.<verb>`
-  convention.
-- ☐ `test/helpers/recorded-data-access.ts` + `test/fixtures/data/`, built
-  from Findings 7.1–7.4's scrubbed shapes.
+  convention. **Done** — `pythonOnViya.dataExplorer` is a second view in the
+  `pythonOnViya` container, `pythonOnViya.refreshDataExplorer` mirrors
+  `refreshContentExplorer`, and a third `viewsWelcome` state
+  (`pythonOnViya.hasProfiles && pythonOnViya.authorized && !pythonOnViya.connected`)
+  invites a Connect the tree itself never triggers — ADR-0027's open UX
+  question, resolved as an amendment to that ADR rather than silently
+  defaulted: no lazy `connect()` on first expansion, an explicit state
+  instead, for the same reason browsing SAS Content never triggers a silent
+  sign-in. `src/compute/commands.ts` gained one small addition this needed
+  that nothing before it did: `onDidChangeConnection`, an event fired
+  alongside its existing `pythonOnViya.connected` context-key sync, since
+  this is the first tree whose contents (not just its welcome banner) depend
+  on the compute session.
+- ☑ `test/helpers/recorded-data-access.ts` + `test/fixtures/data/`, built
+  from Findings 7.1–7.4's scrubbed shapes. **Done** as
+  `test/helpers/recorded-data.ts` (named to match `recorded-content.ts`'s own
+  convention once it was in front of us, rather than the plan's placeholder
+  name) plus six fixtures under `test/fixtures/data/`, scrubbed from a fresh
+  2026-09-09 probe pass (Findings 7.8/7.9) rather than reconstructed from
+  Findings 7.1–7.4's prose after the fact. **One real defect found and fixed
+  the same day, before review:** `recorded-content.ts`'s route-matching
+  convention (a bare string route matches any query string on the same base
+  href) is safe there only because no content test ever follows a `next`
+  link; copied unchanged into `recorded-data.ts`, it let a route meant for
+  page 1 of the librefs collection also answer page 2's request, which
+  carried the identical `next` link back, and `LibraryAdapter.collectPages`
+  followed it forever — an actual `npm run coverage` run crashed with a V8
+  out-of-memory error rather than merely failing an assertion. Fixed by
+  making `recorded-data.ts`'s string routes match the href exactly (no query
+  stripping); `LibraryAdapter.collectPages` also gained its own
+  `MAX_DATA_PAGES` runaway guard (mirroring `compute/fileref.ts`'s
+  `MAX_FILEREF_PAGES`) as defence in depth against a real deployment ever
+  producing a non-terminating `next` link, with a test pinning it. Both
+  `recorded-data.ts`'s own doc comment and `collectPages`'s record the full
+  story for whoever next copies this helper's shape into a fourth service.
+  **A second, smaller gap surfaced once the OOM fix landed:** with the
+  infinite loop gone, `npm run coverage` ran to completion but failed the
+  95% branch-coverage threshold at 94.88%, traced to `src/data/adapter.ts`
+  (86.27% branches) and one line of `src/data/types.ts`. Eight branches were
+  genuinely untested rather than untestable: `getLibraries` skipping an item
+  with no usable name, skipping one whose `self` follow-up returns a body
+  that isn't a valid library, propagating a failed `self` follow-up rather
+  than swallowing it, a response body that isn't an object at all, the
+  `malformed` helper's missing-`contentType` fallback text, an `AbortSignal`
+  actually reaching the wire request; `getTables` propagating a failed
+  tables-collection fetch; and `readTableItem` in `types.ts` dropping a
+  non-object or `null` value outright. Closed with eight new tests (no
+  production-code change beyond the OOM fix above); `recorded-data.ts` also
+  gained `hadSignal` on `RecordedDataCall` so the `AbortSignal` case has
+  something to assert against. `npx tsc --noEmit` (both configs) and
+  `npx prettier --check` are clean on every file this touched; the actual
+  branch percentage still needs `npm run coverage` run on a real machine to
+  confirm it clears 95%, since the sandbox does not run coverage.
+  **A third symptom then surfaced on the real machine, and it was not Phase 7
+  code at all.** `npm run coverage` failed with two tests timing out at the 2s
+  unit budget — `check-contracts`'s before-all hook and `check-coverage-scope`'s
+  "this repository" case — and, downstream of those never finishing, the global
+  lines/statements/functions thresholds fell short (~92% against 94/93/94) while
+  branches passed. The low percentage was a pure artefact: `check-contracts.mjs`
+  reads 24% only because its test timed out before exercising it; let the test
+  finish and it climbs back and the thresholds clear. The two failing tests are
+  the only ones that load the TypeScript compiler and parse the whole source
+  tree — `check-contracts`'s hook `import`s a script that pulls in `typescript`
+  plus `js-yaml`, and `check-coverage-scope`'s repository case walks and parses
+  every file. Native, both finish well under a second; under c8, in a process
+  that by then holds V8 coverage data for the entire suite, that work runs
+  several times slower and lands right on the 2s line — so it passed one run and
+  timed out the next (the failing set flip-flopped run to run, the signature of
+  a marginal test rather than a hung one). Phase 7 added enough tests to eat the
+  thin margin these two always had. A first attempt — excluding
+  `eslint-ignores.test.ts` from the coverage pass — did nothing, and the run
+  output showed why: tests run in alphabetical file order, so both failing tests
+  run *before* `eslint-ignores`, whose heap therefore was not even allocated
+  when they timed out. Fixed by giving those two suites a real, bounded budget
+  for the compiler work they genuinely do (`this.timeout(30_000)` at the
+  suite level in each file), exactly as `eslint-ignores.test.ts` already does
+  for loading ESLint; the fast pure-function cases in those files keep the 2s
+  ceiling in practice. Moving them out of c8 was not an option: `scripts/`
+  coverage counts toward the global threshold, so dropping `check-contracts.mjs`
+  and `check-coverage-scope.mjs` from the run would have cratered it. No
+  production-code or threshold change; the two timeouts and the downstream
+  percentage shortfall were both pure symptoms of a budget that never fit these
+  two whole-tree-parse tests under coverage instrumentation. `npm run verify`
+  passed clean on a real machine once fixed: 1295 passing, lines 94.81%,
+  branches 95.22%, functions 94.45%, statements 94.81% — every threshold met.
+  **Adversarial self-review completed before push**, against the finished
+  diff (`src/data/`, `src/compute/commands.ts`, `src/extension.ts`, the
+  package/nls/docs edits, and the test/fixture additions). No blocking
+  findings. Five low-priority notes, each verified independently against the
+  code rather than relayed on trust: two were folded into this slice —
+  `syncConnectedContext`'s sync in `src/compute/commands.ts` now fires
+  `connectionChanged` from `.finally` rather than `.then`, so a rejected
+  `setContext` no longer silently drops the event and leaves the
+  session-dependent view stuck on stale state; and `MAX_DATA_PAGES`'s doc
+  comment in `src/data/adapter.ts` had an unevidenced claim — "the session's
+  own librefs default is `limit=10`" was never actually probed (that number
+  belongs to Finding 94's *fileref* collection, a different endpoint) and the
+  arithmetic it was paired with was wrong regardless (394 tables ÷ 10 is 40
+  pages exactly, not "under 40"). Corrected to cite only what Finding 7.9
+  actually established — `SASHELP`'s 394 tables paginated at `limit=5`, which
+  is 79 pages — and to note that neither the adapter nor the wire sets
+  `limit` at all, so a real deployment's page size is whatever the server
+  chooses. Two more are recorded here rather than fixed, as genuine
+  scope decisions rather than defects: **`SasLibraryTreeProvider.getChildren`
+  never passes an `AbortSignal` to `getLibraries`/`getTables`**, so a
+  mid-load collapse or refresh leaves in-flight requests running with their
+  results discarded (each request is still bounded by its own timeout, and
+  `src/content/contentTree.ts` does the same, so this is consistent with the
+  existing tree, not a regression) — wiring a per-refresh `AbortController`
+  through the tree is left for a later slice, not this one. **The tree does
+  not refresh on an `isBusy` transition**: expanding a library while a run is
+  in flight logs `session-busy` and renders empty, and stays empty until a
+  manual refresh after the run ends — acceptable for a read-only tree, but a
+  real gap if a later slice adds anything that depends on catching the
+  session becoming idle again. The fifth note (`src/data/adapter.ts` and
+  `src/content/adapter.ts` carrying the project header rather than a SAS one)
+  was confirmed as the already-ratified ADR-0026/0027 approach, not a defect.
+  `npx tsc --noEmit`/`npx prettier --check` clean on every file the two
+  folded-in fixes touched.
 
 ☐ **7b — Data viewer webview.**
 
@@ -652,3 +784,80 @@ carries.)
 Whether a *second* concurrent `DataAccessApi` call (no job involved) queues
 the same way a job does remains unprobed, as does the `createView` sort
 round trip — both deliberately out of scope for a read-only pass.
+
+**Finding 7.8 — implementation-time probe, 2026-09-09 (same session as 7a's
+code, `verde`): the `tables` relation needs no `itemtype` accept-header
+parameter, and a table's own sparse list entry carries no `readOnly`.** Two
+questions this Plan section's prose left unsettled when 7a's code was
+actually being written, both read-only against a fresh throwaway `SAS Studio
+compute context` session (created and deleted; `404` read-back confirmed):
+
+- **`itemtype` is not required.** Finding 7.5 recorded the *documented*
+  mechanism for reaching a library's tables collection as
+  `Accept: application/vnd.sas.collection+json;itemtype=application/vnd.sas.compute.data.table.summary`
+  — and `Link`/`readLinks` (`src/wire/links.ts`) do not carry `itemType` at
+  all, which would have been a real gap had the parameter been load-bearing.
+  It is not: requesting the identical `.../data/WORK` URI with a **bare**
+  `Accept: application/vnd.sas.collection+json` (no `itemtype`) returned the
+  identical tables collection, envelope
+  `"accept":"application/vnd.sas.compute.data.table.summary"` — this
+  deployment infers the item type from the base media type alone, since
+  `library`/`library.summary`/`collection` are the only three
+  representations this URI ever serves. `LibraryAdapter.getTables` therefore
+  follows a library's own `tables` link (`type: "application/vnd.sas.collection"`)
+  through the ordinary `client.send({ link })` path with no `itemtype` string
+  anywhere in `src/data/` — confirming, rather than merely assuming,
+  ADR-0027's "acceptFor already derives the correct Accept... with no new
+  media-type constant."
+- **A table's sparse list entry carries no `readOnly` of its own.** `GET`
+  `SASHELP`'s `tables` collection (394 tables) returned each entry as
+  `{ id, name, version, links }` — the same two-tier sparse/rich split
+  Findings 7.2/7.5 established for libraries, but 7a does not add the
+  per-table rich-detail follow-up that would parallel a library's: no caller
+  in this slice needs a table's own fields beyond its name, and a per-table
+  `GET` for 394 tables just to populate an icon would be exactly the kind of
+  request a read-only tree should not make. `src/data/types.ts`'s
+  `readTableItem` inherits `readOnly` from the owning `LibraryItem` instead —
+  matching upstream's own documented "inherited unless overridden" contract,
+  since no override has ever been observed on either deployment probed this
+  phase.
+
+**Finding 7.9 — implementation-time probe, 2026-09-09 (same session,
+`verde`): a paginated collection's own `next` link carries no media type, and
+following it literally changes what the URI answers.** `GET` `SASHELP`'s
+`tables` collection at `limit=5` returned a `next` link
+(`.../data/SASHELP?limit=5&start=5`) with **no `type` field at all** — Finding
+14's established shape for a link with no media type (the key is omitted, not
+`null`). Requesting that exact href with **no `Accept` header** (the ordinary
+consequence of following a typeless link through the existing `acceptFor`
+logic) answered `200` with `Content-Type: application/vnd.sas.compute.library+json`
+and the **library's own rich detail** — not a continuation of the tables
+listing. The same URI genuinely serves three representations (Finding 7.5),
+and an absent `Accept` falls back to the richest one by default; a `next`
+link's own silence about its type is not a promise that the default still
+means "more of this listing." A naive pagination loop that re-derives
+`Accept` fresh from each page's own `next` link — the shape
+`compute/fileref.ts`'s `listFilerefNames` (Finding 94) uses, safely, because
+the filerefs collection is not overloaded onto a shared URI the way
+`DataAccessApi`'s per-libref endpoint is — would silently switch
+representations on page 2 and either misread the library object as more
+table rows or fail confusingly. `LibraryAdapter`'s private `collectPages`
+avoids this by fixing the *first* link's own `type`/`responseType` across
+every page and varying only the `href` a `next` link names, so the request
+that actually reaches the wire always carries page 1's accept header. No
+equivalent risk exists for `listFilerefNames` or any other collection this
+project already paginates — this is specific to the two-or-three-representations-
+per-URI shape Findings 7.5/7.6/7.8 establish is unique to `DataAccessApi`.
+
+**Net effect on 7a specifically:** both findings *confirm* ADR-0027's design
+(one concrete adapter, `acceptFor`'s existing link-driven `Accept`, no new
+media-type constant) rather than requiring a change to it — the risk each
+probe closed was a risk in the Plan section's own prose, not in the shape the
+ADR actually settled on. Recorded here, in the same slice as the code
+relying on them, per this project's own "every claim carries its evidence"
+rule.
+
+Whether a *second* concurrent `DataAccessApi` call (no job involved) queues
+the same way a job does remains unprobed, as does the `createView` sort
+round trip — both deliberately out of scope for a read-only pass, and
+neither bears on 7a, which issues no such call and does not sort.

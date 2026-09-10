@@ -952,6 +952,38 @@ things this box waits on.
   behaviour
   change.
 
+  **[PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150) opened
+  2026-09-10** — four commits (the original implementation, the Finding
+  7.14 fix, the docs-only reconciliation of `STATUS.md`/this file with both
+  manual-test passes, and the l10n fix above), against `main` at `58f60ec`
+  (post-6c-i).
+
+  **github-advanced-security (CodeQL) finding on PR #150, `js/missing-origin-check`,
+  2026-09-10: real, fixed.** `dataViewerEntry.tsx`'s `window.addEventListener("message", …)`
+  trusted `event.data` with no check on who posted it — the same class of gap
+  CVE-2021-43908 exploited in a real VS Code webview (an arbitrary page,
+  loaded in an `<iframe>` pointed at the webview, could post a message the
+  handler would process as if the extension host had sent it). Fixed by
+  checking `event.origin` against `vscode-webview:`/`https:` prefixes before
+  reading `event.data` — the exact check Microsoft's own team recommends
+  (`microsoft/vscode-discussions#1061`), broader than CodeQL's own suggested
+  one-liner (`vscode-webview://` only) so a future web-hosted (`vscode.dev`)
+  build would not silently break; this project ships no `browser` entry
+  point today, so the `https:` arm is defensive, not load-bearing.
+  **Not itself covered by Sean's own two manual-test passes above — both
+  predate this fix.** The failure mode if the origin check's premise is
+  wrong is silent and total (every host→webview message gets dropped, the
+  panel never renders past its initial blank frame), and nothing in this
+  project's own tiers can catch that (this file is structurally excluded
+  from both `tsc`-against-real-packages and the unit tier, the same reason
+  Finding 7.14 needed a manual pass to catch in the first place) — **a third
+  manual visual check of a real panel, confirming a table still opens and
+  loads normally, is needed before this can be called closed.**
+  **Related, not fixed here**: `src/webview/entry.ts` (the result panel's own
+  message listener, already shipped) has the identical gap and was not
+  touched — a different, already-merged file, out of this PR's diff; worth
+  its own decision, not a silent piggyback fix.
+
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
 - ☐ Server-side sort via `createView` — decide the orphan-view cleanup

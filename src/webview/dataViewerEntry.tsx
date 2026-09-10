@@ -35,6 +35,16 @@
  * already is (ADR-0009's `isBrowserOnly`), which is why that same manual pass
  * is what caught {@link toColumnDefs}'s wrong `"NUM"` comparison (Finding
  * 7.14) — nothing else in this project's own tiers could have.
+ *
+ * **The `message` listener's origin check (added responding to a CodeQL
+ * finding on this PR) postdates that manual pass and has not itself been
+ * run against a real panel.** If the check's premise is wrong for this
+ * project's actual Electron/webview version, the failure mode is silent and
+ * total: every host→webview message (`init`, `failure`, `rows`, `rowsError`)
+ * gets dropped, and the panel never renders anything past its initial blank
+ * frame — indistinguishable from `columns === undefined` still loading.
+ * Confirming a real panel still loads a table after this change is not
+ * optional before merge.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -185,6 +195,27 @@ function DataViewerApp() {
 
   useEffect(() => {
     const listener = (event: MessageEvent<unknown>) => {
+      // Caught by CodeQL (`js/missing-origin-check`) on this PR: nothing here
+      // verified who posted the message before trusting `event.data`. A
+      // `vscode-webview://…` document is still an ordinary browsing context —
+      // CVE-2021-43908 demonstrated a real VS Code webview accepting a
+      // `postMessage` from an arbitrary page loaded in an `<iframe>` pointed at
+      // it, precisely because a handler skipped this check. The exact
+      // `startsWith("vscode-webview:")` (no `//`) plus an `https:` fallback for
+      // a browser-hosted `vscode.dev` window is Microsoft's own recommended
+      // check (microsoft/vscode-discussions#1061) — not just this file's own
+      // origin at `location.origin`, since VS Code's host frame relays the
+      // extension's `postMessage` through its own outer document, whose
+      // origin this check has no independent way to pin down more precisely
+      // than "some `vscode-webview:`/`https:` origin". This project ships no
+      // `browser` entry point (desktop-only, per `package.json`), so the
+      // `https:` arm is defensive rather than load-bearing today.
+      if (
+        !event.origin.startsWith("vscode-webview:") &&
+        !event.origin.startsWith("https:")
+      ) {
+        return;
+      }
       const message = event.data as DataViewerHostMessage | undefined;
       if (message === undefined || typeof message !== "object") return;
 

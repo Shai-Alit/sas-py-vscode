@@ -445,7 +445,7 @@ change that landed left the tree unrefreshed; `run()` now acts on the adapter's
 actual `ContentResult` and only suppresses output when the abort fired *during*
 the work. Claude's PR review clean (one non-blocking note: the command handlers
 have no `.catch`, matching the existing `src/*/commands.ts` convention). All
-threads resolved. **6c-ii is next.**
+threads resolved. **6c-ii followed, then 6c-iii; all three merged 2026-09-10.**
 
 - ☑ **Folder create / file create / rename / delete on `ContentAdapter`**
   (`src/content/adapter.ts`, `vscode`-free), each driven by a link the parent
@@ -559,14 +559,73 @@ resolved.
   multi-line blob, not the idiomatic one-liner upstream inserts, and the
   feature is a low-priority nice-to-have. Revisit if users ask.
 
-☐ **6c-iii — `getParent` / `TreeView.reveal` + the `ancestors` probe.**
+☑ **6c-iii — `getParent` / `TreeView.reveal` + the `ancestors` probe.** Done
+and merged 2026-09-10 — [PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154),
+squash `507155e`. `npm run verify` green (1480 unit passing; coverage 95.31 lines /
+95.37 branches / 94.98 functions / 95.31 statements). Integration 318 passing
+(run with the VS Code env vars stripped — the `ELECTRON_RUN_AS_NODE` launch
+quirk, unchanged). Adversarial pass before the PR: **no blocking findings** —
+two minor polish items folded in (`revealCreated`'s re-list comment; the
+drag-and-drop path now `await`s its `reveal` to match the create path rather
+than firing it with `void`). **PR #154 review:** the Claude reviewer found
+nothing blocking; the Codex reviewer flagged the two reveal-path fetches
+(`getParent`'s `getParentOfItem`, `revealCreated`'s `getChildItems`) as running
+without an abort path. Both are already bounded by the client's 15s timeout and
+neither has a `CancellationToken` to thread, but each now passes its own
+`AbortSignal.timeout(8_000)` — a tighter bound so a slow deployment cannot stack
+full-length timeouts behind a best-effort affordance — and the `reveal`-failed
+`log.debug` line is now `l10n.t()`-wrapped. Also folded in this clone's
+dependency reconcile — `npm install` after `main` fast-forwarded onto Sean's
+concurrent Phase 7b merge (React + ag-grid), which the stale `node_modules` was
+missing — and a merge of `origin/main` (PR #153, Phase 7 data fixes) that
+landed while #154 was in review.
 
-- ☐ **`getParent` / `TreeView.reveal` + the finding-101 `ancestors` probe.**
-  The first caller is "reveal the item just created or moved" — 6c-i does a
-  parent refresh instead of a reveal, so this is genuinely 6c-iii's.
-  `GET /folders/ancestors?childUri=…` returned `406` under the collection media
-  type and `{}` under `application/json` in finding 101 — pin the real shape
-  here before iterating it the way upstream's `getParentOfItem` does.
+- ☑ **`ContentAdapter.getParentOfItem`** — `GET` the item's `ancestors` link.
+  Finding 6.12 pinned the shape: the link advertises
+  `type: application/vnd.sas.content.folder.ancestor`, so the client sends the
+  matching `Accept` and gets `{ childUri, ancestors: [<folder>…] }` with the
+  immediate parent first — **not** the bare array `application/json` yields,
+  which also `404`s (`errorCode 11519`) for a folder directly under the
+  invisible root. `{ ok: true, value: undefined }` for no `ancestors` link, an
+  empty `ancestors: []` (a folder under the SAS Content root), or a `204`
+  (unknown `childUri`); `response-malformed` for a `200` with no `ancestors`
+  array or a non-folder first entry. Finding 101's `406`/`{}` was the wrong
+  `Accept` (`application/vnd.sas.collection+json`) — superseded by 6.12.
+- ☑ **`SasContentTreeProvider.getParent`** — top-level nodes (synthetic root,
+  delegate folders) return `undefined` without a request; a folder read
+  directly (`type: "folder"`) with no ancestors is mapped back to
+  `SAS_CONTENT_ROOT` rather than read as top-level; everything else asks the
+  adapter, and a failure there is logged like a failed listing and stops the
+  walk. **Node identity is unchanged** (still the service id — [ADR-0026], no
+  ADR here): a rendered *member* carries its member-record id while an
+  `ancestors` entry carries the folder's own id, so `reveal` selects precisely
+  only where the two agree — a delegate, a root-listing folder, or a node taken
+  straight from a fresh listing — and otherwise just expands the chain, which is
+  what `reveal` is for. The re-key-by-resource-URI alternative was weighed and
+  rejected (Sean, 2026-09-10) as an invariant change out of proportion to the
+  gain.
+- ☑ **Reveal wiring.** `contentExplorer.ts` builds a best-effort `reveal`
+  (`{ select: true, focus: false, expand: true }`; `.reveal`'s rejection —
+  usually the identity gap below — logged at `log.debug` then swallowed) and
+  passes it to the 6c-i command deps and the 6c-ii controller. After a create,
+  `revealCreated` re-lists the parent and matches the new node by `sameResource`
+  (a new `vscode`-free `types.ts` helper — the create response's folder id vs
+  the listing's member id disagree, but the underlying `/folders/folders/{id}`
+  or `/files/files/{id}` both name agrees), falling back to the raw create
+  response; the re-list runs after the cancellable progress has resolved so it
+  carries its own `AbortSignal.timeout(8_000)`. After a move, the first moved
+  member is revealed directly (its id is stable — finding 6.10). `run()` in
+  `contentCommands.ts` became generic and returns its `{ result, aborted }` so
+  `createChild` can act on a success without re-deciding what "succeeded" means.
+- ☑ Tests: `content-adapter.test.ts` (+7 — `getParentOfItem` link-follow,
+  empty-array, `204`, no-link, two `response-malformed` branches, passthrough);
+  `content-types.test.ts` (+4 — `sameResource`); `tree.test.ts` (+7 —
+  `getParent` for root/delegate/member (with a bounded-request
+  assertion)/root-listing-folder/adapter-failure/no-adapter);
+  `dragAndDrop.test.ts` (reveal-after-move, incl. the
+  first-*successfully*-moved case). New fixture `ancestors-my-folder.json`
+  (scrubbed `application/vnd.sas.content.folder.ancestor+json` body); new
+  `contentNoBody()` test helper for the `204`.
 
 ☐ **6d — Favourites and recycle bin.**
 
@@ -1004,3 +1063,62 @@ snippet (there is no idiomatic Python equivalent of upstream's
 - **`verde`-only** (LTS 2026.03), one small UTF-8 text file. A second-cadence
   check and binary / large-file behaviour are unprobed — acceptable while the
   snippet stays deferred.
+
+---
+
+_Finding 6.12 ran 2026-09-10 for 6c-iii, via the `viya-api-probe` skill,
+read-only (`GET` only) against `verde` (Viya 4, LTS 2026.03). The `innov`
+(Stable 2026.06) token in the creds file had expired (`401` "Full
+authentication is required") — the same gap finding 6.11 hit — so this is
+**single-cadence**. The `/folders/ancestors` operation is a long-standing
+Folders v5 primitive and the deployment's answers matched the public OpenAPI
+(which is not cadence-specific), so the risk of a 2026.06 difference is low;
+re-probe when the `innov` token is refreshed. First checked the documented
+shape (SAS Folders v5 OpenAPI, `operationId: getAncestors`) per the probe
+order._
+
+**Finding 6.12 — `GET /folders/ancestors?childUri=<uri>`: the response shape
+depends on `Accept`, and "no parent" is a `200` under the vendor type but a
+`404` under `application/json`.**
+
+The `ancestors` link every folder-read-directly and every member record carries
+has `href` `/folders/ancestors?childUri=<underlying resource uri>` — already
+fully formed, no template — and advertises
+`type: application/vnd.sas.content.folder.ancestor`.
+
+| request `Accept` | `200` body |
+|---|---|
+| `application/vnd.sas.content.folder.ancestor+json` **or none** (the link's own type ⇒ what `src/content/client.ts` sends) | **object**: `{ childUri, ancestors: [<folder>…], version: 1 }` |
+| `application/json` | **bare array**: `[<folder>…]` |
+| `application/vnd.sas.collection+json` | **`406`** (finding 101's `406` — wrong `Accept`) |
+
+- **Order** is immediate parent first, up to the top-most *visible* folder. A
+  file at `My Folder / A / x.py` → `[A, My Folder, <userFolder>, <userRoot>]`;
+  the invisible `/folders/folders` grand-root is **not** included.
+- Each ancestor is a **full folder representation** — `id`, `name`, `type`
+  (`folder` / `myFolder` / `userFolder` / `userRoot`), `parentFolderUri`,
+  `memberCount`, timestamps, and a full `links` array. `uri` and `contentType`
+  keys are **absent** (as in the root listing, finding 98), so
+  `resourceHrefOf`'s `self`-link fallback applies. A `myFolder` ancestor carries
+  the **same `id`** as `GET /folders/folders/@myFolder` returns (so the tree's
+  delegate node and this entry are the same node); an ordinary-folder ancestor
+  matches the `isNull(parent)` root-listing item's `id`.
+- **"No parent" cases:**
+
+  | case | ancestor type (or none) | `application/json` |
+  |---|---|---|
+  | folder directly under the invisible root | **`200`** `{ ancestors: [], version: 1 }` | **`404`** `application/vnd.sas.error+json`, `errorCode 11519` "was not found as a child in any of the folders" |
+  | `childUri` param **omitted** | **`400`** `errorCode 11518` "You must specify the request parameter \"childUri\"" | `400` |
+  | `childUri` present but empty, or a well-formed but unknown resource id | **`204 No Content`**, empty body | `204` / `404` |
+
+- **Upstream (`RestContentAdapter.getParentOfItem`) reads `data[0]` off a bare
+  array** — it relies on axios's default `application/json`, which on this
+  deployment `404`s for a top-level folder (axios would throw). This project
+  follows the link with its own advertised type instead and reads
+  `body.ancestors[0]`, so a top-level folder is a clean `{ ancestors: [] }`
+  rather than an exception.
+- **Not probed:** `allowPartialPath=true` behaviour beyond a `200` (an
+  access-restricted mid-path folder was not set up); the `POST /ancestors`
+  bulk-by-URI variant (`operationId: createBulkAncestors`, a
+  `application/vnd.sas.collection+json` of `{childUri, ancestors}` entries) —
+  not needed, the tree resolves one item at a time.

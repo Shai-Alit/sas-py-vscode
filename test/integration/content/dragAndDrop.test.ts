@@ -62,17 +62,21 @@ type MoveItem = ContentAdapter["moveItem"];
 
 interface Harness {
   controller: SasContentDragAndDropController;
-  state: { refreshed: number };
+  state: { refreshed: number; revealed: ContentItem[] };
   errors: string[];
 }
 
 function controllerWith(moveItem: MoveItem): Harness {
   const { channel, errors } = fakeLog();
-  const state = { refreshed: 0 };
+  const state = { refreshed: 0, revealed: [] as ContentItem[] };
   const controller = new SasContentDragAndDropController({
     adapter: () => ({ moveItem }) as unknown as ContentAdapter,
     refresh: () => {
       state.refreshed += 1;
+    },
+    reveal: (item) => {
+      state.revealed.push(item);
+      return Promise.resolve();
     },
     log: channel,
     viewId: CONTENT_VIEW_ID,
@@ -189,6 +193,11 @@ describe("SAS Content drag-and-drop move", () => {
     assert.deepEqual(moves, [{ id: "m1", dest: "/folders/folders/dest" }]);
     assert.equal(holder.state.refreshed, 1);
     assert.equal(holder.errors.length, 0);
+    // 6c-iii: the moved member (id stable) is revealed in its new home.
+    assert.deepEqual(
+      holder.state.revealed.map((i) => i.id),
+      ["m1"],
+    );
   });
 
   it("handleDrop skips a drop that is not a move and never calls the adapter", async () => {
@@ -217,6 +226,8 @@ describe("SAS Content drag-and-drop move", () => {
 
     assert.equal(holder.state.refreshed, 1);
     assert.equal(holder.errors.length, 1);
+    // Nothing moved, so nothing to reveal.
+    assert.equal(holder.state.revealed.length, 0);
   });
 
   it("handleDrop does nothing when dropped on empty space", async () => {
@@ -255,6 +266,12 @@ describe("SAS Content drag-and-drop move", () => {
 
     // One refresh for the whole batch, whatever the mix of outcomes.
     assert.equal(holder.state.refreshed, 1);
+    // The first item that actually moved is the one revealed — not the first
+    // dragged (which failed).
+    assert.deepEqual(
+      holder.state.revealed.map((i) => i.id),
+      ["good1"],
+    );
   });
 
   it("multi-item drop: filters out the objectionable items and moves only the valid ones", async () => {

@@ -9,12 +9,23 @@ along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 [`docs/phases/phase-6.md`](docs/phases/phase-6.md).** Scoped 2026-09-03 (4
 slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 before
 starting. **6a is done** (split 6a-i + 6a-ii) and **6b is done**; **6c** is
-split into 6c-i/ii/iii — the oversized-read fix (PR #147) and **6c-i are done
-and merged** (PR #148, squash `c63feaf`); **6c-ii (drag-and-drop move) is done
-and merged 2026-09-10** ([PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151),
-squash `8e842c7`). The drag-into-editor snippet that was scoped into 6c-ii is
-**deferred to future work** (Sean, 2026-09-10; finding 6.11). **6c-iii is
-next.**
+split into 6c-i/ii/iii — the oversized-read fix (PR #147), **6c-i** (PR #148,
+squash `c63feaf`) and **6c-ii (drag-and-drop move)** ([PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151),
+squash `8e842c7`) are done and merged. The drag-into-editor snippet that was
+scoped into 6c-ii is **deferred to future work** (Sean, 2026-09-10; finding
+6.11). **6c-iii (`getParent` / `TreeView.reveal`) is done and merged 2026-09-10
+([PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154), squash
+`507155e`) — `npm run verify` green (1480 unit; coverage 95.31 lines / 95.37
+branches / 94.98 functions / 95.31 statements), 318 integration passing;
+adversarial pass before the PR raised no blocking findings (two minor polish
+items folded in); Codex PR review flagged the two reveal-path fetches for
+lacking an abort path — each now carries its own `AbortSignal.timeout(8_000)`
+and the `reveal`-failed `log.debug` is `l10n.t()`-wrapped; Claude PR review
+clean, all threads resolved.**
+Finding 6.12 pinned the `/folders/ancestors` wire shape (superseding finding
+101). This clone also had `npm install` run to reconcile `node_modules` with
+Sean's concurrent Phase 7b merge (React + ag-grid) that `main` fast-forwarded
+onto. **6d (favourites + recycle bin) is next.**
 
 (Probe finding numbers are now phase-scoped `N.x` — see the "Finding-numbering
 scheme changed 2026-09-09" section below and `CLAUDE.md`.)
@@ -105,7 +116,26 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     gap, `canSelectMany` leaving the 6c-i Rename/Delete/Create context commands
     able to act on one of a multi-selection, and a comment overclaim — all
     folded in on the branch; all threads resolved.
-  - **6c-iii is next.**
+  - **6c-iii — `getParent` / `TreeView.reveal`.** Merged 2026-09-10 —
+    [PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154), squash
+    `507155e`. Adversarial pass before the PR raised no blocking findings; in review,
+    Codex flagged the two reveal-path fetches for lacking an abort path — both
+    are already client-timeout-bounded and neither has a `CancellationToken` to
+    thread, but each now carries its own `AbortSignal.timeout(8_000)`, and the
+    `reveal`-failed `log.debug` is `l10n.t()`-wrapped. `ContentAdapter.getParentOfItem`
+    (`GET` the `ancestors` link — finding 6.12: object `{ childUri, ancestors:
+    [<folder>…] }` under the link's own media type, immediate parent first;
+    empty array / `204` ⇒ no parent; finding 101's `406`/`{}` was the wrong
+    `Accept`, now superseded). `SasContentTreeProvider.getParent` (top-level ⇒
+    `undefined`; a root-listing folder with no ancestors ⇒ `SAS_CONTENT_ROOT`).
+    A best-effort `reveal` wired into the 6c-i create commands (re-lists +
+    `sameResource`-matches the new node, since a create response's folder id and
+    the listing's member id disagree) and the 6c-ii drop handler (first moved
+    member, id stable). **Node identity unchanged** — the re-key-by-resource-URI
+    alternative was weighed and rejected as an invariant change out of
+    proportion to the gain (Sean, 2026-09-10). `npm run verify` green (1480
+    unit; coverage 95.31 / 95.37 / 94.98 / 95.31), 318 integration passing.
+  - **6d (favourites + recycle bin) is next.**
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 2026-09-09 — nothing else gates Phase 6.
@@ -442,7 +472,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9. **6c-ii (drag-and-drop move) done and merged 2026-09-10** ([PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151), squash `8e842c7`) — `npm run verify` green (1417 unit + 296 integration); findings 6.10/6.11; the drag-into-editor snippet is deferred (finding 6.11); `canSelectMany` + `!listMultiSelection` guard on the 6c-i context commands. **6c-iii next.** | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9. **6c-ii (drag-and-drop move) done and merged 2026-09-10** ([PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151), squash `8e842c7`) — `npm run verify` green (1417 unit + 296 integration); findings 6.10/6.11; the drag-into-editor snippet is deferred (finding 6.11); `canSelectMany` + `!listMultiSelection` guard on the 6c-i context commands. **6c-iii (`getParent` / `TreeView.reveal`, finding 6.12) done and merged 2026-09-10** ([PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154), squash `507155e`) — adversarial pass raised no blocking findings; Codex PR review's abort-path finding folded in (`AbortSignal.timeout(8_000)` on the two reveal fetches); `npm run verify` green (1480 unit; coverage 95.31/95.37/94.98/95.31), 318 integration. **6d next.** | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). **7b: architecture decided and code complete 2026-09-10** (React + `ag-grid-community`, [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)) — `LibraryAdapter.openTable`/`getColumns`/`getRows`, `DataViewerPanelManager`, the `pythonOnViya.openTable` command, and the webview bootstrap all written and typechecked; Findings 7.10/7.13 settled the row-count and link-typing questions the datasource needed. **Adversarially reviewed 2026-09-10** — three real findings folded in (no unit test for `dataViewerModel.ts`; a `requestId` collision across a webview reload; no `AbortSignal` on the panel's adapter calls) — and Sean's own `npm install` + `tsc -p tsconfig.webview.json` now come back clean. Sean's own `npm run verify`/`npm run test:integration` then surfaced and closed two more real gaps (an integration-test ordering bug; a `types.ts` branch-coverage shortfall) — both green on re-run. **Sean's own manual visual check of a real panel then ran twice, 2026-09-10.** First pass found three real findings; a live probe (Finding 7.14, `verde`) confirmed real numeric columns report `type: "FLOAT"` (never the unprobed `"NUM"` the code checked for) and the alignment check, a stale fixture, and two tests were all corrected; a missing `background-color` on the panel's `<style>` block was also fixed. Second pass, against a confirmed-fresh build, confirmed the alignment fix and surfaced a more specific, deliberately-deferred finding: neither the SAS Libraries tree nor an open data-viewer panel recovers on its own once a busy session frees up (extends an already-accepted 7a limitation to the panel; not addressed by 7c's planned scope, needs its own future slice). A second adversarial review (against `origin/main`) found no blocking findings; its one real minor observation (no test for abort-on-dispose) is folded in and verified. Left open at Sean's own direction, not blocking: the busy-recovery gap and the grid's light-only `ag-theme-alpine` (a design decision ADR-0028 didn't address). A pre-existing localisation gap (the panel's failure messages went out unlocalised) was found and fixed while preparing the PR — new `src/data/messages.ts` (`localiseDataProblem`), matching `resultPanel.ts`/`contentFileSystem.ts`'s own pattern; that commit skipped the manual adversarial pass, Sean's own call, relying on the automated PR reviewers instead. **[PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150) done and merged 2026-09-10** (squash `60a944e`), including a real profile-scoping panel-key bug caught by review and fixed, and a CodeQL-autofix origin-check rewrite re-verified against a real panel — see `phase-7.md`'s 7b Runbook for both. **7d resurrected from a 2026-09-04 stash and live-probed 2026-09-10** (Findings 7.11/7.12: bridge methods confirmed end to end; credential-echo risk narrower than feared). **7c-i (sort + filter) code-complete 2026-09-10**, [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155) open — Findings 7.15–7.18 (`createView`'s shape, `where=` ignored on a view's own rows read, `count` absent once a sort/filter is active, an invalid `where=` is a `400` with the real message nested in `errors[0].details`); reviewed twice before push, no blocking findings. Sean's own manual test (§12) then found and this branch fixed three real bugs: sort/filter silently lost on a tab switch (a webview reload replaying stale, empty state instead of the panel's current sort/filter), and an invalid filter showing a blank grid with nothing logged (the message existed, the webview was discarding it). See the bullet list above and `phase-7.md`'s 7c-i Runbook entry for the full account. | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

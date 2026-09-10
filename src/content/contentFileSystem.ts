@@ -31,7 +31,9 @@
  *
  * ## The lost-update guard lives here
  *
- * `readFile` records the `ETag` it read for each resource in {@link opened};
+ * `readFile` records the `ETag` it read for each resource in {@link opened},
+ * keyed by the resource's deployment root and href together so two Viya roots
+ * that happen to share a Files service id keep a guard entry each;
  * `writeFile` sends that tag — the one for the bytes the editor is showing, not
  * a fresh one — as `If-Match`, so a `PUT` after someone else changed the file
  * comes back `412` and the user is told to reopen it. `stat` deliberately does
@@ -69,13 +71,23 @@ export class SasContentFileSystemProvider
   readonly onDidChangeFile = this.changed.event;
 
   /**
-   * What `readFile` learned about each resource it has served, keyed by the
-   * `/files/files/{id}` href: a {@link WritePrecondition} when the read carried
-   * an `ETag`, or `null` when it succeeded without one (a proxy stripping the
-   * header, or a resource type that does not issue one — finding 6.1 only
-   * confirms the header for `.py`). `writeFile` needs the distinction: `null`
-   * means "opened, but there is no tag to be conditional against", which is a
-   * different refusal from "never opened".
+   * What `readFile` learned about each resource it has served, keyed by
+   * deployment root and `/files/files/{id}` href together (the key {@link resolve}
+   * builds): a {@link WritePrecondition} when the read carried an `ETag`, or
+   * `null` when it succeeded without one (a proxy stripping the header, or a
+   * resource type that does not issue one — finding 6.1 only confirms the header
+   * for `.py`). `writeFile` needs the distinction: `null` means "opened, but
+   * there is no tag to be conditional against", which is a different refusal
+   * from "never opened".
+   *
+   * The deployment root is part of the key, not just the href: a Files service
+   * id is a bare GUID with no deployment in it, so the same id can name a
+   * different file on two Viya roots. Keying on the href alone would let a
+   * `readFile` against root B overwrite the entry a `readFile` against root A
+   * recorded, and the next save on root A would then send root B's tag and draw
+   * a spurious `412` the user would read as someone else's edit. The URI already
+   * carries its own root for adapter resolution; the guard is scoped the same
+   * way.
    */
   private readonly opened = new Map<string, WritePrecondition | null>();
 
@@ -117,11 +129,11 @@ export class SasContentFileSystemProvider
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    const { adapter, href } = this.resolve(uri);
+    const { adapter, href, key } = this.resolve(uri);
     const result = await adapter.readFileContent(href);
     if (!result.ok) throw this.toFileSystemError(result.problem);
     this.opened.set(
-      href,
+      key,
       result.value.etag === undefined
         ? null
         : { etag: result.value.etag, contentType: result.value.contentType },
@@ -133,8 +145,8 @@ export class SasContentFileSystemProvider
   // a placeholder file, and the tree only ever opens a file that already
   // exists, so every write is an overwrite of a known resource.
   async writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
-    const { adapter, href } = this.resolve(uri);
-    const precondition = this.opened.get(href);
+    const { adapter, href, key } = this.resolve(uri);
+    const precondition = this.opened.get(key);
     if (precondition === undefined) {
       // No read ever populated the guard. VS Code reads before it lets a file
       // be edited, so this is the pathological "save into a `sasContent:` URI
@@ -165,12 +177,12 @@ export class SasContentFileSystemProvider
     // above, which is the truth, instead of sending the stale tag and drawing a
     // spurious `412` the user would read as someone else's edit.
     if (result.value.etag !== undefined) {
-      this.opened.set(href, {
+      this.opened.set(key, {
         etag: result.value.etag,
         contentType: precondition.contentType,
       });
     } else {
-      this.opened.set(href, null);
+      this.opened.set(key, null);
     }
     // No `onDidChangeFile` fire: the editor already holds the buffer it just
     // saved, and announcing a change to the URI it wrote invites a needless
@@ -202,11 +214,15 @@ export class SasContentFileSystemProvider
     );
   }
 
-  /** The adapter for the deployment a `sasContent:` URI names and the
-   * file-resource href it carries, or a thrown `FileSystemError` when the URI
-   * is not one this extension wrote or there is no session for its
-   * deployment. */
-  private resolve(uri: vscode.Uri): { adapter: ContentAdapter; href: string } {
+  /** The adapter for the deployment a `sasContent:` URI names, the file-resource
+   * href it carries, and the {@link opened} key for that (root, href) pair — or
+   * a thrown `FileSystemError` when the URI is not one this extension wrote or
+   * there is no session for its deployment. */
+  private resolve(uri: vscode.Uri): {
+    adapter: ContentAdapter;
+    href: string;
+    key: string;
+  } {
     const parts = parseContentUri(uri.query);
     if (parts === undefined) throw vscode.FileSystemError.FileNotFound(uri);
     const adapter = this.adapterForEndpoint(parts.deploymentRoot);
@@ -215,7 +231,16 @@ export class SasContentFileSystemProvider
         vscode.l10n.t("Sign in to SAS Viya to open SAS Content files."),
       );
     }
-    return { adapter, href: parts.resourceHref };
+    // Guard key: deployment root + href, `\n`-joined. Neither a URL nor a
+    // `/files/files/{guid}` href contains a newline, so one pair can never
+    // collide with another. Built from the parsed parts rather than
+    // `uri.toString()` so two URIs that differ only in query encoding still
+    // resolve to the same entry.
+    return {
+      adapter,
+      href: parts.resourceHref,
+      key: `${parts.deploymentRoot}\n${parts.resourceHref}`,
+    };
   }
 
   /** Log the technical sentence, return the `FileSystemError` to throw. The

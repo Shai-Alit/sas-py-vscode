@@ -43,7 +43,13 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
   94.93% lines / 95.22% branches / 94.53% functions / 94.93% statements);
   adversarial pass done before the PR, Codex + Claude PR reviews clean, all
   threads resolved. One review finding deferred to 6c (an oversized-file read
-  surfaces as a network error, not a size error).
+  surfaces as a network error, not a size error). A post-merge review pass
+  raised one Major — the `opened` ETag guard was keyed by the file href alone,
+  so it leaked across deployments; now keyed by deployment root + href — plus
+  two Minor doc/robustness findings, addressed on
+  `fix/content-etag-guard-per-deployment` (adversarial pass done; `npm run
+  verify` green locally on the branch, 1348 unit + 281 integration passing) and
+  headed for a follow-up PR.
 - **6c — mutations (create/rename/move/delete).** Next. Also picks up the
   three items moved out of 6b above, and the `.py` type / `/types/types`
   probe deferred from 6a.

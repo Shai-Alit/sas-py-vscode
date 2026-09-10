@@ -47,16 +47,22 @@ export interface ContentUriParts {
  * The `sasContent:` URI string for a file member on a given deployment.
  *
  * `resourceHref` is the member's own `uri` (what {@link resourceHrefOf}
- * returns); `deploymentRoot` is the active profile's endpoint. `#`/`?` in the
- * name are escaped; the href rides raw (a `/files/files/{guid}` has no
- * query-reserved character); the root is percent-encoded because it is a URL.
+ * returns); `deploymentRoot` is the active profile's endpoint. `%`, `#` and `?`
+ * in the name are percent-encoded — `%` first, so the other two escapes are not
+ * themselves double-encoded — so a legal-but-unusual SAS Content name like
+ * `100% done.py` still round-trips through `vscode.Uri.parse`; the href rides
+ * raw (a `/files/files/{guid}` has no query-reserved character); the root is
+ * percent-encoded because it is a URL.
  */
 export function contentUriString(
   name: string,
   resourceHref: string,
   deploymentRoot: string,
 ): string {
-  const safeName = name.replace(/#/g, "%23").replace(/\?/g, "%3F");
+  const safeName = name
+    .replace(/%/g, "%25")
+    .replace(/#/g, "%23")
+    .replace(/\?/g, "%3F");
   return (
     `${CONTENT_SCHEME}:/${safeName}` +
     `?id=${resourceHref}&r=${encodeURIComponent(deploymentRoot)}`

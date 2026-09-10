@@ -353,6 +353,29 @@ struck lines below.
   stripping proxy / non-`verde` release — finding 6.2 says a `200` always
   carries one), so a later save gets the accurate "no version tag, reopen it"
   refusal instead of sending the consumed tag and drawing a spurious `412`.
+- ☑ **PR #141 post-merge review findings (2026-09-10).** Raised on the merged
+  PR by the Codex/Claude passes; fixed here on
+  `fix/content-etag-guard-per-deployment`, with an adversarial pass before the
+  follow-up PR was opened. `npm run verify` was run locally on the branch:
+  green, 1348 unit + 281 integration passing, coverage unchanged (94.93 lines /
+  95.22 branches / 94.53 functions / 94.93 statements). One Major, two Minor:
+  - **Major — the `opened` ETag guard was keyed by the `/files/files/{id}`
+    href alone**, so the same Files service id opened on two Viya roots shared
+    one entry: a `readFile` against root B overwrote the tag root A recorded,
+    and the next save on A sent B's tag and drew a spurious `412` the user
+    would read as someone else's edit. Now keyed by deployment root **and**
+    href together (`resolve()` builds the composite), scoped exactly like the
+    per-URI adapter resolution the URI's `r=` already drives. New integration
+    test: "keeps the ETag guard per deployment".
+  - **Minor — `adapter.ts` `statFile`'s `size: … : 0` fallback** now carries a
+    comment that the `0` is a deliberate defensive default for a shape finding
+    6.1 says this deployment never sends (the object-shape check above already
+    rejects a non-object body), not a masked parse bug.
+  - **Minor — `contentUriString` now percent-encodes a bare `%`** in the name
+    segment, escaped before `#`/`?` so those escapes are not themselves
+    double-encoded, so a legal SAS Content name like `100% done.py` round-trips
+    through `vscode.Uri.parse`. New unit case in `content-uri.test.ts`. The
+    name segment stays cosmetic — identity is entirely in `id=`/`r=`.
 - ☑ `workspace.registerFileSystemProvider("sasContent", …)` + the
   `onFileSystem:sasContent` activation event. A tree file leaf
   (`NodePresentation.openable` — an ordinary `file`, never a `dataFlow`) gets a

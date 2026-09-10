@@ -440,6 +440,41 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     }
   });
 
+  it("keeps the ETag guard per deployment — the same file id on two roots does not share a tag", async () => {
+    const rootA = "https://a.example.com";
+    const rootB = "https://b.example.com";
+    const uriA = vscode.Uri.parse(
+      `sasContent:/x.py?id=${HREF}&r=${encodeURIComponent(rootA)}`,
+    );
+    const uriB = vscode.Uri.parse(
+      `sasContent:/x.py?id=${HREF}&r=${encodeURIComponent(rootB)}`,
+    );
+    const sentFrom: Record<string, string> = {};
+    const adapterFor = (endpoint: string): AdapterStub => ({
+      readFileContent: () =>
+        Promise.resolve(
+          ok<FileContent>({
+            bytes: new Uint8Array(),
+            etag: endpoint === rootA ? '"tag-a"' : '"tag-b"',
+            contentType: "application/x-python",
+          }),
+        ),
+      writeFileContent: (_href, _bytes, p) => {
+        sentFrom[endpoint] = p.etag;
+        return Promise.resolve(ok({ etag: undefined }));
+      },
+    });
+    const { provider } = providerWith(undefined, adapterFor);
+    // Open the same Files service id on both deployments, B last…
+    await provider.readFile(uriA);
+    await provider.readFile(uriB);
+    // …then save on A: it must still send A's tag, not the one B just recorded.
+    await provider.writeFile(uriA, new Uint8Array());
+    await provider.writeFile(uriB, new Uint8Array());
+    assert.equal(sentFrom[rootA], '"tag-a"');
+    assert.equal(sentFrom[rootB], '"tag-b"');
+  });
+
   it("resolves the adapter for the deployment the URI names, not the active one", async () => {
     const seenEndpoints: string[] = [];
     const other = "https://other.example.com";

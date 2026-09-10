@@ -497,21 +497,24 @@ threads resolved. **6c-ii is next.**
   fixtures `folder-created` / `member-created` / `types-python` /
   `validate-name-taken`.
 
-☐ **6c-ii — drag-and-drop move.** Scoped to the move (Sean, 2026-09-10): the
-drag-into-editor snippet is **deferred to future work** — finding 6.11 measured
-that a `filesrvc` fileref has no OS path the `PROC PYTHON` subprocess can
-`open()`, so the only Python-shaped equivalent of upstream's one-line
-`filename … filesrvc …;` is a multi-line `SAS.submit(… fcopy …)` blob with a
-hard-coded server path, and it is a low-priority nice-to-have. `npm run verify`
-green (1417 unit + 296 integration passing; coverage 95.18 lines / 95.25
-branches / 94.79 functions / 95.18 statements). Adversarial pass before the PR
-(a runtime `Array.isArray` check on the one `any` boundary; the recycled-item
-guard). [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151) review —
-Codex clean; the Claude reviewer raised a multi-item drag test gap (fixed with
-two mixed-outcome integration tests) and that `canSelectMany` left the 6c-i
-Rename/Delete/Create context commands able to act on just the clicked item of a
-multi-selection — their `when` clauses now carry `&& !listMultiSelection` so
-they hide during a multi-select rather than silently acting on one.
+☑ **6c-ii — drag-and-drop move.** Merged 2026-09-10 —
+[PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151), squash
+`8e842c7`. Scoped to the move (Sean, 2026-09-10): the drag-into-editor snippet
+is **deferred to future work** — finding 6.11 measured that a `filesrvc` fileref
+has no OS path the `PROC PYTHON` subprocess can `open()`, so the only
+Python-shaped equivalent of upstream's one-line `filename … filesrvc …;` is a
+multi-line `SAS.submit(… fcopy …)` blob with a hard-coded server path, and it is
+a low-priority nice-to-have. `npm run verify` green (1417 unit + 296 integration
+passing; coverage 95.18 lines / 95.25 branches / 94.79 functions / 95.18
+statements). Adversarial pass before the PR (a runtime `Array.isArray` check on
+the one `any` boundary; the recycled-item guard). Codex PR review clean; the
+Claude PR review raised three findings over two rounds — a multi-item drag test
+gap (fixed with two mixed-outcome integration tests); `canSelectMany` leaving
+the 6c-i Rename/Delete/Create context commands able to act on just the clicked
+item of a multi-selection (their `when` clauses now carry `&& !listMultiSelection`
+so they hide during a multi-select); and a comment overclaiming the
+`Array.isArray` guard (reworded) — all folded in before merge, all threads
+resolved.
 
 - ☑ **Drag-and-drop move** — `src/content/contentDragAndDrop.ts`, the repo's
   first `TreeDragAndDropController`. `handleDrag` puts the draggable selection

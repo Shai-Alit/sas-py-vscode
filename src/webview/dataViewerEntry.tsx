@@ -220,10 +220,17 @@ function DataViewerApp() {
       // ships no `browser` entry point (desktop-only, per `package.json`),
       // so the `.vscode-webview.net` arm is defensive rather than
       // load-bearing today.
-      if (
-        !event.origin.startsWith("vscode-webview://") &&
-        !event.origin.endsWith(".vscode-webview.net")
-      ) {
+      let parsedOrigin: URL;
+      try {
+        parsedOrigin = new URL(event.origin);
+      } catch {
+        return;
+      }
+      const isTrustedOrigin =
+        parsedOrigin.protocol === "vscode-webview:" ||
+        (parsedOrigin.protocol === "https:" &&
+          parsedOrigin.hostname.endsWith(".vscode-webview.net"));
+      if (!isTrustedOrigin) {
         return;
       }
       const message = event.data as DataViewerHostMessage | undefined;

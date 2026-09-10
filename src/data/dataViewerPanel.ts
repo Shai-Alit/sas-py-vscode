@@ -351,6 +351,25 @@ class OpenTablePanel implements vscode.Disposable {
       sort.length === 0 ? filter : undefined,
       this.controller.signal,
     );
+
+    // Reviewed adversarially before this PR: `ensureReadTarget` serialises
+    // *view creation*, but this `getRows` call, once dispatched, is not
+    // itself serialised against a *later* request's own sort/filter change.
+    // A fast pair of scroll/sort/filter changes can have this exact call
+    // still in flight against a view a later `ensureReadTarget` has already
+    // superseded (recreated or discarded) by the time it resolves — reading
+    // a since-deleted view answers 404, and the request this reply would
+    // answer is one ag-grid itself has already moved past (a superseded
+    // datasource, not merely a superseded row window). Rather than surface
+    // that as a confusing error for a request nothing is waiting on
+    // meaningfully anymore, drop the reply once `sort`/`filter` no longer
+    // match this panel's *current* state — a genuinely current request's
+    // own `sort`/`filter` still match at this point, so ordinary paging
+    // (which never changes either) is unaffected.
+    if (!sortEquals(this.activeSort, sort) || this.activeFilter !== filter) {
+      return;
+    }
+
     if (!result.ok) {
       this.post({
         type: "rowsError",
@@ -385,10 +404,26 @@ class OpenTablePanel implements vscode.Disposable {
     sort: readonly SortSpec[],
     filter: string,
   ): Promise<DataResult<TableDetail>> {
-    const next = this.ensureReadTargetChain.then(() =>
-      this.ensureReadTargetLocked(sort, filter),
-    );
-    this.ensureReadTargetChain = next.catch(() => undefined);
+    // `.catch()` twice, deliberately, not once: the assignment to
+    // `ensureReadTargetChain` protects every *later* call from a poisoned
+    // chain, but on its own leaves the promise `handleRequestRows` itself
+    // awaits still rejecting on a throw. Nothing in this codebase's adapter
+    // layer actually throws today (`DataResult` is total, per this
+    // project's own convention) — this is latent hardening, not a reachable
+    // gap — but `handleRequestRows`'s own fire-and-forget `void` call would
+    // otherwise turn a future regression into a silent unhandled rejection
+    // instead of an ordinary `rowsError` reply.
+    const next = this.ensureReadTargetChain
+      .then(() => this.ensureReadTargetLocked(sort, filter))
+      .catch((error: unknown): DataResult<TableDetail> => ({
+        ok: false,
+        reason: `an unexpected error while preparing to read: ${messageOf(error)}`,
+        problem: {
+          code: "compute",
+          problem: { code: "compute-unreachable", detail: messageOf(error) },
+        },
+      }));
+    this.ensureReadTargetChain = next;
     return next;
   }
 
@@ -410,6 +445,16 @@ class OpenTablePanel implements vscode.Disposable {
 
     if (sort.length === 0) {
       if (this.activeView !== undefined) await this.discardView();
+      // `discardView` resets `activeFilter` to `undefined` unconditionally —
+      // correct for *its* callers (a superseded view has no current filter
+      // at all), but this call site's own current filter is `filter`, active
+      // against the base table now, not absent. Set it explicitly so
+      // `handleRequestRows`'s own staleness check (comparing against
+      // `activeSort`/`activeFilter`) has a real, current value to compare a
+      // plain filtered-no-sort request against, rather than treating every
+      // such request as stale forever.
+      this.activeSort = sort;
+      this.activeFilter = filter;
       return { ok: true, value: table };
     }
 
@@ -489,6 +534,13 @@ function sortEquals(a: readonly SortSpec[], b: readonly SortSpec[]): boolean {
     const other = b[index];
     return other?.key === spec.key && other.direction === spec.direction;
   });
+}
+
+/** The message of a thrown value, and nothing else it might be carrying — the
+ * same small helper `compute/client.ts`/`content/client.ts`/`dialects/probe.ts`
+ * each carry their own copy of. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }
 
 function createRealPanel(
@@ -624,6 +676,23 @@ function buildHtml(
     font-family: var(--vscode-font-family);
     color: var(--vscode-foreground);
     background-color: var(--vscode-editor-background);
+  }
+  /* Real review finding, 2026-09-10: an unstyled <input> renders with the
+     browser's own default control chrome — a bright white box regardless of
+     VS Code's active theme. Matches this project's other user-facing text
+     (--vscode-foreground/--vscode-editor-background above), using the same
+     VS Code webview theming variables an ordinary input is documented to use. */
+  .python-on-viya-data-viewer-filter {
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+  }
+  .python-on-viya-data-viewer-filter::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+  }
+  .python-on-viya-data-viewer-filter:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
   }
 </style>
 </head>

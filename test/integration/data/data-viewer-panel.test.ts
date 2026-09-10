@@ -51,6 +51,11 @@ import {
   recordedDataClient,
   type RecordedDataRoute,
 } from "../../helpers/recorded-data";
+import type {
+  ComputeClient,
+  ComputeResponse,
+  ComputeResult,
+} from "../../../src/compute/client";
 import type { ComputeSession } from "../../../src/compute/session";
 
 const SESSION_ID = "aaaaaaaa-0000-4000-8000-000000000001-ses0000";
@@ -433,6 +438,102 @@ describe("DataViewerPanelManager", () => {
     assert.deepEqual(deletedHrefs, [VIEW1_HREF]);
   });
 
+  it("drops a stale reply for a request whose sort/filter the panel has already moved past", async () => {
+    // Adversarial review, 2026-09-10: `ensureReadTarget` serialises *view
+    // creation*, but the `getRows` call that follows it is not itself
+    // serialised against a *later* request's own state change. A slow first
+    // read (held back here, deliberately, via a raw fake rather than
+    // `recordedDataClient`'s synchronous routing) can still be in flight
+    // against a view a second, faster request has already superseded by the
+    // time it resolves — this asserts the panel drops that reply rather than
+    // posting a confusing error (or stale rows) for a request nothing is
+    // still waiting on.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW1_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const VIEW2_HREF = `${LIBREFS_HREF}/%24VIEWS/V2`;
+    const { client: baseClient } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: (request) => {
+          const body = request.body as { sortBy: { key: string }[] };
+          const key = body.sortBy[0]?.key;
+          const href = key === "Age" ? VIEW1_HREF : VIEW2_HREF;
+          return dataOk(
+            {
+              name: key === "Age" ? "V1" : "V2",
+              libref: "SASHELP",
+              links: [
+                { rel: "rows", href: `${href}/rows`, method: "GET" },
+                { rel: "delete", href, method: "DELETE" },
+              ],
+            },
+            { status: 201 },
+          );
+        },
+      },
+      { when: VIEW1_HREF, reply: dataOk({}, { status: 204 }) },
+      {
+        when: `${VIEW2_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+    ]);
+
+    let resolveStaleRead:
+      ((result: ComputeResult<ComputeResponse>) => void) | undefined;
+    const client: ComputeClient = {
+      send: (request) => {
+        if (request.link.href === `${VIEW1_HREF}/rows?start=0&limit=2`) {
+          return new Promise((resolve) => {
+            resolveStaleRead = resolve;
+          });
+        }
+        return baseClient.send(request);
+      },
+    };
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+    fake.posted.length = 0;
+
+    // r1 sorts by Age: creates V1, then starts (and stalls on) a read
+    // against it.
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    assert.equal(fake.posted.length, 0, "r1's own read is still stalled");
+
+    // r2 changes the sort to Name before r1's read ever answers: its own
+    // ensureReadTarget is free to run (only the *subsequent* getRows was
+    // held back), discards V1, creates V2, and reads it successfully.
+    fake.sendRequestRows("r2", 0, 2, [{ key: "Name", direction: "ascending" }]);
+    await flush();
+    assert.equal(fake.posted.length, 1);
+    const [reply] = fake.posted;
+    assert.ok(reply?.type === "rows");
+    assert.equal(reply.requestId, "r2");
+
+    // Now let r1's long-stalled read against the since-deleted V1 finally
+    // answer (a 404, since V1 no longer exists) — this reply must be
+    // dropped, not posted as a confusing rowsError for a request the panel
+    // has already moved past.
+    assert.ok(resolveStaleRead);
+    resolveStaleRead(
+      dataFail({ code: "compute-rejected", error: { status: 404 } }),
+    );
+    await flush();
+
+    assert.equal(fake.posted.length, 1, "r1's stale reply must not post");
+  });
+
   it("discards the active view and reads the base table again once sort is cleared", async () => {
     const fake = fakePanel();
     const manager = new DataViewerPanelManager(extensionUri, {
@@ -703,6 +804,15 @@ describe("DataViewerPanelManager", () => {
     // just the inline <style> block every panel already carries.
     assert.match(html, /<link rel="stylesheet" href="[^"]*dataViewer\.css"/);
     assert.match(html, /<script nonce="[^"]+" src="[^"]*dataViewer\.js"/);
+
+    // Real review finding, 2026-09-10: the filter box (7c-i) needs its own
+    // theme-aware styling — an unstyled <input> renders with the browser's
+    // default control chrome regardless of VS Code's active theme.
+    assert.match(
+      html,
+      /\.python-on-viya-data-viewer-filter\s*\{[^}]*var\(--vscode-input-background\)/,
+    );
+    assert.match(html, /var\(--vscode-input-foreground\)/);
   });
 
   it("disposes every open panel", async () => {

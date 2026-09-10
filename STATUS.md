@@ -292,14 +292,22 @@ account in `phase-7.md`'s 7b Runbook entry.
   fallback, Finding 7.18). A pre-existing 7a/7b fixture
   (`table-detail-class.json`) had guessed its `createView`/`rowsAsCSV` link
   hrefs wrong (neither had a caller before now); corrected against Finding
-  7.15's real shape. `npm run verify` green (1468 unit passing, every
-  coverage threshold met, 100% on this slice's own touched lines/branches);
-  `npm run test:integration` green (309 passing); `check:docs`/
-  `l10n:extract`/`build` all clean. **Adversarial pre-PR review completed
-  2026-09-10** — no blocking findings; two low-priority notes, both
-  addressed (a doc comment on why an in-flight `createView` at dispose time
-  cannot leak, given the existing `AbortSignal` guarantee; a type-hardening
-  suggestion deliberately deferred, recorded in `phase-7.md`).
+  7.15's real shape. **Reviewed twice before push**: an independent-agent
+  pass (no blocking findings, two low-priority notes addressed — see
+  `phase-7.md`), then Sean's own review of the same diff, per this
+  project's actual standing requirement. Sean's pass found three further
+  real, low-priority issues, all fixed: the new filter box had no
+  theme-aware styling (fixed with the standard `--vscode-input-*`
+  variables); a `getRows` call following a resolved `ensureReadTarget` was
+  not itself serialised against a *later* request's own sort/filter change,
+  so a fast state change could leave an earlier read answering against an
+  already-discarded view (fixed — `handleRequestRows` now drops a reply
+  once the panel's state has moved past it; a new integration test
+  reproduces the race directly); and `ensureReadTarget` returned an
+  un-`catch`'d promise (latent hardening, now fixed). Full account in
+  `phase-7.md`'s 7c-i Runbook entry. `npm run verify`/`test:integration`
+  re-run green after all three fixes (1468 unit, 310 integration passing,
+  thresholds unchanged); `check:docs`/`l10n:extract`/`build` all clean.
   **Not yet pushed — no PR opened.** `docs/dev/manual-test-pass.md` gained an
   unrun §12 for Sean's own visual check of the new filter bar and sort-icon
   rendering.

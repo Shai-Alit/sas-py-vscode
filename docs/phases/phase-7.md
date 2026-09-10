@@ -1249,11 +1249,14 @@ extrapolations from the relation name that Finding 7.15 shows are not what a
 real deployment sends); neither had a caller before 7c-i, so it went
 unnoticed until this slice's own new tests tried to follow `createView` and
 hit an unmatched-route failure. Corrected to the real shape, and the
-fixture's missing `delete` link added. **Adversarial pre-PR review completed
-2026-09-10** (per `CLAUDE.md`'s standing rule, before any push): no blocking
-findings. Two low-priority notes, both addressed: a doc comment added to
-`dataViewerPanel.ts`'s dispose handler working through, and rejecting on
-the merits, the "does a leak survive a createView POST still in flight at
+fixture's missing `delete` link added.
+
+**Adversarial review ran twice before any push, per `CLAUDE.md`'s standing
+rule.** First, an independent agent pass against the finished diff (Sean's
+own call, given this session's own tool access) — no blocking findings. Two
+low-priority notes, both addressed: a doc comment added to
+`dataViewerPanel.ts`'s dispose handler working through, and rejecting on the
+merits, the "does a leak survive a createView POST still in flight at
 dispose time" question (no — `AbortSignal` wiring already guarantees an
 aborted in-flight request resolves to a failure, not a late success, so
 `ensureReadTargetLocked` never reaches the assignment that would leak it;
@@ -1264,6 +1267,57 @@ passing a filter against a view fails to compile rather than relying on
 `getRows`'s own doc comment) noted as a real, deliberately deferred
 architecture question for a future slice, not built here — `getRows` has
 exactly one caller today and it is correct.
+
+**Second, Sean's own review** (per this project's actual standing
+requirement — the review must be handed to the developer and answered, not
+merely performed in-session), against the same `git diff main`. Also no
+blocking findings, but three further real, low-priority notes this pass
+caught that the first missed — all folded in before push:
+
+1. **The new filter `<input>` had no theme-aware styling** — it would have
+   rendered with the browser's default control chrome (a bright white box)
+   regardless of VS Code's active theme. Fixed: a CSS rule added to
+   `buildHtml`'s own `<style>` block (`dataViewerPanel.ts`) using
+   `--vscode-input-background`/`-foreground`/`-border`/
+   `-placeholderForeground` and `--vscode-focusBorder`, the same VS
+   Code-documented variables this panel's own `body` rule already uses for
+   `--vscode-foreground`/`--vscode-editor-background`. A new assertion in the
+   existing "builds an HTML shell" integration test checks for the rule.
+2. **A `getRows` call that follows a resolved `ensureReadTarget` is not
+   itself serialised against a *later* request's own state change** — a fast
+   sort/filter change could leave an earlier request's read still in flight
+   against a view a newer request has already discarded and recreated,
+   answering (say) a 404 for a request nothing is meaningfully waiting on
+   anymore. Fixed: `handleRequestRows` now compares `sort`/`filter` against
+   the panel's *current* `activeSort`/`activeFilter` immediately before
+   posting either a `rows` or a `rowsError` reply, and drops it silently if
+   they no longer match — closing this found, in fixing it, that
+   `ensureReadTargetLocked`'s own no-sort branch never updated
+   `activeFilter` at all, which would have made this exact check
+   permanently misfire against every plain filtered-no-sort request. Fixed
+   in the same change. A new integration test (`test/integration/data/
+   data-viewer-panel.test.ts`, "drops a stale reply…") reproduces the race
+   directly via a raw fake `ComputeClient` whose one held-back response is
+   resolved by hand, after a second, faster request has already superseded
+   it.
+3. **`ensureReadTarget` returned the raw, un-`catch`'d promise** — the
+   `.catch()` on the *stored* chain protects every later call from a
+   poisoned chain, but left the promise `handleRequestRows` itself awaits
+   still capable of rejecting (nothing in this codebase's adapter layer
+   actually throws today, so this was latent hardening rather than a
+   reachable gap, but a future regression would have surfaced as a silent
+   unhandled rejection through the `void this.handleRequestRows(...)`
+   fire-and-forget call, rather than an ordinary `rowsError` reply). Fixed:
+   the returned promise now also converts a rejection into an ordinary
+   `DataResult` failure.
+
+One more note from this pass was examined and needs no change:
+`encodeURIComponent` leaving `'` unencoded in a `where=` query string is
+legal and matches how Finding 7.16 was itself probed — the existing test
+asserting that exact encoded shape is intentional, not an oversight.
+`npm run verify`/`test:integration` re-run green after all three fixes
+(1468 unit passing; 95.35%/95.44%/94.98%/95.35%, unchanged; 310
+integration passing).
 
 - ☑ Live-probe the `createView` mechanism against `verde` — **done**,
   Findings 7.15–7.18. Settled, correcting this bullet's own original

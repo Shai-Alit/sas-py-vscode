@@ -200,19 +200,29 @@ function DataViewerApp() {
       // `vscode-webview://…` document is still an ordinary browsing context —
       // CVE-2021-43908 demonstrated a real VS Code webview accepting a
       // `postMessage` from an arbitrary page loaded in an `<iframe>` pointed at
-      // it, precisely because a handler skipped this check. The exact
-      // `startsWith("vscode-webview:")` (no `//`) plus an `https:` fallback for
-      // a browser-hosted `vscode.dev` window is Microsoft's own recommended
-      // check (microsoft/vscode-discussions#1061) — not just this file's own
-      // origin at `location.origin`, since VS Code's host frame relays the
-      // extension's `postMessage` through its own outer document, whose
-      // origin this check has no independent way to pin down more precisely
-      // than "some `vscode-webview:`/`https:` origin". This project ships no
-      // `browser` entry point (desktop-only, per `package.json`), so the
-      // `https:` arm is defensive rather than load-bearing today.
+      // it, precisely because a handler skipped this check.
+      //
+      // **First attempt at this fix was itself wrong, caught by the
+      // automated PR review (Codex), 2026-09-10**: a bare `startsWith("https:")`
+      // fallback — copied from a community answer
+      // (`microsoft/vscode-discussions#1061`) without checking its own
+      // soundness — matches literally every HTTPS origin in existence,
+      // `https://evil.example.com` included, which defeats the point of an
+      // origin check entirely. The two concrete origins VS Code actually
+      // uses are narrower: `vscode-webview://<id>` on desktop (confirmed via
+      // a real webview's own `location.origin`), and
+      // `https://<id>.vscode-webview.net` for a browser-hosted `vscode.dev`
+      // window (`vscode-resource.vscode-webview.net` is the same domain
+      // family VS Code's own resource-URI proxy uses — a real deployed
+      // Microsoft domain, not a guess). Checking against those two
+      // specifically, rather than the whole `https:` scheme, is what
+      // actually narrows this to VS Code's own webview host. This project
+      // ships no `browser` entry point (desktop-only, per `package.json`),
+      // so the `.vscode-webview.net` arm is defensive rather than
+      // load-bearing today.
       if (
-        !event.origin.startsWith("vscode-webview:") &&
-        !event.origin.startsWith("https:")
+        !event.origin.startsWith("vscode-webview://") &&
+        !event.origin.endsWith(".vscode-webview.net")
       ) {
         return;
       }

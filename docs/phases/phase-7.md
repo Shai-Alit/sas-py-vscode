@@ -959,17 +959,44 @@ things this box waits on.
   (post-6c-i).
 
   **github-advanced-security (CodeQL) finding on PR #150, `js/missing-origin-check`,
-  2026-09-10: real, fixed.** `dataViewerEntry.tsx`'s `window.addEventListener("message", …)`
-  trusted `event.data` with no check on who posted it — the same class of gap
-  CVE-2021-43908 exploited in a real VS Code webview (an arbitrary page,
-  loaded in an `<iframe>` pointed at the webview, could post a message the
-  handler would process as if the extension host had sent it). Fixed by
-  checking `event.origin` against `vscode-webview:`/`https:` prefixes before
-  reading `event.data` — the exact check Microsoft's own team recommends
-  (`microsoft/vscode-discussions#1061`), broader than CodeQL's own suggested
-  one-liner (`vscode-webview://` only) so a future web-hosted (`vscode.dev`)
-  build would not silently break; this project ships no `browser` entry
-  point today, so the `https:` arm is defensive, not load-bearing.
+  2026-09-10: real, fixed — in two attempts.** `dataViewerEntry.tsx`'s
+  `window.addEventListener("message", …)` trusted `event.data` with no check
+  on who posted it — the same class of gap CVE-2021-43908 exploited in a
+  real VS Code webview (an arbitrary page, loaded in an `<iframe>` pointed at
+  the webview, could post a message the handler would process as if the
+  extension host had sent it).
+
+  The first fix checked `event.origin` against bare `vscode-webview:`/`https:`
+  prefixes, following a Microsoft community thread
+  (`microsoft/vscode-discussions#1061`) that suggested the `https:` fallback
+  so a future web-hosted (`vscode.dev`) build wouldn't silently break.
+  **Codex's automated PR review caught that this was itself broken**: a bare
+  `https:` prefix matches essentially every HTTPS origin on the web, so any
+  attacker-controlled page loaded in an `<iframe>` pointed at the webview
+  still passes the check — it defeats the purpose of having one at all. The
+  community thread's suggestion, taken at face value, was wrong; this project
+  should have verified it independently rather than citing it as the answer.
+
+  The corrected fix narrows the check to the two concrete origins VS Code
+  actually issues a webview: `vscode-webview://<uuid>` for the desktop host,
+  confirmed via community-reported `location.origin` values, and
+  `https://<uuid>.vscode-webview.net` for a web/`vscode.dev`-hosted build,
+  confirmed via the `vscode-resource.vscode-webview.net` domain referenced in
+  the CVE-2021-43908 writeup:
+
+  ```ts
+  if (
+    !event.origin.startsWith("vscode-webview://") &&
+    !event.origin.endsWith(".vscode-webview.net")
+  ) {
+    return;
+  }
+  ```
+
+  This is narrower than CodeQL's own suggested one-liner would have left it
+  if taken as a ceiling (`vscode-webview://` only) in that it still allows a
+  future web-hosted build to work, but does not allow an arbitrary HTTPS
+  origin the way the first attempt did.
   **Not itself covered by Sean's own two manual-test passes above — both
   predate this fix.** The failure mode if the origin check's premise is
   wrong is silent and total (every host→webview message gets dropped, the

@@ -117,7 +117,17 @@ acceptable to ship as documented follow-ups rather than blockers.**
 **[PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150) opened
 2026-09-10 — awaiting Codex/Claude PR review** (the l10n fix's own commit
 skipped the standing pre-push manual adversarial pass, Sean's own call, to
-rely on those two instead).
+rely on those two instead). **github-advanced-security (CodeQL) then flagged
+a real `js/missing-origin-check` finding**: `dataViewerEntry.tsx`'s message
+listener trusted `event.data` with no check on who posted it (the
+CVE-2021-43908 class of gap). Fixed in two attempts — the first, following a
+Microsoft community thread's `https:`-prefix suggestion, was itself broken
+(Codex's review caught that a bare `https:` prefix matches almost any HTTPS
+origin) and was tightened to the two concrete origins VS Code actually
+issues (`vscode-webview://…` desktop, `https://….vscode-webview.net` web).
+`tsc`/`prettier` clean; **not yet covered by any manual test pass, and a
+third manual check (open a real table) is still needed before this can be
+called closed.** Full account in `phase-7.md`'s 7b Runbook entry.
 
 - **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
   `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new

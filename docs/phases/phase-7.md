@@ -1232,9 +1232,38 @@ future caller hitting the same envelope shape benefits. New
 filter-bar layout and sort-icon rendering is still needed, per this slice's
 own "not yet visually confirmed" notes in `dataViewerEntry.tsx`); §11's own
 "no sort/filter" known-gap row updated to point at it. `CHANGELOG.md`
-updated. **Not yet verified**: `npm run verify`/`test:integration`/`coverage`
-on a real machine, `npm run l10n:extract` (a new `vscode.l10n.t()` call in
-`dataViewerPanel.ts`), the adversarial pre-PR review.
+updated. `npm run verify` green (1468 unit passing; 95.35% lines / 95.44%
+branches / 94.98% functions / 95.35% statements, every threshold met — 100%
+on every line/branch this slice touched, including two small branch-coverage
+gaps a first coverage run found and closed:
+`dataViewerModel.ts`'s `isSortSpec` guard against a `null`/non-object sort
+entry, and `viyaError.ts`'s two nested-`errors[]`-loop branches); `npm run
+test:integration` green (309 passing — three new-test failures on the first
+run traced to a pre-existing fixture bug, not a code bug, see below);
+`npm run check:docs`/`l10n:extract`/`build` all clean. **A pre-existing
+fixture bug found and fixed the same session**: `test/fixtures/data/
+table-detail-class.json` (built for 7a/7b, before this slice's own probe)
+had guessed both its `createView` and `rowsAsCSV` link hrefs wrong
+(`.../CLASS/createView` and `.../CLASS/rowsAsCSV`, plausible-looking
+extrapolations from the relation name that Finding 7.15 shows are not what a
+real deployment sends); neither had a caller before 7c-i, so it went
+unnoticed until this slice's own new tests tried to follow `createView` and
+hit an unmatched-route failure. Corrected to the real shape, and the
+fixture's missing `delete` link added. **Adversarial pre-PR review completed
+2026-09-10** (per `CLAUDE.md`'s standing rule, before any push): no blocking
+findings. Two low-priority notes, both addressed: a doc comment added to
+`dataViewerPanel.ts`'s dispose handler working through, and rejecting on
+the merits, the "does a leak survive a createView POST still in flight at
+dispose time" question (no — `AbortSignal` wiring already guarantees an
+aborted in-flight request resolves to a failure, not a late success, so
+`ensureReadTargetLocked` never reaches the assignment that would leak it;
+already covered by `compute-client.test.ts`'s own abort tests, not something
+this file needs a new, necessarily-inaccurate-fake test for); and a
+type-level hardening suggestion (a discriminated `ReadTarget` type so
+passing a filter against a view fails to compile rather than relying on
+`getRows`'s own doc comment) noted as a real, deliberately deferred
+architecture question for a future slice, not built here — `getRows` has
+exactly one caller today and it is correct.
 
 - ☑ Live-probe the `createView` mechanism against `verde` — **done**,
   Findings 7.15–7.18. Settled, correcting this bullet's own original

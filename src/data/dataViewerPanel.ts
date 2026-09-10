@@ -218,6 +218,25 @@ class OpenTablePanel implements vscode.Disposable {
         }
       }),
       this.panel.onDidDispose(() => {
+        // What if dispose lands while an `applySort` this session started is
+        // still in flight, rather than one already resolved? `staleView` here
+        // is only ever what `activeView` already held *before* this tick —
+        // an in-flight `createView` cannot have set it yet. Reviewed
+        // adversarially before this PR: is a leak still possible if that
+        // call resolves *after* this handler runs? No — `applySort` passes
+        // `this.controller.signal`, aborted two lines below, through to
+        // `client.send`; `src/compute/client.ts`'s own `AbortSignal.any`
+        // wiring (tested in `compute-client.test.ts`) turns an aborted
+        // in-flight request into a rejected transport call, which
+        // `sendRequest`'s `catch` turns into an ordinary `{ok:false}`
+        // failure — never a late success. `ensureReadTargetLocked` bails out
+        // on that failure (`if (!created.ok) return created;`) before ever
+        // reaching `this.activeView = created.value`, so there is nothing
+        // for a *second* dispose-time cleanup to catch. This reasoning rests
+        // on the transport's existing abort guarantee, already covered
+        // generically, not on anything new this file would need its own test
+        // for.
+        //
         // Captured before `controller.abort()`, and deleted with **no**
         // signal of its own — reusing `this.controller.signal` here would
         // abort the very cleanup call this is trying to make, since that is

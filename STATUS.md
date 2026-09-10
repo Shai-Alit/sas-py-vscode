@@ -289,11 +289,20 @@ account in `phase-7.md`'s 7b Runbook entry.
   cleanup on every state change and on dispose; a serialised
   `ensureReadTarget` closing a real concurrent-view-creation race). A shared
   fix also landed in `src/wire/viyaError.ts` (a nested `errors[0].details`
-  fallback, Finding 7.18). **Not yet verified on a real machine** (`npm run
-  verify`/`test:integration`/`coverage`, `npm run l10n:extract`) and **the
-  adversarial pre-PR review has not run** — nothing pushed, no PR opened.
-  `docs/dev/manual-test-pass.md` gained an unrun §12 for Sean's own visual
-  check of the new filter bar and sort-icon rendering.
+  fallback, Finding 7.18). A pre-existing 7a/7b fixture
+  (`table-detail-class.json`) had guessed its `createView`/`rowsAsCSV` link
+  hrefs wrong (neither had a caller before now); corrected against Finding
+  7.15's real shape. `npm run verify` green (1468 unit passing, every
+  coverage threshold met, 100% on this slice's own touched lines/branches);
+  `npm run test:integration` green (309 passing); `check:docs`/
+  `l10n:extract`/`build` all clean. **Adversarial pre-PR review completed
+  2026-09-10** — no blocking findings; two low-priority notes, both
+  addressed (a doc comment on why an in-flight `createView` at dispose time
+  cannot leak, given the existing `AbortSignal` guarantee; a type-hardening
+  suggestion deliberately deferred, recorded in `phase-7.md`).
+  **Not yet pushed — no PR opened.** `docs/dev/manual-test-pass.md` gained an
+  unrun §12 for Sean's own visual check of the new filter bar and sort-icon
+  rendering.
 - **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
   Scoped 2026-09-04 from a separate session; that session's doc edits were
   stashed rather than committed and sat unmerged until found and resurrected

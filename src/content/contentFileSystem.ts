@@ -20,11 +20,14 @@
  * `vscode.FileSystemError` the editor expects — logging the technical sentence
  * and showing the localised one.
  *
- * The adapter is read through a getter, not held, because
- * `src/content/contentExplorer.ts` rebuilds it when the active deployment
- * changes — the same arrangement `SasContentTreeProvider` uses. With no adapter
- * (no profile, or signed out) every call fails `Unavailable` with a sign-in
- * hint rather than a stack trace.
+ * The adapter is resolved per call from the deployment root carried in the URI
+ * (`src/content/uri.ts`), never from "the active profile" — so a document
+ * opened from one deployment keeps reading and writing against that deployment
+ * after the user switches profiles, which is what a `FileSystemProvider` (asked
+ * to service a URI long after it was handed out — a background save, a
+ * `compare:` tab) has to do. With no adapter for that deployment (no profile,
+ * or signed out) every call fails `Unavailable` with a sign-in hint rather than
+ * a stack trace.
  *
  * ## The lost-update guard lives here
  *
@@ -55,7 +58,7 @@ import * as vscode from "vscode";
 import { type ContentAdapter, type WritePrecondition } from "./adapter";
 import { localiseContentProblem } from "./messages";
 import { describeContentProblem, type ContentProblem } from "./problems";
-import { resourceHrefOfQuery } from "./uri";
+import { parseContentUri } from "./uri";
 
 export class SasContentFileSystemProvider
   implements vscode.FileSystemProvider, vscode.Disposable
@@ -77,13 +80,17 @@ export class SasContentFileSystemProvider
   private readonly opened = new Map<string, WritePrecondition | null>();
 
   /**
-   * @param currentAdapter Returns the adapter for the active profile, or
-   *   `undefined` when there is nothing to talk to.
+   * @param adapterForEndpoint Returns the adapter for a given deployment root,
+   *   or `undefined` when there is no session for it. Passed the root parsed
+   *   from each URI — not "the active profile" — so an open document keeps
+   *   talking to its own deployment after a profile switch.
    * @param log The extension's shared channel — every failure is logged here
    *   with its technical sentence before the localised one is thrown.
    */
   constructor(
-    private readonly currentAdapter: () => ContentAdapter | undefined,
+    private readonly adapterForEndpoint: (
+      endpoint: string,
+    ) => ContentAdapter | undefined,
     private readonly log: vscode.LogOutputChannel,
   ) {}
 
@@ -187,18 +194,20 @@ export class SasContentFileSystemProvider
     );
   }
 
-  /** The active adapter and the file-resource href a `sasContent:` URI names,
-   * or a thrown `FileSystemError` when either is missing. */
+  /** The adapter for the deployment a `sasContent:` URI names and the
+   * file-resource href it carries, or a thrown `FileSystemError` when the URI
+   * is not one this extension wrote or there is no session for its
+   * deployment. */
   private resolve(uri: vscode.Uri): { adapter: ContentAdapter; href: string } {
-    const adapter = this.currentAdapter();
+    const parts = parseContentUri(uri.query);
+    if (parts === undefined) throw vscode.FileSystemError.FileNotFound(uri);
+    const adapter = this.adapterForEndpoint(parts.deploymentRoot);
     if (adapter === undefined) {
       throw vscode.FileSystemError.Unavailable(
         vscode.l10n.t("Sign in to SAS Viya to open SAS Content files."),
       );
     }
-    const href = resourceHrefOfQuery(uri.query);
-    if (href === undefined) throw vscode.FileSystemError.FileNotFound(uri);
-    return { adapter, href };
+    return { adapter, href: parts.resourceHref };
   }
 
   /** Log the technical sentence, return the `FileSystemError` to throw. The
@@ -221,6 +230,20 @@ export class SasContentFileSystemProvider
       case "forbidden":
         return vscode.FileSystemError.NoPermissions(message);
       case "unauthorized":
+        // `noSession` is the "no token could be obtained" origin (client.ts):
+        // there is no live session for this deployment, so the user is signed
+        // out for it — the same state `resolve()` catches when there is no
+        // adapter at all. Give the sign-in prompt. Every other `unauthorized`
+        // keeps `localiseAuthProblem`'s wording, including a bare-challenge
+        // `not-authenticated`: the auth layer defines that as a dropped
+        // `Authorization` header — our bug — and words it "please report this",
+        // so sending that user to sign in again is a loop that cannot fix it.
+        if (problem.noSession === true) {
+          return vscode.FileSystemError.Unavailable(
+            vscode.l10n.t("Sign in to SAS Viya to open SAS Content files."),
+          );
+        }
+        return vscode.FileSystemError.Unavailable(message);
       case "content-unreachable":
         return vscode.FileSystemError.Unavailable(message);
       case "link-missing":

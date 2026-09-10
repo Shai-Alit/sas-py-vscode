@@ -14,10 +14,11 @@
  * never throws out of `getChildren` (VS Code renders a thrown error as an angry
  * inline node).
  *
- * The adapter is read through a getter rather than held, because
- * `src/content/contentExplorer.ts` rebuilds it when the active deployment
- * changes. When there is no adapter (no profile, or not signed in),
- * `getChildren` returns nothing and the view's `viewsWelcome` content shows.
+ * The adapter is read through a getter rather than held, because the tree
+ * follows the active profile and `src/content/contentExplorer.ts` can switch
+ * the deployment under the view. When there is no adapter (no profile, or not
+ * signed in), `getChildren` returns nothing and the view's `viewsWelcome`
+ * content shows.
  *
  * ## What this slice does not do
  *
@@ -55,11 +56,15 @@ export class SasContentTreeProvider
   /**
    * @param currentAdapter Returns the adapter for the active profile, or
    *   `undefined` when the view has nothing to show (no profile / signed out).
+   * @param currentEndpoint The active profile's deployment root, stamped into
+   *   the `sasContent:` URI of each openable leaf so the file keeps talking to
+   *   this deployment even after a later profile switch.
    * @param log The extension's shared channel — a failed listing is logged
    *   here, not shown as a notification.
    */
   constructor(
     private readonly currentAdapter: () => ContentAdapter | undefined,
+    private readonly currentEndpoint: () => string | undefined,
     private readonly log: vscode.LogOutputChannel,
   ) {}
 
@@ -87,12 +92,15 @@ export class SasContentTreeProvider
 
     // An openable file leaf: one click opens it through the `sasContent:`
     // FileSystemProvider. `resourceHrefOf` is the member's own `uri`; a member
-    // that somehow carries neither `uri` nor a `self` link is left inert
-    // rather than pointed at a URI with no id.
-    if (shape.openable) {
+    // that carries neither `uri` nor a `self` link, or a view with no active
+    // deployment, is left inert rather than pointed at a URI missing a part.
+    const endpoint = this.currentEndpoint();
+    if (shape.openable && endpoint !== undefined) {
       const href = resourceHrefOf(item);
       if (href !== undefined) {
-        const uri = vscode.Uri.parse(contentUriString(item.name, href));
+        const uri = vscode.Uri.parse(
+          contentUriString(item.name, href, endpoint),
+        );
         node.resourceUri = uri;
         node.command = {
           command: "vscode.open",

@@ -91,15 +91,20 @@ export function registerContentExplorer(
     getSession: deps.getSession ?? defaultGetSession,
   });
 
-  // Both the tree and the filesystem provider read the adapter for whatever
-  // deployment is active right now; `ContentSession` hands back the same
-  // instance until the endpoint changes.
-  const adapterForActiveProfile = () =>
-    session.adapterFor(profiles.active()?.profile.endpoint);
+  // The tree reads the adapter for whatever deployment is active right now; the
+  // filesystem provider reads the one for the deployment named in each URI it
+  // is handed, which may not be the active profile any more (the user switched
+  // with a document still open). `ContentSession` keeps an adapter per
+  // endpoint so both are served.
+  const activeEndpoint = () => profiles.active()?.profile.endpoint;
 
-  const provider = new SasContentTreeProvider(adapterForActiveProfile, log);
+  const provider = new SasContentTreeProvider(
+    () => session.adapterFor(activeEndpoint()),
+    activeEndpoint,
+    log,
+  );
   const fileSystem = new SasContentFileSystemProvider(
-    adapterForActiveProfile,
+    (endpoint) => session.adapterFor(endpoint),
     log,
   );
 

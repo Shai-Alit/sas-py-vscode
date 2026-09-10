@@ -35,10 +35,11 @@ import { extensionId } from "../../helpers/manifest";
  * is `test/unit/content-adapter.test.ts`.
  */
 
-const A_CONTENT_URI = vscode.Uri.parse(
-  "sasContent:/analysis.py?id=/files/files/dddddddd-0000-4000-8000-000000000001",
-);
 const HREF = "/files/files/dddddddd-0000-4000-8000-000000000001";
+const ENDPOINT = "https://viya.example.com";
+const A_CONTENT_URI = vscode.Uri.parse(
+  `sasContent:/analysis.py?id=${HREF}&r=${encodeURIComponent(ENDPOINT)}`,
+);
 
 function fakeLog(): { channel: vscode.LogOutputChannel; errors: string[] } {
   const errors: string[] = [];
@@ -58,13 +59,17 @@ type AdapterStub = Partial<
   Pick<ContentAdapter, "statFile" | "readFileContent" | "writeFileContent">
 >;
 
-function providerWith(adapter: AdapterStub | undefined): {
+function providerWith(
+  adapter: AdapterStub | undefined,
+  forEndpoint?: (endpoint: string) => AdapterStub | undefined,
+): {
   provider: SasContentFileSystemProvider;
   errors: string[];
 } {
   const { channel, errors } = fakeLog();
+  const resolve = forEndpoint ?? (() => adapter);
   const provider = new SasContentFileSystemProvider(
-    () => adapter as ContentAdapter | undefined,
+    (endpoint) => resolve(endpoint) as ContentAdapter | undefined,
     channel,
   );
   return { provider, errors };
@@ -329,6 +334,51 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     }
   });
 
+  it("maps a no-session unauthorized to the sign-in prompt, not the raw auth reading", async () => {
+    // With an adapter now built for any endpoint a URI names, "signed out"
+    // surfaces as an `unauthorized` problem the wire tags `noSession` (the
+    // token was never obtained) rather than a missing adapter — it must still
+    // read as "sign in", not the "please report this" wording
+    // `localiseAuthProblem` uses for a surprise.
+    const { provider } = providerWith({
+      readFileContent: () =>
+        Promise.resolve(
+          fail({
+            code: "unauthorized",
+            problem: { code: "not-authenticated" },
+            noSession: true,
+          }),
+        ),
+    });
+    const error = await rejectionOf(provider.readFile(A_CONTENT_URI));
+    assert.equal(error.code, "Unavailable");
+    assert.match(
+      error.message,
+      /Sign in to SAS Viya to open SAS Content files/,
+    );
+    assert.doesNotMatch(error.message, /report this/);
+  });
+
+  it("keeps the auth layer's wording for a deployment-answered not-authenticated", async () => {
+    // A 401 the deployment actually answered with a bare challenge — no
+    // `noSession` tag. The auth layer defines this as a dropped Authorization
+    // header (our bug), so the message must stay "please report this"; a
+    // sign-in prompt here sends the user round a loop that cannot fix it.
+    const { provider } = providerWith({
+      readFileContent: () =>
+        Promise.resolve(
+          fail({
+            code: "unauthorized",
+            problem: { code: "not-authenticated" },
+          }),
+        ),
+    });
+    const error = await rejectionOf(provider.readFile(A_CONTENT_URI));
+    assert.equal(error.code, "Unavailable");
+    assert.match(error.message, /report this/);
+    assert.doesNotMatch(error.message, /Sign in to SAS Viya/);
+  });
+
   it("fails every operation with a sign-in hint when there is no adapter", async () => {
     const { provider } = providerWith(undefined);
     for (const run of [
@@ -342,14 +392,44 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     }
   });
 
-  it("rejects a sasContent: URI whose query carries no id", async () => {
+  it("rejects a sasContent: URI missing either the id or the deployment root", async () => {
     const { provider } = providerWith({
       statFile: () => Promise.reject(new Error("must not be called")),
     });
-    const error = await rejectionOf(
-      provider.stat(vscode.Uri.parse("sasContent:/x.py?name=x")),
+    for (const bad of [
+      "sasContent:/x.py?name=x",
+      `sasContent:/x.py?id=${HREF}`, // no r=
+      `sasContent:/x.py?r=${encodeURIComponent(ENDPOINT)}`, // no id=
+    ]) {
+      const error = await rejectionOf(provider.stat(vscode.Uri.parse(bad)));
+      assert.equal(error.code, "FileNotFound", bad);
+    }
+  });
+
+  it("resolves the adapter for the deployment the URI names, not the active one", async () => {
+    const seenEndpoints: string[] = [];
+    const other = "https://other.example.com";
+    const otherUri = vscode.Uri.parse(
+      `sasContent:/a.py?id=${HREF}&r=${encodeURIComponent(other)}`,
     );
-    assert.equal(error.code, "FileNotFound");
+    const { provider } = providerWith(undefined, (endpoint) => {
+      seenEndpoints.push(endpoint);
+      return endpoint === other
+        ? {
+            statFile: () =>
+              Promise.resolve(
+                ok<FileStat>({
+                  size: 1,
+                  createdAt: undefined,
+                  modifiedAt: undefined,
+                }),
+              ),
+          }
+        : undefined;
+    });
+    const result = await provider.stat(otherUri);
+    assert.equal(result.size, 1);
+    assert.deepEqual(seenEndpoints, [other]);
   });
 
   it("refuses structural operations as not supported yet", () => {

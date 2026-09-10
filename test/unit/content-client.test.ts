@@ -156,7 +156,7 @@ describe("content/client", () => {
     assert.equal(result.problem.problem.code, "session-expired");
   });
 
-  it("reads a bare Bearer 401 as not-authenticated", async () => {
+  it("reads a bare Bearer 401 as not-authenticated, without noSession", async () => {
     const { client } = clientWith({
       status: 401,
       headers: { "www-authenticate": "Bearer" },
@@ -165,6 +165,10 @@ describe("content/client", () => {
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
     assert.equal(result.problem.problem.code, "not-authenticated");
+    // The deployment answered this 401 — a dropped Authorization header, per the
+    // auth layer — so it is *not* the "no session at all" origin, and the
+    // file-system layer must keep the "please report this" wording for it.
+    assert.equal(result.problem.noSession, undefined);
   });
 
   it("maps a 403 to forbidden and reads the error envelope", async () => {
@@ -233,7 +237,7 @@ describe("content/client", () => {
     }
   });
 
-  it("reports a token function that throws as not-authenticated", async () => {
+  it("reports a token function that throws as not-authenticated with noSession", async () => {
     const { client } = clientWith(
       { status: 200 },
       {
@@ -246,6 +250,9 @@ describe("content/client", () => {
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
     assert.equal(result.problem.problem.code, "not-authenticated");
+    // No token was ever obtained — nothing reached the deployment — so this is
+    // the origin the file-system layer answers with a sign-in prompt.
+    assert.equal(result.problem.noSession, true);
   });
 
   it("survives a non-Error rejection from the transport", async () => {
@@ -274,6 +281,7 @@ describe("content/client", () => {
     const result = await client.send({ link: SELF });
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
+    assert.equal(result.problem.noSession, true);
   });
 
   describe("write arm (6b — findings 6.1/6.2)", () => {

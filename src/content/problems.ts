@@ -38,12 +38,21 @@ export type ContentProblem =
   /** The request never got an answer — DNS, TLS, proxy, timeout, abort. */
   | { code: "content-unreachable"; detail: string }
   /**
-   * A 401. Not re-diagnosed here — the variant carries slice 1c's verdict
-   * (`AuthProblem`), the same delegation `compute/problems.ts` makes and for
-   * the same reason: the challenge analysis is not specific to any one
-   * service.
+   * A 401, or no token to send at all. Not re-diagnosed here — the variant
+   * carries slice 1c's verdict (`AuthProblem`), the same delegation
+   * `compute/problems.ts` makes and for the same reason: the challenge
+   * analysis is not specific to any one service.
+   *
+   * `noSession` is set only when `src/content/client.ts` never obtained a
+   * token — `config.token()` threw, so nothing was sent and there is no live
+   * session for this deployment. It is *not* set for a 401 the deployment
+   * actually answered, including a bare-challenge one that `challengeProblem`
+   * also reads as `not-authenticated` (which the auth layer defines as a
+   * dropped `Authorization` header — our bug, "please report this", not a
+   * sign-in loop). `src/content/contentFileSystem.ts` needs the two apart: the
+   * first warrants a sign-in prompt, the second does not.
    */
-  | { code: "unauthorized"; problem: AuthProblem }
+  | { code: "unauthorized"; problem: AuthProblem; noSession?: true }
   /**
    * A 403: authenticated, but not permitted to read this folder. Distinct
    * from `content-rejected` because the remedy is a conversation with whoever
@@ -88,7 +97,9 @@ export function describeContentProblem(problem: ContentProblem): string {
     case "content-unreachable":
       return `could not reach the SAS Content service: ${problem.detail}`;
     case "unauthorized":
-      return `the SAS Content service refused the request: ${describeAuthProblem(problem.problem)}`;
+      return problem.noSession === true
+        ? "no active SAS Viya session for this deployment"
+        : `the SAS Content service refused the request: ${describeAuthProblem(problem.problem)}`;
     case "forbidden":
       return `not permitted to read this content${describeViyaError(problem.error)}`;
     case "content-rejected":

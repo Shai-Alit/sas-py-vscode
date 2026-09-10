@@ -28,6 +28,14 @@ describe("content/problems describeContentProblem", () => {
     ],
     [
       {
+        code: "unauthorized",
+        problem: { code: "not-authenticated" },
+        noSession: true,
+      },
+      /^no active SAS Viya session for this deployment$/,
+    ],
+    [
+      {
         code: "forbidden",
         error: { status: 403, detail: "user is not authorized" },
       },
@@ -59,7 +67,11 @@ describe("content/problems describeContentProblem", () => {
   ];
 
   for (const [problem, expected] of cases) {
-    it(`describes ${problem.code}`, () => {
+    const label =
+      problem.code === "unauthorized" && problem.noSession === true
+        ? "unauthorized (noSession)"
+        : problem.code;
+    it(`describes ${label}`, () => {
       assert.match(describeContentProblem(problem), expected);
     });
   }

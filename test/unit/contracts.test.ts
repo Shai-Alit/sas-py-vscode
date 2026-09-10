@@ -45,7 +45,14 @@ interface CheckContracts {
  * factory or a generation added to the union without a contract fails here, by
  * name, on three operating systems.
  */
-describe("check-contracts", () => {
+describe("check-contracts", function () {
+  // The before-hook loads `check-contracts.mjs`, which pulls in `typescript` and
+  // `js-yaml`, and the "this repository" block parses the source tree. Native
+  // that is fast; under `c8` it runs several times slower and lands on mocha's
+  // 2s budget, flaking run to run. Bounded budget for that work, mirroring
+  // `eslint-ignores.test.ts`'s timeout for loading ESLint.
+  this.timeout(30_000);
+
   let script: CheckContracts;
 
   before(async () => {

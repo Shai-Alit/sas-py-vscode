@@ -327,11 +327,27 @@ lines below.
   left in place, so a retry without reopening is another conditional `PUT` that
   `412`s the same way rather than a blind overwrite. A `200` advances the
   cached tag to the one the `PUT` returned.
+- ☑ **Adversarial pass (2026-09-10) — `unauthorized` was collapsing two
+  origins.** `client.ts` synthesises `not-authenticated` both when
+  `config.token()` throws (no token ever obtained — the user is signed out for
+  that deployment) and when `challengeProblem` reads a bare-challenge 401 the
+  deployment actually answered (a dropped `Authorization` header — our bug,
+  which `auth/messages.ts` words "please report this", not a sign-in loop). The
+  `FileSystemProvider` keyed its sign-in prompt on `problem.problem.code ===
+  "not-authenticated"`, so both read as "sign in". Fixed with a `noSession?:
+  true` tag on the `unauthorized` `ContentProblem`, set only in `client.ts`'s
+  token-catch arm; `contentFileSystem.ts` shows the sign-in prompt for that
+  tag and keeps `localiseAuthProblem`'s wording for every other `unauthorized`.
 - ☑ `workspace.registerFileSystemProvider("sasContent", …)` + the
   `onFileSystem:sasContent` activation event. A tree file leaf
   (`NodePresentation.openable` — an ordinary `file`, never a `dataFlow`) gets a
   `resourceUri` and a `vscode.open` command pointed at its
-  `sasContent:/<name>?id=<resourceHref>` URI (`src/content/uri.ts`).
+  `sasContent:/<name>?id=<resourceHref>&r=<deployment root>` URI
+  (`src/content/uri.ts`). The deployment root is in the URI, and
+  `ContentSession` keeps an adapter per endpoint, so a file opened under one
+  profile keeps reading and writing against its own deployment after the user
+  switches profiles — a `FileSystemProvider` must service a URI without
+  depending on "the active profile".
 - ☑ ~~The read-only `TextDocumentContentProvider` `sasContentReadOnly` scheme
   for recycle-bin content~~ — **moved to 6d.** Nothing in 6b views recycled
   content; the scheme belongs with the recycle bin it exists for.

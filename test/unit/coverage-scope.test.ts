@@ -39,7 +39,14 @@ interface CheckCoverageScope {
  * the list fails here, by name, rather than showing up a step later as an
  * unexplained drop in a percentage.
  */
-describe("check-coverage-scope", () => {
+describe("check-coverage-scope", function () {
+  // The "this repository" case below walks and parses every source file through
+  // the TypeScript compiler. Native that is sub-second; under `c8` in a process
+  // already holding whole-suite coverage data it lands on mocha's 2s budget and
+  // flakes. Bounded budget for the compiler work it genuinely does, mirroring
+  // `eslint-ignores.test.ts`'s timeout for loading ESLint.
+  this.timeout(30_000);
+
   let script: CheckCoverageScope;
 
   before(async () => {

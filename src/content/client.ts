@@ -208,11 +208,20 @@ async function sendRequest(
   } catch (error) {
     // The message only: the thrown value came from the sign-in machinery.
     // `not-authenticated` rather than `session-expired` because nothing was
-    // presented to the deployment at all.
+    // presented to the deployment at all. `noSession` marks *this* origin —
+    // no token was ever obtained — apart from a 401 the deployment answered
+    // with a bare challenge, which `challengeProblem` below also reads as
+    // `not-authenticated`: `src/content/contentFileSystem.ts` shows a sign-in
+    // prompt for the former and the auth layer's "please report this" for the
+    // latter.
     return {
       ok: false,
       reason: `could not obtain an access token: ${messageOf(error)}`,
-      problem: { code: "unauthorized", problem: { code: "not-authenticated" } },
+      problem: {
+        code: "unauthorized",
+        problem: { code: "not-authenticated" },
+        noSession: true,
+      },
     };
   }
 

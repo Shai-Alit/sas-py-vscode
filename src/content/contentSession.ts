@@ -21,9 +21,16 @@
  * Two profiles pointing at the same deployment are the same thing to the
  * Folders service, and {@link accountForEndpoint} (which the token flow uses)
  * is keyed on the endpoint alone — so switching between them changes nothing
- * this class would build differently. Rebuilding only when the endpoint
- * actually changes avoids discarding a working adapter, and its in-flight tree,
- * on a profile switch that does not move the deployment.
+ * this class would build differently.
+ *
+ * ## One adapter per endpoint, all kept
+ *
+ * The cache is a `Map` keyed on endpoint, not a single held adapter: the
+ * `sasContent:` filesystem provider can be asked to save a file whose
+ * deployment is *not* the active profile's (the user switched profiles with
+ * the editor still open — see `src/content/uri.ts`), and it must get the
+ * adapter for that file's deployment, not the current one. Entries are only
+ * ever added; {@link ContentSession.clear} (sign-out) drops them all at once.
  */
 
 import { accountForEndpoint } from "../auth/identity";
@@ -70,24 +77,21 @@ export interface ContentSessionDeps<A extends AccountLike = AccountLike> {
 }
 
 export class ContentSession<A extends AccountLike = AccountLike> {
-  private adapter: ContentAdapter | undefined;
-  private endpoint: string | undefined;
+  private readonly adapters = new Map<string, ContentAdapter>();
 
   constructor(private readonly deps: ContentSessionDeps<A>) {}
 
   /**
-   * The adapter for `endpoint`, building one if the endpoint has changed since
-   * the last call. `undefined` clears the held adapter and returns nothing —
-   * the state for "no profile is active".
+   * The adapter for `endpoint`, building one the first time an endpoint is
+   * asked for and reusing it thereafter. `undefined` returns nothing (the "no
+   * profile is active" state) without touching the cache — a file still open
+   * from another deployment keeps its adapter.
    */
   adapterFor(endpoint: string | undefined): ContentAdapter | undefined {
-    if (endpoint === undefined) {
-      this.clear();
-      return undefined;
-    }
-    if (endpoint === this.endpoint && this.adapter !== undefined) {
-      return this.adapter;
-    }
+    if (endpoint === undefined) return undefined;
+
+    const cached = this.adapters.get(endpoint);
+    if (cached !== undefined) return cached;
 
     const create = this.deps.createClient ?? createContentClient;
     const client = create({
@@ -97,15 +101,14 @@ export class ContentSession<A extends AccountLike = AccountLike> {
         : { transport: this.deps.transport }),
       token: async () => await this.tokenFor(endpoint),
     });
-    this.adapter = new ContentAdapter(client);
-    this.endpoint = endpoint;
-    return this.adapter;
+    const adapter = new ContentAdapter(client);
+    this.adapters.set(endpoint, adapter);
+    return adapter;
   }
 
-  /** Drops the held adapter — the sign-out path. */
+  /** Drops every held adapter — the sign-out path. */
   clear(): void {
-    this.adapter = undefined;
-    this.endpoint = undefined;
+    this.adapters.clear();
   }
 
   /**

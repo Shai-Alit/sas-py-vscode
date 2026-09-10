@@ -567,13 +567,18 @@ export class ContentAdapter {
       ...withSignal(signal),
     });
     if (!linked.ok) {
-      // Roll the orphan back. Best effort: if this delete fails too the file is
-      // an unreferenced resource in the user's own Files store, not visible in
-      // the tree — noise, not a hazard — and the create failure is the one
-      // worth reporting.
+      // Roll the orphan back — the file resource exists but is linked nowhere.
+      // **Deliberately not `signal`.** The likeliest reason a two-call sequence
+      // fails partway is the caller's signal firing (a cancel, or the client
+      // timeout), and forwarding an already-aborted signal here means the
+      // rollback rejects before it reaches the network and the orphan is left
+      // for good. It gets the client's own default timeout instead, so a
+      // cancelled create still cleans up after itself. If the DELETE fails on
+      // its own merits the file is an unreferenced resource in the user's Files
+      // store, invisible in the tree — noise, not a hazard — and `linked` is the
+      // failure worth returning.
       await this.client.send({
         link: { rel: DELETE_REL, href: fileHref, method: "DELETE" },
-        ...withSignal(signal),
       });
       return linked;
     }
@@ -606,6 +611,15 @@ export class ContentAdapter {
    * - A **folder read directly** (a root-listing folder) takes a minimal
    *   `{name}` body via its `update` link — echoing its full representation
    *   back is rejected `400`/`errorCode 1177` on Stable 2026.06.
+   *
+   * **No `If-Match` on the write, deliberately.** The endpoint honours one
+   * (finding 6.5: a stale tag → `412`), but the member path already `GET`s the
+   * representation immediately before the `PUT`, so the only lost-update window
+   * is the few milliseconds between them — and a `412` on a *rename* has no
+   * sensible recovery to offer ("reopen it" means nothing here). Concurrent
+   * renames are last-write-wins, which for a name — unlike file content
+   * (`writeFileContent`, which does guard) — loses nothing but the losing
+   * name.
    */
   async renameItem(
     item: ContentItem,

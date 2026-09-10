@@ -751,6 +751,49 @@ describe("content/adapter", () => {
           "expected a rollback DELETE of the created file",
         );
       });
+
+      it("rolls the orphan back even when the caller's signal is already aborted", async () => {
+        // The most likely reason addMember fails partway is the caller's signal
+        // firing. The rollback DELETE must not carry that aborted signal, or it
+        // rejects before it reaches the network and the file is orphaned.
+        let rollback: ContentRequest | undefined;
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentFixture("types-python.json") },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: contentOk(fileRep(), { status: 201 }),
+          },
+          {
+            when: (href, method) =>
+              href === `${PARENT}/members` && method === "POST",
+            reply: contentFail({
+              code: "content-unreachable",
+              detail: "aborted",
+            }),
+          },
+          {
+            when: (href, method) => href === FILE_SELF && method === "DELETE",
+            reply: (request) => {
+              rollback = request;
+              return contentOk({}, { status: 204 });
+            },
+          },
+        ]);
+        const result = await adapter.createFile(
+          parentFolder(),
+          "model.py",
+          AbortSignal.abort(),
+        );
+        assert.ok(!result.ok);
+        assert.ok(rollback, "the rollback DELETE was not attempted");
+        assert.equal(
+          rollback.signal,
+          undefined,
+          "the rollback must not forward the caller's aborted signal",
+        );
+      });
     });
 
     describe("renameItem", () => {

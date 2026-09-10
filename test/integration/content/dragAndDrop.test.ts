@@ -85,8 +85,16 @@ const notCalled: MoveItem = () => {
 };
 
 function droppedInto(target: ContentItem | undefined, holder: Harness) {
+  return dropItems(target, holder, [fileMember]);
+}
+
+function dropItems(
+  target: ContentItem | undefined,
+  holder: Harness,
+  items: ContentItem[],
+) {
   const transfer = new vscode.DataTransfer();
-  transfer.set(MIME, new vscode.DataTransferItem([fileMember]));
+  transfer.set(MIME, new vscode.DataTransferItem(items));
   const tokenSource = new vscode.CancellationTokenSource();
   return holder.controller
     .handleDrop(target, transfer, tokenSource.token)
@@ -94,6 +102,46 @@ function droppedInto(target: ContentItem | undefined, holder: Harness) {
       tokenSource.dispose();
     });
 }
+
+/** Runs `body` with `vscode.window.showErrorMessage` stubbed to record its
+ * calls, restoring it afterwards. */
+async function withErrorMessageStub(
+  body: (shown: string[]) => Promise<void>,
+): Promise<void> {
+  const shown: string[] = [];
+  const original = vscode.window.showErrorMessage;
+  (vscode.window as { showErrorMessage: unknown }).showErrorMessage = (
+    message: string,
+  ) => {
+    shown.push(message);
+    return Promise.resolve(undefined);
+  };
+  try {
+    await body(shown);
+  } finally {
+    (vscode.window as { showErrorMessage: unknown }).showErrorMessage =
+      original;
+  }
+}
+
+const memberNamed = (id: string): ContentItem => ({
+  ...fileMember,
+  id,
+  name: `${id}.py`,
+  uri: `/files/files/${id}`,
+  links: [
+    { rel: "self", href: `/folders/folders/src/members/${id}`, method: "GET" },
+  ],
+});
+
+const rejected = {
+  ok: false,
+  reason: "rejected",
+  problem: {
+    code: "content-rejected",
+    error: { status: 409, detail: "name clash" },
+  },
+} as ContentResult<ContentItem>;
 
 describe("SAS Content drag-and-drop move", () => {
   it("handleDrag puts only draggable items on the transfer", () => {
@@ -175,6 +223,58 @@ describe("SAS Content drag-and-drop move", () => {
     const holder = controllerWith(notCalled);
     await droppedInto(undefined, holder);
     assert.equal(holder.state.refreshed, 0);
+  });
+
+  it("multi-item drop: moves the good ones past a failing one, logs every failure, shows the first, refreshes once", async () => {
+    const moved: string[] = [];
+    const holder = controllerWith((item, dest) => {
+      if (item.id === "bad1" || item.id === "bad2")
+        return Promise.resolve(rejected);
+      moved.push(item.id);
+      return Promise.resolve({
+        ok: true,
+        value: { ...item, parentFolderUri: dest },
+      } as ContentResult<ContentItem>);
+    });
+
+    await withErrorMessageStub(async (shown) => {
+      await dropItems(targetFolder, holder, [
+        memberNamed("good1"),
+        memberNamed("bad1"),
+        memberNamed("good2"),
+        memberNamed("bad2"),
+      ]);
+
+      // The loop continued past each failure and moved every good item.
+      assert.deepEqual(moved, ["good1", "good2"]);
+      // Every failure went to the log…
+      assert.equal(holder.errors.length, 2);
+      // …but only the first is surfaced as a dialog.
+      assert.equal(shown.length, 1);
+    });
+
+    // One refresh for the whole batch, whatever the mix of outcomes.
+    assert.equal(holder.state.refreshed, 1);
+  });
+
+  it("multi-item drop: filters out the objectionable items and moves only the valid ones", async () => {
+    const moved: string[] = [];
+    const holder = controllerWith((item, dest) => {
+      moved.push(item.id);
+      return Promise.resolve({
+        ok: true,
+        value: { ...item, parentFolderUri: dest },
+      } as ContentResult<ContentItem>);
+    });
+
+    await dropItems(targetFolder, holder, [
+      memberNamed("keep"),
+      { ...memberNamed("recycled"), inRecycleBin: true },
+      { ...memberNamed("noop"), parentFolderUri: "/folders/folders/dest" },
+    ]);
+
+    assert.deepEqual(moved, ["keep"]);
+    assert.equal(holder.state.refreshed, 1);
   });
 
   it("handleDrop skips a recycled item and never calls the adapter", async () => {

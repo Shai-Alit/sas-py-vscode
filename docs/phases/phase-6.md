@@ -503,7 +503,7 @@ that a `filesrvc` fileref has no OS path the `PROC PYTHON` subprocess can
 `open()`, so the only Python-shaped equivalent of upstream's one-line
 `filename … filesrvc …;` is a multi-line `SAS.submit(… fcopy …)` blob with a
 hard-coded server path, and it is a low-priority nice-to-have. `npm run verify`
-green (1417 unit + 294 integration passing; coverage 95.18 lines / 95.25
+green (1417 unit + 296 integration passing; coverage 95.18 lines / 95.25
 branches / 94.79 functions / 95.18 statements). Adversarial pass before the PR;
 one review finding folded in (a runtime `Array.isArray` check on the one `any`
 boundary), one review call from Sean folded in (the recycled-item guard above).

@@ -10,10 +10,12 @@ along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 slices, 6a–6d); the 6→12 order was re-confirmed with Sean on 2026-09-09 before
 starting. **6a is done** (split 6a-i + 6a-ii) and **6b is done**; **6c** is
 split into 6c-i/ii/iii — the oversized-read fix (PR #147) and **6c-i are done
-and merged** (PR #148, squash `c63feaf`); **6c-ii (drag-and-drop move) is code
-complete, verify green, adversarial pass done and answered — PR not opened
-yet.** The drag-into-editor snippet that was scoped into 6c-ii is **deferred to
-future work** (Sean, 2026-09-10; finding 6.11). **6c-iii is next after 6c-ii.**
+and merged** (PR #148, squash `c63feaf`); **6c-ii (drag-and-drop move) is open
+as [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151)** — adversarial
+pass done before the PR; Codex review clean, Claude review's one finding (a
+multi-item drag test gap) folded in. The drag-into-editor snippet that was
+scoped into 6c-ii is **deferred to future work** (Sean, 2026-09-10; finding
+6.11). **6c-iii is next after 6c-ii.**
 
 (Probe finding numbers are now phase-scoped `N.x` — see the "Finding-numbering
 scheme changed 2026-09-09" section below and `CLAUDE.md`.)
@@ -82,7 +84,7 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     landed mutation) — both fixed on the branch; Claude PR review clean; all
     threads resolved.
   - **6c-ii — drag-and-drop move.** Code complete on a local branch, `npm run
-    verify` green (1417 unit + 294 integration; coverage 95.18 lines /
+    verify` green (1417 unit + 296 integration; coverage 95.18 lines /
     95.25 branches / 94.79 functions / 95.18 statements). `src/content/
     contentDragAndDrop.ts` — the repo's first `TreeDragAndDropController`;
     `ContentAdapter.moveItem` (a `GET`-then-`PUT` on the member's `update`
@@ -93,9 +95,11 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     **drag-into-editor snippet is deferred** (Sean, 2026-09-10) — finding
     6.11: no idiomatic Python equivalent of `filename … filesrvc …;`, only a
     fragile `SAS.submit(… fcopy …)` blob, and a low-priority nice-to-have.
-    Adversarial pass done and answered (one Minor cast fixed; the recycled-item
-    guard was the reviewer's one call for Sean, folded in). **PR not opened
-    yet.**
+    Adversarial pass done before the PR (one Minor cast fixed; the recycled-item
+    guard was that pass's one call for Sean, folded in). Open as
+    [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151); Codex review
+    clean, Claude review's one finding (multi-item drag untested) folded in with
+    two mixed-outcome integration tests.
   - **6c-iii** is next after 6c-ii.
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
@@ -195,7 +199,7 @@ captured in passing, moved out of this file 2026-09-09. Per-phase detail
 | 3 — Run Python (vertical slice) | ✅ **done, 3a–3f.** Finding 74 (interpreter banner / `>>>`) fully closed 2026-09-09 by Finding 93 — accepted and documented. | `docs/phases/phase-3.md` |
 | 4 — Diagnostics | ✅ **done, 4a–4d.** Phase 4→5 housekeeping ran 2026-09-02 (`baacf3c`). | `docs/phases/phase-4.md` |
 | 5 — Hardening & first release | ✅ **done — all slices merged; `v0.1.1` is the first published release.** Phase 5→6 housekeeping ran 2026-09-09 (see above). | `docs/phases/phase-5.md` |
-| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9. **6c-ii (drag-and-drop move) code complete, verify green (1417 unit + 294 integration), adversarial pass done + answered, PR not opened yet** — findings 6.10/6.11; the drag-into-editor snippet is deferred (finding 6.11). 6c-iii next. | `docs/phases/phase-6.md` |
+| 6 — SAS Content explorer | **in progress.** 6a done (6a-i `src/wire/` promotion [ADR-0025](docs/adr/0025-shared-wire-layer.md), 6a-ii adapter + read-only tree [ADR-0026](docs/adr/0026-content-adapter-shape.md)); **6b done and merged 2026-09-10** ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash `1c13854`) — open/save via a `sasContent:` `FileSystemProvider`, findings 6.1–6.2, `npm run verify` green (1347 unit + 280 integration passing). Oversized-read fix merged (PR #147, `79e10b0`); **6c-i (create/rename/delete) done and merged 2026-09-10** ([PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148), squash `c63feaf`), findings 6.3–6.9. **6c-ii (drag-and-drop move) open as [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151)** — verify green (1417 unit + 296 integration); adversarial pass before the PR, Codex review clean, Claude review's one finding folded in; findings 6.10/6.11; the drag-into-editor snippet is deferred (finding 6.11). 6c-iii next. | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | **in progress. 7a done and merged 2026-09-10** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142), squash) — `src/data/`, the `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new `onDidChangeConnection`. `npm run verify` green (1295 passing; lines 94.81%, branches 95.22%, functions 94.45%, statements 94.81%). Findings 7.8/7.9 closed two implementation-time questions (no `itemtype` needed; a paginated collection's untyped `next` link must not be followed literally). 7b (data viewer webview) next, not started. | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | **scoped 2026-09-03**, not started | `docs/phases/phase-8.md` |
 | 9 — Notebooks | **scoped 2026-09-04**, not started | `docs/phases/phase-9.md` |

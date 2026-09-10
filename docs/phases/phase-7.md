@@ -310,9 +310,10 @@ it; sort/filter/export as refinements on a working viewer). Nothing here is a
 hard technical barrier — this is a recommendation, not a dependency lock._
 
 ☑ **7a — `LibraryAdapter` + read-only tree.** Code written 2026-09-09 (this
-session, from the `sas-py-vscode-cowork` clone); not yet pushed or reviewed —
-the adversarial pass (`CLAUDE.md`) runs before a branch or PR exists, so
-nothing here should be read as "merged" until `STATUS.md` says so.
+session, from the `sas-py-vscode-cowork` clone), adversarially reviewed before
+the branch was pushed (per `CLAUDE.md`'s review-before-PR-exists rule), and
+merged 2026-09-10 via [PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142)
+(squash).
 
 - ☑ A second-**deployment** probe of `GET /sessions/{sessionId}/data`, the
   summary/tables content-negotiation Finding 7.5 corrected, `…/{tableName}`,

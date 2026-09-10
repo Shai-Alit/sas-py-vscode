@@ -64,6 +64,16 @@ import {
 } from "./types";
 import { contentUriString } from "./uri";
 
+/**
+ * The per-request bound on a {@link SasContentTreeProvider.getParent} fetch,
+ * shorter than the client's 15s default. `getParent` has no `CancellationToken`
+ * to thread (VS Code does not pass one), and a `reveal` walk can touch the
+ * network once per ancestor level, so a slow deployment must not be able to
+ * stack full-length timeouts behind a best-effort UI affordance. The client
+ * still enforces its own default too — this only tightens it.
+ */
+const GET_PARENT_TIMEOUT_MS = 8_000;
+
 export class SasContentTreeProvider
   implements vscode.TreeDataProvider<ContentItem>, vscode.Disposable
 {
@@ -171,8 +181,9 @@ export class SasContentTreeProvider
    * the `isNull(parent)` listing) sits under the synthetic root, so when the
    * service reports it has no ancestors (finding 6.12) it is mapped back to
    * {@link SAS_CONTENT_ROOT} rather than read as top-level. Everything else
-   * asks the adapter; a failure there is logged like a failed listing and the
-   * walk stops.
+   * asks the adapter, on a {@link GET_PARENT_TIMEOUT_MS} bound since there is no
+   * cancellation token to thread; a failure there is logged like a failed
+   * listing and the walk stops.
    */
   async getParent(item: ContentItem): Promise<ContentItem | undefined> {
     if (isSasContentRoot(item) || isDelegateFolder(item)) return undefined;
@@ -180,7 +191,10 @@ export class SasContentTreeProvider
     const adapter = this.currentAdapter();
     if (adapter === undefined) return undefined;
 
-    const result = await adapter.getParentOfItem(item);
+    const result = await adapter.getParentOfItem(
+      item,
+      AbortSignal.timeout(GET_PARENT_TIMEOUT_MS),
+    );
     if (!result.ok) {
       this.log.error(
         vscode.l10n.t(

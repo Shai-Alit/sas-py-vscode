@@ -111,9 +111,12 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
     gap, `canSelectMany` leaving the 6c-i Rename/Delete/Create context commands
     able to act on one of a multi-selection, and a comment overclaim — all
     folded in on the branch; all threads resolved.
-  - **6c-iii — `getParent` / `TreeView.reveal`.** Code-complete 2026-09-10;
-    adversarial pass before the PR raised no blocking findings (two minor
-    polish items folded in). `ContentAdapter.getParentOfItem`
+  - **6c-iii — `getParent` / `TreeView.reveal`.** [PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154),
+    open. Adversarial pass before the PR raised no blocking findings; in review,
+    Codex flagged the two reveal-path fetches for lacking an abort path — both
+    are already client-timeout-bounded and neither has a `CancellationToken` to
+    thread, but each now carries its own `AbortSignal.timeout(8_000)`, and the
+    `reveal`-failed `log.debug` is `l10n.t()`-wrapped. `ContentAdapter.getParentOfItem`
     (`GET` the `ancestors` link — finding 6.12: object `{ childUri, ancestors:
     [<folder>…] }` under the link's own media type, immediate parent first;
     empty array / `204` ⇒ no parent; finding 101's `406`/`{}` was the wrong

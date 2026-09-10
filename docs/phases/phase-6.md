@@ -564,12 +564,20 @@ resolved.
 95.37 branches / 94.98 functions / 95.31 statements). Integration 318 passing
 (run with the VS Code env vars stripped — the `ELECTRON_RUN_AS_NODE` launch
 quirk, unchanged). Adversarial pass before the PR: **no blocking findings** —
-two minor polish items folded in (a comment noting `revealCreated`'s re-list is
-deliberately unspinnered/unabortable and bounded only by the client timeout;
-the drag-and-drop path now `await`s its `reveal` to match the create path
-rather than firing it with `void`). Also folded in this clone's dependency
-reconcile — `npm install` after `main` fast-forwarded onto Sean's concurrent
-Phase 7b merge (React + ag-grid), which the stale `node_modules` was missing.
+two minor polish items folded in (`revealCreated`'s re-list comment; the
+drag-and-drop path now `await`s its `reveal` to match the create path rather
+than firing it with `void`). **PR #154 review:** the Claude reviewer found
+nothing blocking; the Codex reviewer flagged the two reveal-path fetches
+(`getParent`'s `getParentOfItem`, `revealCreated`'s `getChildItems`) as running
+without an abort path. Both are already bounded by the client's 15s timeout and
+neither has a `CancellationToken` to thread, but each now passes its own
+`AbortSignal.timeout(8_000)` — a tighter bound so a slow deployment cannot stack
+full-length timeouts behind a best-effort affordance — and the `reveal`-failed
+`log.debug` line is now `l10n.t()`-wrapped. Also folded in this clone's
+dependency reconcile — `npm install` after `main` fast-forwarded onto Sean's
+concurrent Phase 7b merge (React + ag-grid), which the stale `node_modules` was
+missing — and a merge of `origin/main` (PR #153, Phase 7 data fixes) that
+landed while #154 was in review.
 
 - ☑ **`ContentAdapter.getParentOfItem`** — `GET` the item's `ancestors` link.
   Finding 6.12 pinned the shape: the link advertises
@@ -596,21 +604,24 @@ Phase 7b merge (React + ag-grid), which the stale `node_modules` was missing.
   rejected (Sean, 2026-09-10) as an invariant change out of proportion to the
   gain.
 - ☑ **Reveal wiring.** `contentExplorer.ts` builds a best-effort `reveal`
-  (`{ select: true, focus: false, expand: true }`, `.reveal`'s rejection
-  swallowed) and passes it to the 6c-i command deps and the 6c-ii controller.
-  After a create, `revealCreated` re-lists the parent and matches the new node
-  by `sameResource` (a new `vscode`-free `types.ts` helper — the create
-  response's folder id vs the listing's member id disagree, but the underlying
-  `/folders/folders/{id}` or `/files/files/{id}` both name agrees), falling back
-  to the raw create response. After a move, the first moved member is revealed
-  directly (its id is stable — finding 6.10). `run()` in `contentCommands.ts`
-  became generic and returns its `{ result, aborted }` so `createChild` can act
-  on a success without re-deciding what "succeeded" means.
+  (`{ select: true, focus: false, expand: true }`; `.reveal`'s rejection —
+  usually the identity gap below — logged at `log.debug` then swallowed) and
+  passes it to the 6c-i command deps and the 6c-ii controller. After a create,
+  `revealCreated` re-lists the parent and matches the new node by `sameResource`
+  (a new `vscode`-free `types.ts` helper — the create response's folder id vs
+  the listing's member id disagree, but the underlying `/folders/folders/{id}`
+  or `/files/files/{id}` both name agrees), falling back to the raw create
+  response; the re-list runs after the cancellable progress has resolved so it
+  carries its own `AbortSignal.timeout(8_000)`. After a move, the first moved
+  member is revealed directly (its id is stable — finding 6.10). `run()` in
+  `contentCommands.ts` became generic and returns its `{ result, aborted }` so
+  `createChild` can act on a success without re-deciding what "succeeded" means.
 - ☑ Tests: `content-adapter.test.ts` (+7 — `getParentOfItem` link-follow,
   empty-array, `204`, no-link, two `response-malformed` branches, passthrough);
   `content-types.test.ts` (+4 — `sameResource`); `tree.test.ts` (+7 —
-  `getParent` for root/delegate/member/root-listing-folder/adapter-failure/
-  no-adapter); `dragAndDrop.test.ts` (reveal-after-move, incl. the
+  `getParent` for root/delegate/member (with a bounded-request
+  assertion)/root-listing-folder/adapter-failure/no-adapter);
+  `dragAndDrop.test.ts` (reveal-after-move, incl. the
   first-*successfully*-moved case). New fixture `ancestors-my-folder.json`
   (scrubbed `application/vnd.sas.content.folder.ancestor+json` body); new
   `contentNoBody()` test helper for the `204`.

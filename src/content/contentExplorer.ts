@@ -134,9 +134,11 @@ export function registerContentExplorer(
           () => undefined,
           (error: unknown) => {
             log.debug(
-              `SAS Content: could not reveal "${item.name}": ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              vscode.l10n.t(
+                'SAS Content: could not reveal "{0}": {1}',
+                item.name,
+                error instanceof Error ? error.message : String(error),
+              ),
             );
           },
         );

@@ -215,18 +215,23 @@ describe("SasContentTreeProvider", () => {
       provider.dispose();
     });
 
-    it("returns the adapter's parent for a member item", async () => {
+    it("returns the adapter's parent for a member item, on a bounded request", async () => {
       const parentFolder = item({ id: "p", name: "reports", type: "folder" });
-      const { provider } = makeProvider(() =>
-        adapterReturning(okResult([]), okResult([]), {
-          ok: true,
-          value: parentFolder,
-        }),
-      );
+      let sawSignal: unknown;
+      const adapter = {
+        getParentOfItem: (_item: ContentItem, signal?: AbortSignal) => {
+          sawSignal = signal;
+          return Promise.resolve({ ok: true, value: parentFolder });
+        },
+      } as unknown as ContentAdapter;
+      const { provider } = makeProvider(() => adapter);
       const got = await provider.getParent(
         item({ id: "m", name: "a.py", type: "child", contentType: "file" }),
       );
       assert.equal(got, parentFolder);
+      // getParent has no CancellationToken to thread, so it supplies its own
+      // timeout signal rather than leaving the fetch on the client default.
+      assert.ok(sawSignal instanceof AbortSignal);
       provider.dispose();
     });
 

@@ -128,9 +128,10 @@ async function createChild(
  * If the re-listing fails, or nothing matches, the create response is revealed
  * as-is: worst case that only expands the parent.
  *
- * The re-list carries no `AbortSignal` and no spinner of its own — it runs
- * after `run`'s cancellable progress has resolved, is best-effort, and swallows
- * its own failure. It is still bounded by the client's default request timeout.
+ * The re-list runs after `run`'s cancellable progress has resolved, so it has
+ * no user-facing spinner and no progress token to thread; it is best-effort and
+ * swallows its own failure. It is given its own short {@link REVEAL_RELIST_TIMEOUT_MS}
+ * bound so a slow deployment cannot hold it open for the client's full default.
  */
 async function revealCreated(
   deps: ContentCommandDeps,
@@ -138,12 +139,20 @@ async function revealCreated(
   parent: ContentItem,
   created: ContentItem,
 ): Promise<void> {
-  const listing = await adapter.getChildItems(parent);
+  const listing = await adapter.getChildItems(
+    parent,
+    AbortSignal.timeout(REVEAL_RELIST_TIMEOUT_MS),
+  );
   const node = listing.ok
     ? (sameResource(created, listing.value) ?? created)
     : created;
   await deps.reveal(node);
 }
+
+/** The bound on {@link revealCreated}'s follow-up listing — shorter than the
+ * client's 15s default because it backs a best-effort reveal with no way for
+ * the user to cancel it. */
+const REVEAL_RELIST_TIMEOUT_MS = 8_000;
 
 async function rename(
   deps: ContentCommandDeps,

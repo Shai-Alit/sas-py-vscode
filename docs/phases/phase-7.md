@@ -909,6 +909,49 @@ things this box waits on.
   are pre-written PR bodies for other, unrelated scoping slices (Phase 10 and
   7d), not part of this change.
 
+  **A real, pre-existing localisation gap, found while writing this PR's own
+  body and fixed at Sean's direction, 2026-09-10**: `dataViewerPanel.ts` had
+  been passing `describeDataProblem`'s own log fragment (`src/data/problems.ts`,
+  explicitly documented as "the English sentence for a log") straight into the
+  webview's `FailureMessage`/`RowsErrorMessage` — the exact busy-session and
+  link-missing text this whole Runbook entry is about — with no `l10n.t()`
+  anywhere in the path. Every other panel in this project keeps that split:
+  `resultPanel.ts` calls a dedicated `localiseBackendProblem`
+  (`src/backend/messages.ts`), and `contentFileSystem.ts` calls
+  `localiseContentProblem` (`src/content/messages.ts`) for exactly the same
+  reason — a `describe...Problem` function is for the log and stays
+  `vscode`-free; a `localise...Problem` function is for the one place a
+  failure reaches the user directly, and needs `vscode.l10n.t()`, which lives
+  on a module `problems.ts` must never import. `src/data/` had no such module.
+  Added `src/data/messages.ts` with `localiseDataProblem`, matching that
+  pattern exactly (delegating a wrapped `ComputeProblem` to
+  `compute/messages.ts`'s own `localiseComputeProblem` rather than
+  re-wording it); `dataViewerPanel.ts`'s three call sites, plus its one raw
+  literal (`"the table is not open yet"`, in the race-guard `handleRequestRows`
+  hits if a row request somehow arrives before `init`), now go through it.
+  Neither adversarial review caught this — it is not a correctness or
+  security defect, just an inconsistency with the project's own
+  localisation-boundary convention. New integration coverage in
+  `test/integration/data/messages.test.ts` (the same suite shape as
+  `compute/messages.test.ts`), and `.c8rc.json`'s exclude list gained
+  `src/data/messages.ts` alongside the project's other `messages.ts` files —
+  all `vscode`-importing, so none is reachable from the unit tier
+  (`check-coverage-scope: OK — 92 source files, 35 unreachable`). One existing
+  integration assertion (`data-viewer-panel.test.ts`, "posts failure... when
+  openTable finds no self link") was checking for the word "link" in the old
+  log-fragment text; updated to match `localiseComputeProblem`'s own
+  deliberately link-free wording instead. `npx tsc --noEmit` / `-p
+  tsconfig.test.json`, `npx prettier --check`, `check-secrets`,
+  `check-copyright`, and `check-coverage-scope` all clean. **Sean's own call:
+  this specific fix skipped the standing pre-push manual adversarial pass**,
+  relying on Codex + Claude's automated PR reviews to catch anything further
+  — a deliberate, one-off exception, not a change to the standing rule. No
+  `CHANGELOG.md` entry — the English text shown to the user is materially
+  unchanged (still a plain-language explanation of the same failure), so
+  this is an internal-correctness/i18n-infrastructure fix, not a user-facing
+  behaviour
+  change.
+
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
 - ☐ Server-side sort via `createView` — decide the orphan-view cleanup

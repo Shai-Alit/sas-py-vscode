@@ -22,6 +22,7 @@
     "src/data/dataExplorer.ts",
     "src/data/dataTree.ts",
     "src/data/dataViewerPanel.ts",
+    "src/data/messages.ts",
     "src/extension.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",

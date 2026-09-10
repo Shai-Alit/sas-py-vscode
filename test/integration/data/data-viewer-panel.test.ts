@@ -309,7 +309,11 @@ describe("DataViewerPanelManager", () => {
     assert.equal(fake.posted.length, 1);
     const [message] = fake.posted;
     assert.ok(message?.type === "failure");
-    assert.match(message.message, /link/i);
+    // The panel-facing text is now `localiseDataProblem`'s localised
+    // sentence, not `describeDataProblem`'s log fragment — the latter is
+    // the one that contained the word "link"; the former deliberately
+    // doesn't (`compute/messages.ts`'s own `link-missing` wording).
+    assert.match(message.message, /did not offer that operation/);
   });
 
   it("posts failure when the columns fetch fails, after openTable already succeeded", async () => {

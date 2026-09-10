@@ -105,7 +105,13 @@ list**, so it is flagged for its own future slice rather than assumed away;
 the grid's light-only theme remains a separate open design decision for
 Sean, not a defect. One minor gap from the second review (no test asserts
 panel-dispose aborts its `AbortController`) has been folded in and verified.
-See `phase-7.md`'s 7b Runbook entry for the full account. **Sean has
+Preparing this PR's own body also surfaced a real, pre-existing gap: the
+data viewer panel's failure messages went out as `describeDataProblem`'s
+unlocalised log fragment, unlike every other panel in this project. Fixed
+with a new `src/data/messages.ts` (`localiseDataProblem`), matching
+`resultPanel.ts`/`contentFileSystem.ts`'s own established pattern exactly,
+with its own integration coverage. See `phase-7.md`'s 7b Runbook entry for
+the full account. **Sean has
 confirmed the deferred busy-recovery gap and the light-theme decision are
 acceptable to ship as documented follow-ups rather than blockers — ready
 for a PR.**

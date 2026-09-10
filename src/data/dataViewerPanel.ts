@@ -35,7 +35,7 @@ import {
   toWireRows,
   type DataViewerHostMessage,
 } from "./dataViewerModel";
-import { describeDataProblem } from "./problems";
+import { localiseDataProblem } from "./messages";
 import { type TableDetail, type TableItem } from "./types";
 
 const VIEW_TYPE = "pythonOnViya.dataViewer";
@@ -204,7 +204,7 @@ class OpenTablePanel implements vscode.Disposable {
     if (!opened.ok) {
       this.emitOpening({
         type: "failure",
-        message: describeDataProblem(opened.problem),
+        message: localiseDataProblem(opened.problem),
       });
       return;
     }
@@ -216,7 +216,7 @@ class OpenTablePanel implements vscode.Disposable {
     if (!columns.ok) {
       this.emitOpening({
         type: "failure",
-        message: describeDataProblem(columns.problem),
+        message: localiseDataProblem(columns.problem),
       });
       return;
     }
@@ -248,7 +248,7 @@ class OpenTablePanel implements vscode.Disposable {
       this.post({
         type: "rowsError",
         requestId,
-        message: "the table is not open yet",
+        message: vscode.l10n.t("The table is not open yet."),
       });
       return;
     }
@@ -262,7 +262,7 @@ class OpenTablePanel implements vscode.Disposable {
       this.post({
         type: "rowsError",
         requestId,
-        message: describeDataProblem(result.problem),
+        message: localiseDataProblem(result.problem),
       });
       return;
     }

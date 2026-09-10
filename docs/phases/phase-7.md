@@ -956,7 +956,10 @@ things this box waits on.
   2026-09-10** — four commits (the original implementation, the Finding
   7.14 fix, the docs-only reconciliation of `STATUS.md`/this file with both
   manual-test passes, and the l10n fix above), against `main` at `58f60ec`
-  (post-6c-i).
+  (post-6c-i). Three more commits landed before merge: the fourth-manual-pass
+  documentation update (`d4ddb76`), the profile-scoping panel-key fix
+  (`801a6ff`, see below), and a merge of `main` reconciling the 6c-ii
+  conflict (`6c93a62`). **Merged 2026-09-10 as squash `60a944e`.**
 
   **github-advanced-security (CodeQL) finding on PR #150, `js/missing-origin-check`,
   2026-09-10: real, fixed — in two attempts.** `dataViewerEntry.tsx`'s
@@ -1220,6 +1223,25 @@ things this box waits on.
   `buildHtml` doc comment's still-open `img-src` question is worth
   resolving whenever 7c actually exercises an ag-grid icon, in case the
   SVG-icon path needs it too.
+- ☐ Hide `pythonOnViya.openTable` from the global Command Palette —
+  `package.json`'s `commandPalette` array gives the four analogous content
+  commands (`createContentFolder`/`createContentFile`/`renameContentItem`/
+  `deleteContentItem`) a `"when": "false"` entry each, but `openTable` has
+  none, so it's reachable from Ctrl+Shift+P where it silently no-ops (no
+  tree item to act on — `dataExplorer.ts`'s handler returns early). Real,
+  non-blocking finding from PR #150's final review round, 2026-09-10;
+  deferred rather than fixed on that PR (Sean's call).
+- ☐ Remove the dead `data-title` attribute from the data viewer's HTML
+  shell (`buildHtml`, `src/data/dataViewerPanel.ts`) — nothing in
+  `dataViewerEntry.tsx` reads `#root`'s `dataset.title`; the panel title
+  only ever flows through the `WebviewPanel`'s own `title` param. Real,
+  non-blocking finding from PR #150's final review round, 2026-09-10;
+  deferred rather than fixed on that PR (Sean's call).
+- ☐ Add a JSX test case for `check-coverage-scope.mjs`'s `scriptKindFor` —
+  the `.tsx`/`ts.ScriptKind.TSX` handling it added for this slice has no
+  test exercising actual JSX syntax, only `.tsx` files that happen not to
+  contain any. Real, non-blocking finding from PR #150's final review
+  round, 2026-09-10; deferred rather than fixed on that PR (Sean's call).
 
 ☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
 Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting

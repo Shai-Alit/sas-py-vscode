@@ -31,7 +31,7 @@
 
 import * as vscode from "vscode";
 
-import { type LibraryAdapter } from "./adapter";
+import { type DataResult, type LibraryAdapter } from "./adapter";
 import {
   isReadyMessage,
   isRequestRowsMessage,
@@ -40,7 +40,8 @@ import {
   type DataViewerHostMessage,
 } from "./dataViewerModel";
 import { localiseDataProblem } from "./messages";
-import { type TableDetail, type TableItem } from "./types";
+import { describeDataProblem } from "./problems";
+import { type SortSpec, type TableDetail, type TableItem } from "./types";
 
 const VIEW_TYPE = "pythonOnViya.dataViewer";
 
@@ -68,6 +69,12 @@ export interface DataWebviewPanel extends vscode.Disposable {
  * reliably, so panel creation is injectable and defaults to the real thing. */
 export interface DataViewerPanelDeps {
   createPanel?: ((title: string) => DataWebviewPanel) | undefined;
+  /** Where a best-effort view cleanup failure is logged (`discardView`'s own
+   * doc comment) — never surfaced to the user, since a view this project
+   * failed to delete is orphaned only until the session itself ends, not a
+   * correctness problem for anything still open. `undefined` in a test that
+   * has no reason to assert on logging. */
+  log?: vscode.LogOutputChannel | undefined;
 }
 
 export class DataViewerPanelManager implements vscode.Disposable {
@@ -117,6 +124,7 @@ export class DataViewerPanelManager implements vscode.Disposable {
         createRealPanel(this.extensionUri, title),
       this.extensionUri,
       () => this.panels.delete(key),
+      this.deps.log,
     );
     this.panels.set(key, panel);
     await panel.start();
@@ -141,13 +149,43 @@ class OpenTablePanel implements vscode.Disposable {
    * than once — ADR-0021's reasoning for `retainContextWhenHidden: false`
    * applies unchanged here) discards that grid instance along with whatever
    * request it was waiting on. The freshly mounted grid asks again once it
-   * is ready; there is nothing stale to replay to it. */
+   * is ready; there is nothing stale to replay to it.
+   *
+   * **An `"init"` message's own `initialSort`/`initialFilter` are never
+   * replayed verbatim from this stored copy** — {@link openingMessageFor}
+   * always overwrites them with `activeSort`/`activeFilter` as they stand
+   * *at replay time*, not as they stood when the table was first opened.
+   * Sean's own manual test (`manual-test-pass.md` §12) found that a bare
+   * replay of this frozen message lost an active sort or filter on every
+   * hide/show: the freshly mounted grid has no sort or filter of its own to
+   * seed the datasource with, so its very first `requestRows` reads as
+   * `sort: []`, `filter: ""` — which {@link ensureReadTargetLocked}'s own
+   * `sort.length === 0` branch reads as the user having cleared both,
+   * discarding a still-wanted server-side view rather than merely losing a
+   * UI indicator. */
   private lastOpeningMessage: DataViewerHostMessage | undefined;
   /** Set once {@link loadTable} resolves the table's rich detail — carries
    * the `rows` link every `requestRows` reply needs. `undefined` until then,
    * and every row request that somehow arrives before it is set answers with
    * `rowsError` rather than throwing (see {@link handleRequestRows}). */
   private tableDetail: TableDetail | undefined;
+  /** The server-side view backing the *current* sort/filter state — `applySort`'s
+   * own return value, reused across every `requestRows` while `activeSort`/
+   * `activeFilter` stay unchanged; `undefined` when no sort is active (a plain
+   * or filtered-only read goes straight against `tableDetail`). See {@link
+   * ensureReadTarget}. */
+  private activeView: TableDetail | undefined;
+  private activeSort: readonly SortSpec[] = [];
+  private activeFilter: string | undefined;
+  /** Serialises {@link ensureReadTarget}'s own body — a fast scroll can have
+   * more than one `requestRows` in flight at once, and without this, two
+   * concurrent calls deciding *together* that the (sort, filter) pairing
+   * changed would each create their own view, the second silently
+   * overwriting {@link activeView} and orphaning the first rather than
+   * either one being deleted through the ordinary supersede-or-dispose path.
+   * `.catch()` on the stored chain keeps one rejected call from poisoning
+   * every later one. */
+  private ensureReadTargetChain: Promise<unknown> = Promise.resolve();
   private readonly subscriptions: vscode.Disposable[] = [];
   /** Aborted on dispose — caught in review: none of this class's three
    * adapter calls carried a `signal` before now, even though `openTable`/
@@ -163,6 +201,7 @@ class OpenTablePanel implements vscode.Disposable {
     private readonly panel: DataWebviewPanel,
     private readonly extensionUri: vscode.Uri,
     private readonly onDisposed: () => void,
+    private readonly log?: vscode.LogOutputChannel,
   ) {}
 
   reveal(): void {
@@ -177,7 +216,9 @@ class OpenTablePanel implements vscode.Disposable {
         if (isReadyMessage(message)) {
           this.ready = true;
           if (this.lastOpeningMessage !== undefined) {
-            void this.panel.webview.postMessage(this.lastOpeningMessage);
+            void this.panel.webview.postMessage(
+              this.openingMessageFor(this.lastOpeningMessage),
+            );
           }
           return;
         }
@@ -186,14 +227,54 @@ class OpenTablePanel implements vscode.Disposable {
             message.requestId,
             message.start,
             message.limit,
+            message.sort,
+            message.filter,
           );
         }
       }),
       this.panel.onDidDispose(() => {
+        // What if dispose lands while an `applySort` this session started is
+        // still in flight, rather than one already resolved? `staleView` here
+        // is only ever what `activeView` already held *before* this tick —
+        // an in-flight `createView` cannot have set it yet. Reviewed
+        // adversarially before this PR: is a leak still possible if that
+        // call resolves *after* this handler runs? No — `applySort` passes
+        // `this.controller.signal`, aborted two lines below, through to
+        // `client.send`; `src/compute/client.ts`'s own `AbortSignal.any`
+        // wiring (tested in `compute-client.test.ts`) turns an aborted
+        // in-flight request into a rejected transport call, which
+        // `sendRequest`'s `catch` turns into an ordinary `{ok:false}`
+        // failure — never a late success. `ensureReadTargetLocked` bails out
+        // on that failure (`if (!created.ok) return created;`) before ever
+        // reaching `this.activeView = created.value`, so there is nothing
+        // for a *second* dispose-time cleanup to catch. This reasoning rests
+        // on the transport's existing abort guarantee, already covered
+        // generically, not on anything new this file would need its own test
+        // for.
+        //
+        // Captured before `controller.abort()`, and deleted with **no**
+        // signal of its own — reusing `this.controller.signal` here would
+        // abort the very cleanup call this is trying to make, since that is
+        // the controller being aborted on this same tick.
+        const staleView = this.activeView;
+        this.activeView = undefined;
         this.controller.abort();
         for (const subscription of this.subscriptions) subscription.dispose();
         this.subscriptions.length = 0;
         this.onDisposed();
+        if (staleView !== undefined) {
+          void this.adapter.deleteView(staleView).then((result) => {
+            if (!result.ok) {
+              this.log?.warn(
+                vscode.l10n.t(
+                  'SAS Libraries: could not delete a sort/filter view over "{0}" on panel dispose ({1}) — it will be orphaned until the session ends',
+                  `${staleView.libref}.${staleView.name}`,
+                  describeDataProblem(result.problem),
+                ),
+              );
+            }
+          });
+        }
       }),
     );
 
@@ -241,6 +322,16 @@ class OpenTablePanel implements vscode.Disposable {
       type: "init",
       columns: toWireColumns(columns.value),
       rowCount: opened.value.rowCount,
+      filterPlaceholder: vscode.l10n.t(
+        "Filter rows (SAS WHERE clause) — press Enter to apply",
+      ),
+      // Overwritten by `openingMessageFor` on every actual send — a table
+      // has no active sort or filter the moment it is first opened, so `[]`/
+      // `""` is already correct here, but the real values this field must
+      // carry on a *later* replay live in `activeSort`/`activeFilter`, not
+      // in this one-time literal.
+      initialSort: [],
+      initialFilter: "",
     });
   }
 
@@ -248,6 +339,8 @@ class OpenTablePanel implements vscode.Disposable {
     requestId: string,
     start: number,
     limit: number,
+    sort: readonly SortSpec[],
+    filter: string,
   ): Promise<void> {
     const table = this.tableDetail;
     if (table === undefined) {
@@ -264,12 +357,85 @@ class OpenTablePanel implements vscode.Disposable {
       return;
     }
 
+    const target = await this.ensureReadTarget(sort, filter);
+    if (!target.ok) {
+      // Findings 7.16/7.18 (docs/phases/phase-7.md): this is the path an
+      // invalid `sortBy`/`where=` combination fails on when a sort is
+      // active — `createView` rejects the whole body up front. Logged, not
+      // just posted to the webview: Sean's own manual test (§12) found a
+      // failed filter left nothing in the log at all to confirm anything had
+      // even been attempted.
+      this.log?.warn(
+        vscode.l10n.t(
+          'SAS Libraries: could not prepare a sort/filter read over "{0}" ({1})',
+          `${table.libref}.${table.name}`,
+          describeDataProblem(target.problem),
+        ),
+      );
+      this.post({
+        type: "rowsError",
+        requestId,
+        message: localiseDataProblem(target.problem),
+      });
+      return;
+    }
+
+    // A filter is applied via `where=` only against the base table — never
+    // against `target.value` when it is a sort-view, which already has any
+    // active filter baked into its own `createView` body (Finding 7.16:
+    // `where=` is silently ignored on a view's own rows read).
     const result = await this.adapter.getRows(
-      table,
+      target.value,
       { start, limit },
+      sort.length === 0 ? filter : undefined,
       this.controller.signal,
     );
+
+    // Reviewed adversarially before this PR: `ensureReadTarget` serialises
+    // *view creation*, but this `getRows` call, once dispatched, is not
+    // itself serialised against a *later* request's own sort/filter change.
+    // A fast pair of scroll/sort/filter changes can have this exact call
+    // still in flight against a view a later `ensureReadTarget` has already
+    // superseded (recreated or discarded) by the time it resolves — reading
+    // a since-deleted view answers 404, and the request this reply would
+    // answer is one ag-grid itself has already moved past (a superseded
+    // datasource, not merely a superseded row window).
+    //
+    // **A stale request still gets a reply — a `rowsError`, not silence.**
+    // Caught by PR review, 2026-09-10: an earlier version of this branch
+    // returned with no reply at all, reasoning that nothing was "waiting on"
+    // it meaningfully — but `dataViewerEntry.tsx`'s own `pendingRowRequests`
+    // map is keyed by `requestId` and only ever cleared when a `rows`/
+    // `rowsError` reply for that exact id arrives. A silently dropped reply
+    // leaves that entry (and the `getRows` promise it resolves) pending
+    // forever — a real, unbounded leak across a session with enough
+    // sort/filter changes, not merely a cosmetic one, since every
+    // `requestRows` this project's own protocol sends must get exactly one
+    // reply.
+    if (!sortEquals(this.activeSort, sort) || this.activeFilter !== filter) {
+      this.post({
+        type: "rowsError",
+        requestId,
+        message: vscode.l10n.t(
+          "This request was superseded by a later sort or filter change.",
+        ),
+      });
+      return;
+    }
+
     if (!result.ok) {
+      // Finding 7.18 (docs/phases/phase-7.md): a filter-only invalid
+      // `where=` fails here, against the base table's own rows read, rather
+      // than at `ensureReadTarget` above (no view is created for a
+      // filter-with-no-sort — see that method's own doc comment). Logged for
+      // the same reason as the `target.ok` branch above.
+      this.log?.warn(
+        vscode.l10n.t(
+          'SAS Libraries: a row request over "{0}" failed ({1})',
+          `${table.libref}.${table.name}`,
+          describeDataProblem(result.problem),
+        ),
+      );
       this.post({
         type: "rowsError",
         requestId,
@@ -287,12 +453,146 @@ class OpenTablePanel implements vscode.Disposable {
     });
   }
 
+  /**
+   * The table (no sort active) or the sort-view (sort active) the next
+   * {@link handleRequestRows} call should read from — creating, reusing, or
+   * discarding a view as `sort`/`filter` change.
+   *
+   * **A view is recreated whenever the (sort, filter) pairing changes, and
+   * reused across every page fetch while it stays the same** — one
+   * create/delete round trip per distinct sort/filter state, not one per
+   * scroll-triggered page the way upstream's own `getSortedRows` does
+   * (`applySort`'s own doc comment). Serialised via {@link
+   * ensureReadTargetChain} — see that field's own doc comment.
+   */
+  private ensureReadTarget(
+    sort: readonly SortSpec[],
+    filter: string,
+  ): Promise<DataResult<TableDetail>> {
+    // `.catch()` twice, deliberately, not once: the assignment to
+    // `ensureReadTargetChain` protects every *later* call from a poisoned
+    // chain, but on its own leaves the promise `handleRequestRows` itself
+    // awaits still rejecting on a throw. Nothing in this codebase's adapter
+    // layer actually throws today (`DataResult` is total, per this
+    // project's own convention) — this is latent hardening, not a reachable
+    // gap — but `handleRequestRows`'s own fire-and-forget `void` call would
+    // otherwise turn a future regression into a silent unhandled rejection
+    // instead of an ordinary `rowsError` reply.
+    const next = this.ensureReadTargetChain
+      .then(() => this.ensureReadTargetLocked(sort, filter))
+      .catch((error: unknown): DataResult<TableDetail> => ({
+        ok: false,
+        reason: `an unexpected error while preparing to read: ${messageOf(error)}`,
+        problem: {
+          code: "compute",
+          problem: { code: "compute-unreachable", detail: messageOf(error) },
+        },
+      }));
+    this.ensureReadTargetChain = next;
+    return next;
+  }
+
+  private async ensureReadTargetLocked(
+    sort: readonly SortSpec[],
+    filter: string,
+  ): Promise<DataResult<TableDetail>> {
+    const table = this.tableDetail;
+    if (table === undefined) {
+      // Guarded by the same check `handleRequestRows` already made before
+      // calling this — kept here too so this method has no implicit
+      // dependency on call order to stay total.
+      return {
+        ok: false,
+        reason: "the table is not open yet",
+        problem: { code: "not-connected" },
+      };
+    }
+
+    if (sort.length === 0) {
+      if (this.activeView !== undefined) await this.discardView();
+      // `discardView` resets `activeFilter` to `undefined` unconditionally —
+      // correct for *its* callers (a superseded view has no current filter
+      // at all), but this call site's own current filter is `filter`, active
+      // against the base table now, not absent. Set it explicitly so
+      // `handleRequestRows`'s own staleness check (comparing against
+      // `activeSort`/`activeFilter`) has a real, current value to compare a
+      // plain filtered-no-sort request against, rather than treating every
+      // such request as stale forever.
+      this.activeSort = sort;
+      this.activeFilter = filter;
+      return { ok: true, value: table };
+    }
+
+    if (
+      this.activeView !== undefined &&
+      sortEquals(this.activeSort, sort) &&
+      this.activeFilter === filter
+    ) {
+      return { ok: true, value: this.activeView };
+    }
+
+    if (this.activeView !== undefined) await this.discardView();
+
+    const created = await this.adapter.applySort(
+      table,
+      sort,
+      filter === "" ? undefined : filter,
+      this.controller.signal,
+    );
+    if (!created.ok) return created;
+
+    this.activeView = created.value;
+    this.activeSort = sort;
+    this.activeFilter = filter;
+    return created;
+  }
+
+  /** Deletes the current view, if there is one, and clears this panel's own
+   * record of it regardless of whether the delete actually succeeded — a
+   * failed delete here is logged, not retried or propagated (see {@link
+   * DataViewerPanelDeps.log}'s own doc comment). */
+  private async discardView(): Promise<void> {
+    const view = this.activeView;
+    this.activeView = undefined;
+    this.activeSort = [];
+    this.activeFilter = undefined;
+    if (view === undefined) return;
+
+    const deleted = await this.adapter.deleteView(view, this.controller.signal);
+    if (!deleted.ok) {
+      this.log?.warn(
+        vscode.l10n.t(
+          'SAS Libraries: could not delete a superseded sort/filter view over "{0}" ({1}) — it will be orphaned until the session ends',
+          `${view.libref}.${view.name}`,
+          describeDataProblem(deleted.problem),
+        ),
+      );
+    }
+  }
+
   /** Sends a message that also becomes this panel's "opening state" —
    * replayed on the next `"ready"`, since only one `init`/`failure` is ever
    * meaningful at a time. */
   private emitOpening(message: DataViewerHostMessage): void {
     this.lastOpeningMessage = message;
-    this.post(message);
+    this.post(this.openingMessageFor(message));
+  }
+
+  /** An `"init"` message, with `initialSort`/`initialFilter` refreshed to
+   * this panel's *current* `activeSort`/`activeFilter` — see {@link
+   * lastOpeningMessage}'s own doc comment for why a frozen copy of those two
+   * fields is wrong the moment either one has changed since the table was
+   * opened. Every other message type (`"failure"`) passes through unchanged,
+   * since neither carries a sort or a filter to begin with. */
+  private openingMessageFor(
+    message: DataViewerHostMessage,
+  ): DataViewerHostMessage {
+    if (message.type !== "init") return message;
+    return {
+      ...message,
+      initialSort: this.activeSort,
+      initialFilter: this.activeFilter ?? "",
+    };
   }
 
   /** Sends a message immediately if the webview has already sent its
@@ -307,6 +607,26 @@ class OpenTablePanel implements vscode.Disposable {
     if (!this.ready) return;
     void this.panel.webview.postMessage(message);
   }
+}
+
+/** Whether two sort specs name the same columns in the same order with the
+ * same direction — {@link OpenTablePanel.ensureReadTarget}'s own "has the
+ * sort actually changed" check, ordinary array equality rather than a set
+ * comparison since a column-order change (drag-reordering a multi-sort) is
+ * itself a real change a view must be recreated for. */
+function sortEquals(a: readonly SortSpec[], b: readonly SortSpec[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((spec, index) => {
+    const other = b[index];
+    return other?.key === spec.key && other.direction === spec.direction;
+  });
+}
+
+/** The message of a thrown value, and nothing else it might be carrying — the
+ * same small helper `compute/client.ts`/`content/client.ts`/`dialects/probe.ts`
+ * each carry their own copy of. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }
 
 function createRealPanel(
@@ -442,6 +762,36 @@ function buildHtml(
     font-family: var(--vscode-font-family);
     color: var(--vscode-foreground);
     background-color: var(--vscode-editor-background);
+  }
+  /* Real review finding, 2026-09-10: an unstyled <input> renders with the
+     browser's own default control chrome — a bright white box regardless of
+     VS Code's active theme. Matches this project's other user-facing text
+     (--vscode-foreground/--vscode-editor-background above), using the same
+     VS Code webview theming variables an ordinary input is documented to use. */
+  .python-on-viya-data-viewer-filter {
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border: 1px solid var(--vscode-input-border, transparent);
+  }
+  .python-on-viya-data-viewer-filter::placeholder {
+    color: var(--vscode-input-placeholderForeground);
+  }
+  .python-on-viya-data-viewer-filter:focus {
+    outline: 1px solid var(--vscode-focusBorder);
+    outline-offset: -1px;
+  }
+  /* Finding 7.18 (phase-7.md) confirmed an invalid filter answers with a
+     real, actionable SAS parser message, not a generic failure — but
+     dataViewerEntry.tsx's own datasource was dropping it on the floor,
+     leaving a blank grid with nothing to tell the user why
+     (manual-test-pass.md §12). Same VS Code input-validation variables
+     every other extension's inline error text uses, matching the filter
+     box's own --vscode-input-* theming immediately above. */
+  .python-on-viya-data-viewer-rows-error {
+    background-color: var(--vscode-inputValidation-errorBackground);
+    border: 1px solid var(--vscode-inputValidation-errorBorder);
+    color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+    padding: 2px 6px;
   }
 </style>
 </head>

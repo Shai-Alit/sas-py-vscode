@@ -904,10 +904,308 @@ describe("data/adapter LibraryAdapter", () => {
       const result = await adapter.getRows(
         tableDetail(),
         { start: 0, limit: 2 },
+        undefined,
         controller.signal,
       );
       assert.ok(result.ok);
       assert.ok(calls.every((c) => c.hadSignal));
+    });
+
+    it("appends a where= parameter, percent-encoded, when a filter is given", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+      ]);
+      const result = await adapter.getRows(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        "Sex='F'",
+      );
+      assert.ok(result.ok);
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`],
+      );
+    });
+
+    it("omits where= entirely when the filter is an empty string", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+      ]);
+      const result = await adapter.getRows(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        "",
+      );
+      assert.ok(result.ok);
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/rows?start=0&limit=2`],
+      );
+    });
+  });
+
+  describe("applySort", () => {
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/T0D749FF8_VIEW`;
+
+    function tableWithCreateView(): TableDetail {
+      const detail = tableDetail();
+      return {
+        ...detail,
+        links: [
+          ...detail.links,
+          {
+            rel: "createView",
+            href: `${CLASS_HREF}/views`,
+            method: "POST",
+            type: "application/vnd.sas.compute.data.table.view.request",
+          },
+        ],
+      };
+    }
+
+    it("posts sortBy to the createView link and returns a view carrying the original table's identity", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/views`,
+          reply: dataOk(
+            {
+              name: "T0D749FF8_VIEW",
+              libref: "WORK",
+              type: "VIEW",
+              rowCount: -1,
+              links: [
+                { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+                { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+              ],
+            },
+            { status: 201 },
+          ),
+        },
+      ]);
+
+      const result = await adapter.applySort(
+        tableWithCreateView(),
+        [{ key: "Age", direction: "descending" }],
+        undefined,
+      );
+
+      assert.ok(result.ok);
+      // The view's own libref/name are misleading (Finding 7.15) — carrying
+      // the source table's identity is what an error message should show.
+      assert.equal(result.value.libref, "SASHELP");
+      assert.equal(result.value.name, "CLASS");
+      // rowCount/columnCount are never carried over from the view's own
+      // response — its -1 is "not yet known", not a real count.
+      assert.equal(result.value.rowCount, undefined);
+      assert.ok(result.value.links.some((l) => l.rel === "rows"));
+      assert.ok(result.value.links.some((l) => l.rel === "delete"));
+
+      assert.equal(calls.length, 1);
+      const [call] = calls;
+      assert.ok(call);
+      assert.equal(call.method, "POST");
+      assert.equal(call.href, `${CLASS_HREF}/views`);
+    });
+
+    it("bakes a filter into the same createView body rather than a separate call", async () => {
+      let sentBody: unknown;
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/views`,
+          reply: (request) => {
+            sentBody = request.body;
+            return dataOk(
+              {
+                name: "V",
+                libref: "WORK",
+                links: [
+                  { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+                  { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+                ],
+              },
+              { status: 201 },
+            );
+          },
+        },
+      ]);
+
+      const result = await adapter.applySort(
+        tableWithCreateView(),
+        [{ key: "Age", direction: "descending" }],
+        "Sex='F'",
+      );
+
+      assert.ok(result.ok);
+      assert.deepEqual(sentBody, {
+        sortBy: [{ key: "Age", direction: "descending" }],
+        where: "Sex='F'",
+      });
+    });
+
+    it("omits where from the body when there is no filter", async () => {
+      let sentBody: unknown;
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/views`,
+          reply: (request) => {
+            sentBody = request.body;
+            return dataOk(
+              {
+                name: "V",
+                libref: "WORK",
+                links: [
+                  { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+                  { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+                ],
+              },
+              { status: 201 },
+            );
+          },
+        },
+      ]);
+      await adapter.applySort(
+        tableWithCreateView(),
+        [{ key: "Age", direction: "descending" }],
+        undefined,
+      );
+      assert.deepEqual(sentBody, {
+        sortBy: [{ key: "Age", direction: "descending" }],
+      });
+    });
+
+    it("reports link-missing when the table carries no createView relation", async () => {
+      const { adapter } = adapterWith([]);
+      const result = await adapter.applySort(tableDetail(), [], undefined);
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: {
+          code: "link-missing",
+          rel: "createView",
+          resource: 'table "SASHELP.CLASS"',
+        },
+      });
+    });
+
+    it("reports response-malformed when the created view carries no rows or delete link", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/views`,
+          reply: dataOk(
+            { name: "V", libref: "WORK", links: [] },
+            { status: 201 },
+          ),
+        },
+      ]);
+      const result = await adapter.applySort(
+        tableWithCreateView(),
+        [],
+        undefined,
+      );
+      assert.ok(!result.ok);
+      const { problem } = result;
+      assert.ok(problem.code === "compute");
+      assert.equal(problem.problem.code, "response-malformed");
+    });
+
+    it("refuses with session-busy without sending any request", async () => {
+      const { adapter, calls } = adapterWith([], { isBusy: true });
+      const result = await adapter.applySort(
+        tableWithCreateView(),
+        [],
+        undefined,
+      );
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "session-busy" });
+      assert.deepEqual(calls, []);
+    });
+
+    it("rewrites a session-gone 404 through the compute vocabulary", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/views`,
+          reply: dataFail({ code: "compute-rejected", error: { status: 404 } }),
+        },
+      ]);
+      const result = await adapter.applySort(
+        tableWithCreateView(),
+        [],
+        undefined,
+      );
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: { code: "session-gone", error: { status: 404 } },
+      });
+    });
+  });
+
+  describe("deleteView", () => {
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/T0D749FF8_VIEW`;
+
+    function view(): TableDetail {
+      return {
+        kind: "tableDetail",
+        libref: "SASHELP",
+        name: "CLASS",
+        links: [{ rel: "delete", href: VIEW_HREF, method: "DELETE" }],
+      };
+    }
+
+    it("follows the view's own delete link", async () => {
+      const { adapter, calls } = adapterWith([
+        { when: VIEW_HREF, reply: dataOk({}, { status: 204 }) },
+      ]);
+      const result = await adapter.deleteView(view());
+      assert.ok(result.ok);
+      assert.equal(calls.length, 1);
+      const [call] = calls;
+      assert.ok(call);
+      assert.equal(call.method, "DELETE");
+      assert.equal(call.href, VIEW_HREF);
+    });
+
+    it("reports link-missing when the view carries no delete relation", async () => {
+      const { adapter } = adapterWith([]);
+      const result = await adapter.deleteView({ ...view(), links: [] });
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: {
+          code: "link-missing",
+          rel: "delete",
+          resource: 'view over table "SASHELP.CLASS"',
+        },
+      });
+    });
+
+    it("rewrites a session-gone 404 through the compute vocabulary", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: VIEW_HREF,
+          reply: dataFail({ code: "compute-rejected", error: { status: 404 } }),
+        },
+      ]);
+      const result = await adapter.deleteView(view());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: { code: "session-gone", error: { status: 404 } },
+      });
+    });
+
+    it("refuses with session-busy without sending any request", async () => {
+      const { adapter, calls } = adapterWith([], { isBusy: true });
+      const result = await adapter.deleteView(view());
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "session-busy" });
+      assert.deepEqual(calls, []);
     });
   });
 });

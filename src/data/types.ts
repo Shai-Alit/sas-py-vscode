@@ -64,6 +64,17 @@ export const ROWS_REL = "rows";
  * metadata — a collection, paged (Finding 7.1). */
 export const COLUMNS_REL = "columns";
 
+/** The relation on a table's (or a view's — Finding 7.15) own rich detail
+ * that creates a server-side sorted/filtered view of it. `POST`, body media
+ * type `application/vnd.sas.compute.data.table.view.request`. */
+export const CREATE_VIEW_REL = "createView";
+
+/** The relation that removes a table or a view. `DELETE`, no request body,
+ * no response media type (Finding 7.15 — the link carries no `type` at all,
+ * the same "absent means no media type" shape Finding 14 already
+ * established for a link with nothing to negotiate). */
+export const DELETE_REL = "delete";
+
 /** A SAS library (a libref) — `WORK`, `SASHELP`, and any site-registered
  * library the active session's compute context can see. */
 export interface LibraryItem {
@@ -251,6 +262,17 @@ export function readColumnItem(value: unknown): Column | undefined {
       ? { informat: raw.informat }
       : {}),
   };
+}
+
+/**
+ * One column to sort a table's rows by, and the direction — mirrors the
+ * `createView` request body's own `sortBy` entry shape exactly (Finding 7.15:
+ * `{"sortBy":[{"key":"Age","direction":"descending"}]}`), so `LibraryAdapter.
+ * applySort` sends it unmodified rather than translating a second time.
+ */
+export interface SortSpec {
+  readonly key: string;
+  readonly direction: "ascending" | "descending";
 }
 
 /** One row of table data — an ordered array of cell values, positionally

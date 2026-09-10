@@ -239,7 +239,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // its lifetime is the extension's own and every panel it opens is disposed
   // on deactivation via `context.subscriptions` (wired inside
   // `registerDataExplorer`, which owns the command that calls `.open`).
-  const dataViewerPanels = new DataViewerPanelManager(context.extensionUri);
+  const dataViewerPanels = new DataViewerPanelManager(context.extensionUri, {
+    log: output,
+  });
 
   // Phase 7a: the read-only "SAS Libraries" tree, a second view inside the
   // same activity-bar container 6a-ii created (the phase file's own

@@ -171,6 +171,39 @@ export function readViyaError(status: number, body: string): ViyaError {
     }
   }
 
+  // A `createView`/`getRows` validation failure (an invalid `where=` or
+  // `sortBy` key, Finding 7.18, `docs/phases/phase-7.md`) answers a shape
+  // this function did not previously read at all: the top-level `details`
+  // carries only `path:`/`correlator:` machine entries and no human sentence,
+  // while the actual SAS parser message — the only actionable part of the
+  // whole response — sits one level down, in `errors[0].details`. Falling
+  // back to it only when the top-level array supplied nothing is what keeps
+  // this additive: a body whose top-level `details` already has a human
+  // sentence (finding 17's own shape) is unaffected.
+  if (detail === undefined) {
+    const nested: unknown = envelope.errors;
+    if (Array.isArray(nested) && nested.length > 0) {
+      const first: unknown = nested[0];
+      if (typeof first === "object" && first !== null) {
+        const nestedDetails: unknown = (first as Record<string, unknown>)
+          .details;
+        if (Array.isArray(nestedDetails)) {
+          for (const entry of nestedDetails as readonly unknown[]) {
+            if (typeof entry !== "string") continue;
+            const trimmed = entry.trim();
+            if (
+              trimmed.startsWith(CORRELATOR_PREFIX) ||
+              trimmed.startsWith(PATH_PREFIX)
+            ) {
+              continue;
+            }
+            detail ??= clip(trimmed);
+          }
+        }
+      }
+    }
+  }
+
   return {
     status,
     ...(message === undefined ? {} : { message }),

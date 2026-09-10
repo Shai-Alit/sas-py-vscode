@@ -402,6 +402,16 @@ lines below.
   collection media type and `{}` under `application/json` in finding 101 —
   pin the real shape here before iterating it the way upstream's
   `getParentOfItem` does.
+- ☐ **Oversized-file read surfaces as a network error (PR #141 review,
+  2026-09-10).** A `GET .../content` body over `MAX_FILE_CONTENT_BYTES`
+  (10 MiB) makes `nodeHttpTransport` throw a plain `Error`, which
+  `content/client.ts` catches in the same arm as a genuine unreachable host
+  and localises as "could not reach SAS Viya — check your proxy". The real
+  reason reaches only the log. Fix needs a distinct `content-too-large`
+  `ContentProblem` variant **and** a typed size-cap error from
+  `nodeHttpTransport` so the transport catch can tell it apart from a real
+  network failure — too wide for 6b. Low severity (a 10 MiB `.py` is an edge
+  case); not a correctness bug.
 
 ☐ **6d — Favourites and recycle bin.**
 

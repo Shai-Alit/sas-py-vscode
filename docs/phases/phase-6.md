@@ -433,16 +433,19 @@ struck lines below.
   collection media type and `{}` under `application/json` in finding 101 —
   pin the real shape here before iterating it the way upstream's
   `getParentOfItem` does.
-- ☐ **Oversized-file read surfaces as a network error (PR #141 review,
-  2026-09-10).** A `GET .../content` body over `MAX_FILE_CONTENT_BYTES`
-  (10 MiB) makes `nodeHttpTransport` throw a plain `Error`, which
-  `content/client.ts` catches in the same arm as a genuine unreachable host
-  and localises as "could not reach SAS Viya — check your proxy". The real
-  reason reaches only the log. Fix needs a distinct `content-too-large`
-  `ContentProblem` variant **and** a typed size-cap error from
-  `nodeHttpTransport` so the transport catch can tell it apart from a real
-  network failure — too wide for 6b. Low severity (a 10 MiB `.py` is an edge
-  case); not a correctness bug.
+- ☑ **Oversized-file read surfaces as a network error (PR #141 review,
+  2026-09-10).** Done ahead of 6c-i as a standalone `fix/content-oversized-read`
+  branch (Sean's call, 2026-09-10 — it touches `src/auth/transport.ts`, shared
+  with compute, so it stays out of the content-mutation diffs). `nodeHttpTransport`
+  now rejects an over-cap body with a typed `ResponseTooLargeError` (carrying the
+  `capBytes`) instead of a plain `Error`; `src/content/client.ts` catches that
+  and returns a new `content-too-large` `ContentProblem` (`limitBytes`), which
+  `messages.ts` renders as "This file is too large to open in the editor (limit
+  10 MB). Open it in SAS Studio instead." and `contentFileSystem.ts` maps to a
+  plain `FileSystemError` (retrying will not help). Compute is unaffected — the
+  error is an `Error` subclass with the same message, and its rich-output fetch
+  already pre-checks size via `exceedsCaptureCap`. Adversarial pass before the
+  PR; `npm run verify` green.
 
 ☐ **6d — Favourites and recycle bin.**
 

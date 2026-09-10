@@ -358,6 +358,10 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
         problem: { code: "link-missing", rel: "content", resource: "file" },
         code: "Unknown",
       },
+      {
+        problem: { code: "content-too-large", limitBytes: 10 * 1024 * 1024 },
+        code: "Unknown",
+      },
     ];
     for (const { problem, code } of cases) {
       const { provider } = providerWith({
@@ -366,6 +370,19 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
       const error = await rejectionOf(provider.readFile(A_CONTENT_URI));
       assert.equal(error.code, code, `${problem.code} → ${error.code}`);
     }
+  });
+
+  it("maps a too-large read to a size-limit message, not 'cannot reach Viya'", async () => {
+    const { provider, errors } = providerWith({
+      readFileContent: () =>
+        Promise.resolve(
+          fail({ code: "content-too-large", limitBytes: 10 * 1024 * 1024 }),
+        ),
+    });
+    const error = await rejectionOf(provider.readFile(A_CONTENT_URI));
+    assert.match(error.message, /too large to open in the editor/);
+    assert.doesNotMatch(error.message, /reach SAS Viya/);
+    assert.equal(errors.length, 1, "the technical sentence is logged");
   });
 
   it("maps a no-session unauthorized to the sign-in prompt, not the raw auth reading", async () => {

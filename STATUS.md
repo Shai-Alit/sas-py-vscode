@@ -50,9 +50,16 @@ scheme changed 2026-09-09" section below and `CLAUDE.md`.)
   [PR #145](https://github.com/Shai-Alit/sas-py-vscode/pull/145) (squash
   `0449caa`; adversarial pass before the PR, `npm run verify` green, 1348 unit
   + 281 integration passing, coverage unchanged).
-- **6c — mutations (create/rename/move/delete).** Next. Also picks up the
-  three items moved out of 6b above, and the `.py` type / `/types/types`
-  probe deferred from 6a.
+- **6c — mutations (create/rename/move/delete).** Next, and split into three
+  sub-slices (Sean, 2026-09-10): **6c-i** create/rename/delete for folders and
+  files from the tree context menu (+ the `/types/types` re-probe); **6c-ii**
+  move + drag-and-drop (repo's first `TreeDragAndDropController`) + the
+  Python-shaped drag-into-editor snippet; **6c-iii** `getParent`/`TreeView.reveal`
+  + the finding-101 `ancestors` probe. Upload/download to local disk is
+  **deferred to Phase 11** (out of the 6a–6d scope). The 6b-deferred
+  oversized-file-read fix went out first as a standalone
+  `fix/content-oversized-read` branch (`content-too-large` problem + a typed
+  `ResponseTooLargeError` from the transport).
 
 The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
 2026-09-09 — nothing else gates Phase 6.

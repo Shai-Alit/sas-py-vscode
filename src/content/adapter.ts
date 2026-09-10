@@ -106,8 +106,11 @@ const UPDATE_CONTENT_REL = "updateContent";
 /**
  * The response-body cap for a file read, well above the transport's 1 MiB
  * default. A `.py` past 10 MiB is not something this extension can usefully put
- * in an editor, and the transport rejecting it there surfaces as a clear
- * "could not read" rather than a silently truncated buffer.
+ * in an editor; the transport rejects a body over this with a
+ * `ResponseTooLargeError`, which `src/content/client.ts` turns into a
+ * `content-too-large` problem — a "too large to open here, use SAS Studio"
+ * message rather than a silently truncated buffer or a misleading
+ * "could not reach SAS Viya".
  */
 export const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
 

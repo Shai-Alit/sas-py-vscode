@@ -38,6 +38,11 @@ export function localiseContentProblem(problem: ContentProblem): string {
       return vscode.l10n.t(
         "Could not reach SAS Viya to open this file. Check that you can reach the deployment from this machine, and whether it needs a proxy.",
       );
+    case "content-too-large":
+      return vscode.l10n.t(
+        "This file is too large to open in the editor (limit {0} MB). Open it in SAS Studio instead.",
+        String(Math.floor(problem.limitBytes / (1024 * 1024))),
+      );
     case "unauthorized":
       // Delegated, not duplicated — slice 1c already words every reading of a
       // 401, including "sign in again".

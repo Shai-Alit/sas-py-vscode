@@ -23,7 +23,8 @@ is fetched until you open a folder. Folders sort before files, then by name.
 
 Click a file in the tree to open it in an editor. It behaves like any other
 file: edit it and **Save** writes it straight back to SAS Viya. Data flows and
-other non-file items in the tree do not open this way.
+other non-file items in the tree do not open this way, and a file larger than
+10 MB will not open — edit those in SAS Studio.
 
 Saving is guarded against overwriting someone else's change. If the file was
 modified on the server — in SAS Studio, the web client, or another editor —

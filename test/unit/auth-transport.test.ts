@@ -18,6 +18,7 @@ import {
   createNodeHttpTransport,
   MAX_BODY_BYTES,
   nodeHttpTransport,
+  ResponseTooLargeError,
   type TransportRequest,
 } from "../../src/auth/transport";
 
@@ -340,10 +341,18 @@ describe("nodeHttpTransport", () => {
       pump();
     };
 
-    await assert.rejects(
-      send("/token"),
-      new RegExp(`response body exceeded ${String(MAX_BODY_BYTES)} bytes`),
-    );
+    await assert.rejects(send("/token"), (error: unknown) => {
+      // A distinct type, not a bare Error — `src/content/client.ts` keys the
+      // "file too large" message on it rather than falling into "check your
+      // proxy".
+      assert.ok(
+        error instanceof ResponseTooLargeError,
+        `not a ResponseTooLargeError: ${String(error)}`,
+      );
+      assert.equal(error.capBytes, MAX_BODY_BYTES);
+      assert.match(error.message, /response body exceeded/);
+      return true;
+    });
   });
 
   it("returns the response's raw bytes via bytes(), undecoded", async () => {
@@ -402,7 +411,11 @@ describe("nodeHttpTransport", () => {
 
     await assert.rejects(
       send("/token", { maxBodyBytes: small }),
-      new RegExp(`response body exceeded ${String(small)} bytes`),
+      (error: unknown) => {
+        assert.ok(error instanceof ResponseTooLargeError);
+        assert.equal(error.capBytes, small);
+        return true;
+      },
     );
   });
 

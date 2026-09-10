@@ -1,7 +1,7 @@
 {
   "version": 2,
   "accept": "application/vnd.sas.content.folder.member",
-  "count": 1,
+  "count": 2,
   "start": 0,
   "limit": 1000000,
   "name": "members",
@@ -53,6 +53,48 @@
           "rel": "delete",
           "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1",
           "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2024-03-02T09:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-03-02T09:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "eeeeeeee-0000-4000-8000-0000000000f2",
+      "name": "reports",
+      "added": "2024-03-02T09:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002",
+      "uri": "/folders/folders/cccccccc-0000-4000-8000-0000000000ff",
+      "type": "reference",
+      "contentType": "folder",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f2",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f2",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-0000000000ff",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-0000000000ff",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "DELETE",
+          "rel": "deleteResource",
+          "href": "/folders/folders/cccccccc-0000-4000-8000-0000000000ff",
+          "uri": "/folders/folders/cccccccc-0000-4000-8000-0000000000ff"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f2",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f2"
         }
       ]
     }

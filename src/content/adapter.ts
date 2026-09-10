@@ -870,10 +870,10 @@ export class ContentAdapter {
    *
    * A favourite is a **reference** member, not a `child`: the same resource can
    * be referenced from many folders and it keeps its own authorizations. The My
-   * Favorites folder representation is fetched once and memoised for the life of
-   * the adapter (which is rebuilt per deployment and on sign-out); only its
-   * `addMember` link is read, and that href — `/folders/folders/{id}/members` —
-   * is stable.
+   * Favorites folder representation is fetched fresh each call
+   * ({@link ContentAdapter.favoritesFolder}) — **not** memoised, because
+   * `@myFavorites` resolves per account and one {@link ContentAdapter} is reused
+   * across profile switches on a deployment.
    */
   async addToFavorites(
     item: ContentItem,
@@ -974,15 +974,24 @@ export class ContentAdapter {
     return map;
   }
 
-  /** The My Favorites folder representation, memoised on the first success. A
-   * failure is returned but not cached, so a transient error does not pin the
-   * adapter to a favourites-less state. */
+  /**
+   * The My Favorites folder representation, `GET`-ed fresh on every call.
+   *
+   * **Deliberately not memoised.** `@myFavorites` resolves to a concrete
+   * *per-account* folder id (`delegate-favorites.json` shows the `addMember`
+   * href baked to it), and {@link ContentSession.adapterFor} caches one
+   * {@link ContentAdapter} per *endpoint* and reuses it across profile switches
+   * on the same deployment. A cached href would let one account's `addMember`
+   * land in another account's My Favorites after a profile switch with no
+   * sign-out (the same class of bug 6b's per-deployment `sasContent:` ETag-guard
+   * fix closed). {@link ContentAdapter.favoriteRecordHrefs} re-fetches for the
+   * same reason — this matches its policy. The only endpoint-global cache in this
+   * adapter is `typeDefCache`, which really is the same for every user of a
+   * deployment.
+   */
   private async favoritesFolder(
     signal?: AbortSignal,
   ): Promise<ContentResult<ContentItem>> {
-    if (this.favoritesFolderCache !== undefined) {
-      return this.favoritesFolderCache;
-    }
     const result = await this.client.send({
       link: { rel: SELF_REL, href: `${FOLDERS_COLLECTION}/@myFavorites` },
       ...withSignal(signal),
@@ -997,10 +1006,8 @@ export class ContentAdapter {
         "and the body was not a folder representation",
       );
     }
-    this.favoritesFolderCache = { ok: true, value: item };
-    return this.favoritesFolderCache;
+    return { ok: true, value: item };
   }
-  private favoritesFolderCache: { ok: true; value: ContentItem } | undefined;
 
   /**
    * Delete a folder (recursively) or a file.

@@ -154,6 +154,38 @@ describe("content/presentation nodePresentationOf", () => {
     assert.equal(nodePresentationOf(item({ type: "folder" })).openable, false);
   });
 
+  describe("a My Favorites 'reference' member (6d-i)", () => {
+    it("presents a favourited folder as an expandable folder, marked Remove", () => {
+      const p = nodePresentationOf(
+        item({
+          type: "reference",
+          contentType: "folder",
+          name: "reports",
+          isInMyFavorites: true,
+        }),
+      );
+      assert.equal(p.expandable, true);
+      assert.equal(p.icon, "folder");
+      assert.equal(p.favoriteAction, "remove");
+      assert.equal(p.contextValue, `${CONTEXT_FOLDER}${FAVORITE_SUFFIX}`);
+    });
+
+    it("presents a favourited file as an openable leaf, marked Remove", () => {
+      const p = nodePresentationOf(
+        item({
+          type: "reference",
+          contentType: "file",
+          name: "analysis.py",
+          isInMyFavorites: true,
+        }),
+      );
+      assert.equal(p.expandable, false);
+      assert.equal(p.openable, true);
+      assert.equal(p.icon, "file");
+      assert.equal(p.contextValue, `${CONTEXT_FILE}${FAVORITE_SUFFIX}`);
+    });
+  });
+
   describe("favouritability (6d-i)", () => {
     it("offers Add on a folder or leaf that is not a favourite", () => {
       for (const it of [

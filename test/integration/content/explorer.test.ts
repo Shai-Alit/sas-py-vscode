@@ -181,6 +181,26 @@ describe("SAS Content explorer", () => {
     }
   });
 
+  it("favourites commands early-out on a Recycle Bin item without throwing (6d-i)", async () => {
+    // `favorite()` checks `item.inRecycleBin` before the session, so a
+    // programmatic invocation on a bin item is short-circuited even though the
+    // `.recycled` `when` clause already hides the menu entry.
+    const recycled = {
+      id: "bin-1",
+      name: "old.py",
+      type: "child",
+      contentType: "file",
+      inRecycleBin: true,
+      links: [],
+    };
+    for (const command of FAVORITE_COMMANDS) {
+      await assert.doesNotReject(
+        Promise.resolve(vscode.commands.executeCommand(command, recycled)),
+        `${command} threw on a recycled item`,
+      );
+    }
+  });
+
   it("registers the two 6d-i favourites commands and wires their menu", async () => {
     const registered = await vscode.commands.getCommands(true);
     for (const command of FAVORITE_COMMANDS) {

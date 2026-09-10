@@ -688,17 +688,39 @@ before the PR.
   (a one-click reversible toggle); a full tree reload after, which re-marks every
   visible row. Hidden from the palette (`commandPalette`, `when:false`); menu
   group `5_favorites`.
-- ☑ Tests: `content-adapter.test.ts` (+9 — `markFavorites` stamp / lookup-failure
-  / opt-in / favourites-delegate branch / `self`-link fallback; `addToFavorites`
-  POST body / `contentType` omission / memoisation / link-missing ×2 /
-  `response-malformed` / passthrough; `removeFromFavorites` DELETE / link-missing
-  / passthrough), `content-presentation.test.ts` (+4 — the favourite-action
-  matrix), `content-types.test.ts` (+2 — `isFavoritesDelegate` /
-  `FAVORITE_MEMBER_TYPE`), `test/integration/content/explorer.test.ts` (+1 —
-  command + menu wiring; the 6c-i menu assertion relaxed for the `=~` form). New
-  fixture `favorites-members.json`. `npm run verify` green (1503 unit; coverage
-  95.37 lines / 95.31 branches / 95.06 functions / 95.37 statements), 320
-  integration passing.
+- ☑ Tests: `content-adapter.test.ts` (`markFavorites` stamp / lookup-failure /
+  opt-in / favourites-delegate branch incl. a `reference` folder staying
+  navigable / `self`-link fallback; `addToFavorites` POST body / `contentType`
+  omission / **re-fetch-every-call** / link-missing ×2 / `response-malformed` /
+  passthrough; `removeFromFavorites` DELETE / link-missing / passthrough),
+  `content-presentation.test.ts` (favourite-action matrix; a `.recycled` bin
+  item; a `reference` folder/file browsed under My Favorites),
+  `content-types.test.ts` (`isFavoritesDelegate` / `FAVORITE_MEMBER_TYPE`;
+  `typeNameOf`/`isContainer` for a `reference` member),
+  `test/integration/content/explorer.test.ts` (command + menu wiring; the 6c-i
+  menu assertion relaxed for the `=~` form; every content `when` regex withholds
+  a `.recycled` item; the `favorite()` bin early-out). New fixture
+  `favorites-members.json`. `npm run verify` green (1506 unit; coverage 95.38
+  lines / 95.29 branches / 95.07 functions / 95.38 statements), 321 integration
+  passing; `npm run check:docs` green.
+- ☑ **[PR #157](https://github.com/Shai-Alit/sas-py-vscode/pull/157) review —
+  four findings folded in before merge.** Codex, round 1 (2 × Major, one root
+  cause): a Recycle Bin child kept a bare `sasContent:folder`/`:file`
+  `contextValue`, so the new add-favourite command showed on it → `.recycled`
+  `contextValue` suffix (above) + an `inRecycleBin` early-out in `favorite()`,
+  checked before the session since it is a fact about the clicked item. Round 2:
+  **(blocking)** `favoritesFolder()` memoised the My Favorites representation —
+  including its per-account `addMember` href — but a `ContentAdapter` is cached
+  per *endpoint* and reused across profile switches, so one account's favourites
+  could receive another's `addMember` (the 6b `sasContent:` ETag-guard bug
+  class) → memoisation dropped, `@myFavorites` re-fetched every call, matching
+  `favoriteRecordHrefs`' own policy. **(likely blocking)** `typeNameOf` /
+  `isContainer` only special-cased `type: "child"`, so a favourite browsed
+  *inside* My Favorites (wire `type: "reference"`, finding 6.13) read as a
+  non-navigable leaf — a favourited folder could not expand, a favourited file
+  could not open, both got a file icon and `sasContent:file` → `typeNameOf` now
+  defers to `contentType` for `"reference"` too. **(minor)** the `favorite()`
+  early-out had only indirect coverage → a direct integration check added.
 - ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i.** A drop onto the
   My Favorites delegate already no-ops (`moveObjection` → `target-not-a-folder`);
   wiring it to `addToFavorites` is upstream parity but not in the 6d punch list.

@@ -239,25 +239,26 @@ async function remove(
  *
  * A Recycle Bin item is not favouritable — `presentation.ts` gives it a
  * `.recycled` `contextValue` the menu `when` clauses exclude, so this handler is
- * only reached for one programmatically; it early-outs with a message rather
- * than referencing bin content from My Favorites.
+ * only reached for one programmatically. That guard is checked first, before the
+ * session, because it is a fact about the clicked item, not about auth state.
  */
 async function favorite(
   deps: ContentCommandDeps,
   item: ContentItem | undefined,
   action: "add" | "remove",
 ): Promise<void> {
-  const adapter = deps.adapter();
-  if (adapter === undefined || item === undefined) {
-    reportNoTarget(adapter);
-    return;
-  }
-  if (item.inRecycleBin === true) {
+  if (item?.inRecycleBin === true) {
     void vscode.window.showErrorMessage(
       vscode.l10n.t(
         "Restore this item from the Recycle Bin before adding it to My Favorites.",
       ),
     );
+    return;
+  }
+
+  const adapter = deps.adapter();
+  if (adapter === undefined || item === undefined) {
+    reportNoTarget(adapter);
     return;
   }
 

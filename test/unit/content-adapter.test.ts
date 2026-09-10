@@ -7,15 +7,13 @@ import {
   ContentAdapter,
   MAX_FILE_CONTENT_BYTES,
 } from "../../src/content/adapter";
+import { type ContentRequest } from "../../src/content/client";
 import {
-  type ContentRequest,
-  type ContentResponse,
-  type ContentResult,
-} from "../../src/content/client";
-import {
+  isContainer,
   isSasContentRoot,
   readContentItem,
   SAS_CONTENT_ROOT,
+  typeNameOf,
   type ContentItem,
 } from "../../src/content/types";
 import { readJsonFixture } from "../helpers/fixtures";
@@ -401,7 +399,19 @@ describe("content/adapter", () => {
         assert.ok(result.ok);
         assert.ok(result.value.length > 0);
         assert.ok(result.value.every((c) => c.isInMyFavorites === true));
-        assert.equal(result.value[0]?.favoriteUri, FAV_RECORD);
+
+        // The wire type of a favourite is `"reference"`, not `"child"`; the real
+        // kind is still in `contentType`, so a favourited folder browsed here
+        // stays navigable and a favourited file stays openable — and the record
+        // to remove is the child's own `delete` link, not `deleteResource`.
+        const folder = result.value.find((c) => c.name === "reports");
+        const file = result.value.find((c) => c.name === "analysis.py");
+        assert.ok(folder && file);
+        assert.equal(file.favoriteUri, FAV_RECORD);
+        assert.equal(folder.type, "reference");
+        assert.equal(isContainer(folder), true);
+        assert.equal(typeNameOf(file), "file");
+        assert.equal(isContainer(file), false);
       });
 
       it("falls back to the self link for a favourite child with no delete link", async () => {
@@ -1976,19 +1986,18 @@ describe("content/adapter", () => {
         assert.equal(body.uri, "/folders/folders/f");
       });
 
-      it("memoises the My Favorites folder across calls, but not a failure", async () => {
+      it("re-fetches the My Favorites folder on every call — never cached", async () => {
+        // `@myFavorites` resolves per account; one ContentAdapter is reused
+        // across profile switches on an endpoint, so a cached href would let one
+        // account's addMember land in another's favourites (PR review, blocking).
         const member = readContentItemFixture("member-created.json");
         let favGets = 0;
-        let favResponse: ContentResult<ContentResponse> = contentFail({
-          code: "content-unreachable",
-          detail: "boom",
-        });
         const { adapter } = adapterWith([
           {
             when: FAV_SELF,
             reply: () => {
               favGets += 1;
-              return favResponse;
+              return contentFixture("delegate-favorites.json");
             },
           },
           {
@@ -2000,14 +2009,10 @@ describe("content/adapter", () => {
           },
         ]);
 
-        const first = await adapter.addToFavorites(member);
-        assert.ok(!first.ok); // fetch failed
-        favResponse = contentFixture("delegate-favorites.json");
-        const second = await adapter.addToFavorites(member);
-        assert.ok(second.ok);
-        const third = await adapter.addToFavorites(member);
-        assert.ok(third.ok);
-        assert.equal(favGets, 2); // failure not cached; first success is
+        assert.ok((await adapter.addToFavorites(member)).ok);
+        assert.ok((await adapter.addToFavorites(member)).ok);
+        assert.ok((await adapter.addToFavorites(member)).ok);
+        assert.equal(favGets, 3);
       });
 
       it("reports link-missing when the item has no resolvable resource href", async () => {

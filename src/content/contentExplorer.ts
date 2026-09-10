@@ -113,10 +113,11 @@ export function registerContentExplorer(
 
   // 6c-iii: show and select the item a create or move just landed.
   // `provider.getParent` drives the walk; `reveal` rejects when it cannot place
-  // the node (the identity gap the tree-provider doc comment describes), which
-  // is swallowed — a best-effort expand is still the point. The view is filled
-  // in below (the drag-and-drop controller it needs is built first); `reveal`
-  // only runs on later user action, so `current` is set by then.
+  // the node (usually the identity gap the tree-provider doc comment describes),
+  // which is swallowed — a best-effort expand is still the point — but logged at
+  // debug so a genuine VS Code-internal failure still leaves a trail. The view
+  // is filled in below (the drag-and-drop controller it needs is built first);
+  // `reveal` only runs on later user action, so `current` is set by then.
   const viewRef: { current: vscode.TreeView<ContentItem> | undefined } = {
     current: undefined,
   };
@@ -131,7 +132,13 @@ export function registerContentExplorer(
           }),
         ).then(
           () => undefined,
-          () => undefined,
+          (error: unknown) => {
+            log.debug(
+              `SAS Content: could not reveal "${item.name}": ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          },
         );
 
   // 6c-ii: drag a folder or file member onto another folder to move it. The

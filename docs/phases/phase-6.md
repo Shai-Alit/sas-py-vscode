@@ -427,8 +427,22 @@ message, and its rich-output fetch already pre-checks size via
 `exceedsCaptureCap`. Adversarial pass before the PR; `npm run verify` green;
 Codex + Claude PR reviews clean.
 
-☐ **6c-i — create / rename / delete from the tree context menu.** Findings
-6.3–6.9 (both a `verde` LTS 2026.03 and an `innov` Stable 2026.06 deployment).
+☑ **6c-i — create / rename / delete from the tree context menu.** Merged
+2026-09-10 — [PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148),
+squash `c63feaf`. Findings 6.3–6.9 (both a `verde` LTS 2026.03 and an `innov`
+Stable 2026.06 deployment). `npm run verify` green (1395 unit + 287 integration
+passing; coverage 95.12 lines / 95.18 branches / 94.76 functions / 95.12
+statements). Adversarial pass before the PR raised one Major — `createFile`'s
+orphan-rollback `DELETE` forwarded the caller's (cancellable) signal, so a
+cancel/timeout that broke the two-call sequence also killed the rollback; now
+runs on the client's own timeout with no caller signal, with a test driving an
+already-aborted signal. Codex's PR review raised one further Major — the command
+runner treated a **post-completion** Cancel click as a cancelled mutation, so a
+change that landed left the tree unrefreshed; `run()` now acts on the adapter's
+actual `ContentResult` and only suppresses output when the abort fired *during*
+the work. Claude's PR review clean (one non-blocking note: the command handlers
+have no `.catch`, matching the existing `src/*/commands.ts` convention). All
+threads resolved. **6c-ii is next.**
 
 - ☑ **Folder create / file create / rename / delete on `ContentAdapter`**
   (`src/content/adapter.ts`, `vscode`-free), each driven by a link the parent
@@ -470,10 +484,11 @@ Codex + Claude PR reviews clean.
   spinner), hidden from the command palette (`menus.commandPalette`,
   `when:false`) because they need a tree item. `SasContentTreeProvider.refresh`
   grew an optional parent argument so a create reloads just that folder.
-- ☑ Tests: `content-adapter.test.ts` (+18 — create/rename/delete branches,
-  collision, non-empty-folder recursion, orphan rollback, swallowed 404,
-  `getTypeDefinition` cache/shortcut/fallback), `content-client.test.ts` (JSON
-  body / `Content-Disposition` / `Accept`), `content-problems.test.ts` +
+- ☑ Tests: `content-adapter.test.ts` (+40 — create/rename/delete happy and
+  defensive branches, collision, non-empty-folder recursion, orphan rollback
+  incl. the already-aborted-signal case, swallowed 404, sub-folder-member
+  delete, `getTypeDefinition` cache/shortcut/fallback), `content-client.test.ts`
+  (JSON body / `Content-Disposition` / `Accept`), `content-problems.test.ts` +
   `content-presentation.test.ts` + `test/integration/content/`
   (`messages.test.ts`, `explorer.test.ts` — command + menu wiring). New
   fixtures `folder-created` / `member-created` / `types-python` /

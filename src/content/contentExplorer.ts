@@ -39,6 +39,7 @@ import {
 } from "./contentSession";
 import { SasContentFileSystemProvider } from "./contentFileSystem";
 import { SasContentTreeProvider } from "./contentTree";
+import { type ContentItem } from "./types";
 import { CONTENT_SCHEME } from "./uri";
 
 /** The id of the tree view, matching `package.json`'s `contributes.views`. */
@@ -110,6 +111,29 @@ export function registerContentExplorer(
     log,
   );
 
+  // 6c-iii: show and select the item a create or move just landed.
+  // `provider.getParent` drives the walk; `reveal` rejects when it cannot place
+  // the node (the identity gap the tree-provider doc comment describes), which
+  // is swallowed — a best-effort expand is still the point. The view is filled
+  // in below (the drag-and-drop controller it needs is built first); `reveal`
+  // only runs on later user action, so `current` is set by then.
+  const viewRef: { current: vscode.TreeView<ContentItem> | undefined } = {
+    current: undefined,
+  };
+  const reveal = (item: ContentItem): Thenable<void> =>
+    viewRef.current === undefined
+      ? Promise.resolve()
+      : Promise.resolve(
+          viewRef.current.reveal(item, {
+            select: true,
+            focus: false,
+            expand: true,
+          }),
+        ).then(
+          () => undefined,
+          () => undefined,
+        );
+
   // 6c-ii: drag a folder or file member onto another folder to move it. The
   // controller is a thin shell — `contentMove.ts` decides which drops are
   // moves, `adapter.moveItem` does the wire work. `canSelectMany` lets a user
@@ -123,6 +147,7 @@ export function registerContentExplorer(
     refresh: () => {
       provider.refresh();
     },
+    reveal,
     log,
     viewId: CONTENT_VIEW_ID,
   });
@@ -132,6 +157,7 @@ export function registerContentExplorer(
     dragAndDropController: dragAndDrop,
     canSelectMany: true,
   });
+  viewRef.current = view;
 
   // The tree context-menu mutations (6c-i). They read the same
   // per-active-deployment adapter the tree does, and reload through the tree.
@@ -140,6 +166,7 @@ export function registerContentExplorer(
     refresh: (item) => {
       provider.refresh(item);
     },
+    reveal,
     log,
     viewId: CONTENT_VIEW_ID,
   });

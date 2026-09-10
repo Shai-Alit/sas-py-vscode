@@ -49,11 +49,16 @@ function okResult(
 function adapterReturning(
   roots: ContentResult<readonly ContentItem[]>,
   children: ContentResult<readonly ContentItem[]> = okResult([]),
+  parent: ContentResult<ContentItem | undefined> = {
+    ok: true,
+    value: undefined,
+  },
 ): ContentAdapter {
-  // The provider only calls these two methods.
+  // The provider calls these three.
   return {
     getRootItems: () => Promise.resolve(roots),
     getChildItems: () => Promise.resolve(children),
+    getParentOfItem: () => Promise.resolve(parent),
   } as unknown as ContentAdapter;
 }
 
@@ -186,5 +191,99 @@ describe("SasContentTreeProvider", () => {
     assert.equal(errors.length, 1);
     assert.match(errors[0] ?? "", /SAS Content:/);
     provider.dispose();
+  });
+
+  describe("getParent (6c-iii)", () => {
+    it("has no parent for the synthetic root or a delegate, without asking the adapter", async () => {
+      let asked = 0;
+      const adapter = {
+        getParentOfItem: () => {
+          asked += 1;
+          return Promise.resolve({ ok: true, value: undefined });
+        },
+      } as unknown as ContentAdapter;
+      const { provider } = makeProvider(() => adapter);
+
+      assert.equal(await provider.getParent(SAS_CONTENT_ROOT), undefined);
+      assert.equal(
+        await provider.getParent(
+          item({ id: "d", name: "My Folder", type: "myFolder" }),
+        ),
+        undefined,
+      );
+      assert.equal(asked, 0);
+      provider.dispose();
+    });
+
+    it("returns the adapter's parent for a member item", async () => {
+      const parentFolder = item({ id: "p", name: "reports", type: "folder" });
+      const { provider } = makeProvider(() =>
+        adapterReturning(okResult([]), okResult([]), {
+          ok: true,
+          value: parentFolder,
+        }),
+      );
+      const got = await provider.getParent(
+        item({ id: "m", name: "a.py", type: "child", contentType: "file" }),
+      );
+      assert.equal(got, parentFolder);
+      provider.dispose();
+    });
+
+    it("maps a root-listing folder with no ancestors back to the synthetic root", async () => {
+      const { provider } = makeProvider(() =>
+        adapterReturning(okResult([]), okResult([]), {
+          ok: true,
+          value: undefined,
+        }),
+      );
+      const got = await provider.getParent(
+        item({ id: "top", name: "Products", type: "folder" }),
+      );
+      assert.equal(got, SAS_CONTENT_ROOT);
+      provider.dispose();
+    });
+
+    it("returns undefined for a member with no ancestors (rather than the root)", async () => {
+      const { provider } = makeProvider(() =>
+        adapterReturning(okResult([]), okResult([]), {
+          ok: true,
+          value: undefined,
+        }),
+      );
+      const got = await provider.getParent(
+        item({ id: "m", name: "a.py", type: "child", contentType: "file" }),
+      );
+      assert.equal(got, undefined);
+      provider.dispose();
+    });
+
+    it("logs and returns undefined when the adapter fails", async () => {
+      const { provider, errors } = makeProvider(() =>
+        adapterReturning(okResult([]), okResult([]), {
+          ok: false,
+          reason: "boom",
+          problem: { code: "content-unreachable", detail: "ETIMEDOUT" },
+        }),
+      );
+      const got = await provider.getParent(
+        item({ id: "m", name: "a.py", type: "child" }),
+      );
+      assert.equal(got, undefined);
+      assert.equal(errors.length, 1);
+      assert.match(errors[0] ?? "", /SAS Content:/);
+      provider.dispose();
+    });
+
+    it("returns undefined when there is no adapter", async () => {
+      const { provider } = makeProvider(() => undefined);
+      assert.equal(
+        await provider.getParent(
+          item({ id: "m", name: "a.py", type: "child" }),
+        ),
+        undefined,
+      );
+      provider.dispose();
+    });
   });
 });

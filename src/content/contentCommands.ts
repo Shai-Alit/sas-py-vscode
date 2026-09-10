@@ -28,7 +28,7 @@ import { type ContentAdapter } from "./adapter";
 import { type ContentResult } from "./client";
 import { localiseContentProblem } from "./messages";
 import { describeContentProblem } from "./problems";
-import { isContainer, type ContentItem } from "./types";
+import { isContainer, sameResource, type ContentItem } from "./types";
 
 /** What the command layer needs from its surroundings — supplied by
  * `src/content/contentExplorer.ts`, which owns the session and the tree. */
@@ -39,6 +39,9 @@ export interface ContentCommandDeps {
    * that folder re-fetches, or nothing after a rename/delete for a full
    * reload. */
   refresh: (item?: ContentItem) => void;
+  /** Show and select a node in the tree (6c-iii). Best-effort — it resolves
+   * whether or not `TreeView.reveal` could place the node. */
+  reveal: (item: ContentItem) => Thenable<void>;
   /** The shared channel; the technical sentence for every failure goes here. */
   log: vscode.LogOutputChannel;
   /** The tree view id, for the progress spinner's location. */
@@ -99,7 +102,7 @@ async function createChild(
   if (name === undefined) return;
   const chosen = name.trim();
 
-  await run(
+  const { result, aborted } = await run(
     deps,
     parent,
     (signal) =>
@@ -110,6 +113,32 @@ async function createChild(
       ? vscode.l10n.t('Creating folder "{0}"…', chosen)
       : vscode.l10n.t('Creating file "{0}"…', chosen),
   );
+
+  if (result.ok && !aborted) {
+    await revealCreated(deps, adapter, parent, result.value);
+  }
+}
+
+/**
+ * Show and select the item a create just landed. The create response is the new
+ * resource's own representation (a folder id) or its member record (a member
+ * id); the refreshed listing renders every child as a member record, so the
+ * node the tree drew is found by {@link sameResource} — matching the underlying
+ * resource address the two forms agree on — rather than by an id that will not.
+ * If the re-listing fails, or nothing matches, the create response is revealed
+ * as-is: worst case that only expands the parent.
+ */
+async function revealCreated(
+  deps: ContentCommandDeps,
+  adapter: ContentAdapter,
+  parent: ContentItem,
+  created: ContentItem,
+): Promise<void> {
+  const listing = await adapter.getChildItems(parent);
+  const node = listing.ok
+    ? (sameResource(created, listing.value) ?? created)
+    : created;
+  await deps.reveal(node);
 }
 
 async function rename(
@@ -192,13 +221,17 @@ async function remove(
  * failure whose cause is that abort; that one stays silent. Every other failure
  * is logged and shown. The tree is reloaded whatever the outcome, because a
  * cancelled or failed multi-step delete may have changed the server partway.
+ *
+ * Returns the adapter's `ContentResult` and whether the work was aborted, so a
+ * caller that wants to act on a success — `createChild` reveals what it made —
+ * can, without re-deciding what "succeeded" means.
  */
-async function run(
+async function run<T>(
   deps: ContentCommandDeps,
   refreshTarget: ContentItem | undefined,
-  action: (signal: AbortSignal) => Promise<ContentResult<unknown>>,
+  action: (signal: AbortSignal) => Promise<ContentResult<T>>,
   title: string,
-): Promise<void> {
+): Promise<{ result: ContentResult<T>; aborted: boolean }> {
   const { result, aborted } = await vscode.window.withProgress(
     { location: { viewId: deps.viewId }, title, cancellable: true },
     async (_progress, token) => {
@@ -220,12 +253,14 @@ async function run(
 
   deps.refresh(refreshTarget);
 
-  if (result.ok || aborted) return;
+  if (!result.ok && !aborted) {
+    deps.log.error(
+      vscode.l10n.t("SAS Content: {0}", describeContentProblem(result.problem)),
+    );
+    void vscode.window.showErrorMessage(localiseContentProblem(result.problem));
+  }
 
-  deps.log.error(
-    vscode.l10n.t("SAS Content: {0}", describeContentProblem(result.problem)),
-  );
-  void vscode.window.showErrorMessage(localiseContentProblem(result.problem));
+  return { result, aborted };
 }
 
 /** Local, per-keystroke name checks — the authoritative one is the adapter's

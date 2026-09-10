@@ -1207,16 +1207,86 @@ things this box waits on.
   about. `npm run verify` (1419 unit passing) and `npm run test:integration`
   (296 passing) both green.
 
-☐ **7c — Sort, filter, CSV export, table properties.**
+☐ **7c — Sort, filter, CSV export, table properties.** Split into three
+sub-slices (Sean, 2026-09-10), mirroring 6c's own split — each is
+independently valuable and none blocks another: **7c-i** sort + filter
+(share one request payload and one probe, since upstream combines them into
+a single re-fetch); **7c-ii** table properties/columns static viewer (fully
+static, no grid interaction); **7c-iii** CSV export to local disk (the one
+host-side-only, local-disk-write feature, standalone since Phase 6 deferred
+its own upload/download to Phase 11 entirely rather than shipping a helper
+this could share). **7c-i is next.**
 
-- ☐ Server-side sort via `createView` — decide the orphan-view cleanup
-  question (a cancelled/failed delete today leaves a view behind) before
-  porting the create-read-delete sequence unexamined.
-- ☐ `where=`-clause text filter (`TableFilter.tsx`'s shape).
-- ☐ CSV export to local disk — decide whether it shares a helper with
-  Phase 6's own (undecided) download command.
-- ☐ Table properties/columns static viewer (`TablePropertiesViewer.ts`'s
-  shape — two static tables, no grid dependency).
+☐ **7c-i — Sort + filter.**
+
+- ☐ Live-probe the `createView` mechanism against `verde`/`Innov` — request
+  media type and `sortBy` body shape, response shape, and whether a `where=`
+  filter composes onto the created view's own `rows` link or the base
+  table's — before porting upstream's create-read-delete sequence
+  unexamined. `TableDetail.links` already carries a probed `createView`
+  relation (Finding 7.1); this project follows it the way every other
+  `LibraryAdapter` call does, not by composing a URL.
+- ☐ Fix, not port, upstream's orphan-view bug: `RestLibraryAdapter.
+  getSortedRows` (`vscode-sas-extension`) calls `createView` → `getRows` on
+  the view → `deleteTable`, with no try/finally — a throwing read leaves the
+  view orphaned in the session until the session itself is torn down, with
+  no cleanup-on-dispose anywhere in that codebase. This project's own
+  version must guarantee the delete fires on every exit path (success,
+  thrown error, or an aborted signal).
+- ☐ `where=`-clause text filter, matching `TableFilter.tsx`'s upstream shape:
+  one free-text "expression" box (a raw SAS `WHERE` clause), committed on
+  Enter or an explicit action, never live-typed — appended to the rows
+  request the same way `getRows` already appends `start=`/`limit=` via
+  `withQuery`, not a new query-building mechanism.
+- ☐ New host↔webview messages for a combined sort+filter re-fetch, following
+  `dataViewerModel.ts`'s existing `requestId`-echo pattern (`requestRows`/
+  `rows`/`rowsError` today carry no sort/filter state at all).
+- ☐ `toColumnDefs`'s hardcoded `sortable: false` (`dataViewerEntry.tsx`, with
+  an explicit comment deferring it to 7c) becomes real server-side sort,
+  wired to ag-grid's own header-sort state the way upstream's `useDataViewer.
+  ts` reads `params.sortModel` on every `getRows` call — not a client-side
+  ag-grid sort.
+
+☐ **7c-ii — Table properties / columns static viewer.**
+
+- ☐ Extend `TableDetail`/`readTableDetail` (or add a new type) with the full
+  `TableInfo` field set `TablePropertiesViewer.ts` reads and 7a/7b's own
+  `TableDetail` does not carry: `label`, `engine`, `extendedType`,
+  `logicalRecordCount`, `physicalRecordCount`, `recordLength`,
+  `creationTimeStamp`/`modifiedTimeStamp`, `compressionRoutine`, `encoding`,
+  `bookmarkLength`.
+- ☐ Probe the timestamp field shape on `verde`/`Innov` before porting
+  upstream's fallback unexamined — `TablePropertiesViewer.ts`'s own
+  `formatDate` tries `new Date(value)` first and falls back to treating the
+  value as a raw SAS epoch second count (`(numVal - 315619200) * 1000`) if
+  that fails; confirm which shape (ISO string, raw SAS numeric, or both)
+  this deployment's Compute REST API actually returns for these two fields.
+- ☐ A new static webview panel — no host↔webview message loop needed beyond
+  initial render, matching `TablePropertiesViewer.ts`'s own shape (all data
+  fetched once at open time, tab-toggle purely client-side) — opened from a
+  table's tree context menu.
+
+☐ **7c-iii — CSV export.**
+
+- ☐ Probe the CSV mechanism directly rather than porting upstream's literal
+  `.../rows#CSV` URL suffix unexamined — Finding 7.5 already found `#`-suffixed
+  URLs on this deployment are stripped as fragments before the wire ever sees
+  them (the same trap that invalidated Findings 7.1/7.2's original
+  `#summary`/`#tables` mechanism), while Finding 7.1 saw a real, distinct
+  `rowsAsCSV` link relation on `TableDetail`. Confirm whether `rowsAsCSV` is
+  the real mechanism (most likely, given the link-following precedent every
+  other `LibraryAdapter` call already uses) or an `Accept`-header negotiation
+  on the base `rows` link — not upstream's hand-composed suffix.
+- ☐ Host-side only, no webview involvement — the panel's CSP
+  (`default-src 'none'`, no `connect-src`) would block an in-webview
+  `fetch` outright, and upstream's own download command bypasses its
+  webview entirely too (a separate command, not a `DataViewer.ts` message).
+  `vscode.window.showSaveDialog` + a paginated write to the chosen file,
+  same shape as upstream's `LibraryModel.writeTableContentsToStream`.
+- ☐ No shared helper with Phase 6's own download command — Phase 6 deferred
+  all upload/download to Phase 11 and never built one (`STATUS.md`,
+  2026-09-10), so this is standalone; revisit sharing if Phase 11 lands a
+  local-disk-write helper later.
 - ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
   instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
   the full account). Nothing left for 7c to pick up on this; the same

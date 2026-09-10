@@ -270,6 +270,14 @@ account in `phase-7.md`'s 7b Runbook entry.
   (1443 passing), `test:integration` (305 passing), and `npm run coverage`
   (95.29/95.37/94.95/95.29, all thresholds met) all green; `build`/lint/
   typecheck/copyright/secrets/contracts all clean.
+- **7c — Sort, filter, CSV export, table properties.** Split into three
+  sub-slices 2026-09-10, mirroring 6c's own split: **7c-i** sort + filter
+  (share one request payload/probe — the `createView`/`where=` mechanism,
+  and fixing upstream's un-cleaned-up orphan-view bug rather than porting
+  it); **7c-ii** table properties/columns static viewer; **7c-iii** CSV
+  export to local disk (standalone — Phase 6 deferred its own
+  upload/download to Phase 11 entirely, so there's no helper to share).
+  **7c-i is next**, worked from the `sas-py-vscode-cowork` clone.
 - **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
   Scoped 2026-09-04 from a separate session; that session's doc edits were
   stashed rather than committed and sat unmerged until found and resurrected

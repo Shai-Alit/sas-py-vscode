@@ -1368,6 +1368,74 @@ integration passing).
   ts` reads `params.sortModel` on every `getRows` call — not a client-side
   ag-grid sort.
 
+**Sean's own manual test pass, 2026-09-10** (`manual-test-pass.md` §12,
+before PR #155 merged), found three real bugs, all fixed on the same branch:
+
+1. **A sort or filter was silently lost switching away from the table's tab
+   and back.** Root cause: `createRealPanel`'s `retainContextWhenHidden:
+   false` (unchanged from 7b, ADR-0021's own reasoning for the result panel)
+   means VS Code tears the webview document down and reloads it from scratch
+   on every hide/show. The freshly mounted grid sends its own `"ready"`
+   handshake again, but had no memory of a sort or filter the *previous*
+   document had applied, so its first `requestRows` read as `sort: []`,
+   `filter: ""` — which `ensureReadTargetLocked`'s own `sort.length === 0`
+   branch takes as the user having cleared both, discarding the still-wanted
+   server-side view rather than merely losing a UI indicator. **Fixed**:
+   `InitMessage` (`dataViewerModel.ts`) gained `initialSort`/`initialFilter`,
+   and `OpenTablePanel` (`dataViewerPanel.ts`) now replays its *current*
+   `activeSort`/`activeFilter` on every `"ready"` — not the state frozen at
+   `loadTable()` time — via a new `openingMessageFor` helper. On the webview
+   side, `dataViewerEntry.tsx`'s `"init"` handler now restores the filter
+   box's displayed text and seeds `committedFilterRef`, and `toColumnDefs`
+   sets a matching column's `sort`/`sortIndex` so ag-grid seeds its own
+   sort-model state at mount, the documented way to give it a default sort.
+   Two new integration tests in `data-viewer-panel.test.ts` simulate the
+   reload directly (a second `sendReady()` with no request in between) and
+   assert the replayed `init` carries the sort/filter a prior request made
+   active, for both the sorted and the filter-only cases.
+2. **An invalid filter showed a blank grid — no error, no warning, nothing in
+   the log.** Finding 7.18 had already settled that the host computes a
+   real, specific message for this (a `400` with the SAS parser's own
+   complaint nested in `errors[0].details`, surfaced through
+   `localiseComputeProblem`'s existing `compute-rejected` case) — the defect
+   was `dataViewerEntry.tsx`'s own `buildDatasource`, which discarded a
+   failed `requestRows` promise's rejection reason and called only
+   `params.failCallback()`. **Fixed**: the datasource now takes an
+   `onRowsError` callback, wired to a new `rowsError` React state rendered
+   as a small banner above the grid (themed with
+   `--vscode-inputValidation-error*`, the standard VS Code error-styling
+   variables, matching the filter box's own `--vscode-input-*` use). Also
+   added: `dataViewerPanel.ts`'s `handleRequestRows` now logs a `warn` for
+   both of its failure paths (`ensureReadTarget` failing before a read is
+   even attempted, and `getRows` itself failing) — there was no log output
+   for either before, which is what "nothing in the log" actually meant. A
+   new integration test asserts the warning; the existing "answers
+   rowsError…" test was left as-is (it already asserts the reply shape).
+
+None of the three fixes touch a code path any of §12's other, already-`[x]`
+rows exercise — `initialSort`/`initialFilter` are empty on a table's first
+open, identical to before, and the `onRowsError` callback is inert on every
+success. `npm run verify` re-run green (1468 unit passing, coverage
+unchanged — 95.35%/95.44%/94.98%/95.35%, thresholds still met); `npm run
+test:integration` green (313 passing, three new); `check:docs`/`tsc -p
+tsconfig.webview.json`/`build` all clean. `manual-test-pass.md` §12 updated:
+the invalid-filter row and two new tab-switch rows are unchecked pending
+Sean's own re-verification against a real panel; every other row in §12
+stays checked.
+
+**Also found, separately, while investigating why both AI PR reviewers
+showed "pass" on PR #155 with no actual review comment posted**: not a
+runner fluke. Both `ai-review.yml` and `claude-review.yml` share one failure
+mode — their `concurrency: cancel-in-progress` group cancelled the review
+runs against the branch's real source commits (`b309ea5`, `7d31ae7`) the
+moment a fast-follow, correctly-`[skip-review]`-tagged docs-only commit
+(`73e190f`) was pushed right after; that commit's own run then legitimately
+skipped *itself*, but the net effect is that neither reviewer ever actually
+saw the substantive diff, while the PR's checks read "pass" for both. Left
+open, not fixed here — a CI workflow change, out of scope for this slice's
+own data-viewer bug fixes, and flagged to Sean directly rather than edited
+unilaterally.
+
 ☐ **7c-ii — Table properties / columns static viewer.**
 
 - ☐ Extend `TableDetail`/`readTableDetail` (or add a new type) with the full

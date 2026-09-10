@@ -149,7 +149,20 @@ class OpenTablePanel implements vscode.Disposable {
    * than once — ADR-0021's reasoning for `retainContextWhenHidden: false`
    * applies unchanged here) discards that grid instance along with whatever
    * request it was waiting on. The freshly mounted grid asks again once it
-   * is ready; there is nothing stale to replay to it. */
+   * is ready; there is nothing stale to replay to it.
+   *
+   * **An `"init"` message's own `initialSort`/`initialFilter` are never
+   * replayed verbatim from this stored copy** — {@link openingMessageFor}
+   * always overwrites them with `activeSort`/`activeFilter` as they stand
+   * *at replay time*, not as they stood when the table was first opened.
+   * Sean's own manual test (`manual-test-pass.md` §12) found that a bare
+   * replay of this frozen message lost an active sort or filter on every
+   * hide/show: the freshly mounted grid has no sort or filter of its own to
+   * seed the datasource with, so its very first `requestRows` reads as
+   * `sort: []`, `filter: ""` — which {@link ensureReadTargetLocked}'s own
+   * `sort.length === 0` branch reads as the user having cleared both,
+   * discarding a still-wanted server-side view rather than merely losing a
+   * UI indicator. */
   private lastOpeningMessage: DataViewerHostMessage | undefined;
   /** Set once {@link loadTable} resolves the table's rich detail — carries
    * the `rows` link every `requestRows` reply needs. `undefined` until then,
@@ -203,7 +216,9 @@ class OpenTablePanel implements vscode.Disposable {
         if (isReadyMessage(message)) {
           this.ready = true;
           if (this.lastOpeningMessage !== undefined) {
-            void this.panel.webview.postMessage(this.lastOpeningMessage);
+            void this.panel.webview.postMessage(
+              this.openingMessageFor(this.lastOpeningMessage),
+            );
           }
           return;
         }
@@ -306,6 +321,13 @@ class OpenTablePanel implements vscode.Disposable {
       filterPlaceholder: vscode.l10n.t(
         "Filter rows (SAS WHERE clause) — press Enter to apply",
       ),
+      // Overwritten by `openingMessageFor` on every actual send — a table
+      // has no active sort or filter the moment it is first opened, so `[]`/
+      // `""` is already correct here, but the real values this field must
+      // carry on a *later* replay live in `activeSort`/`activeFilter`, not
+      // in this one-time literal.
+      initialSort: [],
+      initialFilter: "",
     });
   }
 
@@ -333,6 +355,15 @@ class OpenTablePanel implements vscode.Disposable {
 
     const target = await this.ensureReadTarget(sort, filter);
     if (!target.ok) {
+      // Findings 7.16/7.18 (docs/phases/phase-7.md): this is the path an
+      // invalid `sortBy`/`where=` combination fails on when a sort is
+      // active — `createView` rejects the whole body up front. Logged, not
+      // just posted to the webview: Sean's own manual test (§12) found a
+      // failed filter left nothing in the log at all to confirm anything had
+      // even been attempted.
+      this.log?.warn(
+        `python-on-viya: could not prepare a sort/filter read over "${table.libref}.${table.name}" (${describeDataProblem(target.problem)})`,
+      );
       this.post({
         type: "rowsError",
         requestId,
@@ -371,6 +402,14 @@ class OpenTablePanel implements vscode.Disposable {
     }
 
     if (!result.ok) {
+      // Finding 7.18 (docs/phases/phase-7.md): a filter-only invalid
+      // `where=` fails here, against the base table's own rows read, rather
+      // than at `ensureReadTarget` above (no view is created for a
+      // filter-with-no-sort — see that method's own doc comment). Logged for
+      // the same reason as the `target.ok` branch above.
+      this.log?.warn(
+        `python-on-viya: a row request over "${table.libref}.${table.name}" failed (${describeDataProblem(result.problem)})`,
+      );
       this.post({
         type: "rowsError",
         requestId,
@@ -506,7 +545,24 @@ class OpenTablePanel implements vscode.Disposable {
    * meaningful at a time. */
   private emitOpening(message: DataViewerHostMessage): void {
     this.lastOpeningMessage = message;
-    this.post(message);
+    this.post(this.openingMessageFor(message));
+  }
+
+  /** An `"init"` message, with `initialSort`/`initialFilter` refreshed to
+   * this panel's *current* `activeSort`/`activeFilter` — see {@link
+   * lastOpeningMessage}'s own doc comment for why a frozen copy of those two
+   * fields is wrong the moment either one has changed since the table was
+   * opened. Every other message type (`"failure"`) passes through unchanged,
+   * since neither carries a sort or a filter to begin with. */
+  private openingMessageFor(
+    message: DataViewerHostMessage,
+  ): DataViewerHostMessage {
+    if (message.type !== "init") return message;
+    return {
+      ...message,
+      initialSort: this.activeSort,
+      initialFilter: this.activeFilter ?? "",
+    };
   }
 
   /** Sends a message immediately if the webview has already sent its
@@ -693,6 +749,19 @@ function buildHtml(
   .python-on-viya-data-viewer-filter:focus {
     outline: 1px solid var(--vscode-focusBorder);
     outline-offset: -1px;
+  }
+  /* Finding 7.18 (phase-7.md) confirmed an invalid filter answers with a
+     real, actionable SAS parser message, not a generic failure — but
+     dataViewerEntry.tsx's own datasource was dropping it on the floor,
+     leaving a blank grid with nothing to tell the user why
+     (manual-test-pass.md §12). Same VS Code input-validation variables
+     every other extension's inline error text uses, matching the filter
+     box's own --vscode-input-* theming immediately above. */
+  .python-on-viya-data-viewer-rows-error {
+    background-color: var(--vscode-inputValidation-errorBackground);
+    border: 1px solid var(--vscode-inputValidation-errorBorder);
+    color: var(--vscode-inputValidation-errorForeground, var(--vscode-foreground));
+    padding: 2px 6px;
   }
 </style>
 </head>

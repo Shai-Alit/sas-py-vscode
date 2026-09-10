@@ -69,15 +69,29 @@ export function toWireRows(rows: readonly RowItem[]): readonly unknown[][] {
 
 /** Host → webview: the column definitions and the table's own known row
  * count (or `undefined`, if this deployment did not supply one), sent once
- * after `openTable`/`getColumns` resolve. `filterPlaceholder` is host-decided
- * (`vscode.l10n.t()`) rather than a literal the webview would otherwise have
- * to translate itself — the same localisation-boundary discipline this
- * module's own top doc comment already describes for every other string. */
+ * after `openTable`/`getColumns` resolve, and replayed (with `initialSort`/
+ * `initialFilter` refreshed to the panel's *current* state, never the
+ * original ones) every time the webview sends a fresh `"ready"` —
+ * `dataViewerPanel.ts`'s own `retainContextWhenHidden: false` means VS Code
+ * reloads this document from scratch on every hide/show, and a freshly
+ * mounted grid has no memory of a sort or filter the previous document had
+ * applied. `filterPlaceholder` is host-decided (`vscode.l10n.t()`) rather
+ * than a literal the webview would otherwise have to translate itself — the
+ * same localisation-boundary discipline this module's own top doc comment
+ * already describes for every other string. */
 export interface InitMessage {
   readonly type: "init";
   readonly columns: readonly WireColumn[];
   readonly rowCount: number | undefined;
   readonly filterPlaceholder: string;
+  /** The sort the grid should seed its column state with on mount — empty
+   * when no sort is active, never `undefined`, the same "off is an empty
+   * array" discipline {@link RequestRowsMessage} already follows. */
+  readonly initialSort: readonly SortSpec[];
+  /** The filter text the filter box should show on mount — empty when no
+   * filter is active, never `undefined`, same reasoning as {@link
+   * initialSort}. */
+  readonly initialFilter: string;
 }
 
 /** Host → webview: one requested row window, answered. */

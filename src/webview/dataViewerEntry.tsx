@@ -36,6 +36,14 @@
  * is what caught {@link toColumnDefs}'s wrong `"NUM"` comparison (Finding
  * 7.14) — nothing else in this project's own tiers could have.
  *
+ * **`init`'s `initialSort`/`initialFilter` (added responding to Sean's own
+ * manual test, `manual-test-pass.md` §12) are not yet visually confirmed
+ * against a real panel either** — the same "this file is excluded from both
+ * `tsc` and the unit tier" caveat above applies to whether ag-grid actually
+ * seeds its header sort indicator from a column's initial `sort`/`sortIndex`
+ * the way {@link toColumnDefs} now sets them, and whether the restored filter
+ * text visibly appears in the filter box on a real hide/show cycle.
+ *
  * **The `message` listener's origin check (added responding to a CodeQL
  * finding on this PR) has been rewritten twice since that manual pass, and
  * both the `startsWith`/`endsWith` version and this file's current
@@ -204,19 +212,39 @@ function lastRowFor(
  * verify behaves correctly against a SAS numeric value in the sandbox this
  * was written in (packages not installed — see this file's own top doc
  * comment). Applying only the alignment classes keeps this fix inside what a
- * plain, already-loaded stylesheet can be trusted to do. */
-function toColumnDefs(columns: readonly WireColumn[]): ColDef[] {
-  return columns.map((column) => ({
-    field: column.field,
-    headerName: column.headerName,
-    sortable: true,
-    ...(column.type === "FLOAT"
-      ? {
-          cellClass: "ag-right-aligned-cell",
-          headerClass: "ag-right-aligned-header",
-        }
-      : {}),
-  }));
+ * plain, already-loaded stylesheet can be trusted to do.
+ *
+ * **`initialSort` seeds a column's own `sort`/`sortIndex`** — the documented
+ * way to give ag-grid a default sort at mount, read fresh into
+ * `params.sortModel` by the same `getRows` call an ordinary header click
+ * would trigger, so nothing downstream needs to know whether a sort came
+ * from a user click or from this restore. Added for `InitMessage`'s own
+ * `initialSort` field (`dataViewerModel.ts`) — see that field's doc comment
+ * for why a hide/show cycle needs this at all. */
+function toColumnDefs(
+  columns: readonly WireColumn[],
+  initialSort: readonly SortSpec[],
+): ColDef[] {
+  return columns.map((column) => {
+    const sortIndex = initialSort.findIndex(
+      (spec) => spec.key === column.field,
+    );
+    const sort = initialSort[sortIndex];
+    return {
+      field: column.field,
+      headerName: column.headerName,
+      sortable: true,
+      ...(column.type === "FLOAT"
+        ? {
+            cellClass: "ag-right-aligned-cell",
+            headerClass: "ag-right-aligned-header",
+          }
+        : {}),
+      ...(sort !== undefined
+        ? { sort: sort.direction === "descending" ? "desc" : "asc", sortIndex }
+        : {}),
+    };
+  });
 }
 
 /** Turns one page's positional `cells` arrays into the field-keyed objects
@@ -246,10 +274,22 @@ function toRowData(
  * `useRef`, not a closed-over state value) so a filter committed after this
  * datasource was built is still picked up without rebuilding it again —
  * unlike `sort`, which ag-grid itself re-reads from `params.sortModel` on
- * every call and needs no such ref. */
+ * every call and needs no such ref.
+ *
+ * **`onRowsError` — added responding to Sean's own manual test
+ * (`manual-test-pass.md` §12): "an invalid filter just shows a blank table.
+ * no error or warning."** The host already answers a bad `where=`/`sortBy`
+ * with a real, specific message (Finding 7.18, `docs/phases/phase-7.md`) —
+ * `requestRows`'s own promise rejects with exactly that string — but this
+ * function was discarding it and calling only `params.failCallback()`,
+ * which tells ag-grid a block failed to load and nothing else. Called with
+ * `undefined` on every success, so a stale error from an earlier failed
+ * fetch does not linger once a later one (a retry, a new filter, an
+ * unrelated scroll) succeeds. */
 function buildDatasource(
   columns: readonly ColDef[],
   filterRef: { readonly current: string },
+  onRowsError: (message: string | undefined) => void,
 ): IDatasource {
   return {
     getRows: (params: IGetRowsParams) => {
@@ -261,12 +301,14 @@ function buildDatasource(
         filterRef.current,
       ).then(
         (page) => {
+          onRowsError(undefined);
           params.successCallback(
             toRowData(page.rows, columns),
             lastRowFor(params.startRow, page.rows, requested, page.count),
           );
         },
-        () => {
+        (message: string) => {
+          onRowsError(message);
           params.failCallback();
         },
       );
@@ -279,6 +321,10 @@ function DataViewerApp() {
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [filterPlaceholder, setFilterPlaceholder] = useState<string>("");
   const [filterInput, setFilterInput] = useState<string>("");
+  /** The most recent row-window fetch failure (an invalid filter, most
+   * commonly), or `undefined` once a later fetch has succeeded — see {@link
+   * buildDatasource}'s own `onRowsError` doc comment. */
+  const [rowsError, setRowsError] = useState<string | undefined>(undefined);
   const gridApiRef = useRef<GridApi | undefined>(undefined);
   // The *committed* filter — updated only on Enter, read by the datasource's
   // own `getRows` closure via this ref rather than a dependency array, so a
@@ -341,8 +387,16 @@ function DataViewerApp() {
 
       switch (message.type) {
         case "init":
-          setColumns(toColumnDefs(message.columns));
+          setColumns(toColumnDefs(message.columns, message.initialSort));
           setFilterPlaceholder(message.filterPlaceholder);
+          // Restores the filter box's own displayed text, and — via the ref
+          // `buildDatasource` reads from, set here rather than left to the
+          // `filterInput` state's own effect — the value the datasource
+          // `onGridReady` installs below actually reads on its first fetch.
+          // See `InitMessage.initialFilter`'s own doc comment
+          // (`dataViewerModel.ts`) for why this is no longer always "".
+          setFilterInput(message.initialFilter);
+          committedFilterRef.current = message.initialFilter;
           break;
         case "failure":
           setFailure(message.message);
@@ -383,7 +437,7 @@ function DataViewerApp() {
       // real total, per page, never a static total supplied up front.
       event.api.setGridOption(
         "datasource",
-        buildDatasource(columns ?? [], committedFilterRef),
+        buildDatasource(columns ?? [], committedFilterRef, setRowsError),
       );
     },
     [columns],
@@ -401,7 +455,7 @@ function DataViewerApp() {
     committedFilterRef.current = filterInput;
     gridApiRef.current?.setGridOption(
       "datasource",
-      buildDatasource(columns ?? [], committedFilterRef),
+      buildDatasource(columns ?? [], committedFilterRef, setRowsError),
     );
   }, [columns, filterInput]);
 
@@ -449,6 +503,15 @@ function DataViewerApp() {
           style={{ width: "100%", boxSizing: "border-box" }}
         />
       </div>
+      {rowsError !== undefined && (
+        <div
+          className="python-on-viya-data-viewer-rows-error"
+          style={{ flex: "0 0 auto" }}
+          role="alert"
+        >
+          {rowsError}
+        </div>
+      )}
       <div style={{ flex: "1 1 auto", minHeight: 0 }}>
         <AgGridReact
           className="ag-theme-alpine"

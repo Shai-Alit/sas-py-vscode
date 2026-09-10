@@ -215,6 +215,12 @@ describe("DataViewerPanelManager", () => {
     const [init] = fake.posted;
     assert.ok(init?.type === "init");
     assert.equal(init.rowCount, 19);
+    // A table freshly opened has no sort or filter yet — see the "replays
+    // init with the panel's current sort and filter" tests below for what
+    // these two fields carry once one is active and the panel replays on a
+    // later ready.
+    assert.deepEqual(init.initialSort, []);
+    assert.equal(init.initialFilter, "");
     assert.deepEqual(
       init.columns.map((c) => [c.field, c.headerName, c.type]),
       [
@@ -311,6 +317,44 @@ describe("DataViewerPanelManager", () => {
     const [reply] = fake.posted;
     assert.ok(reply?.type === "rowsError");
     assert.equal(reply.requestId, "r7");
+  });
+
+  it("logs a warning when a row request fails, not just the reply to the webview", async () => {
+    // Sean's own manual test (`manual-test-pass.md` §12): an invalid filter
+    // left nothing in the log to show a fetch was even attempted — on top
+    // of `dataViewerEntry.tsx`'s own separate bug, that the webview's
+    // datasource discarded the `rowsError` message's own text entirely
+    // (fixed there, asserted by this project's own manual test pass since
+    // this file cannot drive a real browser).
+    const fake = fakePanel();
+    const warnings: string[] = [];
+    const log = {
+      warn: (message: string) => warnings.push(message),
+    } as unknown as vscode.LogOutputChannel;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+      log,
+    });
+    await manager.open(
+      tableItem(),
+      libraryAdapter([
+        ...OPEN_ROUTES,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFail({ code: "compute-rejected", error: { status: 400 } }),
+        },
+      ]),
+    );
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2);
+    await flush();
+
+    assert.equal(warnings.length, 1);
+    assert.match(
+      warnings[0] ?? "",
+      /a row request over "SASHELP\.CLASS" failed/,
+    );
   });
 
   it("creates a sort view on first sorted request and reuses it for a later page of the same sort", async () => {
@@ -586,6 +630,99 @@ describe("DataViewerPanelManager", () => {
     await flush();
 
     assert.ok(baseTableReadAfterSort);
+  });
+
+  it("replays init with the panel's current sort and filter, not empty ones, on a later ready (a webview reload)", async () => {
+    // Sean's own manual test (`manual-test-pass.md` §12): `retainContextWhenHidden:
+    // false` (this panel's own `createRealPanel`) means VS Code tears the
+    // webview document down and reloads it on every hide/show, and the
+    // freshly mounted grid sends its own `"ready"` handshake again with no
+    // memory of a sort or filter the previous document had applied. Before
+    // `openingMessageFor` existed, the replayed `init` always carried the
+    // empty `initialSort`/`initialFilter` this panel was opened with — never
+    // the sort/filter a request had since made active — so the freshly
+    // mounted grid's own first `requestRows` read as "the user cleared
+    // both", which `ensureReadTargetLocked`'s own `sort.length === 0` branch
+    // reads as instruction to discard a still-wanted view.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    const sort = [{ key: "Age" as const, direction: "descending" as const }];
+    fake.sendRequestRows("r1", 0, 2, sort, "Sex='F'");
+    await flush();
+    fake.posted.length = 0;
+
+    // Simulate the reload: a second "ready", with no request in between.
+    fake.sendReady();
+
+    assert.equal(fake.posted.length, 1);
+    const [replay] = fake.posted;
+    assert.ok(replay?.type === "init");
+    assert.deepEqual(replay.initialSort, sort);
+    assert.equal(replay.initialFilter, "Sex='F'");
+  });
+
+  it("replays init with the current filter alone, no sort active, on a later ready", async () => {
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    await manager.open(
+      tableItem(),
+      libraryAdapter([
+        ...OPEN_ROUTES,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`,
+          reply: dataFixture("rows-class-page1.json"),
+        },
+      ]),
+    );
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [], "Sex='F'");
+    await flush();
+    fake.posted.length = 0;
+
+    fake.sendReady();
+
+    assert.equal(fake.posted.length, 1);
+    const [replay] = fake.posted;
+    assert.ok(replay?.type === "init");
+    assert.deepEqual(replay.initialSort, []);
+    assert.equal(replay.initialFilter, "Sex='F'");
   });
 
   it("logs, rather than throws, when a superseded view fails to delete", async () => {

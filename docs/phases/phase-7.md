@@ -1431,10 +1431,61 @@ runs against the branch's real source commits (`b309ea5`, `7d31ae7`) the
 moment a fast-follow, correctly-`[skip-review]`-tagged docs-only commit
 (`73e190f`) was pushed right after; that commit's own run then legitimately
 skipped *itself*, but the net effect is that neither reviewer ever actually
-saw the substantive diff, while the PR's checks read "pass" for both. Left
-open, not fixed here — a CI workflow change, out of scope for this slice's
-own data-viewer bug fixes, and flagged to Sean directly rather than edited
-unilaterally.
+saw the substantive diff, while the PR's checks read "pass" for both. Fixed
+in a separate PR, [#156](https://github.com/Shai-Alit/sas-py-vscode/pull/156)
+(squash), rather than folded into this branch: both `ai_review.py`'s
+`should_skip_review` and the Claude Review guard step now also require the
+commit immediately *before* a `synchronize` push to be skip-tagged before
+honouring the head's own flag, otherwise they review the current
+(complete) diff instead of skipping. Sean squash-merged #156 into `main`
+2026-09-10; this branch was then reconciled with `main` a second time
+(merge commit, no conflicts — only `.github/` files, nothing this branch
+also touches) and pushed, at which point both automated reviewers actually
+ran for the first time against this branch's real diff.
+
+**Both reviewers then found one real finding each, both fixed before any
+further push** — collected together per this project's own "fix everything
+in one local pass" rule, not pushed one at a time:
+
+1. **Blocking (github-actions bot): a stale `requestRows` reply was
+   silently dropped, never answered at all.** The staleness check
+   `handleRequestRows` added during 7c-i's own second review round (see
+   above) returned with no reply once `sort`/`filter` no longer matched the
+   panel's current state — reasoning that nothing was "meaningfully
+   waiting" on it. Verified independently before fixing, since the
+   PR-opening rule requires it: `dataViewerEntry.tsx`'s own
+   `pendingRowRequests` map is keyed by `requestId` and only ever cleared
+   when a `rows`/`rowsError` reply for that exact id arrives — a silently
+   dropped reply leaves that map entry, and the `getRows` promise it would
+   resolve, pending forever. A real, if narrow, unbounded leak across a
+   session with enough sort/filter changes, confirmed correct — this
+   project's own message protocol requires every `requestRows` to get
+   exactly one reply, with no documented exception for a stale one. Fixed:
+   the branch now posts a `rowsError` (`"This request was superseded by a
+   later sort or filter change."`) instead of returning silently. The
+   existing regression test for this path ("answers a stale request with
+   rowsError, not silence…", renamed from "drops a stale reply…") now
+   asserts the reply arrives, rather than asserting it doesn't.
+2. **Non-blocking (github-actions bot): no regression test exercised
+   `onDidDispose`'s own stale-view cleanup.** Every existing dispose test
+   ("disposes every open panel", "aborts the panel's own AbortController…")
+   disposes a panel with no active sort/filter, so `activeView` is always
+   `undefined` at dispose time in each of them — the `deleteView` call that
+   handler's own comment reasons through adversarially (does a leak survive
+   an in-flight `applySort` at dispose time — no, `AbortSignal` wiring
+   already guarantees it) had zero coverage on either its success or its
+   failure-logged path. Verified real by inspection (no other test creates
+   a view and *then* disposes, as opposed to superseding it with a new
+   sort). Fixed: two new tests — one asserts the `DELETE` fires for the
+   active view on dispose, the other asserts the existing `log?.warn`
+   fires when that `DELETE` fails, mirroring the already-covered
+   supersede-path version of the same log line.
+
+`npm run verify` re-run green (coverage unchanged, `src/data` still 100%
+lines/100% statements/99.5% branches/100% functions); `npm run
+test:integration` green (321 passing — the jump from 313 includes 6c-iii's
+own new tests picked up by the `main` reconciliation, plus this round's 2
+new dispose tests); `check:docs`/`build` clean.
 
 ☐ **7c-ii — Table properties / columns static viewer.**
 

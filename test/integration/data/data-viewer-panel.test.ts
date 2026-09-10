@@ -482,16 +482,23 @@ describe("DataViewerPanelManager", () => {
     assert.deepEqual(deletedHrefs, [VIEW1_HREF]);
   });
 
-  it("drops a stale reply for a request whose sort/filter the panel has already moved past", async () => {
+  it("answers a stale request with rowsError, not silence, once the panel has moved past its sort/filter", async () => {
     // Adversarial review, 2026-09-10: `ensureReadTarget` serialises *view
     // creation*, but the `getRows` call that follows it is not itself
     // serialised against a *later* request's own state change. A slow first
     // read (held back here, deliberately, via a raw fake rather than
     // `recordedDataClient`'s synchronous routing) can still be in flight
     // against a view a second, faster request has already superseded by the
-    // time it resolves — this asserts the panel drops that reply rather than
-    // posting a confusing error (or stale rows) for a request nothing is
-    // still waiting on.
+    // time it resolves.
+    //
+    // **PR review, 2026-09-10 (a real, blocking finding on the manual-test
+    // fix commit): an earlier version of this behaviour dropped the stale
+    // reply with no message at all** — reasoning that nothing was
+    // "meaningfully waiting" on it — but `dataViewerEntry.tsx`'s own
+    // `pendingRowRequests` map only clears a `requestId` when a `rows`/
+    // `rowsError` reply for it actually arrives; a silently dropped reply
+    // leaves that promise (and map entry) pending forever. Every
+    // `requestRows` now gets exactly one reply, even a stale one.
     const fake = fakePanel();
     const manager = new DataViewerPanelManager(extensionUri, {
       createPanel: () => fake.panel,
@@ -566,16 +573,24 @@ describe("DataViewerPanelManager", () => {
     assert.equal(reply.requestId, "r2");
 
     // Now let r1's long-stalled read against the since-deleted V1 finally
-    // answer (a 404, since V1 no longer exists) — this reply must be
-    // dropped, not posted as a confusing rowsError for a request the panel
-    // has already moved past.
+    // answer (a 404, since V1 no longer exists) — the panel must still
+    // answer r1 (a rowsError, not the confusing 404 itself, and not
+    // silence), so the webview's own pending promise for "r1" settles.
     assert.ok(resolveStaleRead);
     resolveStaleRead(
       dataFail({ code: "compute-rejected", error: { status: 404 } }),
     );
     await flush();
 
-    assert.equal(fake.posted.length, 1, "r1's stale reply must not post");
+    assert.equal(
+      fake.posted.length,
+      2,
+      "r1's stale request still gets a reply",
+    );
+    const [, staleReply] = fake.posted;
+    assert.ok(staleReply?.type === "rowsError");
+    assert.equal(staleReply.requestId, "r1");
+    assert.match(staleReply.message, /superseded/);
   });
 
   it("discards the active view and reads the base table again once sort is cleared", async () => {
@@ -1014,5 +1029,129 @@ describe("DataViewerPanelManager", () => {
       true,
       "disposing the panel should abort the same controller its adapter calls used",
     );
+  });
+
+  it("deletes the active sort view when the panel is disposed while sorted", async () => {
+    // PR review finding, 2026-09-10: every existing dispose test
+    // ("disposes every open panel", "aborts the panel's own
+    // AbortController...") disposes a panel with no active sort/filter, so
+    // `activeView` is always `undefined` at dispose time in every one of
+    // them — `onDidDispose`'s own `staleView !== undefined` cleanup (the
+    // `deleteView` call reasoned through adversarially in that handler's own
+    // comment) had no test exercising it at all, on either the success or
+    // the failure-logged path. This one covers success; the next covers the
+    // logged failure.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const deletedHrefs: string[] = [];
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: (href, method) => href === VIEW_HREF && method === "DELETE",
+        reply: (request) => {
+          deletedHrefs.push(request.link.href);
+          return dataOk({}, { status: 204 });
+        },
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+    assert.deepEqual(
+      deletedHrefs,
+      [],
+      "no delete yet — the view is still active",
+    );
+
+    fake.panel.dispose();
+    await flush();
+
+    assert.deepEqual(deletedHrefs, [VIEW_HREF]);
+  });
+
+  it("logs, rather than throws, when the active sort view fails to delete on dispose", async () => {
+    const fake = fakePanel();
+    const warnings: string[] = [];
+    const log = {
+      warn: (message: string) => warnings.push(message),
+    } as unknown as vscode.LogOutputChannel;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+      log,
+    });
+    const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
+    const { client } = recordedDataClient([
+      ...OPEN_ROUTES,
+      {
+        when: `${CLASS_HREF}/views`,
+        reply: dataOk(
+          {
+            name: "V1",
+            libref: "SASHELP",
+            links: [
+              { rel: "rows", href: `${VIEW_HREF}/rows`, method: "GET" },
+              { rel: "delete", href: VIEW_HREF, method: "DELETE" },
+            ],
+          },
+          { status: 201 },
+        ),
+      },
+      {
+        when: `${VIEW_HREF}/rows?start=0&limit=2`,
+        reply: dataFixture("rows-class-page1.json"),
+      },
+      {
+        when: (href, method) => href === VIEW_HREF && method === "DELETE",
+        reply: dataFail({ code: "compute-rejected", error: { status: 500 } }),
+      },
+    ]);
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    fake.sendReady();
+
+    fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
+    await flush();
+
+    fake.panel.dispose();
+    await flush();
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? "", /could not delete/);
   });
 });

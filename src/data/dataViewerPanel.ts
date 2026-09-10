@@ -391,13 +391,27 @@ class OpenTablePanel implements vscode.Disposable {
     // superseded (recreated or discarded) by the time it resolves — reading
     // a since-deleted view answers 404, and the request this reply would
     // answer is one ag-grid itself has already moved past (a superseded
-    // datasource, not merely a superseded row window). Rather than surface
-    // that as a confusing error for a request nothing is waiting on
-    // meaningfully anymore, drop the reply once `sort`/`filter` no longer
-    // match this panel's *current* state — a genuinely current request's
-    // own `sort`/`filter` still match at this point, so ordinary paging
-    // (which never changes either) is unaffected.
+    // datasource, not merely a superseded row window).
+    //
+    // **A stale request still gets a reply — a `rowsError`, not silence.**
+    // Caught by PR review, 2026-09-10: an earlier version of this branch
+    // returned with no reply at all, reasoning that nothing was "waiting on"
+    // it meaningfully — but `dataViewerEntry.tsx`'s own `pendingRowRequests`
+    // map is keyed by `requestId` and only ever cleared when a `rows`/
+    // `rowsError` reply for that exact id arrives. A silently dropped reply
+    // leaves that entry (and the `getRows` promise it resolves) pending
+    // forever — a real, unbounded leak across a session with enough
+    // sort/filter changes, not merely a cosmetic one, since every
+    // `requestRows` this project's own protocol sends must get exactly one
+    // reply.
     if (!sortEquals(this.activeSort, sort) || this.activeFilter !== filter) {
+      this.post({
+        type: "rowsError",
+        requestId,
+        message: vscode.l10n.t(
+          "This request was superseded by a later sort or filter change.",
+        ),
+      });
       return;
     }
 

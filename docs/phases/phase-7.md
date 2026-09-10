@@ -997,19 +997,57 @@ things this box waits on.
   if taken as a ceiling (`vscode-webview://` only) in that it still allows a
   future web-hosted build to work, but does not allow an arbitrary HTTPS
   origin the way the first attempt did.
-  **Not itself covered by Sean's own two manual-test passes above — both
-  predate this fix.** The failure mode if the origin check's premise is
-  wrong is silent and total (every host→webview message gets dropped, the
-  panel never renders past its initial blank frame), and nothing in this
-  project's own tiers can catch that (this file is structurally excluded
-  from both `tsc`-against-real-packages and the unit tier, the same reason
-  Finding 7.14 needed a manual pass to catch in the first place) — **a third
-  manual visual check of a real panel, confirming a table still opens and
-  loads normally, is needed before this can be called closed.**
+  **Third manual pass, 2026-09-10: confirmed.** Neither of Sean's first two
+  passes covered this — both predate the fix — so a dedicated check was
+  handed over: open a real table, confirm the grid renders past its initial
+  frame, and check the main window's own DevTools console for anything
+  naming `postMessage` or `origin`. Sean's console export (a real VS Code
+  log, not paraphrased) showed no such error, and the two webview URLs in it
+  carry `origin=<uuid>` / `parentOrigin=vscode-file://vscode-app` query
+  params consistent with the webview's own origin being
+  `vscode-webview://<uuid>` — matching what the check expects. Sean then
+  confirmed directly: the grid showed column headers and rows for a real
+  table. The failure mode this check exists to catch (every host→webview
+  message silently dropped, panel stuck on its initial blank frame) did not
+  occur. Closed.
   **Related, not fixed here**: `src/webview/entry.ts` (the result panel's own
   message listener, already shipped) has the identical gap and was not
   touched — a different, already-merged file, out of this PR's diff; worth
   its own decision, not a silent piggyback fix.
+
+  **New finding, incidental to the console check above, 2026-09-10: real,
+  not fixed, needs a decision.** Sean's console export also showed, twice:
+
+  ```
+  Loading the font 'data:font/woff2;...' violates the following Content
+  Security Policy directive: "default-src 'none'". Note that 'font-src' was
+  not explicitly set, so 'default-src' is used as a fallback. The action has
+  been blocked.
+  ```
+
+  Confirmed the source: `node_modules/ag-grid-community/styles/ag-theme-alpine.css`
+  itself declares an `@font-face` with a base64 `woff2` payload (ag-grid's
+  own bundled icon font for the legacy/classic theming path this project
+  uses — see ADR-0028). `buildHtml`'s CSP (`src/data/dataViewerPanel.ts`)
+  has no `font-src` directive, so `default-src 'none'` blocks it. This is
+  the same class of gap that same file's own doc comment already flagged
+  for `img-src` and predicted might need a fix — but the actual break is a
+  font, not an image, so the comment's specific prediction was half right:
+  right that *something* CSP-adjacent would need attention, wrong about
+  which directive.
+
+  **Currently latent, not visibly broken**: `toColumnDefs` ships
+  `sortable: false` and no filter (7c's own scope, not 7b's), so nothing in
+  today's grid currently renders an icon glyph from that font — consistent
+  with Sean's own observation that no sort/filter icons appear at all (that
+  absence is 7b's documented scope, not this CSP gap). The gap becomes a
+  real, visible defect (missing/broken icons) the moment 7c turns on
+  anything ag-grid renders an icon for. **Not fixed in this PR** — out of
+  its original scope (verifying the origin check), flagged rather than
+  silently folded in. **Sean's decision, 2026-09-10: defer to 7c**, since 7c
+  is the slice that turns sort/filter on and would otherwise rediscover this
+  as a fresh bug — tracked as its own punch-list item under 7c below, not
+  left as an implicit assumption.
 
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
@@ -1021,6 +1059,20 @@ things this box waits on.
   Phase 6's own (undecided) download command.
 - ☐ Table properties/columns static viewer (`TablePropertiesViewer.ts`'s
   shape — two static tables, no grid dependency).
+- ☐ **Add `font-src {cspSource};` to the data viewer panel's CSP**
+  (`src/data/dataViewerPanel.ts`'s `buildHtml`). Deferred here from 7b, Sean's
+  own call, 2026-09-10: `ag-theme-alpine.css`'s bundled `@font-face` (a
+  base64 `woff2` icon font) is blocked today by `default-src 'none'` with no
+  `font-src` — confirmed via a real console export (see 7b's Runbook entry
+  above for the full trace). Invisible in 7b because `sortable: false` and
+  no filter means nothing currently asks the grid to draw an icon from that
+  font; **this item exists because 7c is exactly the slice that turns
+  sort/filter on**, at which point the missing icons would otherwise surface
+  as a fresh, rediscovered bug rather than a known one. Fix by adding the
+  directive, not by loosening `default-src`; the same `buildHtml` doc
+  comment already has an open `img-src` question worth resolving in the same
+  pass, in case ag-grid's SVG-icon path needs it too once icons are actually
+  exercised.
 
 ☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
 Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting

@@ -125,9 +125,18 @@ Microsoft community thread's `https:`-prefix suggestion, was itself broken
 (Codex's review caught that a bare `https:` prefix matches almost any HTTPS
 origin) and was tightened to the two concrete origins VS Code actually
 issues (`vscode-webview://…` desktop, `https://….vscode-webview.net` web).
-`tsc`/`prettier` clean; **not yet covered by any manual test pass, and a
-third manual check (open a real table) is still needed before this can be
-called closed.** Full account in `phase-7.md`'s 7b Runbook entry.
+`tsc`/`prettier` clean; **a third manual check (open a real table) then
+confirmed it, 2026-09-10** — Sean's own console export showed no
+`postMessage`/`origin` error, and the grid rendered column headers and rows
+for a real table. Closed. That same console export also surfaced a new,
+unrelated, real gap: the panel's CSP has no `font-src`, so ag-grid's own
+bundled icon font (an `@font-face` inside `ag-theme-alpine.css`) is
+blocked — currently invisible (7b ships `sortable: false` and no filter, so
+nothing draws an icon from it yet) but will show as broken/missing icons
+the moment 7c turns sort or filter on. **Not fixed here — deferred to 7c,
+Sean's decision**, tracked as its own punch-list item there rather than an
+implicit assumption. Full account in `phase-7.md`'s 7b Runbook entry and
+7c's punch list.
 
 - **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
   `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new

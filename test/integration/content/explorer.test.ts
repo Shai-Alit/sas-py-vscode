@@ -39,6 +39,11 @@ const MUTATION_COMMANDS = [
   "pythonOnViya.deleteContentItem",
 ];
 
+const FAVORITE_COMMANDS = [
+  "pythonOnViya.addContentToFavorites",
+  "pythonOnViya.removeContentFromFavorites",
+];
+
 describe("SAS Content explorer", () => {
   before(async () => {
     const extension = vscode.extensions.getExtension(extensionId());
@@ -131,7 +136,7 @@ describe("SAS Content explorer", () => {
       );
       assert.match(
         entry.when ?? "",
-        /viewItem == sasContent:/,
+        /viewItem (==|=~) [^&]*sasContent:/,
         `${entry.command ?? "?"} not gated on a contextValue`,
       );
       // 6c-ii added `canSelectMany` to the tree; these commands only act on the
@@ -168,11 +173,56 @@ describe("SAS Content explorer", () => {
   it("does nothing catastrophic when a mutation command runs with no argument", async () => {
     // The `when` clauses stop this in the UI; belt-and-braces that the handler
     // guards a missing item rather than throwing into the command dispatcher.
-    for (const command of MUTATION_COMMANDS) {
+    for (const command of [...MUTATION_COMMANDS, ...FAVORITE_COMMANDS]) {
       await assert.doesNotReject(
         Promise.resolve(vscode.commands.executeCommand(command)),
         `${command} threw with no argument`,
       );
     }
+  });
+
+  it("registers the two 6d-i favourites commands and wires their menu", async () => {
+    const registered = await vscode.commands.getCommands(true);
+    for (const command of FAVORITE_COMMANDS) {
+      assert.ok(registered.includes(command), `${command} is not registered`);
+    }
+
+    const extension = vscode.extensions.getExtension(extensionId());
+    assert.ok(extension);
+    const menus = (
+      extension.packageJSON as {
+        contributes?: {
+          menus?: {
+            "view/item/context"?: MenuContribution[];
+            commandPalette?: MenuContribution[];
+          };
+        };
+      }
+    ).contributes?.menus;
+
+    const context = (menus?.["view/item/context"] ?? []).filter((m) =>
+      FAVORITE_COMMANDS.includes(m.command ?? ""),
+    );
+    assert.equal(context.length, 2, "expected an Add and a Remove entry");
+    const whenFor = (command: string) =>
+      context.find((m) => m.command === command)?.when ?? "";
+    // Add shows on a not-yet-favourited folder/file; Remove only on the
+    // `.fav`-suffixed contextValue.
+    assert.match(
+      whenFor("pythonOnViya.addContentToFavorites"),
+      /viewItem =~ \/\^sasContent:\(folder\|file\)\$\//,
+    );
+    assert.match(
+      whenFor("pythonOnViya.removeContentFromFavorites"),
+      /sasContent:\(folder\|file\)\\\.fav\$/,
+    );
+    for (const entry of context) {
+      assert.match(entry.when ?? "", /!listMultiSelection/);
+    }
+
+    const hidden = (menus?.commandPalette ?? []).filter(
+      (m) => FAVORITE_COMMANDS.includes(m.command ?? "") && m.when === "false",
+    );
+    assert.equal(hidden.length, 2, "both should be hidden from the palette");
   });
 });

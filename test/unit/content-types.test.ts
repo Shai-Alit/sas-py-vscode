@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 
 import {
   DELEGATE_FOLDERS,
+  FAVORITE_MEMBER_TYPE,
   isContainer,
+  isFavoritesDelegate,
   isSasContentRoot,
   memberTypeFilter,
   readContentItem,
@@ -217,5 +219,22 @@ describe("content/types", () => {
       "@sasRoot",
       "@myRecycleBin",
     ]);
+  });
+
+  describe("isFavoritesDelegate (6d-i)", () => {
+    it("is true only for the favoritesFolder type", () => {
+      assert.equal(
+        isFavoritesDelegate(item({ type: "favoritesFolder" })),
+        true,
+      );
+      for (const type of ["myFolder", "trashFolder", "folder", "child"]) {
+        assert.equal(isFavoritesDelegate(item({ type })), false);
+      }
+      assert.equal(isFavoritesDelegate(SAS_CONTENT_ROOT), false);
+    });
+
+    it("adds a favourite as a reference, not a child", () => {
+      assert.equal(FAVORITE_MEMBER_TYPE, "reference");
+    });
   });
 });

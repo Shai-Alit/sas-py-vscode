@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "accept": "application/vnd.sas.content.folder.member",
+  "count": 1,
+  "start": 0,
+  "limit": 1000000,
+  "name": "members",
+  "items": [
+    {
+      "creationTimeStamp": "2024-03-01T09:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-03-01T09:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "eeeeeeee-0000-4000-8000-0000000000f1",
+      "name": "analysis.py",
+      "added": "2024-03-01T09:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002",
+      "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+      "type": "reference",
+      "contentType": "file",
+      "typeDefName": "file_py",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "DELETE",
+          "rel": "deleteResource",
+          "href": "/files/files/cccccccc-0000-4000-8000-0000000000a1",
+          "uri": "/files/files/cccccccc-0000-4000-8000-0000000000a1"
+        },
+        {
+          "method": "PUT",
+          "rel": "update",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1",
+          "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members?start=0&limit=1000000&filter=in(contentType,'file','dataFlow','folder')",
+      "uri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members?start=0&limit=1000000&filter=in(contentType,'file','dataFlow','folder')",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

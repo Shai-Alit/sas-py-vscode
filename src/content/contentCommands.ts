@@ -3,7 +3,8 @@
 
 /**
  * The SAS Content tree's context-menu mutations — create a folder, create a
- * file, rename an item, delete an item. 6c-i.
+ * file, rename an item, delete an item (6c-i); add an item to / remove it from
+ * My Favorites (6d-i).
  *
  * A thin `vscode` shell over `src/content/adapter.ts`, the same shape as
  * `src/content/contentFileSystem.ts`: it collects a name through an input box
@@ -48,7 +49,7 @@ export interface ContentCommandDeps {
   viewId: string;
 }
 
-/** Registers the four commands. Every disposable goes on `context.subscriptions`. */
+/** Registers the six commands. Every disposable goes on `context.subscriptions`. */
 export function registerContentCommands(
   context: vscode.ExtensionContext,
   deps: ContentCommandDeps,
@@ -69,6 +70,14 @@ export function registerContentCommands(
     vscode.commands.registerCommand(
       "pythonOnViya.deleteContentItem",
       (item?: ContentItem) => remove(deps, item),
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.addContentToFavorites",
+      (item?: ContentItem) => favorite(deps, item, "add"),
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.removeContentFromFavorites",
+      (item?: ContentItem) => favorite(deps, item, "remove"),
     ),
   );
 }
@@ -219,6 +228,36 @@ async function remove(
     undefined,
     (signal) => adapter.deleteItem(item, signal),
     vscode.l10n.t('Deleting "{0}"…', item.name),
+  );
+}
+
+/**
+ * Add the item to, or remove it from, My Favorites (6d-i). No name prompt and no
+ * confirmation — it is a one-click, fully reversible toggle. `run` reloads the
+ * whole tree afterwards, which re-marks every visible row and refreshes the My
+ * Favorites folder itself.
+ */
+async function favorite(
+  deps: ContentCommandDeps,
+  item: ContentItem | undefined,
+  action: "add" | "remove",
+): Promise<void> {
+  const adapter = deps.adapter();
+  if (adapter === undefined || item === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+
+  await run(
+    deps,
+    undefined,
+    (signal) =>
+      action === "add"
+        ? adapter.addToFavorites(item, signal)
+        : adapter.removeFromFavorites(item, signal),
+    action === "add"
+      ? vscode.l10n.t('Adding "{0}" to My Favorites…', item.name)
+      : vscode.l10n.t('Removing "{0}" from My Favorites…', item.name),
   );
 }
 

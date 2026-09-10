@@ -158,7 +158,10 @@ export class SasContentTreeProvider
     const result =
       item === undefined
         ? await adapter.getRootItems()
-        : await adapter.getChildItems(item);
+        : // `markFavorites` costs one extra `@myFavorites/members` read per
+          // user-driven expand, so the menu can offer Remove-from-Favorites on
+          // an item already favourited (6d-i).
+          await adapter.getChildItems(item, undefined, { markFavorites: true });
 
     if (!result.ok) {
       this.log.error(

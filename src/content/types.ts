@@ -90,6 +90,21 @@ export interface ContentItem {
    * every once-moved member carries that link too.
    */
   readonly inRecycleBin?: boolean | undefined;
+  /**
+   * Set by {@link ContentAdapter.getChildItems} (with `markFavorites`) — **not**
+   * a wire field. `true` when this item's underlying resource is referenced from
+   * the My Favorites delegate, so `src/content/presentation.ts` offers "Remove
+   * from My Favorites" rather than "Add". 6d-i.
+   */
+  readonly isInMyFavorites?: boolean | undefined;
+  /**
+   * The href of the favourite *reference* member record to `DELETE` to
+   * unfavourite this item — set alongside {@link ContentItem.isInMyFavorites}.
+   * A reference member's own `deleteResource` link points at the underlying
+   * file, so removing a favourite must use this (its `delete`/`self` link),
+   * never `deleteResource` (finding 6.13).
+   */
+  readonly favoriteUri?: string | undefined;
   /** The Folders service's own count of members. Not read for any UI
    * decision — finding 80 recorded it disagreeing with the filtered
    * collection — kept only so a future slice need not re-add it. */
@@ -291,6 +306,19 @@ export function isDelegateFolder(item: ContentItem): boolean {
 export function isMyFolderDelegate(item: ContentItem): boolean {
   return item.type === "myFolder";
 }
+
+/** Whether an item is the "My Favorites" delegate (`@myFavorites` resolves to
+ * `type: "favoritesFolder"`, finding 97). Its own direct children are every one
+ * a favourite; a drop onto it is an add-to-favourites, not a move. 6d-i. */
+export function isFavoritesDelegate(item: ContentItem): boolean {
+  return item.type === "favoritesFolder";
+}
+
+/** The member `type` a favourite is added as — a *reference*, not a `child`:
+ * a resource can be referenced from many folders and keeps its own
+ * authorizations, where a `child` can live in exactly one folder (finding 6.13,
+ * and the Folders v7 OpenAPI). */
+export const FAVORITE_MEMBER_TYPE = "reference";
 
 /** The delegate `type` of the Recycle Bin — `@myRecycleBin` resolves to this
  * (finding 97). Its direct children are flagged {@link ContentItem.inRecycleBin}

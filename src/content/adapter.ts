@@ -79,9 +79,11 @@ import {
   DELETE_REL,
   DELETE_RESOURCE_REL,
   extensionOf,
+  FAVORITE_MEMBER_TYPE,
   FILES_COLLECTION,
   FOLDERS_COLLECTION,
   isContainer,
+  isFavoritesDelegate,
   isRecycleBinDelegate,
   isSasContentRoot,
   MEMBERS_REL,
@@ -262,6 +264,7 @@ export class ContentAdapter {
   async getChildItems(
     parent: ContentItem,
     signal?: AbortSignal,
+    opts?: { readonly markFavorites?: boolean },
   ): Promise<ContentResult<readonly ContentItem[]>> {
     const target = this.membersLinkFor(parent);
     if (target === undefined) {
@@ -300,6 +303,43 @@ export class ContentAdapter {
         value: children.map((child) => ({ ...child, inRecycleBin: true })),
       };
     }
+
+    // My Favorites' own children are each a favourite. The record to remove is
+    // the child's own `delete` link (the reference member) — never
+    // `deleteResource`, which addresses the underlying file (finding 6.13).
+    if (isFavoritesDelegate(parent)) {
+      return {
+        ok: true,
+        value: children.map((child) => {
+          const favoriteUri = favoriteMemberHrefOf(child);
+          return favoriteUri === undefined
+            ? { ...child, isInMyFavorites: true }
+            : { ...child, isInMyFavorites: true, favoriteUri };
+        }),
+      };
+    }
+
+    // Everywhere else, when the caller asks: mark the children that are
+    // referenced from My Favorites, so the context menu offers "Remove" rather
+    // than "Add". One extra small request per user-driven folder expand — the
+    // internal callers (recursive delete, reveal-after-create) pass no `opts`
+    // and skip it. Strictly additive and best-effort: a favourites-service
+    // failure leaves every child unmarked rather than blanking a good listing.
+    if (opts?.markFavorites === true) {
+      const favorites = await this.favoriteRecordHrefs(signal);
+      return {
+        ok: true,
+        value: children.map((child) => {
+          const href = resourceHrefOf(child);
+          const favoriteUri =
+            href === undefined ? undefined : favorites.get(href);
+          return favoriteUri === undefined
+            ? child
+            : { ...child, isInMyFavorites: true, favoriteUri };
+        }),
+      };
+    }
+
     return { ok: true, value: children };
   }
 
@@ -821,6 +861,147 @@ export class ContentAdapter {
     return { ok: true, value: moved };
   }
 
+  // ─── 6d-i: favourites ─────────────────────────────────────────────────────
+
+  /**
+   * Add `item` to My Favorites — `POST` the My Favorites folder's `addMember`
+   * link a `{uri, type:"reference", name, contentType}` body (finding 6.13,
+   * `201`).
+   *
+   * A favourite is a **reference** member, not a `child`: the same resource can
+   * be referenced from many folders and it keeps its own authorizations. The My
+   * Favorites folder representation is fetched once and memoised for the life of
+   * the adapter (which is rebuilt per deployment and on sign-out); only its
+   * `addMember` link is read, and that href — `/folders/folders/{id}/members` —
+   * is stable.
+   */
+  async addToFavorites(
+    item: ContentItem,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<void>> {
+    const resource = resourceHrefOf(item);
+    if (resource === undefined) {
+      return linkMissing(`"${item.name}"`, SELF_REL);
+    }
+
+    const favorites = await this.favoritesFolder(signal);
+    if (!favorites.ok) return favorites;
+    const addMember = findLink(favorites.value.links, ADD_MEMBER_REL);
+    if (addMember === undefined) {
+      return linkMissing("the My Favorites folder", ADD_MEMBER_REL);
+    }
+
+    const result = await this.client.send({
+      link: { ...addMember, method: "POST" },
+      jsonBody: {
+        uri: resource,
+        type: FAVORITE_MEMBER_TYPE,
+        name: item.name,
+        // A member carries `contentType` (`file` / `folder`); a top-level
+        // root-listing folder does not — omit it then and let the Files/Folders
+        // service infer the kind from `uri` (unprobed for that one case).
+        ...(item.contentType === undefined
+          ? {}
+          : { contentType: item.contentType }),
+      },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+    return { ok: true, value: undefined };
+  }
+
+  /**
+   * Remove `item` from My Favorites — `DELETE` the favourite reference member
+   * record at `item.favoriteUri` (stamped by {@link ContentAdapter.getChildItems}).
+   *
+   * The reference member's own `deleteResource` link points at the underlying
+   * file, so unfavouriting must use this record href, never that one (finding
+   * 6.13). An item with no `favoriteUri` was never marked as favourited, so
+   * there is nothing to remove — `link-missing`.
+   */
+  async removeFromFavorites(
+    item: ContentItem,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<void>> {
+    if (item.favoriteUri === undefined || item.favoriteUri === "") {
+      return linkMissing(`"${item.name}"`, DELETE_REL);
+    }
+    const result = await this.client.send({
+      link: { rel: DELETE_REL, href: item.favoriteUri, method: "DELETE" },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+    return { ok: true, value: undefined };
+  }
+
+  /**
+   * `Map<underlying resource href → favourite reference-member record href>` for
+   * every current My Favorites reference.
+   *
+   * Built fresh from `GET /folders/folders/@myFavorites/members` on every
+   * {@link ContentAdapter.getChildItems} that asks for it — deliberately not
+   * cached, so a favourite added or removed elsewhere (SAS Studio, another
+   * window) shows on the next expand. Finding 6.13: the folder's `memberCount`
+   * cannot stand in for this (it read `1` against an empty collection), so the
+   * members listing is the only authority. Any failure yields an empty map — the
+   * marking it feeds is additive.
+   */
+  private async favoriteRecordHrefs(
+    signal?: AbortSignal,
+  ): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const query = `?limit=${String(MEMBER_LIMIT)}&filter=${memberTypeFilter("contentType")}`;
+    const result = await this.client.send({
+      link: {
+        rel: MEMBERS_REL,
+        href: `${FOLDERS_COLLECTION}/@myFavorites/members${query}`,
+      },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return map;
+
+    const rawItems = readItems(result.value);
+    if (rawItems === undefined) return map;
+    for (const raw of rawItems) {
+      const item = readContentItem(raw);
+      if (item === undefined) continue;
+      const resource = resourceHrefOf(item);
+      const record = favoriteMemberHrefOf(item);
+      if (resource !== undefined && record !== undefined) {
+        map.set(resource, record);
+      }
+    }
+    return map;
+  }
+
+  /** The My Favorites folder representation, memoised on the first success. A
+   * failure is returned but not cached, so a transient error does not pin the
+   * adapter to a favourites-less state. */
+  private async favoritesFolder(
+    signal?: AbortSignal,
+  ): Promise<ContentResult<ContentItem>> {
+    if (this.favoritesFolderCache !== undefined) {
+      return this.favoritesFolderCache;
+    }
+    const result = await this.client.send({
+      link: { rel: SELF_REL, href: `${FOLDERS_COLLECTION}/@myFavorites` },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    const item = readContentItem(result.value.body);
+    if (item === undefined) {
+      return malformed(
+        result.value,
+        "the My Favorites folder",
+        "and the body was not a folder representation",
+      );
+    }
+    this.favoritesFolderCache = { ok: true, value: item };
+    return this.favoritesFolderCache;
+  }
+  private favoritesFolderCache: { ok: true; value: ContentItem } | undefined;
+
   /**
    * Delete a folder (recursively) or a file.
    *
@@ -1032,6 +1213,24 @@ function readItems(response: ContentResponse): readonly unknown[] | undefined {
   if (typeof body !== "object" || body === null) return undefined;
   const items: unknown = (body as { items?: unknown }).items;
   return Array.isArray(items) ? (items as readonly unknown[]) : undefined;
+}
+
+/**
+ * The href of the favourite *reference* member record for an item — the target
+ * of the `DELETE` that unfavourites it.
+ *
+ * Prefers the `delete` link (the relation whose method and meaning are "remove
+ * this record"); finding 6.13 observed `self` and `delete` carrying the **same**
+ * href on a reference member, so the `?? self` is an equivalent-link fallback for
+ * a representation that omits `delete`, not an unprobed guess. Never
+ * `deleteResource`, which on a reference member addresses the underlying file
+ * (finding 6.13).
+ */
+function favoriteMemberHrefOf(item: ContentItem): string | undefined {
+  return (
+    findLink(item.links, DELETE_REL)?.href ??
+    findLink(item.links, SELF_REL)?.href
+  );
 }
 
 /** The `self` link href of a representation body, or `undefined`. Used on the

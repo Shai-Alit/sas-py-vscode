@@ -182,8 +182,16 @@ async function remove(
 
 /**
  * Run one adapter mutation behind the tree's progress spinner, cancellable, and
- * handle its outcome: log-and-notify on failure, refresh on success. A
- * user-cancelled run is silent — the spinner going away is feedback enough.
+ * handle its outcome.
+ *
+ * Cancellation is the abort signal's job, not a post-hoc check of the progress
+ * token: once `action` has resolved, its `ContentResult` is the truth. If the
+ * user clicks **Cancel** *after* the mutation already landed, the work still
+ * happened — so the tree is refreshed and (for a success) nothing else is said.
+ * A `Cancel` *during* the request aborts it, and the adapter comes back with a
+ * failure whose cause is that abort; that one stays silent. Every other failure
+ * is logged and shown. The tree is reloaded whatever the outcome, because a
+ * cancelled or failed multi-step delete may have changed the server partway.
  */
 async function run(
   deps: ContentCommandDeps,
@@ -191,7 +199,7 @@ async function run(
   action: (signal: AbortSignal) => Promise<ContentResult<unknown>>,
   title: string,
 ): Promise<void> {
-  const outcome = await vscode.window.withProgress(
+  const { result, aborted } = await vscode.window.withProgress(
     { location: { viewId: deps.viewId }, title, cancellable: true },
     async (_progress, token) => {
       const controller = new AbortController();
@@ -199,30 +207,25 @@ async function run(
         controller.abort();
       });
       try {
-        const result = await action(controller.signal);
-        return token.isCancellationRequested ? "cancelled" : result;
+        const value = await action(controller.signal);
+        // Read synchronously, right after the await resolves — no yield point
+        // for a late Cancel to slip through, so this reflects whether the work
+        // itself was aborted, not whether the button was clicked afterwards.
+        return { result: value, aborted: controller.signal.aborted };
       } finally {
         sub.dispose();
       }
     },
   );
 
-  if (outcome === "cancelled") return;
-
-  if (!outcome.ok) {
-    deps.log.error(
-      vscode.l10n.t(
-        "SAS Content: {0}",
-        describeContentProblem(outcome.problem),
-      ),
-    );
-    void vscode.window.showErrorMessage(
-      localiseContentProblem(outcome.problem),
-    );
-    return;
-  }
-
   deps.refresh(refreshTarget);
+
+  if (result.ok || aborted) return;
+
+  deps.log.error(
+    vscode.l10n.t("SAS Content: {0}", describeContentProblem(result.problem)),
+  );
+  void vscode.window.showErrorMessage(localiseContentProblem(result.problem));
 }
 
 /** Local, per-keystroke name checks — the authoritative one is the adapter's

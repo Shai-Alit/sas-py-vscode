@@ -131,6 +131,52 @@ describe("check-coverage-scope", function () {
         true,
       );
     });
+
+    // Every case above feeds plain .ts-shaped source through the default
+    // `fileName`, so none of them ever exercises scriptKindFor's `.tsx`
+    // branch — this project's only .tsx files (src/webview/dataViewerEntry.tsx)
+    // do, and the two cases below are real JSX shaped the same way that
+    // file's own AgGridReact element is: a self-closing tag with string,
+    // expression, and bare-boolean attributes. This closes that literal gap
+    // (no test previously fed real JSX through this function at all), but is
+    // not a regression guard on scriptKindFor itself: checked directly with
+    // ts.createSourceFile that this function's answer for these shapes (and
+    // several others — a bare-`<T>` generic arrow, JSX before and after the
+    // import) is identical under ScriptKind.TS and ScriptKind.TSX, since the
+    // parser resyncs cleanly at the unambiguous `import` keyword regardless.
+    // Both cases below would still pass if scriptKindFor always returned
+    // ScriptKind.TS.
+    it("sees a runtime import behind real JSX in a .tsx file", () => {
+      const source = [
+        'import * as vscode from "vscode";',
+        "function App() {",
+        "  return (",
+        "    <AgGridReact",
+        '      className="ag-theme-alpine"',
+        "      columnDefs={columns}",
+        "      suppressDragLeaveHidesColumns",
+        "    />",
+        "  );",
+        "}",
+        "export const y = vscode.window;",
+      ].join("\n");
+      assert.equal(script.importsHostModule(source, "component.tsx"), true);
+    });
+
+    it("ignores the same JSX shape with no vscode import", () => {
+      const source = [
+        "function App() {",
+        "  return (",
+        "    <AgGridReact",
+        '      className="ag-theme-alpine"',
+        "      columnDefs={columns}",
+        "      suppressDragLeaveHidesColumns",
+        "    />",
+        "  );",
+        "}",
+      ].join("\n");
+      assert.equal(script.importsHostModule(source, "component.tsx"), false);
+    });
   });
 
   describe("isTypesOnly", () => {

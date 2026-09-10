@@ -1223,25 +1223,76 @@ things this box waits on.
   `buildHtml` doc comment's still-open `img-src` question is worth
   resolving whenever 7c actually exercises an ag-grid icon, in case the
   SVG-icon path needs it too.
-- ☐ Hide `pythonOnViya.openTable` from the global Command Palette —
+- ☑ Hide `pythonOnViya.openTable` from the global Command Palette —
   `package.json`'s `commandPalette` array gives the four analogous content
   commands (`createContentFolder`/`createContentFile`/`renameContentItem`/
-  `deleteContentItem`) a `"when": "false"` entry each, but `openTable` has
-  none, so it's reachable from Ctrl+Shift+P where it silently no-ops (no
+  `deleteContentItem`) a `"when": "false"` entry each, but `openTable` had
+  none, so it was reachable from Ctrl+Shift+P where it silently no-ops (no
   tree item to act on — `dataExplorer.ts`'s handler returns early). Real,
   non-blocking finding from PR #150's final review round, 2026-09-10;
-  deferred rather than fixed on that PR (Sean's call).
-- ☐ Remove the dead `data-title` attribute from the data viewer's HTML
+  deferred rather than fixed on that PR (Sean's call). **Fixed** 2026-09-10,
+  from the `sas-py-vscode-cowork` clone: a fifth `commandPalette` entry,
+  `{ "command": "pythonOnViya.openTable", "when": "false" }`, added
+  alongside the four content commands' own.
+- ☑ Remove the dead `data-title` attribute from the data viewer's HTML
   shell (`buildHtml`, `src/data/dataViewerPanel.ts`) — nothing in
   `dataViewerEntry.tsx` reads `#root`'s `dataset.title`; the panel title
   only ever flows through the `WebviewPanel`'s own `title` param. Real,
   non-blocking finding from PR #150's final review round, 2026-09-10;
-  deferred rather than fixed on that PR (Sean's call).
-- ☐ Add a JSX test case for `check-coverage-scope.mjs`'s `scriptKindFor` —
+  deferred rather than fixed on that PR (Sean's call). **Fixed** 2026-09-10:
+  the attribute, its `escapeHtmlAttribute` helper (its only caller), and
+  `buildHtml`'s now-unused `table`/`title` locals and parameter all removed
+  together — nothing else in the file read any of them.
+- ☑ Add a JSX test case for `check-coverage-scope.mjs`'s `scriptKindFor` —
   the `.tsx`/`ts.ScriptKind.TSX` handling it added for this slice has no
   test exercising actual JSX syntax, only `.tsx` files that happen not to
   contain any. Real, non-blocking finding from PR #150's final review
   round, 2026-09-10; deferred rather than fixed on that PR (Sean's call).
+  **Fixed** 2026-09-10: two new cases in `test/unit/coverage-scope.test.ts`
+  feed `importsHostModule` a `.tsx` fileName with a real, ag-grid-shaped
+  self-closing JSX element (string, expression, and bare-boolean
+  attributes, mirroring `dataViewerEntry.tsx`'s own `<AgGridReact>` usage) —
+  one with a runtime `vscode` import, one without. Investigated first
+  whether either direction could be made to flip a wrong answer if
+  `scriptKindFor` regressed to always returning `ts.ScriptKind.TS`: tried
+  several representative shapes (a bare-`<T>` generic arrow, a
+  multi-attribute self-closing tag, JSX before and after the import) against
+  both script kinds directly via `ts.createSourceFile`, and none disagreed —
+  TypeScript's parser resyncs cleanly at the unambiguous `import` keyword
+  regardless of script kind for every case built from realistic, syntactically
+  complete JSX, so this specific check (top-level import-declaration
+  detection only) turns out not to depend on getting `ScriptKind.TSX` right
+  for any well-formed input. The two cases still close the literal gap
+  (no test previously fed real JSX through this function at all) and lock in
+  the correct answer for this project's actual `.tsx` shape.
+
+  These three were picked up together as a small, pre-7c batch closing out
+  PR #150's deferred findings, not as the start of 7c proper (none of the
+  four items above are touched). `npx tsc --noEmit` / `-p tsconfig.test.json`,
+  `npx prettier --check` (the four touched files), `npm run lint`, and
+  `npm run check:coverage-scope` all clean; `npm run test:unit` green (1443
+  passing, up from 1441 with the two new cases) and `npm run test:integration`
+  green (305 passing, unchanged — `buildHtml`'s signature change needed no
+  test update, since no integration test asserted the removed parameter or
+  attribute); `npm run coverage` green (95.29% lines / 95.37% branches /
+  94.95% functions / 95.29% statements, every threshold met); `npm run build`
+  clean across all three esbuild contexts; `check:copyright`/`check:secrets`/
+  `check:contracts` all clean. **Adversarial review before any push** (per
+  `CLAUDE.md`'s standing rule) found no blocking issues — confirmed
+  `buildHtml`'s 3-to-2-param signature change dropped nothing (its one caller
+  updated correctly, no test asserted the removed attribute or parameter,
+  `escapeHtmlAttribute`'s removal reopens no XSS surface since every
+  remaining interpolation is either regex-validated or a UUID/URI), and the
+  new `package.json` entry is well-formed and consistent with the other four.
+  One real, non-blocking finding: the in-file comment ahead of the two JSX
+  cases overstated what they prove — reading as if they would catch a
+  `scriptKindFor` regression, when (as this same punch-list item's own
+  account above already found) no realistic well-formed JSX makes this
+  particular check's answer depend on the script kind. **Fixed** — the
+  comment now says plainly that these two cases close the literal test-input
+  gap without being a regression guard, matching this document's own
+  candor. `npx tsc -p tsconfig.test.json --noEmit`, `npx prettier --check`,
+  and `npm run test:unit` (1443 passing, unchanged) all clean after the fix.
 
 ☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
 Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting

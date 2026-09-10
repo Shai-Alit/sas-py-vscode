@@ -1121,6 +1121,52 @@ things this box waits on.
   `tsc --noEmit` (root, `-p tsconfig.webview.json`, `-p tsconfig.test.json`)
   and `prettier --check` all clean.
 
+  **CodeQL "Commit suggestion" applied directly to the PR branch, 2026-09-10,
+  commit `03e6caec` — origin check rewritten again, real gap flagged, fixed
+  by re-verifying.** After the third manual pass above confirmed the
+  `startsWith("vscode-webview://")` / `endsWith(".vscode-webview.net")`
+  check, GitHub's Advanced Security "Copilot Autofix" suggestion for the same
+  `js/missing-origin-check` alert was applied via the code-scanning UI's
+  "Commit suggestion" button, landing as its own commit without going through
+  local review first. It replaced the check with:
+
+  ```ts
+  let parsedOrigin: URL;
+  try {
+    parsedOrigin = new URL(event.origin);
+  } catch {
+    return;
+  }
+  const isTrustedOrigin =
+    parsedOrigin.protocol === "vscode-webview:" ||
+    (parsedOrigin.protocol === "https:" &&
+      parsedOrigin.hostname.endsWith(".vscode-webview.net"));
+  if (!isTrustedOrigin) {
+    return;
+  }
+  ```
+
+  A subsequent automated PR review correctly caught that this exact
+  implementation had never itself been run against a real panel — the third
+  manual pass verified the previous `startsWith`/`endsWith` version, not this
+  rewrite, and `STATUS.md`/this file hadn't been updated to say so. On
+  inspection the logic is at least as strict as the version it replaced
+  (proper `URL` parsing instead of raw-string matching, and an explicit
+  `protocol === "https:"` requirement that the old `endsWith` check never
+  pinned), so this was not treated as a suspected regression, but the
+  project's own standing rule for this file — confirm against a real panel
+  before merge, every time the check changes — still applied.
+  **Fourth manual pass, 2026-09-10: confirmed**, against `03e6caec`
+  specifically. Sean opened a real table on this branch; DevTools showed no
+  `postMessage`/`origin` error, and the grid rendered column headers and
+  rows. A separate console log from opening another table the same session
+  showed only `Unrecognized feature: 'local-network-access'` and `An iframe
+  which has both allow-scripts and allow-same-origin for its sandbox
+  attribute can escape its sandboxing` — both traced to VS Code's own
+  `webviewElement.ts`/`overlayWebview.ts` internals (present in every VS Code
+  webview panel, including this project's existing result panel), not to
+  anything in this PR's diff. Closed.
+
 ☐ **7c — Sort, filter, CSV export, table properties.**
 
 - ☐ Server-side sort via `createView` — decide the orphan-view cleanup

@@ -37,14 +37,19 @@
  * 7.14) — nothing else in this project's own tiers could have.
  *
  * **The `message` listener's origin check (added responding to a CodeQL
- * finding on this PR) postdates that manual pass and has not itself been
- * run against a real panel.** If the check's premise is wrong for this
- * project's actual Electron/webview version, the failure mode is silent and
- * total: every host→webview message (`init`, `failure`, `rows`, `rowsError`)
- * gets dropped, and the panel never renders anything past its initial blank
- * frame — indistinguishable from `columns === undefined` still loading.
- * Confirming a real panel still loads a table after this change is not
- * optional before merge.
+ * finding on this PR) has been rewritten twice since that manual pass, and
+ * both the `startsWith`/`endsWith` version and this file's current
+ * `new URL(event.origin)` version (the second an automated CodeQL "Commit
+ * suggestion" applied directly to the PR branch, 2026-09-10) have each been
+ * confirmed against a real panel** — most recently the version actually
+ * shipping here. If the check's premise is ever wrong for this project's
+ * actual Electron/webview version, the failure mode is silent and total:
+ * every host→webview message (`init`, `failure`, `rows`, `rowsError`) gets
+ * dropped, and the panel never renders anything past its initial blank frame
+ * — indistinguishable from `columns === undefined` still loading. Any future
+ * rewrite of this check must be confirmed against a real panel again before
+ * merge; this is not a one-time check that stays satisfied once the logic
+ * changes.
  */
 
 import { useCallback, useEffect, useState } from "react";

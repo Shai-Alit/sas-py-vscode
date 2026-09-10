@@ -128,7 +128,15 @@ issues (`vscode-webview://…` desktop, `https://….vscode-webview.net` web).
 `tsc`/`prettier` clean; **a third manual check (open a real table) then
 confirmed it, 2026-09-10** — Sean's own console export showed no
 `postMessage`/`origin` error, and the grid rendered column headers and rows
-for a real table. Closed. That same console export also surfaced a new,
+for a real table. Closed, until GitHub's Copilot Autofix suggestion for the
+same CodeQL alert was applied directly to the branch as its own commit
+(`03e6caec`), rewriting the check to a `new URL(event.origin)` version
+without going through local review or re-verification. **Fourth manual pass,
+2026-09-10: confirmed against that exact commit** — same result, no
+`postMessage`/`origin` error, grid rendered. See `phase-7.md`'s 7b Runbook
+entry for the full account, including the unrelated benign VS Code-internal
+console warnings (`local-network-access`, iframe sandbox) a later log from
+the same check surfaced. That same console export also surfaced a new,
 unrelated, real gap: the panel's CSP has no `font-src`, so ag-grid's own
 bundled icon font (an `@font-face` inside `ag-theme-alpine.css`) is
 blocked — currently invisible (7b ships `sortable: false` and no filter, so

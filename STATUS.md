@@ -308,9 +308,9 @@ account in `phase-7.md`'s 7b Runbook entry.
   `phase-7.md`'s 7c-i Runbook entry. `npm run verify`/`test:integration`
   re-run green after all three fixes (1468 unit, 310 integration passing,
   thresholds unchanged); `check:docs`/`l10n:extract`/`build` all clean.
-  **Not yet pushed — no PR opened.** `docs/dev/manual-test-pass.md` gained an
-  unrun §12 for Sean's own visual check of the new filter bar and sort-icon
-  rendering.
+  **[PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155) opened
+  2026-09-10.** `docs/dev/manual-test-pass.md` gained an unrun §12 for
+  Sean's own visual check of the new filter bar and sort-icon rendering.
 - **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
   Scoped 2026-09-04 from a separate session; that session's doc edits were
   stashed rather than committed and sat unmerged until found and resurrected

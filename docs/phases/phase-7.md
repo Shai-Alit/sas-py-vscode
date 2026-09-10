@@ -1217,7 +1217,8 @@ host-side-only, local-disk-write feature, standalone since Phase 6 deferred
 its own upload/download to Phase 11 entirely rather than shipping a helper
 this could share). **7c-i is next.**
 
-☑ **7c-i — Sort + filter.** Code written 2026-09-10 (`sas-py-vscode-cowork`
+☑ **7c-i — Sort + filter.** [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155)
+opened 2026-09-10. Code written 2026-09-10 (`sas-py-vscode-cowork`
 clone), following the live-probed shape Findings 7.15–7.18 established.
 Design decisions (view-per-(sort,filter)-state reuse across pagination, a
 filter baked into `createView`'s own body whenever a sort is active, a

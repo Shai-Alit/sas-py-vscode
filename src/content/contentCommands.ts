@@ -127,6 +127,10 @@ async function createChild(
  * resource address the two forms agree on — rather than by an id that will not.
  * If the re-listing fails, or nothing matches, the create response is revealed
  * as-is: worst case that only expands the parent.
+ *
+ * The re-list carries no `AbortSignal` and no spinner of its own — it runs
+ * after `run`'s cancellable progress has resolved, is best-effort, and swallows
+ * its own failure. It is still bounded by the client's default request timeout.
  */
 async function revealCreated(
   deps: ContentCommandDeps,

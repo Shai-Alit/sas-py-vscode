@@ -171,7 +171,7 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
     // A multi-item move that failed partway has still changed the server, so
     // reload whatever the outcome.
     this.deps.refresh();
-    if (firstMoved !== undefined) void this.deps.reveal(firstMoved);
+    if (firstMoved !== undefined) await this.deps.reveal(firstMoved);
     if (problems.length > 0) {
       void vscode.window.showErrorMessage(problems[0] ?? "");
     }

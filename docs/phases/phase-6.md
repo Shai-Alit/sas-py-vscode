@@ -560,13 +560,16 @@ resolved.
   feature is a low-priority nice-to-have. Revisit if users ask.
 
 ☑ **6c-iii — `getParent` / `TreeView.reveal` + the `ancestors` probe.** Done
-2026-09-10 (adversarial pass done; PR not yet opened). `npm run verify` green
-(1480 unit passing; coverage 95.31 lines / 95.37 branches / 94.98 functions /
-95.31 statements). Integration 318 passing (run with the VS Code env vars
-stripped — the `ELECTRON_RUN_AS_NODE` launch quirk, unchanged). Also folded in
-this clone's dependency reconcile — `npm install` after `main` fast-forwarded
-onto Sean's concurrent Phase 7b merge (React + ag-grid), which the stale
-`node_modules` was missing.
+2026-09-10. `npm run verify` green (1480 unit passing; coverage 95.31 lines /
+95.37 branches / 94.98 functions / 95.31 statements). Integration 318 passing
+(run with the VS Code env vars stripped — the `ELECTRON_RUN_AS_NODE` launch
+quirk, unchanged). Adversarial pass before the PR: **no blocking findings** —
+two minor polish items folded in (a comment noting `revealCreated`'s re-list is
+deliberately unspinnered/unabortable and bounded only by the client timeout;
+the drag-and-drop path now `await`s its `reveal` to match the create path
+rather than firing it with `void`). Also folded in this clone's dependency
+reconcile — `npm install` after `main` fast-forwarded onto Sean's concurrent
+Phase 7b merge (React + ag-grid), which the stale `node_modules` was missing.
 
 - ☑ **`ContentAdapter.getParentOfItem`** — `GET` the item's `ancestors` link.
   Finding 6.12 pinned the shape: the link advertises

@@ -7,6 +7,7 @@ import {
   isLibrary,
   isTable,
   readColumnItem,
+  readDraggedTables,
   readLibraryItem,
   readRowItem,
   readTableDetail,
@@ -317,6 +318,75 @@ describe("data/types", () => {
     it("drops a non-object or null value outright", () => {
       assert.equal(readRowItem("not an object"), undefined);
       assert.equal(readRowItem(null), undefined);
+    });
+  });
+
+  /**
+   * 7d's drag payload. The first test is the regression pin: VS Code hands
+   * `provideDocumentDropEdits` the `JSON.stringify`'d text of whatever
+   * `handleDrag` set, never the array itself, and the slice originally cast
+   * that string to `TableItem[]` — which made `payload[0]` the character
+   * `"["`, every field `undefined`, and the drop fail silently with a
+   * `TypeError` VS Code swallowed. See `docs/phases/phase-7.md`'s 7d Runbook
+   * entry.
+   */
+  describe("readDraggedTables", () => {
+    const dragged: TableItem[] = [
+      { kind: "table", libref: "SASHELP", name: "CLASS", links: [] },
+      { kind: "table", libref: "SASHELP", name: "CARS", links: [] },
+    ];
+
+    it("reads the JSON string VS Code actually delivers, not an array", () => {
+      const asVsCodeSendsIt = JSON.stringify(dragged);
+      assert.equal(typeof asVsCodeSendsIt, "string");
+
+      assert.deepEqual(readDraggedTables(asVsCodeSendsIt), dragged);
+    });
+
+    it("reads an already-parsed array the same way", () => {
+      assert.deepEqual(readDraggedTables(dragged), dragged);
+    });
+
+    it("preserves readOnly and links across the round trip", () => {
+      const withExtras: TableItem[] = [
+        {
+          kind: "table",
+          libref: "WORK",
+          name: "T",
+          readOnly: true,
+          links: [{ rel: "self", method: "GET", href: "/x" }],
+        },
+      ];
+      const [table] = readDraggedTables(JSON.stringify(withExtras));
+      assert.ok(table);
+      assert.equal(table.readOnly, true);
+      assert.equal(table.links[0]?.rel, "self");
+    });
+
+    it("yields no tables for malformed JSON rather than throwing", () => {
+      assert.deepEqual(readDraggedTables("{not json"), []);
+    });
+
+    it("yields no tables for a non-array payload", () => {
+      assert.deepEqual(readDraggedTables(JSON.stringify({ libref: "A" })), []);
+      assert.deepEqual(readDraggedTables(undefined), []);
+      assert.deepEqual(readDraggedTables(null), []);
+      assert.deepEqual(readDraggedTables(42), []);
+    });
+
+    it("drops entries missing a usable libref or name", () => {
+      const mixed = JSON.stringify([
+        { kind: "table", libref: "", name: "CLASS" },
+        { kind: "table", libref: "SASHELP", name: "" },
+        { kind: "table", libref: "SASHELP" },
+        { kind: "table", name: "CLASS" },
+        "not an object",
+        null,
+        { kind: "table", libref: "SASHELP", name: "CLASS" },
+      ]);
+      const tables = readDraggedTables(mixed);
+      assert.equal(tables.length, 1);
+      assert.equal(tables[0]?.name, "CLASS");
     });
   });
 

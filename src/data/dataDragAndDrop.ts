@@ -15,6 +15,17 @@
  * `provideDocumentDropEdits` is what a `.py` editor calls once the drop
  * actually lands there.
  *
+ * ## The payload is a JSON string by the time it lands
+ *
+ * Between those two halves the payload crosses the extension-host RPC
+ * boundary and VS Code serializes it, so what `provideDocumentDropEdits`
+ * reads back is `JSON.stringify`'d text rather than the `TableItem[]`
+ * `handleDrag` set. `readDraggedTables` (`./types`) owns that boundary and
+ * carries the citation; upstream's own `ContentDataProvider` parses at the
+ * identical point for the identical reason. This is the one respect in which
+ * a tree→editor drop differs from `contentDragAndDrop.ts`'s tree→tree drop,
+ * which does get the live objects back.
+ *
  * ## The choice on drop
  *
  * Sean's own call (2026-09-11): a drop always asks, via a quick pick,
@@ -50,7 +61,12 @@ import {
   deriveVariableName,
   deriveViewName,
 } from "./dragSnippet";
-import { isTable, type DataItem, type TableItem } from "./types";
+import {
+  isTable,
+  readDraggedTables,
+  type DataItem,
+  type TableItem,
+} from "./types";
 
 /** Private to this view — a drop only means something when the drag started
  * here, matching `contentDragAndDrop.ts`'s own single-MIME convention. */
@@ -136,14 +152,13 @@ export class SasLibraryDragAndDropController
     dataTransfer: vscode.DataTransfer,
     token: vscode.CancellationToken,
   ): Promise<vscode.DocumentDropEdit | undefined> {
-    // `DataTransferItem.value` is `any`. This is not a wire boundary — the
-    // payload only ever comes from this class's own `handleDrag` under a
-    // private MIME within one window, and those items are already real
-    // `TableItem`s the tree built (matching `contentDragAndDrop.ts`'s own
-    // identical cast and reasoning). Not re-validated per item.
-    const payload = dataTransfer.get(TABLE_MIME)?.value as
-      TableItem[] | undefined;
-    const table = payload?.[0];
+    // `DataTransferItem.value` is `any`, and for a tree→editor drop it is the
+    // JSON *string* VS Code serialized `handleDrag`'s array into, not the
+    // array itself — `readDraggedTables` documents that boundary and is where
+    // the per-entry validation lives (it is `vscode`-free, so unlike this
+    // file it is unit-tested). Casting instead is what shipped first, and it
+    // produced a `table` whose every field was `undefined`.
+    const table = readDraggedTables(dataTransfer.get(TABLE_MIME)?.value)[0];
     // A closure, not a direct `token.isCancellationRequested` read at each
     // call site — the token can flip to cancelled while `showChoice` below
     // is awaited, and re-reading through a function call (matching

@@ -189,6 +189,71 @@ export function readTableItem(
 }
 
 /**
+ * Reads one entry of the payload a 7d drag deposits on
+ * `src/data/dataDragAndDrop.ts`'s own private MIME.
+ *
+ * Unlike `src/content/contentDragAndDrop.ts`'s tree→tree drop — which gets
+ * the live objects back, because VS Code re-runs `handleDrag` locally in the
+ * extension host for a same-view drop (`extHostTreeViews.ts`'s
+ * `_addAdditionalTransferItems`) — a tree→**editor** drop crosses the
+ * extension-host RPC boundary, and VS Code serializes it on the way:
+ * `DataTransferItem.asString()` is `JSON.stringify(value)` for a non-string,
+ * and the drop side is rebuilt with `new InternalDataTransferItem(item.asString)`,
+ * so `value` arrives as the JSON **string** rather than the original array
+ * (`extHostTypes.ts` / `extHostTypeConverters.ts`, VS Code 1.109). This is
+ * therefore a real parse boundary, and each entry is validated rather than
+ * cast — see `docs/phases/phase-7.md`'s 7d Runbook entry for the live failure
+ * that established it.
+ */
+export function readDraggedTable(value: unknown): TableItem | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const libref = raw.libref;
+  const name = raw.name;
+  if (typeof libref !== "string" || libref === "") return undefined;
+  if (typeof name !== "string" || name === "") return undefined;
+
+  return {
+    kind: "table",
+    libref,
+    name,
+    ...(typeof raw.readOnly === "boolean" ? { readOnly: raw.readOnly } : {}),
+    links: readLinks(value),
+  };
+}
+
+/**
+ * Reads a whole 7d drag payload — see {@link readDraggedTable} for why it
+ * arrives as a JSON string.
+ *
+ * Accepts an already-parsed array too, rather than assuming the string form:
+ * which of the two a `DataTransferItem` holds is VS Code's own call and
+ * differs by drop target, and a reader that works either way cannot be broken
+ * by that choice changing. Malformed JSON yields no tables rather than
+ * throwing — a throw out of `provideDocumentDropEdits` is swallowed by VS
+ * Code (`dropIntoEditorController.ts` logs it and drops the edit), so it
+ * would produce the same silent no-op with less to read afterwards.
+ */
+export function readDraggedTables(value: unknown): TableItem[] {
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  const tables: TableItem[] = [];
+  for (const entry of parsed) {
+    const table = readDraggedTable(entry);
+    if (table !== undefined) tables.push(table);
+  }
+  return tables;
+}
+
+/**
  * A table's rich per-item detail — reached by following a {@link TableItem}'s
  * own `self` link (`src/data/adapter.ts`'s `openTable`), distinct from
  * `TableItem` itself, which is what the read-only tree holds (sparse, or with

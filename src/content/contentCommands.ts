@@ -88,12 +88,24 @@ import {
 let cutState:
   { readonly item: ContentItem; readonly endpoint: string } | undefined;
 
+/**
+ * Bumped by every {@link setCutState} call, including a clear. {@link paste}
+ * captures this right after its own clear and checks it again after the
+ * move settles, so it can tell "nothing has touched the slot since" from
+ * "the slot happens to be undefined again" — the latter is also true right
+ * after an unrelated {@link clearCutContentItem} (a profile switch, a
+ * sign-out), which must not be undone by a late failure resurrecting a
+ * stale cut.
+ */
+let cutGeneration = 0;
+
 /** Sets (or clears) the pending cut and its context key together, so the two
  * can never drift apart. */
 function setCutState(
   next: { readonly item: ContentItem; readonly endpoint: string } | undefined,
 ): void {
   cutState = next;
+  cutGeneration += 1;
   void vscode.commands.executeCommand(
     "setContext",
     "pythonOnViya.hasCutContentItem",
@@ -281,10 +293,16 @@ function describeMoveObjection(
  *
  * A third race the clear-early order doesn't resolve on its own: the
  * `await run(...)` below is a yield point, so the user can `cut()` a
- * *different* item while this move is still in flight. The failure-restore
- * therefore only puts `pending` back if the slot is still empty — if a
- * newer cut has already landed in it, that restore is skipped so a failed
- * paste can never clobber a cut made after it started.
+ * *different* item, or something can call {@link clearCutContentItem}
+ * (a profile switch, a sign-out), while this move is still in flight.
+ * Checking `cutState === undefined` on failure can't distinguish "nothing
+ * has touched the slot" from "something intentionally cleared it" — both
+ * look identical — so the failure-restore instead captures
+ * {@link cutGeneration} right after this function's own clear and only
+ * restores `pending` if the generation is still the one it left behind. Any
+ * intervening `cut()` or `clearCutContentItem()` bumps it, so a failed paste
+ * can never clobber a newer cut or resurrect one an intentional clear just
+ * removed.
  */
 export async function paste(
   deps: ContentCommandDeps,
@@ -330,6 +348,7 @@ export async function paste(
   }
 
   clearCutContentItem();
+  const generationAtClear = cutGeneration;
 
   const { result, aborted } = await run(
     deps,
@@ -340,7 +359,7 @@ export async function paste(
 
   if (result.ok) {
     if (!aborted) await deps.reveal(result.value);
-  } else if (cutState === undefined) {
+  } else if (cutGeneration === generationAtClear) {
     setCutState(pending);
   }
 }

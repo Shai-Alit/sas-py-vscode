@@ -447,4 +447,43 @@ describe("SAS Content Cut/Paste (6e)", () => {
       assert.deepEqual(moves, ["other"]);
     });
   });
+
+  it("a failed paste does not resurrect a cut that clearCutContentItem removed while its move was in flight", async () => {
+    let resolveMove!: (value: ContentResult<ContentItem>) => void;
+    const movePromise = new Promise<ContentResult<ContentItem>>((resolve) => {
+      resolveMove = resolve;
+    });
+    const moves: string[] = [];
+    const holder = depsWith((item) => {
+      moves.push(item.id);
+      return movePromise;
+    });
+
+    await withMessageStubs(holder, async () => {
+      cut(holder.deps, fileMember);
+      const pastePromise = paste(holder.deps, targetFolder);
+
+      // Something else — a profile switch, a sign-out — clears the slot
+      // while the move above is still in flight, exactly as
+      // contentExplorer.ts's onDidChange/onDidSignOut handlers do.
+      clearCutContentItem();
+
+      resolveMove({
+        ok: false,
+        reason: "rejected",
+        problem: {
+          code: "content-rejected",
+          error: { status: 409, detail: "name clash" },
+        },
+      });
+      await pastePromise;
+
+      // The failed paste must not have resurrected the stale cut the
+      // intentional clear removed — a later Paste still finds nothing cut.
+      holder.errorToasts.length = 0;
+      await paste(holder.deps, targetFolder);
+      assert.equal(moves.length, 1, "moveItem should not run a second time");
+      assert.match(holder.errorToasts[0] ?? "", /Nothing has been cut yet/);
+    });
+  });
 });

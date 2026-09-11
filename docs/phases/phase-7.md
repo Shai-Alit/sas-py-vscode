@@ -1215,7 +1215,8 @@ a single re-fetch); **7c-ii** table properties/columns static viewer (fully
 static, no grid interaction); **7c-iii** CSV export to local disk (the one
 host-side-only, local-disk-write feature, standalone since Phase 6 deferred
 its own upload/download to Phase 11 entirely rather than shipping a helper
-this could share). **7c-i and 7c-ii are done; 7c-iii is next.**
+this could share). **7c-i and 7c-ii are done; 7c-iii is code-complete and
+reviewed (both the independent-agent pass and Sean's own), PR pending.**
 
 ☑ **7c-i — Sort + filter.** [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155)
 opened 2026-09-10. Code written 2026-09-10 (`sas-py-vscode-cowork`
@@ -1773,25 +1774,158 @@ formally tracking them is that housekeeping's job, not this branch's.
 
 ☐ **7c-iii — CSV export.**
 
-- ☐ Probe the CSV mechanism directly rather than porting upstream's literal
-  `.../rows#CSV` URL suffix unexamined — Finding 7.5 already found `#`-suffixed
-  URLs on this deployment are stripped as fragments before the wire ever sees
-  them (the same trap that invalidated Findings 7.1/7.2's original
-  `#summary`/`#tables` mechanism), while Finding 7.1 saw a real, distinct
-  `rowsAsCSV` link relation on `TableDetail`. Confirm whether `rowsAsCSV` is
-  the real mechanism (most likely, given the link-following precedent every
-  other `LibraryAdapter` call already uses) or an `Accept`-header negotiation
-  on the base `rows` link — not upstream's hand-composed suffix.
+- ☑ Probe the CSV mechanism directly rather than porting upstream's literal
+  `.../rows#CSV` URL suffix unexamined — **done, Finding 7.20** (2026-09-11,
+  `verde`): `rowsAsCSV` is `Accept`-header content negotiation on the
+  identical `rows` href, confirmed with a real `GET` returning genuine CSV
+  text (not upstream's own accidentally-JSON fallback); `start`/`limit`
+  pagination and `where=` are both honoured the same as the JSON `rows` link;
+  default quoting is already RFC-4180-correct with no query parameter needed.
 - ☐ Host-side only, no webview involvement — the panel's CSP
   (`default-src 'none'`, no `connect-src`) would block an in-webview
   `fetch` outright, and upstream's own download command bypasses its
   webview entirely too (a separate command, not a `DataViewer.ts` message).
   `vscode.window.showSaveDialog` + a paginated write to the chosen file,
   same shape as upstream's `LibraryModel.writeTableContentsToStream`.
-- ☐ No shared helper with Phase 6's own download command — Phase 6 deferred
+- ☑ No shared helper with Phase 6's own download command — Phase 6 deferred
   all upload/download to Phase 11 and never built one (`STATUS.md`,
   2026-09-10), so this is standalone; revisit sharing if Phase 11 lands a
   local-disk-write helper later.
+
+  **7c-iii is code-complete 2026-09-11** (`sas-py-vscode-cowork` clone) —
+  live-probed first (Finding 7.20, above): the real `rowsAsCSV` mechanism,
+  `start`/`limit` pagination, `where=`, and already-correct default quoting,
+  plus the byte-exact page-boundary behaviour (`\n`-only line endings, no
+  separator needed between pages) that makes a naive page-by-page relay
+  correct. `LibraryAdapter.getRowsAsCsv` (`src/data/adapter.ts`) follows the
+  new `ROWS_AS_CSV_REL` link; a new, `vscode`-free
+  `src/data/csvExportModel.ts` (`exportTableToCsv`) relays each page's raw
+  CSV text straight through with no client-side re-serialization — a
+  deliberate improvement on upstream's own `LibraryModel.
+  writeTableContentsToStream`, which never actually reaches a CSV response
+  at all (Finding 7.20's own account of why) and re-quotes every field
+  unconditionally instead of relying on the server's already-correct
+  RFC-4180 output. The loop is deliberately unbounded (no `MAX_DATA_PAGES`-
+  style page cap): a hard ceiling here would silently truncate a real user's
+  large export, the opposite of what streaming exists to prevent.
+
+  A new `src/data/csvExportCommand.ts` (`vscode`-facing, `.c8rc.json`-
+  excluded) wires `pythonOnViya.exportTableToCsv` — a `showSaveDialog`, a
+  cancellable progress notification, and a streaming `fs.createWriteStream`
+  write. **Sean's own call, in review**: a cancelled or failed export
+  deletes its own partial output file (upstream leaves a silently truncated
+  one behind), and a pre-flight check (`ensureDiskSpace`) samples a small
+  first page, projects a rough total from it and the table's own `rowCount`,
+  and refuses to start if the destination volume's free space
+  (`fs.promises.statfs`) does not clear the estimate by a 20% safety margin
+  — better to say so up front than run out of disk space mid-export. This
+  is a safety margin, not a guarantee either way (a table whose later rows
+  run wider than the sample can still run out); the ordinary per-write
+  failure path, unconditionally, is what actually catches that. A new
+  `DataProblem` variant, `insufficient-disk-space` (`src/data/problems.ts`,
+  `src/data/messages.ts`), carries the estimated/available byte counts
+  through this project's usual describe/localise split.
+
+  **A genuine architecture decision, flagged and confirmed with Sean before
+  writing the code**: local disk streaming writes have no browser-host
+  equivalent in this codebase's reach — `vscode.workspace.fs.writeFile`
+  only ever writes one complete buffer, so a large table would have to be
+  held in memory in full first, defeating the reason this feature streams
+  at all. `src/data/csvExportCommand.ts` is therefore the **fifth** file on
+  [ADR-0003](../adr/0003-extension-host-target.md)'s Node-built-ins
+  allow-list (`node:fs`, `node:path`), alongside `caAgent.ts` — see that
+  ADR's own 2026-09-11 amendment for the full reasoning, including why this
+  is a different shape of exception than `caAgent.ts`'s own (a
+  correctness/scalability rejection of a nominally-available web-host path,
+  not a capability the web host forbids outright). `csvExportModel.ts`
+  itself stays free of any Node built-in — only the one file that actually
+  touches the filesystem widens the allow-list.
+
+  `npm run verify` green (1551 unit passing; coverage 95.56% lines / 95.51%
+  branches / 95.25% functions / 95.56% statements, every threshold met);
+  `npm run test:integration` green (344 passing, 5 new —
+  `test/integration/data/csv-export-command.test.ts`); `npm run check:docs`/
+  `l10n:extract`/`build`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts` all clean.
+
+  **Adversarial pass (independent agent) ran before any push, per
+  `CLAUDE.md`'s standing rule** — three real, Medium-severity findings, all
+  fixed on the branch before it went anywhere:
+
+  1. **An existing file at the chosen destination was destroyed even when
+     the export never wrote a single row** — `fs.createWriteStream` truncates
+     on open, and a failure right after (an expired session, an
+     `insufficient-disk-space` refusal) then `unlink`ed that same path in
+     cleanup, so a user who picked an existing file as the destination lost
+     it regardless of whether anything new was ever written. **Fixed** by
+     writing to a `<destination>.<randomUUID()>.tmp` file the whole time and
+     `fs.promises.rename`-ing it onto the real destination only once
+     {@link exportTableToCsv} returns success — atomic on the same directory,
+     so there is no window where the destination is a half-written file, and
+     a failed or cancelled run's cleanup only ever removes its own temporary
+     file. This subsumes the module's own earlier "deletes its own partial
+     output file" framing, which did not account for what was already there.
+  2. **`createWriteStream`/`stream.once("error", ...)` sat before the `try`
+     block**, so a (low-probability, but real) synchronous throw from opening
+     the stream skipped `bridge.dispose()` (the exact `CancellationLike`
+     leak `cancellation.ts`'s own doc comment warns about) and reached only
+     `dataExplorer.ts`'s own `.catch`, which logs but never shows the user
+     anything — silently different from every other failure path this
+     feature has. **Fixed** by moving stream creation inside the `try`, so
+     it now reports through the same `catch` as everything else.
+  3. **No test exercised the stream-error path at all** — `fakeStream()`'s
+     own comment admitted "no real stream in this fake ever emits error",
+     leaving `runCsvExport`'s `streamError`/cleanup handling for a genuine
+     disk failure (`ENOSPC` mid-write) completely unverified. **Fixed**: a
+     new `fakeStream({ errorDuringEnd })` option fires the registered
+     `"error"` listener during `end()`, simulating a failure that surfaces
+     only once the stream's internal buffer is finally flushed — after every
+     `write` callback already resolved cleanly — which is exactly the gap a
+     second, post-flush `streamError` check (added alongside this fix) now
+     closes; a new test drives it end to end (routes fetch and write
+     cleanly, then the flush itself fails) and asserts the temp file is
+     cleaned up and the failure is reported.
+
+  `crypto.randomUUID()` (not `Math.random()`, which `eslint.config.mjs`
+  already bans project-wide for exactly this reason) names the temporary
+  file, so `csvExportCommand.ts`'s own allow-list entry now reads `node:fs`,
+  `node:path`, `node:crypto` — ADR-0003's amendment updated to match. `npm
+  run verify`/`test:integration` re-run green after all three fixes (1551
+  unit unchanged; 345 integration passing, one net new); `check:docs` clean.
+
+  **Sean's own review** (per this project's actual standing requirement —
+  the independent-agent pass above is a complement, not a substitute) found
+  no blocking issues: "careful, well-documented... error handling is sound...
+  no swallowing catches... the atomic temp-then-rename guarantees no
+  truncated destination." Three minor, non-blocking notes, two folded in at
+  Sean's discretion (cheap and strictly better, no back-and-forth needed):
+
+  - **No test exercised a `write`'s own callback failing directly** (as
+    opposed to the delayed, end-of-flush failure the review above already
+    added a test for) — a distinct, more ordinary failure shape. **Fixed**:
+    a second `fakeStream` option (`errorOnWrite`) answers a chosen write
+    with its error directly, and a new test drives it (a first write
+    succeeds, a second fails mid-export, no third page is ever requested).
+  - **The temporary file was created before `openTable`/`ensureDiskSpace`
+    ran**, so a table that failed to open, or an export refused for
+    insufficient disk space, still left a fleeting empty temporary file to
+    clean up. **Fixed**: `createWriteStream` now runs only once both checks
+    have passed, immediately before the real export starts — an early
+    failure now touches the filesystem not at all, not even briefly. This
+    needed its own small correctness fix alongside the reorder: the
+    `finally` block's cleanup previously assumed a temporary file always
+    existed by the time any failure could occur (true before this reorder);
+    a new `tempFileCreated` flag gates the cleanup `unlink` now, so a
+    failure that never got as far as creating a stream does not try to
+    remove a file that was never made.
+  - A third note (a stream that already errored is still handed to `end()`
+    in `finally`) was checked and confirmed harmless — a destroyed Node
+    stream's `end()` still invokes its callback rather than hanging — and
+    left as-is, per Sean's own call.
+
+  `npm run verify`/`test:integration` re-run green after folding both fixes
+  in (1551 unit unchanged; 346 integration passing, one further net new);
+  `check:docs`/lint/typecheck all clean.
 - ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
   instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
   the full account). Nothing left for 7c to pick up on this; the same
@@ -2615,3 +2749,93 @@ Findings 7.5–7.9 already closed the dialect-risk question for every other
 `DataAccessApi` field/shape this phase has probed and nothing about a plain
 `TableInfo` GET (no content negotiation, no version-conditioned branch
 anywhere in `RestLibraryAdapter.ts`) suggests a different risk profile.
+
+**Finding 7.20 — implementation-time probe, 2026-09-11 (`verde`, ahead of
+7c-iii's own code): the real `rowsAsCSV` mechanism confirmed end to end —
+`Accept`-header negotiation on the identical `rows` href, real streamable
+CSV text, `start`/`limit` pagination honoured, and default quoting is already
+RFC-4180-correct.** Documented shape checked first: upstream's own
+`RestLibraryAdapter.getRowsAsCSV` composes a hand-built
+`.../rows#CSV` URL and, because the `#` fragment is stripped before the wire
+ever sees it (the same trap Finding 7.5 found for
+`#summary`/`#tables`), the request that actually goes out is a plain
+`GET .../rows` with no `Accept` override — so upstream's own client silently
+falls back to the default JSON envelope and never receives real CSV at all;
+`LibraryModel.writeTableContentsToStream` compensates by reading `data.rows`
+as parsed JSON and building CSV text itself, client-side
+(`stringArrayToCsvString`). **This project's own mechanism must not copy
+that**: Finding 7.15 already found a real, distinct `rowsAsCSV` link relation
+sharing the *identical href* as `rows`, differing only by its own declared
+`type: text/csv` — the correct reading is `Accept`-header content negotiation
+on that one shared URL, not a hand-composed suffix.
+
+Probed directly, `SASHELP.CLASS` (read-only) via a fresh throwaway `SAS
+Studio compute context` session (created and deleted; confirmed gone by a
+`404` read-back):
+
+- **`GET` the `rows` href with `Accept: text/csv` (no query params) → `200`,
+  `Content-Type: text/csv`, body is real, valid CSV data rows — no column-name
+  header row by default.** `Content-Length` matched the body exactly (19 rows,
+  no envelope, no trailing JSON of any kind).
+- **`includeColumnNames=true` prepends a header row of column names** (`Name,
+  Sex,Age,Height,Weight`) — the same query parameter upstream's generated
+  client already knows about, now confirmed to actually take effect on a real
+  `Accept: text/csv` request (upstream never got this far, per above).
+  `includeIndex=true` prepends an extra, unnamed leading column holding the
+  1-based row index, same as the JSON `rows` collection's own per-item
+  shape.
+- **`start`/`limit` pagination is honoured identically to the JSON `rows`
+  link** — `start=3&limit=3` returned exactly rows 4–6, `start=17&limit=10`
+  (17 of 19 total) returned only the 2 remaining rows with a `200`, and
+  `start=100&limit=10` (fully past the end) returned a `200` with an empty
+  body (`Content-Length: 0`), not an error. **Net effect for 7c-iii: CSV
+  export can page through a table exactly like the existing `getRows` path
+  does, and can detect its own last page the same way — fewer rows returned
+  than the page size requested — with no need to know the total row count up
+  front.** This sidesteps Finding 7.17's "`count` disappears once a filter or
+  view is involved" caveat entirely, since CSV export has no JSON envelope to
+  carry a `count` in the first place.
+- **Line endings are a bare `\n` (no `\r`), each page ends with a trailing
+  newline after its last row, and the next page's own body starts immediately
+  with its first row's data — no blank line, no partial-row overlap.**
+  Confirmed byte-exact: `start=0&limit=3`'s raw body ends
+  `...Barbara,F,13,65.3,98\n` and the immediately following `start=3&limit=3`
+  page begins `Carol,F,14,62.8,102...` with no leading newline of its own.
+  **Net effect: writing each page's raw response body to the output file
+  stream, in order, with no separator inserted between pages, reconstructs
+  the identical byte stream a single unpaginated request would produce** — no
+  client-side newline bookkeeping needed across a page boundary, only
+  requesting `includeColumnNames=true` on the first page and omitting it on
+  every later one.
+- **`where=` is honoured on the base table's own CSV read**, same as the JSON
+  `rows` link (Finding 7.16 only found it silently ignored on a *view's* own
+  rows read, not the base table's) — `where=Sex%3D%27F%27&includeColumnNames=true`
+  correctly returned the header row plus the 9 female students only.
+- **Default quoting is already RFC-4180-correct, with no query parameter
+  needed.** Probed with a throwaway `WORK` table (created via a `DATA` step
+  job, Sean's approval obtained first for this one mutating probe; deleted via
+  its own `delete` link afterward, confirmed gone by a `404` read-back, then
+  the session itself deleted and confirmed gone the same way) holding a
+  comma-containing, embedded-double-quote, and embedded-newline value:
+  `name="Smith, Jane ""The Great"""` read back, with no query parameters at
+  all, as `"Smith, Jane ""The Great"""` (correctly comma-quoted, correctly
+  double-quote-escaped) and a `note` value with an embedded newline came back
+  as a single correctly-quoted multi-line CSV field. **`enableQuoting=true`
+  and `enableEscaping=true` produced byte-identical output to the
+  no-parameter default** on this same probe table — this deployment's default
+  is already quoting-safe, so 7c-iii's own request needs neither parameter.
+  Not probed: whether `enableEscaping` (backslash-style escaping instead of
+  quoting) produces *different* output if explicitly requested — irrelevant to
+  this project, which has no reason to ask for it, so left unprobed rather
+  than chased for its own sake.
+
+**Net effect for 7c-iii**: `LibraryAdapter`'s CSV export should follow the
+`rowsAsCSV` link (identical href to `rows`, `findLink`-style, matching how
+every other `LibraryAdapter` call already resolves its target) with
+`Accept: text/csv`, page with `start`/`limit` exactly like `getRows` already
+does, request `includeColumnNames=true` only on the first page, and needs no
+`enableQuoting`/`enableEscaping` override. No dialect branch needed — nothing
+in this probe suggests version-conditioned behaviour, consistent with every
+other `DataAccessApi` mechanism this phase has found. No `Innov`/second-cadence
+cross-check this session (matching 7.19's own note — `Innov`'s stored token
+was not available); not treated as blocking for the same reason 7.19 gives.

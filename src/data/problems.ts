@@ -56,6 +56,22 @@ export type DataProblem =
    * — see ADR-0027.
    */
   | { code: "session-busy" }
+  /**
+   * `pythonOnViya.exportTableToCsv`'s own pre-flight check (`src/data/
+   * csvExportCommand.ts`) found too little free space at the destination for
+   * the estimated export size, and refused to start writing rather than run
+   * out of disk space mid-stream. `estimatedBytes` is a rough projection from
+   * a small sample page and the table's own `rowCount`, not an exact figure
+   * — real CSV row width can vary — so this is a safety margin, not a
+   * guarantee either way: a table that passes this check can still run out
+   * if its later rows are unusually wide, which the ordinary per-write
+   * failure path still catches.
+   */
+  | {
+      code: "insufficient-disk-space";
+      estimatedBytes: number;
+      availableBytes: number;
+    }
   /** Everything else — a transport failure, a 401/403, a session that has
    * gone away, a malformed response, a missing link relation — is exactly
    * what `src/compute/client.ts` and `src/compute/session.ts` already
@@ -76,6 +92,8 @@ export function describeDataProblem(problem: DataProblem): string {
       return "no active SAS Viya session for browsing libraries";
     case "session-busy":
       return "the compute session is running Python and cannot be browsed right now";
+    case "insufficient-disk-space":
+      return `an estimated ${String(problem.estimatedBytes)} bytes will not fit in the ${String(problem.availableBytes)} bytes free at the destination`;
     case "compute":
       return describeComputeProblem(problem.problem);
   }

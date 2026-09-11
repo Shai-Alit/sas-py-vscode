@@ -141,3 +141,42 @@ This is the module the hedge always named. It does not widen the Node surface
 beyond what this ADR anticipated — a browser build has no custom-CA-trust story
 to port anyway (the web host forbids `tls` outright), so `caAgent.ts` is a file
 a future web build omits rather than reimplements.
+
+## Amendment — 2026-09-11 (slice 7c-iii): a second Node-only file, for a
+different reason than `caAgent.ts`'s
+
+7c-iii (CSV export to local disk, `docs/phases/phase-7.md`) needed a genuine
+local-disk **streaming** write, and — Sean's own call, in review — a
+pre-flight check of the destination volume's free space before starting a
+potentially large export, so a table too big for the chosen location fails
+fast with a clear message instead of running out of disk space partway
+through. `src/data/csvExportCommand.ts` is the fifth entry on
+`eslint.config.mjs`'s allow-list (`node:fs`, `node:path`, `node:crypto`).
+
+**Why `vscode.workspace.fs` — the browser-host-compatible path this ADR's own
+hedge exists to keep cheap — does not cover this.** That API's own
+`writeFile` writes exactly one complete `Uint8Array`; VS Code exposes no
+incremental/append write at all. Reaching for it here would mean buffering
+an entire table's CSV text in memory before writing any of it — exactly the
+unbounded-memory shape 7c-iii's own paginated design (`src/data/
+csvExportModel.ts`) exists to avoid for a large table. `fs.createWriteStream`
+is the only way in this codebase's reach to write a large file incrementally,
+and `fs.promises.statfs` (added Node 18.15) is likewise the only way to read
+a volume's free space.
+
+**Different shape from `caAgent.ts`'s own amendment above.** That file needed
+`tls`/`https` for a scenario (custom CA trust) the web host forbids
+outright — there was never a web-compatible alternative to weigh. This one
+does have a nominally web-compatible alternative (`vscode.workspace.fs`); it
+is rejected on a correctness/scalability basis (unbounded memory for a large
+table), not because the web host cannot do it at all. Recorded here rather
+than silently reached for, per this ADR's own "widening the allow-list is a
+visible diff" mechanism.
+
+**What this does not change.** The allow-list stays five files and no globs;
+a future web build omits `csvExportCommand.ts` — and, with it, CSV export —
+the same way it would already omit `caAgent.ts`'s custom-CA-trust support,
+rather than needing to reimplement either. `csvExportModel.ts`, the
+paginated relay this command wraps, stays free of any Node built-in — the
+allow-list widens by exactly the one file that actually touches the
+filesystem, not the feature's whole implementation.

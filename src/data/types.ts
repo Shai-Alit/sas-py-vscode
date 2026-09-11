@@ -60,6 +60,16 @@ export const SELF_REL = "self";
  * implementation time, `docs/phases/phase-7.md`'s Finding 7.10/7.13). */
 export const ROWS_REL = "rows";
 
+/** The relation on a table's own rich detail that reaches the **same** row
+ * data as {@link ROWS_REL}, as CSV text instead of a JSON collection —
+ * Findings 7.15/7.20: a real, distinct link relation sharing the identical
+ * href as `rows`, differing only by its own declared `type: "text/csv"`.
+ * `Accept`-header content negotiation on that one shared URL, not upstream's
+ * own hand-composed `.../rows#CSV` suffix (which, because a URL fragment
+ * never reaches the wire, actually falls back to plain JSON on a real
+ * deployment rather than ever requesting CSV at all). */
+export const ROWS_AS_CSV_REL = "rowsAsCSV";
+
 /** The relation on a table's own rich detail that reaches its column
  * metadata — a collection, paged (Finding 7.1). */
 export const COLUMNS_REL = "columns";

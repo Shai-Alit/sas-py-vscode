@@ -44,11 +44,24 @@
  * `TableItem` handoff, this time to `propertiesPanels.open`
  * (`src/data/tablePropertiesPanel.ts`), which renders a static properties/
  * columns view rather than the paged data grid.
+ *
+ * ## 7c-iii: `pythonOnViya.exportTableToCsv`
+ *
+ * A third context-menu-only sibling, same `currentAdapter()`/`TableItem`
+ * handoff and fire-and-forget/`.catch` shape, this time to `runCsvExport`
+ * (`src/data/csvExportCommand.ts`) — a save dialog and a local disk write,
+ * not a panel. `runCsvExport` already reports every failure it anticipates
+ * itself (a save dialog, an adapter failure, a write failure all end in a
+ * logged message and, for anything the user did not just cancel, an error
+ * dialog); the `.catch` here exists for the same narrow, unanticipated-throw
+ * reason `openTable`'s own doc comment gives, not because this command
+ * expects to reach it in practice.
  */
 
 import * as vscode from "vscode";
 
 import { LibraryAdapter, type LibrarySessionSource } from "./adapter";
+import { runCsvExport } from "./csvExportCommand";
 import { SasLibraryTreeProvider } from "./dataTree";
 import type { DataViewerPanelManager } from "./dataViewerPanel";
 import type { TablePropertiesPanelManager } from "./tablePropertiesPanel";
@@ -148,6 +161,27 @@ export function registerDataExplorer(
           log.error(
             vscode.l10n.t(
               'SAS Libraries: could not open the table properties panel for "{0}.{1}" ({2})',
+              item.libref,
+              item.name,
+              String(error),
+            ),
+          );
+        });
+      },
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.exportTableToCsv",
+      (item?: DataItem) => {
+        if (item === undefined || !isTable(item)) return;
+        const adapter = currentAdapter();
+        if (adapter === undefined) return;
+        // Same fire-and-forget/catch shape as `openTable` above, and for the
+        // identical reason — see this file's own "7c-iii" doc comment for why
+        // `runCsvExport` reaching this `.catch` at all is not expected.
+        void runCsvExport(item, adapter, { log }).catch((error: unknown) => {
+          log.error(
+            vscode.l10n.t(
+              'SAS Libraries: could not export "{0}.{1}" to CSV ({2})',
               item.libref,
               item.name,
               String(error),

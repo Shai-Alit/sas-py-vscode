@@ -17,6 +17,7 @@ import {
   type TableItem,
 } from "../../src/data/types";
 import {
+  dataCsv,
   dataFail,
   dataFixture,
   dataOk,
@@ -130,6 +131,14 @@ function tableDetail(): TableDetail {
           method: "GET",
           type: "application/vnd.sas.collection",
           itemType: "application/vnd.sas.compute.data.table.row",
+        },
+        // Findings 7.15/7.20: the identical href as "rows", differing only
+        // by its own declared `type` — real, not a hand-composed suffix.
+        {
+          rel: "rowsAsCSV",
+          href: `${CLASS_HREF}/rows`,
+          method: "GET",
+          type: "text/csv",
         },
       ],
     },
@@ -947,6 +956,155 @@ describe("data/adapter LibraryAdapter", () => {
         calls.map((c) => c.href),
         [`${CLASS_HREF}/rows?start=0&limit=2`],
       );
+    });
+  });
+
+  describe("getRowsAsCsv", () => {
+    it("requests one window on the table's own rowsAsCSV link, returning the raw response text", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataCsv("Alfred,M,14,69,112.5\nAlice,F,13,56.5,84\n"),
+        },
+      ]);
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        {
+          start: 0,
+          limit: 2,
+        },
+        false,
+      );
+      assert.ok(result.ok);
+      assert.equal(result.value, "Alfred,M,14,69,112.5\nAlice,F,13,56.5,84\n");
+      assert.deepEqual(
+        calls.map((c) => ({ href: c.href, linkType: c.linkType })),
+        [{ href: `${CLASS_HREF}/rows?start=0&limit=2`, linkType: "text/csv" }],
+      );
+    });
+
+    it("appends includeColumnNames=true only when includeHeader is true", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2&includeColumnNames=true`,
+          reply: dataCsv("Name,Sex,Age,Height,Weight\nAlfred,M,14,69,112.5\n"),
+        },
+      ]);
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        true,
+      );
+      assert.ok(result.ok);
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/rows?start=0&limit=2&includeColumnNames=true`],
+      );
+    });
+
+    it("returns an empty string, not a failure, for a window past the end of the table", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=100&limit=10`,
+          reply: dataCsv(""),
+        },
+      ]);
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        { start: 100, limit: 10 },
+        false,
+      );
+      assert.ok(result.ok);
+      assert.equal(result.value, "");
+    });
+
+    it("appends a where= parameter, percent-encoded, when a filter is given", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`,
+          reply: dataCsv("Alice,F,13,56.5,84\n"),
+        },
+      ]);
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        false,
+        "Sex='F'",
+      );
+      assert.ok(result.ok);
+      assert.deepEqual(
+        calls.map((c) => c.href),
+        [`${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`],
+      );
+    });
+
+    it("reports link-missing when the table detail carries no rowsAsCSV relation", async () => {
+      const { adapter } = adapterWith([]);
+      const bare = tableDetail();
+      const result = await adapter.getRowsAsCsv(
+        { ...bare, links: [] },
+        { start: 0, limit: 2 },
+        false,
+      );
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: {
+          code: "link-missing",
+          rel: "rowsAsCSV",
+          resource: 'table "SASHELP.CLASS"',
+        },
+      });
+    });
+
+    it("rewrites a session-gone 404 through the compute vocabulary", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataFail({ code: "compute-rejected", error: { status: 404 } }),
+        },
+      ]);
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        false,
+      );
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "compute",
+        problem: { code: "session-gone", error: { status: 404 } },
+      });
+    });
+
+    it("refuses with session-busy without sending any request", async () => {
+      const { adapter, calls } = adapterWith([], { isBusy: true });
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        false,
+      );
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, { code: "session-busy" });
+      assert.deepEqual(calls, []);
+    });
+
+    it("threads a caller's AbortSignal through to the request", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=2`,
+          reply: dataCsv(""),
+        },
+      ]);
+      const controller = new AbortController();
+      const result = await adapter.getRowsAsCsv(
+        tableDetail(),
+        { start: 0, limit: 2 },
+        false,
+        undefined,
+        controller.signal,
+      );
+      assert.ok(result.ok);
+      assert.ok(calls.every((c) => c.hadSignal));
     });
   });
 

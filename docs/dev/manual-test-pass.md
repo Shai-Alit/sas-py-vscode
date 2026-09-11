@@ -1282,7 +1282,7 @@ creating, renaming, moving, and deleting test files/folders in.
   `explorer.test.ts`) — this is a live-confirmation gap only. Do not re-tick
   this box on this deployment; rewrite it as a normal **Expect** only once
   it is actually confirmed live somewhere.
-- [-] **(known gap) Dragging an item onto a folder moves it** — drag a test
+- [x] **Dragging an item onto a folder moves it** — drag a test
   file onto a different folder.
   **Expect:** a progress notification ("Moving \"…\"…"), the item
   disappears from its old location, and it is auto-revealed (selected,
@@ -1293,36 +1293,38 @@ creating, renaming, moving, and deleting test files/folders in.
   no message, no file movement. **Second pass, 2026-09-11 (Sean), against a
   build with ADR-0031's fix: failed identically.** No progress notification,
   no message, no file movement — same as the first pass, no visible change
-  at all. Root cause remains unknown; accepted as a known gap, deprioritised
-  behind Cut/Paste (below), tracked in `phase-11.md` for a future
-  investigation. Do not re-tick this box on a future pass without a genuine
-  fix — if drag-and-drop is ever confirmed working, rewrite this row as a
-  normal **Expect** per this doc's own convention (see "Keeping this
-  current").
-- [ ] **Dragging multiple items moves all of them together** — select two
+  at all. Root cause was unknown at the time; deprioritised behind Cut/Paste
+  (below), tracked in `phase-11.md` for a future investigation. **Third
+  pass, 2026-09-11 (Sean), against the actual fix (finding 6.16 —
+  `handleDrop`'s `CancellationToken` argument was broken by a VS Code 1.109
+  RPC marshalling bug, unrelated to `resourceUri`): passed, working as
+  expected.** Rewritten as a normal **Expect** per this doc's own
+  convention, per the note this row previously carried.
+- [x] **Dragging multiple items moves all of them together** — select two
   or more items (Ctrl/Cmd-click) and drag them onto a folder.
   **Expect:** a progress notification naming the count ("Moving N
   items…"); all selected items move; the first one is revealed afterward.
-  Not testable while the single-item case above does not work at all.
-- [ ] **Dragging onto My Favorites or the Recycle Bin does nothing** — drag
+  **Live-tested 2026-09-11 (Sean), after the fix above: passed.**
+- [x] **Dragging onto My Favorites or the Recycle Bin does nothing** — drag
   a test file onto the My Favorites row, then onto the Recycle Bin row.
   **Expect:** no error, no toast, no move — the item stays exactly where it
   was. (Neither gesture is wired to add-to-favourites or recycle; only the
-  context-menu actions in §16 do that.) Trivially "passes" while
-  drag-and-drop is broken outright — not meaningfully testable until the
-  base gesture works, since a no-op is indistinguishable from the general
-  failure above.
-- [ ] **Dragging an item onto itself or its current folder is a no-op** —
+  context-menu actions in §16 do that.) **Live-tested 2026-09-11 (Sean),
+  after the fix above: passed** — now a meaningful result, since the base
+  gesture works and this confirms the no-op is deliberate, not a symptom of
+  the general failure that used to make every drag a no-op.
+- [x] **Dragging an item onto itself or its current folder is a no-op** —
   drag an item onto the folder it already lives in, and drop it directly on
   itself if your OS allows the gesture.
   **Expect:** nothing happens either way — no progress notification, no
-  error. Same caveat as the row above.
-- [ ] **Multi-select hides the single-item context actions** — select two
+  error. **Live-tested 2026-09-11 (Sean), after the fix above: passed** —
+  same caveat as the row above, now resolved the same way.
+- [x] **Multi-select hides the single-item context actions** — select two
   or more items at once and right-click.
   **Expect:** New Folder, New File, Rename, Delete, Cut, and the favourite
   toggle are all absent from the context menu (they act on exactly one
   item); only Empty Recycle Bin / Restore-style bulk actions would still
-  apply where relevant.
+  apply where relevant. **Live-tested 2026-09-11 (Sean): passed.**
 - [x] **Cut, then Paste, moves an item unambiguously (6e)** — right-click a
   test file and choose **Cut**, then right-click a *different* folder and
   choose **Paste**.
@@ -1336,15 +1338,17 @@ creating, renaming, moving, and deleting test files/folders in.
   all clean), then again, 2026-09-11, against
   [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162)'s branch
   under the final `pythonOnViya.cutContentItem`/`pasteContentItem` names —
-  confirmed working. This is currently the only working way to move an
-  item in this tree (drag-and-drop, above, does not work at all).
-- [ ] **Paste without a Cut, or onto an invalid target, explains why** —
+  confirmed working. At the time this was live-tested, this was the only
+  working way to move an item in this tree; drag-and-drop (above) is now
+  fixed too, so Cut/Paste is a second, unambiguous way to do the same move
+  rather than the only one.
+- [x] **Paste without a Cut, or onto an invalid target, explains why** —
   right-click a folder and choose **Paste** with nothing cut yet; then Cut
   a file, and Paste it onto the folder it already lives in.
   **Expect:** "Nothing has been cut yet. Cut an item first." for the first
   case; a message naming the item, the target, and "it's already there" for
   the second — neither silently does nothing the way a missed drag would.
-- [ ] **Cut is not offered on a Recycle Bin item** — expand the Recycle
+- [x] **Cut is not offered on a Recycle Bin item** — expand the Recycle
   Bin and right-click an item inside it.
   **Expect:** no **Cut** entry on the context menu at all.
 

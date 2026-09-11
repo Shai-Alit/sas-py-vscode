@@ -200,6 +200,35 @@ describe("SAS Content drag-and-drop move", () => {
     );
   });
 
+  it("handleDrop completes a move even when the token's onCancellationRequested is missing (finding 6.16)", async () => {
+    // Reproduces the VS Code 1.109 RPC bug directly: mainThreadTreeViews.ts's
+    // $handleDrop puts `token` in a non-final argument position, so it
+    // crosses the extension-host boundary JSON-serialized and arrives with
+    // MutableToken's prototype getters stripped — no `onCancellationRequested`
+    // method, `isCancellationRequested` reading `undefined`. Before the fix,
+    // handleDrop subscribed to this token unconditionally and threw
+    // synchronously before any move ran; this token shape is what a real drop
+    // actually receives on that VS Code version.
+    const brokenToken = {
+      isCancellationRequested: undefined,
+    } as unknown as vscode.CancellationToken;
+    const moves: { id: string; dest: string }[] = [];
+    const holder = controllerWith((item, dest) => {
+      moves.push({ id: item.id, dest });
+      return Promise.resolve({
+        ok: true,
+        value: { ...item, parentFolderUri: dest },
+      } as ContentResult<ContentItem>);
+    });
+    const transfer = new vscode.DataTransfer();
+    transfer.set(MIME, new vscode.DataTransferItem([fileMember]));
+
+    await holder.controller.handleDrop(targetFolder, transfer, brokenToken);
+
+    assert.deepEqual(moves, [{ id: "m1", dest: "/folders/folders/dest" }]);
+    assert.equal(holder.state.refreshed, 1);
+  });
+
   it("handleDrop skips a drop that is not a move and never calls the adapter", async () => {
     const holder = controllerWith(notCalled);
     // Target is a file — moveObjection → "target-not-a-folder".

@@ -41,6 +41,21 @@
  * matching this project's own "failures are diagnosable" standard elsewhere.
  * These are genuine per-attempt traces, not incidental debugging left behind
  * — keep them.
+ *
+ * ## The real root cause: a VS Code RPC bug, not `resourceUri` (finding 6.16)
+ *
+ * ADR-0031's `resourceUri` fix did not actually fix drag-and-drop — ship-then
+ * -retest found it live-identical to before. The real defect, found from VS
+ * Code 1.109 source: `handleDrop`'s `token` argument crosses the
+ * extension-host RPC boundary JSON-serialized (it is not the last argument,
+ * so `rpcProtocol.ts`'s cancellation-token marshalling never pops it), which
+ * strips `MutableToken`'s prototype-getter `onCancellationRequested`.
+ * `handleDrop` was firing correctly on every real attempt all along and
+ * throwing `token.onCancellationRequested is not a function` immediately
+ * afterward, inside the `withProgress` callback below, before any move ran —
+ * invisible in the extension's own output channel because DevTools logs the
+ * throw to the *browser* console, not `vscode.window.createOutputChannel`.
+ * See the fix at the `subs` array below.
  */
 
 import * as vscode from "vscode";
@@ -63,8 +78,9 @@ import { resourceHrefOf, type ContentItem } from "./types";
  * format during the Phase 6->7/8 housekeeping investigation (2026-09-11) on
  * the theory that it mattered for a tree this shape — it did not change
  * anything, live-tested, so it was reverted here. The actual cause was a
- * missing `resourceUri` on folder tree items (ADR-0031), unrelated to this
- * constant.
+ * broken `CancellationToken` marshalled across the extension-host RPC
+ * boundary (finding 6.16), unrelated to this constant or to `resourceUri`
+ * (ADR-0031).
  */
 const CONTENT_MIME = "application/vnd.pythononviya.sascontent";
 
@@ -199,10 +215,24 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
         const cancelled = () =>
           token.isCancellationRequested ||
           progressToken.isCancellationRequested;
+        // `token` (the tree view's own CancellationToken, passed into
+        // handleDrop by VS Code) must not be subscribed to. On VS Code 1.109,
+        // mainThreadTreeViews.ts's $handleDrop puts it in a non-final argument
+        // position, so rpcProtocol.ts's "pop a trailing cancellation token"
+        // marshalling never intercepts it — it crosses the extension-host RPC
+        // boundary as plain JSON instead, which drops MutableToken's prototype
+        // getters. The extension host receives a bare
+        // `{ _isCancelled, _emitter }` object with no `onCancellationRequested`
+        // method, so subscribing throws before any move can run (finding 6.16).
+        // `token.isCancellationRequested` above is unaffected (it reads
+        // `undefined`, harmlessly falsy) and is left in the poll in case VS
+        // Code ever fixes the marshalling; only `progressToken` — built
+        // locally in the extension host by extHostProgress.ts, so it never
+        // crosses RPC — is safe to subscribe to. This means the tree view's
+        // own cancel affordance (as opposed to the progress notification's
+        // Cancel button) cannot abort an in-flight move; that is an accepted,
+        // documented gap, not an oversight.
         const subs = [
-          token.onCancellationRequested(() => {
-            controller.abort();
-          }),
           progressToken.onCancellationRequested(() => {
             controller.abort();
           }),

@@ -870,29 +870,41 @@ checkpoint. Every row through "Delete on an ordinary item recycles it
 silently" (§15) and all of §16 (favourites, Recycle Bin) passed clean. Two
 open items:
 
-- ☐ **Drag-and-drop within the SAS Content tree is still completely
-  non-functional. The `resourceUri` fix (ADR-0031) did not fix it — live
-  retested 2026-09-11 (Sean), identical symptoms to the original report:
-  dragging within the tree produces no progress notification, no message,
-  no move. Root cause remains unknown. Deliberately not blocking this PR**
-  (Sean's call — Cut/Paste, below, is the real, working interaction model
-  going forward) **— tracked as an open follow-up in `phase-11.md` instead.**
-  ADR-0031's `resourceUri` change is kept regardless: it matches upstream's
-  own unconditional behaviour, gives every folder a real tooltip (a
-  genuine, if minor, parity fix on its own), and cost nothing to keep — but
-  it is no longer claimed to fix drag-and-drop, and ADR-0031 carries a
-  dated amendment saying so. The investigation that led to it is preserved
-  below for whoever picks this up next, since it does rule out several real
-  candidates even though it didn't land on the actual cause. Confirmed against a
+- ☑ **Drag-and-drop within the SAS Content tree — root cause found and
+  fixed 2026-09-11, in a separate follow-up after this PR merged (finding
+  6.16, Probe findings section below).** The investigation immediately
+  below is preserved as it was recorded at the time, but two of its own
+  conclusions are wrong and are corrected here rather than left standing:
+  it is **not** true that "`handleDrop` firing in only one of roughly six
+  real attempts" — `handleDrop` fired, and completed its own guard checks,
+  on every real attempt. What varied was whether anything *movable* reached
+  the `vscode.window.withProgress` call afterward: a self-rejected drop
+  (nothing movable) returned early and logged cleanly; every drop with a
+  real move to make reached the `withProgress` callback and threw there,
+  which is why it looked like "no move, no error" rather than a visible
+  failure — the throw landed in the DevTools console, not this extension's
+  own output channel, so nothing in the normal diagnostic story below ever
+  saw it. And it is **not** true that "root cause remains unknown" — the
+  `resourceUri` hypothesis this bullet investigates was a red herring; drag
+  *engagement* was never the problem, and neither the file-vs-folder
+  pattern nor the mime-format/version/flakiness candidates ruled out below
+  were ever the actual cause. See finding 6.16 for the real mechanism (a
+  `CancellationToken` argument broken by VS Code's own extension-host RPC
+  marshalling) and ADR-0031's second amendment for how this reframes that
+  ADR's own question. ADR-0031's `resourceUri` change itself is unaffected
+  by any of this — it was never the fix, and is kept on its own narrower,
+  already-stated merits (upstream parity, the folder tooltip).
+
+  Confirmed against a
   build rebuilt fresh from `main` (ruling out a stale `.vsix` as the cause).
   Diagnostic logging added to `handleDrag`/`handleDrop` (kept — see that
   file's own doc comment) showed `handleDrag` firing reliably on every
-  attempt, but `handleDrop` firing in only one of roughly six real attempts
-  across several target folders (My Folder, Demo, Guest, and nested
-  combinations) — no pattern by folder depth or which folder was involved;
-  the one success was a self-referential drop (a file dropped back onto its
-  own current folder), correctly recognised and rejected via
-  `moveObjection`'s `already-there` case.
+  attempt, and (per the correction above) `handleDrop` firing reliably on
+  every attempt too — across several target folders (My Folder, Demo, Guest,
+  and nested combinations), the one attempt that produced no error was a
+  self-referential drop (a file dropped back onto its own current folder),
+  correctly recognised and rejected via `moveObjection`'s `already-there`
+  case before reaching the code that threw.
 
   A throwaway two-view test extension
   (`application/vnd.code.tree.<id>` vs. a private custom mime type, exactly
@@ -930,14 +942,17 @@ open items:
   2026-09-11, found the identical failure as before the fix** — same
   symptoms, same lack of pattern by target. The `resourceUri` hypothesis is
   therefore not confirmed as the actual cause (or is at most one factor
-  among others); see ADR-0031's amendment. **Next, for whoever picks this
-  up:** the one avenue this investigation never reached is VS Code's own
-  Developer Tools console during a live drop (its
-  `TreeDragAndDropController.dropMimeTypes` doc comment names this as the
-  supported way to see what, if anything, VS Code offers on the drop) —
-  everything else tried (mime format, `@types/vscode` version, Electron
-  drag flakiness, nesting depth, and now the missing-`resourceUri`
-  hypothesis) has been ruled out or shown insufficient.
+  among others); see ADR-0031's amendment. At the time this was written,
+  the next step for whoever picked this up was VS Code's own Developer
+  Tools console during a live drop, since everything tried so far (mime
+  format, `@types/vscode` version, Electron drag flakiness, nesting depth,
+  the missing-`resourceUri` hypothesis) had been ruled out or shown
+  insufficient. **That is exactly what found it**: a Phase 7 session opened
+  DevTools during a live drop and found `ERR
+  o.onCancellationRequested is not a function` at `handleDrop` — see finding
+  6.16 for the full trace and the fix, applied on
+  `fix/content-drag-drop-cancellation-token` after this PR had already
+  merged.
 - ☐ **(known gap, deferred) The top-level-folder permanent-delete
   confirmation cannot be live-exercised on the available deployment.** The
   Phase 6→7/8 housekeeping checkpoint previously recorded the original
@@ -972,7 +987,9 @@ actually works.
 
 ☑ **6e — right-click Cut/Paste ships (ADR-0032); the folder `resourceUri`
 change ships too (ADR-0031) but does not fix drag-and-drop, which stays
-broken and is tracked separately.**
+broken and is tracked separately.** *(Superseded 2026-09-11, same day, by a
+follow-up fix — drag-and-drop's real root cause was found and fixed after
+this PR merged; see the dated entry below and finding 6.16.)*
 **Merged 2026-09-11** as [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162),
 squash `a74f756`. Both landed together at the Phase 6→7/8 housekeeping
 checkpoint, discovered while live-testing 6c-ii's drag-and-drop; see the two
@@ -1076,7 +1093,9 @@ entries above for the investigation and its outcome.
   `pythonOnViya.cutContentItem`/`pasteContentItem` changed nothing
   functionally and this pass confirms it). **Drag-and-drop itself: retested
   and still completely non-functional, identical symptoms to the original
-  report** — see the dedicated entry above and ADR-0031's amendment. **Sean's
+  report** — see the dedicated entry above and ADR-0031's amendment. (This
+  was the last confirmed-broken state before the real root cause was found;
+  see the dated follow-up entry below and finding 6.16.) **Sean's
   call: this does not block the PR** — Cut/Paste is the real, working
   interaction model, and the drag-and-drop investigation is tracked as a
   follow-up in `phase-11.md` rather than held against this slice. The
@@ -1108,6 +1127,104 @@ entries above for the investigation and its outcome.
   second fix, all 13 Cut/Paste cases). Both threads replied to inline and
   resolved. **Merged 2026-09-11** — no other findings on either automated
   reviewer.
+
+☑ **Drag-and-drop: real root cause found and fixed, 2026-09-11 — a separate
+follow-up after 6e merged, from a Phase 7 session working in the
+`sas-py-vscode-cowork` clone (that branch never touched `src/content/`, so
+this landed cleanly against `main` with no conflict risk).** VS Code's own
+DevTools console — the one avenue ADR-0031's own investigation never
+reached, per its final "Next, for whoever picks this up" note above — showed
+the real failure on a live drop: `ERR o.onCancellationRequested is not a
+function` at `contentDragAndDrop.ts`'s `handleDrop`. `handleDrop` had been
+firing correctly on every real attempt all along; it threw before doing any
+move whenever something was actually movable, which is why every retest
+above saw "no progress, no error, no move" instead of a visible failure —
+the throw lands in the browser DevTools console, not this extension's own
+output channel, so nothing in the diagnostic story above (the debug logging,
+the throwaway test extension, the `resourceUri` comparison) was ever in a
+position to see it.
+
+Traced to VS Code 1.109 source (read for what it does, matching this
+project's own standing rule — not transcribed from training data): `handleDrop`'s
+third parameter, the tree view's own `CancellationToken`, crosses the
+extension-host RPC boundary in a non-final argument position
+(`mainThreadTreeViews.ts`'s `$handleDrop` puts it fifth of eight), so
+`rpcProtocol.ts`'s "pop a trailing cancellation token" marshalling — which
+only ever inspects the *last* argument — never intercepts it. It is instead
+serialized as plain JSON like any other argument, which strips
+`MutableToken`'s two prototype-getter properties
+(`isCancellationRequested`/`onCancellationRequested` are getters, not own
+fields, so `JSON.stringify` drops them); the extension host receives a bare
+`{ _isCancelled: false, _emitter: null }` object. Recorded as **finding
+6.16** below — this is measured VS Code behaviour, not Viya wire behaviour,
+so the usual `viya-api-probe` order doesn't apply; it is instead read
+directly from VS Code's own source, the way `vscode-sas-extension` comparisons
+elsewhere in this project are.
+
+**Fixed** in `src/content/contentDragAndDrop.ts`'s `handleDrop`: the
+`token.onCancellationRequested(...)` subscription is removed outright rather
+than guarded, since a guard would leave the tree view's own cancel affordance
+silently inert — `progressToken` (built locally in the extension host by
+`extHostProgress.ts`, so it never crosses RPC) is the only cancellation
+source this code can actually rely on, and it already covers the one
+cancellation affordance the user sees (the progress notification's own
+Cancel button). `token.isCancellationRequested` stays in the `cancelled()`
+poll — harmless (it reads `undefined`, falsy) and correct if VS Code ever
+fixes the marshalling. A new regression test
+(`test/integration/content/dragAndDrop.test.ts`) drives `handleDrop` with a
+token shaped exactly like the real broken one (`{ isCancellationRequested:
+undefined }`, no `onCancellationRequested` method at all) and asserts the
+move completes rather than throwing. `contentDragAndDrop.ts`'s own doc
+comment and the `CONTENT_MIME` comment (which had attributed the cause to
+the missing `resourceUri`) are corrected to point at this finding instead.
+
+**Two more claims from the investigation above are corrected in place**
+rather than left standing: "`handleDrop` firing in only one of
+roughly six real attempts" is wrong — it fired every time, and the one
+attempt that produced no error was a self-rejected drop that never reached
+the throwing code, not a successful move. "Root cause remains unknown" /
+"disproven, root cause unknown" (ADR-0031's amendment) is superseded — the
+cause is now known, and it was never about drag engagement or the
+file-vs-folder pattern that investigation chased; see ADR-0031's second
+amendment. Everything else that investigation ruled out (VS Code version,
+Electron drag flakiness, mime-type format, nesting depth) is unaffected and
+still correctly ruled out — none of those were ever the cause either.
+
+`phase-11.md`'s tracked follow-up ("Drag-and-drop within the SAS Content
+tree remains completely non-functional — root cause unknown") is now closed
+— see that file. `npm run verify` green (1580 unit passing, coverage
+unchanged at 95.57/95.51/95.26/95.57 — the fix and its regression test both
+live in files this project's coverage gate excludes, matching every other
+`vscode`-shell file in `src/content/`); `npm run test:integration` green
+(371 passing, +1 — the new regression test above); `npm run
+check:docs` green. **Adversarial pass handed to the developer before any
+push, per this project's standing rule** (this changes source and corrects
+a documented invariant, ADR-0031) — **no blocking findings.** The reviewer
+independently re-derived the VS Code 1.109 RPC-marshalling mechanism against
+that version's own source (`mainThreadTreeViews.ts`, `rpcProtocol.ts`,
+`cancellation.ts`, `extHostTreeViews.ts`) rather than taking the write-up's
+word for it, confirmed the two "unaffected call sites" claim
+(`contentCommands.ts:670`, `run/commands.ts:546` both subscribe to a
+host-local `withProgress` token, never marshalled across RPC), confirmed the
+regression test reproduces the real broken-token shape without copying the
+logic under test, and confirmed the coverage-exclusion claim against
+`.c8rc.json`. One non-blocking observation, since resolved (below): the live
+Extension Development Host retest was still outstanding at review time.
+
+**Third live pass, 2026-09-11 (Sean), against this fix:** the "(known gap)
+Dragging an item onto a folder moves it" row in `manual-test-pass.md` §15,
+which failed identically on both the original report and the ADR-0031
+`resourceUri` fix attempt, now **passes** — a real move, progress
+notification, auto-reveal, all as originally specified, with a clean
+DevTools console. Every other §15 row that had been blocked on the base
+drag gesture working — multi-item drag, drag onto My Favorites/the Recycle
+Bin (no-op), drag onto self/current folder (no-op), and multi-select hiding
+the single-item context actions — was retested the same session and also
+passes; see `manual-test-pass.md`'s own §15 for the row-by-row account.
+Drag-and-drop is now confirmed fixed, not merely fixed in source. The one
+remaining §15 gap (the top-level-folder permanent-delete confirmation) is
+unrelated to drag-and-drop — a Viya deployment-level configuration, already
+recorded as a documented, deferred known gap above — and stays open.
 
 The stale/duplicate copy of §15–§16 this branch's merge into `main` produced
 (the same section content inserted at two different points by two diverging
@@ -1688,3 +1805,94 @@ member). So "empty recycle bin" is: list the bin's members, `DELETE` each one's
 would delete Sean's real bin contents) but finding 6.8 measured
 `deleteRecursively` `409`ing on any non-folder child, so it cannot be relied on
 to empty a mixed bin regardless.
+
+---
+
+_Finding 6.16 is not a `viya-api-probe` finding — it is measured VS Code
+client behaviour, read directly from VS Code 1.109 source
+(`vscode`/`src/vs/workbench/api/…` and `vscode`/`src/vs/base/common/cancellation.ts`
+in the upstream `microsoft/vscode` repository), the same "read the real
+source, don't infer" standard this project applies to `vscode-sas-extension`
+comparisons elsewhere. It settles the drag-and-drop root cause that
+ADR-0031's own investigation (above) went looking for and didn't find, and
+that `phase-11.md` had tracked as an open follow-up. Found 2026-09-11 from a
+Phase 7 session in the `sas-py-vscode-cowork` clone; fixed in this repo on
+`fix/content-drag-drop-cancellation-token`, after 6e (PR #162) had already
+merged._
+
+**Finding 6.16 — VS Code 1.109 marshals a non-final `CancellationToken`
+argument as JSON, which strips its prototype-getter methods; the SAS Content
+tree's `handleDrop` was throwing on every real move attempt as a result.**
+
+`TreeDragAndDropController.handleDrop(target, dataTransfer, token)`'s `token`
+is the tree view's own `CancellationToken`, supplied by VS Code across the
+extension-host RPC boundary — the same boundary every other `vscode.*` API
+call in this project crosses transparently. Two independent VS Code
+internals combine to break it for this one call specifically:
+
+- `src/vs/workbench/api/browser/mainThreadTreeViews.ts`'s `$handleDrop` calls
+  `this._proxy.$handleDrop(this.treeViewId, request.id, dataTransferDto,
+  targetTreeItem?.handle, token, operationUuid, sourceTreeId,
+  sourceTreeItemHandles)` — `token` is argument 5 of 8, not the last one.
+- `src/vs/workbench/services/extensions/common/rpcProtocol.ts`'s argument
+  marshalling only special-cases a `CancellationToken` when it is the
+  **last** argument (`if (args.length > 0 &&
+  CancellationToken.isCancellationToken(args[args.length - 1]))`) — here
+  `args[7]` is `sourceTreeItemHandles` (a `string[]`), so the check misses
+  and `token` is serialized as an ordinary argument instead of being handled
+  specially.
+- `src/vs/base/common/cancellation.ts`'s `MutableToken` stores
+  `isCancellationRequested`/`onCancellationRequested` as **getters on the
+  prototype**, backed by private fields (`_isCancelled`, `_emitter`).
+  `JSON.stringify` only serializes own enumerable properties, so a
+  round-tripped token arrives at the extension host as a plain
+  `{ "_isCancelled": false, "_emitter": null }` object — no
+  `onCancellationRequested` method, and `isCancellationRequested` reads
+  `undefined` (falsy, so it never misreports "cancelled", but a caller that
+  branches on it explicitly rather than testing truthiness would need to
+  know this).
+- `src/vs/workbench/api/common/extHostTreeViews.ts` passes that
+  already-broken object straight through into
+  `this._dndController.handleDrop(target, treeDataTransfer, token)` with no
+  validation — the extension author is trusted to have a real
+  `CancellationToken`, per the declared type, and normally does.
+
+Net effect: `contentDragAndDrop.ts`'s `handleDrop` called
+`token.onCancellationRequested(...)` unconditionally inside its
+`vscode.window.withProgress` callback (after every early-return guard, so
+`handleDrag`/`handleDrop`'s own debug logging showed nothing wrong) and threw
+`TypeError: o.onCancellationRequested is not a function` before any move
+ran. Visible only in the DevTools console (`Help: Toggle Developer Tools`),
+never in this extension's own `LogOutputChannel` — the throw happens outside
+any of this project's own `try`/`catch` blocks, in code VS Code itself
+invokes. Nothing in this project's test suite catches it either:
+unit/integration tests call `handleDrop` directly with a real
+`vscode.CancellationTokenSource().token`, which was never marshalled and
+so never loses its prototype getters; `tsc` sees only the declared
+`CancellationToken` interface, which the broken object doesn't structurally
+violate at the type level for the properties it happens to expose.
+
+- **Two other `onCancellationRequested` call sites in this repo were
+  checked and confirmed unaffected**, since they subscribe to tokens that
+  never cross this same path: `contentCommands.ts:670` and
+  `run/commands.ts:546` both subscribe to a `vscode.window.withProgress`
+  callback's own progress token (built locally in the extension host by
+  `extHostProgress.ts`, never marshalled across RPC — the same reason
+  `contentDragAndDrop.ts`'s `progressToken` subscription is safe);
+  `compute/cancellation.ts`'s callers pass through a
+  `CancellationTokenSource` this project constructs itself. `handleDrop`'s
+  outer `token` is the only `CancellationToken` in this codebase that VS
+  Code itself hands over through a non-final RPC argument position.
+- **Not fixable from this side beyond not subscribing to the broken
+  token.** `token.isCancellationRequested` still reads correctly enough to
+  use in a poll (it is falsy either way, so a real cancellation via this
+  path is simply never observed — an accepted, documented gap, not a
+  silent one); there is no way for an extension to repair a token VS Code
+  has already serialized incorrectly. `progressToken` remains the only
+  reliable cancellation source for this call, and already backs the only
+  cancellation affordance a user sees (the progress notification's own
+  Cancel button).
+- **Worth an upstream `microsoft/vscode` issue**, not filed as part of this
+  fix: either `$handleDrop` should pass `token` last, or
+  `mainThreadTreeViews.ts` should marshal it explicitly rather than relying
+  on `rpcProtocol.ts`'s positional convention.

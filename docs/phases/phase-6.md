@@ -852,6 +852,60 @@ read directly (no member record to move) or one already in the bin.
   command + menu wiring test). New fixtures `recycle-bin-members.json`,
   `member-restored.json`.
 
+**Phase 6's first live manual pass — 2026-09-11 (Sean), `docs/dev/manual-test-pass.md`
+§15–§16.** Landed inside a Phase 7c-ii fix branch rather than at Phase 6's own
+close (no live UI pass had ever run for any of Phase 6 before this — every
+prior verification was unit/integration tests, adversarial code-diff review,
+or a `viya-api-probe` run against the wire, none of it a person clicking in a
+live VS Code window). Reconciled here at the Phase 6→7/8 housekeeping
+checkpoint. Every row through "Delete on an ordinary item recycles it
+silently" (§15) and all of §16 (favourites, Recycle Bin) passed clean. Two
+open items:
+
+- ☐ **Drag-and-drop is completely non-functional** — dragging a tree item
+  onto a folder, from either the OS (Windows Explorer) or from within the
+  SAS Content tree itself, produces no progress notification, no message, and
+  no move. The from-OS case is expected (Phase 11's upload deferral; this
+  controller only declares its own private MIME type, by design). The
+  within-tree case is not expected — 6c-ii's own unit and integration tests
+  exercise `SasContentDragAndDropController.handleDrop` and
+  `moveObjection`/`moveItem` directly and all pass, but none of them drive an
+  actual VS Code drag gesture end to end, so this is the first time the real
+  gesture has been tried at all. Investigated at this checkpoint: the
+  registration in `contentExplorer.ts` (`dragAndDropController: dragAndDrop`
+  passed to `createTreeView`) matches the official
+  `microsoft/vscode-extension-samples` `tree-view-sample` pattern exactly, and
+  the installed `@types/vscode` 1.104.0 declarations confirm neither a
+  `package.json` manifest flag nor a specific MIME-type-naming convention is
+  required for same-tree drag and drop to work — a custom mime type's
+  `DataTransferItem.value` is preserved as the original object "so long as the
+  extension that created the `DataTransferItem` runs in the same extension
+  host," which this is. So the wiring reads as correct against both the
+  source and the documented API contract, and the cause is not yet confirmed:
+  candidates are a stale build (an old `.vsix`/`out/` predating 6c-ii, or not
+  rebuilt from this branch), or a genuine runtime defect only a live gesture
+  surfaces. Not fixed here — no code changed on the strength of an unconfirmed
+  cause. **Next**: confirm the exact commit the tested build was compiled
+  from; if it does include 6c-ii, retest with **Developer: Set Log Level…**
+  set to Debug and the Developer Tools console open while dragging (the
+  `TreeDragAndDropController.dropMimeTypes` doc comment names this as the
+  supported way to see what mime type, if any, VS Code offers on the drop),
+  and check the **Python on Viya** output channel for anything logged during
+  the attempt.
+- ☐ **The top-level-folder permanent-delete confirmation could not be
+  exercised** — no permission on the tested deployment to create or delete a
+  folder directly under SAS Content (a Viya authorization limit, not an
+  extension defect). Needs an account with that permission, or a Viya admin's
+  help, to actually exercise `isRecyclableMember`'s `false` branch live; the
+  behaviour is unit- and integration-tested (`content-adapter.test.ts`,
+  `explorer.test.ts`) but has no live confirmation yet.
+
+The stale/duplicate copy of §15–§16 this branch's merge into `main` produced
+(the same section content inserted at two different points by two diverging
+branches, which a 3-way merge does not deduplicate) was found and removed at
+this checkpoint — `docs/dev/manual-test-pass.md` now carries one copy of
+each, matching what was actually run.
+
 ---
 
 ## Probe findings

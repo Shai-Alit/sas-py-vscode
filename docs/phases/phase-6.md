@@ -402,7 +402,8 @@ struck lines below.
   the first real caller is "select the item you just created or moved", so the
   `ancestors` probe rides with 6c's probe pass.
 
-☐ **6c — Mutations (create/rename/move/delete).** Split into three sub-slices
+☑ **6c — Mutations (create/rename/move/delete).** All three sub-slices merged.
+Split into three sub-slices
 (Sean, 2026-09-10): **6c-i** create/rename/delete for folders and files from
 the tree context menu; **6c-ii** drag-and-drop move (the repo's first
 `TreeDragAndDropController`) — the Python-shaped drag-into-editor snippet was
@@ -627,7 +628,8 @@ landed while #154 was in review.
   (scrubbed `application/vnd.sas.content.folder.ancestor+json` body); new
   `contentNoBody()` test helper for the `204`.
 
-☐ **6d — Favourites and recycle bin.** Split into two sub-slices (Sean,
+☑ **6d — Favourites and recycle bin.** Both sub-slices merged. Split into two
+sub-slices (Sean,
 2026-09-10), mirroring the 6c-i/ii/iii pattern: **6d-i** favourites (add / remove
 / the `isInMyFavorites` marker), **6d-ii** the recycle bin (recycle / restore /
 empty-bin / the read-only `sasContentReadOnly` scheme). The read-only probe pass

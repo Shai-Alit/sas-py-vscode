@@ -290,11 +290,7 @@ function panelHead(): string {
     opacity: 0;
     pointer-events: none;
   }
-  .python-on-viya-table-properties-tabs {
-    border-bottom: 1px solid var(--vscode-panel-border);
-    margin-bottom: 8px;
-  }
-  .python-on-viya-table-properties-tabs label {
+  .python-on-viya-table-properties-tab-label {
     display: inline-block;
     padding: 4px 12px;
     cursor: pointer;
@@ -306,6 +302,10 @@ function panelHead(): string {
   #python-on-viya-tab-properties:checked + label,
   #python-on-viya-tab-columns:checked + label {
     border-bottom-color: var(--vscode-focusBorder);
+  }
+  .python-on-viya-table-properties-tabs-underline {
+    border-bottom: 1px solid var(--vscode-panel-border);
+    margin-bottom: 8px;
   }
   .python-on-viya-table-properties-pane { display: none; }
   #python-on-viya-tab-properties:checked ~ #python-on-viya-pane-properties,
@@ -367,7 +367,23 @@ function buildFailureHtml(table: TableItem, message: string): string {
  * `Column`, its full field set). Every field is optional; an absent one
  * renders as an empty cell, via `tablePropertiesModel.ts`'s own
  * `formatOptional*` helpers, rather than this function branching on each one
- * itself. */
+ * itself.
+ *
+ * **The two radio inputs are not wrapped in a container** — they, their
+ * `<label>`s, and both `#python-on-viya-pane-*` divs are all direct children
+ * of `<body>`. Manual test pass §13 (2026-09-10, Sean) found both panes
+ * rendering blank: an earlier version wrapped the inputs and labels in their
+ * own `<div>`, and `panelHead()`'s `:checked ~ #python-on-viya-pane-*` general
+ * sibling selector only matches elements sharing the *same parent* as the
+ * checked input — nesting the input one level deeper than the panes it is
+ * meant to reveal meant that selector never matched anything, so the
+ * `display: none` default never lifted. The `<label>`s still need to
+ * immediately follow their own `<input>` for the adjacent-sibling `:checked +
+ * label` rule right below, so the flat order here is Properties input,
+ * Properties label, Columns input, Columns label, then a separate
+ * `.python-on-viya-table-properties-tabs-underline` div standing in for the
+ * old wrapper's visual bottom border (which cannot come back as a wrapper
+ * without reintroducing the same bug). */
 function buildPropertiesHtml(
   table: TableItem,
   detail: TableDetail,
@@ -449,12 +465,11 @@ function buildPropertiesHtml(
   return `${panelHead()}
 <body>
 <h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
-<div class="python-on-viya-table-properties-tabs">
 <input type="radio" name="python-on-viya-table-properties-tab" id="python-on-viya-tab-properties" class="python-on-viya-table-properties-tab-input" checked>
-<label for="python-on-viya-tab-properties">${escapeHtml(vscode.l10n.t("Properties"))}</label>
+<label for="python-on-viya-tab-properties" class="python-on-viya-table-properties-tab-label">${escapeHtml(vscode.l10n.t("Properties"))}</label>
 <input type="radio" name="python-on-viya-table-properties-tab" id="python-on-viya-tab-columns" class="python-on-viya-table-properties-tab-input">
-<label for="python-on-viya-tab-columns">${escapeHtml(vscode.l10n.t("Columns"))}</label>
-</div>
+<label for="python-on-viya-tab-columns" class="python-on-viya-table-properties-tab-label">${escapeHtml(vscode.l10n.t("Columns"))}</label>
+<div class="python-on-viya-table-properties-tabs-underline"></div>
 <div id="python-on-viya-pane-properties" class="python-on-viya-table-properties-pane">
 <div class="python-on-viya-table-properties-section-title">${escapeHtml(vscode.l10n.t("General Information"))}</div>
 <table class="python-on-viya-table-properties-table"><tbody>${generalRows}</tbody></table>

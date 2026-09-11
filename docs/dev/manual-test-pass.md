@@ -1021,7 +1021,7 @@ for the full account.
 - [x] **Clearing the filter box restores every row** — select all the text in
   the filter box, delete it, and press Enter.
   **Expect:** all 19 rows return (still sorted, if a sort is still active).
-- [ ] **An invalid filter expression shows a real error, not a blank grid** —
+- [x] **An invalid filter expression shows a real error, not a blank grid** —
   type `NoSuchColumn=1` into the filter box and press Enter.
   **Expect:** the grid shows an error (in the panel, not just the log) naming
   the actual problem (a variable that does not exist on the table) rather
@@ -1032,7 +1032,7 @@ for the full account.
   datasource discarded it on a failed fetch; fixed by rendering it in a small
   banner above the grid, and by adding a `log?.warn` in `dataViewerPanel.ts`
   for both row-fetch failure paths (there was none before, for either).
-- [ ] **A sort survives switching to a different tab and back** — with the
+- [x] **A sort survives switching to a different tab and back** — with the
   grid sorted by **Age** (first item above), switch to a different editor
   tab, then switch back to this table's tab.
   **Expect:** the grid still shows the sort indicator and the Age-sorted
@@ -1046,7 +1046,7 @@ for the full account.
   sort/filter, not the state from when the table was first opened, on every
   `"ready"` handshake (`InitMessage.initialSort`/`initialFilter`,
   `dataViewerModel.ts`).
-- [ ] **A filter survives switching to a different tab and back** — with the
+- [x] **A filter survives switching to a different tab and back** — with the
   filter box showing `Sex='F'` (per the filter-box item above), switch to a
   different editor tab, then switch back.
   **Expect:** the filter box still shows `Sex='F'` and the grid still shows
@@ -1079,35 +1079,61 @@ Adds a **Table Properties** command to a table's context menu in the SAS
 Libraries view — a fully static panel (no scripts at all; its "Properties"/
 "Columns" tab toggle is pure CSS, no message loop) showing the table's size,
 engine, encoding and timestamp details ([Finding 7.19](../phases/phase-7.md))
-and its full column list.
+and its full column list. **Sean's own first pass, 2026-09-10, found one real
+bug**: both panes rendered blank regardless of which tab was selected (the
+CSS-only tab toggle's sibling selector could never match either pane — see the
+"Properties tab shows real values" row below for the full account). Root-caused
+and fixed on `fix/7c-ii-table-properties-blank-panes`, then **re-verified live,
+2026-09-11 (Sean, against `verde`)**, along with every other row this section's
+first pass could not reach while the panes were blank — every row below is
+now checked clean.
 
 **Pre-work:** the same live connection as §10, with **SASHELP.CLASS** visible
 in the tree.
 
-- [ ] **Table Properties opens a panel with two tabs** — right-click
+- [x] **Table Properties opens a panel with two tabs** — right-click
   **SASHELP.CLASS** and choose **Table Properties**.
   **Expect:** a new panel opens, titled with the table's `libref.name`,
   showing a **Properties** tab (selected by default) and a **Columns** tab.
-- [ ] **The Properties tab shows real values** — with the Properties tab
+- [x] **The Properties tab shows real values** — with the Properties tab
   selected.
   **Expect:** Name **CLASS**, Library **SASHELP**, Type **DATA**, Label
   **Student Data**, Engine **V9**; Row Count **19**, Column Count **5**;
   Created/Modified show a real date/time (not a raw number), Compression
   Routine **NO**, Encoding **us-ascii ASCII (ANSI)**.
-- [ ] **Clicking the Columns tab switches panes, with no flash or reload** —
+  **First pass, 2026-09-10 (Sean): failed**, tab comes up with two sub tabs
+  'properties' and 'columns' but it's all blank.
+  **Root-caused and fixed** on `fix/7c-ii-table-properties-blank-panes`: the
+  two radio inputs driving the CSS-only tab toggle were nested one level
+  deeper (inside their own wrapper `<div>`) than the two panes they were
+  meant to reveal, so `panelHead`'s `:checked ~ #pane-*` general-sibling rule
+  could never match either pane and both stayed at their `display: none`
+  default regardless of which tab was selected — a static-HTML/CSS defect,
+  not a data-mapping one. Fixed in `src/data/tablePropertiesPanel.ts`
+  (flattened sibling structure); confirmed live in a real browser
+  (before/after) that the broken structure reproduces this exact symptom and
+  the fix resolves it, and pinned with a new integration test.
+  **Re-verified live, 2026-09-11 (Sean), against `verde` with a `.vsix` built
+  from `fix/7c-ii-table-properties-blank-panes`:** every field matches —
+  Name **CLASS**, Library **SASHELP**, Type **DATA**, Label **Student Data**,
+  Engine **V9**, Row Count **19**, Column Count **5**, Created/Modified as
+  real dates, Compression Routine **NO**, Encoding **us-ascii ASCII (ANSI)**.
+  See `phase-7.md`'s 7c-ii Runbook entry (post-merge fix) for the full
+  account.
+- [x] **Clicking the Columns tab switches panes, with no flash or reload** —
   click the **Columns** tab, then click back to **Properties**.
   **Expect:** the visible pane switches instantly (this is pure CSS, not a
   script) — Name/Sex/Age/Height/Weight with their types (CHAR/CHAR/FLOAT/
   FLOAT/FLOAT), lengths, and no error.
-- [ ] **Choosing Table Properties again reveals the same panel** — with the
+- [x] **Choosing Table Properties again reveals the same panel** — with the
   panel from the item above still open, right-click **SASHELP.CLASS** and
   choose **Table Properties** again.
   **Expect:** the existing panel is revealed/focused, not a second one opened.
-- [ ] **The panel is legible in light, dark, and high-contrast themes** —
+- [x] **The panel is legible in light, dark, and high-contrast themes** —
   switch VS Code's color theme with the panel open.
   **Expect:** text, table borders, and the tab underline all remain legible in
   all three; nothing renders as an unstyled white box.
-- [ ] **A table properties panel opened while the session is busy shows a
+- [x] **A table properties panel opened while the session is busy shows a
   clear message, not a blank panel** — start a long-running Python job, then
   choose **Table Properties** on any table before it finishes.
   **Expect:** the panel shows a real, readable message (not a blank page)
@@ -1143,7 +1169,208 @@ in the tree.
   failure paths in `src/run/commands.ts` never call `log.*` before showing
   that message. Tracked in Phase 3's **3f** slice.
 
-## 15. Regression spot-checks
+## 15. SAS Content — browsing, open/save, and mutations (phases 6a–6c)
+
+A tree view over the deployment-wide Folders/Files service — this repo's
+first activity-bar view container, first `FileSystemProvider`
+(`sasContent:`), and first `TreeDragAndDropController`
+([ADR-0025](../adr/0025-shared-wire-layer.md),
+[ADR-0026](../adr/0026-content-adapter-shape.md)). Unlike SAS Libraries
+(§10), it needs no compute session — signing in is enough. **First pass ran
+2026-09-11 (Sean, live)** — no prior manual pass existed for any of Phase 6
+before this. Every row through "Delete on an ordinary item recycles it
+silently" passed clean. Two open items, both flagged inline below rather than
+fixed in this session (this is a docs-only addition, reconciled properly at
+Phase 6→7/8 housekeeping, not this branch's own scope): the top-level-folder
+permanent-delete confirmation could not be exercised at all (no permission on
+this deployment to create/delete folders directly under SAS Content), and
+drag-and-drop is completely non-functional (dragging does nothing at all,
+from either the OS or the tree itself) — the four rows after it that test
+drag variants were left unchecked rather than retested, since there was
+nothing working yet to vary.
+
+**Pre-work:** a Viya connection signed in (§3) — no need to **Connect to
+SAS Viya** first. Have write access to at least one folder you don't mind
+creating, renaming, moving, and deleting test files/folders in.
+
+- [x] **The view exists and reflects profile/auth state** — open the
+  **Python on Viya** icon in the Activity Bar.
+  **Expect:** **SAS Content** is the first view in the container. With no
+  profile configured it reads "Add a SAS Viya connection profile to browse
+  SAS Content." with a working **Add Connection Profile** link. With a
+  profile configured but signed out, it reads "Sign in to SAS Viya to browse
+  SAS Content." with a working **Sign In** link. There is no third
+  "connect" state — signing in is enough, since this view never touches a
+  compute session.
+- [x] **Signing in populates the tree** — sign in.
+  **Expect:** the view lists delegate rows for My Favorites, My Folder, SAS
+  Content, and Recycle Bin (the exact names are whatever your deployment's
+  Folders service returns), each with a chevron and no children loaded yet.
+- [x] **Expanding a folder lists its contents, folders first** — expand SAS
+  Content (or any folder with a mix of subfolders and files).
+  **Expect:** subfolders are listed before files, and within each group,
+  alphabetically, case-insensitively — this extension orders the listing
+  itself rather than asking the server (ADR-0026).
+- [x] **Refresh reloads the tree** — click the refresh icon in the SAS
+  Content title bar, or run **Refresh SAS Content** from the Command
+  Palette.
+  **Expect:** the tree reloads; an unexpanded state stays unexpanded.
+- [x] **Opening a file opens it for editing** — click a small text file
+  (e.g. a `.py` or `.txt` file) in the tree.
+  **Expect:** a new editor tab opens titled with the file's name, showing
+  its real content; the tab is not read-only.
+- [x] **Saving writes back to Viya** — with that file open, make a small
+  edit and save (Ctrl/Cmd+S).
+  **Expect:** the save completes with no error; reopening the file (close
+  the tab, click it again in the tree) shows the edit persisted.
+- [x] **New Folder / New File prompt, validate, and create** — right-click
+  a folder-shaped node (the SAS Content root, an ordinary subfolder, or My
+  Folder — not My Favorites or Recycle Bin) and choose **New Folder**, then
+  separately **New File**.
+  **Expect:** an input box titled with the parent's name; typing a name
+  containing `/` is rejected in place with "A name cannot contain \"/\".";
+  submitting empty is rejected with "Enter a name."; a valid name shows a
+  brief progress notification ("Creating folder \"…\"…" / "Creating
+  file \"…\"…"), then the new item appears in the tree, already selected
+  and revealed (expanding the parent if it was collapsed) — no separate
+  refresh needed.
+- [x] **Rename** — right-click the folder or file just created and choose
+  **Rename**.
+  **Expect:** an input box titled `Rename "<name>"`, pre-filled with the
+  current name; submitting the unchanged name is rejected with "That is
+  already its name."; a new name shows a brief progress notification
+  ("Renaming to \"…\"…") and the tree reflects it.
+- [x] **Delete on an ordinary item recycles it silently** — right-click the
+  renamed file and choose **Delete**.
+  **Expect:** no confirmation dialog — a brief progress notification
+  ("Moving \"…\" to the Recycle Bin…") and the item disappears from its
+  folder. (Confirmed separately in §16 that it lands in the Recycle Bin.)
+- [ ] **Delete on a top-level folder permanently deletes, behind a modal**
+  — right-click a folder that sits directly under SAS Content (not nested
+  inside another folder) and choose **Delete**.
+  **Expect:** a blocking confirmation — "Permanently delete the folder
+  \"…\" and everything inside it?" with detail "This cannot be undone." and
+  a **Delete Permanently** button. Cancelling leaves it untouched;
+  confirming removes it for good (not recoverable from the Recycle Bin).
+  **First pass, 2026-09-11 (Sean): unable to test** — no access to
+  create/delete folders directly under SAS Content on this deployment (Viya
+  policy).
+- [-] **Dragging an item onto a folder moves it** — drag a test file onto a
+  different folder.
+  **Expect:** a progress notification ("Moving \"…\"…"), the item
+  disappears from its old location, and it is auto-revealed (selected,
+  ancestors expanded) under the new folder — no manual refresh needed.
+  **First pass, 2026-09-11 (Sean): failed** — dragging a file from Windows
+  Explorer does nothing, and dragging a file from within the SAS Content tree
+  also does nothing: no progress notification, no message, and no file
+  movement.
+- [ ] **Dragging multiple items moves all of them together** — select two
+  or more items (Ctrl/Cmd-click) and drag them onto a folder.
+  **Expect:** a progress notification naming the count ("Moving N
+  items…"); all selected items move; the first one is revealed afterward.
+- [ ] **Dragging onto My Favorites or the Recycle Bin does nothing** — drag
+  a test file onto the My Favorites row, then onto the Recycle Bin row.
+  **Expect:** no error, no toast, no move — the item stays exactly where it
+  was. (Neither gesture is wired to add-to-favourites or recycle; only the
+  context-menu actions in §16 do that.)
+- [ ] **Dragging an item onto itself or its current folder is a no-op** —
+  drag an item onto the folder it already lives in, and drop it directly on
+  itself if your OS allows the gesture.
+  **Expect:** nothing happens either way — no progress notification, no
+  error.
+- [ ] **Multi-select hides the single-item context actions** — select two
+  or more items at once and right-click.
+  **Expect:** New Folder, New File, Rename, Delete, and the favourite
+  toggle are all absent from the context menu (they act on exactly one
+  item); only Empty Recycle Bin / Restore-style bulk actions would still
+  apply where relevant.
+
+## 16. SAS Content — favourites and the Recycle Bin (phase 6d)
+
+Two independent features layered on §15's tree: My Favorites, a per-account
+reference list, and the Recycle Bin, where "Delete" (§15) lands for
+anything that isn't a top-level folder. Both are `getChildItems`
+add-ons — no favourite/recycled item gets a different icon; only its
+context menu changes. **First pass ran 2026-09-11 (Sean, live), same session
+as §15** — every row below passed clean, no open items.
+
+**Pre-work:** the same signed-in connection as §15, with at least one test
+folder containing a nested file (a file inside a subfolder, not directly
+under SAS Content) that you don't mind recycling.
+
+- [x] **Add to My Favorites** — right-click an ordinary folder or file (not
+  a delegate, and not something already inside the Recycle Bin) and choose
+  **Add to My Favorites**.
+  **Expect:** a brief progress notification ("Adding \"…\" to My
+  Favorites…"); expanding My Favorites now shows it, with no manual
+  refresh needed. Right-clicking it again — either under My Favorites or in
+  its original location — now offers **Remove from My Favorites** instead.
+- [x] **A favourited item looks identical, no badge** — compare the icon of
+  the item you just favourited against an ordinary sibling.
+  **Expect:** the same folder or file icon either way — favouriting does
+  not add a star or any other visual marker in this build. The only way to
+  tell is the context menu wording. (Not a bug if true; flag it if you
+  instead see a badge, since that would mean the code changed since this
+  was written.)
+- [x] **A favourited item browsed from My Favorites behaves like the real
+  thing** — expand My Favorites and open/expand the item from there rather
+  than from its original location.
+  **Expect:** a favourited file opens for editing exactly as in §15; a
+  favourited folder expands and lists its real children.
+- [x] **Remove from My Favorites** — right-click the item under My
+  Favorites and choose **Remove from My Favorites**.
+  **Expect:** a brief progress notification and it disappears from My
+  Favorites; its original location is untouched.
+- [x] **A Recycle Bin item cannot be favourited** — expand the Recycle Bin
+  (recycle something first if it's empty) and right-click an item inside
+  it.
+  **Expect:** neither **Add to My Favorites** nor **Remove from My
+  Favorites** appears on the context menu at all.
+- [x] **Restore returns an item to where it lived** — recycle a test file
+  (§15's Delete), then expand the Recycle Bin, right-click it, and choose
+  **Restore**.
+  **Expect:** a brief progress notification ("Restoring \"…\"…"); the item
+  disappears from the Recycle Bin and reappears in its original folder.
+- [x] **A file nested inside a recycled folder is still recognizably
+  recycled** — recycle a folder that contains a file (not a bare empty
+  folder), then expand the recycled folder inside the Recycle Bin.
+  **Expect:** the nested file shows as read-only (see the row below) and
+  offers Restore, the same as a directly-recycled item — not as an
+  ordinary editable file. (This confirms a real bug found and fixed in PR
+  #159's review: `inRecycleBin` not propagating past the bin's direct
+  children.)
+- [x] **Recycled files open read-only** — click a file inside the Recycle
+  Bin (not a file inside a recycled folder — either works, per the row
+  above).
+  **Expect:** it opens in the editor, but the tab is read-only (VS Code's
+  padlock indicator; editing and Ctrl/Cmd+S either do nothing or show an
+  error) — a different command than an ordinary open (**View Recycled SAS
+  Content File** vs. **Open SAS Content File**), backed by a second,
+  read-only registration of the same `FileSystemProvider`.
+- [x] **Delete on an already-recycled item permanently deletes, behind a
+  modal** — right-click an item already inside the Recycle Bin and choose
+  **Delete**.
+  **Expect:** the same blocking confirmation as a top-level folder in
+  §15 — "Permanently delete \"…\"?", detail "This cannot be undone.", a
+  **Delete Permanently** button — since a bin item can't be recycled again.
+- [x] **Dragging into or out of the Recycle Bin does nothing** — drag an
+  item from the Recycle Bin onto an ordinary folder, and drag an ordinary
+  item onto the Recycle Bin.
+  **Expect:** neither does anything — no move, no error, no toast. (Moving
+  a recycled item out would be a restore and dropping into the bin an odd
+  half-recycle; 6d deliberately defines neither as a drag gesture — only
+  the context-menu actions above do this.)
+- [x] **(slow) Empty Recycle Bin** — recycle two or three test items so the
+  bin isn't empty, then right-click the Recycle Bin row and choose **Empty
+  Recycle Bin**.
+  **Expect:** a blocking confirmation — "Permanently delete everything in
+  the Recycle Bin?" with detail mentioning that items other tools placed
+  there (such as reports) are left alone — then a progress notification
+  ("Emptying the Recycle Bin…") with **no per-item progress bar** (a known,
+  accepted tradeoff — confirm it doesn't read as hung for your handful of
+  items), and the bin ends up empty.
+
+## 17. Regression spot-checks
 
 Each of these was a real defect caught in review. Quick to confirm now that you
 are set up.
@@ -1179,17 +1406,22 @@ are set up.
 
 This page is meant to be re-run every phase, so it has to grow with the product.
 
-- **Sections 0–1 and 14–15 are phase-agnostic.** Pre-flight, activation, trust,
+- **Sections 0–1, 14 and 17 are phase-agnostic.** Pre-flight, activation, trust,
   enablement and the regression spot-checks apply to every build. The regression
   section grows by one bullet each time review catches a defect worth
   re-confirming by hand.
-- **Sections 2–13 map to phases 1–3 and 7a–7c-ii.** When a phase closes, add a
-  section (or extend one) for its user-visible behaviour, and cite the slice
-  and ADR in the heading the same way the existing sections do. Phase 4's
-  traceback editor-position mapping, for instance, turns the
+- **Sections 2–13 and 15–16 map to phases 1–3, 6a–6d and 7a–7c-ii.** When a
+  phase closes, add a section (or extend one) for its user-visible behaviour,
+  and cite the slice and ADR in the heading the same way the existing sections
+  do. Phase 4's traceback editor-position mapping, for instance, turns the
   `ModuleNotFoundError` **(known gap)** row in §7 into a real assertion.
-  Phase 6 (SAS Content) has none yet — added when that phase gets its own
-  live pass, not folded in here.
+  Phase 6 (SAS Content) got its own live pass and sections (§15–§16) added
+  2026-09-11 — later than its own phase boundary, and out of sequence with
+  this rule's own "when a phase closes" cadence, since it landed inside a
+  Phase 7c-ii fix branch rather than at Phase 6's own close. It is a docs-only
+  addition here; reconciling it properly (moving it, or confirming it stays)
+  is Phase 6→7/8 housekeeping's job (`HOUSEKEEPING.md`), not yet run as of
+  this writing.
 - **Retire a gap when it closes.** A **(known gap)** row is a promise to update
   it, not a permanent excuse. When the behaviour lands, rewrite the row as a
   normal **Expect**.

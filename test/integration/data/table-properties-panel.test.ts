@@ -153,6 +153,33 @@ describe("TablePropertiesPanelManager", () => {
     assert.match(html, /default-src 'none'/);
   });
 
+  it("keeps both radio inputs as direct siblings of the panes they reveal, not nested in a wrapper div", async () => {
+    // Manual test pass §13, 2026-09-10 (Sean, live): both tabs rendered but
+    // the pane content was always blank. Root cause: an earlier version
+    // wrapped the two radio inputs (and their labels) in their own
+    // `<div class="...tabs">`, but `panelHead()`'s tab-switch CSS relies on
+    // the general sibling combinator (`#tab-properties:checked ~
+    // #pane-properties`), which only matches elements sharing the *same
+    // parent* as the checked input — nesting the input one level deeper than
+    // the panes meant that selector could never match, so `display: none`
+    // never lifted for either pane. This asserts the exact flat sibling
+    // order the fix depends on: nothing opens a wrapping element between the
+    // "Properties" input and the "Properties" pane, or between the "Columns"
+    // input and the "Columns" pane.
+    const fake = fakePanel();
+    const manager = new TablePropertiesPanelManager({
+      createPanel: () => fake.panel,
+    });
+
+    await manager.open(tableItem(), libraryAdapter(OPEN_ROUTES));
+
+    const html = fake.panel.webview.html;
+    assert.match(
+      html,
+      /<input[^>]*id="python-on-viya-tab-properties"[^>]*>\s*<label[^>]*for="python-on-viya-tab-properties"[^>]*>[^<]*<\/label>\s*<input[^>]*id="python-on-viya-tab-columns"[^>]*>\s*<label[^>]*for="python-on-viya-tab-columns"[^>]*>[^<]*<\/label>\s*<div[^>]*class="python-on-viya-table-properties-tabs-underline"[^>]*><\/div>\s*<div[^>]*id="python-on-viya-pane-properties"/,
+    );
+  });
+
   it("locks style-src to the <style> tag's own nonce, with no 'unsafe-inline' anywhere", async () => {
     // PR review, 2026-09-11 (blocking): an earlier version of this panel
     // used `style-src {cspSource} 'unsafe-inline'`, reasoning that every

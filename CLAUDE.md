@@ -407,6 +407,26 @@ revisits it automatically. It gets reconciled at the mandatory checkpoint in
 applied; fold in what's outstanding; retire or trim the file), not on an
 ad-hoc basis.
 
+### Never edit another phase's row in STATUS.md's phase-index table
+
+Two concurrent-phase sessions collided on this twice in one afternoon
+(2026-09-11, Phase 6 and Phase 7 worked from separate clones) — not from both
+touching the table, but from one phase's PR adding a cross-reference sentence
+*inside the other phase's own row* (Phase 6's fix noting it closed a
+follow-up tracked in Phase 7's file), landing on the exact line the other
+branch was independently rewriting at the same time. Each row is one
+unbroken line, so any edit inside it collides with any other edit inside it,
+no matter how unrelated the two changes actually are.
+
+If a discovery in one phase is worth mentioning from another phase's
+perspective, put the reference in *your own* row (or your own phase file) and
+link to the other phase's file — never add or edit text inside another
+phase's row, even a short parenthetical, even when it's true and relevant.
+The other phase's own session updates its own row when it's ready. This
+mirrors "Scope edits to what actually changed" above; STATUS.md's table just
+turns the cost of ignoring it into a merge conflict instead of an unrelated
+diff.
+
 ### Treat architecture-level changes as a deliberate event
 
 If something discovered mid-project means a genuine change to the architecture

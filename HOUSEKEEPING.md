@@ -31,7 +31,13 @@ Complete a thorough review of progress and confirm each of the following.
 4. `STATUS.md` names the phase actually being started next, and its phase-index
    table reflects the phase just completed. This is the one file every session
    opens first, so a stale entry here silently misdirects every session until
-   someone catches it.
+   someone catches it. **Trim the just-completed phase's row down to a short
+   status line and a link to its `docs/phases/phase-N.md` file, and move the
+   rest of its narrative into `status-archive.md`.** `STATUS.md`'s own header
+   note already says to do this, but it does not happen unless this checkpoint
+   enforces it — an unarchived row keeps growing across the *next* phase's
+   edits too, instead of stopping at the boundary it was supposed to, and a
+   long row is more likely to collide with whatever next touches the table.
 
 5. Any project-folder scratch or pending file created under CLAUDE.md's
    Runbook-hold policy (for example `phase-N-runbook-pending.md`) is

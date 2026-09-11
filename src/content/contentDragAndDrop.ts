@@ -104,6 +104,11 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
   readonly dragMimeTypes = [CONTENT_MIME];
   readonly dropMimeTypes = [CONTENT_MIME];
 
+  /** Set once `handleDrop` has logged that `token.onCancellationRequested`
+   * is missing (finding 6.16), so a session with many broken drops logs it
+   * only once rather than on every attempt. */
+  private loggedBrokenToken = false;
+
   constructor(private readonly deps: ContentDragAndDropDeps) {}
 
   handleDrag(
@@ -216,27 +221,42 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
           token.isCancellationRequested ||
           progressToken.isCancellationRequested;
         // `token` (the tree view's own CancellationToken, passed into
-        // handleDrop by VS Code) must not be subscribed to. On VS Code 1.109,
-        // mainThreadTreeViews.ts's $handleDrop puts it in a non-final argument
-        // position, so rpcProtocol.ts's "pop a trailing cancellation token"
-        // marshalling never intercepts it — it crosses the extension-host RPC
-        // boundary as plain JSON instead, which drops MutableToken's prototype
-        // getters. The extension host receives a bare
-        // `{ _isCancelled, _emitter }` object with no `onCancellationRequested`
-        // method, so subscribing throws before any move can run (finding 6.16).
-        // `token.isCancellationRequested` above is unaffected (it reads
-        // `undefined`, harmlessly falsy) and is left in the poll in case VS
-        // Code ever fixes the marshalling; only `progressToken` — built
-        // locally in the extension host by extHostProgress.ts, so it never
-        // crosses RPC — is safe to subscribe to. This means the tree view's
-        // own cancel affordance (as opposed to the progress notification's
-        // Cancel button) cannot abort an in-flight move; that is an accepted,
-        // documented gap, not an oversight.
+        // handleDrop by VS Code) is gated rather than subscribed to
+        // unconditionally. On VS Code 1.109, mainThreadTreeViews.ts's
+        // $handleDrop puts it in a non-final argument position, so
+        // rpcProtocol.ts's "pop a trailing cancellation token" marshalling
+        // never intercepts it — it crosses the extension-host RPC boundary as
+        // plain JSON instead, which drops MutableToken's prototype getters.
+        // The extension host receives a bare `{ _isCancelled, _emitter }`
+        // object with no `onCancellationRequested` method, so subscribing
+        // unconditionally throws before any move can run (finding 6.16). The
+        // `typeof` guard below skips the subscription only when the method is
+        // genuinely missing, rather than dropping it outright — a fixed VS
+        // Code, or any future runtime that hands over a well-formed token,
+        // starts honouring the tree view's own cancel affordance again with
+        // no further change here. `progressToken` — built locally in the
+        // extension host by extHostProgress.ts, so it never crosses RPC — is
+        // always safe to subscribe to and backs the one cancellation
+        // affordance the user can rely on today regardless.
         const subs = [
           progressToken.onCancellationRequested(() => {
             controller.abort();
           }),
         ];
+        if (typeof token.onCancellationRequested === "function") {
+          subs.push(
+            token.onCancellationRequested(() => {
+              controller.abort();
+            }),
+          );
+        } else if (!this.loggedBrokenToken) {
+          this.loggedBrokenToken = true;
+          this.deps.log.debug(
+            vscode.l10n.t(
+              "SAS Content: handleDrop — the tree view's own CancellationToken has no onCancellationRequested method this session (VS Code RPC marshalling bug, finding 6.16); its cancel affordance is unavailable, the progress notification's Cancel button still works",
+            ),
+          );
+        }
         const problems: string[] = [];
         let firstMoved: ContentItem | undefined;
         try {

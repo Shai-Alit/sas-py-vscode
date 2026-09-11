@@ -1228,6 +1228,28 @@ remaining §15 gap (the top-level-folder permanent-delete confirmation) is
 unrelated to drag-and-drop — a Viya deployment-level configuration, already
 recorded as a documented, deferred known gap above — and stays open.
 
+**[PR #164](https://github.com/Shai-Alit/sas-py-vscode/pull/164) opened
+2026-09-11.** Automated review found one real issue, fixed on the branch
+before merge: the fix as first pushed dropped the `token.onCancellationRequested`
+subscription outright rather than gating it, which meant the tree view's own
+cancel affordance would stay dead forever even if VS Code fixes the
+underlying RPC bug someday — the code had no way to notice and start using a
+well-formed token again. **Fixed**: `handleDrop` now checks `typeof
+token.onCancellationRequested === "function"` and only subscribes when it is
+actually callable, logging once per controller instance (not once per drop)
+when it isn't; `progressToken` stays unconditionally subscribed to
+regardless, so today's only real cancellation affordance is unaffected
+either way. A new regression test confirms a well-formed
+`vscode.CancellationTokenSource`'s token still gets subscribed to and still
+aborts an in-flight move — the fix degrades conditionally now, rather than
+permanently removing a capability a future VS Code fix would otherwise
+restore automatically. Also folded in from that same review round: a
+long-stale `CHANGELOG.md` line claiming "moving content… [is] a later
+release," true when the SAS Content explorer first shipped but wrong since
+6e's Cut/Paste and now doubly wrong with drag-and-drop fixed — split into
+its own entry. `npm run verify`/`test:integration`/`check:docs` re-run green
+after both fixes.
+
 The stale/duplicate copy of §15–§16 this branch's merge into `main` produced
 (the same section content inserted at two different points by two diverging
 branches, which a 3-way merge does not deduplicate) was found and removed at

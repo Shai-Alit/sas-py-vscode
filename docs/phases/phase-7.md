@@ -2208,6 +2208,44 @@ and this branch has never touched `src/content/`.
 coverage 95.62%/95.54%/95.38%/95.62%, `src/data/types.ts` itself at 100% on
 all four); `npm run test:integration` green (372 passing).
 
+**[PR #163](https://github.com/Shai-Alit/sas-py-vscode/pull/163) went through
+several more review rounds before merge.** Sean's own review found one real
+gap: the quick pick's `description` fields
+(`"SAS.sd2df(...)"`/`"SAS.submit(...)"`) bypassed `vscode.l10n.t()` while the
+sibling `label`/`detail` on the same `SnippetChoice` objects didn't — fixed,
+and `npm run l10n:extract` regenerated `l10n/bundle.l10n.json` (gitignored,
+generated at build time) with the two new keys. Automated review found and
+this branch fixed three more real gaps: `CHANGELOG.md` had no entry at all for
+this PR's own feature, despite `PRODUCTION_PLAN.md`'s and `RUNBOOK.md`'s
+"every PR" gate and every sibling Phase 6/7 feature having one (added, scoped
+to this PR's own feature only — several earlier Phase 6 slices are missing
+their own entries too, left for that phase to backfill); a review-promised
+explanatory comment on `test/integration/data/drag-and-drop.test.ts`'s own
+safe cast had never actually landed (added); and no test exercised a
+multi-table drag end-to-end to confirm only the first table is ever used
+(non-blocking, folded in anyway — `handleDrag` puts every filtered table on
+the transfer, the restriction applies later on the read side). Two other
+review claims were checked and did **not** hold up: one review asserted four
+of `phase-7.md`'s own VS Code-source line citations pointed at unrelated
+code — re-verified against a fresh fetch of the exact same tag
+(`microsoft/vscode` `release/1.109`) and all four were accurate as written; a
+later review asserted "all user-facing strings [already] go through
+`vscode.l10n.t()`" in the same breath as quoting the diff that disproved it.
+Neither was acted on beyond the one confirmed l10n finding above.
+
+**Reconciled with `main` a second time, 2026-09-11** (merge `2c8bd9b`),
+picking up Phase 6's 6e post-merge fix
+([PR #164](https://github.com/Shai-Alit/sas-py-vscode/pull/164), squash
+`4b72119`) — the root cause for Phase 6's own drag-and-drop failure that this
+slice's investigation had handed off (`handleDrop`'s `CancellationToken`
+stripped over RPC). Same conflict shape in `STATUS.md`'s phase-index table,
+resolved the same way; `CHANGELOG.md` merged cleanly on its own this time.
+`npm run verify` green (1574 unit; coverage unchanged); `npm run
+test:integration` green (375 passing, the two new from PR #164).
+
+**Merged 2026-09-11 as squash `7b32db0`. Phase 7 is fully complete — all of
+7a–7d merged.**
+
 ---
 
 ## Probe findings

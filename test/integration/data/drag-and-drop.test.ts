@@ -28,6 +28,13 @@ const classTable: TableItem = {
   links: [],
 };
 
+const carsTable: TableItem = {
+  kind: "table",
+  libref: "SASHELP",
+  name: "CARS",
+  links: [],
+};
+
 const sashelpLibrary: LibraryItem = {
   kind: "library",
   name: "SASHELP",
@@ -194,6 +201,32 @@ describe("SAS Libraries drag-and-drop (7d)", () => {
     assert.match(text, /create view work\.\$\{1:class_view\} as/);
     assert.match(text, /select \* from SASHELP\.CLASS/);
     assert.match(text, /SAS\.sd2df\("work\.\$1"\)/);
+    tokenSource.dispose();
+  });
+
+  it("uses only the first table when several were dragged together", async () => {
+    // `handleDrag` puts every filtered table on the transfer (7a's tree has
+    // no `canSelectMany`, but nothing stops a future caller passing more than
+    // one) — the "only the first" restriction is applied on the read side,
+    // in `provideDocumentDropEdits`, matching upstream's own `source?.[0]`.
+    // Nothing before this test exercised that end to end with a real
+    // multi-table payload.
+    const controller = new SasLibraryDragAndDropController({
+      showQuickPick: (items) =>
+        Promise.resolve(items.find((i) => i.snippetKind === "sd2df")),
+    });
+    const document = await pythonDocument("");
+    const tokenSource = new vscode.CancellationTokenSource();
+
+    const edit = await controller.provideDocumentDropEdits(
+      document,
+      new vscode.Position(0, 0),
+      transferWith([classTable, carsTable]),
+      tokenSource.token,
+    );
+
+    assert.ok(edit);
+    assert.equal(edit.insertText, 'class_df = SAS.sd2df("SASHELP.CLASS")');
     tokenSource.dispose();
   });
 

@@ -28,9 +28,10 @@
  *   Content pseudo-root renders. `type` is `folder`; `contentType` and `uri`
  *   are **absent** (finding 98), so the `self` link is again the only address.
  * - **A member** — an entry of a folder's `members` collection. `type` is
- *   always `"child"`; `contentType` is `folder` or `file` and is what actually
- *   says whether the tree can descend; `uri` points at the underlying resource
- *   (`/folders/folders/{id}` or `/files/files/{id}`).
+ *   `"child"` for an ordinary member, `"reference"` for a My Favorites entry
+ *   (finding 6.13); either way `contentType` is `folder` or `file` and is what
+ *   actually says whether the tree can descend, and `uri` points at the
+ *   underlying resource (`/folders/folders/{id}` or `/files/files/{id}`).
  */
 
 import { readLinks, type Link } from "../wire/links";
@@ -49,16 +50,17 @@ export interface ContentItem {
   readonly name: string;
   /**
    * The service `type`. `folder` / `myFolder` / `favoritesFolder` /
-   * `trashFolder` for a folder-shaped thing read directly; `"child"` for a
-   * member record, where {@link ContentItem.contentType} carries the real
-   * kind. `RootFolder` is this extension's own synthetic value for the SAS
-   * Content pseudo-root — see {@link SAS_CONTENT_ROOT}.
+   * `trashFolder` for a folder-shaped thing read directly; `"child"` for an
+   * ordinary member record and `"reference"` for a My Favorites entry (finding
+   * 6.13), both of which carry the real kind in {@link ContentItem.contentType}.
+   * `RootFolder` is this extension's own synthetic value for the SAS Content
+   * pseudo-root — see {@link SAS_CONTENT_ROOT}.
    */
   readonly type?: string | undefined;
   /**
-   * A member record's underlying kind — `folder` or `file` (finding 99). Only
-   * a member (`type: "child"`) carries it; absent on every folder read
-   * directly.
+   * A member record's underlying kind — `folder` or `file` (finding 99). A
+   * member carries it (`type: "child"` or `"reference"`); absent on every
+   * folder read directly.
    */
   readonly contentType?: string | undefined;
   /**
@@ -90,6 +92,21 @@ export interface ContentItem {
    * every once-moved member carries that link too.
    */
   readonly inRecycleBin?: boolean | undefined;
+  /**
+   * Set by {@link ContentAdapter.getChildItems} (with `markFavorites`) — **not**
+   * a wire field. `true` when this item's underlying resource is referenced from
+   * the My Favorites delegate, so `src/content/presentation.ts` offers "Remove
+   * from My Favorites" rather than "Add". 6d-i.
+   */
+  readonly isInMyFavorites?: boolean | undefined;
+  /**
+   * The href of the favourite *reference* member record to `DELETE` to
+   * unfavourite this item — set alongside {@link ContentItem.isInMyFavorites}.
+   * A reference member's own `deleteResource` link points at the underlying
+   * file, so removing a favourite must use this (its `delete`/`self` link),
+   * never `deleteResource` (finding 6.13).
+   */
+  readonly favoriteUri?: string | undefined;
   /** The Folders service's own count of members. Not read for any UI
    * decision — finding 80 recorded it disagreeing with the filtered
    * collection — kept only so a future slice need not re-add it. */
@@ -253,11 +270,19 @@ export const FOLDER_CONTENT_TYPE = "folder";
 export const FILE_CONTENT_TYPE = "file";
 
 /**
- * The effective type name of an item — its `contentType` if it is a member
- * record (`type: "child"`), otherwise its `type`. Upstream's `getTypeName`.
+ * The effective type name of an item — its `contentType` when it is a member
+ * record, otherwise its `type`. Upstream's `getTypeName`.
+ *
+ * A member carries its real kind in `contentType` and a placeholder in `type`:
+ * `"child"` for an ordinary member, `"reference"` for a My Favorites entry
+ * (finding 6.13). Both must defer to `contentType`, or a favourited folder
+ * browsed under My Favorites reads as a non-navigable `"reference"` leaf and a
+ * favourited file cannot be opened.
  */
 export function typeNameOf(item: ContentItem): string | undefined {
-  return item.type === "child" ? item.contentType : item.type;
+  return item.type === "child" || item.type === "reference"
+    ? item.contentType
+    : item.type;
 }
 
 /** Whether the tree can expand this item. */
@@ -291,6 +316,19 @@ export function isDelegateFolder(item: ContentItem): boolean {
 export function isMyFolderDelegate(item: ContentItem): boolean {
   return item.type === "myFolder";
 }
+
+/** Whether an item is the "My Favorites" delegate (`@myFavorites` resolves to
+ * `type: "favoritesFolder"`, finding 97). Its own direct children are every one
+ * a favourite; a drop onto it is an add-to-favourites, not a move. 6d-i. */
+export function isFavoritesDelegate(item: ContentItem): boolean {
+  return item.type === "favoritesFolder";
+}
+
+/** The member `type` a favourite is added as — a *reference*, not a `child`:
+ * a resource can be referenced from many folders and keeps its own
+ * authorizations, where a `child` can live in exactly one folder (finding 6.13,
+ * and the Folders v7 OpenAPI). */
+export const FAVORITE_MEMBER_TYPE = "reference";
 
 /** The delegate `type` of the Recycle Bin — `@myRecycleBin` resolves to this
  * (finding 97). Its direct children are flagged {@link ContentItem.inRecycleBin}

@@ -9,6 +9,8 @@ import {
   CONTEXT_FOLDER,
   CONTEXT_MY_FOLDER,
   CONTEXT_ROOT,
+  FAVORITE_SUFFIX,
+  RECYCLED_SUFFIX,
   nodePresentationOf,
 } from "../../src/content/presentation";
 import { SAS_CONTENT_ROOT, type ContentItem } from "../../src/content/types";
@@ -30,6 +32,7 @@ describe("content/presentation nodePresentationOf", () => {
       expandable: true,
       openable: false,
       draggable: false,
+      favoriteAction: "none",
       icon: "root-folder",
       contextValue: CONTEXT_ROOT,
     });
@@ -74,6 +77,7 @@ describe("content/presentation nodePresentationOf", () => {
       expandable: true,
       openable: false,
       draggable: false,
+      favoriteAction: "add",
       icon: "folder",
       contextValue: CONTEXT_FOLDER,
     });
@@ -97,6 +101,7 @@ describe("content/presentation nodePresentationOf", () => {
       expandable: false,
       openable: true,
       draggable: true,
+      favoriteAction: "add",
       icon: "file",
       contextValue: CONTEXT_FILE,
     });
@@ -147,5 +152,99 @@ describe("content/presentation nodePresentationOf", () => {
       false,
     );
     assert.equal(nodePresentationOf(item({ type: "folder" })).openable, false);
+  });
+
+  describe("a My Favorites 'reference' member (6d-i)", () => {
+    it("presents a favourited folder as an expandable folder, marked Remove", () => {
+      const p = nodePresentationOf(
+        item({
+          type: "reference",
+          contentType: "folder",
+          name: "reports",
+          isInMyFavorites: true,
+        }),
+      );
+      assert.equal(p.expandable, true);
+      assert.equal(p.icon, "folder");
+      assert.equal(p.favoriteAction, "remove");
+      assert.equal(p.contextValue, `${CONTEXT_FOLDER}${FAVORITE_SUFFIX}`);
+    });
+
+    it("presents a favourited file as an openable leaf, marked Remove", () => {
+      const p = nodePresentationOf(
+        item({
+          type: "reference",
+          contentType: "file",
+          name: "analysis.py",
+          isInMyFavorites: true,
+        }),
+      );
+      assert.equal(p.expandable, false);
+      assert.equal(p.openable, true);
+      assert.equal(p.icon, "file");
+      assert.equal(p.contextValue, `${CONTEXT_FILE}${FAVORITE_SUFFIX}`);
+    });
+  });
+
+  describe("favouritability (6d-i)", () => {
+    it("offers Add on a folder or leaf that is not a favourite", () => {
+      for (const it of [
+        item({ type: "folder" }),
+        item({ type: "child", contentType: "folder" }),
+        item({ type: "child", contentType: "file" }),
+        item({ type: "child", contentType: "dataFlow" }),
+      ]) {
+        const p = nodePresentationOf(it);
+        assert.equal(p.favoriteAction, "add");
+        assert.ok(!p.contextValue.endsWith(FAVORITE_SUFFIX));
+      }
+    });
+
+    it("offers Remove — and suffixes the contextValue — once favourited", () => {
+      const file = nodePresentationOf(
+        item({ type: "child", contentType: "file", isInMyFavorites: true }),
+      );
+      assert.equal(file.favoriteAction, "remove");
+      assert.equal(file.contextValue, `${CONTEXT_FILE}${FAVORITE_SUFFIX}`);
+
+      const folder = nodePresentationOf(
+        item({ type: "folder", isInMyFavorites: true }),
+      );
+      assert.equal(folder.favoriteAction, "remove");
+      assert.equal(folder.contextValue, `${CONTEXT_FOLDER}${FAVORITE_SUFFIX}`);
+    });
+
+    it("offers no favourite action on the root, the delegates, or My Folder", () => {
+      for (const it of [
+        SAS_CONTENT_ROOT,
+        item({ type: "myFolder" }),
+        item({ type: "favoritesFolder" }),
+        item({ type: "trashFolder" }),
+      ]) {
+        assert.equal(nodePresentationOf(it).favoriteAction, "none");
+      }
+    });
+
+    it("suffixes a Recycle Bin item .recycled and offers it no favourite action", () => {
+      const file = nodePresentationOf(
+        item({
+          type: "child",
+          contentType: "file",
+          inRecycleBin: true,
+          // even if some earlier pass stamped it, a bin item is never favourite
+          isInMyFavorites: true,
+        }),
+      );
+      assert.equal(file.favoriteAction, "none");
+      assert.equal(file.contextValue, `${CONTEXT_FILE}${RECYCLED_SUFFIX}`);
+
+      const folder = nodePresentationOf(
+        item({ type: "child", contentType: "folder", inRecycleBin: true }),
+      );
+      assert.equal(folder.favoriteAction, "none");
+      assert.equal(folder.contextValue, `${CONTEXT_FOLDER}${RECYCLED_SUFFIX}`);
+      // the two state suffixes never co-occur
+      assert.ok(!folder.contextValue.includes(FAVORITE_SUFFIX));
+    });
   });
 });

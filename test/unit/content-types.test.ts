@@ -5,7 +5,9 @@ import assert from "node:assert/strict";
 
 import {
   DELEGATE_FOLDERS,
+  FAVORITE_MEMBER_TYPE,
   isContainer,
+  isFavoritesDelegate,
   isSasContentRoot,
   memberTypeFilter,
   readContentItem,
@@ -40,6 +42,17 @@ describe("content/types", () => {
       assert.equal(isContainer(fileMember), false);
     });
 
+    it("reads a My Favorites 'reference' member's kind from contentType too (6d-i)", () => {
+      // Items browsed inside My Favorites carry `type: "reference"`, not
+      // `"child"`; the real kind is still in `contentType`.
+      const favFolder = item({ type: "reference", contentType: "folder" });
+      const favFile = item({ type: "reference", contentType: "file" });
+      assert.equal(typeNameOf(favFolder), "folder");
+      assert.equal(typeNameOf(favFile), "file");
+      assert.equal(isContainer(favFolder), true);
+      assert.equal(isContainer(favFile), false);
+    });
+
     it("treats every folder-shaped type read directly as a container", () => {
       for (const type of [
         "folder",
@@ -63,6 +76,7 @@ describe("content/types", () => {
         isContainer(item({ type: "child", contentType: "file" })),
         false,
       );
+      // a member with no contentType at all — neither kind resolves
       assert.equal(isContainer(item({ type: "reference" })), false);
       assert.equal(isContainer(item({})), false);
     });
@@ -217,5 +231,22 @@ describe("content/types", () => {
       "@sasRoot",
       "@myRecycleBin",
     ]);
+  });
+
+  describe("isFavoritesDelegate (6d-i)", () => {
+    it("is true only for the favoritesFolder type", () => {
+      assert.equal(
+        isFavoritesDelegate(item({ type: "favoritesFolder" })),
+        true,
+      );
+      for (const type of ["myFolder", "trashFolder", "folder", "child"]) {
+        assert.equal(isFavoritesDelegate(item({ type })), false);
+      }
+      assert.equal(isFavoritesDelegate(SAS_CONTENT_ROOT), false);
+    });
+
+    it("adds a favourite as a reference, not a child", () => {
+      assert.equal(FAVORITE_MEMBER_TYPE, "reference");
+    });
   });
 });

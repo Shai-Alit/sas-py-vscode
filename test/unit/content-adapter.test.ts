@@ -9,9 +9,11 @@ import {
 } from "../../src/content/adapter";
 import { type ContentRequest } from "../../src/content/client";
 import {
+  isContainer,
   isSasContentRoot,
   readContentItem,
   SAS_CONTENT_ROOT,
+  typeNameOf,
   type ContentItem,
 } from "../../src/content/types";
 import { readJsonFixture } from "../helpers/fixtures";
@@ -290,6 +292,168 @@ describe("content/adapter", () => {
       const mine = await adapter.getChildItems(myFolder);
       assert.ok(mine.ok);
       assert.ok(mine.value.every((c) => c.inRecycleBin === undefined));
+    });
+
+    describe("markFavorites (6d-i)", () => {
+      const FAV_MEMBERS = "/folders/folders/@myFavorites/members";
+      const FAV_RECORD =
+        "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members/eeeeeeee-0000-4000-8000-0000000000f1";
+
+      it("stamps isInMyFavorites + favoriteUri on a child referenced from My Favorites", async () => {
+        const { adapter, calls } = adapterWith([
+          ...delegateRoutes,
+          {
+            when: `${MY_FOLDER}/members`,
+            reply: contentFixture("my-folder-members.json"),
+          },
+          {
+            when: FAV_MEMBERS,
+            reply: contentFixture("favorites-members.json"),
+          },
+        ]);
+        const roots = await adapter.getRootItems();
+        assert.ok(roots.ok);
+        const myFolder = roots.value.find((i) => i.name === "My Folder");
+        assert.ok(myFolder);
+
+        const result = await adapter.getChildItems(myFolder, undefined, {
+          markFavorites: true,
+        });
+        assert.ok(result.ok);
+        const analysis = result.value.find((i) => i.name === "analysis.py");
+        assert.ok(analysis);
+        assert.equal(analysis.isInMyFavorites, true);
+        assert.equal(analysis.favoriteUri, FAV_RECORD);
+        // Every other child is left unmarked.
+        for (const other of result.value.filter((i) => i !== analysis)) {
+          assert.equal(other.isInMyFavorites, undefined);
+          assert.equal(other.favoriteUri, undefined);
+        }
+        // The favourites listing was filtered to the tree's member types.
+        const favCall = calls.find((c) => c.href.startsWith(FAV_MEMBERS));
+        assert.match(favCall?.href ?? "", /filter=in\(contentType,/);
+      });
+
+      it("leaves every child unmarked when the favourites lookup fails", async () => {
+        const { adapter } = adapterWith([
+          ...delegateRoutes,
+          {
+            when: `${MY_FOLDER}/members`,
+            reply: contentFixture("my-folder-members.json"),
+          },
+          {
+            when: FAV_MEMBERS,
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 500 },
+            }),
+          },
+        ]);
+        const roots = await adapter.getRootItems();
+        assert.ok(roots.ok);
+        const myFolder = roots.value.find((i) => i.name === "My Folder");
+        assert.ok(myFolder);
+
+        const result = await adapter.getChildItems(myFolder, undefined, {
+          markFavorites: true,
+        });
+        assert.ok(result.ok); // the listing itself still succeeds
+        assert.ok(result.value.every((i) => i.isInMyFavorites === undefined));
+      });
+
+      it("does not fetch the favourites listing unless asked", async () => {
+        const { adapter, calls } = adapterWith([
+          ...delegateRoutes,
+          {
+            when: `${MY_FOLDER}/members`,
+            reply: contentFixture("my-folder-members.json"),
+          },
+        ]);
+        const roots = await adapter.getRootItems();
+        assert.ok(roots.ok);
+        const myFolder = roots.value.find((i) => i.name === "My Folder");
+        assert.ok(myFolder);
+        await adapter.getChildItems(myFolder); // no opts
+        assert.equal(
+          calls.some((c) => c.href.startsWith(FAV_MEMBERS)),
+          false,
+        );
+      });
+
+      it("marks every child of My Favorites itself, keyed on its delete link", async () => {
+        const { adapter } = adapterWith([
+          ...delegateRoutes,
+          {
+            when: "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members",
+            reply: contentFixture("favorites-members.json"),
+          },
+        ]);
+        const roots = await adapter.getRootItems();
+        assert.ok(roots.ok);
+        const favorites = roots.value.find((i) => i.name === "My Favorites");
+        assert.ok(favorites);
+
+        const result = await adapter.getChildItems(favorites, undefined, {
+          markFavorites: true,
+        });
+        assert.ok(result.ok);
+        assert.ok(result.value.length > 0);
+        assert.ok(result.value.every((c) => c.isInMyFavorites === true));
+
+        // The wire type of a favourite is `"reference"`, not `"child"`; the real
+        // kind is still in `contentType`, so a favourited folder browsed here
+        // stays navigable and a favourited file stays openable — and the record
+        // to remove is the child's own `delete` link, not `deleteResource`.
+        const folder = result.value.find((c) => c.name === "reports");
+        const file = result.value.find((c) => c.name === "analysis.py");
+        assert.ok(folder && file);
+        assert.equal(file.favoriteUri, FAV_RECORD);
+        assert.equal(folder.type, "reference");
+        assert.equal(isContainer(folder), true);
+        assert.equal(typeNameOf(file), "file");
+        assert.equal(isContainer(file), false);
+      });
+
+      it("falls back to the self link for a favourite child with no delete link", async () => {
+        const { adapter } = adapterWith([
+          ...delegateRoutes,
+          {
+            when: "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members",
+            reply: contentOk({
+              version: 2,
+              count: 1,
+              items: [
+                {
+                  id: "ref-only-self",
+                  name: "pinned.py",
+                  type: "reference",
+                  contentType: "file",
+                  uri: "/files/files/self-only",
+                  links: [
+                    {
+                      method: "GET",
+                      rel: "self",
+                      href: "/folders/folders/fav/members/ref-only-self",
+                    },
+                  ],
+                },
+              ],
+            }),
+          },
+        ]);
+        const roots = await adapter.getRootItems();
+        assert.ok(roots.ok);
+        const favorites = roots.value.find((i) => i.name === "My Favorites");
+        assert.ok(favorites);
+        const result = await adapter.getChildItems(favorites, undefined, {
+          markFavorites: true,
+        });
+        assert.ok(result.ok);
+        assert.equal(
+          result.value[0]?.favoriteUri,
+          "/folders/folders/fav/members/ref-only-self",
+        );
+      });
     });
   });
 
@@ -1750,6 +1914,230 @@ describe("content/adapter", () => {
           calls.filter((c) => c.method === "DELETE").map((c) => c.href),
           ["/folders/folders/sf", `${PARENT}/members/sf`],
         );
+      });
+    });
+  });
+
+  describe("addToFavorites / removeFromFavorites (finding 6.13)", () => {
+    const FAV_SELF = "/folders/folders/@myFavorites";
+    const FAV_ADD =
+      "/folders/folders/aaaaaaaa-0000-4000-8000-000000000002/members";
+
+    describe("addToFavorites", () => {
+      it("POSTs a reference member to the My Favorites addMember link", async () => {
+        const member = readContentItemFixture("member-created.json");
+        let body: Record<string, unknown> | undefined;
+        const { adapter, calls } = adapterWith([
+          { when: FAV_SELF, reply: contentFixture("delegate-favorites.json") },
+          {
+            when: (href, method) => href === FAV_ADD && method === "POST",
+            reply: (request) => {
+              body = request.jsonBody as Record<string, unknown>;
+              return contentOk(
+                { id: "ref", name: member.name, links: [] },
+                {
+                  status: 201,
+                },
+              );
+            },
+          },
+        ]);
+
+        const result = await adapter.addToFavorites(member);
+        assert.ok(result.ok);
+        assert.ok(body);
+        assert.equal(body.type, "reference");
+        assert.equal(body.uri, member.uri);
+        assert.equal(body.name, member.name);
+        assert.equal(body.contentType, member.contentType);
+        assert.deepEqual(
+          calls.map((c) => `${c.method} ${c.href}`),
+          [`GET ${FAV_SELF}`, `POST ${FAV_ADD}`],
+        );
+      });
+
+      it("omits contentType when the item has none (a root-listing folder)", async () => {
+        const folder: ContentItem = {
+          id: "f",
+          name: "Shared",
+          type: "folder",
+          links: [{ rel: "self", href: "/folders/folders/f" }],
+        };
+        let body: Record<string, unknown> | undefined;
+        const { adapter } = adapterWith([
+          { when: FAV_SELF, reply: contentFixture("delegate-favorites.json") },
+          {
+            when: (href, method) => href === FAV_ADD && method === "POST",
+            reply: (request) => {
+              body = request.jsonBody as Record<string, unknown>;
+              return contentOk(
+                { id: "ref", name: "Shared", links: [] },
+                {
+                  status: 201,
+                },
+              );
+            },
+          },
+        ]);
+        const result = await adapter.addToFavorites(folder);
+        assert.ok(result.ok);
+        assert.ok(body);
+        assert.equal("contentType" in body, false);
+        assert.equal(body.uri, "/folders/folders/f");
+      });
+
+      it("re-fetches the My Favorites folder on every call — never cached", async () => {
+        // `@myFavorites` resolves per account; one ContentAdapter is reused
+        // across profile switches on an endpoint, so a cached href would let one
+        // account's addMember land in another's favourites (PR review, blocking).
+        const member = readContentItemFixture("member-created.json");
+        let favGets = 0;
+        const { adapter } = adapterWith([
+          {
+            when: FAV_SELF,
+            reply: () => {
+              favGets += 1;
+              return contentFixture("delegate-favorites.json");
+            },
+          },
+          {
+            when: (href, method) => href === FAV_ADD && method === "POST",
+            reply: contentOk(
+              { id: "r", name: "x", links: [] },
+              { status: 201 },
+            ),
+          },
+        ]);
+
+        assert.ok((await adapter.addToFavorites(member)).ok);
+        assert.ok((await adapter.addToFavorites(member)).ok);
+        assert.ok((await adapter.addToFavorites(member)).ok);
+        assert.equal(favGets, 3);
+      });
+
+      it("reports link-missing when the item has no resolvable resource href", async () => {
+        const { adapter } = adapterWith([]);
+        const result = await adapter.addToFavorites({
+          id: "x",
+          name: "orphan",
+          links: [],
+        });
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+      });
+
+      it("reports link-missing when My Favorites carries no addMember link", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: FAV_SELF,
+            reply: contentOk({
+              id: "fav",
+              name: "My Favorites",
+              type: "favoritesFolder",
+              links: [{ rel: "self", href: FAV_SELF }],
+            }),
+          },
+        ]);
+        const result = await adapter.addToFavorites(
+          readContentItemFixture("member-created.json"),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(result.problem.rel, "addMember");
+      });
+
+      it("reports response-malformed when the My Favorites body is not a folder", async () => {
+        const { adapter } = adapterWith([
+          { when: FAV_SELF, reply: contentOk({ not: "a folder" }) },
+        ]);
+        const result = await adapter.addToFavorites(
+          readContentItemFixture("member-created.json"),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("passes a POST failure straight through", async () => {
+        const { adapter } = adapterWith([
+          { when: FAV_SELF, reply: contentFixture("delegate-favorites.json") },
+          {
+            when: (href, method) => href === FAV_ADD && method === "POST",
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 409 },
+            }),
+          },
+        ]);
+        const result = await adapter.addToFavorites(
+          readContentItemFixture("member-created.json"),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+    });
+
+    describe("removeFromFavorites", () => {
+      const RECORD = "/folders/folders/fav/members/ref-1";
+
+      it("DELETEs the favoriteUri record, not the underlying resource", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: (href, method) => href === RECORD && method === "DELETE",
+            reply: contentNoBody(),
+          },
+        ]);
+        const item: ContentItem = {
+          id: "m",
+          name: "analysis.py",
+          type: "child",
+          contentType: "file",
+          uri: "/files/files/a1",
+          favoriteUri: RECORD,
+          links: [
+            {
+              rel: "deleteResource",
+              href: "/files/files/a1",
+              method: "DELETE",
+            },
+          ],
+        };
+        const result = await adapter.removeFromFavorites(item);
+        assert.ok(result.ok);
+        assert.deepEqual(
+          calls.map((c) => `${c.method} ${c.href}`),
+          [`DELETE ${RECORD}`],
+        );
+      });
+
+      it("reports link-missing when the item carries no favoriteUri", async () => {
+        const { adapter } = adapterWith([]);
+        const result = await adapter.removeFromFavorites({
+          id: "m",
+          name: "x",
+          links: [],
+        });
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+      });
+
+      it("passes a DELETE failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) => href === RECORD && method === "DELETE",
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 404 },
+            }),
+          },
+        ]);
+        const result = await adapter.removeFromFavorites({
+          id: "m",
+          name: "x",
+          favoriteUri: RECORD,
+          links: [],
+        });
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
       });
     });
   });

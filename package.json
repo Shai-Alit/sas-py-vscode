@@ -199,6 +199,18 @@
         "icon": "$(trash)"
       },
       {
+        "command": "pythonOnViya.addContentToFavorites",
+        "title": "%command.addContentToFavorites.title%",
+        "category": "%extension.category%",
+        "icon": "$(star-empty)"
+      },
+      {
+        "command": "pythonOnViya.removeContentFromFavorites",
+        "title": "%command.removeContentFromFavorites.title%",
+        "category": "%extension.category%",
+        "icon": "$(star-full)"
+      },
+      {
         "command": "pythonOnViya.openTable",
         "title": "%command.openTable.title%",
         "category": "%extension.category%"
@@ -273,6 +285,14 @@
           "when": "false"
         },
         {
+          "command": "pythonOnViya.addContentToFavorites",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.removeContentFromFavorites",
+          "when": "false"
+        },
+        {
           "command": "pythonOnViya.openTable",
           "when": "false"
         }
@@ -292,22 +312,32 @@
       "view/item/context": [
         {
           "command": "pythonOnViya.createContentFolder",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder) && !listMultiSelection",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
           "group": "1_new@1"
         },
         {
           "command": "pythonOnViya.createContentFile",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:myFolder) && !listMultiSelection",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
           "group": "1_new@2"
         },
         {
+          "command": "pythonOnViya.addContentToFavorites",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)$/ && !listMultiSelection",
+          "group": "5_favorites@1"
+        },
+        {
+          "command": "pythonOnViya.removeContentFromFavorites",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)\\.fav$/ && !listMultiSelection",
+          "group": "5_favorites@1"
+        },
+        {
           "command": "pythonOnViya.renameContentItem",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file) && !listMultiSelection",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ && !listMultiSelection",
           "group": "7_modify@1"
         },
         {
           "command": "pythonOnViya.deleteContentItem",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem == sasContent:folder || viewItem == sasContent:file) && !listMultiSelection",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ && !listMultiSelection",
           "group": "7_modify@2"
         },
         {

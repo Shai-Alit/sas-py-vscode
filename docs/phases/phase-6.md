@@ -627,26 +627,125 @@ landed while #154 was in review.
   (scrubbed `application/vnd.sas.content.folder.ancestor+json` body); new
   `contentNoBody()` test helper for the `204`.
 
-☐ **6d — Favourites and recycle bin.**
+☐ **6d — Favourites and recycle bin.** Split into two sub-slices (Sean,
+2026-09-10), mirroring the 6c-i/ii/iii pattern: **6d-i** favourites (add / remove
+/ the `isInMyFavorites` marker), **6d-ii** the recycle bin (recycle / restore /
+empty-bin / the read-only `sasContentReadOnly` scheme). The read-only probe pass
+for both ran 2026-09-10 (findings 6.13–6.15, `verde`-only — the `innov` token had
+expired again, the same gap findings 6.11/6.12 hit); Sean approved a scoped
+mutating probe against a throwaway `.py` under My Folder, torn down under a
+`trap`.
 
-- ☐ Add/remove favourites via the `@myFavorites` delegate folder's
-  `addMember`/`delete` links.
-- ☐ Recycle/restore via move-to-`@myRecycleBin` (matching upstream's
-  `moveItem`-based `recycleItem`) — **and** a probe of the `RecycleResource`
-  `PATCH` relation Finding 78 turned up on the Folders service root, which
-  upstream's own client never uses. Worth checking whether it is a simpler,
-  more direct recycle primitive than the move-based one before committing
-  to porting the move-based approach unexamined.
-- ☐ Follow-up probe for Finding 80 (favorites member-count/collection
-  mismatch) before trusting `memberCount` for any UI decision.
-- ☐ Follow-up probe for Finding 81 (inconsistent `previousParent`) to
-  confirm upstream's own "no link ⇒ can't restore, don't offer the command"
-  handling is the right behaviour here too, rather than a masked defect.
-- ☐ Empty-recycle-bin command.
+☐ **6d-i — Favourites.** Code-complete 2026-09-10; adversarial pass pending
+before the PR.
+
+- ☑ **`ContentAdapter.addToFavorites` / `removeFromFavorites`** (finding 6.13).
+  Add is `POST` the My Favorites folder's `addMember` link a
+  `{uri, type:"reference", name, contentType}` body — a **reference** member, not
+  a `child`. The My Favorites representation is fetched once and memoised (only
+  its `addMember` link is read; a failed fetch is not cached). Remove is `DELETE`
+  the reference member record at `item.favoriteUri` — **never** its
+  `deleteResource` link, which on a reference addresses the underlying file
+  (finding 6.13). `contentType` is omitted from the add body for a top-level
+  root-listing folder that carries none (unprobed for that one case).
+- ☑ **`getChildItems(parent, signal, { markFavorites })`** — a new opt. When set,
+  a non-favourites folder expand also `GET`s `@myFavorites/members` (one extra
+  small request) and stamps `isInMyFavorites` + `favoriteUri` on the children
+  whose underlying resource is referenced there. Best-effort and additive: a
+  favourites-service failure leaves the children unmarked rather than blanking
+  the listing. The internal callers (`deleteFolder`, `revealCreated`) pass no
+  opt and skip it. Expanding **My Favorites itself** marks every child directly
+  from its own `delete` link — no second request. Not cached, so a favourite
+  added/removed elsewhere shows on the next expand. Finding 6.13 settles
+  Finding 80: `memberCount` reads a phantom `1` against an empty collection, so
+  the members listing is the only authority. **Known tradeoff** (PR review,
+  non-blocking): toggling one favourite triggers a full-tree reload, which
+  re-issues the `@myFavorites/members` `GET` once per currently-expanded folder —
+  redundant but correct; a short-lived per-refresh cache would remove the
+  fan-out, deferred as speculative until measured to matter.
+- ☑ **`ContentItem.isInMyFavorites` / `favoriteUri`** (synthetic, stamped by
+  `getChildItems`); **`isFavoritesDelegate`** / **`FAVORITE_MEMBER_TYPE`**
+  (`"reference"`) in `types.ts`.
+- ☑ **`presentation.ts`** — a `favoriteAction: "add" | "remove" | "none"` on
+  `NodePresentation`, and **two mutually exclusive state suffixes** on the
+  `sasContent:folder` / `sasContent:file` `contextValue`: **`.fav`** for an
+  already-favourited item (menu offers Remove, not Add) and **`.recycled`** for
+  an item shown inside the Recycle Bin (`ContentItem.inRecycleBin`). This is the
+  one place the otherwise-discrete `contextValue` set carries item state, so the
+  content `when` clauses in `package.json` moved from `==` to `=~` on
+  `$`-anchored patterns (`/^sasContent:(folder|file)(\.fav)?$/`). Because every
+  such pattern is anchored, a `.recycled` item matches **none** of them —
+  create, rename, delete and add/remove-favourite are all withheld from bin
+  content (its own restore / permanent-delete actions are 6d-ii's). **This
+  incidentally tightens the 6c-i menu**, which until 6d-i offered rename/delete
+  on a Recycle Bin child — PR review finding (Codex, 2 × Major, one root cause:
+  a bin child kept a bare `sasContent:folder`/`:file` value, so the new
+  add-favourite command showed on it). The `favorite()` command handler also
+  early-outs with a message when `item.inRecycleBin === true`, in case it is
+  ever invoked programmatically.
+- ☑ **Two flat commands** `pythonOnViya.addContentToFavorites` /
+  `removeContentFromFavorites` in `contentCommands.ts` — no prompt, no confirm
+  (a one-click reversible toggle); a full tree reload after, which re-marks every
+  visible row. Hidden from the palette (`commandPalette`, `when:false`); menu
+  group `5_favorites`.
+- ☑ Tests: `content-adapter.test.ts` (`markFavorites` stamp / lookup-failure /
+  opt-in / favourites-delegate branch incl. a `reference` folder staying
+  navigable / `self`-link fallback; `addToFavorites` POST body / `contentType`
+  omission / **re-fetch-every-call** / link-missing ×2 / `response-malformed` /
+  passthrough; `removeFromFavorites` DELETE / link-missing / passthrough),
+  `content-presentation.test.ts` (favourite-action matrix; a `.recycled` bin
+  item; a `reference` folder/file browsed under My Favorites),
+  `content-types.test.ts` (`isFavoritesDelegate` / `FAVORITE_MEMBER_TYPE`;
+  `typeNameOf`/`isContainer` for a `reference` member),
+  `test/integration/content/explorer.test.ts` (command + menu wiring; the 6c-i
+  menu assertion relaxed for the `=~` form; every content `when` regex withholds
+  a `.recycled` item; the `favorite()` bin early-out). New fixture
+  `favorites-members.json`. `npm run verify` green (1506 unit; coverage 95.38
+  lines / 95.29 branches / 95.07 functions / 95.38 statements), 321 integration
+  passing; `npm run check:docs` green.
+- ☑ **[PR #157](https://github.com/Shai-Alit/sas-py-vscode/pull/157) review —
+  four findings folded in before merge.** Codex, round 1 (2 × Major, one root
+  cause): a Recycle Bin child kept a bare `sasContent:folder`/`:file`
+  `contextValue`, so the new add-favourite command showed on it → `.recycled`
+  `contextValue` suffix (above) + an `inRecycleBin` early-out in `favorite()`,
+  checked before the session since it is a fact about the clicked item. Round 2:
+  **(blocking)** `favoritesFolder()` memoised the My Favorites representation —
+  including its per-account `addMember` href — but a `ContentAdapter` is cached
+  per *endpoint* and reused across profile switches, so one account's favourites
+  could receive another's `addMember` (the 6b `sasContent:` ETag-guard bug
+  class) → memoisation dropped, `@myFavorites` re-fetched every call, matching
+  `favoriteRecordHrefs`' own policy. **(likely blocking)** `typeNameOf` /
+  `isContainer` only special-cased `type: "child"`, so a favourite browsed
+  *inside* My Favorites (wire `type: "reference"`, finding 6.13) read as a
+  non-navigable leaf — a favourited folder could not expand, a favourited file
+  could not open, both got a file icon and `sasContent:file` → `typeNameOf` now
+  defers to `contentType` for `"reference"` too. **(minor)** the `favorite()`
+  early-out had only indirect coverage → a direct integration check added.
+- ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i.** A drop onto the
+  My Favorites delegate already no-ops (`moveObjection` → `target-not-a-folder`);
+  wiring it to `addToFavorites` is upstream parity but not in the 6d punch list.
+  Revisit in 6d-ii or as a follow-up.
+
+☐ **6d-ii — Recycle bin.**
+
+- ☐ Recycle via move-to-`@myRecycleBin` and restore via move-to-`previousParent`
+  — finding 6.14: `PATCH /folders/folders/@item?childUri=…&parentFolderUri=…` and
+  the `PUT`-member form (finding 6.10's `moveItem`) are equivalent, neither needs
+  `If-Match`, and the service sets `previousParent` on recycle / drops it on
+  restore. There is **no** dedicated recycle/restore operation — the
+  `RecycleResource` relation on the Folders root is just `patchMoveFolderItem`
+  with `@myRecycleBin` pre-bound.
+- ☐ `previousParent`-gated restore — finding 6.14: every current `verde` bin
+  member carries the link (Finding 81's missing case did not reproduce), but
+  upstream's "no link ⇒ hide Restore" fallback stays as defence.
+- ☐ Empty-recycle-bin command — finding 6.15: no primitive; iterate the bin's
+  members and `DELETE` each `deleteResource` (`deleteRecursively` on the bin
+  409s on non-folder children, finding 6.8).
 - ☐ **The read-only `sasContentReadOnly` `TextDocumentContentProvider` scheme
   (moved from 6b).** Lets a recycled file's content open read-only, mirroring
   upstream's `sasContentReadOnly` pattern — it only has a caller once the
   recycle bin is browsable.
+- ☐ Recycled-item `contextValue` so the menu offers Restore, not Rename/Delete.
 
 ---
 
@@ -1122,3 +1221,87 @@ fully formed, no template — and advertises
   bulk-by-URI variant (`operationId: createBulkAncestors`, a
   `application/vnd.sas.collection+json` of `{childUri, ancestors}` entries) —
   not needed, the tree resolves one item at a time.
+
+---
+
+_Findings 6.13–6.15 ran 2026-09-10 for 6d (favourites + recycle bin), via the
+`viya-api-probe` skill, against **`verde` only** (Viya 4, LTS 2026.03) — the
+`innov` (Stable 2026.06) token in the creds file had expired (`401`), the same
+gap findings 6.11/6.12 hit. Read probes (`GET`) ran directly. The mutating probes
+(`POST` favourite, `DELETE` favourite, `PATCH`/`PUT` recycle + restore, leaf
+`DELETE`) ran against a single throwaway `.py` resource created under **My
+Folder** and torn down in the same shell under a `trap`, verified `404` after and
+the Recycle Bin confirmed back to its prior 17 members. Sean approved the
+mutating run. The documented shapes were checked first against the SAS Folders v7
+OpenAPI (`developer.sas.com`), which is not cadence-specific. **6d-i relies on
+6.13; 6.14–6.15 are recorded ahead of 6d-ii, the slice that will rely on them.**_
+
+**Finding 6.13 — favourites: add is a `reference` member `POST`, remove is a
+`DELETE` of that record; `memberCount` is unreliable (settles Finding 80).**
+`POST /folders/folders/@myFavorites/members` (the `addMember` link) with
+`{"uri":"<resource uri>","type":"reference","name":"<n>","contentType":"file_py"}`
+→ **`201`**, a full member record: `type: "reference"`, `contentType: "file"`
+(the service normalises `file_py` → `file`, keeps `typeDefName: "file_py"`),
+`uri` → the resource, `parentFolderUri` → the favourites folder. Its link set is
+an ordinary member's — `self`, `delete` (the reference record),
+`getResource`/`putResource`/**`deleteResource`** (all three the *underlying
+file*), `update`, `ancestors`, `validateRename`. `self` and `delete` carry the
+**same** href — the `/folders/folders/<favId>/members/<refId>` record — so the
+adapter's `delete ?? self` fallback is an equivalent link, not an unprobed
+guess. **Removing a favourite must use that record href, never `deleteResource`**
+— that would delete the real file. `DELETE` the record href → **`204`**; the
+underlying resource is untouched.
+- After a real reference exists, the folder's `memberCount` and its members
+  collection `count` agree (`1` / `1`). But **`memberCount` reads a phantom `1`
+  against an empty members collection** — observed both before the probe and
+  after cleanup, under every filter/`recursive`/`includeType` variant. The
+  Folders v7 OpenAPI documents `memberCount` as "The number of members in the
+  folder" with no caveat — a doc-vs-deployment disagreement. **So the members
+  listing is the only authority for favourite state; `memberCount` is never
+  keyed on for a UI decision.** This is the root-cause resolution of Finding 80
+  (a favorites `memberCount: 1` against `count: 0`).
+- A collection-item view of a favourite double-lists the `transferImport` rel
+  — harmless, noted only so a `readLinks` change does not "fix" a non-bug.
+- **Not probed:** adding a favourite that already exists (a duplicate
+  reference); favouriting a top-level root-listing folder (no `contentType` in
+  the add body — the code omits it and lets the service infer from `uri`).
+
+**Finding 6.14 — recycle and restore are one generic move; no dedicated
+operation; `previousParent` is set on recycle and cleared on restore.**
+`PATCH /folders/folders/@item?childUri=<resourceUri>&parentFolderUri=<dest>`,
+`Content-Type`/`Accept` `application/vnd.sas.content.folder.member+json`, body
+`{}` — **`200`** with the updated member record. Recycle = dest
+`/folders/folders/@myRecycleBin`; restore = dest the `previousParent` href.
+- **No `If-Match` required** on either — the OpenAPI (`patchMoveFolderItem`)
+  documents `If-Match`/`If-Unmodified-Since`; the deployment did not enforce
+  them. Doc-vs-deployment.
+- The member `id` is stable; its `self`/`update`/`delete` hrefs re-parent to
+  `/folders/folders/<binId>/members/<id>`; a **`previousParent`** link →
+  original parent appears on recycle. Restore (`PATCH` back to that href) → the
+  item is in the original folder, **gone from the bin**, and the record no
+  longer carries `previousParent`.
+- The **`PUT`-member form** (finding 6.10's `moveItem` — `GET` the record, `PUT`
+  it back with `parentFolderUri` set to the bin's **self href**) is fully
+  equivalent, `200`, same end state. So 6d-ii can reuse `ContentAdapter.moveItem`
+  for recycle (pass the bin self href) rather than a new PATCH arm; the `PATCH`
+  form is one call vs the `PUT` form's two.
+- **No dedicated recycle/restore operationId exists** in the OpenAPI. The
+  `RecycleResource` `PATCH` relation on the Folders root (Finding 78) is exactly
+  `patchMoveFolderItem` with `parentFolderUri` pre-bound to `@myRecycleBin` — not
+  a distinct primitive.
+- Every one of `verde`'s 17 current `@myRecycleBin` members carries
+  `previousParent` **and** a live `update` link (2026-09-03's Finding 81 saw 1 of
+  3 sampled missing it). The missing-link case is real but rare; upstream's "no
+  `previousParent` ⇒ don't offer Restore" fallback stays as defence.
+
+**Finding 6.15 — no empty-recycle-bin primitive; delete a recycled item via its
+`deleteResource` link.**
+`DELETE <deleteResource href>` (`/files/files/{id}` for a file) → **`204`**, and
+the bin member record vanishes with it (finding 6.8's pattern — confirmed by the
+probe teardown: `DELETE` the resource, `GET` after `404`, no leftover bin
+member). So "empty recycle bin" is: list the bin's members, `DELETE` each one's
+`deleteResource` (a folder: `deleteRecursively`/`deleteResource`), one at a time.
+`DELETE /folders/folders/@myRecycleBin?recursive=true` was **not** probed (it
+would delete Sean's real bin contents) but finding 6.8 measured
+`deleteRecursively` `409`ing on any non-folder child, so it cannot be relied on
+to empty a mixed bin regardless.

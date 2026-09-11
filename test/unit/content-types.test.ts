@@ -8,9 +8,14 @@ import {
   FAVORITE_MEMBER_TYPE,
   isContainer,
   isFavoritesDelegate,
+  isRecyclableMember,
+  isRecycleBinDelegate,
+  isRestorable,
   isSasContentRoot,
   memberTypeFilter,
+  PREVIOUS_PARENT_REL,
   readContentItem,
+  RECYCLE_BIN_DELEGATE,
   resourceHrefOf,
   sameResource,
   SAS_CONTENT_ROOT,
@@ -247,6 +252,55 @@ describe("content/types", () => {
 
     it("adds a favourite as a reference, not a child", () => {
       assert.equal(FAVORITE_MEMBER_TYPE, "reference");
+    });
+  });
+
+  describe("recycle bin (6d-ii)", () => {
+    it("recognises the Recycle Bin delegate by its trashFolder type", () => {
+      assert.equal(isRecycleBinDelegate(item({ type: "trashFolder" })), true);
+      for (const type of ["favoritesFolder", "myFolder", "folder", "child"]) {
+        assert.equal(isRecycleBinDelegate(item({ type })), false);
+      }
+      assert.equal(RECYCLE_BIN_DELEGATE, "@myRecycleBin");
+    });
+
+    it("isRecyclableMember: only a live member record, never a root folder or a bin item", () => {
+      assert.equal(
+        isRecyclableMember(item({ type: "child", contentType: "file" })),
+        true,
+      );
+      assert.equal(
+        isRecyclableMember(item({ type: "child", contentType: "folder" })),
+        true,
+      );
+      // a root-listing folder read directly — no member record to move
+      assert.equal(isRecyclableMember(item({ type: "folder" })), false);
+      // already in the bin — past recycling
+      assert.equal(
+        isRecyclableMember(
+          item({ type: "child", contentType: "file", inRecycleBin: true }),
+        ),
+        false,
+      );
+      assert.equal(isRecyclableMember(SAS_CONTENT_ROOT), false);
+    });
+
+    it("isRestorable: true only when the previousParent link is present", () => {
+      assert.equal(
+        isRestorable(
+          item({
+            links: [
+              { rel: PREVIOUS_PARENT_REL, href: "/folders/folders/home" },
+            ],
+          }),
+        ),
+        true,
+      );
+      assert.equal(
+        isRestorable(item({ links: [{ rel: "self", href: "/x" }] })),
+        false,
+      );
+      assert.equal(isRestorable(item({ links: [] })), false);
     });
   });
 });

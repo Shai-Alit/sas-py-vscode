@@ -1,0 +1,51 @@
+{
+  "creationTimeStamp": "2024-01-12T11:30:00.000Z",
+  "createdBy": "alex.researcher@example.com",
+  "modifiedTimeStamp": "2024-01-12T11:30:00.000Z",
+  "modifiedBy": "alex.researcher@example.com",
+  "version": 2,
+  "id": "eeee5555-0000-4000-8000-000000000b02",
+  "name": "scratch.py",
+  "added": "2026-01-12T11:35:00.200000Z",
+  "parentFolderUri": "/folders/folders/ffff0000-0000-4000-8000-0000000000d2",
+  "uri": "/files/files/eeee5555-0000-4000-8000-000000000c02",
+  "type": "child",
+  "contentType": "file",
+  "typeDefName": "file_py",
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-0000000000d2/members/eeee5555-0000-4000-8000-000000000b02",
+      "type": "application/vnd.sas.content.folder.member"
+    },
+    {
+      "method": "GET",
+      "rel": "up",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-0000000000d2",
+      "type": "application/vnd.sas.content.folder"
+    },
+    {
+      "method": "GET",
+      "rel": "getResource",
+      "href": "/files/files/eeee5555-0000-4000-8000-000000000c02",
+      "type": "application/vnd.sas.summary"
+    },
+    {
+      "method": "DELETE",
+      "rel": "deleteResource",
+      "href": "/files/files/eeee5555-0000-4000-8000-000000000c02"
+    },
+    {
+      "method": "PUT",
+      "rel": "update",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-0000000000d2/members/eeee5555-0000-4000-8000-000000000b02",
+      "type": "application/vnd.sas.content.folder.member"
+    },
+    {
+      "method": "DELETE",
+      "rel": "delete",
+      "href": "/folders/folders/ffff0000-0000-4000-8000-0000000000d2/members/eeee5555-0000-4000-8000-000000000b02"
+    }
+  ]
+}

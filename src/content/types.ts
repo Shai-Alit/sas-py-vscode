@@ -34,7 +34,7 @@
  *   underlying resource (`/folders/folders/{id}` or `/files/files/{id}`).
  */
 
-import { readLinks, type Link } from "../wire/links";
+import { findLink, readLinks, type Link } from "../wire/links";
 
 /**
  * One SAS Content item, reduced to what the read-only tree reads.
@@ -85,11 +85,16 @@ export interface ContentItem {
    */
   readonly parentFolderUri?: string | undefined;
   /**
-   * Set by {@link ContentAdapter.getChildItems} on the direct children of the
-   * Recycle Bin delegate — **not** a wire field. 6c-ii's drag-and-drop move
-   * refuses to re-parent a recycled item (that would be a restore, which is
-   * 6d's); `previousParent` cannot stand in for this, since finding 6.10 showed
-   * every once-moved member carries that link too.
+   * Set by {@link ContentAdapter.getChildItems} on every descendant of the
+   * Recycle Bin delegate — its direct children **and** everything nested
+   * inside a recycled folder, propagated one level at a time — **not** a wire
+   * field. 6c-ii's drag-and-drop move refuses to re-parent a recycled item
+   * (that would be a restore, which is 6d-ii's); `previousParent` cannot stand
+   * in for this, since finding 6.10 showed every once-moved member carries
+   * that link too. 6d-ii's read-only file view, Restore menu, and
+   * recycle-vs-permanent-delete split ({@link isRecyclableMember}) all depend
+   * on this reaching every depth, not just the bin's own children (PR #159
+   * review).
    */
   readonly inRecycleBin?: boolean | undefined;
   /**
@@ -170,6 +175,12 @@ export const DELETE_REL = "delete";
  * folder still holds a non-folder member, so the adapter empties a folder
  * itself before following this. */
 export const DELETE_RECURSIVELY_REL = "deleteRecursively";
+
+/** `GET` the folder a recycled member used to live in. Every current `verde`
+ * Recycle Bin member carries it (finding 6.14); restore is
+ * {@link ContentAdapter.moveItem} back to this href. Absent on an item that
+ * has never been recycled. */
+export const PREVIOUS_PARENT_REL = "previousParent";
 
 /** `PUT` (templated `?value={newname}&type={newtype}`) to check a rename before
  * committing it. Answers `200` with `{valid:true}` or `{valid:false,error:{…}}`
@@ -335,9 +346,38 @@ export const FAVORITE_MEMBER_TYPE = "reference";
  * by {@link ContentAdapter.getChildItems}. */
 export const TRASH_FOLDER_TYPE = "trashFolder";
 
+/** The `@name` segment that resolves the Recycle Bin delegate folder
+ * (`GET /folders/folders/@myRecycleBin`, finding 97). The move destination for
+ * a recycle is this folder's own `self` href — finding 6.14. */
+export const RECYCLE_BIN_DELEGATE = "@myRecycleBin";
+
 /** Whether an item is the Recycle Bin delegate. */
 export function isRecycleBinDelegate(item: ContentItem): boolean {
   return item.type === TRASH_FOLDER_TYPE;
+}
+
+/**
+ * Whether "Delete" on this item should move it to the Recycle Bin rather than
+ * remove it outright (6d-ii, upstream's `canRecycleResource`).
+ *
+ * Only a `type: "child"` member has a member record with the `self`/`update`
+ * link {@link ContentAdapter.moveItem} re-parents — a root-listing folder read
+ * directly (`type: "folder"`) has none, so deleting one is unavoidably
+ * permanent. An item already in the Recycle Bin
+ * ({@link ContentItem.inRecycleBin}) is past recycling too.
+ */
+export function isRecyclableMember(item: ContentItem): boolean {
+  return item.type === "child" && item.inRecycleBin !== true;
+}
+
+/**
+ * Whether a recycled item can be restored — it carries the
+ * {@link PREVIOUS_PARENT_REL} link naming where it used to live (finding 6.14).
+ * Every current `verde` bin member does; upstream keeps the negative case only
+ * as defence (Finding 81), and the tree offers no Restore without it.
+ */
+export function isRestorable(item: ContentItem): boolean {
+  return findLink(item.links, PREVIOUS_PARENT_REL) !== undefined;
 }
 
 /**

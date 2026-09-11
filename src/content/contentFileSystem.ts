@@ -51,8 +51,18 @@
  * `readDirectory` — throws `NoPermissions`. Those are 6c, driven from the tree
  * and its context menu, not the filesystem layer. `watch` is a no-op: nothing
  * polls SAS Content for external changes, and `stat` on the next open is how a
- * change is noticed. The read-only `sasContentReadOnly` scheme upstream uses
- * for recycle-bin content is 6d, with the rest of the recycle bin.
+ * change is noticed.
+ *
+ * ## The read-only recycle-bin view (6d-ii)
+ *
+ * `src/content/contentExplorer.ts` registers this same provider a second time
+ * under the `sasContentReadOnly:` scheme with `isReadonly: true`, and
+ * `contentTree.ts` points a recycled file leaf's `vscode.open` at that scheme.
+ * The editor then blocks edits, so `writeFile` is never reached; `stat` and
+ * `readFile` work unchanged because {@link resolve} keys off the URI query, not
+ * the scheme. Mirrors upstream's `sasContentReadOnly` `TextDocumentContentProvider`
+ * without a second class — a read-only `FileSystemProvider` registration gives a
+ * real `stat` (size, mtime) and byte-faithful `readFile` for free.
  */
 
 import * as vscode from "vscode";

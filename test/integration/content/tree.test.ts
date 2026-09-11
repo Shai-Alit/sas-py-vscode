@@ -125,6 +125,32 @@ describe("SasContentTreeProvider", () => {
     provider.dispose();
   });
 
+  it("opens a recycled file leaf under the read-only sasContentReadOnly scheme (6d-ii)", () => {
+    const { provider } = makeProvider(() => adapterReturning(okResult([])));
+    const node = provider.getTreeItem(
+      item({
+        id: "f",
+        name: "scratch.py",
+        type: "child",
+        contentType: "file",
+        uri: "/files/files/eeeeeeee-0000-4000-8000-000000000002",
+        inRecycleBin: true,
+      }),
+    );
+    assert.ok(node.command);
+    assert.equal(node.command.command, "vscode.open");
+    const openArg: unknown = (node.command.arguments ?? [])[0];
+    assert.ok(openArg instanceof vscode.Uri);
+    assert.equal(openArg.scheme, "sasContentReadOnly");
+    // the query still round-trips the same way the editable scheme does
+    assert.deepEqual(parseContentUri(openArg.query), {
+      resourceHref: "/files/files/eeeeeeee-0000-4000-8000-000000000002",
+      deploymentRoot: ENDPOINT,
+    });
+    assert.equal(node.resourceUri?.toString(), openArg.toString());
+    provider.dispose();
+  });
+
   it("leaves a file member with no resolvable href inert", () => {
     const { provider } = makeProvider(() => adapterReturning(okResult([])));
     const node = provider.getTreeItem(

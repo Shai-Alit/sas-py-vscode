@@ -4,7 +4,9 @@
 import assert from "node:assert/strict";
 
 import {
+  CONTENT_READONLY_SCHEME,
   CONTENT_SCHEME,
+  contentReadOnlyUriString,
   contentUriString,
   parseContentUri,
 } from "../../src/content/uri";
@@ -57,6 +59,28 @@ describe("content/uri", () => {
       .slice(1)
       .join("?");
     assert.equal(parseContentUri(query)?.deploymentRoot, root);
+  });
+
+  it("builds the read-only variant under the sasContentReadOnly scheme (6d-ii)", () => {
+    assert.equal(
+      contentReadOnlyUriString("scratch.py", HREF, ROOT),
+      `${CONTENT_READONLY_SCHEME}:/scratch.py?id=${HREF}&r=${encodeURIComponent(ROOT)}`,
+    );
+    // same query, so parseContentUri round-trips it too
+    const query = contentReadOnlyUriString("x.py", HREF, ROOT)
+      .split("?")
+      .slice(1)
+      .join("?");
+    assert.deepEqual(parseContentUri(query), {
+      resourceHref: HREF,
+      deploymentRoot: ROOT,
+    });
+    // and it encodes the name the same way
+    assert.ok(
+      contentReadOnlyUriString("a#b?c.py", HREF, ROOT).startsWith(
+        `${CONTENT_READONLY_SCHEME}:/a%23b%3Fc.py?id=`,
+      ),
+    );
   });
 
   it("returns undefined unless both id and r are present and non-empty", () => {

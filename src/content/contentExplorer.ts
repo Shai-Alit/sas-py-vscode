@@ -40,7 +40,7 @@ import {
 import { SasContentFileSystemProvider } from "./contentFileSystem";
 import { SasContentTreeProvider } from "./contentTree";
 import { type ContentItem } from "./types";
-import { CONTENT_SCHEME } from "./uri";
+import { CONTENT_READONLY_SCHEME, CONTENT_SCHEME } from "./uri";
 
 /** The id of the tree view, matching `package.json`'s `contributes.views`. */
 export const CONTENT_VIEW_ID = "pythonOnViya.contentExplorer";
@@ -183,13 +183,20 @@ export function registerContentExplorer(
   context.subscriptions.push(
     provider,
     fileSystem,
-    // `sasContent:` files are editable (`isReadonly: false`); the read-only
-    // recycle-bin scheme is a separate registration in 6d. Case-sensitive
+    // `sasContent:` files are editable (`isReadonly: false`). Case-sensitive
     // because the id in the query, not the path, identifies the file.
     vscode.workspace.registerFileSystemProvider(CONTENT_SCHEME, fileSystem, {
       isCaseSensitive: true,
       isReadonly: false,
     }),
+    // 6d-ii: the same provider serves a read-only view of a recycled file. The
+    // editor blocks edits and never calls `writeFile`; `contentTree.ts` points
+    // a bin file leaf's `vscode.open` at this scheme.
+    vscode.workspace.registerFileSystemProvider(
+      CONTENT_READONLY_SCHEME,
+      fileSystem,
+      { isCaseSensitive: true, isReadonly: true },
+    ),
     view,
     vscode.commands.registerCommand(
       "pythonOnViya.refreshContentExplorer",

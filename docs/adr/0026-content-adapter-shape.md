@@ -104,11 +104,22 @@ re-encode it.
 
 ## Consequences
 
-- `src/content/` is six small `vscode`-free modules (`types`, `problems`,
-  `client`, `adapter`, `contentSession`, `presentation`) plus two thin `vscode`
-  shells (`contentTree`, `contentExplorer`), paralleling `src/compute/` — no
-  factory, no model, no `ContentSourceType` enum for a reader to trace. The
-  logic lives in the `vscode`-free modules so the unit tier reaches it; the
+- `src/content/` is one concrete adapter with no factory, no model, and no
+  `ContentSourceType` enum for a reader to trace, split into `vscode`-free
+  modules (unit-reachable) and thin `vscode` shells. At 6a-ii that was six
+  `vscode`-free modules (`types`, `problems`, `client`, `adapter`,
+  `contentSession`, `presentation`) plus two shells (`contentTree`,
+  `contentExplorer`), paralleling `src/compute/`.
+  > **Amended 2026-09-10, at the Phase 6→7/8 housekeeping checkpoint.** By the
+  > end of 6c/6d the module list had grown — `contentMove.ts` and `uri.ts`
+  > joined the `vscode`-free set, and `contentFileSystem.ts`,
+  > `contentCommands.ts`, `contentDragAndDrop.ts` and `messages.ts` joined the
+  > shells — without changing the shape this ADR decided: still one adapter,
+  > no factory, no model. The count above describes 6a-ii only; the current
+  > module list is whatever `src/content/` actually contains, not a figure
+  > copied here, the same convention `PRODUCTION_PLAN.md` §4 uses for coverage
+  > thresholds.
+  The logic lives in the `vscode`-free modules so the unit tier reaches it; the
   shells stay branch-free, the discipline
   [ADR-0021](0021-result-panel-webview.md) states for `src/webview/`.
 - A folder listing is ordered by this extension, not the server. If a future

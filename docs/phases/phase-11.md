@@ -18,6 +18,24 @@ and any localisation bundles beyond English. Individually small, collectively th
 difference between "works" and "feels like a peer of the SAS extension."
 *Slices sized when the phase is reached.*
 
+**Also carried here (added 2026-09-10, from the Phase 6→7/8 housekeeping
+checkpoint): two items deferred out of Phase 6 that never landed a home.**
+
+- **Upload/download to local disk.** `phase-6.md` and `STATUS.md` both state
+  this is "deferred to Phase 11" (decided 2026-09-10, never part of the 6a–6d
+  breakdown), but neither the plan nor the punch list here ever recorded it —
+  the deferral existed only as a sentence in the phase that deferred it. Scope
+  for a slice here: uploading a local file into a SAS Content folder and
+  downloading a SAS Content file to local disk, the two directions Phase 6's
+  `sasContent:` `FileSystemProvider` and tree explicitly did not cover.
+- **Drag a folder/file onto My Favorites.** A drop onto the My Favorites
+  delegate in the SAS Content tree already no-ops (`contentMove.ts`'s
+  `moveObjection` returns `target-not-a-folder` for it) rather than doing
+  anything; wiring it to `addToFavorites` instead is upstream parity that
+  never made either 6d slice's punch list (`phase-6.md`'s 6d-i Runbook entry).
+  Small, self-contained, no probe needed — the mutation it would call already
+  exists.
+
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,
 VS Code shows two separate rows (it only collapses profiles that produce the

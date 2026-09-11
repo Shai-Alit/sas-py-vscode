@@ -730,10 +730,12 @@ behaviour change). `npm run verify` green (1531 unit after that merge; coverage
   could not open, both got a file icon and `sasContent:file` → `typeNameOf` now
   defers to `contentType` for `"reference"` too. **(minor)** the `favorite()`
   early-out had only indirect coverage → a direct integration check added.
-- ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i.** A drop onto the
-  My Favorites delegate already no-ops (`moveObjection` → `target-not-a-folder`);
-  wiring it to `addToFavorites` is upstream parity but not in the 6d punch list.
-  Revisit in 6d-ii or as a follow-up.
+- ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i or 6d-ii.** A drop
+  onto the My Favorites delegate already no-ops (`moveObjection` →
+  `target-not-a-folder`); wiring it to `addToFavorites` is upstream parity but
+  was never in either 6d slice's punch list. Tracked in
+  [`phase-11.md`](phase-11.md) (added at the Phase 6→7/8 housekeeping
+  checkpoint, 2026-09-10) rather than left unowned here.
 
 ☑ **6d-ii — Recycle bin.** Done and merged 2026-09-11 —
 [PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159), squash
@@ -750,7 +752,9 @@ single-cadence footing as 6.11–6.15, mitigated by both primitives it is built 
 (`moveItem` finding 6.10, `deleteItem`/`deleteResource` finding 6.8) being
 already confirmed on 2026.06.
 
-**Delete is now recycle (documented-invariant change, Sean's call 2026-09-10).**
+**Delete is now recycle (documented-invariant change, Sean's call 2026-09-10;
+recorded as [ADR-0030](../adr/0030-delete-recycles-content-items.md) at the
+Phase 6→7/8 housekeeping checkpoint).**
 "Delete" on an ordinary folder/file member moves it to the Recycle Bin with no
 confirmation (Restore undoes it) — matching upstream. A permanent delete, behind
 a modal, is reached only for an item that cannot be recycled: a top-level folder

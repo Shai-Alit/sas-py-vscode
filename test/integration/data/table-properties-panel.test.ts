@@ -224,6 +224,39 @@ describe("TablePropertiesPanelManager", () => {
     assert.doesNotMatch(fake.panel.webview.html, /Student Data/);
   });
 
+  it("renders a failure message, then rethrows, when the adapter call rejects rather than answering { ok: false }", async () => {
+    // PR review, 2026-09-11 (Codex, Major): `openTable`/`getColumns` are
+    // total for every failure `LibraryAdapter` itself anticipates, but the
+    // one narrow path `dataExplorer.ts`'s own command handler already
+    // documents (`ComputeClient.send` rethrowing whatever `resolveHref`
+    // throws that is not a `ForeignLinkError`) used to leave the panel stuck
+    // on "Loading…" forever. A raw `ComputeClient` whose `send` rejects
+    // reproduces that exact shape without needing a real `resolveHref`
+    // failure.
+    const fake = fakePanel();
+    const manager = new TablePropertiesPanelManager({
+      createPanel: () => fake.panel,
+    });
+    const client: ComputeClient = {
+      send: () => Promise.reject(new Error("boom")),
+    };
+    const sessions: LibrarySessionSource = {
+      isBusy: () => false,
+      current: (): ConnectedSession => ({
+        client,
+        session: { id: SESSION_ID, state: "idle", links: [] },
+      }),
+    };
+
+    await assert.rejects(
+      manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID)),
+      /boom/,
+    );
+
+    assert.match(fake.panel.webview.html, /boom/);
+    assert.doesNotMatch(fake.panel.webview.html, /Loading/);
+  });
+
   it("reveals the existing panel and issues no new request for a table already open", async () => {
     const fake = fakePanel();
     const manager = new TablePropertiesPanelManager({

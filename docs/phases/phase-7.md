@@ -1674,6 +1674,35 @@ coverage unchanged: 95.48/95.43/95.15/95.48); `npm run test:integration`
 green (334 passing — the CSP nonce test is new); `npx tsc --noEmit` (all
 three configs) and `npx prettier --check`/`npm run lint` clean.
 
+**Second review round, same push.** Codex's automated re-review, now against
+the fix commit itself, raised one further **Major**: the deferred
+"stuck-on-Loading…-forever-if-the-adapter-rejects" note this file's own
+pre-PR write-up had accepted as a pre-existing, shared, cross-panel gap not
+this slice's job to fix — reasonable in isolation, but a second reviewer,
+seeing only this PR's own diff (not this file's own deferral reasoning),
+correctly treated introducing *new* code that reproduces a known-bad UX
+pattern as its own, in-scope defect, distinct from the separate question of
+whether to *also* patch `dataViewerPanel.ts`'s identical pre-existing
+instance. **Fixed, scoped to this slice's own file only**: `start()` now
+wraps its `openTable`/`getColumns` calls in a `try`/`catch`; a caught
+rejection renders `buildFailureHtml` (via the same `localiseDataProblem`
+path, wrapped as a `{code: "compute", problem: {code: "compute-unreachable",
+detail: messageOf(error)}}` — the identical shape `dataViewerPanel.ts`'s own
+`ensureReadTarget` already produces for an unexpected throw) and then
+rethrows, so the command handler's own `.catch`-and-log in `dataExplorer.ts`
+still fires unchanged. `dataViewerPanel.ts`'s own identical gap is
+**deliberately left untouched** — genuinely a different file, from an
+earlier phase, and patching it was never this PR's own diff; if it needs
+closing, that is its own small follow-up, not a silent scope-widening here.
+A new integration test drives a raw `ComputeClient` whose `send` rejects
+directly (the same shape a `resolveHref` throw would produce) and asserts
+both the rendered failure text and that `manager.open(...)` itself still
+rejects (so the caller's log line survives). `npm run verify` green (1519
+unit passing, coverage unchanged — `tablePropertiesPanel.ts` stays
+`.c8rc.json`-excluded); `npm run test:integration` green (335 passing, one
+more new); `npx tsc --noEmit`/`npm run lint`/`npx prettier --check` all
+clean.
+
 ☐ **7c-iii — CSV export.**
 
 - ☐ Probe the CSV mechanism directly rather than porting upstream's literal

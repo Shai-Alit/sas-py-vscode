@@ -147,29 +147,53 @@ class TablePropertiesPanel implements vscode.Disposable {
       }),
     );
 
-    const opened = await this.adapter.openTable(
-      this.table,
-      this.controller.signal,
-    );
-    if (!opened.ok) {
-      this.render(
-        buildFailureHtml(this.table, localiseDataProblem(opened.problem)),
+    // PR review, 2026-09-11 (Codex, Major): `openTable`/`getColumns` are
+    // total for every failure they anticipate (a `DataResult`, never a
+    // rejection) — *except* the one narrow path `dataExplorer.ts`'s own
+    // command handler already documents: `ComputeClient.send` rethrows
+    // whatever `resolveHref` throws that is not a `ForeignLinkError`. Before
+    // this `try` existed, that rejection propagated straight out of
+    // `start()` with the panel left stuck on "Loading…" forever — the
+    // command handler's own `.catch` still logged it, but nothing ever told
+    // the user. Rendering a failure here, then rethrowing, keeps both: the
+    // panel degrades to a real message, and the caller's own log entry still
+    // fires unchanged.
+    try {
+      const opened = await this.adapter.openTable(
+        this.table,
+        this.controller.signal,
       );
-      return;
-    }
+      if (!opened.ok) {
+        this.render(
+          buildFailureHtml(this.table, localiseDataProblem(opened.problem)),
+        );
+        return;
+      }
 
-    const columns = await this.adapter.getColumns(
-      opened.value,
-      this.controller.signal,
-    );
-    if (!columns.ok) {
-      this.render(
-        buildFailureHtml(this.table, localiseDataProblem(columns.problem)),
+      const columns = await this.adapter.getColumns(
+        opened.value,
+        this.controller.signal,
       );
-      return;
-    }
+      if (!columns.ok) {
+        this.render(
+          buildFailureHtml(this.table, localiseDataProblem(columns.problem)),
+        );
+        return;
+      }
 
-    this.render(buildPropertiesHtml(this.table, opened.value, columns.value));
+      this.render(buildPropertiesHtml(this.table, opened.value, columns.value));
+    } catch (error) {
+      this.render(
+        buildFailureHtml(
+          this.table,
+          localiseDataProblem({
+            code: "compute",
+            problem: { code: "compute-unreachable", detail: messageOf(error) },
+          }),
+        ),
+      );
+      throw error;
+    }
   }
 
   /** Writes `html` to the panel's webview — unless the panel has been
@@ -192,6 +216,13 @@ class TablePropertiesPanel implements vscode.Disposable {
   dispose(): void {
     this.panel.dispose();
   }
+}
+
+/** The message of a thrown value, and nothing else it might be carrying — the
+ * same small helper `compute/client.ts`/`content/client.ts`/`dialects/probe.ts`/
+ * `dataViewerPanel.ts` each carry their own copy of. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : "unknown error";
 }
 
 function createRealPanel(title: string): TablePropertiesWebviewPanel {

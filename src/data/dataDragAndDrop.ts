@@ -92,13 +92,13 @@ function snippetChoices(): readonly SnippetChoice[] {
     {
       snippetKind: "sd2df",
       label: vscode.l10n.t("Read directly"),
-      description: "SAS.sd2df(...)",
+      description: vscode.l10n.t("SAS.sd2df(...)"),
       detail: vscode.l10n.t("Read the whole table into a pandas DataFrame."),
     },
     {
       snippetKind: "sql",
       label: vscode.l10n.t("Filter with PROC SQL first"),
-      description: "SAS.submit(...)",
+      description: vscode.l10n.t("SAS.submit(...)"),
       detail: vscode.l10n.t(
         "Push a WHERE filter down to the engine before reading, via a PROC SQL pass-through.",
       ),

@@ -136,6 +136,11 @@ export class SasLibraryDragAndDropController
     dataTransfer: vscode.DataTransfer,
     token: vscode.CancellationToken,
   ): Promise<vscode.DocumentDropEdit | undefined> {
+    // `DataTransferItem.value` is `any`. This is not a wire boundary — the
+    // payload only ever comes from this class's own `handleDrag` under a
+    // private MIME within one window, and those items are already real
+    // `TableItem`s the tree built (matching `contentDragAndDrop.ts`'s own
+    // identical cast and reasoning). Not re-validated per item.
     const payload = dataTransfer.get(TABLE_MIME)?.value as
       TableItem[] | undefined;
     const table = payload?.[0];

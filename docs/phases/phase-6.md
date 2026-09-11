@@ -636,8 +636,15 @@ expired again, the same gap findings 6.11/6.12 hit); Sean approved a scoped
 mutating probe against a throwaway `.py` under My Folder, torn down under a
 `trap`.
 
-☐ **6d-i — Favourites.** Code-complete 2026-09-10; adversarial pass pending
-before the PR.
+☑ **6d-i — Favourites.** Done and merged 2026-09-11 —
+[PR #157](https://github.com/Shai-Alit/sas-py-vscode/pull/157), squash `652f3a8`.
+Adversarial pass before the PR (no blocking findings). Codex/Claude PR review
+raised five findings over two rounds, all folded in locally (one push each) —
+see the "PR #157 review" bullet below; all threads resolved. Reconciled with the
+7c-i data-viewer merge (#155) before merge — the only shared file was
+`src/wire/viyaError.ts` (an additive `readViyaError` fallback, no content
+behaviour change). `npm run verify` green (1531 unit after that merge; coverage
+95.44 / 95.36 / 95.10 / 95.44), 331 integration, `npm run check:docs` green.
 
 - ☑ **`ContentAdapter.addToFavorites` / `removeFromFavorites`** (finding 6.13).
   Add is `POST` the My Favorites folder's `addMember` link a

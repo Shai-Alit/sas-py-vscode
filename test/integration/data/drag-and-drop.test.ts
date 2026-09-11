@@ -51,6 +51,11 @@ describe("SAS Libraries drag-and-drop (7d)", () => {
 
     controller.handleDrag([sashelpLibrary, classTable], transfer);
 
+    // Safe here, unlike the identical-looking cast this PR's own fix
+    // replaced in dataDragAndDrop.ts: handleDrag sets this DataTransferItem's
+    // value directly, in-process, and this test reads it back without
+    // crossing the extension-host RPC boundary that serializes it into JSON
+    // for a real tree->editor drop (see readDraggedTables in ./types.ts).
     const payload = transfer.get(TABLE_MIME)?.value as TableItem[] | undefined;
     assert.ok(payload);
     assert.deepEqual(

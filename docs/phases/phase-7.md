@@ -2007,7 +2007,7 @@ formally tracking them is that housekeeping's job, not this branch's.
   candor. `npx tsc -p tsconfig.test.json --noEmit`, `npx prettier --check`,
   and `npm run test:unit` (1443 passing, unchanged) all clean after the fix.
 
-☐ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
+☑ **7d — Document, probe, and snippet-ize Python↔library data exchange.**
 Scoped 2026-09-04, resurrected and live-probed 2026-09-10 after sitting
 unmerged in a stash — see the Plan section's 7d entry for the full account.
 
@@ -2027,15 +2027,107 @@ unmerged in a stash — see the Plan section's 7d entry for the full account.
   outer job-source echo reproducing submitted Python verbatim) is untouched
   and still applies to a credential written as a literal, regardless of
   `SAS.submit()`.
-- ☐ Write the documented example (`docs/data-access.md` or folded into
+- ☑ Write the documented example (`docs/data-access.md` or folded into
   7a/7b's own docs) — the `SAS.sd2df`/`PROC SQL`-pass-through pattern above,
   and an explicit warning against writing a credential literal anywhere in
-  submitted Python.
-- ☐ Wire the drag-and-drop snippet (`SAS.sd2df("libref.table")`) the Plan
+  submitted Python. **Done** — a new top-level `docs/data-access.md`
+  ("Python and SAS libraries"), registered in `.vitepress/config.mjs`'s
+  sidebar and `docs/README.md`'s index (neither 7a/7b/7c ever added a
+  user-facing doc page of their own to fold this into, so the new-file
+  branch of this bullet applies). Covers `SAS.sd2df`/`SAS.df2sd`, the
+  `PROC SQL` pass-through pattern, the drag-and-drop feature below, and the
+  credential-literal warning Finding 7.12 settles.
+- ☑ Wire the drag-and-drop snippet (`SAS.sd2df("libref.table")`) the Plan
   section's discussion resolves — 7a's tree now exists, so this is
-  unblocked.
-- ☐ A small fixture set for the log-echo probe's own confirmed shape — no
+  unblocked. **Done** — `src/data/dataDragAndDrop.ts`/`dragSnippet.ts`; see
+  this slice's own Runbook entry below for the design (Sean's own call on
+  both of the Plan section's open questions, and the escaping this needed).
+- ☑ A small fixture set for the log-echo probe's own confirmed shape — no
   `DataAccessApi` involved, so no dependency on 7a–7c's own fixtures.
+  **Done** — `test/fixtures/data/submit-log-echo.txt`, a verbatim
+  transcription of Finding 7.12's own already-sanitized log excerpt (not a
+  captured wire JSON envelope — this mechanism has no wire call to capture),
+  pinned by `test/unit/data-submit-log-echo.test.ts`.
+
+**7d is code-complete 2026-09-11** (`sas-py-vscode-cowork` clone). Two design
+questions the Plan section explicitly left open for whoever wrote the drag
+handler were put to Sean rather than assumed: **the choice on drop** — a
+quick pick between a plain `SAS.sd2df(...)` read and a `SAS.submit`-based
+`PROC SQL` pass-through, Sean's call, over always inserting the plain read —
+and **the variable-name heuristic** — the table's own name sanitized to a
+Python identifier and suffixed `_df` (`CLASS` → `class_df`), deduplicated
+against the drop target document's own text (`class_df`, `class_df2`, …),
+Sean's call over a fixed generic name. `src/data/dragSnippet.ts`
+(`vscode`-free, unit-tested) derives the variable/view names and builds both
+snippet bodies; `src/data/dataDragAndDrop.ts` is the one class playing both
+`vscode` roles this needs — `TreeDragAndDropController` (putting the dragged
+`TableItem` on a private MIME) and `DocumentDropEditProvider` (registered for
+`{ language: "python" }`), mirroring upstream's own `LibraryDataProvider`
+shape rather than this project's own 6c-ii split, since a content move never
+leaves the tree but this drop always does. Only the first dragged table is
+handled, matching upstream's own restriction (7a's tree has no
+`canSelectMany`). `libref`/`table` — wire-provided text with no length or
+character restriction this project controls, unlike the self-sanitized
+variable/view names — are escaped twice before landing in either snippet:
+once for the Python string-literal context, and, for the SQL pass-through
+only, once more for the VS Code snippet grammar the whole result is parsed
+as (`$`/`}`/backslash are snippet metacharacters); the plain `sd2df` snippet
+is returned as an unparsed string, needing only the first layer. The SQL
+pass-through mirrors its view-name tabstop (`${1:...}`/`$1`) across both the
+`create view` step and the `sd2df` read, so retyping it once updates both.
+
+**Adversarial pass (independent agent) ran before any push, per
+`CLAUDE.md`'s standing rule** — one real, blocking finding and two related
+Medium ones, all fixed on the branch before it went anywhere:
+
+1. **The SQL pass-through's own `select * from libref.table` line had no
+   protection against a `;` in the table name** — the two escaping layers
+   above protect the *Python* and *snippet* boundaries the text passes
+   through, but neither stops a semicolon (plausible for exactly the
+   SAS/ACCESS external-table case this snippet is written for) from closing
+   the generated `create view` statement early and letting the rest run as
+   independent SAS statements the moment the inserted snippet is run
+   unmodified. **Fixed**: a third layer, `sasNameRef` (`dragSnippet.ts`),
+   wraps a name outside the ordinary bare-identifier shape in a SAS name
+   literal (`'…'n`) before either escaping layer runs — everything between
+   the quotes is one atomic name token to the SAS tokenizer, embedded
+   `;`/whitespace/`&`/`%` included — applied only to the SQL pass-through's
+   own generated SAS source, not to `buildSd2dfSnippet`'s `libref.table`
+   argument, which is a runtime string handed to `SAS.sd2df` rather than SAS
+   source this project generates and hands to the interpreter itself. Two
+   new unit tests pin this directly (a `;`-bearing table name, and an
+   embedded `'` doubling correctly).
+2. **The drop's own `CancellationToken` never reached the quick pick** —
+   `vscode.window.showQuickPick` takes an optional token specifically so an
+   external cancellation dismisses the picker, but neither the real call nor
+   `DataDragAndDropDeps.showQuickPick`'s own type threaded it through, so a
+   drop cancelled elsewhere left the picker lingering. **Fixed**: the token
+   now flows into `showChoice` and both the real and injected
+   `showQuickPick` calls; a new integration test asserts the injected stub
+   receives the exact same token instance.
+3. **An already-cancelled drop still showed the quick pick before discarding
+   the answer** — cancellation was checked only after `showChoice` resolved.
+   **Fixed**: checked before calling `showChoice` too, via a `cancelled()`
+   closure (matching `contentDragAndDrop.ts`'s own idiom) rather than two
+   direct `token.isCancellationRequested` reads — the latter trips a
+   TypeScript narrowing false-positive across the intervening `await`, the
+   same class of gotcha `contentDragAndDrop.ts`'s own closure already
+   avoids. A strengthened integration test now asserts the quick pick is
+   never shown in this case.
+
+`npm run verify` green (1567 unit passing; coverage
+95.6%/95.5%/95.35%/95.6%, every threshold met — `dragSnippet.ts` itself
+99.45%/95%/100%/99.45%, the one remaining branch gap a `for (;;)` loop
+construct c8 cannot fully instrument, not a missing case); `npm run
+test:integration` green (355 passing, 9 new); `check:docs` (all four steps,
+including `docs:build`) green after adding `docs/data-access.md`;
+`check:coverage-scope`/`check:contracts`/`check:copyright`/`check:secrets`
+all clean. (`check:secrets` also caught a real false-positive of its own
+making, worth recording: a doc comment's `` `PASSWORD=` `` markdown code-span
+read as a quoted credential-literal assignment to the scanner's own
+`assigned-literal` rule; reworded to drop the backtick immediately after
+`=` rather than suppressed, since the simpler fix was to stop tripping the
+heuristic at all.)
 
 ---
 

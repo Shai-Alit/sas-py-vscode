@@ -1703,6 +1703,74 @@ unit passing, coverage unchanged — `tablePropertiesPanel.ts` stays
 more new); `npx tsc --noEmit`/`npm run lint`/`npx prettier --check` all
 clean.
 
+**Post-merge fix — blank Properties/Columns panes, found in Sean's own
+manual test pass** (`docs/dev/manual-test-pass.md` §13), 2026-09-10, against a
+real panel: **Table Properties** opened with both tab labels showing, but
+neither pane ever rendered any content — the panel looked entirely blank
+regardless of which tab was selected. Root cause: `buildPropertiesHtml`
+wrapped the two `<input type="radio">` tab controls (and their `<label>`s) in
+their own `<div class="...tabs">`, one level of nesting deeper than the two
+`#python-on-viya-pane-*` divs it was supposed to reveal. `panelHead`'s
+tab-switch rule (`#tab-properties:checked ~ #pane-properties`) is a **general
+sibling** combinator, which only matches elements sharing the *same parent* as
+the checked input — nesting the input inside its own wrapper meant that
+selector could never match either pane, so `.python-on-viya-table-properties-pane`'s
+`display: none` default never lifted for anything. Confirmed live in a real
+browser (Chromium, matching this panel's own webview renderer) before and
+after the fix — the broken structure reproduces the exact blank-pane symptom,
+and the fixed structure renders and tab-switches correctly. **Fixed**
+(`src/data/tablePropertiesPanel.ts`): the two radio inputs, their labels, and
+both pane `<div>`s are now all direct children of `<body>` — no wrapping
+element between any checked input and the pane it targets. The wrapper's own
+visual bottom-border (previously `.tabs`'s `border-bottom`) moved to a new,
+purely decorative `.python-on-viya-table-properties-tabs-underline` div
+inserted after the two label elements — it carries no `id`/`:checked` logic of
+its own, so it cannot reintroduce the bug. A new integration test (`"keeps
+both radio inputs as direct siblings of the panes they reveal, not nested in a
+wrapper div"`, `test/integration/data/table-properties-panel.test.ts`) pins
+the exact flat sibling order this relies on; confirmed by temporarily
+reverting the source change alone that this test fails against the old,
+buggy structure and passes against the fix. Existing tests did not catch this
+because they only assert that expected text appears somewhere in the
+generated HTML string — true both before and after the fix, since the broken
+version still emits the right text, just inside a `display: none` pane. No
+adapter, wire, or data-mapping change of any kind; this is a client-side
+CSS/DOM defect only, so no Viya probe was needed. `npm run verify` green
+(1538 unit passing, coverage 95.52% lines / 95.51% branches / 95.23% functions
+/ 95.52% statements, thresholds unaffected — `tablePropertiesPanel.ts` stays
+`.c8rc.json`-excluded); `npm run test:integration` green (338 passing, one
+new); `npm run check:docs` green.
+
+**Adversarial review before the PR exists**, 2026-09-11, against this
+five-file diff (`STATUS.md`, `manual-test-pass.md`, this file,
+`tablePropertiesPanel.ts`, and the new test). **No blocking findings** — the
+root-cause analysis and fix were confirmed correct (the general-sibling
+combinator reasoning, and that the flattened structure cannot reintroduce the
+bug); the new test was confirmed to be a genuine structural regression pin
+rather than a copy of the logic under test; no CSP, secret, or script-related
+change of any kind in this diff, correctly requiring no probe. One non-blocking
+note: `buildPropertiesHtml`'s doc comment is long for a now-simple flat
+structure, accepted as justified given the subtlety of the bug it documents.
+
+**Re-verified live, 2026-09-11 (Sean), against `verde`** with a `.vsix` built
+from `fix/7c-ii-table-properties-blank-panes`: every §13 field on the
+Properties tab matches (Name **CLASS**, Library **SASHELP**, Type **DATA**,
+Label **Student Data**, Engine **V9**, Row Count **19**, Column Count **5**,
+Created/Modified as real dates, Compression Routine **NO**, Encoding
+**us-ascii ASCII (ANSI)**), and the section's remaining rows (Columns tab
+switch, re-opening reveals the same panel, theme legibility, busy-session
+message) all pass — §13 is now fully ticked in `manual-test-pass.md`.
+
+**Also folded into this same branch, as a docs-only addition (Sean):**
+`manual-test-pass.md` gained new §15/§16, Phase 6's own first live manual
+pass (SAS Content browsing/mutations, and favourites/Recycle Bin) — out of
+this project's normal "add a section when the phase closes" cadence, since
+Phase 6→7/8 housekeeping (`HOUSEKEEPING.md`) has not yet run. Two open Phase 6
+items surfaced (drag-and-drop is entirely non-functional; the
+top-level-folder permanent-delete confirmation could not be exercised, no
+permission on this deployment) — both left as-is here, since fixing or even
+formally tracking them is that housekeeping's job, not this branch's.
+
 ☐ **7c-iii — CSV export.**
 
 - ☐ Probe the CSV mechanism directly rather than porting upstream's literal

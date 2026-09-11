@@ -13,6 +13,29 @@
   (`docs/phases/phase-6.md`)
 - **Executed in:** the Phase 6→7/8 housekeeping checkpoint (`docs/phases/phase-6.md`)
 
+> **Amended 2026-09-11, the day after this ADR was written.** The live
+> retest this record's own Consequences section called for came back
+> negative: rebuilt, reinstalled, reloaded, and dragged, drag-and-drop
+> within the SAS Content tree failed identically to before this change —
+> same symptoms (`handleDrag` fires, `handleDrop` does not, no pattern by
+> target) as the original report. **This ADR's title overclaims** — the
+> `resourceUri` change described below does **not** fix native
+> drag-and-drop, and that hypothesis should be read as disproven, not
+> merely unconfirmed. The decision itself is kept regardless, on its own
+> narrower merits: it matches `vscode-sas-extension`'s own unconditional
+> behaviour, and it gives every folder a real tooltip it previously lacked
+> (a genuine small parity fix). The correlational evidence in this ADR's
+> Context — the file-vs-folder pattern, the comparison against upstream —
+> is preserved below as a real, if ultimately incomplete, investigation:
+> it ruled out several concrete candidates (VS Code version, Electron drag
+> flakiness, mime-type format, nesting depth) even though it did not land
+> on the actual cause. Root cause remains open, tracked in
+> [`phase-11.md`](../phases/phase-11.md) rather than blocking
+> [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), which
+> ships [ADR-0032](0032-content-cut-paste.md)'s Cut/Paste as the actual
+> working move interaction — see `phase-6.md`'s 6e Runbook entry for the
+> full account.
+
 ## Context
 
 6c-ii shipped a `TreeDragAndDropController` for the SAS Content tree, fully

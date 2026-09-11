@@ -870,8 +870,20 @@ checkpoint. Every row through "Delete on an ordinary item recycles it
 silently" (§15) and all of §16 (favourites, Recycle Bin) passed clean. Two
 open items:
 
-- ☐ **Drag-and-drop within the SAS Content tree was unreliable — root cause
-  found and fixed in source; not yet confirmed live (6e).** Confirmed against a
+- ☐ **Drag-and-drop within the SAS Content tree is still completely
+  non-functional. The `resourceUri` fix (ADR-0031) did not fix it — live
+  retested 2026-09-11 (Sean), identical symptoms to the original report:
+  dragging within the tree produces no progress notification, no message,
+  no move. Root cause remains unknown. Deliberately not blocking this PR**
+  (Sean's call — Cut/Paste, below, is the real, working interaction model
+  going forward) **— tracked as an open follow-up in `phase-11.md` instead.**
+  ADR-0031's `resourceUri` change is kept regardless: it matches upstream's
+  own unconditional behaviour, gives every folder a real tooltip (a
+  genuine, if minor, parity fix on its own), and cost nothing to keep — but
+  it is no longer claimed to fix drag-and-drop, and ADR-0031 carries a
+  dated amendment saying so. The investigation that led to it is preserved
+  below for whoever picks this up next, since it does rule out several real
+  candidates even though it didn't land on the actual cause. Confirmed against a
   build rebuilt fresh from `main` (ruling out a stale `.vsix` as the cause).
   Diagnostic logging added to `handleDrag`/`handleDrop` (kept — see that
   file's own doc comment) showed `handleDrag` firing reliably on every
@@ -914,9 +926,18 @@ open items:
   wire logic. **Formalised as a permanent right-click alternative
   regardless** ([ADR-0032](../adr/0032-content-cut-paste.md)) — see the 6e
   entry below. `npx tsc --noEmit`, `eslint`, and `npm run verify` all green
-  on the fix; **the drag-and-drop gesture itself still needs one more live
-  retest** (rebuild, reinstall, reload, drag) to confirm the fix holds in
-  practice — not yet done as of this writing.
+  on the fix, but **the live retest (rebuild, reinstall, reload, drag),
+  2026-09-11, found the identical failure as before the fix** — same
+  symptoms, same lack of pattern by target. The `resourceUri` hypothesis is
+  therefore not confirmed as the actual cause (or is at most one factor
+  among others); see ADR-0031's amendment. **Next, for whoever picks this
+  up:** the one avenue this investigation never reached is VS Code's own
+  Developer Tools console during a live drop (its
+  `TreeDragAndDropController.dropMimeTypes` doc comment names this as the
+  supported way to see what, if anything, VS Code offers on the drop) —
+  everything else tried (mime format, `@types/vscode` version, Electron
+  drag flakiness, nesting depth, and now the missing-`resourceUri`
+  hypothesis) has been ruled out or shown insufficient.
 - ☐ **The top-level-folder permanent-delete confirmation could not be
   exercised.** Originally recorded as blocked by "no permission on the
   tested deployment" — **that reason was wrong**; Sean has since confirmed
@@ -931,19 +952,25 @@ open items:
 
 **Drag-and-drop's own ambiguity, and Cut/Paste (Sean, 2026-09-11, said
 directly in this session — not the earlier pattern of unconfirmed
-attributions elsewhere in this file).** Even once the native gesture is
+attributions elsewhere in this file).** Even if the native gesture is ever
 fixed, dragging a tree item onto a folder never tells the user whether it
 will move or copy — a real, independent UX gap. Sean's own words: this
 should have been ahead of drag-and-drop on the original list. Decided:
 formalise Cut/Paste (move only — Copy is a separate, unprobed question, see
 `phase-11.md`) as a permanent, shipped feature, not just a diagnostic — see
-the 6e entry below and [ADR-0032](../adr/0032-content-cut-paste.md).
+the 6e entry below and [ADR-0032](../adr/0032-content-cut-paste.md). Now
+that drag-and-drop itself remains broken after a real fix attempt,
+Cut/Paste is not just the more honest interaction — it's the only one that
+actually works.
 
-☐ **6e — folder `resourceUri` fix (ADR-0031) + right-click Cut/Paste
-(ADR-0032). Code-complete, adversarially reviewed, findings folded in; not
-yet merged.** Both landed together at the Phase 6→7/8 housekeeping
-checkpoint, discovered while live-testing 6c-ii's drag-and-drop; see the
-two entries above for the investigation.
+☐ **6e — right-click Cut/Paste ships (ADR-0032); the folder `resourceUri`
+change ships too (ADR-0031) but does not fix drag-and-drop, which stays
+broken and is tracked separately.**
+[PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162) open —
+CI green, both AI reviewers clean, mergeable; not yet merged as of this
+writing. Both landed together at the Phase 6→7/8 housekeeping checkpoint,
+discovered while live-testing 6c-ii's drag-and-drop; see the two entries
+above for the investigation and its outcome.
 
 - ☑ `src/content/uri.ts` gains `CONTENT_FOLDER_SCHEME` (`sasContentFolder:`)
   and `contentFolderUriString`, alongside the existing `CONTENT_SCHEME` /
@@ -1035,13 +1062,22 @@ two entries above for the investigation.
   95.51 branches / 95.26 functions / 95.57 lines — `src/content/uri.ts` at
   100/100/100/100); `npm run test:integration` green (368 passing);
   `npm run check:docs` and `npm run check:secrets` both green.
-- **Live-tested before the fix was written**: Cut/Paste moved a real file
-  three times (`Demo → tst`, `tst → My Folder`, `My Folder → Demo`), all
-  clean. **Not yet live-tested since**: the exact commands as finally named
-  (`pythonOnViya.cutContentItem` / `pythonOnViya.pasteContentItem`, renamed
-  from the diagnostic's `...Diagnostic` suffix), the endpoint-scoping fix,
-  or the drag-and-drop `resourceUri` fix itself — all three still need a
-  live retest before this closes out. No PR opened yet.
+- **Live retest, 2026-09-11 (Sean), against [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162)'s branch:**
+  Cut/Paste under its final command names confirmed working (it had already
+  been live-tested once under the diagnostic's temporary command names,
+  before this PR existed — `Demo → tst`, `tst → My Folder`,
+  `My Folder → Demo`, all clean; the rename to
+  `pythonOnViya.cutContentItem`/`pasteContentItem` changed nothing
+  functionally and this pass confirms it). **Drag-and-drop itself: retested
+  and still completely non-functional, identical symptoms to the original
+  report** — see the dedicated entry above and ADR-0031's amendment. **Sean's
+  call: this does not block the PR** — Cut/Paste is the real, working
+  interaction model, and the drag-and-drop investigation is tracked as a
+  follow-up in `phase-11.md` rather than held against this slice. The
+  endpoint-scoping fix itself (cutting on one deployment, pasting after a
+  profile switch) has not been separately live-exercised — covered by
+  `cutPaste.test.ts` but not by a human switching real profiles — noted as
+  a gap for whoever next touches multi-profile Cut/Paste, not a blocker.
 
 The stale/duplicate copy of §15–§16 this branch's merge into `main` produced
 (the same section content inserted at two different points by two diverging

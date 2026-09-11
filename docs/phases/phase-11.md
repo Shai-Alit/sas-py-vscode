@@ -40,13 +40,11 @@ checkpoint): three items deferred out of Phase 6 that never landed a home.**
   Small, self-contained, no probe needed — the mutation it would call already
   exists.
 - ~~Right-click Cut / Paste for SAS Content items~~ — **the Cut/Paste half is
-  done**, shipped at the Phase 6→7/8 housekeeping checkpoint alongside the
-  drag-and-drop fix (`phase-6.md`'s 6e Runbook entry,
-  [ADR-0032](../adr/0032-content-cut-paste.md)). Raised live-testing
-  drag-and-drop for 6c-ii: even once drag-and-drop works, it tells the user
-  nothing about whether the drop will move or copy the item — Cut/Paste is
-  unambiguous, and doesn't depend on a mouse gesture VS Code's own tree
-  widget made fragile in this project's experience. Not an oversight
+  done**, shipped at the Phase 6→7/8 housekeeping checkpoint alongside a
+  drag-and-drop fix attempt (`phase-6.md`'s 6e Runbook entry,
+  [ADR-0032](../adr/0032-content-cut-paste.md)) — see below, the fix
+  attempt did not work, and Cut/Paste is now the only working way to move
+  an item in this tree, not merely the unambiguous one. Not an oversight
   relative to upstream: `vscode-sas-extension`'s own `ContentNavigator/index.ts`
   has no such command either, only drag-and-drop plus a `copyPath` command
   that copies a path string to the OS clipboard, not the item itself — a
@@ -61,6 +59,28 @@ checkpoint): three items deferred out of Phase 6 that never landed a home.**
   `viya-api-probe` pass, not an assumption, before this is designed. If
   there is no server-side copy, this means read-the-content-then-create-a-new-file,
   real additional work rather than a rename of Cut's call.
+- **Drag-and-drop within the SAS Content tree remains completely
+  non-functional — root cause unknown, deliberately deprioritised behind
+  Cut/Paste, tracked here for whoever wants to pick it up.** 6c-ii shipped
+  it fully unit/integration-tested but never live-tested; the Phase 6→7/8
+  housekeeping checkpoint's live pass (2026-09-11) found it did nothing at
+  all — no progress notification, no error, no move — and a real
+  investigation (diagnostic logging, a throwaway isolation test extension,
+  a live comparison against `vscode-sas-extension`'s own working
+  `ContentDataProvider`) landed on a plausible cause (a folder `TreeItem`
+  missing `resourceUri` — [ADR-0031](../adr/0031-content-folder-resource-uri.md))
+  that turned out, on a second live retest after shipping the fix, **not**
+  to be it: identical symptoms, unchanged. Ruled out along the way and
+  confirmed *not* the cause: the installed `@types/vscode`/VS Code version,
+  general Electron drag flakiness, the drag payload's MIME-type format
+  (custom vs. VS Code's own "recommended" `application/vnd.code.tree.*`),
+  and nesting depth. **Not yet tried**: VS Code's own suggested diagnostic
+  for exactly this class of problem — **Developer: Set Log Level…** → Debug,
+  Developer Tools console open, drag live, and read what (if anything) VS
+  Code itself logs about the drop — `TreeDragAndDropController.dropMimeTypes`'s
+  own doc comment names this as the supported way to see what mime type,
+  if any, gets offered. Not blocking anything — Cut/Paste (above) is the
+  real, shipped, working way to move a SAS Content item today.
 
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,

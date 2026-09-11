@@ -1189,17 +1189,21 @@ housekeeping checkpoint rather than in this branch's own scope:
   read/write access to every folder tested, including as a system
   administrator. It simply hasn't been retried since. Still unchecked
   below; needs a live run.
-- Drag-and-drop within the tree was completely non-functional. **Root cause
-  found and fixed** ([ADR-0031](../adr/0031-content-folder-resource-uri.md)):
-  a folder tree item never carried a `resourceUri`, which VS Code's native
-  drag-and-drop needs to reliably recognise a row as a drop target — an
-  openable file leaf always had one, which is why file-target drops worked
-  reliably and folder-target drops almost never did. The four rows below
-  that test drag variants stay unchecked until the fix gets its own live
-  retest — not yet done as of this writing. A right-click Cut/Paste
-  alternative also shipped alongside the fix
-  ([ADR-0032](../adr/0032-content-cut-paste.md)) — new rows at the end of
-  this section, also not yet live-tested.
+- Drag-and-drop within the tree was completely non-functional. A real
+  investigation found a plausible cause and shipped a fix for it
+  ([ADR-0031](../adr/0031-content-folder-resource-uri.md); a folder tree
+  item never carried a `resourceUri`) — but **a second live retest,
+  2026-09-11, after the fix shipped, found drag-and-drop still completely
+  non-functional, identical symptoms.** The `resourceUri` hypothesis is
+  disproven as *the* cause (ADR-0031's own amendment); the change is kept
+  regardless for its own smaller reasons, but drag-and-drop itself is now
+  an accepted, deprioritised **(known gap)** — see `phase-11.md`. The four
+  rows below that test drag variants stay unchecked; they cannot be
+  exercised while the base gesture does not work at all. A right-click
+  Cut/Paste alternative shipped alongside the fix attempt
+  ([ADR-0032](../adr/0032-content-cut-paste.md)) and **is confirmed working,
+  live, under its final command names** — this is now the only way to move
+  an item in this tree, not merely the less ambiguous one.
 
 **Pre-work:** a Viya connection signed in (§3) — no need to **Connect to
 SAS Viya** first. Have write access to at least one folder you don't mind
@@ -1267,52 +1271,62 @@ creating, renaming, moving, and deleting test files/folders in.
   **First pass, 2026-09-11 (Sean): recorded as unable to test** — the
   reason given (no access to create/delete folders directly under SAS
   Content) turned out to be wrong; retry needed.
-- [ ] **Dragging an item onto a folder moves it** — drag a test file onto a
-  different folder.
+- [-] **(known gap) Dragging an item onto a folder moves it** — drag a test
+  file onto a different folder.
   **Expect:** a progress notification ("Moving \"…\"…"), the item
   disappears from its old location, and it is auto-revealed (selected,
   ancestors expanded) under the new folder — no manual refresh needed.
   **First pass, 2026-09-11 (Sean): failed** — dragging a file from Windows
   Explorer does nothing (expected — see below), and dragging a file from
   within the SAS Content tree also did nothing: no progress notification,
-  no message, no file movement. **Root cause found and fixed since**
-  (ADR-0031, see this section's intro) — a folder tree item had no
-  `resourceUri`. Reset to unchecked; needs a fresh retry against a rebuilt
-  extension.
+  no message, no file movement. **Second pass, 2026-09-11 (Sean), against a
+  build with ADR-0031's fix: failed identically.** No progress notification,
+  no message, no file movement — same as the first pass, no visible change
+  at all. Root cause remains unknown; accepted as a known gap, deprioritised
+  behind Cut/Paste (below), tracked in `phase-11.md` for a future
+  investigation. Do not re-tick this box on a future pass without a genuine
+  fix — if drag-and-drop is ever confirmed working, rewrite this row as a
+  normal **Expect** per this doc's own convention (see "Keeping this
+  current").
 - [ ] **Dragging multiple items moves all of them together** — select two
   or more items (Ctrl/Cmd-click) and drag them onto a folder.
   **Expect:** a progress notification naming the count ("Moving N
   items…"); all selected items move; the first one is revealed afterward.
-  Not yet tried — the single-item case above needs to work first.
+  Not testable while the single-item case above does not work at all.
 - [ ] **Dragging onto My Favorites or the Recycle Bin does nothing** — drag
   a test file onto the My Favorites row, then onto the Recycle Bin row.
   **Expect:** no error, no toast, no move — the item stays exactly where it
   was. (Neither gesture is wired to add-to-favourites or recycle; only the
-  context-menu actions in §16 do that.)
+  context-menu actions in §16 do that.) Trivially "passes" while
+  drag-and-drop is broken outright — not meaningfully testable until the
+  base gesture works, since a no-op is indistinguishable from the general
+  failure above.
 - [ ] **Dragging an item onto itself or its current folder is a no-op** —
   drag an item onto the folder it already lives in, and drop it directly on
   itself if your OS allows the gesture.
   **Expect:** nothing happens either way — no progress notification, no
-  error.
+  error. Same caveat as the row above.
 - [ ] **Multi-select hides the single-item context actions** — select two
   or more items at once and right-click.
   **Expect:** New Folder, New File, Rename, Delete, Cut, and the favourite
   toggle are all absent from the context menu (they act on exactly one
   item); only Empty Recycle Bin / Restore-style bulk actions would still
   apply where relevant.
-- [ ] **Cut, then Paste, moves an item unambiguously (6e)** — right-click a
+- [x] **Cut, then Paste, moves an item unambiguously (6e)** — right-click a
   test file and choose **Cut**, then right-click a *different* folder and
   choose **Paste**.
   **Expect:** Cut shows a brief info message ("Cut \"…\". Right-click a
   folder and choose Paste."); Paste shows a progress notification ("Moving
   \"…\"…"), the item disappears from its old location, and it is
   auto-revealed under the new folder — same end state as a working drag,
-  reached without touching drag-and-drop at all. **Live-tested before this
-  row existed**, 2026-09-11 (Sean): three real moves this way (`Demo → tst`,
-  `tst → My Folder`, `My Folder → Demo`), all clean — but under the
-  diagnostic's original command names, not the final
-  `pythonOnViya.cutContentItem`/`pasteContentItem`; worth one more pass to
-  confirm the renamed commands behave identically.
+  reached without touching drag-and-drop at all. **Live-tested twice**:
+  first under the diagnostic's original command names (2026-09-11, Sean —
+  three real moves, `Demo → tst`, `tst → My Folder`, `My Folder → Demo`,
+  all clean), then again, 2026-09-11, against
+  [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162)'s branch
+  under the final `pythonOnViya.cutContentItem`/`pasteContentItem` names —
+  confirmed working. This is currently the only working way to move an
+  item in this tree (drag-and-drop, above, does not work at all).
 - [ ] **Paste without a Cut, or onto an invalid target, explains why** —
   right-click a folder and choose **Paste** with nothing cut yet; then Cut
   a file, and Paste it onto the folder it already lives in.

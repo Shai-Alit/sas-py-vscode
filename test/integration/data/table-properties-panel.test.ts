@@ -108,7 +108,6 @@ function fakePanel(): {
   const panel: TablePropertiesWebviewPanel = {
     webview: {
       html: "",
-      cspSource: "vscode-webview://fake",
     },
     reveal: (column, preserveFocus) => {
       revealed.push({
@@ -152,6 +151,30 @@ describe("TablePropertiesPanelManager", () => {
     // No script anywhere in this panel.
     assert.doesNotMatch(html, /<script/);
     assert.match(html, /default-src 'none'/);
+  });
+
+  it("locks style-src to the <style> tag's own nonce, with no 'unsafe-inline' anywhere", async () => {
+    // PR review, 2026-09-11 (blocking): an earlier version of this panel
+    // used `style-src {cspSource} 'unsafe-inline'`, reasoning that every
+    // dynamic value is already `escapeHtml`-escaped so nothing could exploit
+    // it — true, but weaker than not needing the exception at all. Unlike
+    // `dataViewerPanel.ts` (which genuinely needs `'unsafe-inline'` for
+    // ag-grid's own runtime-set `style="…"` *attributes*, which a nonce
+    // cannot cover), this panel has exactly one `<style>` *element* and no
+    // inline `style="…"` attributes anywhere, so a nonce removes the
+    // exception entirely.
+    const fake = fakePanel();
+    const manager = new TablePropertiesPanelManager({
+      createPanel: () => fake.panel,
+    });
+    await manager.open(tableItem(), libraryAdapter(OPEN_ROUTES));
+
+    const html = fake.panel.webview.html;
+    assert.doesNotMatch(html, /unsafe-inline/);
+    const cspNonce = /style-src 'nonce-([^']+)'/.exec(html)?.[1];
+    const styleNonce = /<style nonce="([^"]+)"/.exec(html)?.[1];
+    assert.ok(cspNonce !== undefined && cspNonce.length > 0);
+    assert.equal(styleNonce, cspNonce);
   });
 
   it("shows a loading placeholder synchronously, before the fetch resolves", () => {

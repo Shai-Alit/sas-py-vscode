@@ -47,11 +47,12 @@ const VIEW_TYPE = "pythonOnViya.tableProperties";
  * uses — narrower than `DataWebviewPanel`/`ResultWebviewPanel`, since this
  * panel never receives or posts a message: `webview.html` is set once with
  * the final content (or a "Loading…" placeholder, then the final content),
- * and nothing ever calls back into the extension. */
+ * and nothing ever calls back into the extension. No `cspSource` — the CSP
+ * is nonce-locked (`panelHead`'s own doc comment), not `cspSource`-scoped,
+ * since this panel loads no external resource at all. */
 export interface TablePropertiesWebviewPanel extends vscode.Disposable {
   readonly webview: {
     html: string;
-    readonly cspSource: string;
   };
   reveal(viewColumn?: vscode.ViewColumn, preserveFocus?: boolean): void;
   onDidDispose(listener: () => void): vscode.Disposable;
@@ -134,7 +135,7 @@ class TablePropertiesPanel implements vscode.Disposable {
   }
 
   async start(): Promise<void> {
-    this.panel.webview.html = buildLoadingHtml(this.panel.webview, this.table);
+    this.panel.webview.html = buildLoadingHtml(this.table);
 
     this.subscriptions.push(
       this.panel.onDidDispose(() => {
@@ -152,11 +153,7 @@ class TablePropertiesPanel implements vscode.Disposable {
     );
     if (!opened.ok) {
       this.render(
-        buildFailureHtml(
-          this.panel.webview,
-          this.table,
-          localiseDataProblem(opened.problem),
-        ),
+        buildFailureHtml(this.table, localiseDataProblem(opened.problem)),
       );
       return;
     }
@@ -167,23 +164,12 @@ class TablePropertiesPanel implements vscode.Disposable {
     );
     if (!columns.ok) {
       this.render(
-        buildFailureHtml(
-          this.panel.webview,
-          this.table,
-          localiseDataProblem(columns.problem),
-        ),
+        buildFailureHtml(this.table, localiseDataProblem(columns.problem)),
       );
       return;
     }
 
-    this.render(
-      buildPropertiesHtml(
-        this.panel.webview,
-        this.table,
-        opened.value,
-        columns.value,
-      ),
-    );
+    this.render(buildPropertiesHtml(this.table, opened.value, columns.value));
   }
 
   /** Writes `html` to the panel's webview — unless the panel has been
@@ -226,25 +212,31 @@ function createRealPanel(title: string): TablePropertiesWebviewPanel {
  *
  * ```
  * default-src 'none';
- * style-src {cspSource} 'unsafe-inline';
+ * style-src 'nonce-{nonce}';
  * ```
  *
- * **No `script-src` at all.** `default-src 'none'` already forbids a script
- * with no directive naming one; there is no nonce to generate and no
- * `<script>` tag anywhere in this panel's output, unlike the other two
- * panels this project ships. **`style-src 'unsafe-inline'`** is needed only
- * for the inline `<style>` block below — there is no user-generated markup
- * this policy has to guard against restyling the panel (every value on the
- * page is either this extension's own chrome or an escaped table/column
- * field — see `tablePropertiesModel.ts`'s `escapeHtml`), so this is a
- * convenience exception, not a threat-model exception the way
- * `dataViewerPanel.ts`'s own `style-src` comment explains theirs is.
+ * **No `script-src` at all** — `default-src 'none'` already forbids a script
+ * with no directive naming one, and there is no `<script>` tag anywhere in
+ * this panel's output, unlike the other two panels this project ships.
+ *
+ * **`style-src` is nonce-locked, not `'unsafe-inline'`.** An earlier version
+ * of this comment argued `'unsafe-inline'` was safe here because every
+ * dynamic value is `escapeHtml`-escaped before it reaches the page — true,
+ * but PR review on this slice (2026-09-11) correctly pointed out that
+ * relying solely on this file's own escaping discipline is weaker than not
+ * needing the exception at all. Unlike `dataViewerPanel.ts` (which genuinely
+ * needs `'unsafe-inline'`: `ag-grid`'s own runtime sets `style="…"`
+ * *attributes* on arbitrary elements it renders, and a CSP nonce cannot
+ * cover an attribute, only a `<style>`/`<script>` element that carries the
+ * matching nonce), this panel has exactly one `<style>` *element* and zero
+ * inline `style="…"` attributes anywhere in its generated markup — so a
+ * nonce on that one element, the same mechanism `resultPanel.ts`/
+ * `dataViewerPanel.ts` already use for their own `<script>` tag, removes the
+ * exception entirely rather than merely justifying it.
  */
-function panelHead(webview: TablePropertiesWebviewPanel["webview"]): string {
-  const csp = [
-    "default-src 'none';",
-    `style-src ${webview.cspSource} 'unsafe-inline';`,
-  ].join(" ");
+function panelHead(): string {
+  const nonce = crypto.randomUUID();
+  const csp = ["default-src 'none';", `style-src 'nonce-${nonce}';`].join(" ");
 
   const lang = /^[a-z]{2,3}(-[a-z0-9]+)*$/i.test(vscode.env.language)
     ? vscode.env.language
@@ -255,7 +247,7 @@ function panelHead(webview: TablePropertiesWebviewPanel["webview"]): string {
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
-<style>
+<style nonce="${nonce}">
   body {
     font-family: var(--vscode-font-family);
     color: var(--vscode-foreground);
@@ -316,11 +308,8 @@ function panelHead(webview: TablePropertiesWebviewPanel["webview"]): string {
 
 /** Shown the instant the panel opens, before `openTable`/`getColumns` have
  * resolved — replaced in place once they do (success or failure). */
-function buildLoadingHtml(
-  webview: TablePropertiesWebviewPanel["webview"],
-  table: TableItem,
-): string {
-  return `${panelHead(webview)}
+function buildLoadingHtml(table: TableItem): string {
+  return `${panelHead()}
 <body>
 <h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
 <p>${escapeHtml(vscode.l10n.t("Loading…"))}</p>
@@ -332,12 +321,8 @@ function buildLoadingHtml(
  * localised (`localiseDataProblem`), the same panel-facing text
  * `dataViewerPanel.ts`'s own `FailureMessage` carries for the identical pair
  * of calls. */
-function buildFailureHtml(
-  webview: TablePropertiesWebviewPanel["webview"],
-  table: TableItem,
-  message: string,
-): string {
-  return `${panelHead(webview)}
+function buildFailureHtml(table: TableItem, message: string): string {
+  return `${panelHead()}
 <body>
 <h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
 <p class="python-on-viya-table-properties-failure">${escapeHtml(message)}</p>
@@ -353,7 +338,6 @@ function buildFailureHtml(
  * `formatOptional*` helpers, rather than this function branching on each one
  * itself. */
 function buildPropertiesHtml(
-  webview: TablePropertiesWebviewPanel["webview"],
   table: TableItem,
   detail: TableDetail,
   columns: readonly Column[],
@@ -431,7 +415,7 @@ function buildPropertiesHtml(
     )
     .join("");
 
-  return `${panelHead(webview)}
+  return `${panelHead()}
 <body>
 <h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
 <div class="python-on-viya-table-properties-tabs">

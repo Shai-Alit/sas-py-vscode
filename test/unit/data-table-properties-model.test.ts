@@ -11,7 +11,22 @@ import {
   formatTimestamp,
 } from "../../src/data/tablePropertiesModel";
 
-describe("data/tablePropertiesModel", () => {
+describe("data/tablePropertiesModel", function () {
+  // `formatTimestamp` is this project's first-ever caller of
+  // `Date.prototype.toLocaleString()` — confirmed nothing else in `src/` or
+  // `test/unit/` calls it. CI caught a real, environment-specific cost of
+  // that: `windows-latest, node 24` timed out at the default 2s budget on
+  // this suite's very first test, which is also the first time the process
+  // ever exercises `Intl`-backed date formatting (ICU data has to load
+  // somewhere on first use). Same category `eslint-ignores.test.ts`
+  // (loading ESLint) and `contracts.test.ts`/`coverage-scope.test.ts`
+  // (loading TypeScript) already raise their own budget for — this is
+  // "loading a tool" (docs/dev/testing.md's own exemption line), not I/O this
+  // suite should be mocking instead, since `Intl` cannot be mocked the way an
+  // HTTP boundary can. `formatTimestamp` itself does no I/O and stays
+  // millisecond-fast on every platform this failure did not reproduce on.
+  this.timeout(30_000);
+
   describe("escapeHtml", () => {
     it("escapes the five HTML-significant characters", () => {
       assert.equal(

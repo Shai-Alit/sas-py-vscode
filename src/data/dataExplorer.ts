@@ -126,7 +126,12 @@ export function registerDataExplorer(
         // is at least diagnosable.
         void panels.open(item, adapter).catch((error: unknown) => {
           log.error(
-            `could not open the data viewer panel for "${item.libref}.${item.name}": ${String(error)}`,
+            vscode.l10n.t(
+              'SAS Libraries: could not open the data viewer panel for "{0}.{1}" ({2})',
+              item.libref,
+              item.name,
+              String(error),
+            ),
           );
         });
       },
@@ -141,7 +146,12 @@ export function registerDataExplorer(
         // identical reason.
         void propertiesPanels.open(item, adapter).catch((error: unknown) => {
           log.error(
-            `could not open the table properties panel for "${item.libref}.${item.name}": ${String(error)}`,
+            vscode.l10n.t(
+              'SAS Libraries: could not open the table properties panel for "{0}.{1}" ({2})',
+              item.libref,
+              item.name,
+              String(error),
+            ),
           );
         });
       },

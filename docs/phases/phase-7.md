@@ -1611,6 +1611,69 @@ the fix only strengthened an existing assertion, adding no new test);
 `npx prettier --check` clean on the touched file. No other file in this diff
 changed, so no wider re-verification was warranted for a test-only fix.
 
+**[PR #158](https://github.com/Shai-Alit/sas-py-vscode/pull/158) opened
+2026-09-11.** Both automated PR reviewers ran against the real diff. The
+project's own Claude reviewer found nothing beyond what the pre-PR pass had
+already disclosed (independently re-verified the same escaping/profile-scoping/
+epoch-constant/`deepEqual` claims and approved). **Codex found two real
+issues, both fixed before any further push:**
+
+1. **Blocking.** `panelHead`'s CSP allowed `style-src {cspSource}
+   'unsafe-inline'`, reasoned (in this file's own pre-PR write-up above) as
+   safe because every dynamic value is `escapeHtml`-escaped before it reaches
+   the page. Codex correctly pushed back: relying solely on this file's own
+   escaping discipline is weaker than not needing the exception at all.
+   Unlike `dataViewerPanel.ts` (which genuinely needs `'unsafe-inline'` —
+   `ag-grid`'s own runtime sets `style="…"` *attributes* on arbitrary
+   elements, which a CSP nonce cannot cover, only a `'unsafe-inline'`/
+   `'unsafe-hashes'` source can), this panel has exactly one `<style>`
+   *element* and zero inline `style="…"` attributes anywhere in its generated
+   markup — so a nonce, the same mechanism `resultPanel.ts`/
+   `dataViewerPanel.ts` already use for their own `<script>` tag, removes the
+   exception entirely rather than merely justifying it. Fixed:
+   `panelHead()` generates its own nonce, `style-src 'nonce-{nonce}'`
+   replaces `{cspSource} 'unsafe-inline'`, and `cspSource` is dropped from
+   `TablePropertiesWebviewPanel` entirely (now genuinely unused). A new
+   integration test (`"locks style-src to the <style> tag's own nonce, with
+   no 'unsafe-inline' anywhere"`) pins both the absence of `unsafe-inline`
+   and that the CSP's nonce matches the `<style>` tag's own.
+2. **Major.** The two `log.error` calls this slice added
+   (`dataExplorer.ts`'s `openTable`/`showTableProperties` command handlers'
+   own `.catch`) were hard-coded English, unlike every comparable log line
+   elsewhere in this codebase (`dataTree.ts`/`contentTree.ts`/
+   `dataViewerPanel.ts`'s own `"<area>: {0}"` pattern, and 7c-i's own
+   identical fix for `dataViewerPanel.ts`'s `log?.warn` calls). Codex flagged
+   only the new `showTableProperties` one (the only one in this PR's diff),
+   but `openTable`'s own log line — right above it, copied from when 7b wrote
+   it — has the exact same defect; fixing only the flagged line and leaving
+   its literal neighbor un-localised would have been inconsistent, so both
+   were wrapped in `vscode.l10n.t()` in the same file, same pattern as the
+   rest of this project.
+
+**A CI failure surfaced separately, on the same push: `test (windows-latest,
+node 24)` timed out at the unit tier's 2s default budget**, on
+`tablePropertiesModel.test.ts`'s very first test. Root cause: `formatTimestamp`
+is this project's first-ever caller of `Date.prototype.toLocaleString()` —
+confirmed nothing else in `src/` or `test/unit/` calls it — and this was the
+first time the whole test process ever exercised `Intl`-backed date
+formatting, which has to load ICU data somewhere on first use; that
+first-use cost apparently exceeded 2s on this specific runner/Node
+combination (passed on `windows-latest, node 22.18.0` and every other
+platform). Same category `eslint-ignores.test.ts` (loading ESLint) and
+`contracts.test.ts`/`coverage-scope.test.ts` (loading TypeScript) already
+carry their own suite-level `this.timeout(30_000)` for — "loading a tool,"
+per `docs/dev/testing.md`'s own exemption line, not I/O this suite should be
+mocking instead, since `Intl` cannot be mocked the way an HTTP boundary can.
+Fixed the same way: `this.timeout(30_000)` on the outer
+`describe("data/tablePropertiesModel", …)` block. `formatTimestamp` itself
+does no I/O and stays millisecond-fast on every platform this failure did
+not reproduce on.
+
+`npm run verify` re-run green after all three fixes (1519 unit passing,
+coverage unchanged: 95.48/95.43/95.15/95.48); `npm run test:integration`
+green (334 passing — the CSP nonce test is new); `npx tsc --noEmit` (all
+three configs) and `npx prettier --check`/`npm run lint` clean.
+
 ☐ **7c-iii — CSV export.**
 
 - ☐ Probe the CSV mechanism directly rather than porting upstream's literal

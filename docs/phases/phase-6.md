@@ -963,14 +963,13 @@ that drag-and-drop itself remains broken after a real fix attempt,
 Cut/Paste is not just the more honest interaction — it's the only one that
 actually works.
 
-☐ **6e — right-click Cut/Paste ships (ADR-0032); the folder `resourceUri`
+☑ **6e — right-click Cut/Paste ships (ADR-0032); the folder `resourceUri`
 change ships too (ADR-0031) but does not fix drag-and-drop, which stays
 broken and is tracked separately.**
-[PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162) open —
-CI green, both AI reviewers clean, mergeable; not yet merged as of this
-writing. Both landed together at the Phase 6→7/8 housekeeping checkpoint,
-discovered while live-testing 6c-ii's drag-and-drop; see the two entries
-above for the investigation and its outcome.
+**Merged 2026-09-11** as [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162),
+squash `a74f756`. Both landed together at the Phase 6→7/8 housekeeping
+checkpoint, discovered while live-testing 6c-ii's drag-and-drop; see the two
+entries above for the investigation and its outcome.
 
 - ☑ `src/content/uri.ts` gains `CONTENT_FOLDER_SCHEME` (`sasContentFolder:`)
   and `contentFolderUriString`, alongside the existing `CONTENT_SCHEME` /
@@ -1078,6 +1077,30 @@ above for the investigation and its outcome.
   profile switch) has not been separately live-exercised — covered by
   `cutPaste.test.ts` but not by a human switching real profiles — noted as
   a gap for whoever next touches multi-profile Cut/Paste, not a blocker.
+- **Two further review rounds on the open PR, each one real finding, both
+  fixed with a follow-up commit + a regression test, no PR re-opened:**
+  automated review of the pushed branch found a genuine race the pre-push
+  pass's own clear-before-move fix hadn't covered — `paste()`'s
+  failure-restore checked only `cutState === undefined`, so a `cut()` of a
+  *different* item while a failing move was still in flight got silently
+  overwritten by the stale restore. **Fixed** (commit `716ae27`): the
+  restore now runs only when the slot is still empty; a new integration
+  test races a real in-flight `cut()` against a rejected move. A second
+  review round on that same commit found the fix itself was incomplete —
+  `cutState === undefined` also can't distinguish "nothing has touched the
+  slot" from "something intentionally cleared it" (`clearCutContentItem`
+  from a profile switch or sign-out, firing while the same move is in
+  flight), so a late failure could still resurrect a cut an intentional
+  clear had just removed. **Fixed** (commit `1563bd3`): `setCutState` now
+  bumps a module-level `cutGeneration` counter on every call, including a
+  clear; `paste()` captures the generation right after its own clear and
+  restores `pending` only if the generation is unchanged, so any
+  intervening `cut()` *or* `clearCutContentItem()` — deliberate or not — is
+  respected. `npm run verify` green after each fix (lint clean, coverage
+  unchanged); `npm run test:integration` green (370 passing after the
+  second fix, all 13 Cut/Paste cases). Both threads replied to inline and
+  resolved. **Merged 2026-09-11** — no other findings on either automated
+  reviewer.
 
 The stale/duplicate copy of §15–§16 this branch's merge into `main` produced
 (the same section content inserted at two different points by two diverging

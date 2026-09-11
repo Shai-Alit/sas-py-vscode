@@ -4,7 +4,36 @@
 /**
  * The SAS Content tree's context-menu mutations — create a folder, create a
  * file, rename an item, delete an item (6c-i); add an item to / remove it from
- * My Favorites (6d-i); restore a recycled item, empty the Recycle Bin (6d-ii).
+ * My Favorites (6d-i); restore a recycled item, empty the Recycle Bin (6d-ii);
+ * cut an item, paste it into a folder (6e).
+ *
+ * ## Cut / Paste (6e) — an unambiguous alternative to drag-and-drop
+ *
+ * Right-click **Cut**, then right-click a folder and choose **Paste**. Both
+ * reuse exactly what `src/content/contentDragAndDrop.ts`'s drop handler
+ * calls — {@link moveObjection} to decide whether the move is valid,
+ * `ContentAdapter.moveItem` to do it — so this is the same move, reached a
+ * different way, not a second implementation to keep in sync. Added
+ * alongside [ADR-0031](../../docs/adr/0031-content-folder-resource-uri.md)'s
+ * drag-and-drop fix, but independently useful regardless of that fix: a drag
+ * never tells the user whether a drop will move or copy, which this project's
+ * own live testing found reason enough on its own — see
+ * [ADR-0032](../../docs/adr/0032-content-cut-paste.md).
+ *
+ * Only one item can be cut at a time, held for the life of the extension
+ * host and scoped to the deployment it was cut from — {@link ContentCommandDeps.activeEndpoint}
+ * is recorded alongside it, since a `ContentAdapter` is per-endpoint and
+ * reused across profile switches (the same fact 6d-i's `favoritesFolder()`
+ * finding turned on); {@link paste} refuses a cut from one deployment
+ * pasted after switching to another. `clearCutContentItem` is called on a
+ * profile change and on sign-out (`contentExplorer.ts`) so a stale cut
+ * cannot linger past either. There is no "cancel cut" command otherwise;
+ * cutting a second item just replaces the first, and there is no visual
+ * indication in the tree of what is currently cut (VS Code has no supported
+ * way to dim/badge a single `TreeItem` on demand outside of a
+ * `contextValue`-driven icon change, which would mean re-rendering the whole
+ * tree just to grey one row — considered out of proportion for a first
+ * slice).
  *
  * ## Delete became recycle (6d-ii)
  *
@@ -36,21 +65,64 @@ import * as vscode from "vscode";
 
 import { type ContentAdapter } from "./adapter";
 import { type ContentResult } from "./client";
+import { moveObjection, type MoveObjection } from "./contentMove";
 import { localiseContentProblem } from "./messages";
 import { describeContentProblem } from "./problems";
 import {
   isContainer,
   isRecyclableMember,
   isRestorable,
+  resourceHrefOf,
   sameResource,
   type ContentItem,
 } from "./types";
+
+/**
+ * The item a Cut is pending for, and the deployment it was cut from — a
+ * `ContentAdapter` is per-endpoint, reused across profile switches (the
+ * same fact 6d-i's `favoritesFolder()` finding turned on), so a paste must
+ * refuse to run a stale item's `self` link against a different deployment's
+ * adapter. `undefined` means nothing is cut. See the file doc comment's
+ * Cut/Paste section for why this is a single slot, not a list.
+ */
+let cutState:
+  { readonly item: ContentItem; readonly endpoint: string } | undefined;
+
+/** Sets (or clears) the pending cut and its context key together, so the two
+ * can never drift apart. */
+function setCutState(
+  next: { readonly item: ContentItem; readonly endpoint: string } | undefined,
+): void {
+  cutState = next;
+  void vscode.commands.executeCommand(
+    "setContext",
+    "pythonOnViya.hasCutContentItem",
+    next !== undefined,
+  );
+}
+
+/**
+ * Clears a pending Cut, if any. Exported so `contentExplorer.ts` can call it
+ * on a profile switch or sign-out — a cut item's endpoint check in
+ * {@link paste} would already refuse a cross-endpoint paste, but a stale cut
+ * surviving a sign-out with no way to clear it, or offering itself on a
+ * profile it was never cut from, is confusing on its own; and so tests can
+ * reset this module-level slot between cases.
+ */
+export function clearCutContentItem(): void {
+  setCutState(undefined);
+}
 
 /** What the command layer needs from its surroundings — supplied by
  * `src/content/contentExplorer.ts`, which owns the session and the tree. */
 export interface ContentCommandDeps {
   /** The adapter for the active deployment, or `undefined` when signed out. */
   adapter: () => ContentAdapter | undefined;
+  /** The active deployment's own root, alongside {@link adapter} — recorded
+   * against a Cut so {@link paste} can refuse one made against a since-changed
+   * deployment, rather than running a stale item's link against the wrong
+   * endpoint's adapter. */
+  activeEndpoint: () => string | undefined;
   /** Reload the tree — passed the changed item's parent after a create so only
    * that folder re-fetches, or nothing after a rename/delete for a full
    * reload. */
@@ -64,7 +136,7 @@ export interface ContentCommandDeps {
   viewId: string;
 }
 
-/** Registers the eight commands. Every disposable goes on `context.subscriptions`. */
+/** Registers the ten commands. Every disposable goes on `context.subscriptions`. */
 export function registerContentCommands(
   context: vscode.ExtensionContext,
   deps: ContentCommandDeps,
@@ -101,7 +173,169 @@ export function registerContentCommands(
     vscode.commands.registerCommand("pythonOnViya.emptyRecycleBin", () =>
       emptyBin(deps),
     ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.cutContentItem",
+      (item?: ContentItem) => {
+        cut(deps, item);
+      },
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.pasteContentItem",
+      (item?: ContentItem) => paste(deps, item),
+    ),
   );
+}
+
+/**
+ * "Cut" (6e). Records the item and the deployment it came from; nothing on
+ * the server changes yet. The menu already hides this on a `.recycled` item
+ * or anything that is not an ordinary member, but both are checked here too,
+ * matching {@link favorite}'s own early-out — in case this ever runs some
+ * other way than the menu.
+ */
+export function cut(
+  deps: ContentCommandDeps,
+  item: ContentItem | undefined,
+): void {
+  if (item?.inRecycleBin === true) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t("Restore this item from the Recycle Bin before moving it."),
+    );
+    return;
+  }
+  if (item !== undefined && item.type !== "child") {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t('"{0}" cannot be moved from here.', item.name),
+    );
+    return;
+  }
+
+  const adapter = deps.adapter();
+  const endpoint = deps.activeEndpoint();
+  if (adapter === undefined || endpoint === undefined || item === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+
+  setCutState({ item, endpoint });
+  void vscode.window.showInformationMessage(
+    vscode.l10n.t(
+      'Cut "{0}". Right-click a folder and choose Paste.',
+      item.name,
+    ),
+  );
+}
+
+/** The complete, standalone message for why {@link moveObjection} rejected a
+ * paste — one full sentence per case, not a fragment interpolated into a
+ * shared template, so each is independently translatable and can be
+ * reordered by a locale that needs to. The drag-and-drop path stays silent
+ * for most of these since a missed drag has no clear "the user meant this,"
+ * but a deliberate Paste click deserves an explanation either way. */
+function describeMoveObjection(
+  reason: MoveObjection,
+  item: ContentItem,
+  target: ContentItem,
+): string {
+  switch (reason) {
+    case "not-a-member":
+      return vscode.l10n.t('"{0}" cannot be moved from here.', item.name);
+    case "target-not-a-folder":
+      return vscode.l10n.t(
+        '"{0}" is not a folder you can move items into.',
+        target.name,
+      );
+    case "in-recycle-bin":
+      return vscode.l10n.t(
+        "An item in the Recycle Bin can only be restored, not moved.",
+      );
+    case "into-itself":
+      return vscode.l10n.t("You can't move a folder into itself.");
+    case "already-there":
+      return vscode.l10n.t(
+        '"{0}" is already in "{1}".',
+        item.name,
+        target.name,
+      );
+  }
+}
+
+/**
+ * "Paste" (6e). Moves {@link cutState}'s item into `target` via the exact
+ * same `moveObjection` / `ContentAdapter.moveItem` pair
+ * `contentDragAndDrop.ts`'s `handleDrop` calls — one implementation of "is
+ * this move valid" and "how do you do it," reached two ways.
+ *
+ * The slot is cleared *before* the move runs, not after, and restored only
+ * if the move did not actually happen (`!result.ok` — which already covers
+ * a cancelled attempt, since `run` reports a cancelled action as a failure
+ * whose cause is the abort). Clearing early rather than late closes two
+ * related races a "clear on success" order leaves open: a second Paste
+ * click fired while the first is still in flight now correctly sees
+ * "nothing has been cut yet" instead of racing a second move of an item
+ * that may already have relocated; and a move that lands right as the user
+ * clicks Cancel (`result.ok && aborted` — a real, if narrow, window `run`'s
+ * own doc comment describes) no longer leaves a now-invalid cut armed for a
+ * second paste, because the slot was already gone before that race could
+ * matter.
+ */
+export async function paste(
+  deps: ContentCommandDeps,
+  target: ContentItem | undefined,
+): Promise<void> {
+  const adapter = deps.adapter();
+  if (adapter === undefined || target === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+  const pending = cutState;
+  if (pending === undefined) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t("Nothing has been cut yet. Cut an item first."),
+    );
+    return;
+  }
+  if (pending.endpoint !== deps.activeEndpoint()) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t(
+        '"{0}" was cut from a different connection. Cut it again to paste it here.',
+        pending.item.name,
+      ),
+    );
+    return;
+  }
+  const item = pending.item;
+
+  const objection = moveObjection(item, target);
+  if (objection !== undefined) {
+    void vscode.window.showWarningMessage(
+      describeMoveObjection(objection, item, target),
+    );
+    return;
+  }
+
+  const destination = resourceHrefOf(target);
+  if (destination === undefined) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t('"{0}" has no address to move into.', target.name),
+    );
+    return;
+  }
+
+  clearCutContentItem();
+
+  const { result, aborted } = await run(
+    deps,
+    undefined,
+    (signal) => adapter.moveItem(item, destination, signal),
+    vscode.l10n.t('Moving "{0}"…', item.name),
+  );
+
+  if (result.ok) {
+    if (!aborted) await deps.reveal(result.value);
+  } else {
+    setCutState(pending);
+  }
 }
 
 async function createChild(

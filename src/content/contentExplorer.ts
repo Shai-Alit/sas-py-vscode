@@ -30,7 +30,10 @@ import * as vscode from "vscode";
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import type { HttpTransport } from "../auth/transport";
 import type { ProfileStore } from "../profile/store";
-import { registerContentCommands } from "./contentCommands";
+import {
+  clearCutContentItem,
+  registerContentCommands,
+} from "./contentCommands";
 import { SasContentDragAndDropController } from "./contentDragAndDrop";
 import {
   ContentSession,
@@ -172,6 +175,7 @@ export function registerContentExplorer(
   // per-active-deployment adapter the tree does, and reload through the tree.
   registerContentCommands(context, {
     adapter: () => session.adapterFor(activeEndpoint()),
+    activeEndpoint,
     refresh: (item) => {
       provider.refresh(item);
     },
@@ -210,13 +214,21 @@ export function registerContentExplorer(
     view.onDidChangeVisibility((event) => {
       if (event.visible) provider.refresh();
     }),
+    // A cut item (6e) is scoped to the deployment it was cut from; a profile
+    // switch, a session change, or a sign-out all mean "the deployment this
+    // extension is talking to may have just changed," so a pending cut is
+    // cleared alongside the tree reload rather than left to `paste`'s own
+    // endpoint check to catch silently.
     profiles.onDidChange(() => {
+      clearCutContentItem();
       provider.refresh();
     }),
     authEvents.onDidChangeSessions(() => {
+      clearCutContentItem();
       provider.refresh();
     }),
     authEvents.onDidSignOut(() => {
+      clearCutContentItem();
       session.clear();
       provider.refresh();
     }),

@@ -30,6 +30,17 @@
  * here too. After the reload the first item moved is revealed (6c-iii): its id
  * is stable, so `TreeView.reveal` places it under its new parent, expanding the
  * destination if it was collapsed.
+ *
+ * ## Every early return is logged (added 2026-09-11, ADR-0031)
+ *
+ * `handleDrag`/`handleDrop` are called by VS Code, not this project's own
+ * code, so a silent early return here previously left no trail at all —
+ * exactly the gap that made the Phase 6→7/8 housekeeping checkpoint's live
+ * drag-and-drop investigation slow: real drops were being rejected with no
+ * way to see why. Each guard now logs at `debug` what it decided and why,
+ * matching this project's own "failures are diagnosable" standard elsewhere.
+ * These are genuine per-attempt traces, not incidental debugging left behind
+ * — keep them.
  */
 
 import * as vscode from "vscode";
@@ -41,8 +52,20 @@ import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
 import { resourceHrefOf, type ContentItem } from "./types";
 
-/** The drag payload — private to this view, so a drop only lands from a drag
- * that started here. */
+/**
+ * The drag payload — private to this view, so a drop only lands from a drag
+ * that started here.
+ *
+ * A same-tree drop is documented as working with any custom mime type here
+ * (`@types/vscode`'s `DataTransferItem.value` docs), and a throwaway test
+ * extension confirmed it in practice, so this was briefly swapped to VS
+ * Code's own "recommended" `application/vnd.code.tree.<treeidlowercase>`
+ * format during the Phase 6->7/8 housekeeping investigation (2026-09-11) on
+ * the theory that it mattered for a tree this shape — it did not change
+ * anything, live-tested, so it was reverted here. The actual cause was a
+ * missing `resourceUri` on folder tree items (ADR-0031), unrelated to this
+ * constant.
+ */
 const CONTENT_MIME = "application/vnd.pythononviya.sascontent";
 
 /** What the controller needs from its surroundings — supplied by
@@ -74,6 +97,13 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
     const draggable = source.filter(
       (item) => nodePresentationOf(item).draggable,
     );
+    this.deps.log.debug(
+      vscode.l10n.t(
+        "SAS Content: handleDrag — {0} of {1} source item(s) draggable",
+        draggable.length,
+        source.length,
+      ),
+    );
     if (draggable.length === 0) return;
     dataTransfer.set(CONTENT_MIME, new vscode.DataTransferItem(draggable));
   }
@@ -85,10 +115,20 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
   ): Promise<void> {
     // A drop on empty space has no target folder, and there is no synthetic
     // "everything" folder to move into — nothing to do.
-    if (target === undefined) return;
+    if (target === undefined) {
+      this.deps.log.debug(
+        vscode.l10n.t("SAS Content: handleDrop — no target, ignored"),
+      );
+      return;
+    }
 
     const adapter = this.deps.adapter();
-    if (adapter === undefined) return;
+    if (adapter === undefined) {
+      this.deps.log.debug(
+        vscode.l10n.t("SAS Content: handleDrop — no active adapter, ignored"),
+      );
+      return;
+    }
 
     // `DataTransferItem.value` is `any`. This is not a wire boundary — the
     // payload only ever comes from this controller's own `handleDrag` under a
@@ -99,11 +139,27 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
     // drops the drop rather than throwing into VS Code's DnD host; the elements
     // are not re-validated per item.
     const payload: unknown = dataTransfer.get(CONTENT_MIME)?.value;
-    if (!Array.isArray(payload) || payload.length === 0) return;
+    if (!Array.isArray(payload) || payload.length === 0) {
+      this.deps.log.debug(
+        vscode.l10n.t(
+          "SAS Content: handleDrop — no {0} payload on the data transfer, ignored",
+          CONTENT_MIME,
+        ),
+      );
+      return;
+    }
     const dragged = payload as ContentItem[];
 
     const destination = resourceHrefOf(target);
-    if (destination === undefined) return;
+    if (destination === undefined) {
+      this.deps.log.debug(
+        vscode.l10n.t(
+          'SAS Content: handleDrop — target "{0}" has no resolvable resource href, ignored',
+          target.name,
+        ),
+      );
+      return;
+    }
 
     // Keep only the drops that are moves on their face; the server rejects the
     // one case this cannot see (a folder into its own descendant — finding
@@ -112,7 +168,22 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
       (item) => moveObjection(item, target) === undefined,
     );
     const [firstItem] = movable;
-    if (firstItem === undefined) return;
+    if (firstItem === undefined) {
+      // Names the objection for every dragged item, so a real-world rejection
+      // reason (e.g. every item read as "not-a-member") is visible instead of
+      // a silent no-op.
+      const reasons = dragged
+        .map((item) => `${item.name}: ${String(moveObjection(item, target))}`)
+        .join("; ");
+      this.deps.log.debug(
+        vscode.l10n.t(
+          'SAS Content: handleDrop — nothing movable onto "{0}" ({1})',
+          target.name,
+          reasons,
+        ),
+      );
+      return;
+    }
 
     const { problems, firstMoved } = await vscode.window.withProgress(
       {

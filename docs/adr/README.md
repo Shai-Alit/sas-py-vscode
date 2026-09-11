@@ -70,3 +70,5 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0028](0028-data-viewer-is-react-and-ag-grid.md) | The data viewer webview is React + ag-grid-community, not a hand-rolled grid; the dependency stays dev-only | Accepted |
 | [0029](0029-sort-view-lifecycle.md) | A server-side sort view is created once per (sort, filter) state and reused across pagination, not recreated per page | Accepted |
 | [0030](0030-delete-recycles-content-items.md) | "Delete" recycles a recyclable SAS Content item with no prompt; only an unrecyclable one is permanently deleted behind a modal | Accepted |
+| [0031](0031-content-folder-resource-uri.md) | Every SAS Content tree item gets a `resourceUri`, folders included, to fix native drag-and-drop | Accepted |
+| [0032](0032-content-cut-paste.md) | Right-click Cut/Paste ships as a SAS Content move interaction, alongside drag-and-drop | Accepted |

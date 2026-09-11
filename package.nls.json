@@ -27,6 +27,8 @@
   "command.removeContentFromFavorites.title": "Remove from My Favorites",
   "command.restoreContentItem.title": "Restore",
   "command.emptyRecycleBin.title": "Empty Recycle Bin",
+  "command.cutContentItem.title": "Cut",
+  "command.pasteContentItem.title": "Paste",
   "command.openTable.title": "Open Table",
   "command.showTableProperties.title": "Table Properties",
   "command.exportTableToCsv.title": "Export to CSV",

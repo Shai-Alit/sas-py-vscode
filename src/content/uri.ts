@@ -42,6 +42,25 @@ export const CONTENT_SCHEME = "sasContent";
  */
 export const CONTENT_READONLY_SCHEME = "sasContentReadOnly";
 
+/**
+ * The scheme for a folder's `TreeItem.resourceUri` — identity only, never
+ * opened, never registered with a `FileSystemProvider`. Added 2026-09-11
+ * (ADR-0031): a folder was previously built with no `resourceUri` at all
+ * (only an openable file leaf got one). This is the one concrete, confirmed
+ * structural difference between this project's `TreeDragAndDropController`
+ * (which mostly failed to recognise a folder row as a same-tree drop
+ * target, live-tested) and `vscode-sas-extension`'s own `ContentDataProvider`
+ * (confirmed to drag reliably in the same environment), which sets a
+ * `resourceUri` unconditionally on every item, container or not — the
+ * mechanism is correlational, not verified against VS Code's own source; see
+ * ADR-0031's Context for the full reasoning and its limits. A folder is never
+ * "opened" the way a file is (no `vscode.open` command is attached), so
+ * this scheme is deliberately inert: nothing calls `workspace.fs.*` on it,
+ * and nothing should ever register a provider for it. If that ever changes,
+ * it stops being safe to reuse this scheme as-is.
+ */
+export const CONTENT_FOLDER_SCHEME = "sasContentFolder";
+
 /** The file href and the deployment it belongs to, read out of a
  * `sasContent:` URI's query. */
 export interface ContentUriParts {
@@ -84,6 +103,25 @@ export function contentReadOnlyUriString(
 ): string {
   return buildContentUri(
     CONTENT_READONLY_SCHEME,
+    name,
+    resourceHref,
+    deploymentRoot,
+  );
+}
+
+/**
+ * The `sasContentFolder:` identity URI for a folder-shaped item — see
+ * {@link CONTENT_FOLDER_SCHEME}. Same shape as {@link contentUriString} so
+ * `parseContentUri` still reads it, on the off chance anything ever needs to,
+ * but nothing currently does.
+ */
+export function contentFolderUriString(
+  name: string,
+  resourceHref: string,
+  deploymentRoot: string,
+): string {
+  return buildContentUri(
+    CONTENT_FOLDER_SCHEME,
     name,
     resourceHref,
     deploymentRoot,

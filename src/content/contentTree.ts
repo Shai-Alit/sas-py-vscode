@@ -48,6 +48,22 @@
  * ({@link NodePresentation.openable}) gets a `resourceUri` and a `vscode.open`
  * command pointed at its `sasContent:` URI, so a single click opens the remote
  * file through `src/content/contentFileSystem.ts`.
+ *
+ * ## Every item gets a `resourceUri`, not only openable leaves (ADR-0031)
+ *
+ * A folder previously had no `resourceUri` at all. This is the one concrete,
+ * confirmed structural difference (ADR-0031) between this project's
+ * `TreeDragAndDropController` — which mostly failed to recognise a folder
+ * row as a same-tree drop target, live-tested — and `vscode-sas-extension`'s
+ * own `ContentDataProvider`, confirmed to drag reliably in the same
+ * environment, which sets a `resourceUri` on every item unconditionally.
+ * The mechanism is correlational, not verified against VS Code's own
+ * source — see ADR-0031's Context for the full reasoning. A folder's
+ * `resourceUri` points at the inert
+ * `sasContentFolder:` scheme (`src/content/uri.ts`) — no `FileSystemProvider`
+ * is ever registered for it, and no `command` is attached, so it carries no
+ * behaviour; it exists purely so the row has an identity VS Code's drag
+ * machinery can hang onto.
  */
 
 import * as vscode from "vscode";
@@ -62,7 +78,11 @@ import {
   SAS_CONTENT_ROOT,
   type ContentItem,
 } from "./types";
-import { contentReadOnlyUriString, contentUriString } from "./uri";
+import {
+  contentFolderUriString,
+  contentReadOnlyUriString,
+  contentUriString,
+} from "./uri";
 
 /**
  * The per-request bound on a {@link SasContentTreeProvider.getParent} fetch,
@@ -127,18 +147,20 @@ export class SasContentTreeProvider
     // a fixed sentinel.
     node.id = item.id;
 
-    // An openable file leaf: one click opens it through the `sasContent:`
-    // FileSystemProvider. `resourceHrefOf` is the member's own `uri`; a member
-    // that carries neither `uri` nor a `self` link, or a view with no active
-    // deployment, is left inert rather than pointed at a URI missing a part.
-    // A file shown inside the Recycle Bin opens under the read-only
-    // `sasContentReadOnly:` scheme instead (6d-ii) — the same provider serves
-    // it, registered `isReadonly`, so a recycled file can be looked at but not
-    // edited before it is restored.
+    // Every item with a resolvable resource href gets a `resourceUri` — not
+    // only an openable file leaf (ADR-0031). `resourceHrefOf` is the member's
+    // own `uri`, or a delegate/root-listing folder's `self` link; a view with
+    // no active deployment, or an item with neither, is left with no
+    // `resourceUri` rather than one pointed at a URI missing a part.
     const endpoint = this.currentEndpoint();
-    if (shape.openable && endpoint !== undefined) {
-      const href = resourceHrefOf(item);
-      if (href !== undefined) {
+    const href = resourceHrefOf(item);
+    if (href !== undefined && endpoint !== undefined) {
+      if (shape.openable) {
+        // A click opens it through the `sasContent:` FileSystemProvider. A
+        // file shown inside the Recycle Bin opens under the read-only
+        // `sasContentReadOnly:` scheme instead (6d-ii) — the same provider
+        // serves it, registered `isReadonly`, so a recycled file can be
+        // looked at but not edited before it is restored.
         const readOnly = item.inRecycleBin === true;
         const uri = vscode.Uri.parse(
           readOnly
@@ -153,6 +175,17 @@ export class SasContentTreeProvider
             : vscode.l10n.t("Open SAS Content File"),
           arguments: [uri],
         };
+      } else {
+        // A folder (or delegate) is never opened — no `command` — but it
+        // still gets an identity `resourceUri`, under the inert
+        // `sasContentFolder:` scheme (never registered with a
+        // `FileSystemProvider`, never touched by `workspace.fs.*`). This is
+        // the one concrete, confirmed structural fix for the drag-and-drop
+        // defect ADR-0031 documents — see `uri.ts`'s `CONTENT_FOLDER_SCHEME`
+        // doc comment and the ADR itself for the evidence and its limits.
+        node.resourceUri = vscode.Uri.parse(
+          contentFolderUriString(item.name, href, endpoint),
+        );
       }
     }
     return node;

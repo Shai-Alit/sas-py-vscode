@@ -797,6 +797,19 @@ read directly (no member record to move) or one already in the bin.
   `isRestorable` and says so rather than calling the adapter when there is no
   `previousParent`; `emptyBin()` confirms with a modal. Both go through the
   existing `run()` progress/abort/refresh wrapper.
+- **Reviewed before the PR (independent-agent pass, 2026-09-10) — no blocking
+  findings.** Verified: `isRecycleBinDelegate` ordered before the generic
+  `isDelegateFolder` check in `contextValueFor` (`trashFolder` is also in
+  `DELEGATE_FOLDER_TYPES`, so the order matters — has its own test);
+  `favoriteActionFor` forces `"none"` for anything `inRecycleBin`, so `.fav`/
+  `.recycled` can never collide; every new adapter method threads its
+  `AbortSignal`, no swallowing catches. **One known-tradeoff flagged, not a
+  finding**: `emptyRecycleBin` is sequential, no per-item progress text, no
+  batching — cancellable and correct, but a bin with hundreds of members would
+  take a couple of minutes. **Ship as-is (Sean, 2026-09-10)** — real bins are
+  small (verde's had 17), and it matches the sequential pattern
+  `deleteFolder`'s own recursion already uses; revisit only if a real bin size
+  makes it a problem.
 - **Known minor gap (deliberate):** a `sasContentReadOnly:` tab left open when
   its file is then restored or purged elsewhere is not force-refreshed or
   closed — upstream fires an `onDidChange` for the virtual URI; here the stale

@@ -1781,7 +1781,7 @@ formally tracking them is that housekeeping's job, not this branch's.
   text (not upstream's own accidentally-JSON fallback); `start`/`limit`
   pagination and `where=` are both honoured the same as the JSON `rows` link;
   default quoting is already RFC-4180-correct with no query parameter needed.
-- ☐ Host-side only, no webview involvement — the panel's CSP
+- ☑ Host-side only, no webview involvement — the panel's CSP
   (`default-src 'none'`, no `connect-src`) would block an in-webview
   `fetch` outright, and upstream's own download command bypasses its
   webview entirely too (a separate command, not a `DataViewer.ts` message).

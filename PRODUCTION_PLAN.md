@@ -520,6 +520,7 @@ the working gap analysis, and it is the checklist to track parity against.
 | Remote file open/save in place | Phase 6b | |
 | Library and table browsing | Phase 7a | |
 | Data viewer (paged, sortable) | Phase 7b–7c | React/ag-grid panel ports |
+| Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`) | Phase 7d | **No upstream equivalent** — upstream's users write SAS, which already reads a libref directly; this is the Python analogue |
 | Notebooks | Phase 9 | **We intend to exceed upstream** — ipynb rather than a bespoke format |
 | Status bar, connection state | Phase 3d-i / 3e | |
 | Session startup / autoexec configuration | Phase 11 | Python analogue of `autoExecLines` + `sasOptions` |

@@ -305,7 +305,7 @@ had been left open.
   client-side. This project ships none of that SQL generation itself; it
   only needs to make the pattern discoverable and safe to use.
 - **Finding 7.12 corrects the stash's speculative risk, rather than
-  confirming it.** The 2026-09-04 session, by direct analogy to Finding 92
+  confirming it.** The 2026-09-04 session, by direct analogy to Finding 8.6
   (Phase 8's `CASTOKEN` leak), guessed that a credential-bearing `LIBNAME`
   statement passed to `SAS.submit()` would land in the job log the same way.
   A live, isolated probe (2026-09-10, `verde`) found the opposite for the
@@ -315,7 +315,7 @@ had been left open.
   `password=XXXXXXXXXXXXXXXXXXXXXXXXX` — SAS's own standard `PASSWORD=`
   masking applied to the statement `SAS.submit()` itself echoes, exactly as
   it would for a top-level `LIBNAME`. **This does not reopen or replace
-  Finding 92.** That finding's own mechanism — the *outer* job-source echo
+  Finding 8.6.** That finding's own mechanism — the *outer* job-source echo
   reproducing a user's submitted Python verbatim (Finding 2/93's documented,
   unconditional source-echo behaviour) — is untouched by this result and
   still applies regardless of `SAS.submit()`: a credential written as a
@@ -1776,7 +1776,7 @@ top-level-folder permanent-delete confirmation could not be exercised, no
 permission on this deployment) — both left as-is here, since fixing or even
 formally tracking them is that housekeeping's job, not this branch's.
 
-☐ **7c-iii — CSV export.**
+☑ **7c-iii — CSV export.**
 
 - ☑ Probe the CSV mechanism directly rather than porting upstream's literal
   `.../rows#CSV` URL suffix unexamined — **done, Finding 7.20** (2026-09-11,
@@ -2017,13 +2017,13 @@ unmerged in a stash — see the Plan section's 7d entry for the full account.
   three completed successfully in one job (`sd2df` shape `(19, 5)`, `df2sd`
   into `work`, `submit` ran without error).
 - ☑ Settle the log-echo question: does `SAS.submit()`'s SQL/DDL text, or a
-  credential passed through it, appear in the job log the way Finding 92
+  credential passed through it, appear in the job log the way Finding 8.6
   (Phase 8) found for an inline `CASTOKEN` literal? **Done** — Finding 7.12
   (2026-09-10, `verde`): a `LIBNAME` statement assembled from a
   runtime-built string and executed via `SAS.submit()` was logged with SAS's
   standard `password=XXXXXXXXXXXXXXXXXXXXXXXXX` masking, not the resolved
-  value — the stash's speculative "worse than Finding 92" risk does not
-  hold for this mechanism specifically. Finding 92's own mechanism (the
+  value — the stash's speculative "worse than Finding 8.6" risk does not
+  hold for this mechanism specifically. Finding 8.6's own mechanism (the
   outer job-source echo reproducing submitted Python verbatim) is untouched
   and still applies to a credential written as a literal, regardless of
   `SAS.submit()`.
@@ -2660,7 +2660,7 @@ checked first (SAS's own LIBNAME-statement documentation, via web search):
 `PASSWORD=`/`PASS=`/`PWD=`/`PW=` values are, by default, replaced with `X`
 characters in the SAS log wherever a `LIBNAME` statement is logged. The
 2026-09-04 scoping session, unable to reach `verde`, guessed by analogy to
-Finding 92 (Phase 8's plaintext `CASTOKEN` leak) that a credential passed to
+Finding 8.6 (Phase 8's plaintext `CASTOKEN` leak) that a credential passed to
 `SAS.submit()` would leak the same way. This session probed it directly,
 designed to isolate `SAS.submit()`'s own behaviour from the already-known
 outer-echo mechanism: a submitted Python block assembled a `LIBNAME`
@@ -2683,10 +2683,10 @@ whether the connection succeeded.)
 
 **Documented vs. observed, stated explicitly:** the 2026-09-04 stash
 documented a *hypothesis* ("`SAS.submit()` likely leaks a credential the way
-Finding 92 did"), not a probed fact. The observation refutes that specific
+Finding 8.6 did"), not a probed fact. The observation refutes that specific
 hypothesis for the mechanism actually tested — `SAS.submit()`'s own
 statement-level echo inherits SAS's ordinary option-masking. **What this
-does not settle, and what remains exactly as risky as Finding 92 already
+does not settle, and what remains exactly as risky as Finding 8.6 already
 established:** the *outer* job-source echo (Finding 2/93's documented,
 unconditional behaviour) reproduces a user's submitted Python verbatim
 regardless of what it does — so a credential written as a Python string
@@ -2695,7 +2695,7 @@ regardless of what it does — so a credential written as a Python string
 still leaks in full, before `SAS.submit()`'s own masking ever has a chance
 to run. This session's probe deliberately avoided that literal-in-source
 case to isolate `SAS.submit()`'s own behaviour; it does not claim the
-literal case is safe — Finding 92 already established it is not, and
+literal case is safe — Finding 8.6 already established it is not, and
 nothing here changes that. **The practical guidance 7d's documentation
 should give:** never write a credential as a literal string in submitted
 Python, whether or not `SAS.submit()` is involved; source it from a runtime

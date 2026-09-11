@@ -375,4 +375,6 @@ would be the first probe recorded here — numbered `9.1`, per the
 phase-scoped finding-numbering scheme adopted 2026-09-09 (`STATUS.md`,
 repo-root `CLAUDE.md`), not a continuation of the project's old global
 sequence (which this phase file's scoping session originally assumed would
-run from Finding 92, `phase-8.md`).
+run from Finding 92, `phase-8.md` — since renumbered `8.6` under the new
+scheme, per that file's own account of the Phase 7→8 housekeeping
+checkpoint).

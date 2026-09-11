@@ -333,5 +333,6 @@ but adjacent to it), that would be the first probe recorded here — numbered `1
 phase-scoped finding-numbering scheme adopted 2026-09-09 (`STATUS.md`,
 repo-root `CLAUDE.md`), not a continuation of the project's old global
 sequence (which this phase file's scoping session originally assumed would
-run from Finding 92, `phase-8.md`, the same starting point phase-9.md's
-scoping session also assumed — a latent collision the new scheme avoids).
+run from Finding 92, `phase-8.md` (since renumbered `8.6` under the new
+scheme), the same starting point phase-9.md's scoping session also assumed —
+a latent collision the new scheme avoids).

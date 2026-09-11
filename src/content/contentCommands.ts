@@ -278,6 +278,13 @@ function describeMoveObjection(
  * own doc comment describes) no longer leaves a now-invalid cut armed for a
  * second paste, because the slot was already gone before that race could
  * matter.
+ *
+ * A third race the clear-early order doesn't resolve on its own: the
+ * `await run(...)` below is a yield point, so the user can `cut()` a
+ * *different* item while this move is still in flight. The failure-restore
+ * therefore only puts `pending` back if the slot is still empty — if a
+ * newer cut has already landed in it, that restore is skipped so a failed
+ * paste can never clobber a cut made after it started.
  */
 export async function paste(
   deps: ContentCommandDeps,
@@ -333,7 +340,7 @@ export async function paste(
 
   if (result.ok) {
     if (!aborted) await deps.reveal(result.value);
-  } else {
+  } else if (cutState === undefined) {
     setCutState(pending);
   }
 }

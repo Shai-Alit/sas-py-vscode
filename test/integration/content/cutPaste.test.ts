@@ -400,4 +400,51 @@ describe("SAS Content Cut/Paste (6e)", () => {
       );
     });
   });
+
+  it("a failed paste does not clobber a newer cut made while its move was in flight", async () => {
+    let resolveMove!: (value: ContentResult<ContentItem>) => void;
+    const movePromise = new Promise<ContentResult<ContentItem>>((resolve) => {
+      resolveMove = resolve;
+    });
+    const holder = depsWith(() => movePromise);
+    const otherItem: ContentItem = {
+      ...fileMember,
+      id: "other",
+      name: "other.py",
+    };
+
+    await withMessageStubs(holder, async () => {
+      cut(holder.deps, fileMember);
+      const pastePromise = paste(holder.deps, targetFolder);
+
+      // The move above is still awaiting movePromise — cut a different item
+      // before it resolves, exactly the race the inline review flagged.
+      cut(holder.deps, otherItem);
+
+      resolveMove({
+        ok: false,
+        reason: "rejected",
+        problem: {
+          code: "content-rejected",
+          error: { status: 409, detail: "name clash" },
+        },
+      });
+      await pastePromise;
+    });
+
+    // The failed paste must not have restored the stale `fileMember` cut
+    // over `otherItem`'s newer one — pasting now should move `otherItem`.
+    const moves: string[] = [];
+    const succeeding = depsWith((item, dest) => {
+      moves.push(item.id);
+      return Promise.resolve({
+        ok: true,
+        value: { ...item, parentFolderUri: dest },
+      } as ContentResult<ContentItem>);
+    });
+    await withMessageStubs(succeeding, async () => {
+      await paste(succeeding.deps, targetFolder);
+      assert.deepEqual(moves, ["other"]);
+    });
+  });
 });

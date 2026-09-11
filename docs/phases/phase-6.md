@@ -1131,7 +1131,9 @@ entries above for the investigation and its outcome.
 ☑ **Drag-and-drop: real root cause found and fixed, 2026-09-11 — a separate
 follow-up after 6e merged, from a Phase 7 session working in the
 `sas-py-vscode-cowork` clone (that branch never touched `src/content/`, so
-this landed cleanly against `main` with no conflict risk).** VS Code's own
+this landed cleanly against `main` with no conflict risk).**
+[PR #164](https://github.com/Shai-Alit/sas-py-vscode/pull/164) opened
+2026-09-11 on `fix/content-drag-drop-cancellation-token`. VS Code's own
 DevTools console — the one avenue ADR-0031's own investigation never
 reached, per its final "Next, for whoever picks this up" note above — showed
 the real failure on a live drop: `ERR o.onCancellationRequested is not a

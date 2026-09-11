@@ -151,7 +151,7 @@ pre-flight check of the destination volume's free space before starting a
 potentially large export, so a table too big for the chosen location fails
 fast with a clear message instead of running out of disk space partway
 through. `src/data/csvExportCommand.ts` is the fifth entry on
-`eslint.config.mjs`'s allow-list (`node:fs`, `node:path`).
+`eslint.config.mjs`'s allow-list (`node:fs`, `node:path`, `node:crypto`).
 
 **Why `vscode.workspace.fs` — the browser-host-compatible path this ADR's own
 hedge exists to keep cheap — does not cover this.** That API's own

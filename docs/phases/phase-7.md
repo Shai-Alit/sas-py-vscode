@@ -1846,8 +1846,52 @@ formally tracking them is that housekeeping's job, not this branch's.
   `npm run test:integration` green (344 passing, 5 new —
   `test/integration/data/csv-export-command.test.ts`); `npm run check:docs`/
   `l10n:extract`/`build`/`check:copyright`/`check:secrets`/
-  `check:coverage-scope`/`check:contracts` all clean. Adversarial pass not
-  yet run.
+  `check:coverage-scope`/`check:contracts` all clean.
+
+  **Adversarial pass (independent agent) ran before any push, per
+  `CLAUDE.md`'s standing rule** — three real, Medium-severity findings, all
+  fixed on the branch before it went anywhere:
+
+  1. **An existing file at the chosen destination was destroyed even when
+     the export never wrote a single row** — `fs.createWriteStream` truncates
+     on open, and a failure right after (an expired session, an
+     `insufficient-disk-space` refusal) then `unlink`ed that same path in
+     cleanup, so a user who picked an existing file as the destination lost
+     it regardless of whether anything new was ever written. **Fixed** by
+     writing to a `<destination>.<randomUUID()>.tmp` file the whole time and
+     `fs.promises.rename`-ing it onto the real destination only once
+     {@link exportTableToCsv} returns success — atomic on the same directory,
+     so there is no window where the destination is a half-written file, and
+     a failed or cancelled run's cleanup only ever removes its own temporary
+     file. This subsumes the module's own earlier "deletes its own partial
+     output file" framing, which did not account for what was already there.
+  2. **`createWriteStream`/`stream.once("error", ...)` sat before the `try`
+     block**, so a (low-probability, but real) synchronous throw from opening
+     the stream skipped `bridge.dispose()` (the exact `CancellationLike`
+     leak `cancellation.ts`'s own doc comment warns about) and reached only
+     `dataExplorer.ts`'s own `.catch`, which logs but never shows the user
+     anything — silently different from every other failure path this
+     feature has. **Fixed** by moving stream creation inside the `try`, so
+     it now reports through the same `catch` as everything else.
+  3. **No test exercised the stream-error path at all** — `fakeStream()`'s
+     own comment admitted "no real stream in this fake ever emits error",
+     leaving `runCsvExport`'s `streamError`/cleanup handling for a genuine
+     disk failure (`ENOSPC` mid-write) completely unverified. **Fixed**: a
+     new `fakeStream({ errorDuringEnd })` option fires the registered
+     `"error"` listener during `end()`, simulating a failure that surfaces
+     only once the stream's internal buffer is finally flushed — after every
+     `write` callback already resolved cleanly — which is exactly the gap a
+     second, post-flush `streamError` check (added alongside this fix) now
+     closes; a new test drives it end to end (routes fetch and write
+     cleanly, then the flush itself fails) and asserts the temp file is
+     cleaned up and the failure is reported.
+
+  `crypto.randomUUID()` (not `Math.random()`, which `eslint.config.mjs`
+  already bans project-wide for exactly this reason) names the temporary
+  file, so `csvExportCommand.ts`'s own allow-list entry now reads `node:fs`,
+  `node:path`, `node:crypto` — ADR-0003's amendment updated to match. `npm
+  run verify`/`test:integration` re-run green after all three fixes (1551
+  unit unchanged; 345 integration passing, one net new); `check:docs` clean.
 - ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
   instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
   the full account). Nothing left for 7c to pick up on this; the same

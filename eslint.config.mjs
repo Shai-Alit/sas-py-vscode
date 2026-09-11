@@ -187,7 +187,7 @@ export default tseslint.config(
   // arriving one reasonable-looking import at a time. `src/auth/caAgent.ts`
   // (`node:fs`, `node:https`, `node:tls`) is the certificate module ADR-0003's
   // hedge always named; see its 2026-09-02 amendment. `src/data/
-  // csvExportCommand.ts` (`node:fs`, `node:path`) is 7c-iii's CSV-export
+  // csvExportCommand.ts` (`node:fs`, `node:path`, `node:crypto`) is 7c-iii's CSV-export
   // streaming write and free-space check — see ADR-0003's 2026-09-11
   // amendment.
   {

@@ -16,12 +16,19 @@
  * entirely too — a plain command, not a message the panel sends. There is
  * nothing here for a webview to be involved in.
  *
- * **A cancelled or failed export deletes its own partial output file.**
- * Upstream's own `SAS.downloadTable`/`writeTableContentsToStream` calls
- * `fileStream.destroy()` on cancellation and stops — the file it already
- * wrote stays on disk, silently truncated, indistinguishable from a complete
- * export. This project does not repeat that: only a run that reaches the
- * end of the table keeps the file it wrote; anything else removes it.
+ * **Writes to a temporary file next to the destination, and only renames it
+ * onto the destination on full success.** Upstream's own `SAS.downloadTable`/
+ * `writeTableContentsToStream` opens the destination file directly — which
+ * both truncates it immediately (before a single row has been confirmed to
+ * fit) and calls `fileStream.destroy()` on cancellation and stops, leaving
+ * whatever was already written on disk, silently truncated, indistinguishable
+ * from a complete export. Writing under a `.tmp` name first and renaming only
+ * once {@link exportTableToCsv} has returned success means a cancelled or
+ * failed run never touches a destination the user already had — an existing
+ * file the save dialog is pointed at survives untouched — and removes only
+ * its own temporary file. `fs.promises.rename` on the same directory is
+ * atomic on every filesystem this project runs on, so there is no window
+ * where the destination is a half-written file.
  *
  * **A pre-flight check estimates the export's size and refuses to start if
  * it will not fit.** {@link ensureDiskSpace} samples a small first page,
@@ -39,7 +46,7 @@
  * already give for a real `vscode` surface (or, here, a real local
  * filesystem) a test cannot drive reliably.
  *
- * **The fourth file on ADR-0003's Node-built-ins allow-list**
+ * **The fifth file on ADR-0003's Node-built-ins allow-list**
  * (`eslint.config.mjs`), alongside `src/auth/caAgent.ts`. Local-disk
  * streaming writes and a free-space check have no browser-host story either
  * — `vscode.workspace.fs.writeFile` only ever writes one complete buffer, so
@@ -49,6 +56,7 @@
  * 2026-09-11 amendment.
  */
 
+import { randomUUID } from "node:crypto";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
@@ -102,8 +110,11 @@ export interface CsvExportDeps {
     | undefined;
   /** Defaults to `fs.createWriteStream`. */
   createWriteStream?: ((path: string) => CsvOutputStream) | undefined;
+  /** Defaults to `fs.promises.rename` — the temporary file onto the real
+   * destination, on full success only. */
+  rename?: ((from: string, to: string) => Promise<void>) | undefined;
   /** Defaults to `fs.promises.unlink`. Best-effort: a failure to remove the
-   * partial file (itself already an unusual, secondary failure) is logged,
+   * temporary file (itself already an unusual, secondary failure) is logged,
    * never shown to the user or allowed to mask the export's own error. */
   unlink?: ((path: string) => Promise<void>) | undefined;
   /** Defaults to `fs.promises.statfs` on the destination's own directory —
@@ -205,10 +216,12 @@ async function ensureDiskSpace(
 /**
  * Runs `pythonOnViya.exportTableToCsv` for `item`: a save dialog, then a
  * cancellable progress notification that opens the table
- * (`LibraryAdapter.openTable`) and streams its rows to the chosen file
- * (`exportTableToCsv`, `src/data/csvExportModel.ts`). A dismissed save
- * dialog (`uri === undefined`) is a silent no-op — the user changed their
- * mind, not a failure to report.
+ * (`LibraryAdapter.openTable`) and streams its rows to a temporary file next
+ * to the chosen destination (`exportTableToCsv`,
+ * `src/data/csvExportModel.ts`), renaming it onto the destination only once
+ * that streaming completes successfully. A dismissed save dialog
+ * (`uri === undefined`) is a silent no-op — the user changed their mind, not
+ * a failure to report.
  */
 export async function runCsvExport(
   item: TableItem,
@@ -227,10 +240,17 @@ export async function runCsvExport(
   const createWriteStream =
     deps.createWriteStream ??
     ((filePath: string) => fs.createWriteStream(filePath));
+  const rename =
+    deps.rename ?? ((from: string, to: string) => fs.promises.rename(from, to));
   const unlink =
     deps.unlink ?? ((filePath: string) => fs.promises.unlink(filePath));
   const statfs =
     deps.statfs ?? ((directory: string) => fs.promises.statfs(directory));
+
+  // Distinct per run (not just per destination): two exports racing to the
+  // same destination — unlikely, but not impossible if a user fires the
+  // command twice — must not fight over one temporary file.
+  const tempPath = `${uri.fsPath}.${randomUUID()}.tmp`;
 
   await withProgress(
     vscode.l10n.t(
@@ -241,14 +261,21 @@ export async function runCsvExport(
     ),
     async (token) => {
       const bridge = abortOn(token);
-      const stream = createWriteStream(uri.fsPath);
-      let streamError: Error | undefined;
-      stream.once("error", (error) => {
-        streamError ??= error;
-      });
       let succeeded = false;
+      // `undefined` until `createWriteStream` actually runs — kept inside
+      // this `try`, not above it, so a stream that fails even to open (a bad
+      // path, a permissions error) is reported the same way any other
+      // failure here is, and `bridge.dispose()` below still runs either way.
+      let stream: CsvOutputStream | undefined;
 
       try {
+        const openedStream = createWriteStream(tempPath);
+        stream = openedStream;
+        let streamError: Error | undefined;
+        openedStream.once("error", (error) => {
+          streamError ??= error;
+        });
+
         const opened = await adapter.openTable(item, bridge.signal);
         if (!opened.ok) {
           report(deps.log, item, opened.problem, bridge.signal.aborted);
@@ -270,7 +297,7 @@ export async function runCsvExport(
         const result = await exportTableToCsv(
           adapter,
           opened.value,
-          (chunk) => writeChunk(stream, chunk, () => streamError),
+          (chunk) => writeChunk(openedStream, chunk, () => streamError),
           bridge.signal,
         );
         if (!result.ok) {
@@ -278,7 +305,15 @@ export async function runCsvExport(
           return;
         }
 
+        await endStream(openedStream);
+        stream = undefined; // already ended — the `finally` below must not end it again
+        // Checked only now, after the flush: a real disk failure can surface
+        // only once the stream's internal buffer is finally written out,
+        // which can land after every `write` callback already resolved
+        // cleanly — checking any earlier would miss exactly that case.
         if (streamError !== undefined) throw streamError;
+
+        await rename(tempPath, uri.fsPath);
         succeeded = true;
       } catch (error) {
         if (!bridge.signal.aborted) {
@@ -297,13 +332,13 @@ export async function runCsvExport(
         }
       } finally {
         bridge.dispose();
-        await endStream(stream);
+        if (stream !== undefined) await endStream(stream);
         if (!succeeded) {
-          await unlink(uri.fsPath).catch((error: unknown) => {
+          await unlink(tempPath).catch((error: unknown) => {
             deps.log.debug(
               vscode.l10n.t(
                 "SAS Libraries: could not remove the incomplete export file {0} ({1})",
-                uri.fsPath,
+                tempPath,
                 messageOf(error),
               ),
             );

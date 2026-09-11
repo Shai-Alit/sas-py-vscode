@@ -101,10 +101,6 @@ const OPEN_ROUTE: RecordedDataRoute = {
   reply: dataFixture("table-detail-class.json"),
 };
 
-/** A fake `CsvOutputStream` that records every chunk it is given instead of
- * touching the real filesystem — the same reasoning `DataViewerPanelDeps.
- * createPanel` gives for a real `vscode` surface a test cannot drive
- * reliably, applied here to a real local file. */
 /** A mutable record `fakeStream` writes into — plain fields, not getters, so
  * a test that destructures the return value before `runCsvExport` runs still
  * observes what happens to the stream afterward rather than a snapshot taken
@@ -114,8 +110,23 @@ interface FakeStreamState {
   ended: boolean;
 }
 
-function fakeStream(): { stream: CsvOutputStream; state: FakeStreamState } {
+/** A fake `CsvOutputStream` that records every chunk it is given instead of
+ * touching the real filesystem — the same reasoning `DataViewerPanelDeps.
+ * createPanel` gives for a real `vscode` surface a test cannot drive
+ * reliably, applied here to a real local file.
+ *
+ * `errorDuringEnd`, when given, fires the registered `"error"` listener
+ * right before `end`'s own callback — simulating a real disk failure
+ * (`ENOSPC`) that surfaces only once the stream's internal buffer is finally
+ * flushed, after every earlier `write` callback already resolved cleanly.
+ * This is the specific ordering `runCsvExport`'s own post-flush `streamError`
+ * check exists for. */
+function fakeStream(options?: { errorDuringEnd?: Error }): {
+  stream: CsvOutputStream;
+  state: FakeStreamState;
+} {
   const state: FakeStreamState = { chunks: [], ended: false };
+  let errorListener: ((error: Error) => void) | undefined;
   const stream: CsvOutputStream = {
     write: (chunk, callback) => {
       state.chunks.push(chunk);
@@ -123,13 +134,52 @@ function fakeStream(): { stream: CsvOutputStream; state: FakeStreamState } {
     },
     end: (callback) => {
       state.ended = true;
+      if (options?.errorDuringEnd !== undefined) {
+        errorListener?.(options.errorDuringEnd);
+      }
       callback();
     },
-    once: () => {
-      // No real stream in this fake ever emits "error" — nothing to attach.
+    once: (_event, listener) => {
+      errorListener = listener;
     },
   };
   return { stream, state };
+}
+
+/** Tracks every `createWriteStream`/`rename`/`unlink` call `runCsvExport`
+ * makes, all answering as fake filesystem successes — `stream` is the one
+ * `createWriteStream` always hands back, so a test can assert on the same
+ * `FakeStreamState` it already holds. */
+interface FakeFsOps {
+  readonly createWriteStream: (path: string) => CsvOutputStream;
+  readonly rename: (from: string, to: string) => Promise<void>;
+  readonly unlink: (path: string) => Promise<void>;
+  readonly createdPaths: string[];
+  readonly renamed: { from: string; to: string }[];
+  readonly unlinked: string[];
+}
+
+function fakeFsOps(stream: CsvOutputStream): FakeFsOps {
+  const createdPaths: string[] = [];
+  const renamed: { from: string; to: string }[] = [];
+  const unlinked: string[] = [];
+  return {
+    createdPaths,
+    renamed,
+    unlinked,
+    createWriteStream: (path) => {
+      createdPaths.push(path);
+      return stream;
+    },
+    rename: (from, to) => {
+      renamed.push({ from, to });
+      return Promise.resolve();
+    },
+    unlink: (path) => {
+      unlinked.push(path);
+      return Promise.resolve();
+    },
+  };
 }
 
 function fakeLog(): { log: vscode.LogOutputChannel; errors: string[] } {
@@ -164,10 +214,10 @@ async function withErrorMessageStub(
 }
 
 describe("runCsvExport", () => {
-  it("writes every page to the stream and keeps the file on a full export", async () => {
+  it("writes every page to a temporary file, then renames it onto the destination on a full export", async () => {
     await withErrorMessageStub(async (shown) => {
       const { stream, state } = fakeStream();
-      const unlinked: string[] = [];
+      const ops = fakeFsOps(stream);
       const { log, errors } = fakeLog();
       const adapter = libraryAdapter([
         OPEN_ROUTE,
@@ -187,17 +237,24 @@ describe("runCsvExport", () => {
         showSaveDialog: () => Promise.resolve(SAVE_URI),
         withProgress: (_title, run) =>
           run(new vscode.CancellationTokenSource().token),
-        createWriteStream: () => stream,
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
         statfs: ampleDiskSpace(),
-        unlink: (path) => {
-          unlinked.push(path);
-          return Promise.resolve();
-        },
       });
 
       assert.deepEqual(state.chunks, ["Name,Sex\nAlfred,M\n"]);
       assert.ok(state.ended);
-      assert.deepEqual(unlinked, []);
+      // Written under a temporary name next to the destination, not the
+      // destination itself — this module's own "no truncated destination"
+      // guarantee depends on this.
+      assert.equal(ops.createdPaths.length, 1);
+      const [tempPath] = ops.createdPaths;
+      assert.ok(tempPath);
+      assert.notEqual(tempPath, SAVE_URI.fsPath);
+      assert.ok(tempPath.startsWith(SAVE_URI.fsPath));
+      assert.deepEqual(ops.renamed, [{ from: tempPath, to: SAVE_URI.fsPath }]);
+      assert.deepEqual(ops.unlinked, []);
       assert.deepEqual(errors, []);
       assert.deepEqual(shown, []);
     });
@@ -223,10 +280,10 @@ describe("runCsvExport", () => {
     assert.deepEqual(errors, []);
   });
 
-  it("reports and cleans up the partial file when opening the table fails", async () => {
+  it("reports and cleans up its temporary file, leaving the destination untouched, when opening the table fails", async () => {
     await withErrorMessageStub(async (shown) => {
       const { stream, state } = fakeStream();
-      const unlinked: string[] = [];
+      const ops = fakeFsOps(stream);
       const { log, errors } = fakeLog();
       const adapter = libraryAdapter([
         {
@@ -240,15 +297,14 @@ describe("runCsvExport", () => {
         showSaveDialog: () => Promise.resolve(SAVE_URI),
         withProgress: (_title, run) =>
           run(new vscode.CancellationTokenSource().token),
-        createWriteStream: () => stream,
-        unlink: (path) => {
-          unlinked.push(path);
-          return Promise.resolve();
-        },
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
       });
 
       assert.ok(state.ended);
-      assert.deepEqual(unlinked, [SAVE_URI.fsPath]);
+      assert.deepEqual(ops.renamed, []);
+      assert.deepEqual(ops.unlinked, ops.createdPaths);
       assert.equal(errors.length, 1);
       assert.equal(shown.length, 1);
     });
@@ -257,7 +313,7 @@ describe("runCsvExport", () => {
   it("refuses to start, and cleans up, when the estimated export will not fit", async () => {
     await withErrorMessageStub(async (shown) => {
       const { stream, state } = fakeStream();
-      const unlinked: string[] = [];
+      const ops = fakeFsOps(stream);
       const { log, errors } = fakeLog();
       // No route for the real export's own first page: if `ensureDiskSpace`
       // failed to stop the export before it started, this would throw on an
@@ -270,18 +326,17 @@ describe("runCsvExport", () => {
         showSaveDialog: () => Promise.resolve(SAVE_URI),
         withProgress: (_title, run) =>
           run(new vscode.CancellationTokenSource().token),
-        createWriteStream: () => stream,
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
         // One byte free — the sample alone already exceeds it.
         statfs: () => Promise.resolve({ bavail: 1, bsize: 1 }),
-        unlink: (path) => {
-          unlinked.push(path);
-          return Promise.resolve();
-        },
       });
 
       assert.deepEqual(state.chunks, []);
       assert.ok(state.ended);
-      assert.deepEqual(unlinked, [SAVE_URI.fsPath]);
+      assert.deepEqual(ops.renamed, []);
+      assert.deepEqual(ops.unlinked, ops.createdPaths);
       assert.equal(errors.length, 1);
       assert.equal(shown.length, 1);
       assert.match(shown[0] ?? "", /free/);
@@ -291,7 +346,7 @@ describe("runCsvExport", () => {
   it("reports and cleans up after writing what succeeded, when a later page fails", async () => {
     await withErrorMessageStub(async (shown) => {
       const { stream, state } = fakeStream();
-      const unlinked: string[] = [];
+      const ops = fakeFsOps(stream);
       const { log, errors } = fakeLog();
       const adapter = libraryAdapter([
         OPEN_ROUTE,
@@ -311,16 +366,57 @@ describe("runCsvExport", () => {
         showSaveDialog: () => Promise.resolve(SAVE_URI),
         withProgress: (_title, run) =>
           run(new vscode.CancellationTokenSource().token),
-        createWriteStream: () => stream,
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
         statfs: ampleDiskSpace(),
-        unlink: (path) => {
-          unlinked.push(path);
-          return Promise.resolve();
-        },
       });
 
       assert.deepEqual(state.chunks, ["Name,Sex\nAlfred,M\n"]);
-      assert.deepEqual(unlinked, [SAVE_URI.fsPath]);
+      assert.deepEqual(ops.renamed, []);
+      assert.deepEqual(ops.unlinked, ops.createdPaths);
+      assert.equal(errors.length, 1);
+      assert.equal(shown.length, 1);
+    });
+  });
+
+  it("reports and cleans up when the underlying stream fails during its final flush, after every row already wrote cleanly", async () => {
+    await withErrorMessageStub(async (shown) => {
+      const { stream, state } = fakeStream({
+        errorDuringEnd: new Error("ENOSPC: no space left on device"),
+      });
+      const ops = fakeFsOps(stream);
+      const { log, errors } = fakeLog();
+      const adapter = libraryAdapter([
+        OPEN_ROUTE,
+        DISK_SPACE_SAMPLE_ROUTE,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=500&includeColumnNames=true`,
+          reply: dataCsv("Name,Sex\nAlfred,M\n"),
+        },
+        {
+          when: `${CLASS_HREF}/rows?start=500&limit=500`,
+          reply: dataCsv(""),
+        },
+      ]);
+
+      await runCsvExport(tableItem(), adapter, {
+        log,
+        showSaveDialog: () => Promise.resolve(SAVE_URI),
+        withProgress: (_title, run) =>
+          run(new vscode.CancellationTokenSource().token),
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
+        statfs: ampleDiskSpace(),
+      });
+
+      // Every page fetched and written without incident — the failure only
+      // surfaces once the stream's own final flush reports it.
+      assert.deepEqual(state.chunks, ["Name,Sex\nAlfred,M\n"]);
+      assert.ok(state.ended);
+      assert.deepEqual(ops.renamed, []);
+      assert.deepEqual(ops.unlinked, ops.createdPaths);
       assert.equal(errors.length, 1);
       assert.equal(shown.length, 1);
     });
@@ -329,7 +425,7 @@ describe("runCsvExport", () => {
   it("says nothing, but still cleans up, when the user cancels", async () => {
     await withErrorMessageStub(async (shown) => {
       const { stream } = fakeStream();
-      const unlinked: string[] = [];
+      const ops = fakeFsOps(stream);
       const { log, errors } = fakeLog();
       const source = new vscode.CancellationTokenSource();
       // The same "cancel before `run` even sees the token" shape
@@ -357,16 +453,15 @@ describe("runCsvExport", () => {
           source.cancel();
           return run(source.token);
         },
-        createWriteStream: () => stream,
-        unlink: (path) => {
-          unlinked.push(path);
-          return Promise.resolve();
-        },
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
       });
 
       assert.deepEqual(errors, []);
       assert.deepEqual(shown, []);
-      assert.deepEqual(unlinked, [SAVE_URI.fsPath]);
+      assert.deepEqual(ops.renamed, []);
+      assert.deepEqual(ops.unlinked, ops.createdPaths);
     });
   });
 });

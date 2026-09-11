@@ -313,6 +313,40 @@ sas-py-vscode/
 └── .github/workflows/
 ```
 
+> **Amended 2026-09-10, at the Phase 6→7/8 housekeeping checkpoint.** This
+> sketch predates Phases 6 and 7 and doesn't show what they actually added,
+> because — like §2.2's `ExecutionBackend` sketch and §2.3's capability
+> probe — it was written before either was built. Three real,
+> architecture-level additions:
+>
+> - **`src/wire/`** ([ADR-0025](docs/adr/0025-shared-wire-layer.md)), promoted
+>   out of `src/compute/` in 6a-i: the HATEOAS link helpers and the
+>   `application/vnd.sas.error+json` reader, service-agnostic so a second Viya
+>   service's client can share them without depending on `src/compute/`.
+> - **`src/content/`** ([ADR-0026](docs/adr/0026-content-adapter-shape.md)),
+>   6a through 6d: one concrete `ContentAdapter` — no factory, no model, no
+>   `ContentSourceType` enum — built on `src/wire/`, plus the repo's first
+>   activity-bar view container, first `FileSystemProvider` (`sasContent:`,
+>   registered a second time `isReadonly` for the Recycle Bin), and first
+>   `TreeDragAndDropController`. `src/data/` (Phase 7a,
+>   [ADR-0027](docs/adr/0027-library-adapter-shape.md)) is a second,
+>   independent tree in the same container, reading the active compute
+>   session rather than the deployment-wide Folders/Files service.
+> - **`src/webview/dataViewerEntry.tsx`** and its React +
+>   `ag-grid-community` bundle (Phase 7b,
+>   [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)) — this
+>   repo's first bundled frontend framework, kept out of the extension's own
+>   runtime dependencies (`devDependencies`, preserving
+>   [ADR-0005](docs/adr/0005-supply-chain-policy.md)'s zero-runtime-dependency
+>   invariant) and out of the unit tier (browser-only, no `jsdom`).
+>
+> None of this changes what §2.1's design principles ask for — the
+> `ExecutionBackend` seam, the ban on inline version branching, HTTP-boundary
+> testing — it is additional surface built on top of them. Actual module
+> layout is `src/{auth,backend,compute,content,data,dialects,profile,run,
+> webview,wire}/`, not the `client/src/` tree sketched above; see each
+> phase's own file under `docs/phases/` for the slice-by-slice detail.
+
 ### 2.1 Design principles
 
 - **The `ExecutionBackend` seam is load-bearing.** Everything above it — commands,
@@ -541,10 +575,11 @@ true: the code landed under `src/{auth,backend,compute,dialects,profile}/`, and
 `connection/` and `python/` were never created. The gate is a single aggregate
 ratchet in `.c8rc.json` rather than a per-directory target; it has moved
 several times since this was written (3b, the post-3f floor raise on
-functions, then 4d's raise on lines/statements), so the actual current
-numbers are whatever `.c8rc.json` says today rather than a figure copied
-here — as of 2026-09-02 that's lines 94 / statements 94 / functions 93 /
-branches 95. The original ≥85% figure is long since passed.
+functions, then 4d's raise on lines/statements, then Phase 6's own raise on
+functions), so the actual current numbers are whatever `.c8rc.json` says
+today rather than a figure copied here — as of 2026-09-10 that's lines 94 /
+statements 94 / functions 94 / branches 95. The original ≥85% figure is
+long since passed.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
 

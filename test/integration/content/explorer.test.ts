@@ -49,6 +49,11 @@ const RECYCLE_BIN_COMMANDS = [
   "pythonOnViya.emptyRecycleBin",
 ];
 
+const CUT_PASTE_COMMANDS = [
+  "pythonOnViya.cutContentItem",
+  "pythonOnViya.pasteContentItem",
+];
+
 /** The content commands that must never be offered on a Recycle Bin item —
  * everything except Delete (which becomes "permanently delete" there) and the
  * bin's own Restore / Empty. */
@@ -56,6 +61,7 @@ const NON_RECYCLE_CONTENT_COMMANDS = [
   "pythonOnViya.createContentFolder",
   "pythonOnViya.createContentFile",
   "pythonOnViya.renameContentItem",
+  "pythonOnViya.cutContentItem",
   ...FAVORITE_COMMANDS,
 ];
 
@@ -192,6 +198,7 @@ describe("SAS Content explorer", () => {
       ...MUTATION_COMMANDS,
       ...FAVORITE_COMMANDS,
       ...RECYCLE_BIN_COMMANDS,
+      ...CUT_PASTE_COMMANDS,
     ]) {
       await assert.doesNotReject(
         Promise.resolve(vscode.commands.executeCommand(command)),
@@ -218,6 +225,26 @@ describe("SAS Content explorer", () => {
         `${command} threw on a recycled item`,
       );
     }
+  });
+
+  it("cut early-outs on a Recycle Bin item without throwing (6e)", async () => {
+    // Same shape as the favourites early-out above — `cut()` checks
+    // `item.inRecycleBin` before the session, even though the `.recycled`
+    // `when` clause already hides the menu entry.
+    const recycled = {
+      id: "bin-1",
+      name: "old.py",
+      type: "child",
+      contentType: "file",
+      inRecycleBin: true,
+      links: [],
+    };
+    await assert.doesNotReject(
+      Promise.resolve(
+        vscode.commands.executeCommand("pythonOnViya.cutContentItem", recycled),
+      ),
+      "cutContentItem threw on a recycled item",
+    );
   });
 
   it("registers the two 6d-i favourites commands and wires their menu", async () => {
@@ -347,6 +374,52 @@ describe("SAS Content explorer", () => {
     const hidden = (menus?.commandPalette ?? []).filter(
       (m) =>
         RECYCLE_BIN_COMMANDS.includes(m.command ?? "") && m.when === "false",
+    );
+    assert.equal(hidden.length, 2, "both should be hidden from the palette");
+  });
+
+  it("registers the two 6e cut/paste commands and wires their menu", async () => {
+    const registered = await vscode.commands.getCommands(true);
+    for (const command of CUT_PASTE_COMMANDS) {
+      assert.ok(registered.includes(command), `${command} is not registered`);
+    }
+
+    const context = contextMenuEntries().filter((m) =>
+      CUT_PASTE_COMMANDS.includes(m.command ?? ""),
+    );
+    assert.equal(context.length, 2, "expected a Cut and a Paste entry");
+    const whenFor = (command: string) =>
+      context.find((m) => m.command === command)?.when ?? "";
+
+    // Cut is offered on an ordinary (or favourited) folder/file, never a
+    // recycled one, and hidden during a multi-selection like every other
+    // per-item command.
+    assert.match(
+      whenFor("pythonOnViya.cutContentItem"),
+      /viewItem =~ \/\^sasContent:\(folder\|file\)\(\\\.fav\)\?\$\//,
+    );
+    // Paste targets a folder-shaped node — an ordinary/favourited folder or
+    // My Folder, the same set Create offers itself on — and only when
+    // something has actually been cut.
+    assert.match(
+      whenFor("pythonOnViya.pasteContentItem"),
+      /sasContent:folder\(\\\.fav\)\?\$\/ \|\| viewItem == sasContent:myFolder/,
+    );
+    assert.match(
+      whenFor("pythonOnViya.pasteContentItem"),
+      /pythonOnViya\.hasCutContentItem/,
+    );
+    for (const entry of context) {
+      assert.match(entry.when ?? "", /!listMultiSelection/);
+    }
+
+    const menus = (
+      vscode.extensions.getExtension(extensionId())?.packageJSON as {
+        contributes?: { menus?: { commandPalette?: MenuContribution[] } };
+      }
+    ).contributes?.menus;
+    const hidden = (menus?.commandPalette ?? []).filter(
+      (m) => CUT_PASTE_COMMANDS.includes(m.command ?? "") && m.when === "false",
     );
     assert.equal(hidden.length, 2, "both should be hidden from the palette");
   });

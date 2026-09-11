@@ -41,6 +41,8 @@ under their category.
 | Remove from My Favorites | `Python on Viya: Remove from My Favorites` | `pythonOnViya.removeContentFromFavorites` |
 | Restore | `Python on Viya: Restore` | `pythonOnViya.restoreContentItem` |
 | Empty Recycle Bin | `Python on Viya: Empty Recycle Bin` | `pythonOnViya.emptyRecycleBin` |
+| Cut | `Python on Viya: Cut` | `pythonOnViya.cutContentItem` |
+| Paste | `Python on Viya: Paste` | `pythonOnViya.pasteContentItem` |
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` |
 | Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showTableProperties` |
 | Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportTableToCsv` |

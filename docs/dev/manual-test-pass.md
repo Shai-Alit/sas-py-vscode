@@ -1169,7 +1169,7 @@ in the tree.
   failure paths in `src/run/commands.ts` never call `log.*` before showing
   that message. Tracked in Phase 3's **3f** slice.
 
-## 15. SAS Content — browsing, open/save, and mutations (phases 6a–6c)
+## 15. SAS Content — browsing, open/save, and mutations (phases 6a–6c, 6e)
 
 A tree view over the deployment-wide Folders/Files service — this repo's
 first activity-bar view container, first `FileSystemProvider`
@@ -1179,15 +1179,31 @@ first activity-bar view container, first `FileSystemProvider`
 (§10), it needs no compute session — signing in is enough. **First pass ran
 2026-09-11 (Sean, live)** — no prior manual pass existed for any of Phase 6
 before this. Every row through "Delete on an ordinary item recycles it
-silently" passed clean. Two open items, both flagged inline below rather than
-fixed in this session (this is a docs-only addition, reconciled properly at
-Phase 6→7/8 housekeeping, not this branch's own scope): the top-level-folder
-permanent-delete confirmation could not be exercised at all (no permission on
-this deployment to create/delete folders directly under SAS Content), and
-drag-and-drop is completely non-functional (dragging does nothing at all,
-from either the OS or the tree itself) — the four rows after it that test
-drag variants were left unchecked rather than retested, since there was
-nothing working yet to vary.
+silently" passed clean.
+
+Two things came out of that pass, both investigated at the Phase 6→7/8
+housekeeping checkpoint rather than in this branch's own scope:
+
+- The top-level-folder permanent-delete confirmation was recorded as
+  blocked by a permissions limit — **that reason was wrong**; Sean has full
+  read/write access to every folder tested, including as a system
+  administrator. It simply hasn't been retried since. Still unchecked
+  below; needs a live run.
+- Drag-and-drop within the tree was completely non-functional. A real
+  investigation found a plausible cause and shipped a fix for it
+  ([ADR-0031](../adr/0031-content-folder-resource-uri.md); a folder tree
+  item never carried a `resourceUri`) — but **a second live retest,
+  2026-09-11, after the fix shipped, found drag-and-drop still completely
+  non-functional, identical symptoms.** The `resourceUri` hypothesis is
+  disproven as *the* cause (ADR-0031's own amendment); the change is kept
+  regardless for its own smaller reasons, but drag-and-drop itself is now
+  an accepted, deprioritised **(known gap)** — see `phase-11.md`. The four
+  rows below that test drag variants stay unchecked; they cannot be
+  exercised while the base gesture does not work at all. A right-click
+  Cut/Paste alternative shipped alongside the fix attempt
+  ([ADR-0032](../adr/0032-content-cut-paste.md)) and **is confirmed working,
+  live, under its final command names** — this is now the only way to move
+  an item in this tree, not merely the less ambiguous one.
 
 **Pre-work:** a Viya connection signed in (§3) — no need to **Connect to
 SAS Viya** first. Have write access to at least one folder you don't mind
@@ -1252,38 +1268,74 @@ creating, renaming, moving, and deleting test files/folders in.
   \"…\" and everything inside it?" with detail "This cannot be undone." and
   a **Delete Permanently** button. Cancelling leaves it untouched;
   confirming removes it for good (not recoverable from the Recycle Bin).
-  **First pass, 2026-09-11 (Sean): unable to test** — no access to
-  create/delete folders directly under SAS Content on this deployment (Viya
-  policy).
-- [-] **Dragging an item onto a folder moves it** — drag a test file onto a
-  different folder.
+  **First pass, 2026-09-11 (Sean): recorded as unable to test** — the
+  reason given (no access to create/delete folders directly under SAS
+  Content) turned out to be wrong; retry needed.
+- [-] **(known gap) Dragging an item onto a folder moves it** — drag a test
+  file onto a different folder.
   **Expect:** a progress notification ("Moving \"…\"…"), the item
   disappears from its old location, and it is auto-revealed (selected,
   ancestors expanded) under the new folder — no manual refresh needed.
   **First pass, 2026-09-11 (Sean): failed** — dragging a file from Windows
-  Explorer does nothing, and dragging a file from within the SAS Content tree
-  also does nothing: no progress notification, no message, and no file
-  movement.
+  Explorer does nothing (expected — see below), and dragging a file from
+  within the SAS Content tree also did nothing: no progress notification,
+  no message, no file movement. **Second pass, 2026-09-11 (Sean), against a
+  build with ADR-0031's fix: failed identically.** No progress notification,
+  no message, no file movement — same as the first pass, no visible change
+  at all. Root cause remains unknown; accepted as a known gap, deprioritised
+  behind Cut/Paste (below), tracked in `phase-11.md` for a future
+  investigation. Do not re-tick this box on a future pass without a genuine
+  fix — if drag-and-drop is ever confirmed working, rewrite this row as a
+  normal **Expect** per this doc's own convention (see "Keeping this
+  current").
 - [ ] **Dragging multiple items moves all of them together** — select two
   or more items (Ctrl/Cmd-click) and drag them onto a folder.
   **Expect:** a progress notification naming the count ("Moving N
   items…"); all selected items move; the first one is revealed afterward.
+  Not testable while the single-item case above does not work at all.
 - [ ] **Dragging onto My Favorites or the Recycle Bin does nothing** — drag
   a test file onto the My Favorites row, then onto the Recycle Bin row.
   **Expect:** no error, no toast, no move — the item stays exactly where it
   was. (Neither gesture is wired to add-to-favourites or recycle; only the
-  context-menu actions in §16 do that.)
+  context-menu actions in §16 do that.) Trivially "passes" while
+  drag-and-drop is broken outright — not meaningfully testable until the
+  base gesture works, since a no-op is indistinguishable from the general
+  failure above.
 - [ ] **Dragging an item onto itself or its current folder is a no-op** —
   drag an item onto the folder it already lives in, and drop it directly on
   itself if your OS allows the gesture.
   **Expect:** nothing happens either way — no progress notification, no
-  error.
+  error. Same caveat as the row above.
 - [ ] **Multi-select hides the single-item context actions** — select two
   or more items at once and right-click.
-  **Expect:** New Folder, New File, Rename, Delete, and the favourite
+  **Expect:** New Folder, New File, Rename, Delete, Cut, and the favourite
   toggle are all absent from the context menu (they act on exactly one
   item); only Empty Recycle Bin / Restore-style bulk actions would still
   apply where relevant.
+- [x] **Cut, then Paste, moves an item unambiguously (6e)** — right-click a
+  test file and choose **Cut**, then right-click a *different* folder and
+  choose **Paste**.
+  **Expect:** Cut shows a brief info message ("Cut \"…\". Right-click a
+  folder and choose Paste."); Paste shows a progress notification ("Moving
+  \"…\"…"), the item disappears from its old location, and it is
+  auto-revealed under the new folder — same end state as a working drag,
+  reached without touching drag-and-drop at all. **Live-tested twice**:
+  first under the diagnostic's original command names (2026-09-11, Sean —
+  three real moves, `Demo → tst`, `tst → My Folder`, `My Folder → Demo`,
+  all clean), then again, 2026-09-11, against
+  [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162)'s branch
+  under the final `pythonOnViya.cutContentItem`/`pasteContentItem` names —
+  confirmed working. This is currently the only working way to move an
+  item in this tree (drag-and-drop, above, does not work at all).
+- [ ] **Paste without a Cut, or onto an invalid target, explains why** —
+  right-click a folder and choose **Paste** with nothing cut yet; then Cut
+  a file, and Paste it onto the folder it already lives in.
+  **Expect:** "Nothing has been cut yet. Cut an item first." for the first
+  case; a message naming the item, the target, and "it's already there" for
+  the second — neither silently does nothing the way a missed drag would.
+- [ ] **Cut is not offered on a Recycle Bin item** — expand the Recycle
+  Bin and right-click an item inside it.
+  **Expect:** no **Cut** entry on the context menu at all.
 
 ## 16. SAS Content — favourites and the Recycle Bin (phase 6d)
 
@@ -1418,10 +1470,12 @@ This page is meant to be re-run every phase, so it has to grow with the product.
   Phase 6 (SAS Content) got its own live pass and sections (§15–§16) added
   2026-09-11 — later than its own phase boundary, and out of sequence with
   this rule's own "when a phase closes" cadence, since it landed inside a
-  Phase 7c-ii fix branch rather than at Phase 6's own close. It is a docs-only
-  addition here; reconciling it properly (moving it, or confirming it stays)
-  is Phase 6→7/8 housekeeping's job (`HOUSEKEEPING.md`), not yet run as of
-  this writing.
+  Phase 7c-ii fix branch rather than at Phase 6's own close. Reconciled by
+  the Phase 6→7/8 housekeeping checkpoint (`HOUSEKEEPING.md`): the real
+  drag-and-drop failures the live pass found were root-caused and fixed
+  (ADR-0031), a Cut/Paste alternative shipped alongside it (ADR-0032, new
+  rows in §15), and both are tracked in `phase-6.md`'s 6e Runbook entry
+  rather than silently left as unchecked boxes here.
 - **Retire a gap when it closes.** A **(known gap)** row is a promise to update
   it, not a permanent excuse. When the behaviour lands, rewrite the row as a
   normal **Expect**.

@@ -38,10 +38,16 @@ called out under **Changed** with a migration note.
 - **A SAS Content explorer.** The Python on Viya activity-bar icon now opens a
   **SAS Content** view showing My Favorites, My Folder, SAS Content and Recycle
   Bin, read from the Viya Folders and Files services. Expand a folder to list
-  its sub-folders and files; a refresh button on the view reloads it. Moving
-  content and dragging a file into the editor are a later release.
+  its sub-folders and files; a refresh button on the view reloads it. Dragging
+  a file into the editor is a later release.
   See [Browsing SAS Content](docs/browsing-sas-content.md) and
   [ADR-0026](docs/adr/0026-content-adapter-shape.md).
+- **Move SAS Content items — by dragging, or by right-click Cut/Paste.** Drag
+  a file or folder onto another folder to move it, or right-click an item and
+  choose **Cut**, then right-click a folder and choose **Paste** for the same
+  result without touching drag-and-drop
+  ([ADR-0032](docs/adr/0032-content-cut-paste.md)). Dragging onto My Favorites
+  or the Recycle Bin, or onto an item's own current folder, is a no-op.
 - **Open and save SAS Content files in place.** Clicking a file in the SAS
   Content view opens it in an editor; saving writes it straight back to SAS
   Viya. The save is guarded against a lost update — if the file changed on the

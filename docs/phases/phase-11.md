@@ -59,28 +59,51 @@ checkpoint): three items deferred out of Phase 6 that never landed a home.**
   `viya-api-probe` pass, not an assumption, before this is designed. If
   there is no server-side copy, this means read-the-content-then-create-a-new-file,
   real additional work rather than a rename of Cut's call.
-- **Drag-and-drop within the SAS Content tree remains completely
-  non-functional — root cause unknown, deliberately deprioritised behind
-  Cut/Paste, tracked here for whoever wants to pick it up.** 6c-ii shipped
-  it fully unit/integration-tested but never live-tested; the Phase 6→7/8
-  housekeeping checkpoint's live pass (2026-09-11) found it did nothing at
-  all — no progress notification, no error, no move — and a real
-  investigation (diagnostic logging, a throwaway isolation test extension,
-  a live comparison against `vscode-sas-extension`'s own working
-  `ContentDataProvider`) landed on a plausible cause (a folder `TreeItem`
-  missing `resourceUri` — [ADR-0031](../adr/0031-content-folder-resource-uri.md))
-  that turned out, on a second live retest after shipping the fix, **not**
-  to be it: identical symptoms, unchanged. Ruled out along the way and
-  confirmed *not* the cause: the installed `@types/vscode`/VS Code version,
-  general Electron drag flakiness, the drag payload's MIME-type format
-  (custom vs. VS Code's own "recommended" `application/vnd.code.tree.*`),
-  and nesting depth. **Not yet tried**: VS Code's own suggested diagnostic
-  for exactly this class of problem — **Developer: Set Log Level…** → Debug,
-  Developer Tools console open, drag live, and read what (if anything) VS
-  Code itself logs about the drop — `TreeDragAndDropController.dropMimeTypes`'s
-  own doc comment names this as the supported way to see what mime type,
-  if any, gets offered. Not blocking anything — Cut/Paste (above) is the
-  real, shipped, working way to move a SAS Content item today.
+- ~~Drag-and-drop within the SAS Content tree remains completely
+  non-functional — root cause unknown~~ — **closed 2026-09-11, fixed.** 6c-ii
+  shipped it fully unit/integration-tested but never live-tested; the Phase
+  6→7/8 housekeeping checkpoint's live pass (2026-09-11) found it did
+  nothing at all — no progress notification, no error, no move — and an
+  investigation (diagnostic logging, a throwaway isolation test extension, a
+  live comparison against `vscode-sas-extension`'s own working
+  `ContentDataProvider`) landed on a plausible but ultimately wrong cause (a
+  folder `TreeItem` missing `resourceUri` —
+  [ADR-0031](../adr/0031-content-folder-resource-uri.md)), confirmed wrong by
+  a live retest after shipping that fix: identical symptoms, unchanged.
+  That investigation correctly ruled out the installed `@types/vscode`/VS
+  Code version, general Electron drag flakiness, the drag payload's
+  MIME-type format, and nesting depth — but its own theory (that folders
+  were somehow special) was itself the dead end; drag *engagement* was never
+  the problem.
+  **The one avenue that investigation never reached — VS Code's own
+  Developer Tools console during a live drop — is exactly what found it.** A
+  Phase 7 session (2026-09-11, VS Code 1.109 source) saw `ERR
+  o.onCancellationRequested is not a function` at `handleDrop` in the
+  console: `handleDrop`'s own `CancellationToken` argument is a non-final
+  argument to `mainThreadTreeViews.ts`'s `$handleDrop`, so
+  `rpcProtocol.ts`'s "pop a trailing cancellation token" marshalling never
+  catches it, and it crosses the extension-host RPC boundary as plain JSON,
+  which strips `MutableToken`'s prototype-getter
+  `onCancellationRequested`. `handleDrop` had been firing and completing its
+  own guard checks on every real attempt all along; it threw immediately
+  afterward, before any move ran, whenever there was something movable to
+  attempt — invisible in this extension's own output channel because the
+  throw lands in the DevTools console instead. Fixed in
+  `src/content/contentDragAndDrop.ts` (the `token` subscription is dropped;
+  only `progressToken`, which never crosses RPC, is subscribed to) and
+  recorded as finding 6.16 in `phase-6.md`, including a correction of that
+  file's own "fires ~1 in 6" and "root cause unknown" claims and ADR-0031's
+  second amendment. `npm run verify`/`test:integration`/`check:docs` all
+  green, a new regression test reproduces the exact broken-token shape, and
+  an adversarial pass before the push raised no blocking findings (the
+  reviewer independently re-derived the VS Code source mechanism rather
+  than taking the write-up's word for it). **Live-confirmed 2026-09-11
+  (Sean)**: a real drag-and-drop move now works, plus every other §15 row
+  that had been blocked on the base gesture (multi-item drag, the
+  My-Favorites/Recycle-Bin no-ops, the self-drop no-op, multi-select
+  hiding context actions) — see `manual-test-pass.md`'s §15. Cut/Paste
+  (above) remains a permanent, working alternative regardless — this
+  closes the parity gap, it does not replace Cut/Paste.
 
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,

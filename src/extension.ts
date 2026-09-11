@@ -18,6 +18,7 @@ import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerContentExplorer } from "./content/contentExplorer";
 import { registerDataExplorer } from "./data/dataExplorer";
 import { DataViewerPanelManager } from "./data/dataViewerPanel";
+import { TablePropertiesPanelManager } from "./data/tablePropertiesPanel";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
 import { registerRunCommands } from "./run/commands";
@@ -243,6 +244,14 @@ export function activate(context: vscode.ExtensionContext): void {
     log: output,
   });
 
+  // Phase 7c-ii: the table properties/columns panel manager — fully static
+  // (`src/data/tablePropertiesPanel.ts`), so unlike `dataViewerPanels` above
+  // it needs no `extensionUri` (no bundled script/stylesheet) and no `log`
+  // (a failed fetch renders its own message directly in the panel, the same
+  // choice `dataViewerPanel.ts`'s own initial-load failure path already
+  // makes).
+  const tablePropertiesPanels = new TablePropertiesPanelManager();
+
   // Phase 7a: the read-only "SAS Libraries" tree, a second view inside the
   // same activity-bar container 6a-ii created (the phase file's own
   // coordination note — 6a landed first). Unlike SAS Content, this is
@@ -262,6 +271,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onDidChangeConnection,
     },
     dataViewerPanels,
+    tablePropertiesPanels,
   );
 }
 

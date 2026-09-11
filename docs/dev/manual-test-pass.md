@@ -1073,7 +1073,47 @@ for the full account.
   indicator in a column header are both legible and not shown as a
   broken/missing icon in any of the three themes.
 
-## 13. Trust, enablement and the rest
+## 13. Table properties (phase 7c-ii)
+
+Adds a **Table Properties** command to a table's context menu in the SAS
+Libraries view — a fully static panel (no scripts at all; its "Properties"/
+"Columns" tab toggle is pure CSS, no message loop) showing the table's size,
+engine, encoding and timestamp details ([Finding 7.19](../phases/phase-7.md))
+and its full column list.
+
+**Pre-work:** the same live connection as §10, with **SASHELP.CLASS** visible
+in the tree.
+
+- [ ] **Table Properties opens a panel with two tabs** — right-click
+  **SASHELP.CLASS** and choose **Table Properties**.
+  **Expect:** a new panel opens, titled with the table's `libref.name`,
+  showing a **Properties** tab (selected by default) and a **Columns** tab.
+- [ ] **The Properties tab shows real values** — with the Properties tab
+  selected.
+  **Expect:** Name **CLASS**, Library **SASHELP**, Type **DATA**, Label
+  **Student Data**, Engine **V9**; Row Count **19**, Column Count **5**;
+  Created/Modified show a real date/time (not a raw number), Compression
+  Routine **NO**, Encoding **us-ascii ASCII (ANSI)**.
+- [ ] **Clicking the Columns tab switches panes, with no flash or reload** —
+  click the **Columns** tab, then click back to **Properties**.
+  **Expect:** the visible pane switches instantly (this is pure CSS, not a
+  script) — Name/Sex/Age/Height/Weight with their types (CHAR/CHAR/FLOAT/
+  FLOAT/FLOAT), lengths, and no error.
+- [ ] **Choosing Table Properties again reveals the same panel** — with the
+  panel from the item above still open, right-click **SASHELP.CLASS** and
+  choose **Table Properties** again.
+  **Expect:** the existing panel is revealed/focused, not a second one opened.
+- [ ] **The panel is legible in light, dark, and high-contrast themes** —
+  switch VS Code's color theme with the panel open.
+  **Expect:** text, table borders, and the tab underline all remain legible in
+  all three; nothing renders as an unstyled white box.
+- [ ] **A table properties panel opened while the session is busy shows a
+  clear message, not a blank panel** — start a long-running Python job, then
+  choose **Table Properties** on any table before it finishes.
+  **Expect:** the panel shows a real, readable message (not a blank page)
+  explaining the session is busy.
+
+## 14. Trust, enablement and the rest
 
 - [x] **Untrusted workspace posture** — set the folder Restricted via
   **Workspaces: Manage Workspace Trust**.
@@ -1103,7 +1143,7 @@ for the full account.
   failure paths in `src/run/commands.ts` never call `log.*` before showing
   that message. Tracked in Phase 3's **3f** slice.
 
-## 14. Regression spot-checks
+## 15. Regression spot-checks
 
 Each of these was a real defect caught in review. Quick to confirm now that you
 are set up.
@@ -1139,11 +1179,11 @@ are set up.
 
 This page is meant to be re-run every phase, so it has to grow with the product.
 
-- **Sections 0–1 and 13–14 are phase-agnostic.** Pre-flight, activation, trust,
+- **Sections 0–1 and 14–15 are phase-agnostic.** Pre-flight, activation, trust,
   enablement and the regression spot-checks apply to every build. The regression
   section grows by one bullet each time review catches a defect worth
   re-confirming by hand.
-- **Sections 2–12 map to phases 1–3 and 7a–7c-i.** When a phase closes, add a
+- **Sections 2–13 map to phases 1–3 and 7a–7c-ii.** When a phase closes, add a
   section (or extend one) for its user-visible behaviour, and cite the slice
   and ADR in the heading the same way the existing sections do. Phase 4's
   traceback editor-position mapping, for instance, turns the

@@ -28,6 +28,7 @@
   "command.restoreContentItem.title": "Restore",
   "command.emptyRecycleBin.title": "Empty Recycle Bin",
   "command.openTable.title": "Open Table",
+  "command.showTableProperties.title": "Table Properties",
   "viewsContainers.pythonOnViya.title": "Python on Viya",
   "views.contentExplorer.name": "SAS Content",
   "views.dataExplorer.name": "SAS Libraries",

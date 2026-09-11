@@ -1215,7 +1215,7 @@ a single re-fetch); **7c-ii** table properties/columns static viewer (fully
 static, no grid interaction); **7c-iii** CSV export to local disk (the one
 host-side-only, local-disk-write feature, standalone since Phase 6 deferred
 its own upload/download to Phase 11 entirely rather than shipping a helper
-this could share). **7c-i is next.**
+this could share). **7c-i and 7c-ii are done; 7c-iii is next.**
 
 ☑ **7c-i — Sort + filter.** [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155)
 opened 2026-09-10. Code written 2026-09-10 (`sas-py-vscode-cowork`
@@ -1511,24 +1511,197 @@ English text (e.g. `/could not delete/`), unaffected by the wrapping.
 `npm run verify` green (1479 unit passing, coverage unchanged); `npm run
 test:integration` green (321 passing, unchanged).
 
-☐ **7c-ii — Table properties / columns static viewer.**
+☑ **7c-ii — Table properties / columns static viewer.** Code written
+2026-09-10/2026-09-11 (`sas-py-vscode-cowork` clone), live-probed first
+(Finding 7.19: the full `TableInfo` field set, and the timestamp-shape
+question this punch list itself raised — ISO-8601, not a raw SAS epoch
+number). `src/data/types.ts`'s `TableDetail`/`readTableDetail` gained
+`type`/`label`/`engine`/`extendedType`/`logicalRecordCount`/
+`physicalRecordCount`/`recordLength`/`creationTimeStamp`/`modifiedTimeStamp`/
+`compressionRoutine`/`encoding`/`bookmarkLength`, read with the same
+"empty string ⇒ absent" tolerance `readColumnItem` already gives `Column`'s
+own optional fields. A new `src/data/tablePropertiesModel.ts` (`vscode`-free,
+unit-tested: `escapeHtml`, `formatTimestamp` — ISO-first with the
+upstream-parity epoch fallback kept but not confirmed reachable — and three
+`formatOptional*` helpers) and `src/data/tablePropertiesPanel.ts`
+(`TablePropertiesPanelManager`/`TablePropertiesPanel`, `.c8rc.json`-excluded
+and integration-tested, mirroring `DataViewerPanelManager`'s own
+profile-scoped panel-key discipline). **Deliberately not a straight port of
+`TablePropertiesViewer.ts`'s own client-side tab toggle**: this panel needs no
+`<script>` at all — the "Properties"/"Columns" tabs are two `<input
+type="radio">` elements with `<label>`s styled as tab buttons, and the two
+content panes are shown or hidden by a plain CSS sibling selector keyed off
+which radio is `:checked`. `enableScripts` is `false`, the only one of this
+project's three webview panels that needs no script execution — a smaller
+attack surface than upstream's own version, at no cost to the two-tab UX,
+not a scope addition of its own. The panel's HTML is rebuilt in place
+(loading → success/failure) with no message protocol; every dynamic field is
+`escapeHtml`-escaped, since (unlike the other two panels) this one
+concatenates untrusted wire text (a column's own `label`/`format`/`informat`)
+directly into HTML strings rather than going through a message channel or the
+DOM API. New command `pythonOnViya.showTableProperties`, wired the same way
+`openTable` is (`dataExplorer.ts`, `dataTree.ts`'s context menu). `npm run
+verify` green (1519 unit passing; coverage 95.48% lines / 95.43% branches /
+95.15% functions / 95.48% statements, every threshold met — `src/data/`
+itself 100% lines/functions/statements, 99.59% branches); `npm run
+test:integration` green (333 passing, 9 new — this clone's own baseline is
+higher than the "321" figure quoted earlier in this file for 7c-i alone,
+since `main` here also carries 6d-i's own tests). A first coverage run found one
+real gap: `readTableDetail`'s new `extendedType` field never had a
+non-empty-value test (the real fixture's own probed value is always `""`),
+closed with one more unit test. A first `npm run lint` pass also found a real
+`@typescript-eslint/no-unnecessary-condition` finding: a `disposed`-flag guard
+reused verbatim after two different `await` points let TypeScript narrow the
+second occurrence to a compile-time `false` (it does not model that a
+callback registered elsewhere, not this method's own control flow, is what
+flips the flag) — fixed by moving the guard into its own `render()` helper
+called fresh at each of the three render sites, which is also the cleaner
+shape on its own merits (one write path instead of three inline ones).
+`test/fixtures/data/table-detail-class.json` (shared with 7a/7b/7c-i) gained
+the new fields from Finding 7.19's own real values; no existing assertion
+read the whole object, so nothing else needed updating.
 
-- ☐ Extend `TableDetail`/`readTableDetail` (or add a new type) with the full
-  `TableInfo` field set `TablePropertiesViewer.ts` reads and 7a/7b's own
-  `TableDetail` does not carry: `label`, `engine`, `extendedType`,
-  `logicalRecordCount`, `physicalRecordCount`, `recordLength`,
-  `creationTimeStamp`/`modifiedTimeStamp`, `compressionRoutine`, `encoding`,
-  `bookmarkLength`.
-- ☐ Probe the timestamp field shape on `verde`/`Innov` before porting
-  upstream's fallback unexamined — `TablePropertiesViewer.ts`'s own
-  `formatDate` tries `new Date(value)` first and falls back to treating the
-  value as a raw SAS epoch second count (`(numVal - 315619200) * 1000`) if
-  that fails; confirm which shape (ISO string, raw SAS numeric, or both)
-  this deployment's Compute REST API actually returns for these two fields.
-- ☐ A new static webview panel — no host↔webview message loop needed beyond
-  initial render, matching `TablePropertiesViewer.ts`'s own shape (all data
-  fetched once at open time, tab-toggle purely client-side) — opened from a
-  table's tree context menu.
+**Adversarial review before the PR exists** (`CLAUDE.md`'s standing rule),
+2026-09-11, against the finished diff (`types.ts`, the two new `src/data/`
+files, the `dataExplorer.ts`/`extension.ts`/`package.json` wiring, both new
+test files, the fixture, and this slice's own docs). **No blocking
+findings.** Confirmed independently, not merely relayed: every dynamic value
+interpolated into the panel's HTML goes through `escapeHtml`/`formatOptional*`;
+the panel key is profile-scoped the same way 6b's `sasContent:` `FileSystemProvider`
+and 7b's `DataViewerPanelManager` already are, with its own regression test;
+the `315619200` SAS-epoch constant is arithmetically correct (3653 days ×
+86400s); `readTableDetail`'s new fields genuinely omit rather than carry
+`undefined`, confirmed by a strict `deepEqual`. Four low-priority notes, one
+folded in:
+
+1. **Folded in.** `formatTimestamp`'s own epoch-fallback unit test re-derived
+   the function's `315619200` constant rather than asserting against an
+   independently-computed expected value — a wrong constant in the code would
+   have still passed. Fixed: the test now asserts against
+   `2023-05-18T03:33:20Z`, computed by plain date arithmetic (2,000,000,000
+   seconds after 1960-01-01), not by repeating the function's own subtraction.
+2. **Accepted as-is.** `formatTimestamp`'s `new Date(value)` parses a bare
+   short numeric string as a year (`"2026"` → the year 2026), so such a value
+   never reaches the SAS-epoch fallback branch at all. Not reachable with real
+   data (Finding 7.19: the two fields are ISO-8601, and the fallback is
+   already documented as not confirmed reachable) — parity with upstream's own
+   identical ordering (`new Date` first, numeric fallback second), not a
+   regression to fix here.
+3. **Deliberately deferred, not fixed here.** If `openTable`/`getColumns`
+   *rejects* rather than resolving `{ok:false}` (the narrow
+   `resolveHref`-rethrow path `adapter.ts`'s own `openTable` doc comment
+   already names), `TablePropertiesPanel.start()`'s promise rejects,
+   `dataExplorer.ts`'s `.catch` logs it, and the panel is left showing
+   "Loading…" forever rather than a failure message. **This is not new**:
+   `DataViewerPanelManager`'s own `loadTable` has the identical gap today, so
+   fixing it only in this slice's panel would leave the sibling one
+   inconsistent, and fixing both is a second file this slice did not open —
+   real scope creep for a one-line `try`/`catch`, not a defect this diff
+   introduced. Left as a known, shared, non-blocking gap; worth a small
+   follow-up covering both panels together rather than fixed piecemeal here.
+4. **Not a defect, just an observation.** `TablePropertiesPanel.render()`
+   guards on its own `disposed` boolean rather than `this.controller.signal
+   .aborted` — already deliberately documented (this file's own comment on why
+   a shared `if (this.disposed) return;` across multiple `await` points
+   tripped `@typescript-eslint/no-unnecessary-condition`, and why `render()`
+   exists as its own method instead) and covered by a test.
+
+`npm run test:unit` re-run green after the one fix (1519 passing, unchanged —
+the fix only strengthened an existing assertion, adding no new test);
+`npx prettier --check` clean on the touched file. No other file in this diff
+changed, so no wider re-verification was warranted for a test-only fix.
+
+**[PR #158](https://github.com/Shai-Alit/sas-py-vscode/pull/158) opened
+2026-09-11.** Both automated PR reviewers ran against the real diff. The
+project's own Claude reviewer found nothing beyond what the pre-PR pass had
+already disclosed (independently re-verified the same escaping/profile-scoping/
+epoch-constant/`deepEqual` claims and approved). **Codex found two real
+issues, both fixed before any further push:**
+
+1. **Blocking.** `panelHead`'s CSP allowed `style-src {cspSource}
+   'unsafe-inline'`, reasoned (in this file's own pre-PR write-up above) as
+   safe because every dynamic value is `escapeHtml`-escaped before it reaches
+   the page. Codex correctly pushed back: relying solely on this file's own
+   escaping discipline is weaker than not needing the exception at all.
+   Unlike `dataViewerPanel.ts` (which genuinely needs `'unsafe-inline'` —
+   `ag-grid`'s own runtime sets `style="…"` *attributes* on arbitrary
+   elements, which a CSP nonce cannot cover, only a `'unsafe-inline'`/
+   `'unsafe-hashes'` source can), this panel has exactly one `<style>`
+   *element* and zero inline `style="…"` attributes anywhere in its generated
+   markup — so a nonce, the same mechanism `resultPanel.ts`/
+   `dataViewerPanel.ts` already use for their own `<script>` tag, removes the
+   exception entirely rather than merely justifying it. Fixed:
+   `panelHead()` generates its own nonce, `style-src 'nonce-{nonce}'`
+   replaces `{cspSource} 'unsafe-inline'`, and `cspSource` is dropped from
+   `TablePropertiesWebviewPanel` entirely (now genuinely unused). A new
+   integration test (`"locks style-src to the <style> tag's own nonce, with
+   no 'unsafe-inline' anywhere"`) pins both the absence of `unsafe-inline`
+   and that the CSP's nonce matches the `<style>` tag's own.
+2. **Major.** The two `log.error` calls this slice added
+   (`dataExplorer.ts`'s `openTable`/`showTableProperties` command handlers'
+   own `.catch`) were hard-coded English, unlike every comparable log line
+   elsewhere in this codebase (`dataTree.ts`/`contentTree.ts`/
+   `dataViewerPanel.ts`'s own `"<area>: {0}"` pattern, and 7c-i's own
+   identical fix for `dataViewerPanel.ts`'s `log?.warn` calls). Codex flagged
+   only the new `showTableProperties` one (the only one in this PR's diff),
+   but `openTable`'s own log line — right above it, copied from when 7b wrote
+   it — has the exact same defect; fixing only the flagged line and leaving
+   its literal neighbor un-localised would have been inconsistent, so both
+   were wrapped in `vscode.l10n.t()` in the same file, same pattern as the
+   rest of this project.
+
+**A CI failure surfaced separately, on the same push: `test (windows-latest,
+node 24)` timed out at the unit tier's 2s default budget**, on
+`tablePropertiesModel.test.ts`'s very first test. Root cause: `formatTimestamp`
+is this project's first-ever caller of `Date.prototype.toLocaleString()` —
+confirmed nothing else in `src/` or `test/unit/` calls it — and this was the
+first time the whole test process ever exercised `Intl`-backed date
+formatting, which has to load ICU data somewhere on first use; that
+first-use cost apparently exceeded 2s on this specific runner/Node
+combination (passed on `windows-latest, node 22.18.0` and every other
+platform). Same category `eslint-ignores.test.ts` (loading ESLint) and
+`contracts.test.ts`/`coverage-scope.test.ts` (loading TypeScript) already
+carry their own suite-level `this.timeout(30_000)` for — "loading a tool,"
+per `docs/dev/testing.md`'s own exemption line, not I/O this suite should be
+mocking instead, since `Intl` cannot be mocked the way an HTTP boundary can.
+Fixed the same way: `this.timeout(30_000)` on the outer
+`describe("data/tablePropertiesModel", …)` block. `formatTimestamp` itself
+does no I/O and stays millisecond-fast on every platform this failure did
+not reproduce on.
+
+`npm run verify` re-run green after all three fixes (1519 unit passing,
+coverage unchanged: 95.48/95.43/95.15/95.48); `npm run test:integration`
+green (334 passing — the CSP nonce test is new); `npx tsc --noEmit` (all
+three configs) and `npx prettier --check`/`npm run lint` clean.
+
+**Second review round, same push.** Codex's automated re-review, now against
+the fix commit itself, raised one further **Major**: the deferred
+"stuck-on-Loading…-forever-if-the-adapter-rejects" note this file's own
+pre-PR write-up had accepted as a pre-existing, shared, cross-panel gap not
+this slice's job to fix — reasonable in isolation, but a second reviewer,
+seeing only this PR's own diff (not this file's own deferral reasoning),
+correctly treated introducing *new* code that reproduces a known-bad UX
+pattern as its own, in-scope defect, distinct from the separate question of
+whether to *also* patch `dataViewerPanel.ts`'s identical pre-existing
+instance. **Fixed, scoped to this slice's own file only**: `start()` now
+wraps its `openTable`/`getColumns` calls in a `try`/`catch`; a caught
+rejection renders `buildFailureHtml` (via the same `localiseDataProblem`
+path, wrapped as a `{code: "compute", problem: {code: "compute-unreachable",
+detail: messageOf(error)}}` — the identical shape `dataViewerPanel.ts`'s own
+`ensureReadTarget` already produces for an unexpected throw) and then
+rethrows, so the command handler's own `.catch`-and-log in `dataExplorer.ts`
+still fires unchanged. `dataViewerPanel.ts`'s own identical gap is
+**deliberately left untouched** — genuinely a different file, from an
+earlier phase, and patching it was never this PR's own diff; if it needs
+closing, that is its own small follow-up, not a silent scope-widening here.
+A new integration test drives a raw `ComputeClient` whose `send` rejects
+directly (the same shape a `resolveHref` throw would produce) and asserts
+both the rendered failure text and that `manager.open(...)` itself still
+rejects (so the caller's log line survives). `npm run verify` green (1519
+unit passing, coverage unchanged — `tablePropertiesPanel.ts` stays
+`.c8rc.json`-excluded); `npm run test:integration` green (335 passing, one
+more new); `npx tsc --noEmit`/`npm run lint`/`npx prettier --check` all
+clean.
 
 ☐ **7c-iii — CSV export.**
 
@@ -2320,3 +2493,57 @@ probed: whether a `createView` call itself can fail with a *malformed*
 `where=` does — worth a quick check while 7c-i's own error-handling code is
 being written, since it is one line to add to the same throwaway-session
 pass.
+
+**Finding 7.19 — the full `TableInfo` field set 7c-ii's table properties
+panel needs, and the real shape of its two timestamp fields.** Probed:
+`GET /compute/sessions/{id}/data/SASHELP/CLASS` (the same rich per-item table
+detail Finding 7.1 already established the mechanism for), `verde`,
+2026-09-10, a fresh throwaway session (`SAS Studio compute context`, deleted
+afterward, confirmed gone by a `404` read-back). Full body:
+
+```json
+{
+  "bookmarkLength": 12,
+  "columnCount": 5,
+  "compressionRoutine": "NO",
+  "creationTimeStamp": "2026-03-04T20:36:21.880Z",
+  "encoding": "us-ascii  ASCII (ANSI)",
+  "engine": "V9",
+  "extendedType": "",
+  "id": "CLASS",
+  "label": "Student Data",
+  "libref": "SASHELP",
+  "links": [ /* self, alternate, rows, rowsAsCSV, rowSet, promptContent,
+                columns, createView — no "delete" link on the table itself,
+                only on a view createView produces (Finding 7.15) */ ],
+  "logicalRecordCount": 19,
+  "modifiedTimeStamp": "2026-03-04T20:36:21.880Z",
+  "name": "CLASS",
+  "physicalRecordCount": 19,
+  "recordLength": 40,
+  "rowCount": 19,
+  "type": "DATA",
+  "version": 3
+}
+```
+
+**Settles the one open question 7c-ii's own punch list named**:
+`creationTimeStamp`/`modifiedTimeStamp` are ISO-8601 strings with millisecond
+precision and a `Z` suffix, not a raw SAS epoch-seconds number — `new
+Date(value)` parses them directly on this deployment, every time. Upstream's
+own `TablePropertiesViewer.ts` carries a fallback that treats the value as
+seconds since 1960-01-01, in case SAS ever sends the raw-epoch shape instead
+of an ISO string.
+`src/data/tablePropertiesModel.ts`'s own `formatTimestamp` keeps the identical
+fallback for parity, but it is **not confirmed reachable on this
+deployment** — nothing here has ever exercised it against real data, and this
+finding is why. **`extendedType` is an empty string, not absent** — treated
+identically to absent by `readTableDetail` (the same "empty optional string ⇒
+undefined" convention `readColumnItem` already applies to a column's own
+`label`/`format`/`informat`). No `Innov`/second-cadence cross-check this
+session (the `Innov` token was not available in this session's credentials,
+matching 6d-i's own "verde-only" note); not treated as blocking, since
+Findings 7.5–7.9 already closed the dialect-risk question for every other
+`DataAccessApi` field/shape this phase has probed and nothing about a plain
+`TableInfo` GET (no content negotiation, no version-conditioned branch
+anywhere in `RestLibraryAdapter.ts`) suggests a different risk profile.

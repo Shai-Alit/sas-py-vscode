@@ -938,17 +938,24 @@ open items:
   everything else tried (mime format, `@types/vscode` version, Electron
   drag flakiness, nesting depth, and now the missing-`resourceUri`
   hypothesis) has been ruled out or shown insufficient.
-- ☐ **The top-level-folder permanent-delete confirmation could not be
-  exercised.** Originally recorded as blocked by "no permission on the
-  tested deployment" — **that reason was wrong**; Sean has since confirmed
-  he has full read/write access to every folder tested, including as a
-  system administrator. The real reason it hasn't been exercised yet is
-  simply that it wasn't retried after that was clarified. Still needs a live
-  run: right-click a folder sitting directly under SAS Content (not nested)
-  and choose Delete, and confirm the permanent-delete modal appears as
-  `isRecyclableMember`'s `false` branch predicts. Unit- and
-  integration-tested (`content-adapter.test.ts`, `explorer.test.ts`) but no
-  live confirmation yet.
+- ☐ **(known gap, deferred) The top-level-folder permanent-delete
+  confirmation cannot be live-exercised on the available deployment.** The
+  Phase 6→7/8 housekeeping checkpoint previously recorded the original
+  "no permission on the tested deployment" finding as wrong, reasoning from
+  Sean's own admin rights — **that correction was itself mistaken and is
+  retracted here.** Sean has since clarified directly: this has nothing to
+  do with account privilege. Deleting a folder that sits directly under SAS
+  Content is restricted by a Viya deployment-level configuration set at
+  install/admin-config time, independent of the requesting user's own
+  permissions — an administrator account does not bypass it. The original
+  §15 finding was correct; the housekeeping checkpoint's "that reason was
+  wrong" note was the actual error, not the finding it was correcting.
+  **Deferred, not blocking**: live confirmation needs either a deployment
+  configured to allow it or a different test environment, neither available
+  now. Unit- and integration-tested (`content-adapter.test.ts`,
+  `explorer.test.ts`) — `isRecyclableMember`'s `false` branch and the
+  permanent-delete modal it drives are exercised there — so this is a live
+  human-in-the-loop confirmation gap only, not an untested code path.
 
 **Drag-and-drop's own ambiguity, and Cut/Paste (Sean, 2026-09-11, said
 directly in this session — not the earlier pattern of unconfirmed

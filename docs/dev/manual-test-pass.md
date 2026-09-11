@@ -1185,10 +1185,15 @@ Two things came out of that pass, both investigated at the Phase 6→7/8
 housekeeping checkpoint rather than in this branch's own scope:
 
 - The top-level-folder permanent-delete confirmation was recorded as
-  blocked by a permissions limit — **that reason was wrong**; Sean has full
-  read/write access to every folder tested, including as a system
-  administrator. It simply hasn't been retried since. Still unchecked
-  below; needs a live run.
+  blocked by a permissions limit. The Phase 6→7/8 housekeeping checkpoint
+  later recorded that reason as wrong, reasoning from Sean's own admin
+  access — **that correction was itself mistaken and is retracted.** Sean
+  has since clarified: deleting a folder directly under SAS Content is
+  restricted by a Viya deployment-level configuration set at install time,
+  independent of the requesting account's own permissions — admin rights
+  do not bypass it. The original finding was correct. **Deferred as a known
+  gap** (row below) — it needs a deployment configured to allow this, not a
+  retry on the current one.
 - Drag-and-drop within the tree was completely non-functional. A real
   investigation found a plausible cause and shipped a fix for it
   ([ADR-0031](../adr/0031-content-folder-resource-uri.md); a folder tree
@@ -1261,16 +1266,22 @@ creating, renaming, moving, and deleting test files/folders in.
   **Expect:** no confirmation dialog — a brief progress notification
   ("Moving \"…\" to the Recycle Bin…") and the item disappears from its
   folder. (Confirmed separately in §16 that it lands in the Recycle Bin.)
-- [ ] **Delete on a top-level folder permanently deletes, behind a modal**
-  — right-click a folder that sits directly under SAS Content (not nested
-  inside another folder) and choose **Delete**.
+- [-] **(known gap) Delete on a top-level folder permanently deletes, behind
+  a modal** — right-click a folder that sits directly under SAS Content
+  (not nested inside another folder) and choose **Delete**.
   **Expect:** a blocking confirmation — "Permanently delete the folder
   \"…\" and everything inside it?" with detail "This cannot be undone." and
   a **Delete Permanently** button. Cancelling leaves it untouched;
   confirming removes it for good (not recoverable from the Recycle Bin).
-  **First pass, 2026-09-11 (Sean): recorded as unable to test** — the
-  reason given (no access to create/delete folders directly under SAS
-  Content) turned out to be wrong; retry needed.
+  **First pass, 2026-09-11 (Sean): unable to test** — a Viya
+  deployment-level configuration, set at install time, restricts deleting a
+  folder directly under SAS Content for most users regardless of account
+  permissions; not something an admin account bypasses, and not retestable
+  on this deployment. **Deferred**: needs a deployment configured to allow
+  it. Unit- and integration-tested (`content-adapter.test.ts`,
+  `explorer.test.ts`) — this is a live-confirmation gap only. Do not re-tick
+  this box on this deployment; rewrite it as a normal **Expect** only once
+  it is actually confirmed live somewhere.
 - [-] **(known gap) Dragging an item onto a folder moves it** — drag a test
   file onto a different folder.
   **Expect:** a progress notification ("Moving \"…\"…"), the item

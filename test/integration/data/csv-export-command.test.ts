@@ -120,15 +120,30 @@ interface FakeStreamState {
  * (`ENOSPC`) that surfaces only once the stream's internal buffer is finally
  * flushed, after every earlier `write` callback already resolved cleanly.
  * This is the specific ordering `runCsvExport`'s own post-flush `streamError`
- * check exists for. */
-function fakeStream(options?: { errorDuringEnd?: Error }): {
+ * check exists for.
+ *
+ * `errorOnWrite`, when given, answers the write at that zero-based index
+ * with the error directly in its own callback instead of recording the
+ * chunk — the more ordinary failure shape (a `write` that fails on the
+ * spot), distinct from `errorDuringEnd`'s own delayed-surfacing one. */
+function fakeStream(options?: {
+  errorDuringEnd?: Error;
+  errorOnWrite?: { atIndex: number; error: Error };
+}): {
   stream: CsvOutputStream;
   state: FakeStreamState;
 } {
   const state: FakeStreamState = { chunks: [], ended: false };
+  let writeCount = 0;
   let errorListener: ((error: Error) => void) | undefined;
   const stream: CsvOutputStream = {
     write: (chunk, callback) => {
+      const index = writeCount;
+      writeCount += 1;
+      if (options?.errorOnWrite?.atIndex === index) {
+        callback(options.errorOnWrite.error);
+        return;
+      }
       state.chunks.push(chunk);
       callback(undefined);
     },
@@ -280,7 +295,7 @@ describe("runCsvExport", () => {
     assert.deepEqual(errors, []);
   });
 
-  it("reports and cleans up its temporary file, leaving the destination untouched, when opening the table fails", async () => {
+  it("reports the failure and creates no temporary file at all, leaving the destination untouched, when opening the table fails", async () => {
     await withErrorMessageStub(async (shown) => {
       const { stream, state } = fakeStream();
       const ops = fakeFsOps(stream);
@@ -302,9 +317,13 @@ describe("runCsvExport", () => {
         unlink: ops.unlink,
       });
 
-      assert.ok(state.ended);
+      // The stream is created only once the table has actually opened and
+      // the disk-space check has passed — a failure this early never
+      // touches the filesystem at all, not even a fleeting temporary file.
+      assert.equal(ops.createdPaths.length, 0);
+      assert.equal(state.ended, false);
       assert.deepEqual(ops.renamed, []);
-      assert.deepEqual(ops.unlinked, ops.createdPaths);
+      assert.deepEqual(ops.unlinked, []);
       assert.equal(errors.length, 1);
       assert.equal(shown.length, 1);
     });
@@ -334,9 +353,12 @@ describe("runCsvExport", () => {
       });
 
       assert.deepEqual(state.chunks, []);
-      assert.ok(state.ended);
+      // Refused before a stream was ever opened — the sample fetch alone is
+      // enough to make the call.
+      assert.equal(ops.createdPaths.length, 0);
+      assert.equal(state.ended, false);
       assert.deepEqual(ops.renamed, []);
-      assert.deepEqual(ops.unlinked, ops.createdPaths);
+      assert.deepEqual(ops.unlinked, []);
       assert.equal(errors.length, 1);
       assert.equal(shown.length, 1);
       assert.match(shown[0] ?? "", /free/);
@@ -413,6 +435,58 @@ describe("runCsvExport", () => {
 
       // Every page fetched and written without incident — the failure only
       // surfaces once the stream's own final flush reports it.
+      assert.deepEqual(state.chunks, ["Name,Sex\nAlfred,M\n"]);
+      assert.ok(state.ended);
+      assert.deepEqual(ops.renamed, []);
+      assert.deepEqual(ops.unlinked, ops.createdPaths);
+      assert.equal(errors.length, 1);
+      assert.equal(shown.length, 1);
+    });
+  });
+
+  it("reports and cleans up when a write itself fails, mid-export", async () => {
+    await withErrorMessageStub(async (shown) => {
+      // The first (header) write succeeds; the second fails directly in its
+      // own callback — the more ordinary failure shape, distinct from the
+      // end-of-stream flush failure the case above exercises.
+      const { stream, state } = fakeStream({
+        errorOnWrite: {
+          atIndex: 1,
+          error: new Error("ENOSPC: no space left on device"),
+        },
+      });
+      const ops = fakeFsOps(stream);
+      const { log, errors } = fakeLog();
+      const adapter = libraryAdapter([
+        OPEN_ROUTE,
+        DISK_SPACE_SAMPLE_ROUTE,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=500&includeColumnNames=true`,
+          reply: dataCsv("Name,Sex\nAlfred,M\n"),
+        },
+        {
+          when: `${CLASS_HREF}/rows?start=500&limit=500`,
+          reply: dataCsv("Alice,F\n"),
+        },
+        {
+          when: `${CLASS_HREF}/rows?start=1000&limit=500`,
+          reply: dataCsv(""),
+        },
+      ]);
+
+      await runCsvExport(tableItem(), adapter, {
+        log,
+        showSaveDialog: () => Promise.resolve(SAVE_URI),
+        withProgress: (_title, run) =>
+          run(new vscode.CancellationTokenSource().token),
+        createWriteStream: ops.createWriteStream,
+        rename: ops.rename,
+        unlink: ops.unlink,
+        statfs: ampleDiskSpace(),
+      });
+
+      // Only the first write landed; the second's own failure stopped the
+      // export before a third page was ever requested.
       assert.deepEqual(state.chunks, ["Name,Sex\nAlfred,M\n"]);
       assert.ok(state.ended);
       assert.deepEqual(ops.renamed, []);

@@ -1215,8 +1215,8 @@ a single re-fetch); **7c-ii** table properties/columns static viewer (fully
 static, no grid interaction); **7c-iii** CSV export to local disk (the one
 host-side-only, local-disk-write feature, standalone since Phase 6 deferred
 its own upload/download to Phase 11 entirely rather than shipping a helper
-this could share). **7c-i and 7c-ii are done; 7c-iii is code-complete,
-adversarial pass and PR pending.**
+this could share). **7c-i and 7c-ii are done; 7c-iii is code-complete and
+reviewed (both the independent-agent pass and Sean's own), PR pending.**
 
 ☑ **7c-i — Sort + filter.** [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155)
 opened 2026-09-10. Code written 2026-09-10 (`sas-py-vscode-cowork`
@@ -1892,6 +1892,40 @@ formally tracking them is that housekeeping's job, not this branch's.
   `node:path`, `node:crypto` — ADR-0003's amendment updated to match. `npm
   run verify`/`test:integration` re-run green after all three fixes (1551
   unit unchanged; 345 integration passing, one net new); `check:docs` clean.
+
+  **Sean's own review** (per this project's actual standing requirement —
+  the independent-agent pass above is a complement, not a substitute) found
+  no blocking issues: "careful, well-documented... error handling is sound...
+  no swallowing catches... the atomic temp-then-rename guarantees no
+  truncated destination." Three minor, non-blocking notes, two folded in at
+  Sean's discretion (cheap and strictly better, no back-and-forth needed):
+
+  - **No test exercised a `write`'s own callback failing directly** (as
+    opposed to the delayed, end-of-flush failure the review above already
+    added a test for) — a distinct, more ordinary failure shape. **Fixed**:
+    a second `fakeStream` option (`errorOnWrite`) answers a chosen write
+    with its error directly, and a new test drives it (a first write
+    succeeds, a second fails mid-export, no third page is ever requested).
+  - **The temporary file was created before `openTable`/`ensureDiskSpace`
+    ran**, so a table that failed to open, or an export refused for
+    insufficient disk space, still left a fleeting empty temporary file to
+    clean up. **Fixed**: `createWriteStream` now runs only once both checks
+    have passed, immediately before the real export starts — an early
+    failure now touches the filesystem not at all, not even briefly. This
+    needed its own small correctness fix alongside the reorder: the
+    `finally` block's cleanup previously assumed a temporary file always
+    existed by the time any failure could occur (true before this reorder);
+    a new `tempFileCreated` flag gates the cleanup `unlink` now, so a
+    failure that never got as far as creating a stream does not try to
+    remove a file that was never made.
+  - A third note (a stream that already errored is still handed to `end()`
+    in `finally`) was checked and confirmed harmless — a destroyed Node
+    stream's `end()` still invokes its callback rather than hanging — and
+    left as-is, per Sean's own call.
+
+  `npm run verify`/`test:integration` re-run green after folding both fixes
+  in (1551 unit unchanged; 346 integration passing, one further net new);
+  `check:docs`/lint/typecheck all clean.
 - ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
   instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
   the full account). Nothing left for 7c to pick up on this; the same

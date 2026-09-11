@@ -262,20 +262,19 @@ export async function runCsvExport(
     async (token) => {
       const bridge = abortOn(token);
       let succeeded = false;
-      // `undefined` until `createWriteStream` actually runs — kept inside
-      // this `try`, not above it, so a stream that fails even to open (a bad
-      // path, a permissions error) is reported the same way any other
+      // Set once `createWriteStream` actually runs (below) — a table this
+      // run never gets as far as reading (a gone session, an
+      // `insufficient-disk-space` refusal) creates no temporary file at all,
+      // not even a fleeting empty one, and the `finally` block's own cleanup
+      // must not try to remove one that was never made.
+      let tempFileCreated = false;
+      // `undefined` until `createWriteStream` actually runs. Declared outside
+      // the `try` regardless, so a stream that fails even to open (a bad
+      // path, a permissions error) is still reported the same way any other
       // failure here is, and `bridge.dispose()` below still runs either way.
       let stream: CsvOutputStream | undefined;
 
       try {
-        const openedStream = createWriteStream(tempPath);
-        stream = openedStream;
-        let streamError: Error | undefined;
-        openedStream.once("error", (error) => {
-          streamError ??= error;
-        });
-
         const opened = await adapter.openTable(item, bridge.signal);
         if (!opened.ok) {
           report(deps.log, item, opened.problem, bridge.signal.aborted);
@@ -293,6 +292,14 @@ export async function runCsvExport(
           report(deps.log, item, spaceCheck.problem, bridge.signal.aborted);
           return;
         }
+
+        const openedStream = createWriteStream(tempPath);
+        stream = openedStream;
+        tempFileCreated = true;
+        let streamError: Error | undefined;
+        openedStream.once("error", (error) => {
+          streamError ??= error;
+        });
 
         const result = await exportTableToCsv(
           adapter,
@@ -333,7 +340,7 @@ export async function runCsvExport(
       } finally {
         bridge.dispose();
         if (stream !== undefined) await endStream(stream);
-        if (!succeeded) {
+        if (!succeeded && tempFileCreated) {
           await unlink(tempPath).catch((error: unknown) => {
             deps.log.debug(
               vscode.l10n.t(

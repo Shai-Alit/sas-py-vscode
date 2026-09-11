@@ -733,26 +733,118 @@ behaviour change). `npm run verify` green (1531 unit after that merge; coverage
   wiring it to `addToFavorites` is upstream parity but not in the 6d punch list.
   Revisit in 6d-ii or as a follow-up.
 
-☐ **6d-ii — Recycle bin.**
+☑ **6d-ii — Recycle bin.** Code-complete 2026-09-10 —
+[PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159) opened
+2026-09-10. `npm run verify` green (1549 unit; coverage 95.49
+lines / 95.40 branches / 95.18 functions / 95.49 statements), 333 integration
+passing (VS Code env vars stripped, the `ELECTRON_RUN_AS_NODE` launch quirk),
+`npm run check:docs` green. Probe: findings 6.14/6.15 re-confirmed read-only
+against `verde` this session (the `/folders/` root's `recycleBin` + `PATCH`
+`RecycleResource` relations, `@myRecycleBin`'s link set, every sampled bin
+member carrying `previousParent` + `deleteResource` + `update`); `innov`
+(2026.06) is **still single-cadence-unprobed** — the host does not resolve from
+this machine even with the refreshed token — so 6d-ii ships on the same
+single-cadence footing as 6.11–6.15, mitigated by both primitives it is built on
+(`moveItem` finding 6.10, `deleteItem`/`deleteResource` finding 6.8) being
+already confirmed on 2026.06.
 
-- ☐ Recycle via move-to-`@myRecycleBin` and restore via move-to-`previousParent`
-  — finding 6.14: `PATCH /folders/folders/@item?childUri=…&parentFolderUri=…` and
-  the `PUT`-member form (finding 6.10's `moveItem`) are equivalent, neither needs
-  `If-Match`, and the service sets `previousParent` on recycle / drops it on
-  restore. There is **no** dedicated recycle/restore operation — the
-  `RecycleResource` relation on the Folders root is just `patchMoveFolderItem`
-  with `@myRecycleBin` pre-bound.
-- ☐ `previousParent`-gated restore — finding 6.14: every current `verde` bin
-  member carries the link (Finding 81's missing case did not reproduce), but
-  upstream's "no link ⇒ hide Restore" fallback stays as defence.
-- ☐ Empty-recycle-bin command — finding 6.15: no primitive; iterate the bin's
-  members and `DELETE` each `deleteResource` (`deleteRecursively` on the bin
-  409s on non-folder children, finding 6.8).
-- ☐ **The read-only `sasContentReadOnly` `TextDocumentContentProvider` scheme
-  (moved from 6b).** Lets a recycled file's content open read-only, mirroring
-  upstream's `sasContentReadOnly` pattern — it only has a caller once the
-  recycle bin is browsable.
-- ☐ Recycled-item `contextValue` so the menu offers Restore, not Rename/Delete.
+**Delete is now recycle (documented-invariant change, Sean's call 2026-09-10).**
+"Delete" on an ordinary folder/file member moves it to the Recycle Bin with no
+confirmation (Restore undoes it) — matching upstream. A permanent delete, behind
+a modal, is reached only for an item that cannot be recycled: a top-level folder
+read directly (no member record to move) or one already in the bin.
+{@link isRecyclableMember} (`type === "child" && !inRecycleBin`) is the split.
+
+- ☑ **`ContentAdapter.recycleItem` / `restoreItem` / `emptyRecycleBin`**
+  (`src/content/adapter.ts`). Finding 6.14: recycle and restore are one generic
+  move, no dedicated operation — both **reuse `moveItem`**. `recycleItem`
+  resolves `@myRecycleBin` fresh (per account, never memoised — the
+  `favoritesFolder` reasoning) and moves the member onto the bin's own `self`
+  href. `restoreItem` reads the `previousParent` link already on the rendered
+  item and moves back to it; `link-missing` (rel `previousParent`) when it is
+  absent (Finding 81's rare case). `emptyRecycleBin` resolves `@myRecycleBin`,
+  lists its tree-filtered members (a `report`/`job` in the bin is not listed, so
+  not purged — matches upstream; clear those in SAS Studio), and runs
+  `deleteItem` on each **sequentially, stopping at the first failure** —
+  `deleteItem` already empties a recycled folder child-first (finding 6.8:
+  `deleteRecursively` still `409`s on a non-folder child, and the probe this
+  session confirmed a recycled folder member carries `deleteResource` but **no**
+  `deleteRecursively`). No `If-Match` on any of it (finding 6.14).
+- ☑ **`isRecyclableMember` / `isRestorable` / `RECYCLE_BIN_DELEGATE` /
+  `PREVIOUS_PARENT_REL`** in `types.ts` (`vscode`-free, unit-tested).
+- ☑ **`CONTEXT_RECYCLE_BIN` (`sasContent:recycleBin`)** split off the shared
+  `sasContent:delegate` in `presentation.ts`, so "Empty Recycle Bin" targets the
+  Recycle Bin delegate and nothing else. The `.recycled` `contextValue` suffix
+  (added in 6d-i) is what Restore and the permanent-delete `deleteContentItem`
+  key on; Rename / Create / favourites stay withheld from it (their anchored
+  `=~` patterns already exclude `.recycled`).
+- ☑ **Read-only recycle-bin view — no new provider class.** The existing
+  `SasContentFileSystemProvider` is registered a **second time** under
+  `sasContentReadOnly:` with `isReadonly: true` (`contentExplorer.ts`);
+  `contentTree.ts` points a bin file leaf's `vscode.open` at that scheme
+  (`contentReadOnlyUriString`, `src/content/uri.ts` — same query, shared
+  `parseContentUri`). Deliberate deviation from the punch list's
+  "`TextDocumentContentProvider`": a read-only `FileSystemProvider` registration
+  gives a real `stat` (size, mtime) and byte-faithful `readFile` for free, the
+  editor blocks edits so `writeFile` is unreachable, and it is one line instead
+  of a class. Mirrors upstream's *intent*, per this repo's "read for what it
+  does, not transcribe".
+- ☑ **Commands.** `pythonOnViya.restoreContentItem` ("Restore", `when`
+  `/^sasContent:(folder|file)\.recycled$/ && !listMultiSelection`, group
+  `7_modify@0`) and `pythonOnViya.emptyRecycleBin` ("Empty Recycle Bin", `when`
+  `viewItem == sasContent:recycleBin`), both hidden from the palette.
+  `deleteContentItem`'s `when` gained `|\.recycled` so "Delete" also shows on a
+  bin item (there it prompts and permanently deletes). `restore()` pre-checks
+  `isRestorable` and says so rather than calling the adapter when there is no
+  `previousParent`; `emptyBin()` confirms with a modal. Both go through the
+  existing `run()` progress/abort/refresh wrapper.
+- **Reviewed before the PR (independent-agent pass, 2026-09-10) — no blocking
+  findings.** Verified: `isRecycleBinDelegate` ordered before the generic
+  `isDelegateFolder` check in `contextValueFor` (`trashFolder` is also in
+  `DELEGATE_FOLDER_TYPES`, so the order matters — has its own test);
+  `favoriteActionFor` forces `"none"` for anything `inRecycleBin`, so `.fav`/
+  `.recycled` can never collide; every new adapter method threads its
+  `AbortSignal`, no swallowing catches. **One known-tradeoff flagged, not a
+  finding**: `emptyRecycleBin` is sequential, no per-item progress text, no
+  batching — cancellable and correct, but a bin with hundreds of members would
+  take a couple of minutes. **Ship as-is (Sean, 2026-09-10)** — real bins are
+  small (verde's had 17), and it matches the sequential pattern
+  `deleteFolder`'s own recursion already uses; revisit only if a real bin size
+  makes it a problem.
+- **Known minor gap (deliberate):** a `sasContentReadOnly:` tab left open when
+  its file is then restored or purged elsewhere is not force-refreshed or
+  closed — upstream fires an `onDidChange` for the virtual URI; here the stale
+  read-only tab is harmless (the file is reachable fresh from its restored
+  location) and closing it automatically is not worth the plumbing. Revisit if
+  it annoys anyone.
+- ☑ **[PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159) review —
+  one finding, fixed before merge.** **Likely blocking**: `getChildItems`
+  stamped `inRecycleBin` only on the Recycle Bin delegate's *direct* children
+  — the doc comment even called descending into a recycled folder "a 6d
+  concern" without saying which 6d slice would close it, and this was it. A
+  file nested inside a recycled folder came back with `inRecycleBin` unset, so
+  it opened through the ordinary editable `sasContent:` scheme (not
+  read-only), its context menu offered Rename/Delete/Favourite instead of
+  Restore, and "Delete" on it called `recycleItem` again — re-parenting it
+  straight onto the bin's own root instead of doing anything sensible with an
+  already-recycled item. Fixed: the stamping branch now also fires when
+  `parent.inRecycleBin === true`, not only `isRecycleBinDelegate(parent)`, so
+  the flag propagates to every depth. New test: "propagates inRecycleBin into
+  a recycled folder's own children too". `npm run verify` re-run green (1550
+  unit; coverage 95.49/95.44/95.18/95.49 — branch coverage improved), 333
+  integration unchanged.
+- ☑ Tests: `content-adapter.test.ts` (+13 — `recycleItem` resolve/move,
+  never-cached, no-self, bin-resolve failure, malformed, move rejection;
+  `restoreItem` previousParent move, `link-missing`, move failure;
+  `emptyRecycleBin` folder-child-first + record tidy, empty bin, stop-at-first-
+  failure, listing failure, bin-resolve failure), `content-types.test.ts` (+3 —
+  `isRecycleBinDelegate` / `isRecyclableMember` / `isRestorable`),
+  `content-presentation.test.ts` (Recycle Bin → `CONTEXT_RECYCLE_BIN`),
+  `content-uri.test.ts` (`contentReadOnlyUriString`), `tree.test.ts` (recycled
+  leaf → `sasContentReadOnly:` scheme), `explorer.test.ts` (rewrote the
+  `.recycled`-withholding assertion for the delete/restore split; new 6d-ii
+  command + menu wiring test). New fixtures `recycle-bin-members.json`,
+  `member-restored.json`.
 
 ---
 
@@ -1242,6 +1334,21 @@ the Recycle Bin confirmed back to its prior 17 members. Sean approved the
 mutating run. The documented shapes were checked first against the SAS Folders v7
 OpenAPI (`developer.sas.com`), which is not cadence-specific. **6d-i relies on
 6.13; 6.14–6.15 are recorded ahead of 6d-ii, the slice that will rely on them.**_
+
+_**Re-confirmed read-only for 6d-ii, 2026-09-10 (`verde`):** the `/folders/` root
+advertises `recycleBin` (`GET` → `@myRecycleBin`) and `RecycleResource` (`PATCH`
+`/folders/folders/@item?childUri={resourceUri}&parentFolderUri=/folders/folders/@myRecycleBin`,
+`application/vnd.sas.content.folder.member`); `@myRecycleBin` resolves
+`type: trashFolder` with `self` / `members` / `addMember` / `deleteRecursively` /
+`createChild` / `up` / `ancestors`; every sampled bin member (`type: "child"`)
+carries `previousParent` (→ its old `/folders/folders/{id}`), `deleteResource`
+(→ the underlying resource), `delete` (→ the member record), `self` and `update`
+— and a recycled **folder** member carries `deleteResource` but **not**
+`deleteRecursively`, so empty-bin still has to empty a recycled folder
+child-first (finding 6.8's pattern). `innov` (2026.06) was **not** reachable this
+session even with a refreshed token — the host does not resolve from this machine
+— so 6d-ii stays single-cadence like 6.11–6.15, riding on `moveItem` (6.10) and
+`deleteResource` (6.8) both being confirmed on 2026.06._
 
 **Finding 6.13 — favourites: add is a `reference` member `POST`, remove is a
 `DELETE` of that record; `memberCount` is unreliable (settles Finding 80).**

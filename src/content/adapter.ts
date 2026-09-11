@@ -88,7 +88,9 @@ import {
   isSasContentRoot,
   MEMBERS_REL,
   memberTypeFilter,
+  PREVIOUS_PARENT_REL,
   readContentItem,
+  RECYCLE_BIN_DELEGATE,
   resourceHrefOf,
   SAS_CONTENT_ROOT,
   SELF_REL,
@@ -293,11 +295,20 @@ export class ContentAdapter {
     }
     children.sort(byFolderThenName);
 
-    // Flag the Recycle Bin's own children so 6c-ii's drag-and-drop move can
-    // refuse to re-parent a recycled item (that is a restore — 6d's). Only the
-    // direct children are flagged; descending into a recycled folder is a 6d
-    // concern.
-    if (isRecycleBinDelegate(parent)) {
+    // Flag every descendant of the Recycle Bin — not just its direct
+    // children — so 6c-ii's drag-and-drop move can refuse to re-parent a
+    // recycled item (that is a restore, 6d-ii's) and so 6d-ii's read-only
+    // file view / Restore menu / recycle-vs-permanent-delete split
+    // (`isRecyclableMember`) all still apply two or more levels down. A
+    // recycled folder is itself `inRecycleBin: true` (stamped by this same
+    // branch, one call up — a delegate is never nested, so the two conditions
+    // never both apply to the same call), so propagating from *it* rather
+    // than re-testing `isRecycleBinDelegate` on every level is what makes
+    // this recurse correctly no matter how deep the tree goes. (PR #159
+    // review: without this, a file inside a recycled folder read as an
+    // ordinary editable item with no Restore action, and "Delete" on it
+    // re-recycled it — re-parenting it straight onto the bin's own root.)
+    if (isRecycleBinDelegate(parent) || parent.inRecycleBin === true) {
       return {
         ok: true,
         value: children.map((child) => ({ ...child, inRecycleBin: true })),
@@ -1003,6 +1014,123 @@ export class ContentAdapter {
       return malformed(
         result.value,
         "the My Favorites folder",
+        "and the body was not a folder representation",
+      );
+    }
+    return { ok: true, value: item };
+  }
+
+  // ─── 6d-ii: recycle bin ──────────────────────────────────────────────────
+  //
+  // Finding 6.14: recycle and restore are one generic move — there is no
+  // dedicated operation. `RecycleResource` on the Folders root is just
+  // `patchMoveFolderItem` with `@myRecycleBin` pre-bound. So both reuse
+  // {@link ContentAdapter.moveItem}: recycle moves to the bin's own `self`
+  // href, restore moves back to the `previousParent` href the service stamps on
+  // recycle and clears on restore. Neither needs `If-Match` (finding 6.14; the
+  // same "a re-parent has no reopen-it recovery" reasoning `moveItem` already
+  // gives). Empty-bin has no primitive either (finding 6.15) — it deletes each
+  // member's resource one at a time.
+
+  /**
+   * Move `item` to the Recycle Bin — a soft delete.
+   *
+   * Resolves `@myRecycleBin` fresh (per account, like
+   * {@link ContentAdapter.favoritesFolder} — never memoised) and reuses
+   * {@link ContentAdapter.moveItem} to re-parent the member onto the bin's own
+   * `self` href. The moved member keeps its `id`, gains a `previousParent` link
+   * to its old folder (finding 6.14), and re-lists under the bin.
+   *
+   * Only a `type: "child"` member can be recycled — a folder read directly has
+   * no member record to move; the caller (`src/content/contentCommands.ts`,
+   * gated on {@link isRecyclableMember}) permanently deletes those instead.
+   */
+  async recycleItem(
+    item: ContentItem,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<ContentItem>> {
+    const bin = await this.recycleBinFolder(signal);
+    if (!bin.ok) return bin;
+    const binSelf = findLink(bin.value.links, SELF_REL);
+    if (binSelf === undefined) {
+      return linkMissing("the Recycle Bin folder", SELF_REL);
+    }
+    return await this.moveItem(item, binSelf.href, signal);
+  }
+
+  /**
+   * Restore a recycled `item` to where it used to live.
+   *
+   * `GET`s nothing extra — the `previousParent` link is already on the item the
+   * tree rendered (finding 6.14) — and reuses {@link ContentAdapter.moveItem} to
+   * re-parent onto that href. The service drops `previousParent` and removes the
+   * bin membership on success.
+   *
+   * `link-missing` when the item carries no `previousParent` (Finding 81's rare
+   * case; the tree also hides Restore then, via {@link isRestorable}).
+   */
+  async restoreItem(
+    item: ContentItem,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<ContentItem>> {
+    const previous = findLink(item.links, PREVIOUS_PARENT_REL);
+    if (previous === undefined) {
+      return linkMissing(`"${item.name}"`, PREVIOUS_PARENT_REL);
+    }
+    return await this.moveItem(item, previous.href, signal);
+  }
+
+  /**
+   * Permanently delete every member of the Recycle Bin, one at a time.
+   *
+   * Finding 6.15: no empty-bin primitive, and `deleteRecursively` on the bin
+   * `409`s on any non-folder child (finding 6.8). So this lists the bin's
+   * members (the same tree-filtered listing {@link ContentAdapter.getChildItems}
+   * builds — a `report` or `job` in the bin is not listed and is left for SAS
+   * Studio, matching upstream) and runs {@link ContentAdapter.deleteItem} on
+   * each, which already empties a recycled folder child-first.
+   *
+   * Sequential, and stops at the first failure — the members deleted before it
+   * stay deleted, and the caller reloads the tree to show the partial result.
+   */
+  async emptyRecycleBin(signal?: AbortSignal): Promise<ContentResult<void>> {
+    const bin = await this.recycleBinFolder(signal);
+    if (!bin.ok) return bin;
+
+    const members = await this.getChildItems(bin.value, signal);
+    if (!members.ok) return members;
+
+    for (const member of members.value) {
+      const removed = await this.deleteItem(member, signal);
+      if (!removed.ok) return removed;
+    }
+    return { ok: true, value: undefined };
+  }
+
+  /**
+   * The Recycle Bin folder representation, `GET`-ed fresh on every call.
+   *
+   * Not memoised, for the reason {@link ContentAdapter.favoritesFolder} spells
+   * out: `@myRecycleBin` resolves to a per-account folder id and one
+   * {@link ContentAdapter} is reused across profile switches on an endpoint.
+   */
+  private async recycleBinFolder(
+    signal?: AbortSignal,
+  ): Promise<ContentResult<ContentItem>> {
+    const result = await this.client.send({
+      link: {
+        rel: SELF_REL,
+        href: `${FOLDERS_COLLECTION}/${RECYCLE_BIN_DELEGATE}`,
+      },
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    const item = readContentItem(result.value.body);
+    if (item === undefined) {
+      return malformed(
+        result.value,
+        "the Recycle Bin folder",
         "and the body was not a folder representation",
       );
     }

@@ -211,6 +211,18 @@
         "icon": "$(star-full)"
       },
       {
+        "command": "pythonOnViya.restoreContentItem",
+        "title": "%command.restoreContentItem.title%",
+        "category": "%extension.category%",
+        "icon": "$(history)"
+      },
+      {
+        "command": "pythonOnViya.emptyRecycleBin",
+        "title": "%command.emptyRecycleBin.title%",
+        "category": "%extension.category%",
+        "icon": "$(trash)"
+      },
+      {
         "command": "pythonOnViya.openTable",
         "title": "%command.openTable.title%",
         "category": "%extension.category%"
@@ -298,6 +310,14 @@
           "when": "false"
         },
         {
+          "command": "pythonOnViya.restoreContentItem",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.emptyRecycleBin",
+          "when": "false"
+        },
+        {
           "command": "pythonOnViya.openTable",
           "when": "false"
         },
@@ -340,14 +360,24 @@
           "group": "5_favorites@1"
         },
         {
+          "command": "pythonOnViya.restoreContentItem",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)\\.recycled$/ && !listMultiSelection",
+          "group": "7_modify@0"
+        },
+        {
           "command": "pythonOnViya.renameContentItem",
           "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ && !listMultiSelection",
           "group": "7_modify@1"
         },
         {
           "command": "pythonOnViya.deleteContentItem",
-          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ && !listMultiSelection",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav|\\.recycled)?$/ && !listMultiSelection",
           "group": "7_modify@2"
+        },
+        {
+          "command": "pythonOnViya.emptyRecycleBin",
+          "when": "view == pythonOnViya.contentExplorer && viewItem == sasContent:recycleBin",
+          "group": "7_modify@3"
         },
         {
           "command": "pythonOnViya.openTable",

@@ -62,7 +62,7 @@ import {
   SAS_CONTENT_ROOT,
   type ContentItem,
 } from "./types";
-import { contentUriString } from "./uri";
+import { contentReadOnlyUriString, contentUriString } from "./uri";
 
 /**
  * The per-request bound on a {@link SasContentTreeProvider.getParent} fetch,
@@ -131,17 +131,26 @@ export class SasContentTreeProvider
     // FileSystemProvider. `resourceHrefOf` is the member's own `uri`; a member
     // that carries neither `uri` nor a `self` link, or a view with no active
     // deployment, is left inert rather than pointed at a URI missing a part.
+    // A file shown inside the Recycle Bin opens under the read-only
+    // `sasContentReadOnly:` scheme instead (6d-ii) — the same provider serves
+    // it, registered `isReadonly`, so a recycled file can be looked at but not
+    // edited before it is restored.
     const endpoint = this.currentEndpoint();
     if (shape.openable && endpoint !== undefined) {
       const href = resourceHrefOf(item);
       if (href !== undefined) {
+        const readOnly = item.inRecycleBin === true;
         const uri = vscode.Uri.parse(
-          contentUriString(item.name, href, endpoint),
+          readOnly
+            ? contentReadOnlyUriString(item.name, href, endpoint)
+            : contentUriString(item.name, href, endpoint),
         );
         node.resourceUri = uri;
         node.command = {
           command: "vscode.open",
-          title: vscode.l10n.t("Open SAS Content File"),
+          title: readOnly
+            ? vscode.l10n.t("View Recycled SAS Content File")
+            : vscode.l10n.t("Open SAS Content File"),
           arguments: [uri],
         };
       }

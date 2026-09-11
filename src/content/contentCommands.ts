@@ -4,7 +4,16 @@
 /**
  * The SAS Content tree's context-menu mutations — create a folder, create a
  * file, rename an item, delete an item (6c-i); add an item to / remove it from
- * My Favorites (6d-i).
+ * My Favorites (6d-i); restore a recycled item, empty the Recycle Bin (6d-ii).
+ *
+ * ## Delete became recycle (6d-ii)
+ *
+ * From 6d-ii, "Delete" on an ordinary folder or file member moves it to the
+ * Recycle Bin — no confirmation, because Restore undoes it — matching the SAS
+ * extension. A permanent delete (with a modal) happens only for an item that
+ * *cannot* be recycled: a top-level folder read directly (no member record to
+ * move) or one already sitting in the Recycle Bin. {@link isRecyclableMember}
+ * is the split.
  *
  * A thin `vscode` shell over `src/content/adapter.ts`, the same shape as
  * `src/content/contentFileSystem.ts`: it collects a name through an input box
@@ -29,7 +38,13 @@ import { type ContentAdapter } from "./adapter";
 import { type ContentResult } from "./client";
 import { localiseContentProblem } from "./messages";
 import { describeContentProblem } from "./problems";
-import { isContainer, sameResource, type ContentItem } from "./types";
+import {
+  isContainer,
+  isRecyclableMember,
+  isRestorable,
+  sameResource,
+  type ContentItem,
+} from "./types";
 
 /** What the command layer needs from its surroundings — supplied by
  * `src/content/contentExplorer.ts`, which owns the session and the tree. */
@@ -49,7 +64,7 @@ export interface ContentCommandDeps {
   viewId: string;
 }
 
-/** Registers the six commands. Every disposable goes on `context.subscriptions`. */
+/** Registers the eight commands. Every disposable goes on `context.subscriptions`. */
 export function registerContentCommands(
   context: vscode.ExtensionContext,
   deps: ContentCommandDeps,
@@ -78,6 +93,13 @@ export function registerContentCommands(
     vscode.commands.registerCommand(
       "pythonOnViya.removeContentFromFavorites",
       (item?: ContentItem) => favorite(deps, item, "remove"),
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.restoreContentItem",
+      (item?: ContentItem) => restore(deps, item),
+    ),
+    vscode.commands.registerCommand("pythonOnViya.emptyRecycleBin", () =>
+      emptyBin(deps),
     ),
   );
 }
@@ -198,6 +220,13 @@ async function rename(
   );
 }
 
+/**
+ * "Delete" (6c-i, reworked in 6d-ii). An ordinary folder or file member is
+ * **recycled** — moved to the Recycle Bin with no confirmation, because Restore
+ * undoes it. Anything that cannot be recycled ({@link isRecyclableMember} is
+ * `false`: a top-level folder read directly, or an item already in the bin) is
+ * **permanently** deleted behind a modal.
+ */
 async function remove(
   deps: ContentCommandDeps,
   item: ContentItem | undefined,
@@ -208,18 +237,28 @@ async function remove(
     return;
   }
 
+  if (isRecyclableMember(item)) {
+    await run(
+      deps,
+      undefined,
+      (signal) => adapter.recycleItem(item, signal),
+      vscode.l10n.t('Moving "{0}" to the Recycle Bin…', item.name),
+    );
+    return;
+  }
+
   const confirm = await vscode.window.showWarningMessage(
     isContainer(item)
       ? vscode.l10n.t(
-          'Delete the folder "{0}" and everything inside it?',
+          'Permanently delete the folder "{0}" and everything inside it?',
           item.name,
         )
-      : vscode.l10n.t('Delete "{0}"?', item.name),
+      : vscode.l10n.t('Permanently delete "{0}"?', item.name),
     {
       modal: true,
-      detail: vscode.l10n.t("This cannot be undone from the editor."),
+      detail: vscode.l10n.t("This cannot be undone."),
     },
-    vscode.l10n.t("Delete"),
+    vscode.l10n.t("Delete Permanently"),
   );
   if (confirm === undefined) return;
 
@@ -228,6 +267,72 @@ async function remove(
     undefined,
     (signal) => adapter.deleteItem(item, signal),
     vscode.l10n.t('Deleting "{0}"…', item.name),
+  );
+}
+
+/**
+ * "Restore" a recycled item to where it used to live (6d-ii). Shown only on a
+ * `.recycled` `contextValue`. When the item carries no `previousParent` link
+ * ({@link isRestorable} — Finding 81's rare case, which the menu also hides),
+ * there is nowhere to send it, so this says so rather than calling the adapter.
+ */
+async function restore(
+  deps: ContentCommandDeps,
+  item: ContentItem | undefined,
+): Promise<void> {
+  const adapter = deps.adapter();
+  if (adapter === undefined || item === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+
+  if (!isRestorable(item)) {
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        'SAS Viya did not record where "{0}" used to live, so it can\'t be restored from here. Restore it in SAS Studio instead.',
+        item.name,
+      ),
+    );
+    return;
+  }
+
+  await run(
+    deps,
+    undefined,
+    (signal) => adapter.restoreItem(item, signal),
+    vscode.l10n.t('Restoring "{0}"…', item.name),
+  );
+}
+
+/**
+ * "Empty Recycle Bin" (6d-ii). Shown on the Recycle Bin delegate. Permanently
+ * deletes every folder/file the bin lists; the adapter resolves `@myRecycleBin`
+ * itself, so the tree node is only the menu anchor.
+ */
+async function emptyBin(deps: ContentCommandDeps): Promise<void> {
+  const adapter = deps.adapter();
+  if (adapter === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+
+  const confirm = await vscode.window.showWarningMessage(
+    vscode.l10n.t("Permanently delete everything in the Recycle Bin?"),
+    {
+      modal: true,
+      detail: vscode.l10n.t(
+        "This cannot be undone. Items other tools placed here, such as reports, are left alone — remove those in SAS Studio.",
+      ),
+    },
+    vscode.l10n.t("Empty Recycle Bin"),
+  );
+  if (confirm === undefined) return;
+
+  await run(
+    deps,
+    undefined,
+    (signal) => adapter.emptyRecycleBin(signal),
+    vscode.l10n.t("Emptying the Recycle Bin…"),
   );
 }
 

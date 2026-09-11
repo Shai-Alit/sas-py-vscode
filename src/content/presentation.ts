@@ -21,9 +21,10 @@
  *   service representation to create under, and cannot be renamed or deleted.
  * - `sasContent:myFolder` — the "My Folder" delegate. Create inside it; do not
  *   rename or delete it, and it is not favouritable.
- * - `sasContent:delegate` — the "My Favorites" / "Recycle Bin" delegates.
- *   None of create / rename / delete / favourite (favourites are references; the
- *   recycle bin is 6d-ii).
+ * - `sasContent:delegate` — the "My Favorites" delegate. None of create /
+ *   rename / delete / favourite (favourites are references).
+ * - `sasContent:recycleBin` — the "Recycle Bin" delegate. Its own action is
+ *   "Empty Recycle Bin" (6d-ii); none of create / rename / delete / favourite.
  * - `sasContent:folder` — an ordinary folder (a root-listing folder or a
  *   folder member). Create, rename, delete, and favourite.
  * - `sasContent:file` — a file or other leaf member. Rename, delete, favourite.
@@ -49,6 +50,7 @@ import {
   isContainer,
   isDelegateFolder,
   isMyFolderDelegate,
+  isRecycleBinDelegate,
   isSasContentRoot,
   typeNameOf,
   type ContentItem,
@@ -64,8 +66,10 @@ export const CONTEXT_FILE = "sasContent:file";
 export const CONTEXT_ROOT = "sasContent:root";
 /** The "My Folder" delegate — create inside it, but do not rename or delete. */
 export const CONTEXT_MY_FOLDER = "sasContent:myFolder";
-/** The "My Favorites" / "Recycle Bin" delegates — no create/rename/delete. */
+/** The "My Favorites" delegate — no create/rename/delete/favourite. */
 export const CONTEXT_DELEGATE = "sasContent:delegate";
+/** The "Recycle Bin" delegate — carries only "Empty Recycle Bin" (6d-ii). */
+export const CONTEXT_RECYCLE_BIN = "sasContent:recycleBin";
 /** Appended to {@link CONTEXT_FOLDER} / {@link CONTEXT_FILE} for an item already
  * in My Favorites (6d-i). Mutually exclusive with {@link RECYCLED_SUFFIX}. */
 export const FAVORITE_SUFFIX = ".fav";
@@ -146,6 +150,7 @@ function contextValueWithState(
 function contextValueFor(item: ContentItem, container: boolean): string {
   if (isSasContentRoot(item)) return CONTEXT_ROOT;
   if (isMyFolderDelegate(item)) return CONTEXT_MY_FOLDER;
+  if (isRecycleBinDelegate(item)) return CONTEXT_RECYCLE_BIN;
   if (isDelegateFolder(item)) return CONTEXT_DELEGATE;
   return container ? CONTEXT_FOLDER : CONTEXT_FILE;
 }

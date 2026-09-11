@@ -1,0 +1,130 @@
+{
+  "version": 2,
+  "accept": "application/json",
+  "count": 2,
+  "start": 0,
+  "limit": 1000000,
+  "name": "members",
+  "items": [
+    {
+      "creationTimeStamp": "2024-01-10T09:00:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-01-10T09:00:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "eeee5555-0000-4000-8000-000000000b01",
+      "name": "old-experiments",
+      "added": "2024-01-10T09:00:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003",
+      "uri": "/folders/folders/eeee5555-0000-4000-8000-000000000c01",
+      "type": "child",
+      "contentType": "folder",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members/eeee5555-0000-4000-8000-000000000b01",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003",
+          "type": "application/vnd.sas.content.folder"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/folders/folders/eeee5555-0000-4000-8000-000000000c01",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "DELETE",
+          "rel": "deleteResource",
+          "href": "/folders/folders/eeee5555-0000-4000-8000-000000000c01"
+        },
+        {
+          "method": "PUT",
+          "rel": "update",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members/eeee5555-0000-4000-8000-000000000b01",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members/eeee5555-0000-4000-8000-000000000b01"
+        },
+        {
+          "method": "GET",
+          "rel": "previousParent",
+          "href": "/folders/folders/ffff0000-0000-4000-8000-0000000000d1",
+          "type": "application/vnd.sas.content.folder"
+        }
+      ]
+    },
+    {
+      "creationTimeStamp": "2024-01-12T11:30:00.000Z",
+      "createdBy": "alex.researcher@example.com",
+      "modifiedTimeStamp": "2024-01-12T11:30:00.000Z",
+      "modifiedBy": "alex.researcher@example.com",
+      "version": 2,
+      "id": "eeee5555-0000-4000-8000-000000000b02",
+      "name": "scratch.py",
+      "added": "2024-01-12T11:30:00.100000Z",
+      "parentFolderUri": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003",
+      "uri": "/files/files/eeee5555-0000-4000-8000-000000000c02",
+      "type": "child",
+      "contentType": "file",
+      "typeDefName": "file_py",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members/eeee5555-0000-4000-8000-000000000b02",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "GET",
+          "rel": "getResource",
+          "href": "/files/files/eeee5555-0000-4000-8000-000000000c02",
+          "type": "application/vnd.sas.summary"
+        },
+        {
+          "method": "PUT",
+          "rel": "putResource",
+          "href": "/files/files/eeee5555-0000-4000-8000-000000000c02"
+        },
+        {
+          "method": "DELETE",
+          "rel": "deleteResource",
+          "href": "/files/files/eeee5555-0000-4000-8000-000000000c02"
+        },
+        {
+          "method": "PUT",
+          "rel": "update",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members/eeee5555-0000-4000-8000-000000000b02",
+          "type": "application/vnd.sas.content.folder.member"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members/eeee5555-0000-4000-8000-000000000b02"
+        },
+        {
+          "method": "GET",
+          "rel": "previousParent",
+          "href": "/folders/folders/ffff0000-0000-4000-8000-0000000000d2",
+          "type": "application/vnd.sas.content.folder"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members?start=0&limit=1000000&filter=in(contentType,'file','folder','dataFlow')",
+      "type": "application/vnd.sas.collection"
+    }
+  ]
+}

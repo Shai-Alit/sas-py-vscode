@@ -25,6 +25,8 @@
   "command.deleteContentItem.title": "Delete",
   "command.addContentToFavorites.title": "Add to My Favorites",
   "command.removeContentFromFavorites.title": "Remove from My Favorites",
+  "command.restoreContentItem.title": "Restore",
+  "command.emptyRecycleBin.title": "Empty Recycle Bin",
   "command.openTable.title": "Open Table",
   "command.showTableProperties.title": "Table Properties",
   "viewsContainers.pythonOnViya.title": "Python on Viya",

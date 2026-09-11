@@ -8,6 +8,7 @@ import {
   CONTEXT_FILE,
   CONTEXT_FOLDER,
   CONTEXT_MY_FOLDER,
+  CONTEXT_RECYCLE_BIN,
   CONTEXT_ROOT,
   FAVORITE_SUFFIX,
   RECYCLED_SUFFIX,
@@ -59,14 +60,16 @@ describe("content/presentation nodePresentationOf", () => {
       nodePresentationOf(item({ type: "myFolder" })).contextValue,
       CONTEXT_MY_FOLDER,
     );
-    // Favorites / Recycle Bin: none of create/rename/delete.
+    // My Favorites: none of create/rename/delete/favourite.
     assert.equal(
       nodePresentationOf(item({ type: "favoritesFolder" })).contextValue,
       CONTEXT_DELEGATE,
     );
+    // Recycle Bin: its own contextValue, so "Empty Recycle Bin" targets it
+    // and nothing else (6d-ii).
     assert.equal(
       nodePresentationOf(item({ type: "trashFolder" })).contextValue,
-      CONTEXT_DELEGATE,
+      CONTEXT_RECYCLE_BIN,
     );
   });
 

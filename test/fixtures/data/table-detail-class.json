@@ -2,6 +2,18 @@
   "name": "CLASS",
   "rowCount": 19,
   "columnCount": 5,
+  "type": "DATA",
+  "label": "Student Data",
+  "engine": "V9",
+  "extendedType": "",
+  "logicalRecordCount": 19,
+  "physicalRecordCount": 19,
+  "recordLength": 40,
+  "creationTimeStamp": "2026-03-04T20:36:21.880Z",
+  "modifiedTimeStamp": "2026-03-04T20:36:21.880Z",
+  "compressionRoutine": "NO",
+  "encoding": "us-ascii  ASCII (ANSI)",
+  "bookmarkLength": 12,
   "links": [
     {
       "href": "/compute/sessions/aaaaaaaa-0000-4000-8000-000000000001-ses0000/data/SASHELP/CLASS",

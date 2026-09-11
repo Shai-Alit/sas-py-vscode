@@ -40,3 +40,4 @@ under their category.
 | Add to My Favorites | `Python on Viya: Add to My Favorites` | `pythonOnViya.addContentToFavorites` |
 | Remove from My Favorites | `Python on Viya: Remove from My Favorites` | `pythonOnViya.removeContentFromFavorites` |
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` |
+| Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showTableProperties` |

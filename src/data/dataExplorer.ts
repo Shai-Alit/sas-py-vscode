@@ -37,6 +37,13 @@
  * profile) is a silent no-op: a table node cannot exist without one already
  * having populated the tree, so this is unreachable in practice, not a state
  * this command has to explain to the user.
+ *
+ * ## 7c-ii: `pythonOnViya.showTableProperties`
+ *
+ * A context-menu-only sibling of `openTable` — same `currentAdapter()`/
+ * `TableItem` handoff, this time to `propertiesPanels.open`
+ * (`src/data/tablePropertiesPanel.ts`), which renders a static properties/
+ * columns view rather than the paged data grid.
  */
 
 import * as vscode from "vscode";
@@ -44,6 +51,7 @@ import * as vscode from "vscode";
 import { LibraryAdapter, type LibrarySessionSource } from "./adapter";
 import { SasLibraryTreeProvider } from "./dataTree";
 import type { DataViewerPanelManager } from "./dataViewerPanel";
+import type { TablePropertiesPanelManager } from "./tablePropertiesPanel";
 import { isTable, type DataItem } from "./types";
 import type { ProfileStore } from "../profile/store";
 
@@ -75,6 +83,7 @@ export function registerDataExplorer(
   log: vscode.LogOutputChannel,
   events: DataExplorerEvents,
   panels: DataViewerPanelManager,
+  propertiesPanels: TablePropertiesPanelManager,
 ): void {
   const currentAdapter = (): LibraryAdapter | undefined => {
     const profileId = profiles.active()?.profile.id;
@@ -93,6 +102,7 @@ export function registerDataExplorer(
     provider,
     view,
     panels,
+    propertiesPanels,
     vscode.commands.registerCommand("pythonOnViya.refreshDataExplorer", () => {
       provider.refresh();
     }),
@@ -117,6 +127,21 @@ export function registerDataExplorer(
         void panels.open(item, adapter).catch((error: unknown) => {
           log.error(
             `could not open the data viewer panel for "${item.libref}.${item.name}": ${String(error)}`,
+          );
+        });
+      },
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.showTableProperties",
+      (item?: DataItem) => {
+        if (item === undefined || !isTable(item)) return;
+        const adapter = currentAdapter();
+        if (adapter === undefined) return;
+        // Same fire-and-forget/catch shape as `openTable` above, and for the
+        // identical reason.
+        void propertiesPanels.open(item, adapter).catch((error: unknown) => {
+          log.error(
+            `could not open the table properties panel for "${item.libref}.${item.name}": ${String(error)}`,
           );
         });
       },

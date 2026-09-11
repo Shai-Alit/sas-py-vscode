@@ -26,6 +26,7 @@
   "command.addContentToFavorites.title": "Add to My Favorites",
   "command.removeContentFromFavorites.title": "Remove from My Favorites",
   "command.openTable.title": "Open Table",
+  "command.showTableProperties.title": "Table Properties",
   "viewsContainers.pythonOnViya.title": "Python on Viya",
   "views.contentExplorer.name": "SAS Content",
   "views.dataExplorer.name": "SAS Libraries",

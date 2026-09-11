@@ -192,6 +192,62 @@ describe("data/types", () => {
       assert.equal(readTableDetail("not an object", table), undefined);
       assert.equal(readTableDetail(null, table), undefined);
     });
+
+    it("reads the full TableInfo field set 7c-ii needs (Finding 7.19, verde, SASHELP.CLASS)", () => {
+      const body = readJsonFixture("data", "table-detail-class.json");
+      const detail = readTableDetail(body, table);
+      assert.ok(detail);
+      assert.equal(detail.type, "DATA");
+      assert.equal(detail.label, "Student Data");
+      assert.equal(detail.engine, "V9");
+      assert.equal(detail.extendedType, undefined);
+      assert.equal(detail.logicalRecordCount, 19);
+      assert.equal(detail.physicalRecordCount, 19);
+      assert.equal(detail.recordLength, 40);
+      assert.equal(detail.creationTimeStamp, "2026-03-04T20:36:21.880Z");
+      assert.equal(detail.modifiedTimeStamp, "2026-03-04T20:36:21.880Z");
+      assert.equal(detail.compressionRoutine, "NO");
+      assert.equal(detail.encoding, "us-ascii  ASCII (ANSI)");
+      assert.equal(detail.bookmarkLength, 12);
+    });
+
+    it("omits every 7c-ii field rather than carrying undefined when the body has none of them", () => {
+      const detail = readTableDetail({ name: "CLASS", rowCount: 19 }, table);
+      assert.deepEqual(detail, {
+        kind: "tableDetail",
+        libref: "SASHELP",
+        name: "CLASS",
+        rowCount: 19,
+        links: [],
+      });
+    });
+
+    it("treats an empty-string optional text field the same as an absent one", () => {
+      const detail = readTableDetail(
+        { name: "CLASS", extendedType: "", label: "", engine: "" },
+        table,
+      );
+      assert.equal(detail?.extendedType, undefined);
+      assert.equal(detail?.label, undefined);
+      assert.equal(detail?.engine, undefined);
+    });
+
+    it("keeps a non-empty extendedType — the real fixture's own value is always empty, so nothing else exercises this branch", () => {
+      const detail = readTableDetail(
+        { name: "CLASS", extendedType: "AUDIT" },
+        table,
+      );
+      assert.equal(detail?.extendedType, "AUDIT");
+    });
+
+    it("ignores a non-number optional numeric field the same as an absent one", () => {
+      const detail = readTableDetail(
+        { name: "CLASS", bookmarkLength: "12", recordLength: null },
+        table,
+      );
+      assert.equal(detail?.bookmarkLength, undefined);
+      assert.equal(detail?.recordLength, undefined);
+    });
   });
 
   describe("readColumnItem", () => {

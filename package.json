@@ -214,6 +214,11 @@
         "command": "pythonOnViya.openTable",
         "title": "%command.openTable.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.showTableProperties",
+        "title": "%command.showTableProperties.title%",
+        "category": "%extension.category%"
       }
     ],
     "viewsContainers": {
@@ -295,6 +300,10 @@
         {
           "command": "pythonOnViya.openTable",
           "when": "false"
+        },
+        {
+          "command": "pythonOnViya.showTableProperties",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -342,6 +351,11 @@
         },
         {
           "command": "pythonOnViya.openTable",
+          "when": "view == pythonOnViya.dataExplorer && viewItem == sasData:table",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.showTableProperties",
           "when": "view == pythonOnViya.dataExplorer && viewItem == sasData:table",
           "group": "navigation"
         }

@@ -186,6 +186,20 @@ export function readTableItem(
  * viewing (7b) is the first caller, since that is the first time this
  * project needs the `rows`/`columns` links only the rich detail carries
  * (Finding 7.1).
+ *
+ * **7c-ii extends this with the rest of `TableInfo`'s own field set** —
+ * `type`/`label`/`engine`/`extendedType`/`logicalRecordCount`/
+ * `physicalRecordCount`/`recordLength`/`creationTimeStamp`/
+ * `modifiedTimeStamp`/`compressionRoutine`/`encoding`/`bookmarkLength` — read
+ * from the same `openTable` response 7b already fetches, needed only once a
+ * caller wants to show them (`src/data/tablePropertiesPanel.ts`); nothing
+ * before 7c-ii read past `rowCount`/`columnCount`. Finding 7.19
+ * (`docs/phases/phase-7.md`, `verde`, 2026-09-10) confirms the full shape
+ * against `SASHELP.CLASS`, including that `creationTimeStamp`/
+ * `modifiedTimeStamp` are ISO-8601 strings (`"2026-03-04T20:36:21.880Z"`), not
+ * a raw SAS epoch-seconds number — see `tablePropertiesModel.ts`'s
+ * `formatTimestamp` for what that means for the epoch fallback it still
+ * carries.
  */
 export interface TableDetail {
   readonly kind: "tableDetail";
@@ -193,11 +207,34 @@ export interface TableDetail {
   readonly name: string;
   readonly rowCount?: number | undefined;
   readonly columnCount?: number | undefined;
+  /** The SAS table type — `"DATA"` on every table Finding 7.19 observed;
+   * `applySort`'s own created view has never been probed for what it reports
+   * here, and nothing reads this field for that case. */
+  readonly type?: string | undefined;
+  readonly label?: string | undefined;
+  readonly engine?: string | undefined;
+  readonly extendedType?: string | undefined;
+  readonly logicalRecordCount?: number | undefined;
+  readonly physicalRecordCount?: number | undefined;
+  readonly recordLength?: number | undefined;
+  /** ISO-8601 — see this interface's own doc comment (Finding 7.19). */
+  readonly creationTimeStamp?: string | undefined;
+  readonly modifiedTimeStamp?: string | undefined;
+  readonly compressionRoutine?: string | undefined;
+  readonly encoding?: string | undefined;
+  readonly bookmarkLength?: number | undefined;
   readonly links: readonly Link[];
 }
 
 /** Reads a table's rich detail response. `table` supplies the libref, since
- * the response body itself never repeats it. */
+ * the response body itself never repeats it.
+ *
+ * Every 7c-ii field is optional at the type level and read the same
+ * defensive way `readColumnItem` already reads `Column`'s own optional
+ * fields: a string is kept only when non-empty (Finding 7.19 observed
+ * `extendedType: ""` on a real table — empty, not absent, and treated
+ * identically to absent by every caller), a number only when it actually is
+ * one. */
 export function readTableDetail(
   value: unknown,
   table: TableItem,
@@ -214,6 +251,45 @@ export function readTableDetail(
     ...(typeof raw.rowCount === "number" ? { rowCount: raw.rowCount } : {}),
     ...(typeof raw.columnCount === "number"
       ? { columnCount: raw.columnCount }
+      : {}),
+    ...(typeof raw.type === "string" && raw.type !== ""
+      ? { type: raw.type }
+      : {}),
+    ...(typeof raw.label === "string" && raw.label !== ""
+      ? { label: raw.label }
+      : {}),
+    ...(typeof raw.engine === "string" && raw.engine !== ""
+      ? { engine: raw.engine }
+      : {}),
+    ...(typeof raw.extendedType === "string" && raw.extendedType !== ""
+      ? { extendedType: raw.extendedType }
+      : {}),
+    ...(typeof raw.logicalRecordCount === "number"
+      ? { logicalRecordCount: raw.logicalRecordCount }
+      : {}),
+    ...(typeof raw.physicalRecordCount === "number"
+      ? { physicalRecordCount: raw.physicalRecordCount }
+      : {}),
+    ...(typeof raw.recordLength === "number"
+      ? { recordLength: raw.recordLength }
+      : {}),
+    ...(typeof raw.creationTimeStamp === "string" &&
+    raw.creationTimeStamp !== ""
+      ? { creationTimeStamp: raw.creationTimeStamp }
+      : {}),
+    ...(typeof raw.modifiedTimeStamp === "string" &&
+    raw.modifiedTimeStamp !== ""
+      ? { modifiedTimeStamp: raw.modifiedTimeStamp }
+      : {}),
+    ...(typeof raw.compressionRoutine === "string" &&
+    raw.compressionRoutine !== ""
+      ? { compressionRoutine: raw.compressionRoutine }
+      : {}),
+    ...(typeof raw.encoding === "string" && raw.encoding !== ""
+      ? { encoding: raw.encoding }
+      : {}),
+    ...(typeof raw.bookmarkLength === "number"
+      ? { bookmarkLength: raw.bookmarkLength }
       : {}),
     links: readLinks(value),
   };

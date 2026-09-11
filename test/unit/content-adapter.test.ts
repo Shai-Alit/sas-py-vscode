@@ -2141,6 +2141,357 @@ describe("content/adapter", () => {
       });
     });
   });
+
+  describe("recycleItem / restoreItem / emptyRecycleBin (findings 6.14/6.15)", () => {
+    const BIN_SELF = "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003";
+    const BIN_MEMBERS = `${BIN_SELF}/members`;
+
+    describe("recycleItem", () => {
+      it("resolves @myRecycleBin and moves the member onto its self href", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        assert.ok(memberSelf);
+        let body: Record<string, unknown> | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFixture("delegate-recycle-bin.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: (request) => {
+              body = request.jsonBody as Record<string, unknown>;
+              return contentFixture("member-moved.json");
+            },
+          },
+        ]);
+
+        const result = await adapter.recycleItem(member);
+        assert.ok(result.ok);
+        assert.ok(body);
+        assert.equal(body.parentFolderUri, BIN_SELF);
+        assert.deepEqual(
+          calls.map((c) => `${c.method} ${c.href}`),
+          [
+            "GET /folders/folders/@myRecycleBin",
+            `GET ${memberSelf}`,
+            `PUT ${memberSelf}`,
+          ],
+        );
+      });
+
+      it("re-fetches @myRecycleBin on every call — never cached", async () => {
+        // Same reasoning as favoritesFolder: `@myRecycleBin` resolves per
+        // account, one adapter is reused across profile switches on an endpoint.
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        let binGets = 0;
+        const { adapter } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: () => {
+              binGets += 1;
+              return contentFixture("delegate-recycle-bin.json");
+            },
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: contentFixture("member-moved.json"),
+          },
+        ]);
+
+        assert.ok((await adapter.recycleItem(member)).ok);
+        assert.ok((await adapter.recycleItem(member)).ok);
+        assert.equal(binGets, 2);
+      });
+
+      it("reports link-missing when the Recycle Bin carries no self link", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentOk({
+              id: "bin",
+              name: "Recycle Bin",
+              type: "trashFolder",
+              links: [],
+            }),
+          },
+        ]);
+        const result = await adapter.recycleItem(
+          readContentItemFixture("member-created.json"),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(calls.length, 1);
+      });
+
+      it("passes a bin-resolve failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFail({ code: "content-unreachable", detail: "down" }),
+          },
+        ]);
+        const result = await adapter.recycleItem(
+          readContentItemFixture("member-created.json"),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-unreachable");
+      });
+
+      it("reports response-malformed when @myRecycleBin is not a folder", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentOk("not a folder"),
+          },
+        ]);
+        const result = await adapter.recycleItem(
+          readContentItemFixture("member-created.json"),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+
+      it("passes a move rejection straight through", async () => {
+        const member = readContentItemFixture("member-created.json");
+        const memberSelf = member.links.find((l) => l.rel === "self")?.href;
+        const { adapter } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFixture("delegate-recycle-bin.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "GET",
+            reply: contentFixture("member-created.json"),
+          },
+          {
+            when: (href, method) => href === memberSelf && method === "PUT",
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 409 },
+            }),
+          },
+        ]);
+        const result = await adapter.recycleItem(member);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+    });
+
+    describe("restoreItem", () => {
+      it("moves the item back onto its previousParent href", async () => {
+        // The second bin member (a file) — read straight out of the listing
+        // fixture, the way `getChildItems` would hand it to the command layer.
+        const listing = readJsonFixture("content", "recycle-bin-members.json");
+        const item = readContentItem(
+          (listing as { items: unknown[] }).items[1],
+        );
+        assert.ok(item);
+        const self = item.links.find((l) => l.rel === "self")?.href;
+        const previousParent = item.links.find(
+          (l) => l.rel === "previousParent",
+        )?.href;
+        assert.ok(self && previousParent);
+
+        let body: Record<string, unknown> | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: (href, method) => href === self && method === "GET",
+            reply: contentOk({
+              id: item.id,
+              name: item.name,
+              type: "child",
+              uri: item.uri,
+              links: item.links,
+            }),
+          },
+          {
+            when: (href, method) => href === self && method === "PUT",
+            reply: (request) => {
+              body = request.jsonBody as Record<string, unknown>;
+              return contentFixture("member-restored.json");
+            },
+          },
+        ]);
+
+        const result = await adapter.restoreItem(item);
+        assert.ok(result.ok);
+        assert.ok(body);
+        assert.equal(body.parentFolderUri, previousParent);
+        assert.deepEqual(
+          calls.map((c) => c.method),
+          ["GET", "PUT"],
+        );
+      });
+
+      it("reports link-missing when the item carries no previousParent", async () => {
+        const { adapter, calls } = adapterWith([]);
+        const result = await adapter.restoreItem({
+          id: "m",
+          name: "orphan.py",
+          type: "child",
+          links: [{ rel: "self", href: "/folders/folders/b/members/m" }],
+        });
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.equal(result.problem.rel, "previousParent");
+        assert.equal(calls.length, 0);
+      });
+
+      it("passes a move failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: (href, method) =>
+              href === "/folders/folders/b/members/m" && method === "GET",
+            reply: contentFail({
+              code: "content-unreachable",
+              detail: "down",
+            }),
+          },
+        ]);
+        const result = await adapter.restoreItem({
+          id: "m",
+          name: "x.py",
+          type: "child",
+          uri: "/files/files/x",
+          links: [
+            { rel: "self", href: "/folders/folders/b/members/m" },
+            { rel: "previousParent", href: "/folders/folders/home" },
+          ],
+        });
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-unreachable");
+      });
+    });
+
+    describe("emptyRecycleBin", () => {
+      it("deletes every listed bin member, folder child-first, then tidies records", async () => {
+        const deleted: string[] = [];
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFixture("delegate-recycle-bin.json"),
+          },
+          {
+            when: BIN_MEMBERS,
+            reply: contentFixture("recycle-bin-members.json"),
+          },
+          // the recycled folder child's own (empty) members listing
+          {
+            when: "/folders/folders/eeee5555-0000-4000-8000-000000000c01/members",
+            reply: contentOk({ items: [] }),
+          },
+          {
+            when: (_href, method) => method === "DELETE",
+            reply: (request) => {
+              deleted.push(request.link.href);
+              // the trailing member-record delete is a 404, swallowed
+              return request.link.href.includes("/members/")
+                ? contentFail({
+                    code: "content-rejected",
+                    error: { status: 404 },
+                  })
+                : contentNoBody();
+            },
+          },
+        ]);
+
+        const result = await adapter.emptyRecycleBin();
+        assert.ok(result.ok);
+        // both resources deleted (folder + file), each followed by its record
+        assert.ok(
+          deleted.includes(
+            "/folders/folders/eeee5555-0000-4000-8000-000000000c01",
+          ),
+        );
+        assert.ok(
+          deleted.includes("/files/files/eeee5555-0000-4000-8000-000000000c02"),
+        );
+        assert.equal(calls[0]?.href, "/folders/folders/@myRecycleBin");
+      });
+
+      it("resolves an empty bin to ok with no deletes", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFixture("delegate-recycle-bin.json"),
+          },
+          { when: BIN_MEMBERS, reply: contentOk({ items: [] }) },
+        ]);
+        const result = await adapter.emptyRecycleBin();
+        assert.ok(result.ok);
+        assert.ok(!calls.some((c) => c.method === "DELETE"));
+      });
+
+      it("stops at the first member that fails to delete", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFixture("delegate-recycle-bin.json"),
+          },
+          {
+            when: BIN_MEMBERS,
+            reply: contentFixture("recycle-bin-members.json"),
+          },
+          {
+            when: "/folders/folders/eeee5555-0000-4000-8000-000000000c01/members",
+            reply: contentOk({ items: [] }),
+          },
+          {
+            when: (_href, method) => method === "DELETE",
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 403 },
+            }),
+          },
+        ]);
+        const result = await adapter.emptyRecycleBin();
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+
+      it("passes a members-listing failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFixture("delegate-recycle-bin.json"),
+          },
+          {
+            when: BIN_MEMBERS,
+            reply: contentFail({
+              code: "content-unreachable",
+              detail: "down",
+            }),
+          },
+        ]);
+        const result = await adapter.emptyRecycleBin();
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-unreachable");
+      });
+
+      it("passes a bin-resolve failure straight through", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: "/folders/folders/@myRecycleBin",
+            reply: contentFail({ code: "content-unreachable", detail: "x" }),
+          },
+        ]);
+        const result = await adapter.emptyRecycleBin();
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-unreachable");
+        assert.equal(calls.length, 1);
+      });
+    });
+  });
 });
 
 /** A `ContentItem` parsed from a fixture the way the adapter would see it —

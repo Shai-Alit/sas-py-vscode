@@ -33,6 +33,15 @@
 /** The `FileSystemProvider` scheme for editable SAS Content files. */
 export const CONTENT_SCHEME = "sasContent";
 
+/**
+ * The scheme for a **read-only** view of a SAS Content file — a recycled file,
+ * opened from the Recycle Bin (6d-ii). The same {@link SasContentFileSystemProvider}
+ * serves it, registered a second time with `isReadonly: true`, so the query
+ * shape and {@link parseContentUri} are shared; only the scheme differs. Mirrors
+ * upstream's `sasContentReadOnly` scheme.
+ */
+export const CONTENT_READONLY_SCHEME = "sasContentReadOnly";
+
 /** The file href and the deployment it belongs to, read out of a
  * `sasContent:` URI's query. */
 export interface ContentUriParts {
@@ -59,12 +68,40 @@ export function contentUriString(
   resourceHref: string,
   deploymentRoot: string,
 ): string {
+  return buildContentUri(CONTENT_SCHEME, name, resourceHref, deploymentRoot);
+}
+
+/**
+ * The `sasContentReadOnly:` URI string for a recycled file (6d-ii) — the same
+ * shape as {@link contentUriString}, under the read-only scheme, so opening it
+ * lands in {@link SasContentFileSystemProvider}'s read path but the editor never
+ * offers to save it.
+ */
+export function contentReadOnlyUriString(
+  name: string,
+  resourceHref: string,
+  deploymentRoot: string,
+): string {
+  return buildContentUri(
+    CONTENT_READONLY_SCHEME,
+    name,
+    resourceHref,
+    deploymentRoot,
+  );
+}
+
+function buildContentUri(
+  scheme: string,
+  name: string,
+  resourceHref: string,
+  deploymentRoot: string,
+): string {
   const safeName = name
     .replace(/%/g, "%25")
     .replace(/#/g, "%23")
     .replace(/\?/g, "%3F");
   return (
-    `${CONTENT_SCHEME}:/${safeName}` +
+    `${scheme}:/${safeName}` +
     `?id=${resourceHref}&r=${encodeURIComponent(deploymentRoot)}`
   );
 }

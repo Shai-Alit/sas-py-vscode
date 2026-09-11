@@ -39,4 +39,6 @@ under their category.
 | Delete | `Python on Viya: Delete` | `pythonOnViya.deleteContentItem` |
 | Add to My Favorites | `Python on Viya: Add to My Favorites` | `pythonOnViya.addContentToFavorites` |
 | Remove from My Favorites | `Python on Viya: Remove from My Favorites` | `pythonOnViya.removeContentFromFavorites` |
+| Restore | `Python on Viya: Restore` | `pythonOnViya.restoreContentItem` |
+| Empty Recycle Bin | `Python on Viya: Empty Recycle Bin` | `pythonOnViya.emptyRecycleBin` |
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` |

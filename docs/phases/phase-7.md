@@ -1207,7 +1207,7 @@ things this box waits on.
   about. `npm run verify` (1419 unit passing) and `npm run test:integration`
   (296 passing) both green.
 
-☐ **7c — Sort, filter, CSV export, table properties.** Split into three
+☑ **7c — Sort, filter, CSV export, table properties.** Split into three
 sub-slices (Sean, 2026-09-10), mirroring 6c's own split — each is
 independently valuable and none blocks another: **7c-i** sort + filter
 (share one request payload and one probe, since upstream combines them into
@@ -1215,8 +1215,12 @@ a single re-fetch); **7c-ii** table properties/columns static viewer (fully
 static, no grid interaction); **7c-iii** CSV export to local disk (the one
 host-side-only, local-disk-write feature, standalone since Phase 6 deferred
 its own upload/download to Phase 11 entirely rather than shipping a helper
-this could share). **7c-i and 7c-ii are done; 7c-iii is code-complete and
-reviewed (both the independent-agent pass and Sean's own), PR pending.**
+this could share). **7c-i, 7c-ii, and 7c-iii are all done and merged** —
+[PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155),
+[PR #158](https://github.com/Shai-Alit/sas-py-vscode/pull/158) /
+[PR #160](https://github.com/Shai-Alit/sas-py-vscode/pull/160), and
+[PR #161](https://github.com/Shai-Alit/sas-py-vscode/pull/161) (squash
+`dac4f7f`) respectively.
 
 ☑ **7c-i — Sort + filter.** [PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155)
 opened 2026-09-10. Code written 2026-09-10 (`sas-py-vscode-cowork`

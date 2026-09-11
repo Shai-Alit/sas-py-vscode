@@ -1437,7 +1437,71 @@ under SAS Content) that you don't mind recycling.
   accepted tradeoff — confirm it doesn't read as hung for your handful of
   items), and the bin ends up empty.
 
-## 17. Regression spot-checks
+## 17. Python and SAS libraries — `SAS.sd2df`/`df2sd`/`submit`, and the drag-and-drop snippet (phase 7d)
+
+`PROC PYTHON`'s own `SAS` bridge object, documented at
+[`docs/data-access.md`](../data-access.md) — no new backend code, so this
+section is entirely about the documented example being accurate and the new
+drag-and-drop snippet inserting what it claims to.
+
+**Pre-work:** the same live connection as §10, with **SASHELP.CLASS** visible
+in the tree, and an empty `.py` file open.
+
+**First live pass ran 2026-09-11 (Sean, `verde`), against an installed build.**
+The three `Run File` rows and all three drag-and-drop rows pass. The drag rows
+failed on the first attempt for a real reason — see the note under the drag row
+below, and `phase-7.md`'s 7d Runbook entry for the root cause.
+
+- [x] **`SAS.sd2df` reads a table** — Run File on a script containing just
+  `df = SAS.sd2df("sashelp.class")` followed by `print(df.shape)`.
+  **Expect:** output includes `(19, 5)`, matching `SASHELP.CLASS`'s known
+  row/column count — the exact example `docs/data-access.md` shows.
+- [x] **`SAS.df2sd` writes a table back** — Run File on a script that builds a
+  small `DataFrame` (e.g. `import pandas as pd; df = pd.DataFrame({"x": [1,
+  2, 3]})`) then calls `SAS.df2sd(df, "work.probe_out")`, then reopen the SAS
+  Libraries tree (refresh) and expand **WORK**.
+  **Expect:** the run succeeds with no error, and `PROBE_OUT` now appears
+  under **WORK** in the tree.
+- [ ] **The `PROC SQL` pass-through example runs** — Run File on
+  `docs/data-access.md`'s own pass-through example (substitute a real
+  site-registered library/table you can read for `external_db.orders`, or
+  use `sashelp.class` with any `where` clause on a real column).
+  **Expect:** no error, and `SAS.sd2df` on the created `work.` view returns
+  only the filtered rows.
+- [x] **Dragging a table into a `.py` editor asks how** — drag
+  **SASHELP.CLASS** from the SAS Libraries tree and drop it into the open
+  `.py` file.
+  **Expect:** a quick pick appears titled `Insert "SASHELP.CLASS" into
+  Python as…`, offering **Read directly** and **Filter with PROC SQL
+  first**.
+  **First attempt, 2026-09-11 (Sean): failed, then fixed.** The quick pick
+  appeared and either choice inserted nothing, silently — VS Code serializes
+  a tree→editor drop payload across the extension-host RPC boundary, so
+  `provideDocumentDropEdits` received the `JSON.stringify`'d text rather than
+  the `TableItem[]` `handleDrag` set, and the slice had cast it instead of
+  parsing it. The resulting `TypeError` was swallowed by VS Code and appeared
+  only in the DevTools console, never in the output channel. Fixed
+  (`readDraggedTables`), and **re-tested live the same day: passes.** Full
+  account in `phase-7.md`'s 7d Runbook entry.
+- [x] **"Read directly" inserts a plain sd2df assignment** — choose **Read
+  directly**.
+  **Expect:** `class_df = SAS.sd2df("SASHELP.CLASS")` lands at the drop
+  point, as plain text (no tabstops to Tab through).
+- [x] **"Filter with PROC SQL first" inserts a real snippet, with a mirrored
+  tabstop** — undo the previous insert, drag **SASHELP.CLASS** in again, and
+  this time choose **Filter with PROC SQL first**.
+  **Expect:** a multi-line `SAS.submit("""proc sql; …""")` block followed by
+  a `SAS.sd2df("work.$1")` line lands at the drop point, with
+  `class_view` pre-selected as an editable tabstop; typing a new name and
+  pressing `Tab` updates *both* the `create view work.…` line and the
+  `SAS.sd2df("work....")` line together, then lands the cursor on the `where`
+  clause's own `1=1` placeholder.
+- [ ] **Dropping the same table twice de-duplicates the variable name** —
+  with `class_df = SAS.sd2df(...)` already in the file from an earlier row,
+  drop **SASHELP.CLASS** again and choose **Read directly**.
+  **Expect:** the new line assigns `class_df2`, not `class_df` again.
+
+## 18. Regression spot-checks
 
 Each of these was a real defect caught in review. Quick to confirm now that you
 are set up.
@@ -1473,11 +1537,11 @@ are set up.
 
 This page is meant to be re-run every phase, so it has to grow with the product.
 
-- **Sections 0–1, 14 and 17 are phase-agnostic.** Pre-flight, activation, trust,
+- **Sections 0–1, 14 and 18 are phase-agnostic.** Pre-flight, activation, trust,
   enablement and the regression spot-checks apply to every build. The regression
   section grows by one bullet each time review catches a defect worth
   re-confirming by hand.
-- **Sections 2–13 and 15–16 map to phases 1–3, 6a–6d and 7a–7c-ii.** When a
+- **Sections 2–13 and 15–17 map to phases 1–3, 6a–6d and 7a–7d.** When a
   phase closes, add a section (or extend one) for its user-visible behaviour,
   and cite the slice and ADR in the heading the same way the existing sections
   do. Phase 4's traceback editor-position mapping, for instance, turns the

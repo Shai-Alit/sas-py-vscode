@@ -62,6 +62,10 @@ import * as vscode from "vscode";
 
 import { LibraryAdapter, type LibrarySessionSource } from "./adapter";
 import { runCsvExport } from "./csvExportCommand";
+import {
+  PYTHON_DROP_SELECTOR,
+  SasLibraryDragAndDropController,
+} from "./dataDragAndDrop";
 import { SasLibraryTreeProvider } from "./dataTree";
 import type { DataViewerPanelManager } from "./dataViewerPanel";
 import type { TablePropertiesPanelManager } from "./tablePropertiesPanel";
@@ -106,9 +110,11 @@ export function registerDataExplorer(
   };
 
   const provider = new SasLibraryTreeProvider(currentAdapter, log);
+  const dragAndDrop = new SasLibraryDragAndDropController();
 
   const view = vscode.window.createTreeView(DATA_VIEW_ID, {
     treeDataProvider: provider,
+    dragAndDropController: dragAndDrop,
   });
 
   context.subscriptions.push(
@@ -116,6 +122,15 @@ export function registerDataExplorer(
     view,
     panels,
     propertiesPanels,
+    // 7d: dropping a table from this tree into a `.py` editor inserts a
+    // `SAS.sd2df`/`SAS.submit` snippet — `dragAndDrop` plays both the
+    // `TreeDragAndDropController` role `view` uses above and this
+    // `DocumentDropEditProvider` role, per `dataDragAndDrop.ts`'s own doc
+    // comment.
+    vscode.languages.registerDocumentDropEditProvider(
+      PYTHON_DROP_SELECTOR,
+      dragAndDrop,
+    ),
     vscode.commands.registerCommand("pythonOnViya.refreshDataExplorer", () => {
       provider.refresh();
     }),

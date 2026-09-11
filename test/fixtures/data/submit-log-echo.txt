@@ -1,0 +1,2 @@
+libname mysqllib mysql server='fake-host-not-real.example' user='fakeuser' password=XXXXXXXXXXXXXXXXXXXXXXXXX schema='test';
+ERROR: The SAS/ACCESS Interface to MYSQL cannot be loaded.

@@ -32,7 +32,8 @@ level of the published site and is authored alongside the slice that ships the
 feature it describes. So far that is
 [Connection profiles](connection-profiles.md), [Signing in](signing-in.md),
 [Connecting to Viya](connecting.md), [Running Python](running-python.md),
-[Browsing SAS Content](browsing-sas-content.md), [Diagnostics](diagnostics.md),
+[Browsing SAS Content](browsing-sas-content.md),
+[Python and SAS libraries](data-access.md), [Diagnostics](diagnostics.md),
 [The Python environment](python-environment.md) and
 [Troubleshooting](troubleshooting.md). A new top-level page has to be
 added to `nav` and `sidebar` in `.vitepress/config.mjs` as well — an

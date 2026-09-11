@@ -61,6 +61,16 @@ called out under **Changed** with a migration note.
   created, with SAS Viya's own suggested alternative. The read-only delegate
   folders (My Favorites, Recycle Bin) and the "SAS Content" root have no such
   actions.
+- **Drag a table from the SAS Libraries view into a Python file.** Dropping it
+  shows a quick pick — **Read directly** inserts a plain
+  `SAS.sd2df("libref.table")` assignment, and **Filter with PROC SQL first**
+  inserts a `SAS.submit`-based `PROC SQL` pass-through with a mirrored,
+  editable view-name tabstop, useful for pushing a `WHERE` filter down to a
+  SAS/ACCESS-connected external table before reading it. The assigned variable
+  name is derived from the table's own name and deduplicated against the rest
+  of the document. See the new [Python and SAS libraries](docs/data-access.md)
+  page, which also documents the underlying `PROC PYTHON` bridge
+  (`SAS.sd2df`/`SAS.df2sd`/`SAS.submit`) directly.
 
 ### Changed
 

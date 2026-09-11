@@ -95,6 +95,51 @@ describe("SasContentTreeProvider", () => {
     provider.dispose();
   });
 
+  it("gives a folder an identity resourceUri under sasContentFolder:, with no open command (ADR-0031)", () => {
+    const { provider } = makeProvider(() => adapterReturning(okResult([])));
+    const node = provider.getTreeItem(
+      item({
+        id: "folder-9",
+        name: "reports",
+        type: "folder",
+        uri: "/folders/folders/eeeeeeee-0000-4000-8000-000000000009",
+      }),
+    );
+    assert.equal(node.command, undefined);
+    assert.ok(node.resourceUri instanceof vscode.Uri);
+    assert.equal(node.resourceUri.scheme, "sasContentFolder");
+    assert.equal(node.resourceUri.path, "/reports");
+    assert.deepEqual(parseContentUri(node.resourceUri.query), {
+      resourceHref: "/folders/folders/eeeeeeee-0000-4000-8000-000000000009",
+      deploymentRoot: ENDPOINT,
+    });
+    provider.dispose();
+  });
+
+  it("leaves a folder with no resolvable href, or no active deployment, without a resourceUri", () => {
+    const { provider } = makeProvider(() => adapterReturning(okResult([])));
+    const noHref = provider.getTreeItem(
+      item({ id: "folder-9", name: "reports", type: "folder" }),
+    );
+    assert.equal(noHref.resourceUri, undefined);
+
+    const { provider: disconnected } = makeProvider(
+      () => adapterReturning(okResult([])),
+      null,
+    );
+    const noDeployment = disconnected.getTreeItem(
+      item({
+        id: "folder-9",
+        name: "reports",
+        type: "folder",
+        uri: "/folders/folders/eeeeeeee-0000-4000-8000-000000000009",
+      }),
+    );
+    assert.equal(noDeployment.resourceUri, undefined);
+    provider.dispose();
+    disconnected.dispose();
+  });
+
   it("maps a file member to a leaf that opens via sasContent:, carrying the deployment", () => {
     const { provider } = makeProvider(() => adapterReturning(okResult([])));
     const node = provider.getTreeItem(

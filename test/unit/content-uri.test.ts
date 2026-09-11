@@ -4,8 +4,10 @@
 import assert from "node:assert/strict";
 
 import {
+  CONTENT_FOLDER_SCHEME,
   CONTENT_READONLY_SCHEME,
   CONTENT_SCHEME,
+  contentFolderUriString,
   contentReadOnlyUriString,
   contentUriString,
   parseContentUri,
@@ -79,6 +81,29 @@ describe("content/uri", () => {
     assert.ok(
       contentReadOnlyUriString("a#b?c.py", HREF, ROOT).startsWith(
         `${CONTENT_READONLY_SCHEME}:/a%23b%3Fc.py?id=`,
+      ),
+    );
+  });
+
+  it("builds the folder identity variant under the sasContentFolder scheme (ADR-0031)", () => {
+    assert.equal(
+      contentFolderUriString("reports", HREF, ROOT),
+      `${CONTENT_FOLDER_SCHEME}:/reports?id=${HREF}&r=${encodeURIComponent(ROOT)}`,
+    );
+    // same query shape, so parseContentUri round-trips it too, even though
+    // nothing currently reads a sasContentFolder: URI back this way
+    const query = contentFolderUriString("x", HREF, ROOT)
+      .split("?")
+      .slice(1)
+      .join("?");
+    assert.deepEqual(parseContentUri(query), {
+      resourceHref: HREF,
+      deploymentRoot: ROOT,
+    });
+    // and it encodes the name the same way
+    assert.ok(
+      contentFolderUriString("a#b?c", HREF, ROOT).startsWith(
+        `${CONTENT_FOLDER_SCHEME}:/a%23b%3Fc?id=`,
       ),
     );
   });

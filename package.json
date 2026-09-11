@@ -223,6 +223,16 @@
         "icon": "$(trash)"
       },
       {
+        "command": "pythonOnViya.cutContentItem",
+        "title": "%command.cutContentItem.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.pasteContentItem",
+        "title": "%command.pasteContentItem.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "pythonOnViya.openTable",
         "title": "%command.openTable.title%",
         "category": "%extension.category%"
@@ -323,6 +333,14 @@
           "when": "false"
         },
         {
+          "command": "pythonOnViya.cutContentItem",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.pasteContentItem",
+          "when": "false"
+        },
+        {
           "command": "pythonOnViya.openTable",
           "when": "false"
         },
@@ -382,6 +400,16 @@
           "command": "pythonOnViya.deleteContentItem",
           "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav|\\.recycled)?$/ && !listMultiSelection",
           "group": "7_modify@2"
+        },
+        {
+          "command": "pythonOnViya.cutContentItem",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ && !listMultiSelection",
+          "group": "7_modify@3"
+        },
+        {
+          "command": "pythonOnViya.pasteContentItem",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && pythonOnViya.hasCutContentItem && !listMultiSelection",
+          "group": "7_modify@4"
         },
         {
           "command": "pythonOnViya.emptyRecycleBin",

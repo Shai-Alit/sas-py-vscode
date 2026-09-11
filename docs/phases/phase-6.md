@@ -411,9 +411,17 @@ scoped into this slice but is now **deferred to future work** (Sean,
 2026-09-10; finding 6.11 — no idiomatic Python equivalent of upstream's
 `filename … filesrvc …;` one-liner, and a low-priority nice-to-have);
 **6c-iii** `getParent`/`TreeView.reveal` + the finding-101 `ancestors` probe.
-**Upload/download to local disk is deferred to Phase 11** (Sean, 2026-09-10) —
-it was never in the 6a–6d breakdown and is a Phase 11 parity item, not a 6c
-mutation.
+**Upload/download to local disk was never in the 6a–6d breakdown.** The
+6c-i Runbook entry that first said so (PR #148) attributed pushing it out to
+Phase 11 to Sean by name; git blame (`c63feaf`, co-authored by a prior Claude
+session) shows that attribution was never confirmed with him, and Sean has
+said directly (2026-09-11, at the Phase 6→7/8 housekeeping checkpoint) that
+he does not want it deferred that far — it is a feature developers will
+expect, not a long-tail parity item. **Scope is an open question, not a
+settled deferral** — corrected here rather than left as a false decision
+record; see `phase-11.md`'s note for the retracted framing and
+`STATUS.md`'s open-items list for where this is tracked until it is actually
+scoped.
 
 ☑ **Oversized-file read surfaces as a network error (PR #141 review,
 2026-09-10).** Done ahead of 6c-i as a standalone `fix/content-oversized-read`
@@ -730,10 +738,12 @@ behaviour change). `npm run verify` green (1531 unit after that merge; coverage
   could not open, both got a file icon and `sasContent:file` → `typeNameOf` now
   defers to `contentType` for `"reference"` too. **(minor)** the `favorite()`
   early-out had only indirect coverage → a direct integration check added.
-- ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i.** A drop onto the
-  My Favorites delegate already no-ops (`moveObjection` → `target-not-a-folder`);
-  wiring it to `addToFavorites` is upstream parity but not in the 6d punch list.
-  Revisit in 6d-ii or as a follow-up.
+- ☐ ~~Drag a folder/file onto My Favorites~~ — **not in 6d-i or 6d-ii.** A drop
+  onto the My Favorites delegate already no-ops (`moveObjection` →
+  `target-not-a-folder`); wiring it to `addToFavorites` is upstream parity but
+  was never in either 6d slice's punch list. Tracked in
+  [`phase-11.md`](phase-11.md) (added at the Phase 6→7/8 housekeeping
+  checkpoint, 2026-09-10) rather than left unowned here.
 
 ☑ **6d-ii — Recycle bin.** Done and merged 2026-09-11 —
 [PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159), squash
@@ -750,7 +760,9 @@ single-cadence footing as 6.11–6.15, mitigated by both primitives it is built 
 (`moveItem` finding 6.10, `deleteItem`/`deleteResource` finding 6.8) being
 already confirmed on 2026.06.
 
-**Delete is now recycle (documented-invariant change, Sean's call 2026-09-10).**
+**Delete is now recycle (documented-invariant change, Sean's call 2026-09-10;
+recorded as [ADR-0030](../adr/0030-delete-recycles-content-items.md) at the
+Phase 6→7/8 housekeeping checkpoint).**
 "Delete" on an ordinary folder/file member moves it to the Recycle Bin with no
 confirmation (Restore undoes it) — matching upstream. A permanent delete, behind
 a modal, is reached only for an item that cannot be recycled: a top-level folder
@@ -847,6 +859,261 @@ read directly (no member record to move) or one already in the bin.
   `.recycled`-withholding assertion for the delete/restore split; new 6d-ii
   command + menu wiring test). New fixtures `recycle-bin-members.json`,
   `member-restored.json`.
+
+**Phase 6's first live manual pass — 2026-09-11 (Sean), `docs/dev/manual-test-pass.md`
+§15–§16.** Landed inside a Phase 7c-ii fix branch rather than at Phase 6's own
+close (no live UI pass had ever run for any of Phase 6 before this — every
+prior verification was unit/integration tests, adversarial code-diff review,
+or a `viya-api-probe` run against the wire, none of it a person clicking in a
+live VS Code window). Reconciled here at the Phase 6→7/8 housekeeping
+checkpoint. Every row through "Delete on an ordinary item recycles it
+silently" (§15) and all of §16 (favourites, Recycle Bin) passed clean. Two
+open items:
+
+- ☐ **Drag-and-drop within the SAS Content tree is still completely
+  non-functional. The `resourceUri` fix (ADR-0031) did not fix it — live
+  retested 2026-09-11 (Sean), identical symptoms to the original report:
+  dragging within the tree produces no progress notification, no message,
+  no move. Root cause remains unknown. Deliberately not blocking this PR**
+  (Sean's call — Cut/Paste, below, is the real, working interaction model
+  going forward) **— tracked as an open follow-up in `phase-11.md` instead.**
+  ADR-0031's `resourceUri` change is kept regardless: it matches upstream's
+  own unconditional behaviour, gives every folder a real tooltip (a
+  genuine, if minor, parity fix on its own), and cost nothing to keep — but
+  it is no longer claimed to fix drag-and-drop, and ADR-0031 carries a
+  dated amendment saying so. The investigation that led to it is preserved
+  below for whoever picks this up next, since it does rule out several real
+  candidates even though it didn't land on the actual cause. Confirmed against a
+  build rebuilt fresh from `main` (ruling out a stale `.vsix` as the cause).
+  Diagnostic logging added to `handleDrag`/`handleDrop` (kept — see that
+  file's own doc comment) showed `handleDrag` firing reliably on every
+  attempt, but `handleDrop` firing in only one of roughly six real attempts
+  across several target folders (My Folder, Demo, Guest, and nested
+  combinations) — no pattern by folder depth or which folder was involved;
+  the one success was a self-referential drop (a file dropped back onto its
+  own current folder), correctly recognised and rejected via
+  `moveObjection`'s `already-there` case.
+
+  A throwaway two-view test extension
+  (`application/vnd.code.tree.<id>` vs. a private custom mime type, exactly
+  mirroring `contentDragAndDrop.ts`'s own approach) isolated the cause by
+  elimination: `handleDrop` fired 4-for-4 in the test extension, both mime
+  formats, including a drop on a nested child row — ruling out the
+  installed `@types/vscode`/VS Code version, general Electron drag
+  flakiness, MIME-type-format choice, and nesting depth. A mime-format swap
+  on the real controller (matching upstream's own "recommended"
+  `application/vnd.code.tree.<treeidlowercase>` convention) was tried live,
+  twice, and changed nothing — reverted.
+
+  A further live test then showed the real pattern: `handleDrop` fired
+  reliably for every **file** target and almost never for a **folder**
+  target. Comparing against `vscode-sas-extension`'s own `ContentDataProvider`
+  (confirmed by Sean to drag reliably, live, in this exact environment)
+  found the cause — it sets `TreeItem.resourceUri` on every item
+  unconditionally; `contentTree.ts` only set one on an openable file leaf,
+  never on a folder. **Fixed** ([ADR-0031](../adr/0031-content-folder-resource-uri.md)):
+  every item with a resolvable resource href now gets a `resourceUri` — a
+  folder's points at a new, inert `sasContentFolder:` scheme
+  (`src/content/uri.ts`, never registered with a `FileSystemProvider`, no
+  `command` attached) purely for identity. **Separately confirmed, live,
+  before this fix was written**: the underlying move capability was never
+  broken — a right-click Cut/Paste diagnostic (reusing `ContentAdapter.moveItem` /
+  `moveObjection` directly, bypassing VS Code's drag machinery entirely)
+  moved a real file three times live (`Demo → tst`, `tst → My Folder`,
+  `My Folder → Demo`), all clean, before ADR-0031's fix even existed —
+  proof the defect was entirely in how VS Code delivered (or didn't
+  deliver) the native drag gesture, never in this project's own adapter or
+  wire logic. **Formalised as a permanent right-click alternative
+  regardless** ([ADR-0032](../adr/0032-content-cut-paste.md)) — see the 6e
+  entry below. `npx tsc --noEmit`, `eslint`, and `npm run verify` all green
+  on the fix, but **the live retest (rebuild, reinstall, reload, drag),
+  2026-09-11, found the identical failure as before the fix** — same
+  symptoms, same lack of pattern by target. The `resourceUri` hypothesis is
+  therefore not confirmed as the actual cause (or is at most one factor
+  among others); see ADR-0031's amendment. **Next, for whoever picks this
+  up:** the one avenue this investigation never reached is VS Code's own
+  Developer Tools console during a live drop (its
+  `TreeDragAndDropController.dropMimeTypes` doc comment names this as the
+  supported way to see what, if anything, VS Code offers on the drop) —
+  everything else tried (mime format, `@types/vscode` version, Electron
+  drag flakiness, nesting depth, and now the missing-`resourceUri`
+  hypothesis) has been ruled out or shown insufficient.
+- ☐ **(known gap, deferred) The top-level-folder permanent-delete
+  confirmation cannot be live-exercised on the available deployment.** The
+  Phase 6→7/8 housekeeping checkpoint previously recorded the original
+  "no permission on the tested deployment" finding as wrong, reasoning from
+  Sean's own admin rights — **that correction was itself mistaken and is
+  retracted here.** Sean has since clarified directly: this has nothing to
+  do with account privilege. Deleting a folder that sits directly under SAS
+  Content is restricted by a Viya deployment-level configuration set at
+  install/admin-config time, independent of the requesting user's own
+  permissions — an administrator account does not bypass it. The original
+  §15 finding was correct; the housekeeping checkpoint's "that reason was
+  wrong" note was the actual error, not the finding it was correcting.
+  **Deferred, not blocking**: live confirmation needs either a deployment
+  configured to allow it or a different test environment, neither available
+  now. Unit- and integration-tested (`content-adapter.test.ts`,
+  `explorer.test.ts`) — `isRecyclableMember`'s `false` branch and the
+  permanent-delete modal it drives are exercised there — so this is a live
+  human-in-the-loop confirmation gap only, not an untested code path.
+
+**Drag-and-drop's own ambiguity, and Cut/Paste (Sean, 2026-09-11, said
+directly in this session — not the earlier pattern of unconfirmed
+attributions elsewhere in this file).** Even if the native gesture is ever
+fixed, dragging a tree item onto a folder never tells the user whether it
+will move or copy — a real, independent UX gap. Sean's own words: this
+should have been ahead of drag-and-drop on the original list. Decided:
+formalise Cut/Paste (move only — Copy is a separate, unprobed question, see
+`phase-11.md`) as a permanent, shipped feature, not just a diagnostic — see
+the 6e entry below and [ADR-0032](../adr/0032-content-cut-paste.md). Now
+that drag-and-drop itself remains broken after a real fix attempt,
+Cut/Paste is not just the more honest interaction — it's the only one that
+actually works.
+
+☑ **6e — right-click Cut/Paste ships (ADR-0032); the folder `resourceUri`
+change ships too (ADR-0031) but does not fix drag-and-drop, which stays
+broken and is tracked separately.**
+**Merged 2026-09-11** as [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162),
+squash `a74f756`. Both landed together at the Phase 6→7/8 housekeeping
+checkpoint, discovered while live-testing 6c-ii's drag-and-drop; see the two
+entries above for the investigation and its outcome.
+
+- ☑ `src/content/uri.ts` gains `CONTENT_FOLDER_SCHEME` (`sasContentFolder:`)
+  and `contentFolderUriString`, alongside the existing `CONTENT_SCHEME` /
+  `CONTENT_READONLY_SCHEME` pair — inert, identity-only, never registered
+  with a `FileSystemProvider`.
+- ☑ `src/content/contentTree.ts`'s `getTreeItem` now gives every item with a
+  resolvable resource href a `resourceUri` — an openable file leaf keeps its
+  existing `sasContent:` / `sasContentReadOnly:` URI and `vscode.open`
+  command unchanged; a folder (or delegate) gets the new
+  `sasContentFolder:` identity URI and no command.
+- ☑ `src/content/contentDragAndDrop.ts`'s `handleDrag`/`handleDrop` keep the
+  per-attempt debug logging added during the investigation (every early
+  return now logs why) — a genuine, permanent diagnosability improvement,
+  not leftover debugging. The mime-format swap tried and live-tested during
+  the investigation was reverted; it changed nothing.
+- ☑ `src/content/contentCommands.ts` gains `pythonOnViya.cutContentItem` /
+  `pythonOnViya.pasteContentItem` (6e) alongside the existing eight content
+  commands. Cut records the clicked item (one at a time, module-level
+  state); Paste calls the same `moveObjection` / `ContentAdapter.moveItem`
+  `contentDragAndDrop.ts` calls, so there is exactly one implementation of
+  "is this move valid" and "how do you do it," reached two ways. An invalid
+  paste shows a plain-English reason (`describeMoveObjection`) rather than
+  staying silent the way a missed drag does. Menu-gated like every other
+  content command: Cut on an ordinary/favourited folder/file (never
+  recycled, never during a multi-selection); Paste on a folder-shaped
+  target, only once something is actually cut
+  (`pythonOnViya.hasCutContentItem`). No visual "what's cut" indicator —
+  considered and deferred as polish, not a defect (ADR-0032).
+- ☑ `package.json` / `package.nls.json`: two new commands (`command.cutContentItem.title` /
+  `command.pasteContentItem.title`), palette-hidden like the rest, two new
+  `view/item/context` entries. `docs/reference/commands.md` regenerated
+  (`npm run docs:reference`); `l10n/bundle.l10n.json` re-extracted
+  (`npm run l10n:extract`).
+- ☑ Tests: `content-uri.test.ts` (+1 — `contentFolderUriString`, matching
+  the existing `contentReadOnlyUriString` test shape), `tree.test.ts` (+2 —
+  a folder gets a `sasContentFolder:` `resourceUri` with no command; a
+  folder with no resolvable href or no active deployment stays inert,
+  mirroring the existing file-leaf tests), `explorer.test.ts` (+3 — cut
+  early-outs on a Recycle Bin item without throwing, matching the
+  favourites early-out precedent; registers the two 6e commands and wires
+  their menu; both added to the existing "does nothing catastrophic with no
+  argument" and `.recycled`-withholding loops rather than duplicating them),
+  and a new `cutPaste.test.ts` (+11 — `cut`/`paste` exported and exercised
+  directly against a stub `ContentCommandDeps`, the same pattern
+  `dragAndDrop.test.ts` uses: the happy path end to end, "nothing has been
+  cut yet", each of `moveObjection`'s four paste-reachable rejection
+  reasons — `not-a-member` is prevented earlier, at `cut()` time, and tested
+  there instead — "no address to move into", the cross-endpoint refusal,
+  and a failed move restoring the cut rather than consuming it).
+- **No live probe needed.** `ContentAdapter.moveItem`'s wire shape is
+  already probed and shipped (finding 6.10, 6c-ii) and unchanged here; the
+  `resourceUri` fix is a pure VS Code client-side rendering concern with no
+  new wire behaviour. Confirmed against `vscode-sas-extension`'s source
+  (`C:\Users\seford\git\GitHub\vscode-sas-extension`, read for what it does,
+  not transcribed — matching this project's own standing rule).
+- **Adversarial pass run before any push, one real blocking finding and one
+  real test-coverage gap, both folded in locally in one pass (no PR opened
+  yet, per this project's standing rule).** Blocking: the cut slot was
+  module-level with no endpoint scoping and no clear on a profile switch or
+  sign-out — cutting on deployment A and pasting after switching to B would
+  have run `moveItem` against B's adapter with A's item link. Fixed:
+  `ContentCommandDeps` gains `activeEndpoint`; the cut slot now records
+  `{ item, endpoint }`; `paste` refuses a cross-endpoint paste by name;
+  `clearCutContentItem` (new export) is called from `contentExplorer.ts`'s
+  profile-change, session-change, and sign-out handlers. Same pass also
+  fixed two related medium findings while touching this code: `paste` now
+  clears the slot *before* the move runs rather than after, restoring it
+  only on failure — closing both a double-paste race (a second Paste fired
+  while the first is still in flight) and a succeeded-then-cancelled race
+  (`result.ok && aborted`) that previously left a stale cut armed either
+  way. `describeMoveObjection` was rewritten from five sentence fragments
+  interpolated into one shared template into five complete, independently
+  translatable messages. Minor findings folded in too: `MoveObjection`
+  imported by name instead of `NonNullable<ReturnType<typeof moveObjection>>`;
+  `cut()` now rejects a non-member item at cut time instead of only
+  discovering it at paste time; the drag-and-drop punch-list tick above was
+  demoted from ☑ to ☐ (root cause found and fixed in source is not the same
+  claim as confirmed live); the "turned out to need" phrasing in
+  `contentTree.ts`/`uri.ts` was reworded to match ADR-0031's own careful
+  "one concrete, confirmed structural difference, correlational, not
+  verified against VS Code's own source"; ADR-0031 gained a Consequences
+  note about the auto-derived tooltip a folder's new `resourceUri` produces
+  as a side effect; `cutPaste.test.ts` exports and resets module state via
+  `afterEach(clearCutContentItem)` so no test leaks a pending cut into the
+  next. STATUS.md's Phase 6 row also had a real self-contradiction fixed
+  (it opened "all slices merged" while its own ending said 6e was unmerged
+  and holding housekeeping open).
+- `npm run verify` green (1580 unit passing; coverage 95.57 statements /
+  95.51 branches / 95.26 functions / 95.57 lines — `src/content/uri.ts` at
+  100/100/100/100); `npm run test:integration` green (368 passing);
+  `npm run check:docs` and `npm run check:secrets` both green.
+- **Live retest, 2026-09-11 (Sean), against [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162)'s branch:**
+  Cut/Paste under its final command names confirmed working (it had already
+  been live-tested once under the diagnostic's temporary command names,
+  before this PR existed — `Demo → tst`, `tst → My Folder`,
+  `My Folder → Demo`, all clean; the rename to
+  `pythonOnViya.cutContentItem`/`pasteContentItem` changed nothing
+  functionally and this pass confirms it). **Drag-and-drop itself: retested
+  and still completely non-functional, identical symptoms to the original
+  report** — see the dedicated entry above and ADR-0031's amendment. **Sean's
+  call: this does not block the PR** — Cut/Paste is the real, working
+  interaction model, and the drag-and-drop investigation is tracked as a
+  follow-up in `phase-11.md` rather than held against this slice. The
+  endpoint-scoping fix itself (cutting on one deployment, pasting after a
+  profile switch) has not been separately live-exercised — covered by
+  `cutPaste.test.ts` but not by a human switching real profiles — noted as
+  a gap for whoever next touches multi-profile Cut/Paste, not a blocker.
+- **Two further review rounds on the open PR, each one real finding, both
+  fixed with a follow-up commit + a regression test, no PR re-opened:**
+  automated review of the pushed branch found a genuine race the pre-push
+  pass's own clear-before-move fix hadn't covered — `paste()`'s
+  failure-restore checked only `cutState === undefined`, so a `cut()` of a
+  *different* item while a failing move was still in flight got silently
+  overwritten by the stale restore. **Fixed** (commit `716ae27`): the
+  restore now runs only when the slot is still empty; a new integration
+  test races a real in-flight `cut()` against a rejected move. A second
+  review round on that same commit found the fix itself was incomplete —
+  `cutState === undefined` also can't distinguish "nothing has touched the
+  slot" from "something intentionally cleared it" (`clearCutContentItem`
+  from a profile switch or sign-out, firing while the same move is in
+  flight), so a late failure could still resurrect a cut an intentional
+  clear had just removed. **Fixed** (commit `1563bd3`): `setCutState` now
+  bumps a module-level `cutGeneration` counter on every call, including a
+  clear; `paste()` captures the generation right after its own clear and
+  restores `pending` only if the generation is unchanged, so any
+  intervening `cut()` *or* `clearCutContentItem()` — deliberate or not — is
+  respected. `npm run verify` green after each fix (lint clean, coverage
+  unchanged); `npm run test:integration` green (370 passing after the
+  second fix, all 13 Cut/Paste cases). Both threads replied to inline and
+  resolved. **Merged 2026-09-11** — no other findings on either automated
+  reviewer.
+
+The stale/duplicate copy of §15–§16 this branch's merge into `main` produced
+(the same section content inserted at two different points by two diverging
+branches, which a 3-way merge does not deduplicate) was found and removed at
+this checkpoint — `docs/dev/manual-test-pass.md` now carries one copy of
+each, matching what was actually run.
 
 ---
 

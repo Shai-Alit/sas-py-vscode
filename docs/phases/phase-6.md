@@ -733,9 +733,9 @@ behaviour change). `npm run verify` green (1531 unit after that merge; coverage
   wiring it to `addToFavorites` is upstream parity but not in the 6d punch list.
   Revisit in 6d-ii or as a follow-up.
 
-☑ **6d-ii — Recycle bin.** Code-complete 2026-09-10 —
-[PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159) opened
-2026-09-10. `npm run verify` green (1549 unit; coverage 95.49
+☑ **6d-ii — Recycle bin.** Done and merged 2026-09-11 —
+[PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159), squash
+`c6b7a70`. `npm run verify` green (1549 unit; coverage 95.49
 lines / 95.40 branches / 95.18 functions / 95.49 statements), 333 integration
 passing (VS Code env vars stripped, the `ELECTRON_RUN_AS_NODE` launch quirk),
 `npm run check:docs` green. Probe: findings 6.14/6.15 re-confirmed read-only

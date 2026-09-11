@@ -294,6 +294,39 @@ describe("content/adapter", () => {
       assert.ok(mine.value.every((c) => c.inRecycleBin === undefined));
     });
 
+    it("propagates inRecycleBin into a recycled folder's own children too (PR #159 review)", async () => {
+      // Not just the bin's direct children — descending into a recycled
+      // *folder* must keep flagging every level, or a file two levels deep in
+      // the bin reads as an ordinary editable item with no Restore action.
+      const { adapter } = adapterWith([
+        ...delegateRoutes,
+        {
+          when: "/folders/folders/aaaaaaaa-0000-4000-8000-000000000003/members",
+          reply: contentFixture("recycle-bin-members.json"),
+        },
+        {
+          when: "/folders/folders/eeee5555-0000-4000-8000-000000000c01/members",
+          reply: contentFixture("my-folder-members.json"),
+        },
+      ]);
+      const roots = await adapter.getRootItems();
+      assert.ok(roots.ok);
+      const recycleBin = roots.value.find((i) => i.name === "Recycle Bin");
+      assert.ok(recycleBin);
+
+      const recycled = await adapter.getChildItems(recycleBin);
+      assert.ok(recycled.ok);
+      const recycledFolder = recycled.value.find(
+        (c) => c.name === "old-experiments",
+      );
+      assert.ok(recycledFolder?.inRecycleBin === true);
+
+      const grandchildren = await adapter.getChildItems(recycledFolder);
+      assert.ok(grandchildren.ok);
+      assert.ok(grandchildren.value.length > 0);
+      assert.ok(grandchildren.value.every((c) => c.inRecycleBin === true));
+    });
+
     describe("markFavorites (6d-i)", () => {
       const FAV_MEMBERS = "/folders/folders/@myFavorites/members";
       const FAV_RECORD =

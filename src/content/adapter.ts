@@ -295,11 +295,20 @@ export class ContentAdapter {
     }
     children.sort(byFolderThenName);
 
-    // Flag the Recycle Bin's own children so 6c-ii's drag-and-drop move can
-    // refuse to re-parent a recycled item (that is a restore — 6d's). Only the
-    // direct children are flagged; descending into a recycled folder is a 6d
-    // concern.
-    if (isRecycleBinDelegate(parent)) {
+    // Flag every descendant of the Recycle Bin — not just its direct
+    // children — so 6c-ii's drag-and-drop move can refuse to re-parent a
+    // recycled item (that is a restore, 6d-ii's) and so 6d-ii's read-only
+    // file view / Restore menu / recycle-vs-permanent-delete split
+    // (`isRecyclableMember`) all still apply two or more levels down. A
+    // recycled folder is itself `inRecycleBin: true` (stamped by this same
+    // branch, one call up — a delegate is never nested, so the two conditions
+    // never both apply to the same call), so propagating from *it* rather
+    // than re-testing `isRecycleBinDelegate` on every level is what makes
+    // this recurse correctly no matter how deep the tree goes. (PR #159
+    // review: without this, a file inside a recycled folder read as an
+    // ordinary editable item with no Restore action, and "Delete" on it
+    // re-recycled it — re-parenting it straight onto the bin's own root.)
+    if (isRecycleBinDelegate(parent) || parent.inRecycleBin === true) {
       return {
         ok: true,
         value: children.map((child) => ({ ...child, inRecycleBin: true })),

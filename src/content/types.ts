@@ -85,11 +85,16 @@ export interface ContentItem {
    */
   readonly parentFolderUri?: string | undefined;
   /**
-   * Set by {@link ContentAdapter.getChildItems} on the direct children of the
-   * Recycle Bin delegate — **not** a wire field. 6c-ii's drag-and-drop move
-   * refuses to re-parent a recycled item (that would be a restore, which is
-   * 6d's); `previousParent` cannot stand in for this, since finding 6.10 showed
-   * every once-moved member carries that link too.
+   * Set by {@link ContentAdapter.getChildItems} on every descendant of the
+   * Recycle Bin delegate — its direct children **and** everything nested
+   * inside a recycled folder, propagated one level at a time — **not** a wire
+   * field. 6c-ii's drag-and-drop move refuses to re-parent a recycled item
+   * (that would be a restore, which is 6d-ii's); `previousParent` cannot stand
+   * in for this, since finding 6.10 showed every once-moved member carries
+   * that link too. 6d-ii's read-only file view, Restore menu, and
+   * recycle-vs-permanent-delete split ({@link isRecyclableMember}) all depend
+   * on this reaching every depth, not just the bin's own children (PR #159
+   * review).
    */
   readonly inRecycleBin?: boolean | undefined;
   /**

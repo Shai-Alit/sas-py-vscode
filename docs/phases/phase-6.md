@@ -817,6 +817,22 @@ read directly (no member record to move) or one already in the bin.
   read-only tab is harmless (the file is reachable fresh from its restored
   location) and closing it automatically is not worth the plumbing. Revisit if
   it annoys anyone.
+- ☑ **[PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159) review —
+  one finding, fixed before merge.** **Likely blocking**: `getChildItems`
+  stamped `inRecycleBin` only on the Recycle Bin delegate's *direct* children
+  — the doc comment even called descending into a recycled folder "a 6d
+  concern" without saying which 6d slice would close it, and this was it. A
+  file nested inside a recycled folder came back with `inRecycleBin` unset, so
+  it opened through the ordinary editable `sasContent:` scheme (not
+  read-only), its context menu offered Rename/Delete/Favourite instead of
+  Restore, and "Delete" on it called `recycleItem` again — re-parenting it
+  straight onto the bin's own root instead of doing anything sensible with an
+  already-recycled item. Fixed: the stamping branch now also fires when
+  `parent.inRecycleBin === true`, not only `isRecycleBinDelegate(parent)`, so
+  the flag propagates to every depth. New test: "propagates inRecycleBin into
+  a recycled folder's own children too". `npm run verify` re-run green (1550
+  unit; coverage 95.49/95.44/95.18/95.49 — branch coverage improved), 333
+  integration unchanged.
 - ☑ Tests: `content-adapter.test.ts` (+13 — `recycleItem` resolve/move,
   never-cached, no-self, bin-resolve failure, malformed, move rejection;
   `restoreItem` previousParent move, `link-missing`, move failure;

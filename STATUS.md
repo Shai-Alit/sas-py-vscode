@@ -52,7 +52,11 @@ Runbook entry for the full account.
 [PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159) opened
 2026-09-10. Adversarial pass before the PR — no blocking findings; one known
 tradeoff flagged (`emptyRecycleBin` has no per-item progress or batching),
-Sean's call to ship as-is. Recycle /
+Sean's call to ship as-is. PR review (Codex ×2 clean; Claude found one likely-
+blocking issue — `inRecycleBin` wasn't propagated past the bin's direct
+children, so a file nested inside a recycled folder read as an ordinary
+editable item with no Restore — fixed, `getChildItems` now also propagates
+from `parent.inRecycleBin`). Recycle /
 restore reuse `ContentAdapter.moveItem` (findings 6.14/6.15, re-confirmed
 read-only against `verde` this session; `innov` unreachable so single-cadence
 like 6.11–6.15); `emptyRecycleBin` iterates + `deleteItem`s each bin member;

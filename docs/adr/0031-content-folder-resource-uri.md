@@ -17,8 +17,9 @@
 > retest this record's own Consequences section called for came back
 > negative: rebuilt, reinstalled, reloaded, and dragged, drag-and-drop
 > within the SAS Content tree failed identically to before this change —
-> same symptoms (`handleDrag` fires, `handleDrop` does not, no pattern by
-> target) as the original report. **This ADR's title overclaims** — the
+> same symptoms (`handleDrag` fires, `handleDrop` produces no progress
+> notification, no error, no move, no pattern by target) as the original
+> report. **This ADR's title overclaims** — the
 > `resourceUri` change described below does **not** fix native
 > drag-and-drop, and that hypothesis should be read as disproven, not
 > merely unconfirmed. The decision itself is kept regardless, on its own
@@ -35,6 +36,44 @@
 > ships [ADR-0032](0032-content-cut-paste.md)'s Cut/Paste as the actual
 > working move interaction — see `phase-6.md`'s 6e Runbook entry for the
 > full account.
+>
+> **Further amended 2026-09-11, same day, once the actual root cause was
+> found.** A Phase 7 session (working from VS Code 1.109 source, not this
+> deployment) opened DevTools during a live drop and found the real failure:
+> `handleDrop`'s `CancellationToken` argument is marshalled as plain JSON
+> across the extension-host RPC boundary on this VS Code version (it is a
+> non-final argument to `mainThreadTreeViews.ts`'s `$handleDrop`, so
+> `rpcProtocol.ts`'s "pop a trailing cancellation token" convention never
+> catches it), which strips the token's prototype-getter methods.
+> `contentDragAndDrop.ts`'s `handleDrop` subscribed to it unconditionally and
+> threw before any move could run — on every real attempt, not
+> intermittently, and invisibly (the throw lands in the DevTools console,
+> not this extension's own output channel). See
+> [finding 6.16](../phases/phase-6.md) for the full trace and the fix
+> (`handleDrop` no longer subscribes to that token).
+>
+> **This ADR's own framing of the question, not only its title, was wrong.**
+> The Context section investigated *drag engagement* — why `handleDrop`
+> fired for a file target and (apparently) not for a folder one — on the
+> theory that folders were somehow special. They were not: `handleDrop` fired
+> identically for every target and threw identically afterward whenever
+> anything was actually movable; the one folder-target case that looked
+> different was a self-referential drop rejected earlier by `moveObjection`,
+> which never reached the throwing code and so never threw — not a
+> successful drag engagement. The file-vs-folder pattern the Context section
+> describes was a real, reproduced observation, but it was never evidence
+> about *drag engagement*; it was evidence about which drops had something
+> movable to attempt. Every other candidate the Context section ruled out
+> (VS Code/`@types/vscode` version, Electron drag flakiness, mime-type-format
+> choice, nesting depth) remains correctly ruled out; none of them were ever
+> the cause either.
+>
+> The `resourceUri` change itself is unaffected by any of this: it was never
+> the fix (the prior amendment already established that), it is not
+> implicated in the real cause, and it stays for its own already-stated,
+> narrower reasons — upstream parity, and the folder tooltip it now
+> produces. Drag-and-drop is fixed; `phase-11.md`'s tracked follow-up is
+> closed. See `phase-6.md`'s dated Runbook entry for the full account.
 
 ## Context
 

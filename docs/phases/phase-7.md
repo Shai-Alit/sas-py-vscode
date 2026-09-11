@@ -2129,6 +2129,85 @@ read as a quoted credential-literal assignment to the scanner's own
 `=` rather than suppressed, since the simpler fix was to stop tripping the
 heuristic at all.)
 
+**[PR #163](https://github.com/Shai-Alit/sas-py-vscode/pull/163) opened
+2026-09-11.** Sean's own live test against an installed build then found the
+drop broken in a way no tier here could have caught: the drag engaged, the
+quick pick appeared with the right title, and choosing *either* option
+inserted nothing at all — no error, no output-channel line, the picker simply
+closed. The failure was visible only in the DevTools console, as the same
+`TypeError: Cannot read properties of undefined (reading 'toLowerCase')`
+printed twice per drop.
+
+**Root cause — a tree→editor drop crosses the extension-host RPC boundary,
+and VS Code serializes the payload on the way.** Traced through VS Code
+1.109's own source rather than guessed at:
+
+1. `dropIntoEditorController.ts:163`/`:165` are the two `console.error(err)`
+   calls in `getDropEdits`'s catch block — hence the doubled log line. A throw
+   out of `provideDocumentDropEdits` is **swallowed**: no edits are returned
+   and the drop is a silent no-op, which is why nothing surfaced anywhere a
+   user or the extension's own logging would see it.
+2. `extHostTypes.ts:1672-1674` — `DataTransferItem.asString()` returns
+   `JSON.stringify(this.value)` for a non-string value.
+3. `extHostTypeConverters.ts:2206` — the drop side rebuilds the item as
+   `new types.InternalDataTransferItem(item.asString)`, so `value` arrives as
+   the JSON **string**, not the `TableItem[]` `handleDrag` set.
+
+The slice had cast it (`dataTransfer.get(TABLE_MIME)?.value as TableItem[]`),
+which made `payload[0]` the single character `"["`. That is truthy, so the
+`table === undefined` guard passed; every field then read `undefined`, the
+quick pick rendered its title as `Insert "undefined.undefined" into Python
+as…`, and `deriveVariableName(undefined)` hit `raw.toLowerCase()` at
+`dragSnippet.ts:56`. Upstream's own `ContentDataProvider` parses at the
+identical point for the identical reason
+(`JSON.parse(dataTransferItem.value)[0]`) — the reference implementation had
+the answer all along, and the cast is what this slice wrote instead.
+
+**Fixed** by routing the payload through a new `readDraggedTables` /
+`readDraggedTable` pair in `src/data/types.ts` rather than parsing inline:
+`types.ts` is `vscode`-free and therefore unit-testable, whereas
+`dataDragAndDrop.ts` is coverage-excluded (`.c8rc.json`), so inline parsing
+would have shipped the boundary untested a second time. Each entry is
+validated rather than cast, malformed JSON yields no tables rather than
+throwing (a throw here is swallowed anyway, so it would reproduce the same
+silent no-op with less to read afterwards), and an already-parsed array is
+accepted too — which of the two forms a `DataTransferItem` holds is VS Code's
+own call and differs by drop target, so a reader that works either way cannot
+be broken by that choice changing. Six new unit tests, the first of them a
+round-trip regression pin that stringifies a real `TableItem[]` and asserts it
+reads back. **Re-tested live by Sean the same day: the drag, both snippet
+choices, and the inserted code all work** (`manual-test-pass.md` §17).
+
+**This is the one respect in which a tree→editor drop differs from
+`contentDragAndDrop.ts`'s tree→tree drop**, and the difference is worth
+stating explicitly because the two look identical in the API: for a *same-view*
+drop, `extHostTreeViews.ts:193-195` calls `_addAdditionalTransferItems`, which
+re-runs `handleDrag` **locally** in the extension host — so Phase 6 genuinely
+does get the live objects back, and its `Array.isArray(payload)` check is
+correct and must not be "fixed" into a parse.
+
+**A second, unrelated root cause was found in Phase 6's own drop while
+confirming that** — `handleDrop`'s `CancellationToken` does not survive the
+RPC hop, so `src/content/contentDragAndDrop.ts:203` throws before doing any
+work. It is recorded in `phase-6.md` rather than duplicated here, since it is
+that phase's defect and its fix belongs on that phase's branch; nothing in 7d
+depends on it. Noted here only because the two were diagnosed together and the
+shared theme — VS Code's drag-and-drop RPC boundary loses things that the
+declared API types promise will be there — is what made each easier to find
+once the other was understood.
+
+**Reconciled with `main` 2026-09-11** (merge `30771e8`), picking up Phase 6's
+6e merge ([PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162),
+squash `a74f756`) and two docs-only follow-ups. One conflict, both halves of
+`STATUS.md`'s phase-index table, resolved by taking `main`'s Phase 6 row
+wholesale and `main`'s Phase 7 row with this slice's own 7d tail. The merge is
+pure additions against `main` in `src/` and `test/` — nothing from 6e was lost,
+and this branch has never touched `src/content/`.
+
+`npm run verify` re-run green after the fix and the merge (1574 unit passing;
+coverage 95.62%/95.54%/95.38%/95.62%, `src/data/types.ts` itself at 100% on
+all four); `npm run test:integration` green (372 passing).
+
 ---
 
 ## Probe findings

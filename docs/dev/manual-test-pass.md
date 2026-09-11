@@ -1443,11 +1443,16 @@ drag-and-drop snippet inserting what it claims to.
 **Pre-work:** the same live connection as §10, with **SASHELP.CLASS** visible
 in the tree, and an empty `.py` file open.
 
-- [ ] **`SAS.sd2df` reads a table** — Run File on a script containing just
+**First live pass ran 2026-09-11 (Sean, `verde`), against an installed build.**
+The three `Run File` rows and all three drag-and-drop rows pass. The drag rows
+failed on the first attempt for a real reason — see the note under the drag row
+below, and `phase-7.md`'s 7d Runbook entry for the root cause.
+
+- [x] **`SAS.sd2df` reads a table** — Run File on a script containing just
   `df = SAS.sd2df("sashelp.class")` followed by `print(df.shape)`.
   **Expect:** output includes `(19, 5)`, matching `SASHELP.CLASS`'s known
   row/column count — the exact example `docs/data-access.md` shows.
-- [ ] **`SAS.df2sd` writes a table back** — Run File on a script that builds a
+- [x] **`SAS.df2sd` writes a table back** — Run File on a script that builds a
   small `DataFrame` (e.g. `import pandas as pd; df = pd.DataFrame({"x": [1,
   2, 3]})`) then calls `SAS.df2sd(df, "work.probe_out")`, then reopen the SAS
   Libraries tree (refresh) and expand **WORK**.
@@ -1459,17 +1464,26 @@ in the tree, and an empty `.py` file open.
   use `sashelp.class` with any `where` clause on a real column).
   **Expect:** no error, and `SAS.sd2df` on the created `work.` view returns
   only the filtered rows.
-- [ ] **Dragging a table into a `.py` editor asks how** — drag
+- [x] **Dragging a table into a `.py` editor asks how** — drag
   **SASHELP.CLASS** from the SAS Libraries tree and drop it into the open
   `.py` file.
   **Expect:** a quick pick appears titled `Insert "SASHELP.CLASS" into
   Python as…`, offering **Read directly** and **Filter with PROC SQL
   first**.
-- [ ] **"Read directly" inserts a plain sd2df assignment** — choose **Read
+  **First attempt, 2026-09-11 (Sean): failed, then fixed.** The quick pick
+  appeared and either choice inserted nothing, silently — VS Code serializes
+  a tree→editor drop payload across the extension-host RPC boundary, so
+  `provideDocumentDropEdits` received the `JSON.stringify`'d text rather than
+  the `TableItem[]` `handleDrag` set, and the slice had cast it instead of
+  parsing it. The resulting `TypeError` was swallowed by VS Code and appeared
+  only in the DevTools console, never in the output channel. Fixed
+  (`readDraggedTables`), and **re-tested live the same day: passes.** Full
+  account in `phase-7.md`'s 7d Runbook entry.
+- [x] **"Read directly" inserts a plain sd2df assignment** — choose **Read
   directly**.
   **Expect:** `class_df = SAS.sd2df("SASHELP.CLASS")` lands at the drop
   point, as plain text (no tabstops to Tab through).
-- [ ] **"Filter with PROC SQL first" inserts a real snippet, with a mirrored
+- [x] **"Filter with PROC SQL first" inserts a real snippet, with a mirrored
   tabstop** — undo the previous insert, drag **SASHELP.CLASS** in again, and
   this time choose **Filter with PROC SQL first**.
   **Expect:** a multi-line `SAS.submit("""proc sql; …""")` block followed by

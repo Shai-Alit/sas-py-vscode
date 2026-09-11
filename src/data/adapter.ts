@@ -77,6 +77,7 @@ import {
   readRowItem,
   readTableDetail,
   readTableItem,
+  ROWS_AS_CSV_REL,
   ROWS_REL,
   SELF_REL,
   TABLES_REL,
@@ -389,6 +390,76 @@ export class LibraryAdapter {
       if (row !== undefined) rows.push(row);
     }
     return { ok: true, value: { rows, count: readCount(result.value.body) } };
+  }
+
+  /**
+   * One window of a table's row data as raw CSV text, following `table`'s own
+   * `rowsAsCSV` link — Findings 7.15/7.20: a real, distinct link relation
+   * sharing the identical href as {@link ROWS_REL}, differing only by its own
+   * declared `type: "text/csv"`. `client.send` derives `Accept: text/csv`
+   * from that link's own `type` the same way every other `GET` in this module
+   * derives its `Accept` (`acceptFor`, `src/compute/client.ts`) — no
+   * `responseType` override needed here, unlike {@link applySort}'s `POST`.
+   *
+   * Returns the response's raw {@link ComputeResponse.text} unchanged: a
+   * `text/csv` content type is never JSON (`isJson`, `src/compute/client.ts`),
+   * so `client.send` leaves it unparsed, and Finding 7.20 found this
+   * deployment's own CSV rows already RFC-4180-quoted — nothing here
+   * re-serializes or re-quotes what the server sent.
+   *
+   * `includeHeader` should be `true` only for a caller's first page: Finding
+   * 7.20 confirmed a page's own header row (`includeColumnNames=true`) and
+   * every page's data rows concatenate cleanly with no separator of their
+   * own needed — bare `\n` line endings, each page's body already ending in
+   * one, the next page's own body starting immediately with its first row.
+   * A request past the end of the table comes back `200` with an empty
+   * body, not an error — `src/data/csvExportModel.ts`'s own pagination loop
+   * is what reads that as "done".
+   *
+   * `filter`/pagination behave exactly like {@link getRows}, including the
+   * identical restriction: `where=` is silently ignored on a view {@link
+   * applySort} created (Finding 7.16) — never pass a non-empty `filter`
+   * alongside a `table` obtained from `applySort`.
+   */
+  async getRowsAsCsv(
+    table: TableDetail,
+    window: RowWindow,
+    includeHeader: boolean,
+    filter?: string,
+    signal?: AbortSignal,
+  ): Promise<DataResult<string>> {
+    const required = this.require();
+    if (!required.ok) return required;
+    const { client } = required.value;
+
+    const link = findLink(table.links, ROWS_AS_CSV_REL);
+    if (link === undefined) {
+      return linkMissing(
+        `table "${table.libref}.${table.name}"`,
+        ROWS_AS_CSV_REL,
+      );
+    }
+
+    const parameters = [
+      `start=${String(window.start)}`,
+      `limit=${String(window.limit)}`,
+    ];
+    if (includeHeader) parameters.push("includeColumnNames=true");
+    if (filter !== undefined && filter !== "") {
+      parameters.push(`where=${encodeURIComponent(filter)}`);
+    }
+    const windowed: Link = {
+      ...link,
+      href: withQuery(link.href, parameters),
+    };
+
+    const result = await client.send({
+      link: windowed,
+      ...withSignal(signal),
+    });
+    if (!result.ok) return wrapCompute(asSessionGone(result));
+
+    return { ok: true, value: result.value.text };
   }
 
   /**

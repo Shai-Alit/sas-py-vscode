@@ -182,17 +182,21 @@ export default tseslint.config(
   // `randomUUID`. A checkpoint nobody can run is exactly the aspiration the ADR
   // disclaimed, so it is a rule now.
   //
-  // The allow-list is four files and no globs. Widening it is a visible diff
+  // The allow-list is five files and no globs. Widening it is a visible diff
   // here, which is the whole mechanism: the cost of a web build is Node APIs
   // arriving one reasonable-looking import at a time. `src/auth/caAgent.ts`
   // (`node:fs`, `node:https`, `node:tls`) is the certificate module ADR-0003's
-  // hedge always named; see its 2026-09-02 amendment.
+  // hedge always named; see its 2026-09-02 amendment. `src/data/
+  // csvExportCommand.ts` (`node:fs`, `node:path`) is 7c-iii's CSV-export
+  // streaming write and free-space check — see ADR-0003's 2026-09-11
+  // amendment.
   {
     files: ["src/**/*.ts"],
     ignores: [
       "src/auth/caAgent.ts",
       "src/auth/pkce.ts",
       "src/auth/transport.ts",
+      "src/data/csvExportCommand.ts",
       "src/profile/commands.ts",
     ],
     rules: {
@@ -213,7 +217,7 @@ export default tseslint.config(
               regex:
                 "^(node:|(assert|async_hooks|buffer|child_process|cluster|console|constants|crypto|dgram|diagnostics_channel|dns|domain|events|fs|http|http2|https|inspector|module|net|os|path|perf_hooks|process|punycode|querystring|readline|repl|stream|string_decoder|sys|timers|tls|trace_events|tty|url|util|v8|vm|wasi|worker_threads|zlib)($|/))",
               message:
-                "Node built-ins are confined to src/auth/pkce.ts, src/auth/transport.ts and src/profile/commands.ts (ADR-0003). The web extension host forbids them entirely, and every new site is a module a future web build has to reimplement. If this module genuinely needs one, add it to the allow-list in eslint.config.mjs and say why in the ADR — do not import it quietly.",
+                "Node built-ins are confined to this rule's own allow-list in eslint.config.mjs (ADR-0003). The web extension host forbids them entirely, and every new site is a module a future web build has to reimplement. If this module genuinely needs one, add it to the allow-list here and say why in the ADR — do not import it quietly.",
             },
           ],
         },

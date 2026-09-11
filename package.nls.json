@@ -29,6 +29,7 @@
   "command.emptyRecycleBin.title": "Empty Recycle Bin",
   "command.openTable.title": "Open Table",
   "command.showTableProperties.title": "Table Properties",
+  "command.exportTableToCsv.title": "Export to CSV",
   "viewsContainers.pythonOnViya.title": "Python on Viya",
   "views.contentExplorer.name": "SAS Content",
   "views.dataExplorer.name": "SAS Libraries",

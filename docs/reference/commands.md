@@ -43,3 +43,4 @@ under their category.
 | Empty Recycle Bin | `Python on Viya: Empty Recycle Bin` | `pythonOnViya.emptyRecycleBin` |
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` |
 | Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showTableProperties` |
+| Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportTableToCsv` |

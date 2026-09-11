@@ -18,7 +18,7 @@ called out under **Changed** with a migration note.
   Clicking a table — or running **Open Table** from its context menu — opens
   it in a scrollable, virtualized grid showing every row and column, backed
   by [ADR-0028](docs/adr/0028-data-viewer-is-react-and-ag-grid.md)'s React +
-  `ag-grid-community` webview. CSV export is a later release.
+  `ag-grid-community` webview.
 - **Sort and filter a table in the data viewer.** Click a column header to
   sort by it (server-side, via a temporary SAS view —
   [ADR-0029](docs/adr/0029-sort-view-lifecycle.md)); type a SAS `WHERE`-clause
@@ -29,6 +29,12 @@ called out under **Changed** with a migration note.
   its size/engine/encoding/timestamp details and its full column list (type,
   length, format, informat, label) — a fully static panel with no scripts at
   all, its tab toggle done in pure CSS.
+- **Export a table to CSV.** Right-click a table in the SAS Libraries view and
+  choose **Export to CSV** for a save dialog, then a cancellable progress
+  notification that streams every row straight to the chosen file — no size
+  limit tied to what the grid can hold in memory. A cancelled or failed
+  export removes the partial file it started rather than leaving a silently
+  truncated one behind.
 - **A SAS Content explorer.** The Python on Viya activity-bar icon now opens a
   **SAS Content** view showing My Favorites, My Folder, SAS Content and Recycle
   Bin, read from the Viya Folders and Files services. Expand a folder to list

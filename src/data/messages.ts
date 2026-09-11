@@ -52,6 +52,12 @@ export function localiseDataProblem(problem: DataProblem): string {
       return vscode.l10n.t(
         "A Python program is running in this session, so it cannot be browsed right now. Wait for it to finish, or cancel it, then try again.",
       );
+    case "insufficient-disk-space":
+      return vscode.l10n.t(
+        "This table is estimated at about {0}, but only about {1} is free at the destination. Choose a location with more free space and try again.",
+        formatBytes(problem.estimatedBytes),
+        formatBytes(problem.availableBytes),
+      );
     case "compute":
       // Delegated, not duplicated — `compute/messages.ts` already words
       // every reading of a transport failure, a 401/403, a gone session, and
@@ -59,4 +65,25 @@ export function localiseDataProblem(problem: DataProblem): string {
       // delegates to `localiseAuthProblem` rather than re-wording a 401.
       return localiseComputeProblem(problem.problem);
   }
+}
+
+/** A byte count as a human-scale string (`"12.3 MB"`) — decimal (1000-based)
+ * units, matching how VS Code's own file-size UI and most desktop file
+ * managers report free disk space, rather than the binary (1024-based) KiB/
+ * MiB/GiB an `insufficient-disk-space` reader would otherwise have to
+ * mentally convert. */
+function formatBytes(bytes: number): string {
+  const units = ["bytes", "KB", "MB", "GB", "TB"] as const;
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1000 && unitIndex < units.length - 1) {
+    value /= 1000;
+    unitIndex += 1;
+  }
+  // `unitIndex` never leaves `[0, units.length - 1]` — the loop guard above
+  // keeps it there — so this is always a real element, not the `undefined`
+  // a bare index type would otherwise carry.
+  const unit: string = units[unitIndex] ?? "bytes";
+  const precision = unitIndex === 0 ? 0 : 1;
+  return `${value.toFixed(precision)} ${unit}`;
 }

@@ -77,6 +77,28 @@ export function dataOk(
   };
 }
 
+/** A successful raw-text reply — CSV, not JSON (Findings 7.15/7.20:
+ * `rowsAsCSV`'s own `text/csv` content type). Unlike {@link dataOk}, `body`
+ * stays `undefined`: the real `ComputeClient` only parses a JSON content type
+ * (`isJson`, `src/compute/client.ts`), and a `text/csv` response leaves
+ * `body` unset there too — `text` is what `LibraryAdapter.getRowsAsCsv`
+ * actually reads. */
+export function dataCsv(
+  text: string,
+  init?: { status?: number },
+): ComputeResult<ComputeResponse> {
+  return {
+    ok: true,
+    value: {
+      status: init?.status ?? 200,
+      notModified: false,
+      contentType: "text/csv",
+      text,
+      body: undefined,
+    },
+  };
+}
+
 /** A failure the client would have produced for a non-2xx or transport error. */
 export function dataFail(
   problem: ComputeProblem,

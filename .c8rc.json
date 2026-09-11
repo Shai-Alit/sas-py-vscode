@@ -20,6 +20,7 @@
     "src/content/contentFileSystem.ts",
     "src/content/contentTree.ts",
     "src/content/messages.ts",
+    "src/data/csvExportCommand.ts",
     "src/data/dataExplorer.ts",
     "src/data/dataTree.ts",
     "src/data/dataViewerPanel.ts",

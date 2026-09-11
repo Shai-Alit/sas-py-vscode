@@ -231,6 +231,11 @@
         "command": "pythonOnViya.showTableProperties",
         "title": "%command.showTableProperties.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.exportTableToCsv",
+        "title": "%command.exportTableToCsv.title%",
+        "category": "%extension.category%"
       }
     ],
     "viewsContainers": {
@@ -324,6 +329,10 @@
         {
           "command": "pythonOnViya.showTableProperties",
           "when": "false"
+        },
+        {
+          "command": "pythonOnViya.exportTableToCsv",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -386,6 +395,11 @@
         },
         {
           "command": "pythonOnViya.showTableProperties",
+          "when": "view == pythonOnViya.dataExplorer && viewItem == sasData:table",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.exportTableToCsv",
           "when": "view == pythonOnViya.dataExplorer && viewItem == sasData:table",
           "group": "navigation"
         }

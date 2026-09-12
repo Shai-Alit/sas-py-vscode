@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until `1.0.0`, minor versions may contain breaking changes; they will always be
 called out under **Changed** with a migration note.
 
-## [Unreleased]
+## [0.1.2] - 2026-09-11
 
 ### Added
 
@@ -61,6 +61,15 @@ called out under **Changed** with a migration note.
   created, with SAS Viya's own suggested alternative. The read-only delegate
   folders (My Favorites, Recycle Bin) and the "SAS Content" root have no such
   actions.
+- **Favourite a SAS Content item, and recover deleted ones from a Recycle
+  Bin.** Right-click an ordinary folder or file for **Add to My Favorites**
+  (or **Remove from My Favorites** once it's there); browse it from **My
+  Favorites** exactly as from its original location. Deleting an ordinary
+  item now moves it to the **Recycle Bin** instead of removing it outright —
+  right-click an item there to **Restore** it to where it came from, or
+  right-click the Recycle Bin itself for **Empty Recycle Bin**. A top-level
+  folder, or an item already in the Recycle Bin, still asks for a blocking
+  confirmation before it deletes for good, since neither can be recycled.
 - **Drag a table from the SAS Libraries view into a Python file.** Dropping it
   shows a quick pick — **Read directly** inserts a plain
   `SAS.sd2df("libref.table")` assignment, and **Filter with PROC SQL first**

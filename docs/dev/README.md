@@ -11,7 +11,7 @@ satisfy; these pages explain how the machinery works and why.
 - [**The live test tier in anger**](live-testing.md) — running `npm run
   test:live` against a real deployment: the gates, the CA-certificate case, what
   each suite costs, and the cleanup contract for mutating tests
-- [**Manual test pass**](manual-test-pass.md) — the human tier: a scripted
+- [**Manual test pass**](manual-tests/setup.md) — the human tier: a scripted
   walkthrough of every user-visible behaviour, run by hand against a real
   deployment with the packaged `.vsix`, before a release and when a phase closes
 - [**Continuous integration**](ci.md) — the six CI jobs, why the test matrix

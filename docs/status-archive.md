@@ -1058,21 +1058,21 @@ grep of `vscode-sas-extension` that confirms its own claim of calling no CAS
 APIs — every `CAS`/`CASLIB`/`swat` hit lands in the language server's syntax
 reference data, nothing in `client/src`), a web search for the CAS Management
 REST API and `swat`'s current authentication documentation, and eight live
-probes against `verde` (Findings 87–92, `docs/phases/phase-8.md`'s own Probe
+probes against `verde` (Findings 8.1–8.6, `docs/phases/phase-8.md`'s own Probe
 findings section) refined `PRODUCTION_PLAN.md`'s one-line sketch into a
 3-slice Runbook (8a CAS browsing, 8b authenticated CAS session helper, 8c CAS
 tables in the data viewer), recommended order 8a→8b→8c. Key outcomes: caslib
 and table browsing needs **no `sessionId` and no CAS session of its own**
 for global-scope resources, contradicting every example in the CAS
-Management API's own reference docs (Finding 88); the existing
+Management API's own reference docs (Finding 8.2); the existing
 `ComputeClient`/`links.ts` machinery already fits `casManagement`'s hypermedia
-shape without modification, so 8a needs no new HTTP layer (Finding 87); and a
+shape without modification, so 8a needs no new HTTP layer (Finding 8.1); and a
 `PROC PYTHON` cell can authenticate to CAS with the exact same Viya access
 token this project already borrows per request, live-confirmed over both the
-binary and REST/HTTP transports (Finding 91) — settling Phase 8's central
+binary and REST/HTTP transports (Finding 8.5) — settling Phase 8's central
 premise. **One serious finding came out of settling that last one**: the
 naive way of delivering that token to the cell (an inline `PROC PYTHON`
-`submit` block) echoed it in plaintext into the job log (Finding 92), which
+`submit` block) echoed it in plaintext into the job log (Finding 8.6), which
 happened for real during this session's own probe — the exposed `verde`
 token was reported to Sean for rotation, and the throwaway Compute session
 that carried it is deleted and confirmed gone (`404` read-back). 8b's own
@@ -1511,3 +1511,423 @@ confirm the 6→12 order against real post-v0.1.0 demand.
 - **New issues held.** Per Sean, no new GitHub issues filed while the project is
   pre-release / invite-only — the fileref bug is a `fix/` PR, the accounts-menu
   gap lives in `phase-11.md`. Revisit issue tracking once past "preview".
+
+**Phase 7 (Libraries and data viewer) — full slice-by-slice narrative, moved here 2026-09-11 at the Phase 7→8 housekeeping checkpoint**, per `STATUS.md`'s own archival rule, once its own copy of this narrative started duplicating `docs/phases/phase-7.md`'s own detail (the pattern this file's own header note has always asked for at a phase boundary).
+
+**Phase 7 (Libraries and data viewer) is fully complete — 7a–7d all merged,
+worked from the separate `sas-py-vscode-cowork` clone — open
+[`docs/phases/phase-7.md`](phases/phase-7.md).** Scoped 2026-09-03
+(7a–7c); **7a is done and merged** ([PR #142](https://github.com/Shai-Alit/sas-py-vscode/pull/142));
+**7b (data viewer webview) is done and merged 2026-09-10** ([PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150),
+squash `60a944e`) — adversarially reviewed twice — no blocking findings
+either time — and Sean's own manual visual check of a real panel ran
+2026-09-10, twice: once before this round's fixes, once after.
+Of the three findings the first check surfaced: column alignment is fixed
+and confirmed by Sean's own re-test (Finding 7.14, live-probed against
+`verde`); the busy-session blank-grid panel got a real, defensible fix
+(`buildHtml` was missing a `background-color` rule, kept) but Sean's re-test
+against a confirmed-fresh build surfaced a second, deliberately deferred gap
+instead — neither the SAS Libraries tree nor an open data-viewer panel
+recovers on its own once a busy run finishes; the tree needs a manual
+refresh (already an accepted 7a limitation, now confirmed to extend to the
+panel too, per 7a's own Runbook hedge), and the panel has no equivalent
+affordance at all. **Deliberately left open at Sean's own direction — not
+blocking this slice, and not addressed by anything in 7c's current punch
+list**, so it is flagged for its own future slice rather than assumed away;
+the grid's light-only theme remains a separate open design decision for
+Sean, not a defect. One minor gap from the second review (no test asserts
+panel-dispose aborts its `AbortController`) has been folded in and verified.
+Preparing this PR's own body also surfaced a real, pre-existing gap: the
+data viewer panel's failure messages went out as `describeDataProblem`'s
+unlocalised log fragment, unlike every other panel in this project. Fixed
+with a new `src/data/messages.ts` (`localiseDataProblem`), matching
+`resultPanel.ts`/`contentFileSystem.ts`'s own established pattern exactly,
+with its own integration coverage. See `phase-7.md`'s 7b Runbook entry for
+the full account. **Sean has
+confirmed the deferred busy-recovery gap and the light-theme decision are
+acceptable to ship as documented follow-ups rather than blockers.**
+**[PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150) opened
+2026-09-10, merged 2026-09-10 (squash `60a944e`)** (the l10n fix's own commit
+skipped the standing pre-push manual adversarial pass, Sean's own call, to
+rely on those two instead). **github-advanced-security (CodeQL) then flagged
+a real `js/missing-origin-check` finding**: `dataViewerEntry.tsx`'s message
+listener trusted `event.data` with no check on who posted it (the
+CVE-2021-43908 class of gap). Fixed in two attempts — the first, following a
+Microsoft community thread's `https:`-prefix suggestion, was itself broken
+(Codex's review caught that a bare `https:` prefix matches almost any HTTPS
+origin) and was tightened to the two concrete origins VS Code actually
+issues (`vscode-webview://…` desktop, `https://….vscode-webview.net` web).
+`tsc`/`prettier` clean; **a third manual check (open a real table) then
+confirmed it, 2026-09-10** — Sean's own console export showed no
+`postMessage`/`origin` error, and the grid rendered column headers and rows
+for a real table. Closed, until GitHub's Copilot Autofix suggestion for the
+same CodeQL alert was applied directly to the branch as its own commit
+(`03e6caec`), rewriting the check to a `new URL(event.origin)` version
+without going through local review or re-verification. **Fourth manual pass,
+2026-09-10: confirmed against that exact commit** — same result, no
+`postMessage`/`origin` error, grid rendered. See `phase-7.md`'s 7b Runbook
+entry for the full account, including the unrelated benign VS Code-internal
+console warnings (`local-network-access`, iframe sandbox) a later log from
+the same check surfaced. That same console export also surfaced a new,
+unrelated, real gap: the panel's CSP has no `font-src`, so ag-grid's own
+bundled icon font (an `@font-face` inside `ag-theme-alpine.css`) is
+blocked — currently invisible (7b ships `sortable: false` and no filter, so
+nothing draws an icon from it yet) but will show as broken/missing icons
+the moment 7c turns sort or filter on. First deferred to 7c as its own
+punch-list item; **superseded same day** — a second adversarial review
+(prompted with that deferral) agreed it was reasonable but flagged the fix
+as cheap and already confirmed, so **Sean's final call was to fix it now**
+rather than carry it forward: `font-src {cspSource} data:;` added to
+`buildHtml`'s CSP, with a matching new test assertion. Nothing left on 7c's
+punch list for this. That same review found no blocking issues across the
+full 7b diff (11 files); two low, non-blocking findings — a `null`
+message-listener gap (practically unreachable, file untested by any tier
+either way) and a stale `NUM` doc-comment example Finding 7.14 should have
+swept — **both fixed too, Sean's call to fold them in alongside the CSP
+fix**. A fourth manual pass confirmed the origin check again after GitHub's
+Copilot Autofix rewrote it to a `new URL(event.origin)` version
+post-merge-of-the-manual-pass (`03e6caec`); a real profile-scoping bug in
+`DataViewerPanelManager`'s panel key (caught by review, same shape as 6b's
+`sasContent:` ETag-guard fix) was found and fixed with a regression test;
+and the branch was reconciled against `main` after phase 6's 6c-ii merged
+in the meantime. **PR #150 merged 2026-09-10 as squash `60a944e`.** Full
+account in `phase-7.md`'s 7b Runbook entry.
+
+- **7a — `LibraryAdapter` + read-only tree.** Done. `src/data/`, the
+  `pythonOnViya.dataExplorer` tree, `ComputeSessionManager`'s new
+  `onDidChangeConnection` — see this file's Phase index row for the full
+  verify numbers.
+- **7b — Data viewer webview.** Decided 2026-09-10, with Sean: React +
+  `ag-grid-community`, not a hand-rolled grid — [ADR-0028](adr/0028-data-viewer-is-react-and-ag-grid.md)
+  records the reasoning, the re-derived CSP threat model 7b's own code must
+  write, the testing-boundary call (browser-only exclusion, no `jsdom`), and
+  the dependency-classification decision (`devDependencies`, preserving
+  [ADR-0005](adr/0005-supply-chain-policy.md)'s zero-runtime-dependency
+  invariant — see that ADR's own 2026-09-10 amendment). Finding 7.10
+  (`phase-7.md`) settles a real implementation question in 7b's favour: the
+  rows collection's `count` is populated even at a small `limit`, so no
+  "assume last page" heuristic is needed (a same-day re-probe corrected that
+  finding's own `itemCount` detail; unused by any code, see `phase-7.md`).
+  Finding 7.13 confirms the rows collection's own `next`/`last`/`self` links
+  are properly typed, unlike the tables collection's (Finding 7.9). **Code
+  complete 2026-09-10**: `LibraryAdapter.openTable`/`getColumns`/`getRows`
+  (unit-tested), `DataViewerPanelManager`/`OpenTablePanel`
+  (integration-tested against a fake panel and the real adapter), the
+  `pythonOnViya.openTable` command, and the React/ag-grid webview bootstrap
+  (`src/webview/dataViewerEntry.tsx`) — see `phase-7.md`'s 7b punch list for
+  the full file-by-file account. **Adversarially reviewed 2026-09-10,
+  before any push** (per `CLAUDE.md`'s standing rule): three real findings
+  folded in — no unit test for `dataViewerModel.ts` (added), a `requestId`
+  collision across a webview reload that could resolve the wrong row window
+  (fixed with `crypto.randomUUID()`), and no `AbortSignal` on any of the
+  panel's three adapter calls (fixed with a per-panel `AbortController`).
+  Sean's own `npm install` + `npx tsc -p tsconfig.webview.json --noEmit`
+  then came back clean — the one thing nothing in the sandbox this was
+  written in could check — after two small fixes the install itself
+  surfaced (an ambient `*.css` module shim; an `exactOptionalPropertyTypes`
+  conflict on an intentionally-omitted `rowCount`). Sean's own
+  `npm run verify` and `npm run test:integration` then surfaced two more
+  real gaps the review pass predates: a test-ordering bug in three
+  `DataViewerPanelManager` integration tests (`sendReady()` called before
+  `open()` had registered the fake panel's listener), and a branch-coverage
+  shortfall traced to under-tested `src/data/types.ts` parser functions.
+  Both fixed and re-verified — `phase-7.md`'s 7b punch list has the full
+  account — and Sean's re-run of both commands is green. **Sean's own
+  manual visual check of a real panel then ran twice, 2026-09-10.** First
+  pass (`manual-test-pass.md` §10/§11) found three real findings: numeric
+  columns not right-aligning, a busy-session table-open showing a blank
+  panel with no message, and the grid always rendering in ag-grid's
+  light-only theme. A live probe against `verde` (Finding 7.14) settled the
+  first — real numeric columns report `type: "FLOAT"`, never `"NUM"` — and
+  `toColumnDefs` was fixed to match, along with a stale fixture and two
+  tests that had baked in the same unprobed `"NUM"` value. A
+  `background-color` rule was added to the panel's `<style>` block for the
+  second. **Second pass**, against a confirmed-fresh installed build,
+  confirmed the alignment fix and surfaced a different, more specific
+  finding in its place: neither the SAS Libraries tree nor an open
+  data-viewer panel recovers on its own once a busy session frees up — the
+  tree needs a manual refresh (already an accepted 7a limitation; this
+  confirms it extends to the panel too), and the panel has no equivalent
+  affordance at all. A second adversarial review (against `origin/main`,
+  covering the original 7b commit plus the Finding 7.14 fixes) found no
+  blocking findings; its one real minor observation — no test asserted that
+  disposing a panel aborts its in-flight `AbortController` — is now folded
+  in and verified. **Left open, at Sean's own direction, not blocking**: the
+  busy-recovery gap (not covered by 7c's planned scope, needs its own future
+  slice) and the light-only-theme decision (ADR-0028 didn't address it).
+  `phase-7.md`'s 7b punch list and Probe findings section have the full
+  account. **Merged 2026-09-10** as [PR #150](https://github.com/Shai-Alit/sas-py-vscode/pull/150)
+  (squash `60a944e`), after a profile-scoping panel-key fix and a
+  reconciliation against `main` (6c-ii had merged while this PR was open) —
+  see `phase-7.md`'s 7b Runbook for the full account.
+- **Three small PR #150 follow-up findings closed 2026-09-10**, from the
+  `sas-py-vscode-cowork` clone, ahead of 7c proper: `pythonOnViya.openTable`
+  hidden from the global Command Palette (a `commandPalette` `"when": "false"`
+  entry, matching the four content commands); the dead `data-title` attribute
+  (and its now-unused `escapeHtmlAttribute` helper and `buildHtml`
+  parameter) removed from the data viewer's HTML shell; and a JSX test case
+  added for `check-coverage-scope.mjs`'s `scriptKindFor`, feeding
+  `importsHostModule` a real, ag-grid-shaped `.tsx` element. See
+  `phase-7.md`'s 7c punch list for the full account, including why the JSX
+  test's own investigation found this particular check doesn't actually
+  depend on `scriptKindFor` for any well-formed input. `npm run test:unit`
+  (1443 passing), `test:integration` (305 passing), and `npm run coverage`
+  (95.29/95.37/94.95/95.29, all thresholds met) all green; `build`/lint/
+  typecheck/copyright/secrets/contracts all clean.
+- **7c — Sort, filter, CSV export, table properties.** Split into three
+  sub-slices 2026-09-10, mirroring 6c's own split: **7c-i** sort + filter
+  (share one request payload/probe — the `createView`/`where=` mechanism,
+  and fixing upstream's un-cleaned-up orphan-view bug rather than porting
+  it); **7c-ii** table properties/columns static viewer; **7c-iii** CSV
+  export to local disk (standalone — Phase 6 deferred its own
+  upload/download to Phase 11 entirely, so there's no helper to share).
+  **7c-i (sort + filter) is code-complete 2026-09-10** (`sas-py-vscode-cowork`
+  clone) — live-probed first (Findings 7.15–7.18: `createView`'s real
+  request/response shape and its own `delete`/`rowsAsCSV` links; `where=` is
+  silently ignored on a created view's own rows read, so a filter must be
+  baked into the same `createView` body as `sortBy`; `count` disappears the
+  instant a filter or view is involved, not just sometimes null); design
+  recorded in [ADR-0029](adr/0029-sort-view-lifecycle.md) (one view
+  reused per (sort, filter) state across pagination, not recreated per page
+  the way upstream's own un-cleaned-up `getSortedRows` does; guaranteed
+  cleanup on every state change and on dispose; a serialised
+  `ensureReadTarget` closing a real concurrent-view-creation race). A shared
+  fix also landed in `src/wire/viyaError.ts` (a nested `errors[0].details`
+  fallback, Finding 7.18). A pre-existing 7a/7b fixture
+  (`table-detail-class.json`) had guessed its `createView`/`rowsAsCSV` link
+  hrefs wrong (neither had a caller before now); corrected against Finding
+  7.15's real shape. **Reviewed twice before push**: an independent-agent
+  pass (no blocking findings, two low-priority notes addressed — see
+  `phase-7.md`), then Sean's own review of the same diff, per this
+  project's actual standing requirement. Sean's pass found three further
+  real, low-priority issues, all fixed: the new filter box had no
+  theme-aware styling (fixed with the standard `--vscode-input-*`
+  variables); a `getRows` call following a resolved `ensureReadTarget` was
+  not itself serialised against a *later* request's own sort/filter change,
+  so a fast state change could leave an earlier read answering against an
+  already-discarded view (fixed — `handleRequestRows` now drops a reply
+  once the panel's state has moved past it; a new integration test
+  reproduces the race directly); and `ensureReadTarget` returned an
+  un-`catch`'d promise (latent hardening, now fixed). Full account in
+  `phase-7.md`'s 7c-i Runbook entry. `npm run verify`/`test:integration`
+  re-run green after all three fixes (1468 unit, 310 integration passing,
+  thresholds unchanged); `check:docs`/`l10n:extract`/`build` all clean.
+  **[PR #155](https://github.com/Shai-Alit/sas-py-vscode/pull/155) opened
+  2026-09-10.** `docs/dev/manual-test-pass.md` gained an unrun §12 for
+  Sean's own visual check of the new filter bar and sort-icon rendering.
+  **That check ran 2026-09-10 and found three real bugs, all fixed on the
+  same branch before merge**: a sort or filter was silently lost switching
+  away from the table's tab and back (`retainContextWhenHidden: false`
+  reloads the webview document on hide/show, and the freshly mounted grid
+  had no memory of the previous document's sort/filter — its own first
+  request read as "cleared", which this panel's state machine took as an
+  instruction to discard the still-wanted server-side view); and an invalid
+  filter showed a blank grid with no error, warning, or log line anywhere
+  (the host already computed a real, specific message — Finding 7.18 — but
+  `dataViewerEntry.tsx`'s own datasource was discarding it). Fixed:
+  `InitMessage` gained `initialSort`/`initialFilter`, replayed as the panel's
+  *current* state (not the state frozen when the table first opened) on
+  every `"ready"`; the webview restores the filter box's text and seeds
+  ag-grid's initial sort from them; a `rowsError` reply now renders as a
+  banner instead of being silently dropped; and `dataViewerPanel.ts` now logs
+  a warning on both row-fetch failure paths, which it did not before either.
+  `npm run verify` green (1468 unit, coverage unchanged); `test:integration`
+  green (313 passing, three new). Full account in `phase-7.md`'s 7c-i Runbook
+  entry. **Also found, separately**: both AI PR reviewers showed "pass" on
+  PR #155 with no review ever actually posted — a `cancel-in-progress`
+  concurrency gap in `ai-review.yml`/`claude-review.yml` let a fast-follow
+  `[skip-review]` docs commit cancel the review runs against the real source
+  commits, then legitimately skip itself. Not a runner fluke.
+  **Fixed and merged** as [PR #156](https://github.com/Shai-Alit/sas-py-vscode/pull/156)
+  (squash) — both `ai_review.py` and the Claude Review guard step now also
+  require the commit immediately before a `synchronize` push to be
+  skip-tagged before honouring the head's own flag. `phase-7c-i-sort-filter`
+  was reconciled with `main` a second time to pick it up, and both automated
+  reviewers then ran against this branch's real diff for the first time.
+  **Each found one real issue, both verified and fixed before any further
+  push**: a stale `requestRows` reply was silently dropped rather than
+  answered (a real, if narrow, leak — `dataViewerEntry.tsx`'s own
+  `pendingRowRequests` entry, and the promise it resolves, was left pending
+  forever), and no test exercised `onDidDispose`'s own stale-view-delete
+  cleanup on either its success or failure-logged path. `npm run verify`/
+  `test:integration` re-run green (321 passing — the jump from 313 includes
+  6c-iii's own tests from the `main` reconciliation, plus 2 new dispose
+  tests this round added). Full account in `phase-7.md`'s 7c-i Runbook
+  entry.
+- **7c-ii (table properties/columns static viewer) is code-complete
+  2026-09-11** (`sas-py-vscode-cowork` clone) — live-probed first (Finding
+  7.19: the full `TableInfo` field set, and confirmation that
+  `creationTimeStamp`/`modifiedTimeStamp` are ISO-8601 strings, not a raw SAS
+  epoch number, settling the one open question this slice's own punch list
+  raised). `TableDetail`/`readTableDetail` (`src/data/types.ts`) gained the
+  rest of `TableInfo`'s field set; a new `src/data/tablePropertiesModel.ts`
+  (`vscode`-free, unit-tested) and `src/data/tablePropertiesPanel.ts`
+  (`.c8rc.json`-excluded, integration-tested) render a static properties/
+  columns panel opened via a new `pythonOnViya.showTableProperties` context
+  command. **Deliberately not a straight port of upstream's own client-side
+  tab-toggle script** — this panel needs no `<script>` at all: the two tabs
+  are CSS-only (radio-button `:checked` sibling selectors), so
+  `enableScripts` is `false`, the only one of this project's three webview
+  panels that needs no script execution. `npm run verify` green (1519 unit
+  passing; coverage 95.48/95.43/95.15/95.48, every threshold met);
+  `npm run test:integration` green (333 passing, 9 new);
+  `npm run check:docs` green. **Adversarial pass done before the PR
+  2026-09-11 — no blocking findings.** Four low-priority notes, one folded
+  in: `formatTimestamp`'s own epoch-fallback unit test re-derived the
+  function's `315619200` constant instead of asserting an
+  independently-computed expected value; fixed. Two accepted as-is (a bare
+  numeric string parsing as a year rather than reaching the epoch fallback —
+  parity with upstream, not reachable with real ISO-8601 data; the `disposed`
+  boolean vs. `AbortSignal.aborted` style note). One noted as a real but
+  pre-existing, cross-panel gap and initially deferred (a stuck "Loading…"
+  panel if `openTable`/`getColumns` *rejects* rather than resolving
+  `{ok:false}`, shared with `DataViewerPanelManager`'s own identical
+  `loadTable`) — **a second Codex review round on the open PR then flagged
+  this same gap as its own in-scope finding** (a fair distinction: introducing
+  new code that reproduces a known-bad pattern is different from also being
+  asked to patch a different file's pre-existing instance), so it was fixed
+  after all, scoped to `tablePropertiesPanel.ts` alone — see below.
+  **[PR #158](https://github.com/Shai-Alit/sas-py-vscode/pull/158) opened
+  2026-09-11.** Both automated PR reviewers ran against the real diff; the
+  Claude reviewer found nothing new. **Codex found two real issues, both
+  fixed on the branch**: (blocking) `panelHead`'s CSP allowed `style-src
+  'unsafe-inline'`, reasoned as safe only because every dynamic value is
+  `escapeHtml`-escaped — correctly pushed back on as weaker than not needing
+  the exception at all; unlike `dataViewerPanel.ts` (which genuinely needs
+  `'unsafe-inline'` for `ag-grid`'s own runtime-set `style="…"` *attributes*,
+  which a nonce cannot cover), this panel has exactly one `<style>` *element*
+  and no inline `style="…"` attributes anywhere, so a nonce (the same
+  mechanism `resultPanel.ts`/`dataViewerPanel.ts` already use for their own
+  `<script>` tag) removes the exception entirely; (major) the new
+  `showTableProperties` log line was hard-coded English — fixed, and its
+  identical `openTable` neighbor (copied from 7b, same defect, not flagged
+  since it predates this diff) fixed alongside it rather than left
+  inconsistent. **A CI failure surfaced separately**: `test (windows-latest,
+  node 24)` timed out at the unit tier's 2s budget on `formatTimestamp`'s own
+  test — this project's first-ever call to `Date.prototype.toLocaleString()`,
+  and Intl/ICU's first-use cost apparently exceeded 2s on that one
+  runner/Node combination. Fixed the same way `eslint-ignores.test.ts`/
+  `contracts.test.ts`/`coverage-scope.test.ts` already do for their own
+  "loading a tool" cost: a suite-level `this.timeout(30_000)`. `npm run
+  verify` re-run green after all three fixes (1519 unit passing, coverage
+  unchanged); `npm run test:integration` green (334 passing — a new CSP
+  nonce test). **A second Codex review round, against that fix commit,
+  raised one further Major**: the "stuck on Loading… forever" gap this
+  file's own pre-PR write-up had accepted as pre-existing and deferred.
+  Fixed, scoped to this slice's own file only: `start()` now wraps its two
+  adapter calls in a `try`/`catch`, rendering a failure (the same
+  `compute-unreachable` shape `dataViewerPanel.ts`'s own `ensureReadTarget`
+  already produces for an unexpected throw) and then rethrowing, so the
+  command handler's own log line still fires. `dataViewerPanel.ts`'s
+  identical instance is deliberately left untouched — a different file from
+  an earlier phase, not this PR's own diff; closing it, if wanted, is its own
+  small follow-up. A new integration test drives a raw `ComputeClient` whose
+  `send` rejects and asserts both the rendered failure text and that
+  `manager.open(...)` itself still rejects. `npm run verify` green again
+  (1519 unit, coverage unchanged); `npm run test:integration` green (335
+  passing). Full account in `phase-7.md`'s 7c-ii Runbook entry.
+- **7c-iii (CSV export to local disk) is done and merged 2026-09-11**
+  (`sas-py-vscode-cowork` clone) —
+  [PR #161](https://github.com/Shai-Alit/sas-py-vscode/pull/161), squash
+  `dac4f7f`. Live-probed
+  first (Finding 7.20): the real `rowsAsCSV` mechanism is `Accept`-header
+  content negotiation on the identical `rows` href, not upstream's own
+  hand-composed `.../rows#CSV` suffix (which never actually reaches a CSV
+  response on a real deployment — upstream silently re-serializes JSON rows
+  instead); pagination/`where=`/quoting all already correct, and pages
+  concatenate with no separator needed. `LibraryAdapter.getRowsAsCsv`, a new
+  `vscode`-free `src/data/csvExportModel.ts` (deliberately unbounded
+  pagination — its own `start` is self-derived, never a server link, so it
+  cannot cycle the way a `next`-link loop could), and a new
+  `src/data/csvExportCommand.ts` wiring `pythonOnViya.exportTableToCsv`: a
+  save dialog, a cancellable progress notification, a streaming write to a
+  temporary file renamed onto the destination only on full success (so a
+  cancelled/failed export never touches, or truncates, a destination the
+  user already had), and a pre-flight `ensureDiskSpace` check refusing to
+  start if the destination volume looks too small for the estimated size.
+  **A genuine architecture decision, confirmed with Sean before writing the
+  code**: `csvExportCommand.ts` is a new, fifth entry on
+  [ADR-0003](adr/0003-extension-host-target.md)'s Node-built-ins
+  allow-list (`node:fs`, `node:path`, `node:crypto`) — `vscode.workspace.fs`'s
+  whole-buffer-only `writeFile` can't stream a potentially large export
+  without holding the whole table in memory first, defeating the reason this
+  feature streams at all; see that ADR's 2026-09-11 amendment.
+  **Adversarially reviewed twice before the PR, per `CLAUDE.md`'s standing
+  rule**: an independent-agent pass found three real findings, most
+  notably that an existing file at the chosen destination could be
+  truncated then deleted on a failed export — fixed with an atomic
+  write-to-temp-then-rename redesign, which also closed a synchronous-throw
+  gap and a missing stream-error test. Sean's own review then found no
+  blocking issues; two of its three minor notes were folded in (a missing
+  mid-write failure test; deferring temp-file creation until after
+  `openTable`/the disk-space check pass, so an early failure touches the
+  filesystem not at all). `npm run verify` green (1551 unit passing;
+  coverage 95.56%/95.51%/95.25%/95.56%, every threshold met);
+  `npm run test:integration` green (346 passing, 7 new); `check:docs`/
+  `l10n:extract`/`build`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts` all clean. Full account in
+  `phase-7.md`'s 7c-iii Runbook entry. **7c (sort/filter, table properties,
+  CSV export) is now fully done — all three sub-slices merged.**
+- **7d — Python↔library data exchange (`SAS.sd2df`/`df2sd`/`submit`).**
+  Scoped 2026-09-04 from a separate session; that session's doc edits were
+  stashed rather than committed and sat unmerged until found and resurrected
+  2026-09-10. Live-probed this session (Findings 7.11/7.12): all three
+  bridge methods work end to end, and the credential-echo risk the stash
+  had only guessed at (by analogy to Phase 8's Finding 8.6) turned out to be
+  more nuanced than feared — `SAS.submit()`'s own log echo applies SAS's
+  standard `PASSWORD=` masking; Finding 8.6's own mechanism (the outer
+  job-source echo) is untouched and still the real risk for a credential
+  written as a literal. **Code-complete 2026-09-11** (`sas-py-vscode-cowork`
+  clone): a new `docs/data-access.md`
+  ("Python and SAS libraries", registered in the VitePress sidebar and
+  `docs/README.md`'s index — neither 7a/7b/7c ever shipped a user-facing doc
+  page of its own to fold this into); the drag-and-drop snippet
+  (`src/data/dragSnippet.ts`, `vscode`-free/unit-tested, and
+  `src/data/dataDragAndDrop.ts`, the one class playing both the
+  `TreeDragAndDropController` and `DocumentDropEditProvider` roles this
+  needs, registered for `{ language: "python" }`) — a drop always asks, via a
+  quick pick, whether to insert a plain `SAS.sd2df(...)` read or a
+  `SAS.submit`-based `PROC SQL` pass-through (Sean's call), with the assigned
+  variable name derived from the table's own name and deduplicated against
+  the drop target document's own text (Sean's call); and
+  `test/fixtures/data/submit-log-echo.txt`, a verbatim transcription of
+  Finding 7.12's own already-sanitized log excerpt (not a captured wire JSON
+  envelope — this mechanism has no wire call), pinned by a new unit test.
+  **Adversarial pass (independent agent) ran before any push, per
+  `CLAUDE.md`'s standing rule** — one real, blocking finding: the SQL
+  pass-through's own `select * from libref.table` line had no protection
+  against a `;` in the table name, letting the rest run as independent SAS
+  statements the moment the inserted snippet is run unmodified. **Fixed**:
+  `dragSnippet.ts`'s new `sasNameRef` wraps a name outside the ordinary
+  bare-identifier shape in a SAS name literal (`'…'n`) before either escaping
+  layer runs, applied only to the SQL pass-through's own generated SAS
+  source (not `sd2df`'s runtime string argument). Two related Medium
+  findings also fixed: the drop's own `CancellationToken` never reached the
+  quick pick (now threaded through), and an already-cancelled drop still
+  showed the picker before discarding the answer (now checked first, via a
+  `cancelled()` closure matching `contentDragAndDrop.ts`'s own idiom, to
+  dodge a TypeScript narrowing false-positive across the intervening
+  `await`). `npm run verify` green (1567 unit passing; coverage
+  95.6%/95.5%/95.35%/95.6%, every threshold met); `npm run test:integration`
+  green (355 passing, 9 new); `check:docs` (all four steps) green.
+  **[PR #163](https://github.com/Shai-Alit/sas-py-vscode/pull/163) opened
+  2026-09-11**, after which Sean's own live test found the drop silently
+  inserting nothing — a tree→editor drop crosses the extension-host RPC
+  boundary and VS Code serializes the payload, so
+  `provideDocumentDropEdits` got the `JSON.stringify`'d text rather than the
+  `TableItem[]` `handleDrag` set, and the slice had cast it instead of
+  parsing it; the resulting `TypeError` was swallowed by VS Code and visible
+  only in the DevTools console. **Fixed** with a validated, `vscode`-free
+  `readDraggedTables` in `src/data/types.ts` (+6 unit tests) rather than an
+  inline parse in the coverage-excluded `dataDragAndDrop.ts`, and
+  **re-tested live by Sean the same day: drag, both snippet choices and the
+  inserted code all work** (`manual-test-pass.md` §17's first six rows now
+  pass). Diagnosing it also found a **separate root cause for Phase 6's own
+  drag-and-drop failure** — `handleDrop`'s `CancellationToken` does not
+  survive the RPC hop, so `contentDragAndDrop.ts:203` throws before doing any
+  work — recorded in `phase-6.md` and handed to that phase's agent, not fixed
+  here. Reconciled with `main` (merge `30771e8`, picking up 6e/PR #162);
+  `npm run verify` re-run green (1574 unit; coverage
+  95.62/95.54/95.38/95.62), `npm run test:integration` green (372 passing).
+  Sean's own review pending before merge. Full account in `phase-7.md`'s 7d
+  Runbook entry.

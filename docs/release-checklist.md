@@ -152,7 +152,7 @@ git push origin vX.Y.Z
   notes.
 
 ☐ **D7.** Install the published extension from the marketplace in a clean VS
-Code profile and run the [manual test pass](dev/manual-test-pass.md) against a
+Code profile and run the [manual test pass](dev/manual-tests/setup.md) against a
 real deployment — at least its rich-output section end to end. Publishing green
 is not the same as working.
 

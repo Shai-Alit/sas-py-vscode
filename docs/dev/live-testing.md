@@ -189,7 +189,7 @@ Deliberately **not** covered by a live test:
   against a live run.
 - **The diagnostics surface** (Problems panel, click-to-jump — slice 4d). This
   is VS Code integration with no new Viya calls; the integration tier and the
-  [manual test pass](manual-test-pass.md) cover it.
+  [manual test pass](manual-tests/setup.md) cover it.
 - **`probeRuntime()` / environment info** (slice 3e). The full wire sequence was
   probed by hand (phase-3 Finding 71) but there is no live *test*; whether a
   deployment has a Python interpreter is a property of the deployment, and a

@@ -30,7 +30,7 @@ your deployment differs, substitute any server/caslib/table you can see —
 just avoid a caslib holding sensitive or customer data for the "expand a
 table" boxes below, since expanding one loads it.
 
-- [ ] **8.1** **The view exists and reflects sign-in state, not connection
+- [x] **8.1** **The view exists and reflects sign-in state, not connection
   state** — open the **Python on Viya** icon in the Activity Bar.
   **Expect:** three views stacked in the same container — **SAS Content**,
   **SAS Libraries**, and **CAS**. Before any profile is configured, CAS shows
@@ -39,23 +39,34 @@ table" boxes below, since expanding one loads it.
   "Sign in to SAS Viya to browse CAS." **There is no third, "not connected"
   welcome message the way SAS Libraries has** — CAS has nothing to say about
   a compute session, because it does not use one.
-- [ ] **8.2** **Signing in alone populates the tree — no Connect needed** —
+- [x] **8.2** **Signing in alone populates the tree — no Connect needed** —
   sign in to a profile, but do **not** run **Connect to SAS Viya**.
   **Expect:** CAS already lists at least **cas-shared-default**, with a
   server icon and a collapsed expand chevron — no welcome text remains, even
   though SAS Libraries (right above it) still shows its own "Connect to SAS
   Viya…" welcome text at the same moment. That difference side by side is
   the point of this box.
-- [ ] **8.3** **Expanding a server lists its global caslibs** — click the
+- [x] **8.3** **Expanding a server lists its global caslibs** — click the
   chevron next to **cas-shared-default**.
   **Expect:** a list of caslibs appears, each with a database icon and an
   expand chevron, including at least **Public**, **Formats**, **Samples**,
   and **SystemData** if your deployment has them.
-- [ ] **8.4** **Expanding a caslib lists its tables** — expand **Public** (or
+- [-] **8.4** **Expanding a caslib lists its tables** — expand **Public** (or
   another caslib you can see).
   **Expect:** a list of tables appears, each with a table icon and an expand
   chevron (a table is not a leaf in this phase, unlike SAS Libraries' — it
   expands to columns).
+  **9/12/2026 failed** - attempted to expand P_FORD and Public caslibs and get this
+  message popup "Element with id cas:cas-shared-default.Public.NREL_1000X 
+  is already registered". note that neither caslib had in-memory tables loaded
+  but do have saved tables present. none of the saved tables are present but
+  they are not currently loaded to memory. messages like that just keep
+  popping up repeatedly. checking Verde it appears the messages are popping 
+  up with the name of each table in the caslib not loaded to memory. I went
+  to Verde and manually loaded a table to memory and refreshed the VS Code
+  CAS view and the table does not show up at all. the error messages continue
+  to show up even after a refresh. signing out and signing back in and 
+  re-running this procedure produces the same results. 
 - [ ] **8.5** **Expanding an unloaded table loads it, then shows its
   columns** — pick a table you have not yet expanded and expand it.
   **Expect:** a short pause (the JIT-load `PUT`, Finding 8.3/8.8), then a
@@ -68,11 +79,14 @@ table" boxes below, since expanding one loads it.
   **Expect:** the same columns appear, this time with no perceptible delay —
   the table's own listing entry now reports it as loaded, so
   `CasAdapter.getColumns` skips the load `PUT` entirely.
-- [ ] **8.7** **Refresh reloads the tree** — click the refresh icon in the
+- [-] **8.7** **Refresh reloads the tree** — click the refresh icon in the
   CAS view's title bar (hover the view's header if you don't see it), or run
   **Refresh CAS** from the Command Palette.
   **Expect:** the tree reloads. If nothing changed on the server, the visible
   list looks the same — that is a pass, not a no-op failure.
+  **9/12/2026 failed** - reload does not update the tree. manually loaded a table
+  to memory in Verde and then clicked refresh in VS Code CAS view. it did not 
+  pick up the in memory table. 
 - [ ] **8.8** **Browsing works while a compute session run is busy** — start
   a long-running selection first: open a `.py` file, type `import time;
   time.sleep(30)`, select it, and **Run Selection** (§6 has the mechanics if
@@ -82,12 +96,12 @@ table" boxes below, since expanding one loads it.
   message — CAS browsing does not go through the compute session at all, so
   it is unaffected by a run in progress. This is the direct contrast to SAS
   Libraries' own busy-session refusal (`phase-7.md`'s 7a manual test §7.6).
-- [ ] **8.9** **Signing out empties the tree cleanly** — sign out of the
+- [x] **8.9** **Signing out empties the tree cleanly** — sign out of the
   profile.
   **Expect:** CAS returns to its "Add a SAS Viya connection profile…" or
   "Sign in to SAS Viya…" welcome text (whichever applies); no stale server,
   caslib, table, or column entries are left showing.
-- [ ] **8.10** **Legible in every theme** — with the tree expanded down to a
+- [x] **8.10** **Legible in every theme** — with the tree expanded down to a
   column, switch VS Code between a light theme, a dark theme, and a
   high-contrast theme (Command Palette → **Preferences: Color Theme**).
   **Expect:** every icon (server, database, table, field) renders as a real

@@ -210,13 +210,30 @@ export class CasAdapter {
    * shape `src/data/adapter.ts`'s own `collectPages` uses, with the same
    * bound against a runaway or cyclical `next` link this project has not
    * constructed itself.
+   *
+   * **The seed request adds `sortBy=name`; every later page reuses whatever
+   * the server's own `next` link already carries.** Finding 8.9: without it,
+   * `casManagement`'s collections are not stably ordered across requests at
+   * all — two identical `GET`s of the same `start`/`limit` window, seconds
+   * apart with no state change in between, returned two different sets of
+   * tables. Fed into offset pagination that reshuffles items between pages,
+   * which is the live bug this fixes: the same table lands on more than one
+   * page, and `casTree.ts`'s per-item node id collides on it, throwing VS
+   * Code's own "Element with id … is already registered" — while other
+   * tables are skipped by the same reshuffle and never appear at all.
+   * `sortBy=name` made three repeated identical requests come back
+   * byte-for-byte the same, and every collection this method reads (servers,
+   * caslibs, tables, columns) accepted it without complaint, so it is added
+   * once, here, rather than once per caller. Only the seed `href` needs it —
+   * the server's own `next` link already carries `sortBy=name` forward to
+   * every later page, confirmed live.
    */
   private async collectPages(
     link: Link,
     signal: AbortSignal | undefined,
   ): Promise<CasResult<readonly unknown[]>> {
     const items: unknown[] = [];
-    let href: string | undefined = link.href;
+    let href: string | undefined = withQuery(link.href, ["sortBy=name"]);
 
     for (let page = 0; href !== undefined && page < MAX_CAS_PAGES; page += 1) {
       const pageLink: Link = { ...link, href };

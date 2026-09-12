@@ -161,7 +161,9 @@ describe("cas/adapter CasAdapter", () => {
       assert.ok(result.ok);
       assert.equal(result.value.length, 1);
       assert.equal(result.value[0]?.name, "cas-shared-default");
-      assert.deepEqual(calls, [{ href: SERVERS_HREF, method: "GET" }]);
+      assert.deepEqual(calls, [
+        { href: `${SERVERS_HREF}?sortBy=name`, method: "GET" },
+      ]);
     });
 
     it("drops a server entry with no usable name", async () => {
@@ -193,10 +195,13 @@ describe("cas/adapter CasAdapter", () => {
     it("paginates the caslibs collection, following next", async () => {
       // Function matchers, not bare strings: a bare string ignores the query
       // string entirely (`recorded-cas.ts`'s own doc comment), which would
-      // make page 1's route also match page 2's request.
+      // make page 1's route also match page 2's request. Page 1's own href
+      // carries collectPages' own seed `sortBy=name` (Finding 8.9); page 2's
+      // does not, because it comes verbatim from the fixture's own `next`
+      // link, which never had one added to it.
       const { adapter, calls } = adapterWith([
         {
-          when: (href) => href === CASLIBS_HREF,
+          when: (href) => href === `${CASLIBS_HREF}?sortBy=name`,
           reply: casFixture("caslibs-page1.json"),
         },
         {
@@ -286,6 +291,15 @@ describe("cas/adapter CasAdapter", () => {
       assert.equal(calls.length, 1);
     });
 
+    it("Finding 8.9: requests sortBy=name, since casManagement's own listings are not stably ordered across identical requests without it", async () => {
+      const { adapter, calls } = adapterWith([
+        { when: TABLES_HREF, reply: casFixture("tables.json") },
+      ]);
+      const result = await adapter.getTables(caslib());
+      assert.ok(result.ok);
+      assert.equal(calls[0]?.href, `${TABLES_HREF}?sortBy=name`);
+    });
+
     it("fails link-missing when the caslib carries no tables link", async () => {
       const { adapter } = adapterWith([]);
       const result = await adapter.getTables(caslib({ links: [] }));
@@ -320,7 +334,9 @@ describe("cas/adapter CasAdapter", () => {
           ["VALUE", "double", 12],
         ],
       );
-      assert.deepEqual(calls, [{ href: COLUMNS_HREF, method: "GET" }]);
+      assert.deepEqual(calls, [
+        { href: `${COLUMNS_HREF}?sortBy=name`, method: "GET" },
+      ]);
     });
 
     it("Finding 8.8: loads an unloaded table first, then reads the same columns link", async () => {
@@ -339,7 +355,7 @@ describe("cas/adapter CasAdapter", () => {
       assert.equal(result.value.length, 2);
       assert.deepEqual(calls, [
         { href: `${LOAD_HREF}?value=loaded`, method: "PUT" },
-        { href: COLUMNS_HREF, method: "GET" },
+        { href: `${COLUMNS_HREF}?sortBy=name`, method: "GET" },
       ]);
     });
 

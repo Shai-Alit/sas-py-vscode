@@ -291,6 +291,13 @@ lock._
   explicitly rather than by silent omission. **Still open** — Finding 8.7
   found every one of the 68 caslibs on `verde` is `scope: "global"`, so there
   is no personal caslib on this deployment to test against.
+- ☐ Confirm Finding 8.9's `sortBy=name` fix — added once, to `collectPages`'s
+  seed request only, trusting the server's own `next` link to carry it
+  forward — actually needs that trust honoured for the servers, caslibs, and
+  columns collections too, not only the caslib/tables case that reproduced
+  the crash. Flagged by the second adversarial review pass as a disclosed,
+  unverified bet: if a real deployment's `next` link ever drops `sortBy` for
+  one of those three, the reshuffle-and-duplicate bug returns silently there.
 - ☑ Design the tree/view-container coordination — a third view,
   `pythonOnViya.casExplorer`, added to the existing `pythonOnViya`
   `viewsContainers` entry alongside SAS Content and SAS Libraries.
@@ -307,6 +314,37 @@ statements/branches/functions/lines — `.c8rc.json`'s ratchet raised from
 94/95/94/94 in this same slice), 382 integration passing,
 `npm run check:docs` green (the generated reference picked up the new
 `pythonOnViya.refreshCasExplorer` command and `CAS` view).
+
+**Pre-PR fix, found by Sean's own manual test pass before 8a's PR was ever
+opened** (`docs/dev/manual-tests/phase-8.md` items 8.4/8.7, 2026-09-12):
+expanding a caslib with several tables threw VS Code's own "Element with id
+… is already registered" repeatedly and the tree ended up showing no tables
+at all — reproduced against `verde`, root-caused, and fixed live rather than
+guessed at (Finding 8.9, below). `CasAdapter.collectPages` now seeds every
+paginated request with `sortBy=name`; the fix is one line, in the one shared
+helper `getServers`/`getCaslibs`/`getTables`/`getColumns` all already funnel
+through. `npm run verify` green after the fix (1669 unit — the one new test
+citing Finding 8.9 directly — coverage unchanged at
+95.82/95.46/95.66/95.82), 382 integration passing (`ELECTRON_RUN_AS_NODE`
+env-strip workaround needed to run integration from this shell, same
+long-standing environment quirk, not a regression).
+
+**Adversarial review, run twice before this PR opens (2026-09-12, Sean) —
+no blocking findings from either pass.** The **first pass** reviewed 8a as
+originally built, before the Finding 8.9 fix existed, and is only being
+recorded here after the fact since it went undocumented at the time: no
+blocking findings; one near-miss raised for a human glance rather than a
+defect — `getColumns`'s JIT-load `PUT` means expanding a table node
+triggers a mutating call as a side effect of what reads as a read-only
+browse action, which is exactly ADR-0033/Finding 8.8's own documented
+design, reconfirmed intentional rather than an oversight. The **second
+pass** reviewed the full branch diff against `main` — the 8a slice, the
+Finding 8.9 fix, and an unrelated CI-classifier/icon change from a
+different session on this same branch — and likewise found nothing
+blocking: it raised the sortBy-forwarding caveat above (now tracked as its
+own punch-list item) and a process question, left for Sean to decide rather
+than settled here, about whether bundling the CAS work with the unrelated
+CI/icon change into one PR is intentional.
 
 ☐ **8b — Authenticated CAS session helper.**
 
@@ -524,6 +562,63 @@ formattedLength, numberFormatLength, numberFormatDecimals, indexed, index}`
 `rawLength`. `src/cas/types.ts`'s `CasColumnItem` reads only `name`/`type`/
 `formattedLength`, per `docs/adr/0033-cas-adapter-shape.md`'s no-speculative-
 fields reasoning.
+
+**Finding 8.9 — decisive, read-only: `casManagement`'s collection listings
+are not stably ordered across identical requests, and this is the direct
+cause of a live crash Sean's manual test pass found before 8a's PR was ever
+opened.** `docs/dev/manual-tests/phase-8.md` items 8.4/8.7 (2026-09-12)
+reported expanding a caslib with several unloaded tables (`Public`, 56
+tables) threw VS Code's own "Element with id
+`cas:cas-shared-default.Public.NREL_1000X` is already registered" repeatedly,
+one per table name, and the tree ended up empty; refresh after manually
+loading a table in Verde did not pick it up either. Every earlier probe of
+this collection (8.2, 8.7) added an explicit `?limit=100`-or-larger query,
+which fetches everything in one page and never exercises real multi-page
+`next`-following — the exact path `CasAdapter.getTables`'s shared
+`collectPages` helper uses in production with no `limit` at all, since it
+follows a caslib's own `tables` link verbatim. This session finally
+exercised that real path: **`GET .../caslibs/Public/tables` with no query
+parameters returned `start: 0, limit: 10`** (`count: 56`, so 6 pages), and
+its own `next` link (`?start=10&limit=10`) is well-formed and does
+terminate correctly — page 6 correctly carries no `next`. But following it
+to completion produced only **40 unique table names across the 56 items
+returned** — the same name (`CARS`, `SAS_MODEL_TABLE`, `RFCUSTOMER`, and 10
+others) appeared on 2–3 different pages, byte-for-byte identical down to
+the `self`/`delete`/`columns` link hrefs, while an unknown number of other
+tables were silently never returned at all. **Fetching the identical
+`?start=20&limit=10` window three times in a row, seconds apart, with no
+write to the deployment in between, returned three completely different
+sets of 10 tables each time** — conclusive: the collection has no stable
+default order at all, so offset-based pagination against it is unsound by
+construction, not merely fragile. This is exactly the shape that produces
+the observed crash: `casTree.ts`'s node id is built from
+`serverName.caslibName.tableName` alone, so the same table name recurring
+across two pages of one `getChildren()` result is a duplicate id, which VS
+Code's `TreeDataProvider` rejects outright — and every table the reshuffle
+skips instead of duplicating is why the tree can end up showing fewer
+tables than exist, or none. **Documented:** the CAS Management API's public
+reference does not call out a default sort order for the `tables`
+collection one way or the other. **Observed (Viya 4, 2026-09-12,
+`verde`):** none — request order is apparently unspecified and not stable
+across requests. **The fix, also confirmed live:** adding `sortBy=name` to
+the request made the same repeated `?start=20&limit=10&sortBy=name` fetch
+return byte-for-byte identical results three times running, and the
+collection's own `next` link (confirmed by direct inspection) carries
+`sortBy=name` forward automatically once the seed request has it, so only
+the first request of a `collectPages` walk needs it. `sortBy=name` was also
+tried, read-only, against the servers collection, the caslibs collection,
+and a loaded table's columns collection — all three accepted it with `200`
+and correctly name-sorted output, so `CasAdapter.collectPages` now adds it
+once, for every collection it reads, rather than only for the one collection
+this session happened to reproduce the bug against. **Not independently
+reproduced for caslibs/columns**: a caslib-collection instability check
+(two identical `?start=20&limit=10` fetches) came back stable both times on
+this deployment, and the one loaded table probed here had only 8 columns —
+below the default page size, so multi-page column pagination was never
+exercised. The fix is applied to all four collections on the strength of
+"every one of them accepted the same parameter cleanly, and the failure
+mode costs nothing to guard against everywhere," not because instability
+was independently confirmed on all four.
 
 **Not probed this session, left open:** a genuine second Viya 4
 cadence/deployment (the dialect-risk item above — `innov`'s stored

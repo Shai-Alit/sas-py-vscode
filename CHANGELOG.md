@@ -20,6 +20,15 @@ called out under **Changed** with a migration note.
   session and opens no CAS session of its own — an endpoint and a token are
   enough ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)).
 
+### Changed
+
+- **New activity bar icon.** Replaced the placeholder glyph with a
+  hexagon-and-V mark consistent with the extension's marketplace icon.
+- **CI's `changes` classifier now also treats `media/` as safe.** A pull
+  request that touches only `docs/`, a top-level markdown file, or a file
+  under `media/` runs the `docs` job alone; `verify`, `test`, and `package` no
+  longer run for an asset-only change like an icon swap.
+
 ## [0.1.2] - 2026-09-11
 
 ### Added

@@ -25,15 +25,18 @@ one check whose output lives in the Security tab rather than in a log.
 ## changes
 
 The first job classifies the diff on two axes, and the expensive jobs gate on
-them. A pull request that touches only documentation runs `docs` and nothing
-else.
+them. A pull request that touches only documentation or a static asset under
+`media/` runs `docs` and nothing else.
 
-- **`code`** — not unambiguously documentation. Gates `verify`, `test` and
-  `package`. A file counts as documentation if it is under `docs/` or is a
-  top-level markdown file; **everything else is code**, including `package.json`,
-  anything under `.github/`, and markdown that lives beside source. The bias is
-  deliberate: misclassifying a code change as prose skips the gate, so the
-  ambiguous cases all resolve to "code".
+- **`code`** — not unambiguously documentation or a static asset. Gates
+  `verify`, `test` and `package`. A file counts as safe if it is under `docs/`,
+  under `media/`, or is a top-level markdown file; **everything else is code**,
+  including `package.json`, anything under `.github/`, and markdown that lives
+  beside source. `media/` was added 2026-09-12: an activity-bar icon swap was
+  gating the full matrix for a change that cannot touch the compiler, the unit
+  tier, or the VSIX. The bias stays deliberate for everything else:
+  misclassifying a code change as safe skips the gate, so ambiguous cases still
+  resolve to "code".
 - **`deps`** — can change the dependency tree or the supply-chain gate itself:
   `package.json`, `package-lock.json`, `.npmrc`, `scripts/check-audit.mjs`,
   `scripts/advisory-allowlist.json`, or anything under `.github/workflows/`.

@@ -1,0 +1,66 @@
+{
+  "count": 4,
+  "items": [
+    {
+      "name": "Samples",
+      "scope": "global",
+      "hidden": false,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers/cas-shared-default/caslibs",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Samples",
+          "type": "application/vnd.sas.cas.caslib"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Samples"
+        },
+        {
+          "method": "GET",
+          "rel": "tables",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Samples/tables",
+          "type": "application/vnd.sas.collection"
+        }
+      ]
+    },
+    {
+      "name": "SystemData",
+      "scope": "global",
+      "hidden": false,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers/cas-shared-default/caslibs",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/SystemData",
+          "type": "application/vnd.sas.cas.caslib"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/SystemData"
+        },
+        {
+          "method": "GET",
+          "rel": "tables",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/SystemData/tables",
+          "type": "application/vnd.sas.collection"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

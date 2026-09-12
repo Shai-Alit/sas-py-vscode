@@ -13,6 +13,7 @@ import { SessionStore } from "./auth/sessionStore";
 import { createNodeHttpTransport } from "./auth/transport";
 import { registerAuthUriHandler } from "./auth/uriHandler";
 import { SessionBindingStore } from "./compute/bindingStore";
+import { registerCasExplorer } from "./cas/casExplorer";
 import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerContentExplorer } from "./content/contentExplorer";
@@ -225,6 +226,22 @@ export function activate(context: vscode.ExtensionContext): void {
   // registered from here with the same `transport` (the 5d-i CA agent) and the
   // auth events it refreshes on, not threaded through `sessions`.
   registerContentExplorer(
+    context,
+    profiles,
+    output,
+    {
+      onDidChangeSessions: auth.onDidChangeSessions,
+      onDidSignOut: auth.onDidSignOut,
+    },
+    { transport },
+  );
+
+  // Phase 8a: the read-only CAS browsing tree, a third view inside the same
+  // activity-bar container. Like SAS Content and unlike SAS Libraries, this
+  // needs no compute session and opens no CAS session of its own (Finding
+  // 8.2, ADR-0033) — an endpoint and a silent token are enough — so it is
+  // registered the same way SAS Content is, with the same `transport`.
+  registerCasExplorer(
     context,
     profiles,
     output,

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until `1.0.0`, minor versions may contain breaking changes; they will always be
 called out under **Changed** with a migration note.
 
+## [Unreleased]
+
+### Added
+
+- **A CAS explorer.** The activity bar now also shows a **CAS** view of a
+  deployment's CAS servers, their global-scope caslibs, and each caslib's
+  tables — no upstream equivalent, since the SAS VS Code extension calls no
+  CAS APIs at all. Expanding a table loads it on demand
+  (`PUT .../state?value=loaded`) and shows its columns. Needs no compute
+  session and opens no CAS session of its own — an endpoint and a token are
+  enough ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)).
+
 ## [0.1.2] - 2026-09-11
 
 ### Added

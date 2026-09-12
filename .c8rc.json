@@ -11,6 +11,8 @@
     "src/auth/uriHandler.ts",
     "src/backend/backend.ts",
     "src/backend/messages.ts",
+    "src/cas/casExplorer.ts",
+    "src/cas/casTree.ts",
     "src/compute/commands.ts",
     "src/compute/messages.ts",
     "src/compute/sessionManager.ts",
@@ -48,8 +50,8 @@
   "reporter": ["text", "lcov"],
   "reports-dir": "coverage",
   "check-coverage": true,
-  "lines": 94,
-  "statements": 94,
-  "functions": 94,
-  "branches": 95
+  "lines": 95.8,
+  "statements": 95.8,
+  "functions": 95.6,
+  "branches": 95.4
 }

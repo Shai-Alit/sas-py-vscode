@@ -1,0 +1,27 @@
+{
+  "count": 2,
+  "items": [
+    {
+      "version": 3,
+      "name": "CODE",
+      "type": "varchar",
+      "formattedLength": 8,
+      "numberFormatLength": 0,
+      "numberFormatDecimals": 0,
+      "indexed": false,
+      "index": 1
+    },
+    {
+      "version": 3,
+      "name": "VALUE",
+      "type": "double",
+      "rawLength": 8,
+      "formattedLength": 12,
+      "numberFormatLength": 0,
+      "numberFormatDecimals": 0,
+      "indexed": false,
+      "index": 2
+    }
+  ],
+  "links": []
+}

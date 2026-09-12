@@ -21,7 +21,8 @@ Run it before a release ([release checklist](../../release-checklist.md) D6), an
 | [`phase-5.md`](phase-5.md) | Hardening: user-provided CA, traceback dedup, Problems-entry lifecycle — phases 5d-i/5d-iii/5d-iv |
 | [`phase-6.md`](phase-6.md) | SAS Content: browsing, open/save, mutations, favourites, Recycle Bin — phases 6a–6e |
 | [`phase-7.md`](phase-7.md) | SAS Libraries, data viewer, sort/filter, table properties, Python↔library data exchange — phases 7a–7d |
-| `phase-8.md` … `phase-12.md` | Stubs — no manual tests yet, these phases have not started |
+| [`phase-8.md`](phase-8.md) | CAS browsing — phase 8a |
+| `phase-9.md` … `phase-12.md` | Stubs — no manual tests yet, these phases have not started |
 | [`misc.md`](misc.md) | Trust/enablement and regression spot-checks — phase-agnostic, run every pass |
 
 ## How to use this

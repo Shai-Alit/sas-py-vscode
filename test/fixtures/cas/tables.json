@@ -1,0 +1,90 @@
+{
+  "count": 2,
+  "items": [
+    {
+      "name": "REFERENCE_DATA",
+      "state": "unloaded",
+      "rowCount": 0,
+      "columnCount": 0,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/REFERENCE_DATA",
+          "type": "application/vnd.sas.cas.table"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/REFERENCE_DATA"
+        },
+        {
+          "method": "PUT",
+          "rel": "updateState",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/REFERENCE_DATA/state",
+          "responseType": "application/json,text/plain"
+        },
+        {
+          "method": "GET",
+          "rel": "columns",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/REFERENCE_DATA/columns",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "dataTable",
+          "href": "/dataTables/dataSources/cas~fs~cas-shared-default~fs~Public/tables/REFERENCE_DATA"
+        }
+      ]
+    },
+    {
+      "name": "LOOKUP_TABLE",
+      "state": "loaded",
+      "rowCount": 12,
+      "columnCount": 2,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/LOOKUP_TABLE",
+          "type": "application/vnd.sas.cas.table"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/LOOKUP_TABLE"
+        },
+        {
+          "method": "PUT",
+          "rel": "updateState",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/LOOKUP_TABLE/state",
+          "responseType": "application/json,text/plain"
+        },
+        {
+          "method": "GET",
+          "rel": "columns",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables/LOOKUP_TABLE/columns",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "dataTable",
+          "href": "/dataTables/dataSources/cas~fs~cas-shared-default~fs~Public/tables/LOOKUP_TABLE"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

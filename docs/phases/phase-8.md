@@ -176,11 +176,15 @@ either:**
   purpose-built variant (a token has different lifetime and sensitivity
   characteristics than a Python source file; whether that difference
   justifies its own code path is 8b's call).
-- **Whether the `links.ts`/`client.ts` promotion Phase 7 flagged happens here,
-  in 7a, or not at all** — this phase adds a second, independent caller with
-  no session concept in it at all, which is a stronger argument for promoting
-  now than Phase 7's own single-caller framing had. Not decided this session;
-  flagged the same way Phase 7 flagged it for whichever of 7a/8a lands first.
+- ~~Whether the `links.ts`/`client.ts` promotion Phase 7 flagged happens here,
+  in 7a, or not at all~~ — **settled 2026-09-11, at 8a's own start
+  ([ADR-0033](../adr/0033-cas-adapter-shape.md)): already done, in 6a-i.** The
+  promotion this bullet asked about happened before either 7a or 8a existed
+  (ADR-0025); `src/cas/` simply becomes the third caller of `src/wire/`,
+  the same way `src/data/` was already the second. No further promotion is
+  needed — `CasAdapter` is built directly on `src/wire/` and its own small
+  `CasClient`, mirroring `ContentAdapter`'s shape rather than
+  `LibraryAdapter`'s (Finding 8.2/8.7: no session for global-scope browsing).
 - **8c's shape depends entirely on 7b's outcome.** Phase 7's own "genuinely
   undecided" note (React + ag-grid vs. hand-rolled grid) has not been settled
   as of this scoping session — 8c ("CAS tables in the data viewer") is a
@@ -228,13 +232,26 @@ everywhere, the same recommendation every phase before this one has made.
   of whatever grid/paging/column-metadata shape 7b builds, pointed at
   `casManagement`'s `tables`/`columns` rather than `DataAccessApi`'s.
 
-*Exit:* a user can browse CAS servers, global caslibs, and tables from a tree
-view without opening any CAS session themselves; get a working, authenticated
-`swat.CAS()` connection inside a Python cell by following one documented
-step, with no credential of their own to acquire or paste in; and open a CAS
-table in the same paged, sortable, filterable grid Phase 7 built for Compute
-session tables — a capability upstream's SAS extension does not offer at
-all, which is this phase's whole reason for existing.
+*Exit:* a user can browse CAS servers, global caslibs, tables, and — once a
+table is loaded — its columns, from a tree view without opening any CAS
+session themselves; get a working, authenticated `swat.CAS()` connection
+inside a Python cell by following one documented step, with no credential of
+their own to acquire or paste in; and open a CAS table in the same paged,
+sortable, filterable grid Phase 7 built for Compute session tables — a
+capability upstream's SAS extension does not offer at all, which is this
+phase's whole reason for existing.
+
+> **Scope note, settled 2026-09-11 at 8a's own start.** This section's own
+> wording disagreed with itself on how deep 8a's tree goes: the 8a slice
+> bullet above already said "servers, global caslibs, tables, columns," but
+> this Exit paragraph — until this note — stopped at tables, mirroring 7a's
+> own scope (7a's tree stops at a table leaf; columns were 7b/7c's problem,
+> reached only once a table is opened in the data viewer). Asked directly:
+> **8a includes columns**, and therefore the JIT-load path Finding 8.3
+> flagged (`PUT .../tables/{name}/state?value=loaded`) is 8a's own problem,
+> not deferred to 8c. See Finding 8.8 for the confirmed load-toggle shape and
+> [ADR-0033](../adr/0033-cas-adapter-shape.md) for how `CasAdapter.getColumns`
+> uses it.
 
 ---
 
@@ -257,25 +274,77 @@ session helper; 8c blocked on 7b regardless of 8a/8b's own timing). Nothing
 here is a hard technical barrier — this is a recommendation, not a dependency
 lock._
 
-☐ **8a — CAS browsing (servers, global caslibs, tables, columns).**
+☑ **8a — CAS browsing (servers, global caslibs, tables, columns).** Done.
 
-- ☐ Decide the `links.ts`/`client.ts` promotion question (Plan, above) —
-  promote to a session-agnostic shared module now that two independent
-  features want it, or import the Compute-named modules directly under
-  `src/cas/` and defer the promotion again.
+- ☑ Decide the `links.ts`/`client.ts` promotion question (Plan, above) —
+  **already done, in 6a-i** (ADR-0025); `src/cas/` is the third caller, no
+  further promotion needed. [ADR-0033](../adr/0033-cas-adapter-shape.md).
 - ☐ A second-cadence/second-deployment probe of `GET /casManagement/servers`,
   `.../caslibs`, `.../caslibs/{name}/tables`, `.../tables/{name}/columns` —
-  Findings 8.1–8.4 confirm the shape on one Viya 4 deployment (`verde`).
+  Findings 8.1–8.4 confirm the shape on one Viya 4 deployment (`verde`);
+  Finding 8.7 re-confirmed the identical shape on the same deployment
+  2026-09-11. **Still not a genuine second cadence** — `innov`'s stored
+  credential is stale, left open the same way every prior phase's
+  single-cadence caveat has been.
 - ☐ Confirm the no-`sessionId`-needed reading (Finding 8.2) holds for a
   *personal* caslib too, or confirm it does not and scope that out
-  explicitly rather than by silent omission.
-- ☐ Design the tree/view-container coordination with whichever of 6a/7a has
-  landed by the time 8a starts — add to the existing `viewsContainers` entry,
-  per the same convention Phase 7 already committed to for its own tree.
-- ☐ Build the caslib/table/column types and tree provider under `src/cas/`
-  (name TBD to this project's own conventions).
-- ☐ `test/helpers/recorded-cas-management.ts` + `test/fixtures/cas/`, built
-  from Findings 8.1–8.4's scrubbed shapes.
+  explicitly rather than by silent omission. **Still open** — Finding 8.7
+  found every one of the 68 caslibs on `verde` is `scope: "global"`, so there
+  is no personal caslib on this deployment to test against.
+- ☐ Confirm Finding 8.9's `sortBy=name` fix — added once, to `collectPages`'s
+  seed request only, trusting the server's own `next` link to carry it
+  forward — actually needs that trust honoured for the servers, caslibs, and
+  columns collections too, not only the caslib/tables case that reproduced
+  the crash. Flagged by the second adversarial review pass as a disclosed,
+  unverified bet: if a real deployment's `next` link ever drops `sortBy` for
+  one of those three, the reshuffle-and-duplicate bug returns silently there.
+- ☑ Design the tree/view-container coordination — a third view,
+  `pythonOnViya.casExplorer`, added to the existing `pythonOnViya`
+  `viewsContainers` entry alongside SAS Content and SAS Libraries.
+- ☑ Build the caslib/table/column types and tree provider under `src/cas/`
+  — `types.ts`/`problems.ts`/`client.ts`/`casSession.ts`/`adapter.ts`/
+  `presentation.ts` (`vscode`-free); `casTree.ts`/`casExplorer.ts` (thin
+  `vscode` shells), mirroring `src/content/`'s file layout and naming.
+- ☑ `test/helpers/recorded-cas.ts` + `test/fixtures/cas/`, built from
+  Findings 8.1–8.3/8.7/8.8's scrubbed shapes (synthetic table/caslib names
+  beyond the four generic caslibs, per this project's own convention).
+
+`npm run verify` green (1668 unit; coverage 95.82/95.46/95.66/95.82
+statements/branches/functions/lines — `.c8rc.json`'s ratchet raised from
+94/95/94/94 in this same slice), 382 integration passing,
+`npm run check:docs` green (the generated reference picked up the new
+`pythonOnViya.refreshCasExplorer` command and `CAS` view).
+
+**Pre-PR fix, found by Sean's own manual test pass before 8a's PR was ever
+opened** (`docs/dev/manual-tests/phase-8.md` items 8.4/8.7, 2026-09-12):
+expanding a caslib with several tables threw VS Code's own "Element with id
+… is already registered" repeatedly and the tree ended up showing no tables
+at all — reproduced against `verde`, root-caused, and fixed live rather than
+guessed at (Finding 8.9, below). `CasAdapter.collectPages` now seeds every
+paginated request with `sortBy=name`; the fix is one line, in the one shared
+helper `getServers`/`getCaslibs`/`getTables`/`getColumns` all already funnel
+through. `npm run verify` green after the fix (1669 unit — the one new test
+citing Finding 8.9 directly — coverage unchanged at
+95.82/95.46/95.66/95.82), 382 integration passing (`ELECTRON_RUN_AS_NODE`
+env-strip workaround needed to run integration from this shell, same
+long-standing environment quirk, not a regression).
+
+**Adversarial review, run twice before this PR opens (2026-09-12, Sean) —
+no blocking findings from either pass.** The **first pass** reviewed 8a as
+originally built, before the Finding 8.9 fix existed, and is only being
+recorded here after the fact since it went undocumented at the time: no
+blocking findings; one near-miss raised for a human glance rather than a
+defect — `getColumns`'s JIT-load `PUT` means expanding a table node
+triggers a mutating call as a side effect of what reads as a read-only
+browse action, which is exactly ADR-0033/Finding 8.8's own documented
+design, reconfirmed intentional rather than an oversight. The **second
+pass** reviewed the full branch diff against `main` — the 8a slice, the
+Finding 8.9 fix, and an unrelated CI-classifier/icon change from a
+different session on this same branch — and likewise found nothing
+blocking: it raised the sortBy-forwarding caveat above (now tracked as its
+own punch-list item) and a process question, left for Sean to decide rather
+than settled here, about whether bundling the CAS work with the unrelated
+CI/icon change into one PR is intentional.
 
 ☐ **8b — Authenticated CAS session helper.**
 
@@ -426,13 +495,139 @@ echoed `submit` path — write the token to a file, have the user's Python read
 the file, never a literal and never an environment variable set via a logged
 statement.
 
-**Not probed this session, left open:** a second Viya 4 cadence/deployment
-(the dialect-risk item above); whether Finding 8.2's no-`sessionId`-required
-reading holds for a session-scoped (personal) caslib, or whether that case
-genuinely requires the CAS-session lifecycle the Plan section flagged as
-undecided; the `PUT .../tables/{name}/state?value=loaded` JIT-load call
-itself (a mutating probe, deliberately out of scope for this pass, though
-Finding 8.3 already establishes why 8a needs it); and whether a *second*
-concurrent `swat.CAS()` connection against the same session's token behaves
-any differently from the single connections Finding 8.5 tested. All are
-8a/8b implementation-time probes, not settled here.
+**Finding 8.7 — re-confirmed live at 8a's own start (2026-09-11, `verde`),
+read-only: Findings 8.1–8.3 hold exactly, on the same deployment and
+cadence.** `GET /casManagement/` still returns the identical apiMeta shape
+(bare vendor media types; the root's own `getServers` relation carries a
+real, root-relative `href` — `/casManagement/servers` — not merely a
+documentation-only operation-catalog entry, confirmed by inspecting the link
+directly rather than assuming it). `GET .../servers` still reports exactly
+one server, `cas-shared-default`, `restPort 8777`/`https`, with the same link
+set Finding 8.1 recorded. `GET .../caslibs?limit=100` still needs no
+`sessionId` — `count: 68`, and this pass additionally checked every item's
+`scope`/`hidden` fields directly: **all 68 report `scope: "global"`,
+`hidden: false`** — no session-scoped or hidden caslib exists on this
+deployment to observe, which is consistent with (not new evidence against)
+the Plan section's decision to defer session-scoped caslib support to a
+later slice. `GET .../caslibs/Public/tables?limit=10` still needs no
+`sessionId` and still reports `count: 56`, every item `state: "unloaded"`,
+`rowCount`/`columnCount` `0`. **Not a second cadence**: this is the same
+`verde` deployment Findings 8.1–8.6 probed, re-checked because it is what was
+reachable this session — `innov`'s stored credential is stale (per the
+developer), not a network failure this time, so the genuine second-cadence
+check the Runbook asks for is still open.
+
+**Finding 8.8 — decisive, approved mutating probe: the JIT-load toggle is a
+bodyless `PUT` with a query parameter, and its response is plain text, not
+JSON.** `docs/phases/phase-8.md`'s own Plan section originally scoped 8a to
+stop at tables, deferring the JIT-load question Finding 8.3 raised; 8a was
+then scoped to include columns instead (see the Exit-criteria scope note
+above), which makes this probe 8a's own problem. Approved by the developer,
+scoped to `Formats.USERFORMATS3` (a generic-caslib system table, chosen
+specifically so nothing customer-identifying was touched) and run
+read-then-write-then-restore, mirroring Finding 8.5/8.6's own
+throwaway-and-clean-up discipline:
+
+1. **Before:** `GET .../caslibs/Formats/tables/USERFORMATS3` — `state:
+   "unloaded"`, `rowCount: 0`, `columnCount: 0`.
+2. **`PUT .../tables/USERFORMATS3/state?value=loaded`** — `200`, body
+   `"loaded"`, `Content-Type: text/plain; charset=utf-8`. **No request body
+   at all** — the documented `?value=loaded` query parameter is the whole
+   mechanism, confirming the CAS Management API's own documented shape
+   directly rather than assuming it. The response is plain text even though
+   the `updateState` link's own `responseType` advertises
+   `application/json,text/plain` (a real documentation/link-metadata-vs-observed
+   gap, not a defect: a client that tried to parse this as JSON would fail on
+   every call).
+3. **After load:** the same table's `columns` collection, previously a `404`
+   (Finding 8.3), now returns `200` — `count: 2`, real column metadata
+   (`{name, type, formattedLength, ...}`, a narrower shape than
+   `DataAccessApi`'s own `Column` — no `label`/`format`/`informat`). The
+   table's own representation now reports `state: "loaded"`, `rowCount: 1`,
+   `columnCount: 2`. **The `columns` link itself is unchanged by loading** —
+   the same href that `404`'d before the load succeeds after it, so a client
+   does not need to re-fetch the table's own representation after loading,
+   only retry the identical `columns` request.
+4. **Restore:** `PUT .../tables/USERFORMATS3/state?value=unloaded` — `200`,
+   body `"unloaded"`. A read-back confirmed the table returned to `state:
+   "unloaded"`, `rowCount: 0`, `columnCount: 0` — the deployment left exactly
+   as found, the same discipline Finding 8.5/8.6's throwaway session
+   followed.
+
+Separately, this probe also confirmed a real CAS column's field shape
+against an already-loaded system table (`SystemData.SASVIYATYPES`, read-only,
+no mutation needed since it was already loaded): `{version, name, type,
+formattedLength, numberFormatLength, numberFormatDecimals, indexed, index}`
+— and, on the table loaded by this probe, one column additionally carried
+`rawLength`. `src/cas/types.ts`'s `CasColumnItem` reads only `name`/`type`/
+`formattedLength`, per `docs/adr/0033-cas-adapter-shape.md`'s no-speculative-
+fields reasoning.
+
+**Finding 8.9 — decisive, read-only: `casManagement`'s collection listings
+are not stably ordered across identical requests, and this is the direct
+cause of a live crash Sean's manual test pass found before 8a's PR was ever
+opened.** `docs/dev/manual-tests/phase-8.md` items 8.4/8.7 (2026-09-12)
+reported expanding a caslib with several unloaded tables (`Public`, 56
+tables) threw VS Code's own "Element with id
+`cas:cas-shared-default.Public.NREL_1000X` is already registered" repeatedly,
+one per table name, and the tree ended up empty; refresh after manually
+loading a table in Verde did not pick it up either. Every earlier probe of
+this collection (8.2, 8.7) added an explicit `?limit=100`-or-larger query,
+which fetches everything in one page and never exercises real multi-page
+`next`-following — the exact path `CasAdapter.getTables`'s shared
+`collectPages` helper uses in production with no `limit` at all, since it
+follows a caslib's own `tables` link verbatim. This session finally
+exercised that real path: **`GET .../caslibs/Public/tables` with no query
+parameters returned `start: 0, limit: 10`** (`count: 56`, so 6 pages), and
+its own `next` link (`?start=10&limit=10`) is well-formed and does
+terminate correctly — page 6 correctly carries no `next`. But following it
+to completion produced only **40 unique table names across the 56 items
+returned** — the same name (`CARS`, `SAS_MODEL_TABLE`, `RFCUSTOMER`, and 10
+others) appeared on 2–3 different pages, byte-for-byte identical down to
+the `self`/`delete`/`columns` link hrefs, while an unknown number of other
+tables were silently never returned at all. **Fetching the identical
+`?start=20&limit=10` window three times in a row, seconds apart, with no
+write to the deployment in between, returned three completely different
+sets of 10 tables each time** — conclusive: the collection has no stable
+default order at all, so offset-based pagination against it is unsound by
+construction, not merely fragile. This is exactly the shape that produces
+the observed crash: `casTree.ts`'s node id is built from
+`serverName.caslibName.tableName` alone, so the same table name recurring
+across two pages of one `getChildren()` result is a duplicate id, which VS
+Code's `TreeDataProvider` rejects outright — and every table the reshuffle
+skips instead of duplicating is why the tree can end up showing fewer
+tables than exist, or none. **Documented:** the CAS Management API's public
+reference does not call out a default sort order for the `tables`
+collection one way or the other. **Observed (Viya 4, 2026-09-12,
+`verde`):** none — request order is apparently unspecified and not stable
+across requests. **The fix, also confirmed live:** adding `sortBy=name` to
+the request made the same repeated `?start=20&limit=10&sortBy=name` fetch
+return byte-for-byte identical results three times running, and the
+collection's own `next` link (confirmed by direct inspection) carries
+`sortBy=name` forward automatically once the seed request has it, so only
+the first request of a `collectPages` walk needs it. `sortBy=name` was also
+tried, read-only, against the servers collection, the caslibs collection,
+and a loaded table's columns collection — all three accepted it with `200`
+and correctly name-sorted output, so `CasAdapter.collectPages` now adds it
+once, for every collection it reads, rather than only for the one collection
+this session happened to reproduce the bug against. **Not independently
+reproduced for caslibs/columns**: a caslib-collection instability check
+(two identical `?start=20&limit=10` fetches) came back stable both times on
+this deployment, and the one loaded table probed here had only 8 columns —
+below the default page size, so multi-page column pagination was never
+exercised. The fix is applied to all four collections on the strength of
+"every one of them accepted the same parameter cleanly, and the failure
+mode costs nothing to guard against everywhere," not because instability
+was independently confirmed on all four.
+
+**Not probed this session, left open:** a genuine second Viya 4
+cadence/deployment (the dialect-risk item above — `innov`'s stored
+credential is stale, not attempted this session); whether Finding 8.2's
+no-`sessionId`-required reading holds for a session-scoped (personal)
+caslib, or whether that case genuinely requires the CAS-session lifecycle
+the Plan section flagged as undecided (no session-scoped caslib exists on
+`verde` to test against — Finding 8.7); and whether a *second* concurrent
+`swat.CAS()` connection against the same session's token behaves any
+differently from the single connections Finding 8.5 tested. All remain
+8b implementation-time probes (or a later slice's, for the session-scoped
+caslib question), not settled here.

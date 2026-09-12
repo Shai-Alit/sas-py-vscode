@@ -30,9 +30,11 @@ for one.
 User-facing documentation (install, connect, run, troubleshoot) lives at the top
 level of the published site and is authored alongside the slice that ships the
 feature it describes. So far that is
+[Getting started](getting-started.md), [FAQ](faq.md),
 [Connection profiles](connection-profiles.md), [Signing in](signing-in.md),
 [Connecting to Viya](connecting.md), [Running Python](running-python.md),
 [Browsing SAS Content](browsing-sas-content.md),
+[Browsing SAS libraries](browsing-sas-libraries.md),
 [Python and SAS libraries](data-access.md), [Diagnostics](diagnostics.md),
 [The Python environment](python-environment.md) and
 [Troubleshooting](troubleshooting.md). A new top-level page has to be

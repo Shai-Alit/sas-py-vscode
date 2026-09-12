@@ -50,7 +50,7 @@ export default defineConfig({
 
   themeConfig: {
     nav: [
-      { text: "Guide", link: "/connection-profiles" },
+      { text: "Guide", link: "/getting-started" },
       { text: "Reference", link: "/reference/settings" },
       { text: "Contributing", link: "/dev/" },
       {
@@ -67,11 +67,14 @@ export default defineConfig({
         text: "Using the extension",
         collapsed: false,
         items: [
+          { text: "Getting started", link: "/getting-started" },
+          { text: "FAQ", link: "/faq" },
           { text: "Connection profiles", link: "/connection-profiles" },
           { text: "Signing in", link: "/signing-in" },
           { text: "Connecting to Viya", link: "/connecting" },
           { text: "Running Python", link: "/running-python" },
           { text: "Browsing SAS Content", link: "/browsing-sas-content" },
+          { text: "Browsing SAS libraries", link: "/browsing-sas-libraries" },
           { text: "Python and SAS libraries", link: "/data-access" },
           { text: "Diagnostics", link: "/diagnostics" },
           { text: "The Python environment", link: "/python-environment" },

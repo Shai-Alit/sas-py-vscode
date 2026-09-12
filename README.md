@@ -1,5 +1,13 @@
 # sas-py-vscode
 
+[![CI](https://github.com/Shai-Alit/sas-py-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/Shai-Alit/sas-py-vscode/actions/workflows/ci.yml)
+[![Open VSX Version](https://img.shields.io/open-vsx/v/shai-alit/python-on-viya)](https://open-vsx.org/extension/shai-alit/python-on-viya)
+[![License](https://img.shields.io/github/license/Shai-Alit/sas-py-vscode)](LICENSE)
+
+Get it from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=shai-alit.python-on-viya)
+or [Open VSX](https://open-vsx.org/extension/shai-alit/python-on-viya).
+
 Run Python on SAS Viya from Visual Studio Code — using the Python packages your
 Viya administrator installed and manages, without installing Python locally.
 
@@ -31,6 +39,15 @@ Because the interesting data and the interesting packages are on the server. A
 local interpreter gives you neither, and a notebook server sitting beside Viya
 gives you a second environment to keep in sync. Running in Viya's own compute
 session means the code you tested is the code that will run.
+
+## Getting started
+
+Install from the
+[Visual Studio Marketplace](https://marketplace.visualstudio.com/items?itemName=shai-alit.python-on-viya)
+or [Open VSX](https://open-vsx.org/extension/shai-alit/python-on-viya), add a
+connection profile pointing at your Viya deployment, sign in, and run a `.py`
+file. The full walkthrough — including what to do if your Viya release
+predates 2022.11 — is [Getting started](docs/getting-started.md).
 
 ## Design constraints
 
@@ -69,6 +86,9 @@ there is nothing to turn off.
 
 ## Documentation
 
+- [Getting started](docs/getting-started.md) — install, connect, and run your
+  first Python file
+- [FAQ](docs/faq.md) — quick answers to what comes up before an actual error
 - [STATUS.md](STATUS.md) — current phase, and which phase file to open
 - [PRODUCTION_PLAN.md](PRODUCTION_PLAN.md) — cross-cutting architecture, test strategy, quality gates, risks, open decisions
 - [RUNBOOK.md](RUNBOOK.md) — repo setup, the per-slice loop, cross-cutting reminders

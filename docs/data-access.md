@@ -2,7 +2,12 @@
 
 Your Python code, running on the same Viya session the **SAS Libraries** view
 browses, can read and write that session's own SAS library data directly — no
-local database driver, and no second credential to manage. This works for
+local database driver, and no second credential to manage. This page is about
+that Python-side bridge; for the tree itself — opening a table in a grid,
+sorting, filtering, table properties, exporting to CSV — see [Browsing SAS
+libraries](browsing-sas-libraries.md).
+
+This works for
 `WORK`, `SASHELP`, and any site-registered library, including one connected to
 an external database through SAS/ACCESS (MySQL, Oracle, and so on): from
 Python's point of view they are all just a libref.
@@ -62,6 +67,10 @@ to bring it in:
 Either way, the assigned variable name is derived from the table's own name
 (`CLASS` → `class_df`), with a numeric suffix if that name is already used
 elsewhere in the file.
+
+Clicking rather than dragging a table opens it in a grid instead — sorting,
+filtering, table properties, and CSV export are all covered in [Browsing SAS
+libraries](browsing-sas-libraries.md).
 
 ## Never write a credential as a literal
 

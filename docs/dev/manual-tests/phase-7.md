@@ -384,7 +384,7 @@ below, and `phase-7.md`'s 7d Runbook entry for the root cause.
   pressing `Tab` updates *both* the `create view work.…` line and the
   `SAS.sd2df("work....")` line together, then lands the cursor on the `where`
   clause's own `1=1` placeholder.
-- [ ] **7.43** **Dropping the same table twice de-duplicates the variable name** —
+- [x] **7.43** **Dropping the same table twice de-duplicates the variable name** —
   with `class_df = SAS.sd2df(...)` already in the file from an earlier row,
   drop **SASHELP.CLASS** again and choose **Read directly**.
   **Expect:** the new line assigns `class_df2`, not `class_df` again.
@@ -402,24 +402,24 @@ unrun.
 **Pre-work:** the same live connection as the SAS Libraries section above,
 with **SASHELP.CLASS** visible in the tree.
 
-- [ ] **7.44** **Export a table to CSV** — right-click **SASHELP.CLASS** and
+- [x] **7.44** **Export a table to CSV** — right-click **SASHELP.CLASS** and
   choose **Export to CSV…**, pick a destination in the save dialog.
   **Expect:** a progress notification while it writes, then the destination
   file exists with a header row (`Name,Sex,Age,Height,Weight`) and 19 data
   rows matching the grid.
-- [ ] **7.45** **Cancelling an export leaves no partial file at the
+- [x] **7.45** **Cancelling an export leaves no partial file at the
   destination** — start the export above again, to a *new* destination, and
   click **Cancel** on the progress notification partway through.
   **Expect:** the destination path does not exist afterward — no
   zero-byte or truncated file left behind (the write goes to a temporary
   file, renamed onto the destination only on full success).
-- [ ] **7.46** **An export that fails or is cancelled never touches an
+- [x] **7.46** **An export that fails or is cancelled never touches an
   existing file at the destination** — export once successfully to a path,
   then export again to that *same* path and cancel partway through.
   **Expect:** the original file at that path is byte-for-byte unchanged
   after the cancelled second attempt — reopen it and confirm the original 19
   rows are still there, not truncated or replaced.
-- [ ] **7.47** **A destination with too little free disk space is refused
+- [x] **7.47** **A destination with too little free disk space is refused
   before anything is written** — export to a destination on a volume you can
   arrange to have little free space on (or note this as not independently
   reachable if no such volume is available, per this section's own

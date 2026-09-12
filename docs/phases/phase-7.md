@@ -1930,6 +1930,18 @@ formally tracking them is that housekeeping's job, not this branch's.
   `npm run verify`/`test:integration` re-run green after folding both fixes
   in (1551 unit unchanged; 346 integration passing, one further net new);
   `check:docs`/lint/typecheck all clean.
+
+  **Live-verified 2026-09-11 (Sean, real deployment):** every row of this
+  project's manual-test tracking for CSV export
+  (`docs/dev/manual-tests/phase-7.md`, items 7.44–7.47) passed — exporting
+  produces a correct CSV, cancelling an export leaves no partial file at the
+  destination, a cancelled re-export onto an existing destination never
+  touches it, and a destination with too little free space is refused
+  before any write starts. This confirms the atomic temp-then-rename design
+  and the pre-flight `ensureDiskSpace` check both hold against a real
+  deployment, not just the mocked HTTP-boundary tests above — no manual-test
+  section existed for this slice at all before the Phase 7→8 housekeeping
+  checkpoint added one.
 - ~~☐ Add `font-src` to the data viewer panel's CSP~~ — **fixed in 7b
   instead of deferred here**, 2026-09-10 (see 7b's Runbook entry above for
   the full account). Nothing left for 7c to pick up on this; the same
@@ -2176,7 +2188,11 @@ own call and differs by drop target, so a reader that works either way cannot
 be broken by that choice changing. Six new unit tests, the first of them a
 round-trip regression pin that stringifies a real `TableItem[]` and asserts it
 reads back. **Re-tested live by Sean the same day: the drag, both snippet
-choices, and the inserted code all work** (`manual-test-pass.md` §17).
+choices, and the inserted code all work** (`docs/dev/manual-tests/phase-7.md`,
+items 7.37–7.42). **Live-verified 2026-09-11, at the Phase 7→8 housekeeping
+checkpoint:** the one row that pass hadn't reached yet — dropping the same
+table a second time assigns `class_df2`, not `class_df` again
+(`docs/dev/manual-tests/phase-7.md` item 7.43) — now also confirmed passing.
 
 **This is the one respect in which a tree→editor drop differs from
 `contentDragAndDrop.ts`'s tree→tree drop**, and the difference is worth

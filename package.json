@@ -2,7 +2,7 @@
   "name": "python-on-viya",
   "displayName": "Python on Viya",
   "description": "Write Python locally and run it on SAS Viya, using the Python environment managed inside Viya.",
-  "version": "0.1.2-dev",
+  "version": "0.1.2",
   "publisher": "shai-alit",
   "license": "Apache-2.0",
   "author": "Sean Ford",
@@ -18,7 +18,7 @@
   "homepage": "https://github.com/Shai-Alit/sas-py-vscode#readme",
   "icon": "media/icon.png",
   "galleryBanner": {
-    "color": "#0766D1",
+    "color": "#004E8A",
     "theme": "dark"
   },
   "pricing": "Free",

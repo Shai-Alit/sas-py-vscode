@@ -10,6 +10,7 @@ import {
   isCasTable,
   readCaslibItem,
   readCasColumnItem,
+  readCasConnectionInfo,
   readCasServerItem,
   readCasTableItem,
   type CasServerItem,
@@ -218,6 +219,35 @@ describe("cas/types", () => {
       assert.ok(isCasColumn(column));
       assert.ok(
         !isCasColumn(server) && !isCasColumn(caslib) && !isCasColumn(table),
+      );
+    });
+  });
+
+  describe("readCasConnectionInfo", () => {
+    it("reads host and port, Finding 8.10's flat, un-nested shape", () => {
+      const info = readCasConnectionInfo({
+        version: 2,
+        serverName: "cas-shared-default",
+        host: "sas-cas-server-default-client",
+        port: 5570,
+        links: [],
+      });
+      assert.deepEqual(info, {
+        host: "sas-cas-server-default-client",
+        port: 5570,
+      });
+    });
+
+    it("drops a body with no usable host", () => {
+      assert.equal(readCasConnectionInfo({ port: 5570 }), undefined);
+      assert.equal(readCasConnectionInfo({ host: "", port: 5570 }), undefined);
+      assert.equal(readCasConnectionInfo(null), undefined);
+    });
+
+    it("drops a body whose port is not a number", () => {
+      assert.equal(
+        readCasConnectionInfo({ host: "h", port: "5570" }),
+        undefined,
       );
     });
   });

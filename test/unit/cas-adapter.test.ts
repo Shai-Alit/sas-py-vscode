@@ -35,6 +35,7 @@ const CASLIBS_HREF = "/casManagement/servers/cas-shared-default/caslibs";
 const TABLES_HREF = `${CASLIBS_HREF}/Public/tables`;
 const COLUMNS_HREF = `${TABLES_HREF}/LOOKUP_TABLE/columns`;
 const LOAD_HREF = `${TABLES_HREF}/LOOKUP_TABLE/state`;
+const CONNECTION_HREF = "/casManagement/servers/cas-shared-default/connection";
 
 function adapterWith(routes: readonly RecordedCasRoute[]): {
   adapter: CasAdapter;
@@ -464,6 +465,73 @@ describe("cas/adapter CasAdapter", () => {
       const result = await adapter.getColumns(loadedTable());
       assert.ok(result.ok);
       assert.deepEqual(result.value, []);
+    });
+  });
+
+  describe("getConnection", () => {
+    function serverWithConnection(): CasServerItem {
+      return server({
+        links: [
+          {
+            rel: "connection",
+            href: CONNECTION_HREF,
+            method: "GET",
+            type: "application/vnd.sas.cas.server.connection",
+          },
+        ],
+      });
+    }
+
+    it("reads Finding 8.10's flat host/port shape, no collectPages involved", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: CONNECTION_HREF,
+          reply: casOk({
+            version: 2,
+            serverName: "cas-shared-default",
+            host: "sas-cas-server-default-client",
+            port: 5570,
+            links: [],
+          }),
+        },
+      ]);
+      const result = await adapter.getConnection(serverWithConnection());
+      assert.ok(result.ok);
+      assert.deepEqual(result.value, {
+        host: "sas-cas-server-default-client",
+        port: 5570,
+      });
+      // No sortBy=name here — a single resource, not a collectPages call.
+      assert.deepEqual(calls, [{ href: CONNECTION_HREF, method: "GET" }]);
+    });
+
+    it("fails link-missing when the server carries no connection relation", async () => {
+      const { adapter } = adapterWith([]);
+      const result = await adapter.getConnection(server({ links: [] }));
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "link-missing");
+      assert.equal(result.problem.rel, "connection");
+    });
+
+    it("propagates a transport failure", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: CONNECTION_HREF,
+          reply: casFail({ code: "cas-unreachable", detail: "ECONNRESET" }),
+        },
+      ]);
+      const result = await adapter.getConnection(serverWithConnection());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cas-unreachable");
+    });
+
+    it("reports a 2xx body with no usable host/port as malformed", async () => {
+      const { adapter } = adapterWith([
+        { when: CONNECTION_HREF, reply: casOk({ serverName: "x" }) },
+      ]);
+      const result = await adapter.getConnection(serverWithConnection());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "response-malformed");
     });
   });
 });

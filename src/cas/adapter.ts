@@ -52,15 +52,18 @@ import {
 import {
   CASLIBS_REL,
   COLUMNS_REL,
+  CONNECTION_REL,
   LOAD_REL,
   readCaslibItem,
   readCasColumnItem,
+  readCasConnectionInfo,
   readCasServerItem,
   readCasTableItem,
   SERVERS_REL,
   TABLES_REL,
   type CaslibItem,
   type CasColumnItem,
+  type CasConnectionInfo,
   type CasServerItem,
   type CasTableItem,
 } from "./types";
@@ -175,6 +178,33 @@ export class CasAdapter {
       if (column !== undefined) columns.push(column);
     }
     return { ok: true, value: columns };
+  }
+
+  /** `server`'s internal connection info (Finding 8.10) — 8b's own caller:
+   * the CAS-connect snippet command needs the internal host/port to build a
+   * `swat.CAS(host, port, password=<token>)` call. A single resource, not a
+   * collection — no `collectPages` involved. */
+  async getConnection(
+    server: CasServerItem,
+    signal?: AbortSignal,
+  ): Promise<CasResult<CasConnectionInfo>> {
+    const link = findLink(server.links, CONNECTION_REL);
+    if (link === undefined) {
+      return linkMissing(`CAS server "${server.name}"`, CONNECTION_REL);
+    }
+
+    const result = await this.client.send({ link, ...withSignal(signal) });
+    if (!result.ok) return result;
+
+    const info = readCasConnectionInfo(result.value.body);
+    if (info === undefined) {
+      return malformed(
+        result.value,
+        `CAS server "${server.name}"'s connection info`,
+        'and it carried no usable "host"/"port" fields',
+      );
+    }
+    return { ok: true, value: info };
   }
 
   /** The JIT-load toggle (Finding 8.8): `PUT` `table`'s own `updateState`

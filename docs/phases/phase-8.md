@@ -274,7 +274,9 @@ session helper; 8c blocked on 7b regardless of 8a/8b's own timing). Nothing
 here is a hard technical barrier — this is a recommendation, not a dependency
 lock._
 
-☑ **8a — CAS browsing (servers, global caslibs, tables, columns).** Done.
+☑ **8a — CAS browsing (servers, global caslibs, tables, columns).** Done —
+[PR #169](https://github.com/Shai-Alit/sas-py-vscode/pull/169), merged
+2026-09-13, squash `610d3f7`.
 
 - ☑ Decide the `links.ts`/`client.ts` promotion question (Plan, above) —
   **already done, in 6a-i** (ADR-0025); `src/cas/` is the third caller, no
@@ -329,6 +331,17 @@ citing Finding 8.9 directly — coverage unchanged at
 env-strip workaround needed to run integration from this shell, same
 long-standing environment quirk, not a regression).
 
+**Live retest, 2026-09-13 (Sean): the Finding 8.9 fix holds.** Manual-test
+items 8.4 and 8.7 (`docs/dev/manual-tests/phase-8.md`) — the two the
+pagination crash blocked on 2026-09-12 — now pass, and all ten 8a
+manual-test items pass. **[PR #169](https://github.com/Shai-Alit/sas-py-vscode/pull/169)
+merged 2026-09-13, squash `610d3f7`** — bundled the 8a slice itself, the
+8a manual-test items (8.1–8.10), the Finding 8.9 fix, and an unrelated
+CI-classifier/activity-bar-icon chore into one PR, merged directly by
+Sean. That resolves the second adversarial pass's open process question
+below (whether the CI/icon bundling was intentional) — it was kept as one
+PR.
+
 **Adversarial review, run twice before this PR opens (2026-09-12, Sean) —
 no blocking findings from either pass.** The **first pass** reviewed 8a as
 originally built, before the Finding 8.9 fix existed, and is only being
@@ -346,22 +359,171 @@ own punch-list item) and a process question, left for Sean to decide rather
 than settled here, about whether bundling the CAS work with the unrelated
 CI/icon change into one PR is intentional.
 
-☐ **8b — Authenticated CAS session helper.**
+☑ **8b — Authenticated CAS session helper.** Code-complete 2026-09-13; the
+slice's one non-negotiable manual check (8.14, below) passed 2026-09-13. One
+further manual-test finding (8.18, below) surfaced after that pass, was
+fixed in code the same day, and was live-reconfirmed 2026-09-13 (Sean) — the
+same discipline 8a's own Finding 8.9 fix followed. [PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170)
+open; see the PR-review-findings entry below for the one fix folded in
+before merge.
 
-- ☐ Design the token-delivery mechanism — extend
-  `src/compute/fileref.ts`'s upload path or build a narrower variant — and
-  confirm by hand that it does **not** appear in the job log the way
-  Finding 8.6's inline attempt did. This is the one check this slice cannot
-  skip before it is considered done.
-- ☐ Decide and document the token-lifetime story (Plan, above): manual
-  reconnect-on-auth-failure, or something more automatic.
-- ☐ Ship the documented snippet/helper a user's Python cell calls to get a
-  connected `swat.CAS()` object, covering both the binary and REST/HTTP forms
-  Finding 8.5 confirmed working (`swat`'s own "Binary vs. REST" documentation
-  page covers the tradeoff; this project doesn't need to re-explain it, only
-  point at it).
-- ☐ Unit-test the token-delivery path at the HTTP-mock boundary, the same as
-  every other upload-based mechanism this project ships.
+- ☑ Design the token-delivery mechanism — **reused `src/compute/fileref.ts`'s
+  upload path as-is** (Decision 1, 2026-09-13: no invariant change to
+  ADR-0014's "nothing ever deletes a fileref" — ADR-0033-style, recorded
+  inline here rather than as its own ADR since it changes no shipped
+  behaviour, only adds a new caller). `src/compute/casToken.ts`'s
+  `writeCasToken` creates a fresh `CTnnnnnn`-named fileref (mirroring
+  `procPython.ts`'s `PYnnnnnn`, random rather than sequential — a one-shot
+  command has no counter to seed) and writes the token's UTF-8 bytes via
+  `writeFilerefContent`, retrying under a new name on a collision.
+- ☑ **Confirm by hand that the delivered token does not appear in the job
+  log** the way Finding 8.6's inline attempt did — `docs/dev/manual-tests/phase-8.md`
+  item **8.14**. This is the one check this slice cannot skip before it is
+  considered done, and it needs a live deployment and a real run — not
+  something provable from a unit or integration test. **Passed, 2026-09-13
+  (Sean).**
+- ☑ Decide and document the token-lifetime story (Plan, above) — **Decision
+  2, 2026-09-13: documented prose, not shipped code.** No
+  reconnect-on-auth-failure helper; `docs/cas-python-connection.md`'s
+  "Reconnecting after a while" section tells the user to re-run the command
+  for a fresh token if a CAS action starts failing with an auth error.
+- ☑ Ship the documented snippet a user's Python cell calls to get a
+  connected `swat.CAS()` object — **Decision 2: bare connect snippet, binary
+  transport only.** `pythonOnViya.insertCasConnectionSnippet`
+  (`src/cas/casConnectCommand.ts`) auto-picks the CAS server when there is
+  exactly one, prompts via `QuickPick` otherwise (Decision 3: a Command
+  Palette command, not a CAS-tree context-menu item — keeps
+  `casExplorer.ts`'s own documented independence from any compute session
+  untouched). `docs/cas-python-connection.md` points at `swat`'s own
+  "Binary vs. REST" documentation for the REST/HTTP alternative rather than
+  re-deriving it, matching `data-access.md`'s own house style.
+- ☑ Unit-test the token-delivery path at the HTTP-mock boundary —
+  `test/unit/compute-cas-token.test.ts` (the retry loop, the `rawBody`-only
+  send), `test/unit/cas-connect-snippet.test.ts` (the snippet builder's own
+  escaping), `test/integration/cas/connect-command.test.ts` (the command's
+  `vscode` plumbing — no-connection/no-editor/no-server/QuickPick-cancel
+  paths, and the happy path against a real editor).
+- ☑ **Distinguish loaded vs. unloaded CAS tables with a different icon.**
+  Flagged by Sean, 2026-09-13, after 8a's manual test pass, and folded into
+  this slice (Sean's call) rather than shipped as its own follow-up: every
+  table in the tree previously got the same icon regardless of `state`
+  (`"loaded"`/`"unloaded"`, Finding 8.3), so a user had no visual cue before
+  running code against a table — and most operations against an unloaded
+  table fail (Finding 8.3's own `404`-on-unloaded-columns shape is one
+  instance of the broader problem). `presentation.ts`'s `nodePresentationOf`
+  now reads a table's `state` (the same field `CasAdapter.getColumns`
+  already branches on for the JIT-load, Finding 8.8) — `"table"` when
+  loaded, `"cloud"` when not (data at rest in the caslib's own backing
+  store, distinct from `"database"`'s caslib icon).
+- **`CasAdapter.getConnection`** (new, `src/cas/adapter.ts`) follows a CAS
+  server's own `connection` relation for the internal host/port
+  `buildCasConnectSnippet` needs — Finding 8.10 (below) pinned the response
+  shape before this was written, rather than guessing it from Finding 8.4's
+  prose description.
+
+`npm run verify` green (1689 unit; coverage 95.87/95.45/95.72/95.87
+statements/branches/functions/lines — no ratchet change needed, the new
+code's own coverage cleared the existing 95.8/95.4/95.6/95.8 thresholds),
+395 integration passing (`ELECTRON_RUN_AS_NODE` env-strip workaround needed
+to run integration from this shell, same long-standing environment quirk,
+not a regression), `npm run check:docs`/`check:secrets` green.
+
+**Adversarial review run before the PR opens (2026-09-13), one real finding,
+fixed before push.** `connectSnippet.ts` escaped `host`/`filerefName` only
+for the Python-string-literal context they land in; `casConnectCommand.ts`
+then inserted the result via `editor.insertSnippet(new
+vscode.SnippetString(snippet))` — real VS Code snippet grammar, where `$`
+and `}` are metacharacters. `host` is untrusted wire data (Finding 8.10),
+so a deployment whose internal CAS host string contains `$` would have had
+it silently reinterpreted as a snippet tabstop/variable instead of inserted
+literally. Fixed by switching the command to a plain `editor.edit()` text
+replace — this snippet carries no tabstops of its own, so `SnippetString`
+was never buying anything here, matching `dragSnippet.ts`'s own
+`buildSd2dfSnippet`, which is inserted as a plain `DocumentDropEdit` string
+for the same reason. A regression test (host containing `$1}`) was added to
+`connect-command.test.ts`. Re-verified after the fix: 1689 unit, 396
+integration passing, lint and `tsc --noEmit` clean.
+
+**Manual test pass, 2026-09-13 (Sean): one real bug found and fixed.**
+`docs/dev/manual-tests/phase-8.md`'s 8b section (8.11–8.20) ran against
+`verde`. Every box passed except **8.18**: with a non-`.py` file focused (a
+`.md` file in the reported case), **Insert CAS Connection Snippet** still
+inserted the snippet rather than reporting "Open a Python file first" —
+`casConnectCommand.ts`'s own gate only asked whether *an* editor was active
+at all (`activeTextEditor() === undefined`), never what kind of document it
+held, unlike `src/run/commands.ts`'s own `runNow`, which has always gated on
+`editor?.document.languageId !== "python"`. Fixed by adopting the identical
+check; a regression test (a focused Markdown document, item 8.18) was added
+to `connect-command.test.ts`. §8.13 (multiple CAS servers) is not
+independently reachable on this deployment (only one CAS server exists) and
+is noted as such rather than forced.
+
+**Adversarial review before this PR opens (2026-09-13), one real finding,
+fixed before push.** `connect-command.test.ts` covered every early-return
+branch in `casConnectCommand.ts` except three: `adapter === undefined`
+("Could not reach CAS for this profile"), a `getConnection` failure, and a
+`writeCasToken` failure reaching `report` — the underlying logic each calls
+into is well covered elsewhere (`CasAdapter.getConnection`,
+`compute-cas-token.test.ts`'s retry/escaping contract), but the command's
+own routing of those three results to `report` was not independently
+exercised. Verified directly (grepped the test file for each branch's own
+condition before accepting the finding) rather than taken on faith. Fixed
+with three new tests, one per branch, reusing the existing `harness()` and a
+new minimal `failingComputeClient()` for the `writeCasToken` case. No
+security or correctness defect — this was a coverage gap, not a bug: the
+review separately traced `fileref.ts`'s and `compute/client.ts`'s transport
+and confirmed neither logs or echoes the raw token/body in any failure
+path.
+
+`npm run verify` green after both rounds of fixes (1689 unit, unchanged —
+the three new tests are integration-level, exercising the command's own
+`vscode` plumbing, not unit-level; coverage unchanged at
+95.87/95.45/95.72/95.87), 400 integration passing (`ELECTRON_RUN_AS_NODE`
+env-strip workaround, same long-standing quirk, not a regression),
+`npm run check:docs` green.
+
+**Live re-confirmation, 2026-09-13 (Sean): the 8.18 fix holds.** Manual-test
+item 8.18 (`docs/dev/manual-tests/phase-8.md`) — Insert CAS Connection
+Snippet correctly gates on a Python-language editor — passed against a real
+editor; its box is now closed.
+
+**PR review findings ([PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170),
+Codex + Claude reviewer), one real gap, fixed before merge.** Across
+several review rounds, both reviewers repeatedly flagged that
+`insertCasConnectionSnippet`'s network chain (`getServers` → `getConnection`
+→ `writeCasToken`'s create/self/upload triplet) had no
+`vscode.window.withProgress` wrapper and no cancellation path — unlike
+every comparable multi-round-trip command elsewhere in this codebase
+(`ComputeSessionManager`'s connect flow, `contentCommands.ts`'s `run()`
+helper, `csvExportCommand.ts`). An earlier framing of the same gap as a
+*timeout* defect ("no `AbortSignal` at all, so a hung endpoint hangs the
+command indefinitely") was checked against `CasClient`/`ComputeClient`'s own
+`send()` and found incorrect — both already apply a `DEFAULT_TIMEOUT_MS`
+(15s/30s respectively) at the transport layer even with no caller-supplied
+signal, so no call could hang unboundedly; later review rounds retracted
+the blocking framing on this basis and downgraded it to a non-blocking
+consistency item. That consistency gap was real, though, and is fixed: the
+command's network chain now runs inside a cancellable
+`vscode.window.withProgress` notification, with a single `AbortSignal` —
+via `src/compute/cancellation.ts`'s existing `abortOn` bridge, the same one
+`ComputeSessionManager` uses — threaded into `getServers`, `getConnection`,
+and `writeCasToken`. An aborted request comes back as an ordinary
+`CasResult`/`ComputeResult` failure at the transport layer, so cancellation
+is told apart from a real failure by asking the token
+(`token.isCancellationRequested`) before reporting, mirroring
+`cancellation.ts`'s own documented rule. Two reviewer-flagged test-coverage
+gaps (a failing `getConnection` and a failing `writeCasToken`, both
+untested at the command level) were already fixed on this branch, in the
+commit that closed 8.18 — no further gap there. Two new tests were added
+for this fix: one confirming a mid-flight cancellation reports nothing
+(mirrors `session-manager.test.ts`'s own cancellation case), one confirming
+an `AbortSignal` reaches all five underlying calls.
+
+`npm run verify` green (1689 unit, unchanged — both new tests are
+integration-level; coverage unchanged at 95.87/95.45/95.72/95.87), 402
+integration passing (`ELECTRON_RUN_AS_NODE` env-strip workaround, same
+long-standing quirk, not a regression), `tsc --noEmit`/`prettier --check`
+clean.
 
 ☐ **8c — CAS tables in the data viewer.**
 
@@ -619,6 +781,22 @@ exercised. The fix is applied to all four collections on the strength of
 "every one of them accepted the same parameter cleanly, and the failure
 mode costs nothing to guard against everywhere," not because instability
 was independently confirmed on all four.
+
+**Finding 8.10 — the `connection` relation's response fields, needed for 8b's
+CAS-connect snippet.** Finding 8.4 recorded this relation's *content* in
+prose ("the CAS controller's internal cluster hostname and binary port")
+without printing the literal field names. Probed read-only at 8b's own start
+(2026-09-13, `verde`): `GET /casManagement/servers/cas-shared-default/connection`
+(`Accept: application/json`) returns `200` with a flat, un-nested body —
+`{"version": 2, "serverName": "cas-shared-default", "host":
+"sas-cas-server-default-client", "port": 5570, "links": [...]}` — `host` and
+`port` are plain top-level fields, not nested under a `binary`/`connection`
+sub-object as might be guessed. `links` carries only `up` (back to the
+server) and `self`; no further relations to follow from here. **Documented:**
+the CAS Management API's own reference does not name this representation's
+field shape at all, only that the relation exists. **Observed (Viya 4,
+2026-09-13):** `host`/`port` as above — confirmed rather than guessed before
+`src/cas/types.ts`'s `CasConnectionInfo` reader was written against it.
 
 **Not probed this session, left open:** a genuine second Viya 4
 cadence/deployment (the dialect-risk item above — `innov`'s stored

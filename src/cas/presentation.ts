@@ -30,7 +30,7 @@ export interface NodePresentation {
   readonly expandable: boolean;
   /** A `vscode.ThemeIcon` id — no bundled SVGs. Every id here is confirmed
    * present in the codicon set VS Code ships (`server`, `database`, `table`,
-   * `symbol-field`). */
+   * `cloud`, `symbol-field`). */
   readonly icon: string;
   readonly contextValue: string;
 }
@@ -54,10 +54,16 @@ export function nodePresentationOf(item: CasItem): NodePresentation {
     };
   }
   if (isCasTable(item)) {
+    // Same condition `adapter.ts`'s `getColumns` already branches on to
+    // decide whether a load is needed — most operations against an
+    // unloaded table fail (Finding 8.3's 404-on-columns is one instance),
+    // so the icon gives the user that cue before they try. "cloud": data
+    // still at rest in the caslib's own backing store, not yet in memory;
+    // distinct from "database" (caslib) and "table" (loaded).
     return {
       label: item.name,
       expandable: true,
-      icon: "table",
+      icon: item.state === "loaded" ? "table" : "cloud",
       contextValue: CONTEXT_TABLE,
     };
   }

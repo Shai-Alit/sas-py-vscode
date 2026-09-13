@@ -51,7 +51,7 @@ table" boxes below, since expanding one loads it.
   **Expect:** a list of caslibs appears, each with a database icon and an
   expand chevron, including at least **Public**, **Formats**, **Samples**,
   and **SystemData** if your deployment has them.
-- [-] **8.4** **Expanding a caslib lists its tables** — expand **Public** (or
+- [x] **8.4** **Expanding a caslib lists its tables** — expand **Public** (or
   another caslib you can see).
   **Expect:** a list of tables appears, each with a table icon and an expand
   chevron (a table is not a leaf in this phase, unlike SAS Libraries' — it
@@ -67,19 +67,20 @@ table" boxes below, since expanding one loads it.
   CAS view and the table does not show up at all. the error messages continue
   to show up even after a refresh. signing out and signing back in and 
   re-running this procedure produces the same results. 
-- [ ] **8.5** **Expanding an unloaded table loads it, then shows its
+  **9/13/2026 passed**
+- [x] **8.5** **Expanding an unloaded table loads it, then shows its
   columns** — pick a table you have not yet expanded and expand it.
   **Expect:** a short pause (the JIT-load `PUT`, Finding 8.3/8.8), then a
   list of columns appears, each with a field icon and the column's SAS type
   shown dimmed to the right of its name (e.g. `varchar`, `double`) — not a
   `404`/error, and not an empty list.
-- [ ] **8.6** **Re-expanding an already-loaded table shows columns
+- [x] **8.6** **Re-expanding an already-loaded table shows columns
   immediately, no reload pause** — collapse the table from the box above,
   then expand it again.
   **Expect:** the same columns appear, this time with no perceptible delay —
   the table's own listing entry now reports it as loaded, so
   `CasAdapter.getColumns` skips the load `PUT` entirely.
-- [-] **8.7** **Refresh reloads the tree** — click the refresh icon in the
+- [x] **8.7** **Refresh reloads the tree** — click the refresh icon in the
   CAS view's title bar (hover the view's header if you don't see it), or run
   **Refresh CAS** from the Command Palette.
   **Expect:** the tree reloads. If nothing changed on the server, the visible
@@ -87,7 +88,8 @@ table" boxes below, since expanding one loads it.
   **9/12/2026 failed** - reload does not update the tree. manually loaded a table
   to memory in Verde and then clicked refresh in VS Code CAS view. it did not 
   pick up the in memory table. 
-- [ ] **8.8** **Browsing works while a compute session run is busy** — start
+  **9/13/2026 passed**
+- [x] **8.8** **Browsing works while a compute session run is busy** — start
   a long-running selection first: open a `.py` file, type `import time;
   time.sleep(30)`, select it, and **Run Selection** (§6 has the mechanics if
   this is unfamiliar). While that run is still going, expand a caslib or

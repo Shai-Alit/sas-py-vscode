@@ -274,7 +274,9 @@ session helper; 8c blocked on 7b regardless of 8a/8b's own timing). Nothing
 here is a hard technical barrier — this is a recommendation, not a dependency
 lock._
 
-☑ **8a — CAS browsing (servers, global caslibs, tables, columns).** Done.
+☑ **8a — CAS browsing (servers, global caslibs, tables, columns).** Done —
+[PR #169](https://github.com/Shai-Alit/sas-py-vscode/pull/169), merged
+2026-09-13, squash `610d3f7`.
 
 - ☑ Decide the `links.ts`/`client.ts` promotion question (Plan, above) —
   **already done, in 6a-i** (ADR-0025); `src/cas/` is the third caller, no
@@ -329,6 +331,17 @@ citing Finding 8.9 directly — coverage unchanged at
 env-strip workaround needed to run integration from this shell, same
 long-standing environment quirk, not a regression).
 
+**Live retest, 2026-09-13 (Sean): the Finding 8.9 fix holds.** Manual-test
+items 8.4 and 8.7 (`docs/dev/manual-tests/phase-8.md`) — the two the
+pagination crash blocked on 2026-09-12 — now pass, and all ten 8a
+manual-test items pass. **[PR #169](https://github.com/Shai-Alit/sas-py-vscode/pull/169)
+merged 2026-09-13, squash `610d3f7`** — bundled the 8a slice itself, the
+8a manual-test items (8.1–8.10), the Finding 8.9 fix, and an unrelated
+CI-classifier/activity-bar-icon chore into one PR, merged directly by
+Sean. That resolves the second adversarial pass's open process question
+below (whether the CI/icon bundling was intentional) — it was kept as one
+PR.
+
 **Adversarial review, run twice before this PR opens (2026-09-12, Sean) —
 no blocking findings from either pass.** The **first pass** reviewed 8a as
 originally built, before the Finding 8.9 fix existed, and is only being
@@ -362,6 +375,17 @@ CI/icon change into one PR is intentional.
   point at it).
 - ☐ Unit-test the token-delivery path at the HTTP-mock boundary, the same as
   every other upload-based mechanism this project ships.
+- ☐ **Distinguish loaded vs. unloaded CAS tables with a different icon.**
+  Flagged by Sean, 2026-09-13, after 8a's manual test pass, and folded into
+  this slice (Sean's call) rather than shipped as its own follow-up: every
+  table in the tree currently gets the same icon regardless of `state`
+  (`"loaded"`/`"unloaded"`, Finding 8.3), so a user has no visual cue before
+  running code against a table — and most operations against an unloaded
+  table fail (Finding 8.3's own `404`-on-unloaded-columns shape is one
+  instance of the broader problem). `CasAdapter`/`presentation.ts` already
+  read a table's `state` off the same collection item that drives the
+  JIT-load `PUT` (Finding 8.8), so the data is there; this is a
+  `casTree.ts`/`presentation.ts` icon-selection change, not a new probe.
 
 ☐ **8c — CAS tables in the data viewer.**
 

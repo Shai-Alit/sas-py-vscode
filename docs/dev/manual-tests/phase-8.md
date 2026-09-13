@@ -204,9 +204,8 @@ command.
   all, not its language. **Fixed same day** in code (the gate now checks
   `editor?.document.languageId !== "python"`, the same check
   `src/run/commands.ts`'s Run Selection/Run File commands already use) and
-  covered by a new automated regression test (`phase-8.md`'s 8b Runbook) —
-  **not yet re-confirmed live by hand**; re-run this box against a real
-  editor before treating it as closed.
+  covered by a new automated regression test (`phase-8.md`'s 8b Runbook).
+  **Re-confirmed live the same day (Sean)** — closing this box.
 - [x] **8.19** **Loaded vs. unloaded CAS tables show different icons** —
   folded into this slice after 8a's own manual pass flagged the gap
   (`docs/phases/phase-8.md`'s 8b Runbook). In the **CAS** tree, find a table

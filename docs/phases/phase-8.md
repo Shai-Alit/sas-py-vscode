@@ -359,11 +359,13 @@ own punch-list item) and a process question, left for Sean to decide rather
 than settled here, about whether bundling the CAS work with the unrelated
 CI/icon change into one PR is intentional.
 
-☐ **8b — Authenticated CAS session helper.** Code-complete 2026-09-13; the
+☑ **8b — Authenticated CAS session helper.** Code-complete 2026-09-13; the
 slice's one non-negotiable manual check (8.14, below) passed 2026-09-13. One
 further manual-test finding (8.18, below) surfaced after that pass, was
-fixed in code the same day, and awaits a live re-confirmation before this
-box ticks — the same discipline 8a's own Finding 8.9 fix followed.
+fixed in code the same day, and was live-reconfirmed 2026-09-13 (Sean) — the
+same discipline 8a's own Finding 8.9 fix followed. [PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170)
+open; see the PR-review-findings entry below for the one fix folded in
+before merge.
 
 - ☑ Design the token-delivery mechanism — **reused `src/compute/fileref.ts`'s
   upload path as-is** (Decision 1, 2026-09-13: no invariant change to
@@ -479,6 +481,49 @@ the three new tests are integration-level, exercising the command's own
 95.87/95.45/95.72/95.87), 400 integration passing (`ELECTRON_RUN_AS_NODE`
 env-strip workaround, same long-standing quirk, not a regression),
 `npm run check:docs` green.
+
+**Live re-confirmation, 2026-09-13 (Sean): the 8.18 fix holds.** Manual-test
+item 8.18 (`docs/dev/manual-tests/phase-8.md`) — Insert CAS Connection
+Snippet correctly gates on a Python-language editor — passed against a real
+editor; its box is now closed.
+
+**PR review findings ([PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170),
+Codex + Claude reviewer), one real gap, fixed before merge.** Across
+several review rounds, both reviewers repeatedly flagged that
+`insertCasConnectionSnippet`'s network chain (`getServers` → `getConnection`
+→ `writeCasToken`'s create/self/upload triplet) had no
+`vscode.window.withProgress` wrapper and no cancellation path — unlike
+every comparable multi-round-trip command elsewhere in this codebase
+(`ComputeSessionManager`'s connect flow, `contentCommands.ts`'s `run()`
+helper, `csvExportCommand.ts`). An earlier framing of the same gap as a
+*timeout* defect ("no `AbortSignal` at all, so a hung endpoint hangs the
+command indefinitely") was checked against `CasClient`/`ComputeClient`'s own
+`send()` and found incorrect — both already apply a `DEFAULT_TIMEOUT_MS`
+(15s/30s respectively) at the transport layer even with no caller-supplied
+signal, so no call could hang unboundedly; later review rounds retracted
+the blocking framing on this basis and downgraded it to a non-blocking
+consistency item. That consistency gap was real, though, and is fixed: the
+command's network chain now runs inside a cancellable
+`vscode.window.withProgress` notification, with a single `AbortSignal` —
+via `src/compute/cancellation.ts`'s existing `abortOn` bridge, the same one
+`ComputeSessionManager` uses — threaded into `getServers`, `getConnection`,
+and `writeCasToken`. An aborted request comes back as an ordinary
+`CasResult`/`ComputeResult` failure at the transport layer, so cancellation
+is told apart from a real failure by asking the token
+(`token.isCancellationRequested`) before reporting, mirroring
+`cancellation.ts`'s own documented rule. Two reviewer-flagged test-coverage
+gaps (a failing `getConnection` and a failing `writeCasToken`, both
+untested at the command level) were already fixed on this branch, in the
+commit that closed 8.18 — no further gap there. Two new tests were added
+for this fix: one confirming a mid-flight cancellation reports nothing
+(mirrors `session-manager.test.ts`'s own cancellation case), one confirming
+an `AbortSignal` reaches all five underlying calls.
+
+`npm run verify` green (1689 unit, unchanged — both new tests are
+integration-level; coverage unchanged at 95.87/95.45/95.72/95.87), 402
+integration passing (`ELECTRON_RUN_AS_NODE` env-strip workaround, same
+long-standing quirk, not a regression), `tsc --noEmit`/`prettier --check`
+clean.
 
 ☐ **8c — CAS tables in the data viewer.**
 

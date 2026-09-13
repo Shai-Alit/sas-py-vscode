@@ -66,6 +66,13 @@ export const COLUMNS_REL = "columns";
  * `responseType` advertises `application/json,text/plain` — Finding 8.8. */
 export const LOAD_REL = "updateState";
 
+/** The relation on a CAS server's own representation that reaches its
+ * internal connection info (host/port) — Finding 8.1/8.7 confirm every
+ * server's own listing entry already carries this relation; Finding 8.10
+ * confirms the shape it resolves to. 8b's own relation: nothing before it
+ * ever follows this link. */
+export const CONNECTION_REL = "connection";
+
 /** A CAS server — `cas-shared-default` on every deployment probed so far
  * (Finding 8.1), but this project has never assumed there is exactly one. */
 export interface CasServerItem {
@@ -123,6 +130,15 @@ export interface CasColumnItem {
   readonly name: string;
   readonly type: string;
   readonly formattedLength?: number | undefined;
+}
+
+/** A CAS server's internal connection info (Finding 8.10) — 8b's own use:
+ * building a `swat.CAS(host, port, password=<token>)` snippet. Not a
+ * `CasItem`: it never appears in the tree, it is fetched on demand by the
+ * connect-snippet command alone. */
+export interface CasConnectionInfo {
+  readonly host: string;
+  readonly port: number;
 }
 
 export type CasItem = CasServerItem | CaslibItem | CasTableItem | CasColumnItem;
@@ -237,4 +253,19 @@ export function readCasColumnItem(
       ? { formattedLength: raw.formattedLength }
       : {}),
   };
+}
+
+/** Reads a server's `connection` representation (Finding 8.10) — a flat,
+ * un-nested body, `host`/`port` as plain top-level fields. `undefined` if
+ * either is missing or the wrong type, the same tolerance every other
+ * reader here gives a shape this project has not observed. */
+export function readCasConnectionInfo(
+  value: unknown,
+): CasConnectionInfo | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const { host, port } = raw;
+  if (typeof host !== "string" || host === "") return undefined;
+  if (typeof port !== "number") return undefined;
+  return { host, port };
 }

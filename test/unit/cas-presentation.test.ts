@@ -47,7 +47,7 @@ describe("cas/presentation nodePresentationOf", () => {
     });
   });
 
-  it("presents a table as an expandable table icon", () => {
+  it("presents a loaded table as an expandable table icon", () => {
     const table: CasTableItem = {
       kind: "table",
       serverName: "cas-shared-default",
@@ -62,6 +62,37 @@ describe("cas/presentation nodePresentationOf", () => {
       icon: "table",
       contextValue: CONTEXT_TABLE,
     });
+  });
+
+  it("presents an unloaded table with a different icon, flagged 2026-09-13", () => {
+    // Most operations against an unloaded table fail (Finding 8.3), so the
+    // user needs a cue before expanding/running against one — the same
+    // "table" icon for both states gave no such cue.
+    const table: CasTableItem = {
+      kind: "table",
+      serverName: "cas-shared-default",
+      caslibName: "Public",
+      name: "LOOKUP_TABLE",
+      state: "unloaded",
+      links: [],
+    };
+    assert.deepEqual(nodePresentationOf(table), {
+      label: "LOOKUP_TABLE",
+      expandable: true,
+      icon: "cloud",
+      contextValue: CONTEXT_TABLE,
+    });
+  });
+
+  it("treats a table with no observed state the same as unloaded", () => {
+    const table: CasTableItem = {
+      kind: "table",
+      serverName: "cas-shared-default",
+      caslibName: "Public",
+      name: "LOOKUP_TABLE",
+      links: [],
+    };
+    assert.equal(nodePresentationOf(table).icon, "cloud");
   });
 
   it("presents a column as a non-expandable leaf with its type as the description", () => {

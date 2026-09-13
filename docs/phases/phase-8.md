@@ -359,33 +359,69 @@ own punch-list item) and a process question, left for Sean to decide rather
 than settled here, about whether bundling the CAS work with the unrelated
 CI/icon change into one PR is intentional.
 
-☐ **8b — Authenticated CAS session helper.**
+☐ **8b — Authenticated CAS session helper.** Code-complete 2026-09-13; one
+manual, non-negotiable check (below) is still outstanding before this box
+can tick.
 
-- ☐ Design the token-delivery mechanism — extend
-  `src/compute/fileref.ts`'s upload path or build a narrower variant — and
-  confirm by hand that it does **not** appear in the job log the way
-  Finding 8.6's inline attempt did. This is the one check this slice cannot
-  skip before it is considered done.
-- ☐ Decide and document the token-lifetime story (Plan, above): manual
-  reconnect-on-auth-failure, or something more automatic.
-- ☐ Ship the documented snippet/helper a user's Python cell calls to get a
-  connected `swat.CAS()` object, covering both the binary and REST/HTTP forms
-  Finding 8.5 confirmed working (`swat`'s own "Binary vs. REST" documentation
-  page covers the tradeoff; this project doesn't need to re-explain it, only
-  point at it).
-- ☐ Unit-test the token-delivery path at the HTTP-mock boundary, the same as
-  every other upload-based mechanism this project ships.
-- ☐ **Distinguish loaded vs. unloaded CAS tables with a different icon.**
+- ☑ Design the token-delivery mechanism — **reused `src/compute/fileref.ts`'s
+  upload path as-is** (Decision 1, 2026-09-13: no invariant change to
+  ADR-0014's "nothing ever deletes a fileref" — ADR-0033-style, recorded
+  inline here rather than as its own ADR since it changes no shipped
+  behaviour, only adds a new caller). `src/compute/casToken.ts`'s
+  `writeCasToken` creates a fresh `CTnnnnnn`-named fileref (mirroring
+  `procPython.ts`'s `PYnnnnnn`, random rather than sequential — a one-shot
+  command has no counter to seed) and writes the token's UTF-8 bytes via
+  `writeFilerefContent`, retrying under a new name on a collision.
+- ☐ **Confirm by hand that the delivered token does not appear in the job
+  log** the way Finding 8.6's inline attempt did. This is the one check this
+  slice cannot skip before it is considered done, and it needs a live
+  deployment and a real run — not something provable from a unit or
+  integration test. **Still open** — needs Sean.
+- ☑ Decide and document the token-lifetime story (Plan, above) — **Decision
+  2, 2026-09-13: documented prose, not shipped code.** No
+  reconnect-on-auth-failure helper; `docs/cas-python-connection.md`'s
+  "Reconnecting after a while" section tells the user to re-run the command
+  for a fresh token if a CAS action starts failing with an auth error.
+- ☑ Ship the documented snippet a user's Python cell calls to get a
+  connected `swat.CAS()` object — **Decision 2: bare connect snippet, binary
+  transport only.** `pythonOnViya.insertCasConnectionSnippet`
+  (`src/cas/casConnectCommand.ts`) auto-picks the CAS server when there is
+  exactly one, prompts via `QuickPick` otherwise (Decision 3: a Command
+  Palette command, not a CAS-tree context-menu item — keeps
+  `casExplorer.ts`'s own documented independence from any compute session
+  untouched). `docs/cas-python-connection.md` points at `swat`'s own
+  "Binary vs. REST" documentation for the REST/HTTP alternative rather than
+  re-deriving it, matching `data-access.md`'s own house style.
+- ☑ Unit-test the token-delivery path at the HTTP-mock boundary —
+  `test/unit/compute-cas-token.test.ts` (the retry loop, the `rawBody`-only
+  send), `test/unit/cas-connect-snippet.test.ts` (the snippet builder's own
+  escaping), `test/integration/cas/connect-command.test.ts` (the command's
+  `vscode` plumbing — no-connection/no-editor/no-server/QuickPick-cancel
+  paths, and the happy path against a real editor).
+- ☑ **Distinguish loaded vs. unloaded CAS tables with a different icon.**
   Flagged by Sean, 2026-09-13, after 8a's manual test pass, and folded into
   this slice (Sean's call) rather than shipped as its own follow-up: every
-  table in the tree currently gets the same icon regardless of `state`
-  (`"loaded"`/`"unloaded"`, Finding 8.3), so a user has no visual cue before
+  table in the tree previously got the same icon regardless of `state`
+  (`"loaded"`/`"unloaded"`, Finding 8.3), so a user had no visual cue before
   running code against a table — and most operations against an unloaded
   table fail (Finding 8.3's own `404`-on-unloaded-columns shape is one
-  instance of the broader problem). `CasAdapter`/`presentation.ts` already
-  read a table's `state` off the same collection item that drives the
-  JIT-load `PUT` (Finding 8.8), so the data is there; this is a
-  `casTree.ts`/`presentation.ts` icon-selection change, not a new probe.
+  instance of the broader problem). `presentation.ts`'s `nodePresentationOf`
+  now reads a table's `state` (the same field `CasAdapter.getColumns`
+  already branches on for the JIT-load, Finding 8.8) — `"table"` when
+  loaded, `"cloud"` when not (data at rest in the caslib's own backing
+  store, distinct from `"database"`'s caslib icon).
+- **`CasAdapter.getConnection`** (new, `src/cas/adapter.ts`) follows a CAS
+  server's own `connection` relation for the internal host/port
+  `buildCasConnectSnippet` needs — Finding 8.10 (below) pinned the response
+  shape before this was written, rather than guessing it from Finding 8.4's
+  prose description.
+
+`npm run verify` green (1689 unit; coverage 95.87/95.45/95.72/95.87
+statements/branches/functions/lines — no ratchet change needed, the new
+code's own coverage cleared the existing 95.8/95.4/95.6/95.8 thresholds),
+395 integration passing (`ELECTRON_RUN_AS_NODE` env-strip workaround needed
+to run integration from this shell, same long-standing environment quirk,
+not a regression), `npm run check:docs`/`check:secrets` green.
 
 ☐ **8c — CAS tables in the data viewer.**
 
@@ -643,6 +679,22 @@ exercised. The fix is applied to all four collections on the strength of
 "every one of them accepted the same parameter cleanly, and the failure
 mode costs nothing to guard against everywhere," not because instability
 was independently confirmed on all four.
+
+**Finding 8.10 — the `connection` relation's response fields, needed for 8b's
+CAS-connect snippet.** Finding 8.4 recorded this relation's *content* in
+prose ("the CAS controller's internal cluster hostname and binary port")
+without printing the literal field names. Probed read-only at 8b's own start
+(2026-09-13, `verde`): `GET /casManagement/servers/cas-shared-default/connection`
+(`Accept: application/json`) returns `200` with a flat, un-nested body —
+`{"version": 2, "serverName": "cas-shared-default", "host":
+"sas-cas-server-default-client", "port": 5570, "links": [...]}` — `host` and
+`port` are plain top-level fields, not nested under a `binary`/`connection`
+sub-object as might be guessed. `links` carries only `up` (back to the
+server) and `self`; no further relations to follow from here. **Documented:**
+the CAS Management API's own reference does not name this representation's
+field shape at all, only that the relation exists. **Observed (Viya 4,
+2026-09-13):** `host`/`port` as above — confirmed rather than guessed before
+`src/cas/types.ts`'s `CasConnectionInfo` reader was written against it.
 
 **Not probed this session, left open:** a genuine second Viya 4
 cadence/deployment (the dialect-risk item above — `innov`'s stored

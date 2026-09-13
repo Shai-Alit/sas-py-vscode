@@ -103,6 +103,9 @@ plain text (a chart, a DataFrame rendered as a table).
 - **[Python and SAS libraries](data-access.md)** — reading and writing that
   same library data directly from your own Python code, with no local
   database driver and no second credential to manage.
+- **[Connecting to CAS from Python](cas-python-connection.md)** — one command
+  gets your Python code an authenticated `swat.CAS()` connection, reusing the
+  same Viya sign-in with no separate CAS credential of your own.
 - **[The Python environment](python-environment.md)** — **Show Environment**
   lists the interpreter version and every package installed on it, so you can
   check whether something is there before you `import` it.

@@ -69,9 +69,19 @@ export interface CasExplorerDeps {
   listAccounts?: CasSessionDeps<Account>["listAccounts"] | undefined;
 }
 
+/** What {@link registerCasExplorer} hands back — 8b's own reason this
+ * exists: `pythonOnViya.insertCasConnectionSnippet`
+ * (`src/cas/casConnectCommand.ts`) reads a CAS server's connection info
+ * through the same endpoint-keyed adapter cache the browsing tree uses,
+ * rather than building a second, independent one. */
+export interface CasExplorerHandles {
+  readonly session: CasSession<Account>;
+}
+
 /**
- * Registers the CAS explorer. Returns nothing; every disposable is pushed on
- * `context.subscriptions`.
+ * Registers the CAS explorer. Every disposable is pushed on
+ * `context.subscriptions`; the returned {@link CasExplorerHandles} is for a
+ * caller that needs the same adapter cache (8b), not a lifecycle to manage.
  */
 export function registerCasExplorer(
   context: vscode.ExtensionContext,
@@ -79,7 +89,7 @@ export function registerCasExplorer(
   log: vscode.LogOutputChannel,
   authEvents: CasAuthEvents,
   deps: CasExplorerDeps = {},
-): void {
+): CasExplorerHandles {
   const session = new CasSession<Account>({
     ...(deps.session?.createClient === undefined
       ? {}
@@ -127,6 +137,8 @@ export function registerCasExplorer(
       provider.refresh();
     }),
   );
+
+  return { session };
 }
 
 /** The silent, account-hinted `getSession` the explorer uses in production. */

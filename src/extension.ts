@@ -13,6 +13,7 @@ import { SessionStore } from "./auth/sessionStore";
 import { createNodeHttpTransport } from "./auth/transport";
 import { registerAuthUriHandler } from "./auth/uriHandler";
 import { SessionBindingStore } from "./compute/bindingStore";
+import { registerCasConnectCommand } from "./cas/casConnectCommand";
 import { registerCasExplorer } from "./cas/casExplorer";
 import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
@@ -241,7 +242,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // needs no compute session and opens no CAS session of its own (Finding
   // 8.2, ADR-0033) — an endpoint and a silent token are enough — so it is
   // registered the same way SAS Content is, with the same `transport`.
-  registerCasExplorer(
+  const casExplorer = registerCasExplorer(
     context,
     profiles,
     output,
@@ -251,6 +252,13 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     { transport },
   );
+
+  // Phase 8b: unlike 8a's browsing tree, this command needs a live Compute
+  // session — the token it delivers has to land inside one
+  // (`src/compute/casToken.ts`) — so it is wired against `sessions` here
+  // rather than alongside 8a above. Reuses 8a's own endpoint-keyed adapter
+  // cache (`casExplorer.session`) rather than building a second one.
+  registerCasConnectCommand(context, sessions, casExplorer.session, profiles);
 
   // Phase 7b: the data viewer's own panel manager — one `WebviewPanel` per
   // open table (`src/data/dataViewerPanel.ts`, ADR-0028), constructed here so

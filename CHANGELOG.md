@@ -16,9 +16,17 @@ called out under **Changed** with a migration note.
   deployment's CAS servers, their global-scope caslibs, and each caslib's
   tables — no upstream equivalent, since the SAS VS Code extension calls no
   CAS APIs at all. Expanding a table loads it on demand
-  (`PUT .../state?value=loaded`) and shows its columns. Needs no compute
-  session and opens no CAS session of its own — an endpoint and a token are
-  enough ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)).
+  (`PUT .../state?value=loaded`) and shows its columns, shown with a
+  different icon depending on whether the table is already loaded into
+  memory. Needs no compute session and opens no CAS session of its own — an
+  endpoint and a token are enough
+  ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)).
+- **Connect to CAS from Python with no separate credential.** Run **Insert
+  CAS Connection Snippet** to get a Python snippet that opens an
+  authenticated `swat.CAS()` connection, reusing the same Viya access token
+  this extension already borrows for everything else it does — never a
+  credential you acquire or paste in yourself. See the new [Connecting to CAS
+  from Python](docs/cas-python-connection.md) page.
 
 ### Changed
 

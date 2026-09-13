@@ -72,3 +72,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0030](0030-delete-recycles-content-items.md) | "Delete" recycles a recyclable SAS Content item with no prompt; only an unrecyclable one is permanently deleted behind a modal | Accepted |
 | [0031](0031-content-folder-resource-uri.md) | Every SAS Content tree item gets a `resourceUri`, folders included, to fix native drag-and-drop | Accepted — amended 2026-09-11: a live retest disproved the drag-and-drop fix; the `resourceUri` change is kept for its own, narrower reasons (see the ADR's own amendment) |
 | [0032](0032-content-cut-paste.md) | Right-click Cut/Paste ships as a SAS Content move interaction, alongside drag-and-drop | Accepted |
+| [0033](0033-cas-adapter-shape.md) | `CasAdapter` is one concrete class built the way `ContentAdapter` is (endpoint plus token, no session), not the way `LibraryAdapter` is | Accepted |

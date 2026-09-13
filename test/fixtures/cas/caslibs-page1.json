@@ -1,0 +1,77 @@
+{
+  "count": 4,
+  "items": [
+    {
+      "name": "Public",
+      "scope": "global",
+      "hidden": false,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers/cas-shared-default/caslibs",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public",
+          "type": "application/vnd.sas.cas.caslib"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public"
+        },
+        {
+          "method": "GET",
+          "rel": "tables",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Public/tables",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "dataSource",
+          "href": "/dataSources/providers/cas/cas-shared-default/caslibs/Public"
+        }
+      ]
+    },
+    {
+      "name": "Formats",
+      "scope": "global",
+      "hidden": false,
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers/cas-shared-default/caslibs",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Formats",
+          "type": "application/vnd.sas.cas.caslib"
+        },
+        {
+          "method": "DELETE",
+          "rel": "delete",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Formats"
+        },
+        {
+          "method": "GET",
+          "rel": "tables",
+          "href": "/casManagement/servers/cas-shared-default/caslibs/Formats/tables",
+          "type": "application/vnd.sas.collection"
+        }
+      ]
+    }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "next",
+      "href": "/casManagement/servers/cas-shared-default/caslibs?start=2&limit=2"
+    }
+  ]
+}

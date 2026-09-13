@@ -1,0 +1,87 @@
+{
+  "count": 1,
+  "items": [
+    {
+      "name": "cas-shared-default",
+      "restPort": 8777,
+      "restProtocol": "https",
+      "links": [
+        {
+          "method": "GET",
+          "rel": "up",
+          "href": "/casManagement/servers",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "self",
+          "href": "/casManagement/servers/cas-shared-default",
+          "type": "application/vnd.sas.cas.server"
+        },
+        {
+          "method": "GET",
+          "rel": "connection",
+          "href": "/casManagement/servers/cas-shared-default/connection",
+          "type": "application/vnd.sas.cas.server.connection"
+        },
+        {
+          "method": "GET",
+          "rel": "state",
+          "href": "/casManagement/servers/cas-shared-default/state"
+        },
+        {
+          "method": "PUT",
+          "rel": "updateState",
+          "href": "/casManagement/servers/cas-shared-default/state"
+        },
+        {
+          "method": "GET",
+          "rel": "nodes",
+          "href": "/casManagement/servers/cas-shared-default/nodes",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "metrics",
+          "href": "/casManagement/servers/cas-shared-default/metrics",
+          "type": "application/vnd.sas.cas.server.metrics"
+        },
+        {
+          "method": "GET",
+          "rel": "sessions",
+          "href": "/casManagement/servers/cas-shared-default/sessions",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "POST",
+          "rel": "createSession",
+          "href": "/casManagement/servers/cas-shared-default/sessions",
+          "type": "application/vnd.sas.cas.session"
+        },
+        {
+          "method": "GET",
+          "rel": "caslibs",
+          "href": "/casManagement/servers/cas-shared-default/caslibs",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "stopLists",
+          "href": "/casManagement/servers/cas-shared-default/stopLists",
+          "type": "application/vnd.sas.collection"
+        },
+        {
+          "method": "GET",
+          "rel": "casProxy",
+          "href": "/casManagement/servers/cas-shared-default/cas"
+        },
+        {
+          "method": "GET",
+          "rel": "dataSource",
+          "href": "/dataSources/providers/cas/cas-shared-default"
+        }
+      ]
+    }
+  ],
+  "links": []
+}

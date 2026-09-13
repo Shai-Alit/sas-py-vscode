@@ -176,6 +176,12 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "pythonOnViya.refreshCasExplorer",
+        "title": "%command.refreshCasExplorer.title%",
+        "category": "%extension.category%",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "pythonOnViya.createContentFolder",
         "title": "%command.createContentFolder.title%",
         "category": "%extension.category%",
@@ -268,6 +274,11 @@
           "id": "pythonOnViya.dataExplorer",
           "name": "%views.dataExplorer.name%",
           "contextualTitle": "%views.dataExplorer.name%"
+        },
+        {
+          "id": "pythonOnViya.casExplorer",
+          "name": "%views.casExplorer.name%",
+          "contextualTitle": "%views.casExplorer.name%"
         }
       ]
     },
@@ -296,6 +307,16 @@
         "view": "pythonOnViya.dataExplorer",
         "when": "pythonOnViya.hasProfiles && pythonOnViya.authorized && !pythonOnViya.connected",
         "contents": "%viewsWelcome.dataExplorer.notConnected%"
+      },
+      {
+        "view": "pythonOnViya.casExplorer",
+        "when": "!pythonOnViya.hasProfiles",
+        "contents": "%viewsWelcome.casExplorer.noProfile%"
+      },
+      {
+        "view": "pythonOnViya.casExplorer",
+        "when": "pythonOnViya.hasProfiles && !pythonOnViya.authorized",
+        "contents": "%viewsWelcome.casExplorer.signedOut%"
       }
     ],
     "menus": {
@@ -362,6 +383,11 @@
         {
           "command": "pythonOnViya.refreshDataExplorer",
           "when": "view == pythonOnViya.dataExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.refreshCasExplorer",
+          "when": "view == pythonOnViya.casExplorer",
           "group": "navigation"
         }
       ],

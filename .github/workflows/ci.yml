@@ -25,12 +25,14 @@ concurrency:
 jobs:
   # Which tiers this change actually needs.
   #
-  # A pull request that only touches prose cannot break the compiler, the unit
-  # tier, the VSIX or the lockfile, and running those jobs anyway costs tens of
-  # minutes of wall clock to tell us something we already knew. This job
-  # classifies the diff once and the expensive jobs gate on it, on two axes:
+  # A pull request that only touches prose or a static asset under media/
+  # cannot break the compiler, the unit tier, the VSIX or the lockfile, and
+  # running those jobs anyway costs tens of minutes of wall clock to tell us
+  # something we already knew. This job classifies the diff once and the
+  # expensive jobs gate on it, on two axes:
   #
-  #   `code` — not unambiguously documentation. Gates verify, test, package.
+  #   `code` — not unambiguously documentation or a static asset. Gates verify,
+  #            test, package.
   #   `deps` — can change the dependency tree or the supply-chain gate itself
   #            (package.json, the lockfile, .npmrc, the audit script/allow-list,
   #            a workflow). Gates supply-chain only. Narrower than `code`
@@ -45,9 +47,11 @@ jobs:
   # its own name, so branch protection stays satisfiable. See docs/dev/ci.md.
   #
   # The classification is deliberately conservative: anything that is not
-  # unambiguously documentation counts as code. `.github/**` counts as code even
-  # when it is markdown, because a change to this file must be exercised by the
-  # jobs it configures.
+  # unambiguously documentation or a static asset counts as code. `.github/**`
+  # counts as code even when it is markdown, because a change to this file must
+  # be exercised by the jobs it configures. `media/` was added to the safe list
+  # 2026-09-12: an activity-bar icon swap was gating the full verify/test/package
+  # tier for a change that cannot touch any of them.
   changes:
     name: changes
     runs-on: ubuntu-latest
@@ -84,11 +88,11 @@ jobs:
           echo "changed files:"
           echo "$changed"
 
-          # `code`: anything that is not unambiguously documentation — gates
-          # verify, test and package. Documentation-only means under docs/ or a
-          # markdown file outside .github/; everything else (source, tests,
-          # package.json, workflows) is code.
-          other=$(echo "$changed" | grep -Ev '^docs/|^[^/]+\.md$' || true)
+          # `code`: anything that is not unambiguously documentation or a
+          # static asset — gates verify, test and package. Safe means under
+          # docs/, under media/, or a markdown file outside .github/;
+          # everything else (source, tests, package.json, workflows) is code.
+          other=$(echo "$changed" | grep -Ev '^docs/|^media/|^[^/]+\.md$' || true)
 
           # `deps`: a change that can alter the dependency tree or the
           # supply-chain gate itself — package.json, the lockfile, .npmrc, the

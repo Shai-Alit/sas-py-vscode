@@ -5,8 +5,18 @@
  * The text of 8b's CAS-connect snippet — a plain string, not a VS Code
  * snippet: there is nothing here for a user to retype (unlike 7d's
  * `src/data/dragSnippet.ts`, which mirrors a tabstop across two lines), so
- * it carries no `${1:...}`/`$1` syntax and needs no second escaping layer
- * for it.
+ * it carries no `${1:...}`/`$1` syntax of its own. `casConnectCommand.ts`
+ * inserts the result with a plain `editor.edit()` text replace, never
+ * `new vscode.SnippetString(...)` — `host` is untrusted wire data (Finding
+ * 8.10), and wrapping it in `SnippetString` regardless of whether this
+ * builder writes any tabstops would still let a `$`/`}` in that wire value
+ * be reinterpreted as snippet grammar instead of inserted literally. So this
+ * module needs no `escapeForSnippetSyntax` layer (contrast
+ * `dragSnippet.ts`'s `buildSqlPassthroughSnippet`, which is deliberately
+ * wrapped in `SnippetString` for its mirrored tabstop and therefore does
+ * carry that second layer) — but only because the caller never parses this
+ * string as snippet syntax, not merely because this builder writes no
+ * tabstops itself.
  *
  * **This module must never import `vscode`.**
  *

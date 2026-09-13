@@ -234,7 +234,15 @@ export function createInsertCasConnectionSnippet(
       port: connectionInfo.value.port,
       filerefName: written.value.filerefName,
     });
-    await editor.insertSnippet(new vscode.SnippetString(snippet));
+    // Plain text, not `new vscode.SnippetString(snippet)`: `host` is
+    // untrusted wire data (Finding 8.10), and `$`/`}` are snippet-grammar
+    // metacharacters that `insertSnippet` would reinterpret rather than
+    // insert literally — see `connectSnippet.ts`'s own doc comment.
+    await editor.edit((editBuilder) => {
+      for (const selection of editor.selections) {
+        editBuilder.replace(selection, snippet);
+      }
+    });
   };
 }
 

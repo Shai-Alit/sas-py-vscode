@@ -233,6 +233,38 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     assert.match(editor.document.getText(), /open\("CT\d{6}"\)/);
   });
 
+  it("inserts a host containing snippet-syntax characters literally", async () => {
+    // Regression test for the escaping gap an adversarial review caught: a
+    // host with `$`/`}` must land as literal text, not be reinterpreted as a
+    // VS Code snippet tabstop/variable. `host` is untrusted wire data
+    // (Finding 8.10) — see `connectSnippet.ts`'s doc comment.
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({
+      cas: {
+        adapterFor: (): CasConnectCommandAdapter => ({
+          getServers: async (): Promise<CasResult<readonly CasServerItem[]>> =>
+            Promise.resolve({
+              ok: true,
+              value: [server("cas-shared-default")],
+            }),
+          getConnection: async () =>
+            Promise.resolve({
+              ok: true,
+              value: { host: "weird$1}host", port: 5570 },
+            }),
+        }),
+      },
+    })();
+
+    assert.deepEqual(h.reports, []);
+    assert.match(
+      editor.document.getText(),
+      /swat\.CAS\("weird\$1}host", 5570, password=_cas_token\)/,
+    );
+  });
+
   it("reports and does nothing when no profile is connected", async () => {
     await pythonDocument();
     const h = harness();

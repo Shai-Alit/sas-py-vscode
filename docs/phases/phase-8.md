@@ -423,6 +423,22 @@ code's own coverage cleared the existing 95.8/95.4/95.6/95.8 thresholds),
 to run integration from this shell, same long-standing environment quirk,
 not a regression), `npm run check:docs`/`check:secrets` green.
 
+**Adversarial review run before the PR opens (2026-09-13), one real finding,
+fixed before push.** `connectSnippet.ts` escaped `host`/`filerefName` only
+for the Python-string-literal context they land in; `casConnectCommand.ts`
+then inserted the result via `editor.insertSnippet(new
+vscode.SnippetString(snippet))` — real VS Code snippet grammar, where `$`
+and `}` are metacharacters. `host` is untrusted wire data (Finding 8.10),
+so a deployment whose internal CAS host string contains `$` would have had
+it silently reinterpreted as a snippet tabstop/variable instead of inserted
+literally. Fixed by switching the command to a plain `editor.edit()` text
+replace — this snippet carries no tabstops of its own, so `SnippetString`
+was never buying anything here, matching `dragSnippet.ts`'s own
+`buildSd2dfSnippet`, which is inserted as a plain `DocumentDropEdit` string
+for the same reason. A regression test (host containing `$1}`) was added to
+`connect-command.test.ts`. Re-verified after the fix: 1689 unit, 396
+integration passing, lint and `tsc --noEmit` clean.
+
 ☐ **8c — CAS tables in the data viewer.**
 
 - ☐ Blocked on 7b's React/ag-grid-vs-hand-rolled decision existing to extend

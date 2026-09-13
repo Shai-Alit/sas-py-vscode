@@ -133,14 +133,14 @@ not, note that box as not independently reachable and confirm only the
 snippet's shape instead — that is an environment gap, not a defect in this
 command.
 
-- [ ] **8.11** **The command is gated on a live session, not just sign-in** —
+- [x] **8.11** **The command is gated on a live session, not just sign-in** —
   signed in but **not** connected, open the Command Palette and type "Insert
   CAS Connection Snippet".
   **Expect:** the command does not appear. Run **Connect to SAS Viya**, then
   search again.
   **Expect:** it now appears. This is the direct contrast to CAS browsing
   above (§8.2), which populates on sign-in alone.
-- [ ] **8.12** **The happy path inserts a real connect snippet at the
+- [x] **8.12** **The happy path inserts a real connect snippet at the
   cursor** — with your cursor positioned in the open `.py` file, run **Insert
   CAS Connection Snippet** (auto-picks the CAS server if the deployment has
   only one).
@@ -160,7 +160,9 @@ command.
   than forcing it. Run **Insert CAS Connection Snippet** again.
   **Expect:** a QuickPick titled to select a CAS server appears, listing each
   by name; picking one inserts a snippet with that server's own host/port.
-- [ ] **8.14** **The delivered token never appears in the job log (the
+  **(9/13/2026) not independently reachable** - only one cas server available
+  on test environment
+- [x] **8.14** **The delivered token never appears in the job log (the
   slice's own non-negotiable check)** — with **Python on Viya: Show Log**
   open (or watching the job log directly), run **Insert CAS Connection
   Snippet**, then run the inserted snippet with **Run File**.
@@ -169,26 +171,27 @@ command.
   bytes, never through a submitted statement (`docs/cas-python-connection.md`,
   "Why there is no `password="..."` literal to see"; ADR-0014). This is the
   exact leak Finding 8.6's earlier inline attempt had.
-- [ ] **8.15** **Running the snippet actually connects (needs `swat` in the
+- [x] **8.15** **Running the snippet actually connects (needs `swat` in the
   session's Python environment — see this section's pre-work)** — with the
   inserted snippet still selected or the file otherwise runnable, **Run
   File**, then run `print(conn)` or `print(conn.serverstatus())` in a
   follow-up cell/run.
   **Expect:** no error — `conn` is a live, authenticated `swat.CAS` object
   against this deployment's own CAS server.
-- [ ] **8.16** **Running the command again delivers a fresh token, not a
+- [x] **8.16** **Running the command again delivers a fresh token, not a
   reused one** — with a snippet already inserted from an earlier box, run
   **Insert CAS Connection Snippet** a second time.
   **Expect:** the newly inserted snippet's `open("CTnnnnnn")` line names a
   **different** fileref than the previous insert — confirming each run
   delivers its own fresh token rather than reusing one across calls
   (`docs/cas-python-connection.md`, "Reconnecting after a while").
-- [ ] **8.17** **No active Compute session reports clearly, without
+- [x] **8.17** **No active Compute session reports clearly, without
   touching the editor** — disconnect (**Disconnect from SAS Viya**), then
   (if the command is still reachable, e.g. via re-running it from history)
   attempt **Insert CAS Connection Snippet**; if the enablement gate in
   §8.11 already hides it entirely, confirm that instead and treat this box
   as covered by that one.
+  **(9/13/2026) already covered**
   **Expect:** either the command is unavailable, or it reports "Connect to
   SAS Viya first, then run this command again." and inserts nothing.
 - [ ] **8.18** **No Python editor open reports clearly** — close every editor
@@ -196,7 +199,15 @@ command.
   Snippet** from the Command Palette.
   **Expect:** a message reading "Open a Python file first, then run this
   command again."; nothing is inserted anywhere.
-- [ ] **8.19** **Loaded vs. unloaded CAS tables show different icons** —
+  **(9/13/2026) failed** — the command inserted into any focused file (e.g.
+  `.md`), not just `.py`; the gate only checked whether an editor was open at
+  all, not its language. **Fixed same day** in code (the gate now checks
+  `editor?.document.languageId !== "python"`, the same check
+  `src/run/commands.ts`'s Run Selection/Run File commands already use) and
+  covered by a new automated regression test (`phase-8.md`'s 8b Runbook) —
+  **not yet re-confirmed live by hand**; re-run this box against a real
+  editor before treating it as closed.
+- [x] **8.19** **Loaded vs. unloaded CAS tables show different icons** —
   folded into this slice after 8a's own manual pass flagged the gap
   (`docs/phases/phase-8.md`'s 8b Runbook). In the **CAS** tree, find a table
   you have not yet expanded this session and one you have already expanded
@@ -205,7 +216,7 @@ command.
   caslib's own backing store); the already-loaded table shows the ordinary
   table icon — visibly different glyphs, not the same icon for both the way
   8a originally shipped.
-- [ ] **8.20** **Legible in every theme** — with an inserted snippet visible
+- [x] **8.20** **Legible in every theme** — with an inserted snippet visible
   and both a loaded and an unloaded table showing in the CAS tree, switch VS
   Code between a light theme, a dark theme, and a high-contrast theme.
   **Expect:** the snippet is ordinary Python syntax highlighting (nothing new

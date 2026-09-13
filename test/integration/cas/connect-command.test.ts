@@ -52,6 +52,14 @@ async function pythonDocument(): Promise<vscode.TextEditor> {
   return await vscode.window.showTextDocument(document);
 }
 
+async function markdownDocument(): Promise<vscode.TextEditor> {
+  const document = await vscode.workspace.openTextDocument({
+    language: "markdown",
+    content: "",
+  });
+  return await vscode.window.showTextDocument(document);
+}
+
 /** A `ComputeClient` that answers `writeCasToken`'s three calls (assign,
  * self, upload) in order — the same shape `compute-cas-token.test.ts` uses,
  * kept minimal here since this file is testing the command around it, not
@@ -127,6 +135,27 @@ function computeClient(): ComputeClient {
       );
       return Promise.resolve(reply);
     },
+  };
+}
+
+/** A `ComputeClient` whose every request answers with the same non-retriable
+ * rejection — the same `rejected(404)` shape
+ * `compute-cas-token.test.ts`'s own "does not retry a non-retriable failure"
+ * case uses, which `createFileref` remaps to `session-gone` via
+ * `asSessionGone`. Used to exercise this command's own `!written.ok`
+ * branch without re-testing `writeCasToken`'s retry contract, which is
+ * `compute-cas-token.test.ts`'s job. */
+function failingComputeClient(): ComputeClient {
+  return {
+    send: () =>
+      Promise.resolve({
+        ok: false,
+        reason: "the compute service answered HTTP 404",
+        problem: {
+          code: "compute-rejected",
+          error: { status: 404, message: "" },
+        },
+      }),
   };
 }
 
@@ -317,6 +346,76 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
 
     assert.equal(h.reports.length, 1);
     assert.match(h.reports[0] ?? "", /Open a Python file/);
+  });
+
+  it("reports and inserts nothing when the active editor is not a Python file", async () => {
+    // Manual-test item 8.18 (`docs/dev/manual-tests/phase-8.md`) found the
+    // command inserted into any open file — `.md` included — since the
+    // original check only asked whether an editor was open at all, not what
+    // kind of document it held.
+    const editor = await markdownDocument();
+    const h = harness();
+
+    await h.build()();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /Open a Python file/);
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("reports when no CasAdapter is available for the profile's endpoint", async () => {
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({ cas: { adapterFor: () => undefined } })();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /Could not reach CAS/);
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("reports a CAS problem from getConnection without touching the editor", async () => {
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({
+      cas: {
+        adapterFor: (): CasConnectCommandAdapter => ({
+          getServers: async () =>
+            Promise.resolve({
+              ok: true,
+              value: [server("cas-shared-default")],
+            }),
+          getConnection: async () =>
+            Promise.resolve({
+              ok: false,
+              reason: "unreachable",
+              problem: { code: "cas-unreachable", detail: "ETIMEDOUT" },
+            }),
+        }),
+      },
+    })();
+
+    assert.equal(h.reports.length, 1);
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("reports a Compute problem from writeCasToken without touching the editor", async () => {
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({
+      sessions: {
+        current: () => ({
+          client: failingComputeClient(),
+          session: connection().session,
+        }),
+      },
+    })();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /session is no longer available/);
+    assert.equal(editor.document.getText(), "");
   });
 
   it("reports a CAS problem from getServers without touching the editor", async () => {

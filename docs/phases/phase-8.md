@@ -359,9 +359,11 @@ own punch-list item) and a process question, left for Sean to decide rather
 than settled here, about whether bundling the CAS work with the unrelated
 CI/icon change into one PR is intentional.
 
-☐ **8b — Authenticated CAS session helper.** Code-complete 2026-09-13; one
-manual, non-negotiable check (below) is still outstanding before this box
-can tick.
+☐ **8b — Authenticated CAS session helper.** Code-complete 2026-09-13; the
+slice's one non-negotiable manual check (8.14, below) passed 2026-09-13. One
+further manual-test finding (8.18, below) surfaced after that pass, was
+fixed in code the same day, and awaits a live re-confirmation before this
+box ticks — the same discipline 8a's own Finding 8.9 fix followed.
 
 - ☑ Design the token-delivery mechanism — **reused `src/compute/fileref.ts`'s
   upload path as-is** (Decision 1, 2026-09-13: no invariant change to
@@ -372,12 +374,12 @@ can tick.
   `procPython.ts`'s `PYnnnnnn`, random rather than sequential — a one-shot
   command has no counter to seed) and writes the token's UTF-8 bytes via
   `writeFilerefContent`, retrying under a new name on a collision.
-- ☐ **Confirm by hand that the delivered token does not appear in the job
+- ☑ **Confirm by hand that the delivered token does not appear in the job
   log** the way Finding 8.6's inline attempt did — `docs/dev/manual-tests/phase-8.md`
   item **8.14**. This is the one check this slice cannot skip before it is
   considered done, and it needs a live deployment and a real run — not
-  something provable from a unit or integration test. **Still open** — needs
-  Sean.
+  something provable from a unit or integration test. **Passed, 2026-09-13
+  (Sean).**
 - ☑ Decide and document the token-lifetime story (Plan, above) — **Decision
   2, 2026-09-13: documented prose, not shipped code.** No
   reconnect-on-auth-failure helper; `docs/cas-python-connection.md`'s
@@ -439,6 +441,44 @@ was never buying anything here, matching `dragSnippet.ts`'s own
 for the same reason. A regression test (host containing `$1}`) was added to
 `connect-command.test.ts`. Re-verified after the fix: 1689 unit, 396
 integration passing, lint and `tsc --noEmit` clean.
+
+**Manual test pass, 2026-09-13 (Sean): one real bug found and fixed.**
+`docs/dev/manual-tests/phase-8.md`'s 8b section (8.11–8.20) ran against
+`verde`. Every box passed except **8.18**: with a non-`.py` file focused (a
+`.md` file in the reported case), **Insert CAS Connection Snippet** still
+inserted the snippet rather than reporting "Open a Python file first" —
+`casConnectCommand.ts`'s own gate only asked whether *an* editor was active
+at all (`activeTextEditor() === undefined`), never what kind of document it
+held, unlike `src/run/commands.ts`'s own `runNow`, which has always gated on
+`editor?.document.languageId !== "python"`. Fixed by adopting the identical
+check; a regression test (a focused Markdown document, item 8.18) was added
+to `connect-command.test.ts`. §8.13 (multiple CAS servers) is not
+independently reachable on this deployment (only one CAS server exists) and
+is noted as such rather than forced.
+
+**Adversarial review before this PR opens (2026-09-13), one real finding,
+fixed before push.** `connect-command.test.ts` covered every early-return
+branch in `casConnectCommand.ts` except three: `adapter === undefined`
+("Could not reach CAS for this profile"), a `getConnection` failure, and a
+`writeCasToken` failure reaching `report` — the underlying logic each calls
+into is well covered elsewhere (`CasAdapter.getConnection`,
+`compute-cas-token.test.ts`'s retry/escaping contract), but the command's
+own routing of those three results to `report` was not independently
+exercised. Verified directly (grepped the test file for each branch's own
+condition before accepting the finding) rather than taken on faith. Fixed
+with three new tests, one per branch, reusing the existing `harness()` and a
+new minimal `failingComputeClient()` for the `writeCasToken` case. No
+security or correctness defect — this was a coverage gap, not a bug: the
+review separately traced `fileref.ts`'s and `compute/client.ts`'s transport
+and confirmed neither logs or echoes the raw token/body in any failure
+path.
+
+`npm run verify` green after both rounds of fixes (1689 unit, unchanged —
+the three new tests are integration-level, exercising the command's own
+`vscode` plumbing, not unit-level; coverage unchanged at
+95.87/95.45/95.72/95.87), 400 integration passing (`ELECTRON_RUN_AS_NODE`
+env-strip workaround, same long-standing quirk, not a regression),
+`npm run check:docs` green.
 
 ☐ **8c — CAS tables in the data viewer.**
 

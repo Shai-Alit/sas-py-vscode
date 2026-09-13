@@ -158,7 +158,7 @@ export function createInsertCasConnectionSnippet(
     }
 
     const editor = activeTextEditor();
-    if (editor === undefined) {
+    if (editor?.document.languageId !== "python") {
       report(
         vscode.l10n.t("Open a Python file first, then run this command again."),
       );

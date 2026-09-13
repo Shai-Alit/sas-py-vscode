@@ -373,10 +373,11 @@ can tick.
   command has no counter to seed) and writes the token's UTF-8 bytes via
   `writeFilerefContent`, retrying under a new name on a collision.
 - ☐ **Confirm by hand that the delivered token does not appear in the job
-  log** the way Finding 8.6's inline attempt did. This is the one check this
-  slice cannot skip before it is considered done, and it needs a live
-  deployment and a real run — not something provable from a unit or
-  integration test. **Still open** — needs Sean.
+  log** the way Finding 8.6's inline attempt did — `docs/dev/manual-tests/phase-8.md`
+  item **8.14**. This is the one check this slice cannot skip before it is
+  considered done, and it needs a live deployment and a real run — not
+  something provable from a unit or integration test. **Still open** — needs
+  Sean.
 - ☑ Decide and document the token-lifetime story (Plan, above) — **Decision
   2, 2026-09-13: documented prose, not shipped code.** No
   reconnect-on-auth-failure helper; `docs/cas-python-connection.md`'s

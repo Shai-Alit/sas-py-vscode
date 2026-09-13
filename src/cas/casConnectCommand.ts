@@ -28,6 +28,7 @@ import * as vscode from "vscode";
 
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import { accountForEndpoint } from "../auth/identity";
+import { abortOn, type CancellationLike } from "../compute/cancellation";
 import { type ComputeClient } from "../compute/client";
 import { localiseComputeProblem } from "../compute/messages";
 import { writeCasToken } from "../compute/casToken";
@@ -69,6 +70,17 @@ export interface CasConnectCommandAdapter {
     signal?: AbortSignal,
   ): Promise<CasResult<CasConnectionInfo>>;
 }
+
+/** A function shaped like `vscode.window.withProgress`, narrowed to a
+ * cancellable notification and the one token type this command's network
+ * calls need. Defaults to the real thing; a test cannot drive a real
+ * progress notification's Cancel button, so it swaps in one that hands back
+ * a token the test controls directly — the same port
+ * `ComputeSessionManager`'s own `withProgress` dep uses. */
+export type CasConnectCommandWithProgress = <T>(
+  title: string,
+  run: (token: CancellationLike) => Promise<T>,
+) => Promise<T>;
 
 /** What this command reads from `CasSession`. */
 export interface CasConnectCommandCas {
@@ -115,6 +127,8 @@ export interface CasConnectCommandDeps {
         account: Account | undefined,
       ) => Thenable<vscode.AuthenticationSession | undefined>)
     | undefined;
+  /** Defaults to a cancellable `vscode.window.withProgress` notification. */
+  withProgress?: CasConnectCommandWithProgress | undefined;
 }
 
 /**
@@ -143,6 +157,17 @@ export function createInsertCasConnectionSnippet(
       items: readonly T[],
       options: vscode.QuickPickOptions,
     ) => await vscode.window.showQuickPick([...items], options));
+  const withProgress: CasConnectCommandWithProgress =
+    deps.withProgress ??
+    (async (title, run) =>
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title,
+          cancellable: true,
+        },
+        async (_progress, token) => await run(token),
+      ));
 
   return async function insertCasConnectionSnippet(): Promise<void> {
     const active = profiles.active();
@@ -175,74 +200,111 @@ export function createInsertCasConnectionSnippet(
       return;
     }
 
-    const servers = await adapter.getServers();
-    if (!servers.ok) {
-      report(localiseCasProblem(servers.problem));
-      return;
-    }
-    const [firstServer] = servers.value;
-    if (firstServer === undefined) {
-      report(
-        vscode.l10n.t("This deployment reports no CAS server to connect to."),
-      );
-      return;
-    }
+    // Everything past this point is network-bound (up to five sequential
+    // round trips: `getServers`, `getConnection`, `listAccounts`+`getSession`,
+    // then `writeCasToken`'s own create/self/upload triplet), so it runs
+    // behind a cancellable progress notification with a single `AbortSignal`
+    // threaded through every CAS/Compute call — the same shape
+    // `ComputeSessionManager`'s own connect flow and
+    // `contentCommands.ts`'s `run()` helper use. Each call already has a
+    // baked-in default timeout at the transport layer (`CasClient`/
+    // `ComputeClient`'s own `DEFAULT_TIMEOUT_MS`), so this is about user
+    // feedback and an explicit cancel path, not an unbounded hang.
+    const message = await withProgress(
+      vscode.l10n.t("Connecting to CAS…"),
+      async (token): Promise<string | undefined> => {
+        const bridge = abortOn(token);
+        try {
+          const servers = await adapter.getServers(bridge.signal);
+          if (!servers.ok) {
+            // A request aborted by the user's own Cancel click comes back as
+            // an ordinary `CasResult` failure — `CasClient`/`ComputeClient`
+            // catch the abort and return it as `cas-unreachable`/
+            // `compute-unreachable` — so cancellation is told apart from a
+            // real failure by asking the token, not by inspecting the
+            // problem, mirroring `cancellation.ts`'s own "ask the token
+            // first" rule.
+            return token.isCancellationRequested
+              ? undefined
+              : localiseCasProblem(servers.problem);
+          }
+          const [firstServer] = servers.value;
+          if (firstServer === undefined) {
+            return vscode.l10n.t(
+              "This deployment reports no CAS server to connect to.",
+            );
+          }
 
-    let server: CasServerItem;
-    if (servers.value.length === 1) {
-      server = firstServer;
-    } else {
-      const picked = await pick(
-        servers.value.map((candidate): ServerQuickPickItem => ({
-          label: candidate.name,
-          server: candidate,
-        })),
-        { title: vscode.l10n.t("Select a CAS server") },
-      );
-      if (picked === undefined) return; // The user cancelled the picker.
-      server = picked.server;
-    }
+          let server: CasServerItem;
+          if (servers.value.length === 1) {
+            server = firstServer;
+          } else {
+            const picked = await pick(
+              servers.value.map((candidate): ServerQuickPickItem => ({
+                label: candidate.name,
+                server: candidate,
+              })),
+              { title: vscode.l10n.t("Select a CAS server") },
+            );
+            if (picked === undefined) return undefined; // The user cancelled the picker.
+            server = picked.server;
+          }
 
-    const connectionInfo = await adapter.getConnection(server);
-    if (!connectionInfo.ok) {
-      report(localiseCasProblem(connectionInfo.problem));
-      return;
-    }
+          const connectionInfo = await adapter.getConnection(
+            server,
+            bridge.signal,
+          );
+          if (!connectionInfo.ok) {
+            return token.isCancellationRequested
+              ? undefined
+              : localiseCasProblem(connectionInfo.problem);
+          }
 
-    const account = accountForEndpoint(
-      active.profile.endpoint,
-      await listAccounts(),
+          const account = accountForEndpoint(
+            active.profile.endpoint,
+            await listAccounts(),
+          );
+          const authSession = await getSession(account);
+          if (authSession === undefined) {
+            return vscode.l10n.t(
+              "The SAS Viya sign-in for this profile has ended.",
+            );
+          }
+
+          const written = await writeCasToken(
+            connection.client,
+            connection.session,
+            authSession.accessToken,
+            { signal: bridge.signal },
+          );
+          if (!written.ok) {
+            return token.isCancellationRequested
+              ? undefined
+              : localiseComputeProblem(written.problem);
+          }
+
+          const snippet = buildCasConnectSnippet({
+            host: connectionInfo.value.host,
+            port: connectionInfo.value.port,
+            filerefName: written.value.filerefName,
+          });
+          // Plain text, not `new vscode.SnippetString(snippet)`: `host` is
+          // untrusted wire data (Finding 8.10), and `$`/`}` are
+          // snippet-grammar metacharacters that `insertSnippet` would
+          // reinterpret rather than insert literally — see
+          // `connectSnippet.ts`'s own doc comment.
+          await editor.edit((editBuilder) => {
+            for (const selection of editor.selections) {
+              editBuilder.replace(selection, snippet);
+            }
+          });
+          return undefined;
+        } finally {
+          bridge.dispose();
+        }
+      },
     );
-    const authSession = await getSession(account);
-    if (authSession === undefined) {
-      report(vscode.l10n.t("The SAS Viya sign-in for this profile has ended."));
-      return;
-    }
-
-    const written = await writeCasToken(
-      connection.client,
-      connection.session,
-      authSession.accessToken,
-    );
-    if (!written.ok) {
-      report(localiseComputeProblem(written.problem));
-      return;
-    }
-
-    const snippet = buildCasConnectSnippet({
-      host: connectionInfo.value.host,
-      port: connectionInfo.value.port,
-      filerefName: written.value.filerefName,
-    });
-    // Plain text, not `new vscode.SnippetString(snippet)`: `host` is
-    // untrusted wire data (Finding 8.10), and `$`/`}` are snippet-grammar
-    // metacharacters that `insertSnippet` would reinterpret rather than
-    // insert literally — see `connectSnippet.ts`'s own doc comment.
-    await editor.edit((editBuilder) => {
-      for (const selection of editor.selections) {
-        editBuilder.replace(selection, snippet);
-      }
-    });
+    if (message !== undefined) report(message);
   };
 }
 

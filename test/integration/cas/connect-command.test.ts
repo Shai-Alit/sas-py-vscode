@@ -25,6 +25,7 @@ import {
   type CasConnectCommandConnection,
   type CasConnectCommandProfiles,
   type CasConnectCommandSessions,
+  type CasConnectCommandWithProgress,
 } from "../../../src/cas/casConnectCommand";
 import {
   type ComputeClient,
@@ -189,6 +190,7 @@ interface Harness {
       options: vscode.QuickPickOptions,
     ) => Thenable<T | undefined>;
     getSession?: () => Thenable<vscode.AuthenticationSession | undefined>;
+    withProgress?: CasConnectCommandWithProgress;
   }): () => Promise<void>;
 }
 
@@ -238,6 +240,9 @@ function harness(): Harness {
           ...(overrides.showQuickPick === undefined
             ? {}
             : { showQuickPick: overrides.showQuickPick }),
+          ...(overrides.withProgress === undefined
+            ? {}
+            : { withProgress: overrides.withProgress }),
         },
       ),
   };
@@ -513,5 +518,85 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
 
     assert.equal(h.reports.length, 1);
     assert.match(h.reports[0] ?? "", /sign-in/);
+  });
+
+  it("reports nothing when the user cancels the connect from the progress notification", async () => {
+    // Mirrors `session-manager.test.ts`'s own "says nothing when the user
+    // cancels" case: a token already cancelled before `getServers` resolves
+    // means the resulting `CasResult` failure is the user's own Cancel
+    // click, not a real problem, and must not surface as an error.
+    const source = new vscode.CancellationTokenSource();
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({
+      cas: {
+        adapterFor: (): CasConnectCommandAdapter => ({
+          getServers: () =>
+            Promise.resolve({
+              ok: false,
+              reason: "aborted",
+              problem: { code: "cas-unreachable", detail: "aborted" },
+            }),
+          getConnection: () => {
+            throw new Error("must not be called once getServers is cancelled");
+          },
+        }),
+      },
+      withProgress: (_title, run) => {
+        source.cancel();
+        return run(source.token);
+      },
+    })();
+
+    assert.deepEqual(h.reports, []);
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("threads an AbortSignal into getServers, getConnection, and writeCasToken", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({
+      cas: {
+        adapterFor: (): CasConnectCommandAdapter => ({
+          getServers: (signal) => {
+            signals.push(signal);
+            return Promise.resolve({
+              ok: true,
+              value: [server("cas-shared-default")],
+            });
+          },
+          getConnection: (_picked, signal) => {
+            signals.push(signal);
+            return Promise.resolve({
+              ok: true,
+              value: { host: "sas-cas-server-default-client", port: 5570 },
+            });
+          },
+        }),
+      },
+      sessions: {
+        current: () => {
+          const client = computeClient();
+          return {
+            client: {
+              send: (request: ComputeRequest) => {
+                signals.push(request.signal);
+                return client.send(request);
+              },
+            },
+            session: connection().session,
+          };
+        },
+      },
+    })();
+
+    assert.equal(editor.document.getText().length > 0, true);
+    assert.equal(signals.length, 5); // getServers, getConnection, + writeCasToken's 3 Compute calls
+    for (const signal of signals) {
+      assert.ok(signal instanceof AbortSignal, "expected an AbortSignal");
+    }
   });
 });

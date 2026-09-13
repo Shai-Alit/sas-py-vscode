@@ -194,7 +194,7 @@ command.
   **(9/13/2026) already covered**
   **Expect:** either the command is unavailable, or it reports "Connect to
   SAS Viya first, then run this command again." and inserts nothing.
-- [ ] **8.18** **No Python editor open reports clearly** — close every editor
+- [x] **8.18** **No Python editor open reports clearly** — close every editor
   tab (or focus a non-editor view), then run **Insert CAS Connection
   Snippet** from the Command Palette.
   **Expect:** a message reading "Open a Python file first, then run this

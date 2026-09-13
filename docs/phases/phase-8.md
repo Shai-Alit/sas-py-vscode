@@ -363,9 +363,9 @@ CI/icon change into one PR is intentional.
 slice's one non-negotiable manual check (8.14, below) passed 2026-09-13. One
 further manual-test finding (8.18, below) surfaced after that pass, was
 fixed in code the same day, and was live-reconfirmed 2026-09-13 (Sean) — the
-same discipline 8a's own Finding 8.9 fix followed. [PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170)
-open; see the PR-review-findings entry below for the one fix folded in
-before merge.
+same discipline 8a's own Finding 8.9 fix followed. **[PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170)
+merged 2026-09-13, squash `671db19`** — see the PR-review-findings entry
+below for the one fix folded in before merge.
 
 - ☑ Design the token-delivery mechanism — **reused `src/compute/fileref.ts`'s
   upload path as-is** (Decision 1, 2026-09-13: no invariant change to

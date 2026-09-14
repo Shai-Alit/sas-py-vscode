@@ -221,3 +221,66 @@ command.
   **Expect:** the snippet is ordinary Python syntax highlighting (nothing new
   to check there); the cloud icon from §8.19 renders as a real codicon, not a
   broken/missing-glyph box, in all three.
+
+## CAS tables in the data viewer (phase 8c)
+
+A CAS table's tree node opens in the same paged, sortable, filterable grid
+Phase 7 built for Compute session tables (`pythonOnViya.openCasTable`),
+reached via the shared `DataViewerPanelManager` generalized behind a
+`TableSource` interface ([ADR-0034](../../adr/0034-table-source-abstraction.md))
+rather than a second, forked panel. **Not yet run** — this section is new for
+Phase 8c and has no prior pass to compare against; every box below is a first
+assertion, not a re-check. Added 2026-09-14 at the Phase 8→9 housekeeping
+checkpoint, which found 8c had shipped and merged with no manual-test section
+tracking it at all — the same gap that checkpoint's Phase 7→8 predecessor
+found and fixed for 7c-iii's CSV export.
+
+**Pre-work:** the same CAS pre-work as the phase 8a section above — a Viya
+connection, signed in (no **Connect** needed). Have at least one table you
+can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
+
+- [ ] **8.21** **Opening a CAS table opens the shared data-viewer panel** —
+  in the **CAS** tree, expand a caslib down to a table and click it (or use
+  its context menu), the same gesture **SAS Libraries**' own table nodes use.
+  **Expect:** the same paged/sortable/filterable grid Phase 7 built opens,
+  populated with this table's real rows and columns — not an empty or
+  errored panel.
+- [ ] **8.22** **Opening an unloaded table loads it first (JIT-load)** — pick
+  a table you have not yet expanded or loaded this session and open it
+  directly via the data viewer gesture above, without expanding it in the
+  tree first.
+  **Expect:** a short pause (the load `PUT`, Finding 8.3/8.8, the same one
+  8a's own §8.5 exercises via the tree), then the grid populates — not an
+  error, and not an empty grid.
+- [ ] **8.23** **Sort and filter work, independently and together** — in the
+  opened panel, sort by a column, then clear it and filter instead, then
+  apply both together.
+  **Expect:** results update correctly for each combination, with no
+  noticeable delay from a view-creation step — Finding 8.12 found CAS needs
+  none, unlike a Compute session table.
+- [ ] **8.24** **Opening the same table twice reveals the existing panel,
+  not a duplicate** — with a CAS table already open, trigger the same open
+  gesture on it again (from the tree or the Command Palette history).
+  **Expect:** the existing panel is revealed/refocused; no second tab or
+  panel appears for the same table.
+- [ ] **8.25** **Switching deployments does not leak a stale panel** — open
+  a CAS table on one connection profile, then switch to a different Viya
+  connection profile whose deployment happens to expose a server/caslib/table
+  with the exact same names, and open that one.
+  **Expect:** a distinct panel opens for the new deployment's table, not a
+  reveal of the first profile's panel — the cross-deployment isolation
+  [ADR-0034](../../adr/0034-table-source-abstraction.md) added `CasAdapter`'s
+  own `endpoint` field for. **If no second profile with matching names is
+  available, note this box as not independently reachable** rather than
+  forcing it — the same allowance §8.13 above takes for a single-CAS-server
+  deployment.
+- [ ] **8.26** **Closing the panel disposes cleanly** — close the CAS
+  table's data-viewer tab/panel.
+  **Expect:** no error appears in **Python on Viya: Show Log** or the
+  DevTools console; reopening the same table afterward opens a fresh panel
+  with correct data, not a stale or broken one.
+- [ ] **8.27** **Legible in every theme** — with a CAS table open in the data
+  viewer, switch VS Code between a light theme, a dark theme, and a
+  high-contrast theme.
+  **Expect:** the grid renders correctly in all three, matching Phase 7's own
+  data viewer — nothing CAS-specific to the rendering here.

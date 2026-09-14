@@ -1512,6 +1512,238 @@ confirm the 6→12 order against real post-v0.1.0 demand.
   pre-release / invite-only — the fileref bug is a `fix/` PR, the accounts-menu
   gap lives in `phase-11.md`. Revisit issue tracking once past "preview".
 
+**Phase 6 (SAS Content explorer) — full slice-by-slice narrative, moved here 2026-09-14 at the Phase 8→9 housekeeping checkpoint**, per `STATUS.md`'s own archival rule — this should have moved at the Phase 6→7/8 checkpoint (2026-09-11) alongside Phase 7's own narrative, but was missed then; caught and fixed at this checkpoint instead.
+
+**Phase 6 (SAS Content explorer) is fully complete and merged — 6a–6e all
+landed.** Open [`docs/phases/phase-6.md`](phases/phase-6.md)
+for the full account. Scoped 2026-09-03 (4 slices, 6a–6d); the 6→12 order was
+re-confirmed with Sean on 2026-09-09 before starting. **6e merged 2026-09-11**
+as [PR #162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash
+`a74f756`, after two further review rounds on the open PR each found and fixed
+one real race in `paste()`'s failure-restore (commits `716ae27`/`1563bd3` —
+see `phase-6.md`'s 6e Runbook entry) — Cut/Paste ships and is confirmed
+working live; the `resourceUri` fix attempt for native drag-and-drop does
+not work (live-retested, identical symptoms — disproven as the cause, per
+ADR-0031's amendment). **Drag-and-drop's real root cause — a VS Code 1.109
+bug that JSON-marshals `handleDrop`'s `CancellationToken` argument and
+strips its subscribe method, so it threw before any move ran — was found
+and fixed 2026-09-11, in a separate follow-up after 6e merged** (finding
+6.16, `phase-6.md`) — [PR #164](https://github.com/Shai-Alit/sas-py-vscode/pull/164)
+opened 2026-09-11; `phase-11.md`'s tracked follow-up is closed. Fixed and
+verified by `npm run verify`/`test:integration`/`check:docs`, a new
+regression test reproducing the exact broken-token shape, an adversarial
+pass before push (no blocking findings), and **a live retest, 2026-09-11
+(Sean): confirmed working** — a real drag-and-drop move, plus every other
+§15 row that had been blocked on the base gesture — see `phase-6.md`'s
+Runbook and `manual-test-pass.md`'s §15.
+**The Phase 6→7/8 between-phase housekeeping
+(`HOUSEKEEPING.md`) is now closed.** Its last open item, the top-level-folder
+permanent-delete confirmation, is resolved as a documented, deferred known
+gap rather than a retry: a real live-exercise attempt found the deletion
+blocked, the housekeeping checkpoint itself then mis-corrected that finding
+by reasoning from Sean's own admin access (**that correction was wrong and
+is retracted**), and Sean has since clarified the actual mechanism — a Viya
+deployment-level configuration set at install time restricts deleting a
+folder directly under SAS Content for most users, independent of account
+permissions, not something admin rights bypass. Not retestable on this
+deployment; needs one configured to allow it. See `phase-6.md`'s Runbook
+(the `☐` item after the drag-and-drop entry) and `manual-test-pass.md`'s §15
+for the full account. **6a is done** (split 6a-i + 6a-ii) and
+**6b is done**; **6c** is
+split into 6c-i/ii/iii — the oversized-read fix (PR #147), **6c-i** (PR #148,
+squash `c63feaf`) and **6c-ii (drag-and-drop move)** ([PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151),
+squash `8e842c7`) are done and merged. The drag-into-editor snippet that was
+scoped into 6c-ii is **deferred to future work** (Sean, 2026-09-10; finding
+6.11). **6c-iii (`getParent` / `TreeView.reveal`) is done and merged 2026-09-10
+([PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154), squash
+`507155e`) — `npm run verify` green (1480 unit; coverage 95.31 lines / 95.37
+branches / 94.98 functions / 95.31 statements), 318 integration passing;
+adversarial pass before the PR raised no blocking findings (two minor polish
+items folded in); Codex PR review flagged the two reveal-path fetches for
+lacking an abort path — each now carries its own `AbortSignal.timeout(8_000)`
+and the `reveal`-failed `log.debug` is `l10n.t()`-wrapped; Claude PR review
+clean, all threads resolved.**
+Finding 6.12 pinned the `/folders/ancestors` wire shape (superseding finding
+101). This clone also had `npm install` run to reconcile `node_modules` with
+Sean's concurrent Phase 7b merge (React + ag-grid) that `main` fast-forwarded
+onto.
+
+**6d (favourites + recycle bin) is split into 6d-i / 6d-ii** (Sean, 2026-09-10),
+mirroring 6c. The read-only + Sean-approved mutating probe pass for both ran
+2026-09-10 — findings 6.13–6.15, `verde`-only (the `innov` token had expired
+again). **6d-i (favourites) is done and merged 2026-09-11**
+([PR #157](https://github.com/Shai-Alit/sas-py-vscode/pull/157), squash
+`652f3a8`) — `ContentAdapter.addToFavorites` / `removeFromFavorites` (a
+`reference` member `POST` / a `DELETE` of that record — finding 6.13, which also
+settles Finding 80: `memberCount` is a phantom, the members listing is the only
+authority), a `markFavorites` opt on `getChildItems` stamping `isInMyFavorites` +
+`favoriteUri`, `.fav` / `.recycled` `contextValue` suffixes + `favoriteAction`
+on the presentation, two flat commands, the `=~` migration of the content menu
+`when` clauses. Adversarial pass before the PR (no blocking findings); five
+review findings folded in over two rounds, all local, one push each — the
+`.recycled` suffix + `favorite()` bin early-out (Codex 2 × Major); dropping the
+per-account `favoritesFolder()` memo (blocking — the adapter is per-endpoint,
+reused across profile switches); `typeNameOf` handling wire `type: "reference"`
+so favourites browsed inside My Favorites expand/open (likely blocking); a
+direct test for the bin early-out (minor). `npm run verify` green (1531 unit
+after the 7c-i merge; coverage 95.44 / 95.36 / 95.10 / 95.44), 331 integration,
+`npm run check:docs` green; all threads resolved. See `phase-6.md`'s 6d-i
+Runbook entry for the full account.
+**6d-ii (recycle bin) is done and merged 2026-09-11** —
+[PR #159](https://github.com/Shai-Alit/sas-py-vscode/pull/159), squash
+`c6b7a70`. Adversarial pass before the PR — no blocking findings; one known
+tradeoff flagged (`emptyRecycleBin` has no per-item progress or batching),
+Sean's call to ship as-is. PR review (Codex ×2 clean; Claude found one likely-
+blocking issue — `inRecycleBin` wasn't propagated past the bin's direct
+children, so a file nested inside a recycled folder read as an ordinary
+editable item with no Restore — fixed same-branch, one push, thread resolved,
+`getChildItems` now also propagates from `parent.inRecycleBin`). Recycle /
+restore reuse `ContentAdapter.moveItem` (findings 6.14/6.15, re-confirmed
+read-only against `verde` this session; `innov` unreachable so single-cadence
+like 6.11–6.15); `emptyRecycleBin` iterates + `deleteItem`s each bin member;
+the read-only `sasContentReadOnly:` view is the existing `FileSystemProvider`
+registered a second time with `isReadonly: true` (no new class). **"Delete" now
+recycles** an ordinary member (no confirm — Restore undoes it) and only
+permanently deletes an un-recyclable one (a top-level folder, or a bin item)
+behind a modal — Sean's call, upstream parity, a documented-invariant change
+from 6c-i, recorded as [ADR-0030](adr/0030-delete-recycles-content-items.md)
+at the Phase 6→7/8 housekeeping checkpoint. `npm run verify` green (1550 unit after the review-finding fix;
+coverage 95.49 / 95.44 / 95.18 / 95.49), 333 integration, `npm run check:docs`
+green.
+
+(Probe finding numbers are now phase-scoped `N.x` — see the "Finding-numbering
+scheme changed 2026-09-09" section below and `CLAUDE.md`.)
+
+- **6a-i — `src/wire/` promotion.** Done. The Viya hypermedia link helpers and
+  the `application/vnd.sas.error+json` reader moved from `src/compute/` to a
+  new service-agnostic `src/wire/` layer so `src/content/` can share them
+  ([ADR-0025](adr/0025-shared-wire-layer.md)). Zero behaviour change.
+- **6a-ii — content adapter + read-only tree.** Done ([PR #139](https://github.com/Shai-Alit/sas-py-vscode/pull/139)).
+  The `src/content/` module (`types`/`problems`/`client`/`adapter`/
+  `contentSession`/`presentation` `vscode`-free; `contentTree`/`contentExplorer`
+  thin `vscode` shells), this repo's first activity-bar view container, and a
+  read-only SAS Content tree (My Favorites / My Folder / SAS Content / Recycle
+  Bin, lazy-expanded). No `ContentModel`, no adapter factory, no `sortBy`
+  cadence branch — [ADR-0026](adr/0026-content-adapter-shape.md). Live
+  Folders/Files findings 97–101 in `phase-6.md`; the `.py`-type second-cadence
+  probe moved to 6c (it only feeds create-file).
+- **6b — open/save via `FileSystemProvider`.** Done and merged 2026-09-10
+  ([PR #141](https://github.com/Shai-Alit/sas-py-vscode/pull/141), squash
+  `1c13854`). A new `sasContent:` `FileSystemProvider`
+  (`src/content/contentFileSystem.ts`) over three `vscode`-free
+  `ContentAdapter` methods (`statFile`/`readFileContent`/`writeFileContent`)
+  and the mutating arm added to `src/content/client.ts`: clicking a file leaf
+  opens it, saving writes it back with an `If-Match` round trip, and a
+  lost-update `412` surfaces as a "reopen for the current version" conflict
+  via the returning `localiseContentProblem` seam. Findings 6.1–6.2. Scoped
+  to the open/save core — `getParent`/`reveal` + the finding-101 `ancestors`
+  probe moved to 6c, the `sasContentReadOnly` recycle-bin scheme to 6d, and
+  the drag-into-editor snippet (Python-shaped, probe-gated — Sean's call) to
+  6c. `npm run verify` green (1347 unit + 280 integration passing; coverage
+  94.93% lines / 95.22% branches / 94.53% functions / 94.93% statements);
+  adversarial pass done before the PR, Codex + Claude PR reviews clean, all
+  threads resolved. One review finding deferred to 6c (an oversized-file read
+  surfaces as a network error, not a size error). A post-merge review pass
+  raised one Major — the `opened` ETag guard was keyed by the file href alone,
+  so it leaked across deployments; now keyed by deployment root + href — plus
+  two Minor doc/robustness findings, all fixed in
+  [PR #145](https://github.com/Shai-Alit/sas-py-vscode/pull/145) (squash
+  `0449caa`; adversarial pass before the PR, `npm run verify` green, 1348 unit
+  + 281 integration passing, coverage unchanged).
+- **6c — mutations (create/rename/move/delete).** Split into three sub-slices
+  (Sean, 2026-09-10): **6c-i** create/rename/delete for folders and files from
+  the tree context menu; **6c-ii** move + drag-and-drop (repo's first
+  `TreeDragAndDropController`) + the Python-shaped drag-into-editor snippet;
+  **6c-iii** `getParent`/`TreeView.reveal` + the finding-101 `ancestors` probe.
+  Upload/download to local disk was never in the 6a–6d breakdown; a prior
+  session's own PR #148 Runbook entry said pushing it to Phase 11 was
+  "(Sean, 2026-09-10)" without that actually being confirmed with him. **Sean
+  has since said (2026-09-11) he does not want it deferred that far** — it's
+  an expected feature, not a long-tail item — so this is now an open scope
+  question, not a settled deferral. See `phase-6.md`'s correction and
+  `phase-11.md`'s retracted note.
+  - The 6b-deferred oversized-file-read fix went out first, **merged**
+    2026-09-10 as [PR #147](https://github.com/Shai-Alit/sas-py-vscode/pull/147)
+    (squash `79e10b0`) — `content-too-large` `ContentProblem` + a typed
+    `ResponseTooLargeError` from `src/auth/transport.ts`. Adversarial pass
+    before the PR; Codex + Claude reviews clean.
+  - **6c-i is done and merged** 2026-09-10 as
+    [PR #148](https://github.com/Shai-Alit/sas-py-vscode/pull/148) (squash
+    `c63feaf`). `ContentAdapter` gains `createFolder`/`createFile`/
+    `renameItem`/`deleteItem` over a new JSON-body arm on `ContentClient`;
+    `content-name-rejected` `ContentProblem`; delegate `contextValue`s; four
+    flat commands in a new `src/content/contentCommands.ts`. Findings 6.3–6.9
+    (probed against both `verde` LTS 2026.03 and `innov` Stable 2026.06):
+    finding 6.9 clears Finding 79's one-cadence caveat; finding 6.7 is a real
+    cadence difference (a folder rejects its own full representation on `PUT`
+    on 2026.06 — 6c-i sends a minimal `{name}` body, no dialect branch).
+    `npm run verify` green (1395 unit + 287 integration). Adversarial pass
+    before the PR (found the `createFile` rollback-signal Major); Codex PR
+    review found one further Major (a post-completion Cancel click hiding a
+    landed mutation) — both fixed on the branch; Claude PR review clean; all
+    threads resolved.
+  - **6c-ii — drag-and-drop move.** Merged 2026-09-10 as
+    [PR #151](https://github.com/Shai-Alit/sas-py-vscode/pull/151) (squash
+    `8e842c7`). `npm run verify` green (1417 unit + 296 integration; coverage
+    95.18 lines / 95.25 branches / 94.79 functions / 95.18 statements).
+    `src/content/
+    contentDragAndDrop.ts` — the repo's first `TreeDragAndDropController`;
+    `ContentAdapter.moveItem` (a `GET`-then-`PUT` on the member's `update`
+    link, `parentFolderUri` changed — finding 6.10); `vscode`-free
+    `contentMove.ts` guard (incl. a recycled-item block — a drag out of the
+    Recycle Bin is a restore, 6d's); `parentFolderUri` + synthetic
+    `inRecycleBin` on `ContentItem`; `canSelectMany` on the view, with
+    `&& !listMultiSelection` added to the 6c-i create / rename / delete
+    context-menu `when` clauses so they hide during a multi-select rather than
+    acting on just the clicked item. The **drag-into-editor snippet is
+    deferred** (Sean, 2026-09-10) — finding 6.11: no idiomatic Python
+    equivalent of `filename … filesrvc …;`, only a fragile
+    `SAS.submit(… fcopy …)` blob, and a low-priority nice-to-have.
+    Adversarial pass before the PR (one Minor cast fixed; the recycled-item
+    guard was that pass's one call for Sean). Codex PR review clean; the Claude
+    PR review raised three findings over two rounds — a multi-item drag test
+    gap, `canSelectMany` leaving the 6c-i Rename/Delete/Create context commands
+    able to act on one of a multi-selection, and a comment overclaim — all
+    folded in on the branch; all threads resolved.
+  - **6c-iii — `getParent` / `TreeView.reveal`.** Merged 2026-09-10 —
+    [PR #154](https://github.com/Shai-Alit/sas-py-vscode/pull/154), squash
+    `507155e`. Adversarial pass before the PR raised no blocking findings; in review,
+    Codex flagged the two reveal-path fetches for lacking an abort path — both
+    are already client-timeout-bounded and neither has a `CancellationToken` to
+    thread, but each now carries its own `AbortSignal.timeout(8_000)`, and the
+    `reveal`-failed `log.debug` is `l10n.t()`-wrapped. `ContentAdapter.getParentOfItem`
+    (`GET` the `ancestors` link — finding 6.12: object `{ childUri, ancestors:
+    [<folder>…] }` under the link's own media type, immediate parent first;
+    empty array / `204` ⇒ no parent; finding 101's `406`/`{}` was the wrong
+    `Accept`, now superseded). `SasContentTreeProvider.getParent` (top-level ⇒
+    `undefined`; a root-listing folder with no ancestors ⇒ `SAS_CONTENT_ROOT`).
+    A best-effort `reveal` wired into the 6c-i create commands (re-lists +
+    `sameResource`-matches the new node, since a create response's folder id and
+    the listing's member id disagree) and the 6c-ii drop handler (first moved
+    member, id stable). **Node identity unchanged** — the re-key-by-resource-URI
+    alternative was weighed and rejected as an invariant change out of
+    proportion to the gain (Sean, 2026-09-10). `npm run verify` green (1480
+    unit; coverage 95.31 / 95.37 / 94.98 / 95.31), 318 integration passing.
+  - **6d (favourites + recycle bin)** is split into 6d-i / 6d-ii. **6d-i
+    (favourites) is code-complete 2026-09-10** — findings 6.13–6.15 from a
+    read-only + Sean-approved mutating probe pass (`verde`-only); `npm run
+    verify` green (1506 unit; coverage 95.38/95.29/95.07/95.38), 321 integration.
+    Adversarial pass pending before the PR. **6d-ii (recycle bin) is next.**
+
+The Phase 5→6 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
+2026-09-09 — nothing else gates Phase 6.
+
+The Phase 6→7/8 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed
+2026-09-11, once 6e merged. Its only remaining open item — the
+top-level-folder permanent-delete confirmation — closed as a documented,
+deferred known gap rather than a live confirmation: it is blocked by a Viya
+deployment-level configuration set at install time, independent of account
+permissions (Sean, 2026-09-11), not by anything this codebase controls or
+that a different account on the same deployment would get past. See
+`phase-6.md`'s Runbook and `manual-test-pass.md`'s §15 for the full account.
+Nothing else gates Phase 7 or 8.
+
+
 **Phase 7 (Libraries and data viewer) — full slice-by-slice narrative, moved here 2026-09-11 at the Phase 7→8 housekeeping checkpoint**, per `STATUS.md`'s own archival rule, once its own copy of this narrative started duplicating `docs/phases/phase-7.md`'s own detail (the pattern this file's own header note has always asked for at a phase boundary).
 
 **Phase 7 (Libraries and data viewer) is fully complete — 7a–7d all merged,
@@ -1931,3 +2163,99 @@ account in `phase-7.md`'s 7b Runbook entry.
   95.62/95.54/95.38/95.62), `npm run test:integration` green (372 passing).
   Sean's own review pending before merge. Full account in `phase-7.md`'s 7d
   Runbook entry.
+
+
+**Phase 8 (CAS and SWAT) — full slice-by-slice narrative, moved here 2026-09-14 at the Phase 8→9 housekeeping checkpoint**, per `STATUS.md`'s own archival rule, once its own copy of this narrative started duplicating `docs/phases/phase-8.md`'s own detail.
+
+**Phase 8 (CAS and SWAT) has started — 8a (CAS browsing) is done, 2026-09-11.**
+A read-only **CAS** tree — a third view in the existing activity-bar
+container, alongside SAS Content and SAS Libraries — shows a deployment's CAS
+servers, their global-scope caslibs, and each caslib's tables; expanding a
+table loads it on demand (Finding 8.3/8.8's JIT-load `PUT`) and shows its
+columns. `src/cas/` mirrors `src/content/`'s shape, not `src/data/`'s — an
+endpoint and a token, no session of any kind — since Finding 8.2/8.7
+confirmed global-scope `casManagement` browsing needs neither a compute
+session nor a CAS session ([ADR-0033](adr/0033-cas-adapter-shape.md)).
+This slice's own scope — whether the tree stops at tables (7a's own
+precedent) or goes one level deeper to columns — was an open inconsistency
+in `phase-8.md`'s own text, resolved this session (columns included), which
+is what pulled the JIT-load probe Finding 8.3 flagged into 8a rather than a
+later slice. That probe (Finding 8.8) was the one mutating call this slice
+needed, approved in advance, scoped to a generic-caslib system table, and
+left the deployment exactly as found. **Before 8a's PR was ever opened,
+Sean's own manual test pass found a real crash** — expanding a caslib with
+several tables threw VS Code's own "Element with id … is already
+registered" repeatedly and the tree ended up empty — root-caused live
+(Finding 8.9): `casManagement`'s own collections have no stable order
+across identical requests at all, so `CasAdapter`'s offset-based pagination
+duplicated some tables and silently dropped others. Fixed by seeding every
+paginated request with `sortBy=name` in the one shared `collectPages`
+helper. `npm run verify` green (1669 unit — one new test citing Finding 8.9;
+coverage unchanged at 95.82/95.46/95.66/95.82 — the ratchet raised from
+94/95/94/94 in this slice), 382 integration passing, `npm run check:docs`
+green. **Adversarial review run twice before the PR opens, no blocking
+findings from either pass** — one near-miss on the first pass (the JIT-load
+`PUT` firing as a side effect of expanding a table node, confirmed
+intentional per ADR-0033/Finding 8.8) and a disclosed sortBy-forwarding
+assumption on the second, now tracked as its own 8a punch-list item.
+**[PR #169](https://github.com/Shai-Alit/sas-py-vscode/pull/169) merged
+2026-09-13, squash `610d3f7`** — bundled the 8a slice, the 8a manual-test
+items (8.1–8.10), the Finding 8.9 fix, and an unrelated CI-classifier/
+activity-bar-icon chore into one PR, merged directly by Sean; the second
+adversarial pass's open process question (whether that bundling was
+intentional) is resolved by the merge itself. **Sean's live retest
+2026-09-13 confirmed the Finding 8.9 fix**: items 8.4 and 8.7, which the
+pagination-crash had blocked on 2026-09-12, now pass, and all ten 8a
+manual-test items pass. See `phase-8.md`'s Runbook and Probe findings
+(8.7/8.8/8.9) for the full account. **Flagged 2026-09-13 (Sean) and folded
+into 8b:** CAS tables show the same tree icon whether loaded into memory or
+not, so a user has no visual cue before running code that will fail against
+an unloaded table — now a punch-list item on 8b in `phase-8.md`'s Runbook.
+**8b (authenticated CAS session helper) is code-complete 2026-09-13** —
+`pythonOnViya.insertCasConnectionSnippet` writes a fresh CAS token as a
+fileref and inserts a plain-text `swat.CAS()` connect snippet; the slice's
+one non-negotiable manual check (the token never appears in the job log)
+passed 2026-09-13. Sean's manual test pass the same day found one further
+bug: the command inserted its snippet into any focused file, not just a
+`.py` one — fixed by gating on `editor?.document.languageId !== "python"`,
+the same check `src/run/commands.ts`'s Run commands already use, with a new
+regression test. The adversarial pass before this PR opens then found one
+real coverage gap (three of the command's own error-report branches were
+untested) — fixed with three more tests, no code defect. `npm run verify`
+green (1689 unit; coverage 95.87/95.45/95.72/95.87), 400 integration
+passing, `npm run check:docs` green. **8b awaits a live re-confirmation of
+the 8.18 fix before its Runbook box ticks** — see `phase-8.md`'s 8b
+Runbook. (That live re-confirmation landed and 8b merged as
+[PR #170](https://github.com/Shai-Alit/sas-py-vscode/pull/170) — see the
+Phase 8 row in the index table below for the up-to-date account.)
+
+**8c (CAS tables in the data viewer) is code-complete 2026-09-13** — a fresh
+probe pass at 8c's own start (Findings 8.11–8.13) found a CAS table's row
+data lives at the end of a `casManagement` → Data Tables API → `rowSets`
+relation chain, not in `casManagement` itself, and needs no server-side view
+of any kind for sort/filter (both travel as plain query parameters on every
+request, together, with `count` staying populated regardless — materially
+simpler than `LibraryAdapter`'s own view-creation dance). Reusing the
+existing data-viewer webview for a second backend was a real architecture
+decision, made with Sean before any code: `DataViewerPanelManager`/
+`OpenTablePanel` (`src/data/dataViewerPanel.ts`) are now generalized behind a
+small `TableSource` interface (`src/data/tableSource.ts`) rather than forking
+a second panel or forcing CAS through Library's view machinery —
+`src/data/librarySource.ts`'s `LibraryTableSource` carries every bit of that
+view-creation complexity now, unchanged in behaviour, and
+`src/cas/casTableSource.ts`'s `CasTableSource` is a thin, direct pass-through
+with none of it, since Finding 8.12 found none is needed. `CasAdapter`
+gained `openTable`/`getRows`; a table node's click/context-menu command,
+`pythonOnViya.openCasTable`, opens the same shared panel manager instance the
+"SAS Libraries" tree's own `openTable` already uses. `npm run coverage`
+green (1675 unit; coverage 95.91/95.46/95.75/95.91 — no ratchet change
+needed), 403 integration passing (8 of them new, `cas-data-viewer.test.ts`),
+`npm run check:docs` green (regenerated `docs/reference/commands.md`).
+**Adversarial self-review run before this PR opens, 2026-09-13 — no
+blocking findings.** Two non-actionable observations: the density of
+finding-citing doc comments on the new CAS types (a deliberate convention,
+not flagged as excessive) and this file's own now-corrected "review not yet
+run" note. See `phase-8.md`'s 8c Runbook entry for the full account,
+including what is deliberately still open (CSV export for a CAS table;
+whether the CAS-side ephemeral per-request sessions Finding 8.13 observed are
+ever cleaned up automatically).

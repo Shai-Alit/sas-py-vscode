@@ -104,7 +104,7 @@ describe("SasCasTreeProvider", () => {
     assert.equal(adapter.getColumnsCalls, 1);
     assert.equal(fired.length, 1);
 
-    const second = await provider.getChildren(fired[0] as CasTableItem);
+    const second = await provider.getChildren(fired[0]);
 
     assert.equal(
       adapter.getColumnsCalls,
@@ -119,7 +119,7 @@ describe("SasCasTreeProvider", () => {
     const { provider, fired } = makeProvider(adapter);
 
     await provider.getChildren(table({ state: "unloaded" }));
-    await provider.getChildren(fired[0] as CasTableItem); // the re-entrant call
+    await provider.getChildren(fired[0]); // the re-entrant call
     await provider.getChildren(table({ state: "unloaded" })); // a later, real re-expand
 
     assert.equal(adapter.getColumnsCalls, 2);

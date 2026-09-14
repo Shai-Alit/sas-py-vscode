@@ -52,6 +52,7 @@ import {
   type DataViewerHostMessage,
 } from "../../../src/data/dataViewerModel";
 import { LibraryTableSource } from "../../../src/data/librarySource";
+import { type TableSource } from "../../../src/data/tableSource";
 import { type TableItem } from "../../../src/data/types";
 import {
   dataFail,
@@ -115,6 +116,26 @@ function source(
   log?: vscode.LogOutputChannel,
 ): LibraryTableSource {
   return new LibraryTableSource(adapter, item, log);
+}
+
+/** A minimal `TableSource` double, independent of `LibraryAdapter`/
+ * `CasAdapter` — used only to drive `close()` directly, since neither real
+ * implementation can ever make it reject (`LibraryTableSource.close`'s own
+ * `discardView` logs and swallows a failed view delete; `CasTableSource.close`
+ * has nothing to discard). `close`'s own doc comment ("never throws") stays
+ * each implementation's responsibility; this double exists only to prove
+ * `OpenTablePanel`'s dispose path still doesn't crash if that contract is
+ * ever violated. */
+function stubSource(close: () => Promise<void>): TableSource {
+  return {
+    key: "stub-key",
+    title: "Stub",
+    logPrefix: "Stub",
+    open: () => Promise.resolve({ ok: true, value: { rowCount: 0 } }),
+    getColumns: () => Promise.resolve({ ok: true, value: [] }),
+    getRows: () => Promise.resolve({ ok: true, value: { rows: [], count: 0 } }),
+    close,
+  };
 }
 
 /** The routes a table's happy-path open needs: its own rich detail, then its
@@ -1197,5 +1218,37 @@ describe("DataViewerPanelManager", () => {
 
     assert.equal(warnings.length, 1);
     assert.match(warnings[0] ?? "", /could not delete/);
+  });
+
+  it("logs, rather than throws, if a TableSource's own close() ever rejects", async () => {
+    // Codex PR review finding, 2026-09-14: the 8c refactor to `TableSource`
+    // replaced the old `adapter.deleteView(...).then(...)` dispose path (which
+    // logged a failure) with a bare `void this.source.close()`, which would
+    // surface an unhandled rejection if any `close()` implementation ever
+    // rejected. No real implementation does today (`close`'s own doc comment
+    // says "never throws"), but `dataViewerPanel.ts`'s dispose handler now
+    // attaches a `.catch` regardless, as a backstop — this drives it directly
+    // with a stub `TableSource`, since neither `LibraryTableSource` nor
+    // `CasTableSource` can be made to reject `close()`.
+    const fake = fakePanel();
+    const warnings: string[] = [];
+    const log = {
+      warn: (message: string) => warnings.push(message),
+    } as unknown as vscode.LogOutputChannel;
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+      log,
+    });
+
+    await manager.open(
+      stubSource(() => Promise.reject(new Error("close failed"))),
+    );
+    fake.sendReady();
+
+    fake.panel.dispose();
+    await flush();
+
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0] ?? "", /cleanup for "Stub" failed/);
   });
 });

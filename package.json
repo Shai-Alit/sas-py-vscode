@@ -383,6 +383,10 @@
         {
           "command": "pythonOnViya.exportTableToCsv",
           "when": "false"
+        },
+        {
+          "command": "pythonOnViya.openCasTable",
+          "when": "false"
         }
       ],
       "view/title": [

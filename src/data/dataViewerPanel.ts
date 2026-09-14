@@ -190,7 +190,16 @@ class OpenTablePanel implements vscode.Disposable {
         this.onDisposed();
         // No signal: the controller above is already aborted by this point,
         // and reusing its signal here would abort this very cleanup call.
-        void this.source.close();
+        void this.source.close().catch((error: unknown) => {
+          this.log?.warn(
+            vscode.l10n.t(
+              '{0}: cleanup for "{1}" failed ({2})',
+              this.source.logPrefix,
+              this.source.title,
+              error instanceof Error ? error.message : "unknown error",
+            ),
+          );
+        });
       }),
     );
 

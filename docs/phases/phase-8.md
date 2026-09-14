@@ -626,6 +626,24 @@ other's panel. The same review's second, non-blocking observation — that the
 other decision of that weight in this project, had no ADR of its own — is now
 [ADR-0034](../adr/0034-table-source-abstraction.md).
 
+**A second Codex review round on the open PR found one Major and one Minor,
+both fixed same-branch, one push:** the `OpenTablePanel` dispose handler had
+regressed from the old `adapter.deleteView(...).then(...)` (which logged a
+failed cleanup) to a bare `void this.source.close()` in the `TableSource`
+refactor above — no real `TableSource` can reject `close()` today (its own
+doc comment says "never throws"; `LibraryTableSource` swallows and logs
+internally, `CasTableSource` has nothing to discard), but the dispose path
+now carries a `.catch` that logs via `log?.warn` regardless, as a backstop
+against a future implementation that does, covered by a new regression test
+driving it directly with a stub `TableSource`; and `pythonOnViya.openCasTable`
+was missing from `package.json`'s `commandPalette` exclusion list, unlike
+every other item-scoped command including its own Library-table sibling
+`openTable` (harmless — `casExplorer`'s handler no-ops with no tree-item
+argument — but a real deviation from that convention), now added.
+`npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92,
+unchanged), 412 integration passing, `check:docs`/`check:copyright`/
+`check:secrets` clean. **Merged 2026-09-14 as squash `bb80b92`.**
+
 **Left open, deliberately, not settled by this slice:** CSV export for a CAS
 table (Finding 8.13's own closing note — `rowSets` may or may not offer a
 `rowsAsCSV`-equivalent relation; nobody has looked), and whether the CAS-side

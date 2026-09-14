@@ -1,0 +1,43 @@
+{
+  "creationTimeStamp": "2026-07-28T18:46:38.037Z",
+  "modifiedTimeStamp": "2026-07-28T18:46:38.037Z",
+  "version": 2,
+  "name": "LOOKUP_TABLE",
+  "providerId": "cas",
+  "dataSourceId": "Public",
+  "type": "dataTable",
+  "attributes": {
+    "caslibId": "Public",
+    "dataTableType": "table",
+    "state": "loaded"
+  },
+  "links": [
+    {
+      "method": "GET",
+      "rel": "up",
+      "href": "/dataTables/dataSources/cas~fs~cas-shared-default~fs~Public/tables",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.data.table"
+    },
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/dataTables/dataSources/cas~fs~cas-shared-default~fs~Public/tables/LOOKUP_TABLE",
+      "type": "application/vnd.sas.data.table"
+    },
+    {
+      "method": "GET",
+      "rel": "rows",
+      "href": "/rowSets/tables/cas~fs~cas-shared-default~fs~Public~fs~LOOKUP_TABLE/rows",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.data.row"
+    },
+    {
+      "method": "GET",
+      "rel": "columns",
+      "href": "/dataTables/dataSources/cas~fs~cas-shared-default~fs~Public/tables/LOOKUP_TABLE/columns",
+      "type": "application/vnd.sas.collection",
+      "itemType": "application/vnd.sas.data.column.summary"
+    }
+  ]
+}

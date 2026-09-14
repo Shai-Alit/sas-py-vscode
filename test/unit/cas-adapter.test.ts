@@ -36,6 +36,13 @@ const TABLES_HREF = `${CASLIBS_HREF}/Public/tables`;
 const COLUMNS_HREF = `${TABLES_HREF}/LOOKUP_TABLE/columns`;
 const LOAD_HREF = `${TABLES_HREF}/LOOKUP_TABLE/state`;
 const CONNECTION_HREF = "/casManagement/servers/cas-shared-default/connection";
+/** Findings 8.11/8.12: the table's own `casManagement` listing entry carries
+ * a `dataTable` relation into a separate Data Tables API representation,
+ * whose own `rows` relation is the only way to read row data at all. */
+const DATA_TABLE_HREF =
+  "/dataTables/dataSources/cas~fs~cas-shared-default~fs~Public/tables/LOOKUP_TABLE";
+const ROWS_HREF =
+  "/rowSets/tables/cas~fs~cas-shared-default~fs~Public~fs~LOOKUP_TABLE/rows";
 
 function adapterWith(routes: readonly RecordedCasRoute[]): {
   adapter: CasAdapter;
@@ -110,6 +117,12 @@ function unloadedTable(): CasTableItem {
           method: "GET",
           type: "application/vnd.sas.collection",
         },
+        {
+          rel: "dataTable",
+          href: DATA_TABLE_HREF,
+          method: "GET",
+          type: "application/vnd.sas.data.table",
+        },
       ],
     },
     caslib(),
@@ -143,6 +156,12 @@ function loadedTable(): CasTableItem {
           href: COLUMNS_HREF,
           method: "GET",
           type: "application/vnd.sas.collection",
+        },
+        {
+          rel: "dataTable",
+          href: DATA_TABLE_HREF,
+          method: "GET",
+          type: "application/vnd.sas.data.table",
         },
       ],
     },
@@ -465,6 +484,262 @@ describe("cas/adapter CasAdapter", () => {
       const result = await adapter.getColumns(loadedTable());
       assert.ok(result.ok);
       assert.deepEqual(result.value, []);
+    });
+  });
+
+  describe("openTable", () => {
+    it("reads columns directly when the table is already loaded, then follows dataTable to the rows link", async () => {
+      const { adapter, calls } = adapterWith([
+        { when: DATA_TABLE_HREF, reply: casFixture("data-table.json") },
+      ]);
+      const result = await adapter.openTable(loadedTable());
+      assert.ok(result.ok);
+      assert.equal(result.value.state, "loaded");
+      // `readLinks` (`src/wire/links.ts`) narrows a wire link down to
+      // `Link`'s own five fields — `uri`/`itemType` are not part of that
+      // shape at all, so they are not expected to survive here either.
+      assert.deepEqual(result.value.rowsLink, {
+        method: "GET",
+        rel: "rows",
+        href: ROWS_HREF,
+        type: "application/vnd.sas.collection",
+      });
+      assert.deepEqual(calls, [{ href: DATA_TABLE_HREF, method: "GET" }]);
+    });
+
+    it("Finding 8.11: loads an unloaded table first, then follows dataTable, and stamps the result loaded", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: (href, method) =>
+            href.startsWith(LOAD_HREF) && method === "PUT",
+          reply: casText("loaded"),
+        },
+        { when: DATA_TABLE_HREF, reply: casFixture("data-table.json") },
+      ]);
+      const result = await adapter.openTable(unloadedTable());
+      assert.ok(result.ok);
+      assert.equal(
+        result.value.state,
+        "loaded",
+        "stamped loaded, not carried over from the stale unloaded listing",
+      );
+      assert.deepEqual(calls, [
+        { href: `${LOAD_HREF}?value=loaded`, method: "PUT" },
+        { href: DATA_TABLE_HREF, method: "GET" },
+      ]);
+    });
+
+    it("returns the load failure as-is, without following dataTable", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: (href, method) =>
+            href.startsWith(LOAD_HREF) && method === "PUT",
+          reply: casFail({
+            code: "cas-rejected",
+            error: { status: 409, message: "table is busy" },
+          }),
+        },
+      ]);
+      const result = await adapter.openTable(unloadedTable());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cas-rejected");
+      assert.equal(calls.length, 1);
+    });
+
+    it("fails link-missing when the table carries no dataTable link", async () => {
+      const { adapter } = adapterWith([]);
+      const table = loadedTable();
+      const result = await adapter.openTable({
+        ...table,
+        links: table.links.filter((l) => l.rel !== "dataTable"),
+      });
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "link-missing");
+      assert.equal(result.problem.rel, "dataTable");
+    });
+
+    it("reports response-malformed when the Data Tables representation carries no rows link", async () => {
+      const { adapter } = adapterWith([
+        { when: DATA_TABLE_HREF, reply: casOk({ name: "LOOKUP_TABLE" }) },
+      ]);
+      const result = await adapter.openTable(loadedTable());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "response-malformed");
+    });
+
+    it("propagates a transport failure following dataTable", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: DATA_TABLE_HREF,
+          reply: casFail({ code: "cas-unreachable", detail: "ECONNRESET" }),
+        },
+      ]);
+      const result = await adapter.openTable(loadedTable());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cas-unreachable");
+    });
+  });
+
+  describe("getRows", () => {
+    async function openedTable() {
+      const { adapter } = adapterWith([
+        { when: DATA_TABLE_HREF, reply: casFixture("data-table.json") },
+      ]);
+      const opened = await adapter.openTable(loadedTable());
+      assert.ok(opened.ok);
+      return opened.value;
+    }
+
+    it("Finding 8.12: reads one window of rows, with no sortBy/where — count stays populated", async () => {
+      const table = await openedTable();
+      const { adapter, calls } = adapterWith([
+        { when: ROWS_HREF, reply: casFixture("rows.json") },
+      ]);
+      const result = await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [],
+        "",
+      );
+      assert.ok(result.ok);
+      assert.equal(result.value.count, 12);
+      assert.deepEqual(
+        result.value.rows.map((r) => r.cells),
+        [
+          ["ABC", 1.5],
+          ["DEF", 2.5],
+        ],
+      );
+      assert.deepEqual(calls, [
+        { href: `${ROWS_HREF}?start=0&limit=2`, method: "GET" },
+      ]);
+    });
+
+    it("sends sortBy=key:direction, comma-joined for more than one column", async () => {
+      const table = await openedTable();
+      const { adapter, calls } = adapterWith([
+        { when: ROWS_HREF, reply: casFixture("rows.json") },
+      ]);
+      await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [
+          { key: "Value", direction: "ascending" },
+          { key: "Code", direction: "descending" },
+        ],
+        "",
+      );
+      assert.equal(
+        calls[0]?.href,
+        `${ROWS_HREF}?start=0&limit=2&sortBy=${encodeURIComponent("Value:ascending,Code:descending")}`,
+      );
+    });
+
+    it("sends where= and sortBy together in the same request — no view of any kind", async () => {
+      const table = await openedTable();
+      const { adapter, calls } = adapterWith([
+        { when: ROWS_HREF, reply: casFixture("rows.json") },
+      ]);
+      await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [{ key: "Value", direction: "descending" }],
+        "Code='ABC'",
+      );
+      assert.equal(
+        calls[0]?.href,
+        `${ROWS_HREF}?start=0&limit=2&sortBy=${encodeURIComponent("Value:descending")}&where=${encodeURIComponent("Code='ABC'")}`,
+      );
+    });
+
+    it("count is undefined when the body carries none", async () => {
+      const table = await openedTable();
+      const { adapter } = adapterWith([
+        { when: ROWS_HREF, reply: casOk({ items: [], links: [] }) },
+      ]);
+      const result = await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [],
+        "",
+      );
+      assert.ok(result.ok);
+      assert.equal(result.value.count, undefined);
+    });
+
+    it("passes the given AbortSignal through to the client", async () => {
+      const table = await openedTable();
+      let capturedSignal: AbortSignal | undefined;
+      const { adapter } = adapterWith([
+        {
+          when: ROWS_HREF,
+          reply: (request) => {
+            capturedSignal = request.signal;
+            return casFixture("rows.json");
+          },
+        },
+      ]);
+      const controller = new AbortController();
+      const result = await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [],
+        "",
+        controller.signal,
+      );
+      assert.ok(result.ok);
+      assert.equal(capturedSignal, controller.signal);
+    });
+
+    it("reports response-malformed when the rows collection carries no items array", async () => {
+      const table = await openedTable();
+      const { adapter } = adapterWith([
+        { when: ROWS_HREF, reply: casOk({ count: 0, links: [] }) },
+      ]);
+      const result = await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [],
+        "",
+      );
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "response-malformed");
+    });
+
+    it("drops a row entry with no usable cells array", async () => {
+      const table = await openedTable();
+      const { adapter } = adapterWith([
+        {
+          when: ROWS_HREF,
+          reply: casOk({ count: 1, items: [{ version: 1 }], links: [] }),
+        },
+      ]);
+      const result = await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [],
+        "",
+      );
+      assert.ok(result.ok);
+      assert.deepEqual(result.value.rows, []);
+    });
+
+    it("propagates a transport failure", async () => {
+      const table = await openedTable();
+      const { adapter } = adapterWith([
+        {
+          when: ROWS_HREF,
+          reply: casFail({ code: "cas-unreachable", detail: "ECONNRESET" }),
+        },
+      ]);
+      const result = await adapter.getRows(
+        table,
+        { start: 0, limit: 2 },
+        [],
+        "",
+      );
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cas-unreachable");
     });
   });
 

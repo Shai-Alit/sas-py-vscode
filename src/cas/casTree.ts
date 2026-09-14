@@ -15,13 +15,15 @@
  * `SasLibraryTreeProvider` reads one: `src/cas/casExplorer.ts` builds a fresh
  * one whenever the active deployment changes.
  *
- * ## No command on a table or column node in this slice
+ * ## 8c: a table node now opens the data viewer
  *
- * There is no CAS data viewer yet (that is 8c, blocked on 7b's own
- * React/ag-grid decision — `docs/phases/phase-8.md`'s Plan section), so a
- * table node here does not open anything on click, unlike
- * `src/data/dataTree.ts`'s `pythonOnViya.openTable`. A column is always a
- * leaf.
+ * A table's `vscode.TreeItem` carries a `command`
+ * (`pythonOnViya.openCasTable`, `package.json`'s own `view/item/context`
+ * entry mirrors it for the right-click menu), fired with the item itself as
+ * its argument — the same one-argument shape `src/data/dataTree.ts`'s
+ * `pythonOnViya.openTable` already established, so this class stays free of
+ * knowing anything about `DataViewerPanelManager` or `CasAdapter.openTable`/
+ * `getColumns`/`getRows` itself. A column is always a leaf.
  */
 
 import * as vscode from "vscode";
@@ -77,6 +79,19 @@ export class SasCasTreeProvider
     node.iconPath = new vscode.ThemeIcon(shape.icon);
     node.contextValue = shape.contextValue;
     node.id = nodeId(item);
+    if (isCasTable(item)) {
+      // Opening is a click, not just a context-menu action — matching
+      // `src/data/dataTree.ts`'s own `pythonOnViya.openTable`. Not gated on
+      // `item.state`: `CasAdapter.openTable` loads an unloaded table itself
+      // (the same JIT-load gate `getColumns` already has), so clicking an
+      // unloaded ("cloud"-icon) table works exactly like clicking a loaded
+      // one, just slower the first time.
+      node.command = {
+        command: "pythonOnViya.openCasTable",
+        title: vscode.l10n.t("Open Table"),
+        arguments: [item],
+      };
+    }
     return node;
   }
 

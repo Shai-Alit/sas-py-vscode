@@ -22,9 +22,17 @@
  * module's own English strings (`headerName` falling back to a column's raw
  * `name`) are data, not UI chrome, so nothing here calls `vscode.l10n.t()`
  * because nothing here needs to.
+ *
+ * **8c: this wire protocol is shared by a second backend, unchanged.**
+ * {@link toWireColumns}/{@link toWireRows} read `./tableSource.ts`'s
+ * `SourceColumn`/`SourceRow` — structural shapes both `src/data/types.ts`'s
+ * `Column`/`RowItem` and `src/cas/types.ts`'s `CasColumnItem`/`CasRowItem`
+ * already satisfy — rather than `src/data/types.ts`'s own concrete types
+ * directly, so this module needs no CAS-specific branch to serve a CAS
+ * table's grid through the identical protocol.
  */
 
-import type { Column, RowItem, SortSpec } from "./types";
+import type { SourceColumn, SourceRow, SourceSortSpec } from "./tableSource";
 
 /** One column, reduced to what the grid's column definitions need. `field` is
  * the key a row's positional `cells` array is mapped onto by index — see
@@ -49,7 +57,7 @@ export interface WireColumn {
  * lives — `src/data/adapter.ts`'s `readColumnItem` already drops an
  * empty-string `label` to `undefined`, so this is a plain `??`. */
 export function toWireColumns(
-  columns: readonly Column[],
+  columns: readonly SourceColumn[],
 ): readonly WireColumn[] {
   return columns.map((column) => ({
     field: column.name,
@@ -63,7 +71,7 @@ export function toWireColumns(
  * but going through this function rather than sending `RowItem[]` directly
  * keeps the wire message's own shape independent of `src/data/types.ts`'s,
  * so the two can diverge later without a cross-cutting rename. */
-export function toWireRows(rows: readonly RowItem[]): readonly unknown[][] {
+export function toWireRows(rows: readonly SourceRow[]): readonly unknown[][] {
   return rows.map((row) => [...row.cells]);
 }
 
@@ -87,7 +95,7 @@ export interface InitMessage {
   /** The sort the grid should seed its column state with on mount — empty
    * when no sort is active, never `undefined`, the same "off is an empty
    * array" discipline {@link RequestRowsMessage} already follows. */
-  readonly initialSort: readonly SortSpec[];
+  readonly initialSort: readonly SourceSortSpec[];
   /** The filter text the filter box should show on mount — empty when no
    * filter is active, never `undefined`, same reasoning as {@link
    * initialSort}. */
@@ -152,7 +160,7 @@ export interface RequestRowsMessage {
   readonly requestId: string;
   readonly start: number;
   readonly limit: number;
-  readonly sort: readonly SortSpec[];
+  readonly sort: readonly SourceSortSpec[];
   readonly filter: string;
 }
 
@@ -178,7 +186,7 @@ export function isRequestRowsMessage(
   );
 }
 
-function isSortSpec(value: unknown): value is SortSpec {
+function isSortSpec(value: unknown): value is SourceSortSpec {
   if (typeof value !== "object" || value === null) return false;
   const { key, direction } = value as Record<string, unknown>;
   return (

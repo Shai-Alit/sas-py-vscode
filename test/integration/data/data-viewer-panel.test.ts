@@ -17,9 +17,17 @@
  * that reason) — `LibraryAdapter` itself stays `vscode`-free and is unit
  * tested directly in `test/unit/data-adapter.test.ts`.
  *
+ * **8c: `manager.open` now takes a `TableSource`, not a bare
+ * `(TableItem, LibraryAdapter)` pair.** Every case below wraps its adapter and
+ * table in a `LibraryTableSource` (`./librarySource()` below) — the same
+ * production wiring `src/data/dataExplorer.ts`'s own `openTable` command now
+ * does. All of the *view-creation* behaviour these tests exercise
+ * (`ensureReadTarget`/`discardView`, moved to `src/data/librarySource.ts`)
+ * is unchanged; only the construction seam moved.
+ *
  * **Every case that exercises the panel's initial load `await`s
  * `manager.open(...)` directly** — `open()` returns a promise that resolves
- * once `openTable`/`getColumns` have settled (successfully or not), added to
+ * once `open`/`getColumns` have settled (successfully or not), added to
  * `DataViewerPanelManager` for exactly this reason (see its own doc comment).
  * A `requestRows` reply is different: it arrives on `fake.sendRequestRows(...)`,
  * a void call into the webview message listener, so those cases `flush()` a
@@ -43,6 +51,7 @@ import {
   isRequestRowsMessage,
   type DataViewerHostMessage,
 } from "../../../src/data/dataViewerModel";
+import { LibraryTableSource } from "../../../src/data/librarySource";
 import { type TableItem } from "../../../src/data/types";
 import {
   dataFail,
@@ -94,6 +103,18 @@ function libraryAdapter(routes: readonly RecordedDataRoute[]): LibraryAdapter {
     current: (): ConnectedSession | undefined => ({ client, session }),
   };
   return new LibraryAdapter(sessions, PROFILE_ID);
+}
+
+/** Wraps an adapter and table in a `LibraryTableSource` — the same
+ * `manager.open` argument `src/data/dataExplorer.ts`'s own `openTable`
+ * command now builds. `item` defaults to `tableItem()`, since most cases
+ * below never vary it. */
+function source(
+  adapter: LibraryAdapter,
+  item: TableItem = tableItem(),
+  log?: vscode.LogOutputChannel,
+): LibraryTableSource {
+  return new LibraryTableSource(adapter, item, log);
 }
 
 /** The routes a table's happy-path open needs: its own rich detail, then its
@@ -202,7 +223,7 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
 
-    await manager.open(tableItem(), libraryAdapter(OPEN_ROUTES));
+    await manager.open(source(libraryAdapter(OPEN_ROUTES)));
     // Not `assert.deepEqual(fake.posted, [], ...)` — @types/node's `deepEqual`
     // carries an `asserts` signature that narrows `fake.posted` itself to the
     // type of the literal `[]` for the rest of this scope, so a later
@@ -251,7 +272,7 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
 
-    const opened = manager.open(tableItem(), libraryAdapter(OPEN_ROUTES));
+    const opened = manager.open(source(libraryAdapter(OPEN_ROUTES)));
     fake.sendReady();
     await opened;
 
@@ -265,14 +286,15 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
     await manager.open(
-      tableItem(),
-      libraryAdapter([
-        ...OPEN_ROUTES,
-        {
-          when: `${CLASS_HREF}/rows?start=0&limit=2`,
-          reply: dataFixture("rows-class-page1.json"),
-        },
-      ]),
+      source(
+        libraryAdapter([
+          ...OPEN_ROUTES,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=2`,
+            reply: dataFixture("rows-class-page1.json"),
+          },
+        ]),
+      ),
     );
     fake.sendReady();
     fake.posted.length = 0;
@@ -298,14 +320,18 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
     await manager.open(
-      tableItem(),
-      libraryAdapter([
-        ...OPEN_ROUTES,
-        {
-          when: `${CLASS_HREF}/rows?start=0&limit=2`,
-          reply: dataFail({ code: "compute-rejected", error: { status: 500 } }),
-        },
-      ]),
+      source(
+        libraryAdapter([
+          ...OPEN_ROUTES,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=2`,
+            reply: dataFail({
+              code: "compute-rejected",
+              error: { status: 500 },
+            }),
+          },
+        ]),
+      ),
     );
     fake.sendReady();
     fake.posted.length = 0;
@@ -336,14 +362,18 @@ describe("DataViewerPanelManager", () => {
       log,
     });
     await manager.open(
-      tableItem(),
-      libraryAdapter([
-        ...OPEN_ROUTES,
-        {
-          when: `${CLASS_HREF}/rows?start=0&limit=2`,
-          reply: dataFail({ code: "compute-rejected", error: { status: 400 } }),
-        },
-      ]),
+      source(
+        libraryAdapter([
+          ...OPEN_ROUTES,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=2`,
+            reply: dataFail({
+              code: "compute-rejected",
+              error: { status: 400 },
+            }),
+          },
+        ]),
+      ),
     );
     fake.sendReady();
 
@@ -395,7 +425,7 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    await manager.open(source(new LibraryAdapter(sessions, PROFILE_ID)));
     fake.sendReady();
     fake.posted.length = 0;
 
@@ -471,7 +501,7 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    await manager.open(source(new LibraryAdapter(sessions, PROFILE_ID)));
     fake.sendReady();
 
     fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
@@ -483,13 +513,15 @@ describe("DataViewerPanelManager", () => {
   });
 
   it("answers a stale request with rowsError, not silence, once the panel has moved past its sort/filter", async () => {
-    // Adversarial review, 2026-09-10: `ensureReadTarget` serialises *view
-    // creation*, but the `getRows` call that follows it is not itself
-    // serialised against a *later* request's own state change. A slow first
-    // read (held back here, deliberately, via a raw fake rather than
-    // `recordedDataClient`'s synchronous routing) can still be in flight
-    // against a view a second, faster request has already superseded by the
-    // time it resolves.
+    // Adversarial review, 2026-09-10: the `getRows` call `ensureReadTarget`
+    // hands off to is not itself serialised against a *later* request's own
+    // state change. A slow first read (held back here, deliberately, via a
+    // raw fake rather than `recordedDataClient`'s synchronous routing) can
+    // still be in flight against a view a second, faster request has already
+    // superseded by the time it resolves. 8c moved `ensureReadTarget` into
+    // `LibraryTableSource`, but the staleness check itself is now
+    // `OpenTablePanel`'s own, generic, sort/filter-only comparison — this
+    // test still exercises the same real race end to end.
     //
     // **PR review, 2026-09-10 (a real, blocking finding on the manual-test
     // fix commit): an earlier version of this behaviour dropped the stale
@@ -552,7 +584,7 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    await manager.open(source(new LibraryAdapter(sessions, PROFILE_ID)));
     fake.sendReady();
     fake.posted.length = 0;
 
@@ -636,7 +668,7 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    await manager.open(source(new LibraryAdapter(sessions, PROFILE_ID)));
     fake.sendReady();
 
     fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
@@ -692,7 +724,7 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    await manager.open(source(new LibraryAdapter(sessions, PROFILE_ID)));
     fake.sendReady();
 
     const sort = [{ key: "Age" as const, direction: "descending" as const }];
@@ -716,14 +748,15 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
     await manager.open(
-      tableItem(),
-      libraryAdapter([
-        ...OPEN_ROUTES,
-        {
-          when: `${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`,
-          reply: dataFixture("rows-class-page1.json"),
-        },
-      ]),
+      source(
+        libraryAdapter([
+          ...OPEN_ROUTES,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=2&where=Sex%3D'F'`,
+            reply: dataFixture("rows-class-page1.json"),
+          },
+        ]),
+      ),
     );
     fake.sendReady();
 
@@ -748,7 +781,6 @@ describe("DataViewerPanelManager", () => {
     } as unknown as vscode.LogOutputChannel;
     const manager = new DataViewerPanelManager(extensionUri, {
       createPanel: () => fake.panel,
-      log,
     });
     const VIEW1_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
     const VIEW2_HREF = `${LIBREFS_HREF}/%24VIEWS/V2`;
@@ -793,7 +825,12 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    // `log` travels to `LibraryTableSource` here, not to the manager's own
+    // deps — a superseded view's delete failure is logged by the source
+    // itself (8c), not by `OpenTablePanel`.
+    await manager.open(
+      source(new LibraryAdapter(sessions, PROFILE_ID), tableItem(), log),
+    );
     fake.sendReady();
 
     fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
@@ -813,7 +850,9 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
 
-    const opened = manager.open(tableItem({ links: [] }), libraryAdapter([]));
+    const opened = manager.open(
+      source(libraryAdapter([]), tableItem({ links: [] })),
+    );
     fake.sendReady();
     await opened;
 
@@ -836,14 +875,18 @@ describe("DataViewerPanelManager", () => {
     });
 
     const opened = manager.open(
-      tableItem(),
-      libraryAdapter([
-        { when: CLASS_HREF, reply: dataFixture("table-detail-class.json") },
-        {
-          when: `${CLASS_HREF}/columns`,
-          reply: dataFail({ code: "compute-rejected", error: { status: 500 } }),
-        },
-      ]),
+      source(
+        libraryAdapter([
+          { when: CLASS_HREF, reply: dataFixture("table-detail-class.json") },
+          {
+            when: `${CLASS_HREF}/columns`,
+            reply: dataFail({
+              code: "compute-rejected",
+              error: { status: 500 },
+            }),
+          },
+        ]),
+      ),
     );
     fake.sendReady();
     await opened;
@@ -869,10 +912,10 @@ describe("DataViewerPanelManager", () => {
     };
     const adapter = new LibraryAdapter(sessions, PROFILE_ID);
 
-    await manager.open(tableItem(), adapter);
+    await manager.open(source(adapter));
     assert.equal(calls.length, 2, "openTable, then getColumns");
 
-    await manager.open(tableItem(), adapter);
+    await manager.open(source(adapter));
     assert.equal(calls.length, 2, "no new request for the same table");
     assert.equal(fake.revealed.length, 1);
   });
@@ -892,7 +935,7 @@ describe("DataViewerPanelManager", () => {
     });
 
     const firstProfile = libraryAdapter(OPEN_ROUTES);
-    await manager.open(tableItem(), firstProfile);
+    await manager.open(source(firstProfile));
 
     const { client, calls } = recordedDataClient(OPEN_ROUTES);
     const session: ComputeSession = {
@@ -907,7 +950,7 @@ describe("DataViewerPanelManager", () => {
       },
       "profile-2",
     );
-    await manager.open(tableItem(), secondProfile);
+    await manager.open(source(secondProfile));
 
     assert.equal(
       calls.length,
@@ -923,7 +966,7 @@ describe("DataViewerPanelManager", () => {
     const manager = new DataViewerPanelManager(extensionUri, {
       createPanel: () => fake.panel,
     });
-    await manager.open(tableItem(), libraryAdapter(OPEN_ROUTES));
+    await manager.open(source(libraryAdapter(OPEN_ROUTES)));
 
     const html = fake.panel.webview.html;
     assert.match(html, /Content-Security-Policy/);
@@ -974,15 +1017,14 @@ describe("DataViewerPanelManager", () => {
     const manager = new DataViewerPanelManager(extensionUri, {
       createPanel: () => (call++ === 0 ? first.panel : second.panel),
     });
-    await manager.open(tableItem(), libraryAdapter(OPEN_ROUTES));
+    await manager.open(source(libraryAdapter(OPEN_ROUTES)));
     // A different key (`SASHELP.SHOES`) than the first table, so the manager
     // opens a second panel rather than revealing the first — reusing
     // `tableItem()`'s own default `self` link (still `CLASS_HREF`) is fine
     // here, since this test asserts on disposal, never on which href either
     // panel's own adapter was asked for.
     await manager.open(
-      tableItem({ name: "SHOES" }),
-      libraryAdapter(OPEN_ROUTES),
+      source(libraryAdapter(OPEN_ROUTES), tableItem({ name: "SHOES" })),
     );
 
     manager.dispose();
@@ -1014,7 +1056,7 @@ describe("DataViewerPanelManager", () => {
       createPanel: () => fake.panel,
     });
 
-    await manager.open(tableItem(), libraryAdapter(routes));
+    await manager.open(source(libraryAdapter(routes)));
 
     assert.ok(
       capturedSignal !== undefined,
@@ -1036,11 +1078,10 @@ describe("DataViewerPanelManager", () => {
     // ("disposes every open panel", "aborts the panel's own
     // AbortController...") disposes a panel with no active sort/filter, so
     // `activeView` is always `undefined` at dispose time in every one of
-    // them — `onDidDispose`'s own `staleView !== undefined` cleanup (the
-    // `deleteView` call reasoned through adversarially in that handler's own
-    // comment) had no test exercising it at all, on either the success or
-    // the failure-logged path. This one covers success; the next covers the
-    // logged failure.
+    // them — `onDidDispose`'s own `staleView !== undefined` cleanup (now
+    // `LibraryTableSource.close`'s own `discardView` call) had no test
+    // exercising it at all, on either the success or the failure-logged
+    // path. This one covers success; the next covers the logged failure.
     const fake = fakePanel();
     const manager = new DataViewerPanelManager(extensionUri, {
       createPanel: () => fake.panel,
@@ -1082,7 +1123,7 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    await manager.open(source(new LibraryAdapter(sessions, PROFILE_ID)));
     fake.sendReady();
 
     fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);
@@ -1107,7 +1148,6 @@ describe("DataViewerPanelManager", () => {
     } as unknown as vscode.LogOutputChannel;
     const manager = new DataViewerPanelManager(extensionUri, {
       createPanel: () => fake.panel,
-      log,
     });
     const VIEW_HREF = `${LIBREFS_HREF}/%24VIEWS/V1`;
     const { client } = recordedDataClient([
@@ -1142,7 +1182,11 @@ describe("DataViewerPanelManager", () => {
         session: { id: SESSION_ID, state: "idle", links: [] },
       }),
     };
-    await manager.open(tableItem(), new LibraryAdapter(sessions, PROFILE_ID));
+    // `log` travels to `LibraryTableSource` — see the "superseded view"
+    // logging test's own comment above.
+    await manager.open(
+      source(new LibraryAdapter(sessions, PROFILE_ID), tableItem(), log),
+    );
     fake.sendReady();
 
     fake.sendRequestRows("r1", 0, 2, [{ key: "Age", direction: "descending" }]);

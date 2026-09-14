@@ -35,6 +35,12 @@ Run it before a release ([release checklist](../../release-checklist.md) D6), an
   - **(slow)** — optional, or minutes to observe. Skip on a quick pass.
   - **(known gap)** — documented as not-done-yet. The behaviour described is the
     _current_ intended one; it is not a bug. If it ever changes, update the row.
+- A checkbox marked `[-]` instead of `[ ]`/`[x]` pairs with the **(known gap)**
+  tag above — a gap confirmed and accepted as the current behaviour, not merely
+  unretested, and not expected to ever be ticked (`phase-6.md`'s `6.10` is the
+  original precedent). Don't reuse `[-]` for an item that's just awaiting a
+  retest — leave those `[ ]` until confirmed one way or the other (caught in
+  PR #173 review, 2026-09-14).
 - Keep **Python on Viya: Show Log** open in the Output panel for the whole pass
   and watch it for anything logged at error level.
 

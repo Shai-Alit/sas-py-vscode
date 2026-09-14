@@ -705,6 +705,33 @@ successfully; no refresh fires for a table that was already loaded; no
 refresh fires when `getColumns` fails; `getChildren` never throws with no
 active deployment.
 
+**Refined twice more over PR #173's own review, both non-blocking:** firing
+`onDidChangeTreeData` for a node that is itself mid-expansion matches VS
+Code's own "and its children recursively (if shown)" contract, so a
+re-entrant `getChildren` call for that same node was expected immediately
+after — `getColumnsAndRefreshIcon` now caches the columns it just fetched
+(a `Map<string, readonly CasItem[]>` keyed by `nodeId`) and serves that one
+expected re-entrant call from cache instead of re-hitting
+`adapter.getColumns`, consuming the entry the instant it is read. A second
+pass then asked what happens if that re-entrant call never arrives (the
+node collapsed early, or the view was hidden) — `refresh()` now clears the
+whole cache, bounding the residual staleness window to "a same-session
+re-expand of that exact table with no intervening refresh, sign-in/out, or
+profile switch." Two more regression tests cover the re-entrant-call case
+and the `refresh()`-clears-a-stale-entry case.
+
+**Live re-confirmed 2026-09-14 (Sean): still fails.** Despite the fix (and
+both refinements) passing every unit and integration test written against
+it, the icon does not visibly flip in a real VS Code window. Root cause not
+found this session — `SasCasTreeProvider`'s own logic is exercised directly
+against a fake `EventEmitter` in `test/integration/cas/tree.test.ts`, never
+against a real `vscode.TreeView`, so a gap between "this class does the
+right thing" and "VS Code's real tree redraws from it" cannot be ruled out
+from these tiers alone. Per Sean's own call, not chased further inside this
+PR — **deferred to Phase 10/11 as a known gap**, `docs/dev/manual-tests/
+phase-8.md` item 8.28 marked `[-]` (known gap) rather than reopened as a
+punch-list item, and carried in [`phase-11.md`](phase-11.md).
+
 **Bug 3 — an invalid CAS filter's error message read as an unexplained
 server failure, not a syntax mistake (manual-test item 8.23).** Sean typed
 `'CrHits'>200` (a quoted column name — invalid; the correct form leaves it
@@ -745,9 +772,9 @@ all four axes. `npm run test:integration` not re-run for Bug 3 — the change
 is a pure function in a module `test/integration/cas/tree.test.ts` (Bug 2's
 new file) does not touch, and Bugs 1/2's own 416-passing integration run
 already covers this session's only VS Code–extension-host-dependent code.
-All three fixes await Sean's live re-confirmation before their manual-test
-boxes close — see `docs/dev/manual-tests/phase-8.md` items 8.21, 8.23, and
-the new 8.28.
+**Live re-confirmed 2026-09-14 (Sean): Bugs 1 and 3 (items 8.21, 8.23) both
+pass.** Bug 2 (item 8.28) does not — see its own entry above for the full
+account and the Phase 10/11 deferral.
 
 ---
 

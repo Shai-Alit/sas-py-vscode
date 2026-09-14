@@ -255,7 +255,7 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   all. **Fixed** — `src/cas/client.ts` now follows exactly one `GET`
   redirect to a root-relative `Location`, re-probed and pinned as Finding
   8.14; see `phase-8.md`'s "Post-merge fixes, 2026-09-14" Runbook entry.
-  **9/14/2026 passed** 
+  **9/14/2026 passed**
 - [x] **8.22** **Opening an unloaded table loads it first (JIT-load)** — pick
   a table you have not yet expanded or loaded this session and open it
   directly via the data viewer gesture above, without expanding it in the
@@ -263,7 +263,7 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   **Expect:** a short pause (the load `PUT`, Finding 8.3/8.8, the same one
   8a's own §8.5 exercises via the tree), then the grid populates — not an
   error, and not an empty grid.
-- [-] **8.23** **Sort and filter work, independently and together** — in the
+- [x] **8.23** **Sort and filter work, independently and together** — in the
   opened panel, sort by a column, then clear it and filter instead, then
   apply both together.
   **Expect:** results update correctly for each combination, with no
@@ -284,9 +284,9 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   `ERROR:`-prefixed `details[]` entry; see `phase-8.md`'s "Post-merge fixes,
   2026-09-14" Runbook entry, Bug 3. Not a client-side syntax validator —
   an invalid filter still fails, now with CAS's own actionable sentence
-  instead of a bare code. **Awaiting live re-confirmation** — please retry
-  both the original `'CrHits'>200` (now expected to explain itself clearly)
-  and a valid filter/sort combination before checking this box.
+  instead of a bare code.
+  **9/14/2026 passed** — re-tried `'CrHits'>200` (now explains itself) and
+  a valid filter/sort combination (Sean).
 - [x] **8.24** **Opening the same table twice reveals the existing panel,
   not a duplicate** — with a CAS table already open, trigger the same open
   gesture on it again (from the tree or the Command Palette history).
@@ -313,20 +313,25 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   high-contrast theme.
   **Expect:** the grid renders correctly in all three, matching Phase 7's own
   data viewer — nothing CAS-specific to the rendering here.
-- [-] **8.28** **A table's icon flips to "loaded" the moment it finishes
-  loading, with no manual refresh** — found testing this section, though the
-  bug itself is in the **CAS** tree (phase 8a), not the data viewer: expand
-  a table you have not yet loaded this session (§8.5) and watch its own icon
-  as the columns appear, without running **Refresh CAS**.
+- [-] **8.28** **(known gap) A table's icon flips to "loaded" the moment it
+  finishes loading, with no manual refresh** — found testing this section,
+  though the bug itself is in the **CAS** tree (phase 8a), not the data
+  viewer: expand a table you have not yet loaded this session (§8.5) and
+  watch its own icon as the columns appear, without running **Refresh CAS**.
   **Expect:** the icon flips from the cloud glyph (§8.19) to the ordinary
   table glyph as soon as the columns finish loading — not only after a
   manual refresh.
   **(9/14/2026) failed** — the icon stayed on the cloud glyph until
   **Refresh CAS** was run by hand, even though the columns themselves loaded
-  and displayed correctly (§8.5 still passes on its own terms). Root cause:
-  `src/cas/casTree.ts`'s `getChildren` never told VS Code the table node had
-  changed after `CasAdapter.getColumns` triggered its JIT-load, so the node
-  kept rendering from its own stale, pre-load `state`. **Fixed** — it now
-  fires a tree refresh with a state-updated copy of the node once the load
-  succeeds; see `phase-8.md`'s "Post-merge fixes, 2026-09-14" Runbook entry.
-  **Awaiting live re-confirmation** before this box closes.
+  and displayed correctly (§8.5 still passes on its own terms). A fix landed
+  (`src/cas/casTree.ts`'s `getChildren` now fires `onDidChangeTreeData` with
+  a state-updated copy of the table node once `CasAdapter.getColumns`'s own
+  JIT-load succeeds) and was refined twice more over PR #173's own review —
+  see `phase-8.md`'s "Post-merge fixes, 2026-09-14" Runbook entry, Bug 2, for
+  the full account. **Re-confirmed live 2026-09-14 (Sean): still fails** —
+  the icon still does not flip in a real VS Code window, despite the fix
+  passing every unit/integration test written against it. Root cause not
+  found this session; per Sean's own call, not worth chasing further inside
+  this PR. **Deferred to Phase 10/11 as a known gap** — see
+  [`phase-11.md`](../../phases/phase-11.md)'s "carried here" list.
+

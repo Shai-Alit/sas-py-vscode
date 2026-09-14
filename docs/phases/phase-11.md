@@ -105,6 +105,27 @@ checkpoint): three items deferred out of Phase 6 that never landed a home.**
   (above) remains a permanent, working alternative regardless — this
   closes the parity gap, it does not replace Cut/Paste.
 
+**Also carried here (added 2026-09-14, from Phase 8's own post-merge fixes):
+a CAS tree table's icon does not flip from "unloaded" (cloud) to "loaded"
+after a JIT-load-on-expand, in a real VS Code window.** `src/cas/casTree.ts`'s
+`getChildren` fires `onDidChangeTreeData` with a state-updated copy of the
+table node once `CasAdapter.getColumns`'s own JIT-load succeeds (PR #173,
+refined twice more over that PR's own review — a re-entrant-call cache and a
+`refresh()`-bound cleanup for it) — and every unit/integration test written
+against `SasCasTreeProvider` directly passes. Live re-confirmed 2026-09-14
+(Sean) anyway: the icon still does not flip; **Refresh CAS** remains the only
+way to see it update. Root cause not found — this project's own test tiers
+exercise the provider against a fake `EventEmitter`, never a real
+`vscode.TreeView`, so a gap between "the class does the right thing" and
+"VS Code's real tree redraws from it" cannot be ruled out from them alone.
+Full account: `phase-8.md`'s "Post-merge fixes, 2026-09-14" Runbook entry,
+Bug 2, and `docs/dev/manual-tests/phase-8.md` item 8.28 (marked `[-]`, known
+gap). Needs a live debugging session against a real tree view — candidates
+worth checking first: whether `TreeItem.id`-based reconciliation actually
+works the way `nodeId`'s own doc comment assumes, whether a bare state change
+needs an accompanying `collapsibleState` touch to force a redraw, or timing
+between the fire and VS Code's own re-render.
+
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,
 VS Code shows two separate rows (it only collapses profiles that produce the

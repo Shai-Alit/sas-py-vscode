@@ -290,6 +290,83 @@ describe("notebook execution (9b)", () => {
     await firstRun;
   });
 
+  it("shows an honest waiting notice once the delay elapses with no output", async () => {
+    // Manual-test §9.8: a cell can sit with no output for reasons the
+    // client cannot distinguish (a slow program vs. a previous statement
+    // still finishing server-side, Finding 76) — `waitingNoticeDelayMs` lets
+    // this test shrink the real 3-second wait to something an integration
+    // run can afford.
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log, 10);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    const controller = fakeController(executions);
+    const { notebook, cell } = await openCell("import time; time.sleep(1)");
+
+    const executing = handlers.executeHandler([cell], notebook, controller);
+    await flush();
+    const job = recorded.currentJob();
+    assert.ok(job !== undefined);
+
+    // Nothing pushed yet — let the notice's own delay elapse for real.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    job.push("done\n");
+    job.finish(true, undefined);
+    await executing;
+
+    const result = executions.get(cell);
+    assert.ok(result);
+    assert.ok(
+      result
+        .outputs()
+        .some((output) => textOf(output).includes("still no output")),
+      `expected the waiting notice once the delay elapsed; got: ${JSON.stringify(
+        result.outputs().map(textOf),
+      )}`,
+    );
+  });
+
+  it("never shows the waiting notice once output has already started streaming", async () => {
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log, 10);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    const controller = fakeController(executions);
+    const { notebook, cell } = await openCell("print('right away')");
+
+    const executing = handlers.executeHandler([cell], notebook, controller);
+    await flush();
+    const job = recorded.currentJob();
+    assert.ok(job !== undefined);
+    // Output arrives well before the (already short) delay, and stays that
+    // way for longer than it — the notice must not appear regardless.
+    job.push("right away\n");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    job.finish(true, undefined);
+    await executing;
+
+    const result = executions.get(cell);
+    assert.ok(result);
+    assert.ok(
+      !result
+        .outputs()
+        .some((output) => textOf(output).includes("still no output")),
+      `did not expect the waiting notice once real output had streamed; got: ${JSON.stringify(
+        result.outputs().map(textOf),
+      )}`,
+    );
+  });
+
   it("cancels the in-flight cell via interruptHandler", async () => {
     const recorded = createRecordedConnection({
       profileId: PROFILE_ID,

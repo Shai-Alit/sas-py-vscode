@@ -74,12 +74,23 @@ export interface SessionBinding {
  * Note the key is *not* `pythonOnViya.session.<id>`: that name is already the
  * refresh token's, in `SecretStorage`. Different stores cannot collide, but two
  * things called the same thing eventually get treated as one.
+ *
+ * `purpose`, added ADR-0035: a profile can now hold **two** independent
+ * sessions — Run File's and the notebook controller's, per
+ * `docs/phases/phase-9.md`'s 9b Runbook entry — and each needs its own
+ * reload-reattach binding, or the notebook's session would be silently
+ * orphaned (left running until the 900-second reaper) on every reload while a
+ * fresh, empty one took its place. Omitted (`undefined`) for Run File's own
+ * binding, unchanged from before ADR-0035, so every binding written by an
+ * install that predates it keeps reattaching exactly as it always did.
  */
-export function sessionBindingKey(profileId: string): string {
+export function sessionBindingKey(profileId: string, purpose?: string): string {
   if (profileId.trim() === "") {
     throw new Error("a session binding needs a profile id");
   }
-  return `${BINDING_KEY_PREFIX}${profileId}`;
+  return purpose === undefined
+    ? `${BINDING_KEY_PREFIX}${profileId}`
+    : `${BINDING_KEY_PREFIX}${purpose}.${profileId}`;
 }
 
 export function serializeBinding(binding: SessionBinding): string {

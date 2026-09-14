@@ -3,20 +3,13 @@
 
 /**
  * The one-backend-per-profile cache `commands.ts` built for itself in 3d-i,
- * lifted out to its own module in Phase 9's 9b slice so a `NotebookController`
- * can share it rather than duplicate it.
+ * lifted out to its own module in Phase 9's 9b slice.
  *
  * `docs/phases/phase-9.md`'s own scoping ("What needs real design work, not a
  * port") named this refactor as a prerequisite for the notebook controller:
  * `backends`/`backendFor` used to live as private closures inside
  * `createRunCommandHandlers`, reachable only by Run File/Run Selection/Reset/
- * Show Environment — nothing outside that function could reach the same
- * backend instance for a given profile. A notebook controller built alongside
- * it without this move would either stand up a second, independent backend
- * for the same profile (two interpreters' worth of state for one profile,
- * defeating the "a notebook cell and Run File share state" goal
- * `PRODUCTION_PLAN.md` promises) or reach into `commands.ts`'s closure, which
- * nothing outside that module can do.
+ * Show Environment — nothing outside that function could reach one at all.
  *
  * Every clause below — the idempotent-reconnect fast path, the orphan-close
  * on a reattach, why there is no injectable backend factory — is unchanged
@@ -27,17 +20,29 @@
  * `ProcPythonBackend` over a simulated wire (`test/helpers/
  * recorded-connection.ts`), not a fake standing in for this cache.
  *
+ * **Two instances, not one shared instance (ADR-0035).** The first cut of 9b
+ * gave Run File and the notebook controller the *same* `BackendCache`, on the
+ * theory that "one connected backend per profile" was itself the goal
+ * `PRODUCTION_PLAN.md` was describing. The 2026-09-14 manual pass showed that
+ * was too literal a reading: `PROC PYTHON` has exactly one interpreter
+ * namespace per compute session, so sharing a backend meant Run File's own
+ * `freshNamespace: true` (every whole-file run, unchanged since Phase 3)
+ * silently wiped whatever the notebook had set — see
+ * `../notebook/notebookController.ts`'s own doc comment for the full account.
+ * `extension.ts` now builds **two** `BackendCache` instances from **two**
+ * separate `ComputeSessionManager`s — one for `registerRunCommands`, one for
+ * `registerNotebookController` — each wrapping its own, entirely independent
+ * one-backend-per-profile cache. Nothing in this module changed to make that
+ * possible: it was already just a cache keyed on `connection.profileId`, with
+ * no assumption baked in that only one caller would ever construct one.
+ *
  * `createRunCommandHandlers` defaults to building its own `BackendCache` via
  * {@link createBackendCache} when nothing is injected — same "defaults to the
  * real thing, injectable for sharing or testing" shape `RunCommandDeps`'s
  * other fields already use. `notebookController.ts`'s own
  * `createNotebookExecutionHandlers` takes a `BackendCache` as a required
  * parameter instead, since it has no other caller that would ever want a
- * private one of its own. Either way, `extension.ts` is the one place that
- * matters in production: it builds exactly one instance and hands it to
- * both, so a notebook cell and a Run File invocation against the same
- * profile reuse one connected backend rather than each holding an
- * independent one.
+ * private one of its own.
  */
 
 import type * as vscode from "vscode";

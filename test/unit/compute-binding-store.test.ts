@@ -156,4 +156,44 @@ describe("session bindings", () => {
     assert.equal(log.said.length, 1);
     assert.match(log.said[0] ?? "", /binding/);
   });
+
+  describe("with a purpose (ADR-0035)", () => {
+    it("writes under a different key than the default store", async () => {
+      const defaultStore = new SessionBindingStore(state, log);
+      const notebookStore = new SessionBindingStore(state, log, "notebook");
+
+      await defaultStore.write(PROFILE_ID, {
+        id: "run-session",
+        context: CONTEXT,
+      });
+      await notebookStore.write(PROFILE_ID, {
+        id: "notebook-session",
+        context: CONTEXT,
+      });
+
+      // Two live entries for one profile, not one overwriting the other —
+      // proof the two stores never collide on a `workspaceState` key.
+      assert.equal(defaultStore.read(PROFILE_ID)?.id, "run-session");
+      assert.equal(notebookStore.read(PROFILE_ID)?.id, "notebook-session");
+      assert.equal(state.keys().length, 2);
+    });
+
+    it("clearing one store's binding leaves the other's untouched", async () => {
+      const defaultStore = new SessionBindingStore(state, log);
+      const notebookStore = new SessionBindingStore(state, log, "notebook");
+      await defaultStore.write(PROFILE_ID, {
+        id: "run-session",
+        context: CONTEXT,
+      });
+      await notebookStore.write(PROFILE_ID, {
+        id: "notebook-session",
+        context: CONTEXT,
+      });
+
+      await notebookStore.clear(PROFILE_ID);
+
+      assert.equal(defaultStore.read(PROFILE_ID)?.id, "run-session");
+      assert.equal(notebookStore.read(PROFILE_ID), undefined);
+    });
+  });
 });

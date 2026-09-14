@@ -35,12 +35,14 @@ needed.
 ## Real execution (phase 9b)
 
 `createNotebookExecutionHandlers` (`src/notebook/notebookController.ts`)
-wires the controller to the same `BackendCache` Run File uses
-(`src/run/backendCache.ts`) — `docs/phases/phase-9.md`'s 9b Runbook entry
-has the full account, including the two scope decisions this slice made:
-the kernel picker alone is a notebook's run-target equivalent (no
-status-bar toggle), and `text/html`/`image/png` output gets an honest
-placeholder rather than a real rendering (9c's own job).
+wires the controller to its own `BackendCache`
+(`src/run/backendCache.ts`), wrapping its own compute session — **not** Run
+File's, since [ADR-0035](../../adr/0035-notebook-gets-its-own-compute-session.md)
+— `docs/phases/phase-9.md`'s 9b Runbook entry has the full account,
+including the two scope decisions this slice made: the kernel picker alone
+is a notebook's run-target equivalent (no status-bar toggle), and
+`text/html`/`image/png` output gets an honest placeholder rather than a real
+rendering (9c's own job).
 
 **§9.2–§9.5 are the basic capability this whole slice exists to add —
 run them first and don't skip ahead to §9.6 on the assumption they pass.**
@@ -52,7 +54,7 @@ to completion; a failure in §9.2 makes the rest moot, not merely untested.
 same as any other phase's live rows — **except §9.5**, which deliberately
 wants no profile signed in.
 
-- [ ] **9.2** **Selecting the kernel and running a cell actually runs the
+- [x] **9.2** **Selecting the kernel and running a cell actually runs the
   Python and streams its output live** — select **Python on Viya** as the
   kernel, type `print("hello")` in a code cell, then run it (the ▷ gutter
   button or **Run All**). **(live)**
@@ -60,7 +62,7 @@ wants no profile signed in.
   streams rather than only once it finishes; the cell gets a green check and
   an execution-order number (`[1]`) once it settles. No placeholder text —
   that behaviour belonged to 9a only, and is gone in this build.
-- [ ] **9.3** **A multi-cell notebook runs cells in order and keeps state
+- [x] **9.3** **A multi-cell notebook runs cells in order and keeps state
   between them** — in a fresh notebook, cell 1: `x = 1`; cell 2:
   `print(x + 1)`. **Run All**. **(live)**
   **Expect:** cell 1 runs first, then cell 2, each getting its own execution
@@ -69,7 +71,7 @@ wants no profile signed in.
   `backend.ts:80-93`), the same persistent-namespace guarantee `proc python
   restart;` gives Run File across its own runs, not a fresh interpreter per
   cell.
-- [ ] **9.4** **A raised exception shows its traceback as plain text and a
+- [x] **9.4** **A raised exception shows its traceback as plain text and a
   red X, with nothing duplicated** — in a fresh cell, run something that
   raises, e.g. `1 / 0`. **(live)**
   **Expect:** the traceback text appears once, as the cell's own streamed
@@ -79,7 +81,7 @@ wants no profile signed in.
   `src/run/render.ts`'s own "already visible" reasoning applies here too.
   Run another cell afterward and confirm it starts normally — a raised
   exception ends the run, it does not leave the backend stuck "busy".
-- [ ] **9.5** **No profile selected reports a clear reason, not a hang or a
+- [x] **9.5** **No profile selected reports a clear reason, not a hang or a
   crash** — sign out of every profile (or leave none configured), select
   **Python on Viya** as the kernel anyway, and run a cell.
   **Expect:** a toast reading "Select a SAS Viya connection profile before
@@ -87,12 +89,12 @@ wants no profile signed in.
   File's `backendFor()` produces for this exact case), and the cell's own
   execution ends promptly (a red X, no output) rather than spinning
   forever.
-- [ ] **9.6** **Legible in every theme** — with a cell showing real output
+- [x] **9.6** **Legible in every theme** — with a cell showing real output
   (from §9.2), switch VS Code between a light theme, a dark theme, and a
   high-contrast theme.
   **Expect:** the kernel picker entry and the cell's output both render as
   normal, legible text in all three.
-- [ ] **9.7** **Interrupting a running cell actually stops watching it, and
+- [x] **9.7** **Interrupting a running cell actually stops watching it, and
   says so** — run a cell with `import time; time.sleep(30)`, then click the
   cell's own **Interrupt** control (or the notebook toolbar's Interrupt)
   while it's running. **(live)**
@@ -103,25 +105,65 @@ wants no profile signed in.
   same one here). A cell run immediately afterward should start normally,
   not be refused as still busy.
 - [ ] **9.8** **A second cell run while one is still in flight is refused
-  as busy, not queued or silently dropped** — start a long-running cell
-  (`import time; time.sleep(15)`), then, before it finishes, run a
-  *different* cell in the same notebook. **(live)**
+  as busy, not queued or silently dropped; a cell that has to wait behind an
+  interrupted one's still-finishing statement says so honestly** — start a
+  long-running cell (`import time; time.sleep(15)`), then, before it
+  finishes, run a *different* cell in the same notebook. **(live)**
   **Expect:** the second cell's own output shows a red error reading "A
   Python program is already running in this session. Wait for it to
   finish, or cancel it, before starting another." — the first cell keeps
-  running and finishes normally afterward.
-- [ ] **9.9** **A notebook cell and Run File share the same session and
-  namespace, not two independent ones** — in a notebook cell:
-  `shared = "from the notebook"`. Run it. Then open a `.py` file for the
-  **same profile**, put `print(shared)` in it, and **Run File**.
-  **(live)**
-  **Expect:** Run File's output shows `from the notebook` — proving the
-  notebook controller reused the same cached `ProcPythonBackend`/session
-  Run File already had (or now shares), rather than each holding an
-  independent interpreter for the same profile. This is `backendCache.ts`'s
-  whole reason for existing; a failure here is a regression in the sharing
-  itself, not just the notebook's own behaviour.
-- [ ] **9.10** **`text/html`/`image/png` output gets an honest "not yet",
+  running and finishes normally afterward. Separately: interrupt a
+  long-running cell (`import time; time.sleep(30)`, then Interrupt), then
+  immediately run a different cell. **Expect:** the new cell may still sit
+  with no output for a while — Finding 76 (Phase 4b) already established
+  that an interrupt cannot preempt a running SAS-side statement, and this is
+  the same limitation, now visible from a notebook too — but after
+  `WAITING_NOTICE_DELAY_MS` (3s) with nothing shown, its own output gains an
+  honest line: "[still no output — this cell may simply be running long, or
+  a previous statement on this session may still be finishing]". It should
+  **not** simply sit blank with no indication anything is happening.
+  **(2026-09-14) partial, root cause identified and this item reworded to
+  match the fix — needs a fresh live re-run.** Interrupting a cell does not
+  kill the SAS-side statement (Finding 76, already known for Run File; not
+  new to notebooks) — a cell run afterward genuinely does wait for it to
+  finish naturally. A real, cause-specific message would need tracking the
+  abandoned statement, which Phase 4c already declined to build for Run
+  File's own identical gap; `phase-11.md`'s "Also carried here" list keeps
+  it as a candidate. This item now tests the honest, cause-agnostic notice
+  instead.
+- [ ] **9.9** **A notebook's own state persists across its own cells and
+  across a reload — and Run File, running against a different SAS session
+  now, never touches it** — in a notebook cell: `k = 1`. Run it, then run a
+  second cell with `print(k)` — confirms cell-to-cell persistence within the
+  notebook (already covered by §9.3, repeated here as the baseline this item
+  builds on). Then open a `.py` file for the **same profile**, put
+  `print(k)` in it, and **Run File**. **(live)**
+  **Expect:** Run File's own run fails with `NameError: name 'k' is not
+  defined` — it is running in its own, independent compute session
+  ([ADR-0035](../../adr/0035-notebook-gets-its-own-compute-session.md)),
+  which starts empty the same way Run File's own whole-file runs always
+  have. Run a notebook cell again afterward (e.g. `print(k)`): **Expect**
+  it still prints `1` — Run File's own run must **not** have disturbed the
+  notebook's session or its variables in any way. Reload the window, open
+  the same notebook, run `print(k)` again: **Expect** `1` again, without
+  first re-running the `k = 1` cell — proving the notebook's own session
+  survived the reload via its own `purpose`-namespaced binding (ADR-0035),
+  not merely coincidentally sharing Run File's already-working reattach.
+  **(2026-09-14) failed, root cause identified and this item rewritten to
+  match the fix (ADR-0035) — needs a fresh live re-run.** The original
+  wording expected `print(shared)` via Run File to see a variable the
+  notebook had set — literal namespace sharing. Root cause: `PROC PYTHON`
+  has exactly one interpreter namespace per compute session (finding 38),
+  and 9b's first cut gave Run File and the notebook the *same* session, so
+  Run File's own `freshNamespace: true` (every whole-file run, unchanged
+  since Phase 3) silently wiped the notebook's variables — and, since it
+  really was the same session, running the notebook again afterward showed
+  the same wipe. Fixed by giving the notebook its own, entirely separate
+  compute session; this item now tests the corrected guarantee — notebook
+  state survives its own reload and is never touched by Run File — rather
+  than the literal cross-surface variable visibility the first cut could
+  not safely deliver.
+- [x] **9.10** **`text/html`/`image/png` output gets an honest "not yet",
   not silence or a crash** — run a cell that writes one of ADR-0019's
   captured files, e.g.
   `import matplotlib.pyplot as plt; plt.plot([1,2,3]); plt.savefig("fig.png")`.
@@ -130,3 +172,19 @@ wants no profile signed in.
   produced — rich rendering in a notebook cell isn't implemented yet]" —
   not a broken image icon, not nothing. (9c is where this becomes a real
   inline image.)
+- [ ] **9.11** **Disconnect ends both sessions, not just Run File's** — with
+  a notebook cell already run once (so the notebook's own, separate
+  compute session is live — [ADR-0035](../../adr/0035-notebook-gets-its-own-compute-session.md))
+  and Run File also used at least once on the same profile, run
+  **Disconnect** (command palette or the status bar). **(live)**
+  **Expect:** a single confirmation, and both sessions actually end
+  server-side — a notebook cell run immediately afterward reconnects and
+  starts with a fresh, empty namespace (no leftover variables from before
+  Disconnect), the same as Run File's own post-Disconnect reconnect
+  already does. No automated test exercises `commands.ts`'s
+  `notebookSessions?.disconnect({ quiet: true })` call (adversarial review,
+  2026-09-14) — `registerComputeCommands` calls real `vscode` command and
+  event-emitter APIs that only exist in the extension host, and the
+  existing integration suite (`test/integration/compute/commands.test.ts`)
+  deliberately never opens a real session — so this item is this
+  behaviour's only coverage until that changes.

@@ -26,8 +26,38 @@
  * "REPL-style controller interrupts whatever is running" shape the VS Code
  * API's own `NotebookController.interruptHandler` doc comment recommends over
  * per-cell cancellation tokens; and the backend-sharing refactor
- * (`../run/backendCache`) this module now depends on rather than building its
- * own cache.
+ * (`../run/backendCache`) this module depends on rather than building its own
+ * cache.
+ *
+ * ## This module's own `BackendCache` is not Run File's (ADR-0035)
+ *
+ * The first cut of this slice, live-tested 2026-09-14, handed this module the
+ * *same* `BackendCache` instance as Run File — one `ProcPythonBackend` per
+ * profile, shared. That failed the manual pass (`docs/dev/manual-tests/
+ * phase-9.md` §9.9): `PROC PYTHON` has exactly one interpreter namespace per
+ * compute session (finding 38), so a shared backend meant Run File's own
+ * `freshNamespace: true` on every whole-file run (`backend.ts:80-93`,
+ * unchanged since Phase 3) silently wiped out whatever the notebook had set —
+ * a real, working-as-documented behaviour on *each* side individually, and a
+ * data-losing collision between them once 9b made them share one interpreter.
+ * There is no cheaper fix than a second session: `proc python restart;`
+ * destroys and reinitialises *the* interpreter, not *a* namespace, so a
+ * "reset on every run" surface and a "persist forever" surface cannot safely
+ * share one.
+ *
+ * **ADR-0035 gives this module its own `BackendCache`, wrapping its own
+ * `ComputeSessionManager`, entirely separate from Run File's.** Both are
+ * built in `extension.ts` and both connect the same *active profile* — there
+ * is still no per-notebook profile choice (below) — but as two independent
+ * SAS compute sessions, each with its own `PROC PYTHON` interpreter, working
+ * directory and filerefs. A notebook's own variables now survive a Run File
+ * invocation elsewhere on the same profile, and vice versa, because they are
+ * no longer the same interpreter. The cost, paid deliberately: a profile used
+ * both ways at once holds two live compute sessions rather than one, each
+ * still independently reaped after 15 idle minutes (ADR-0012's own reaper,
+ * now doubled rather than shared) — see ADR-0035 for the full accounting,
+ * including why `Disconnect` ends both (`../compute/commands.ts`'s own doc
+ * comment) while the status bar keeps reflecting only Run File's.
  *
  * One question the Plan section left open for this slice: whether the
  * run-target (ADR-0011/ADR-0020) status-bar concept extends to notebooks, or
@@ -93,6 +123,15 @@
  * added there (see that module's own comment on it): the check is what stops
  * a second execution from ever reaching `currentRun`'s assignment or its
  * `finally`, not just what produces a nicer refusal message.
+ *
+ * One slot does not mean one *notebook*, though — `currentRun` also records
+ * which `vscode.NotebookDocument` it belongs to, and `interruptHandler`
+ * checks that before touching it. Between `execution.start()` and the busy
+ * check above lies an `await`-wide window where a second notebook's own
+ * queued cell can already show VS Code's own "running" chrome (and offer
+ * Interrupt) while it is really about to be busy-refused; hitting Interrupt
+ * there must not cancel whichever *other* notebook's cell is genuinely
+ * running underneath `currentRun`.
  */
 
 import * as vscode from "vscode";
@@ -109,13 +148,20 @@ export const NOTEBOOK_CONTROLLER_ID = "pythonOnViya.viyaNotebookKernel";
 /** Owned by VS Code's own bundled `vscode.ipynb` extension, not this one. */
 export const NOTEBOOK_TYPE = "jupyter-notebook";
 
+/** How long a cell waits with no output before the honest "still no output"
+ * notice appears — see `executeCell`'s own comment on why this is a plain
+ * timer and not real tracking of what it might be waiting on. */
+const WAITING_NOTICE_DELAY_MS = 3000;
+
 /**
  * Registers the controller against the real {@link NOTEBOOK_CONTROLLER_ID}/
  * {@link NOTEBOOK_TYPE} and pushes it on `context.subscriptions`.
  *
- * `backendCache` is the same instance `extension.ts` hands
- * `registerRunCommands` — see `../run/backendCache`'s own doc comment for why
- * sharing one instance between Run File and this controller matters.
+ * `backendCache` is this module's **own** instance, not Run File's — see this
+ * module's own doc comment ("This module's own `BackendCache` is not Run
+ * File's (ADR-0035)") for why the two were split apart, and
+ * `../run/backendCache`'s own doc comment for what a `BackendCache` gives
+ * either caller regardless of which one it belongs to.
  */
 export function registerNotebookController(
   context: vscode.ExtensionContext,
@@ -172,16 +218,26 @@ export interface NotebookExecutionHandlers {
  * `executeHandler` itself is called with, per the VS Code API's own contract
  * — see {@link NotebookExecutionHandlers}'s doc comment for why that is
  * still enough to test this seam directly).
+ *
+ * `waitingNoticeDelayMs` defaults to {@link WAITING_NOTICE_DELAY_MS} — the
+ * real value — and exists as a parameter only so a test can shrink it rather
+ * than wait out three real seconds; see `executeCell`'s own comment on what
+ * it triggers and why.
  */
 export function createNotebookExecutionHandlers(
   backendCache: BackendCache,
   log: vscode.LogOutputChannel,
+  waitingNoticeDelayMs: number = WAITING_NOTICE_DELAY_MS,
 ): NotebookExecutionHandlers {
   // See this module's own doc comment ("Why one module-scoped `currentRun`
   // slot is safe") for why a single slot, not one per notebook or per cell,
   // is the right amount of state here.
   let currentRun:
-    | { readonly backend: ProcPythonBackend; readonly handle: ExecutionHandle }
+    | {
+        readonly notebook: vscode.NotebookDocument;
+        readonly backend: ProcPythonBackend;
+        readonly handle: ExecutionHandle;
+      }
     | undefined;
   // Jupyter's own convention — the `[N]:` a cell shows next to its output —
   // ported as a plain incrementing counter, the same shape
@@ -190,6 +246,7 @@ export function createNotebookExecutionHandlers(
 
   const executeCell = async (
     cell: vscode.NotebookCell,
+    notebook: vscode.NotebookDocument,
     controller: vscode.NotebookController,
   ): Promise<void> => {
     const execution = controller.createNotebookCellExecution(cell);
@@ -238,10 +295,56 @@ export function createNotebookExecutionHandlers(
     }
 
     const handle = executed.value;
-    currentRun = { backend, handle };
+    currentRun = { notebook, backend, handle };
     try {
-      for await (const output of handle.outputs) {
-        await appendRichOutput(execution, output);
+      let sawOutput = false;
+      // This phase's manual pass, §9.8: after an interrupted cell,
+      // `backend.busy` clears as soon as the *local* abort settles
+      // (`procPython.ts`'s own `cancel`/`busy`) — well before the SAS-side
+      // statement it interrupted actually finishes, per Finding 76. A cell
+      // run right after that can sit with no output for the old statement's
+      // remaining duration, and with nothing else on screen that reads as a
+      // silent hang rather than a program that is (from the user's side)
+      // doing nothing yet. Phase 4c looked at giving Run File a precise
+      // message for this same gap and passed on it as disproportionate —
+      // building real tracking of an abandoned, already-cancelled statement
+      // just to word a status line precisely. This is deliberately the
+      // cheaper, honest alternative: a plain elapsed-time trigger, with
+      // wording that does not claim to know the cause, because it cannot —
+      // the same silence is equally what an ordinary long-running cell with
+      // no output looks like (this phase's own `time.sleep(30)` test case
+      // included), and a message that guessed "a previous cell" would be
+      // wrong exactly there. `phase-11.md`'s "Also carried here" list has the
+      // real-tracking option, flagged for a harder look later, not decided
+      // against permanently.
+      const waitingNotice = setTimeout(() => {
+        if (sawOutput) return;
+        // Fired, not awaited — this timer's own callback cannot be `async`
+        // in a way anything here would await. `appendOutput` can still
+        // reject if the cell or notebook has gone away between the timer
+        // firing and now (closed mid-run); the same "nothing left to do"
+        // swallow `resultPanel.ts`'s own `revealFrame` uses for an editor
+        // that vanished out from under it, not a real error to surface.
+        void execution
+          .appendOutput(
+            new vscode.NotebookCellOutput([
+              vscode.NotebookCellOutputItem.stdout(
+                vscode.l10n.t(
+                  "[still no output — this cell may simply be running long, or a previous statement on this session may still be finishing]\n",
+                ),
+              ),
+            ]),
+          )
+          .then(undefined, () => undefined);
+      }, waitingNoticeDelayMs);
+      try {
+        for await (const output of handle.outputs) {
+          sawOutput = true;
+          clearTimeout(waitingNotice);
+          await appendRichOutput(execution, output);
+        }
+      } finally {
+        clearTimeout(waitingNotice);
       }
       const settled = await handle.done;
       if (!settled.ok) {
@@ -258,7 +361,7 @@ export function createNotebookExecutionHandlers(
 
   const executeHandler: NotebookExecutionHandlers["executeHandler"] = async (
     cells,
-    _notebook,
+    notebook,
     controller,
   ) => {
     // Cells run one at a time, in order — `NotebookCellExecution`'s own
@@ -266,13 +369,17 @@ export function createNotebookExecutionHandlers(
     // serial contract underneath it) makes this the natural shape rather
     // than a design choice this slice had to make.
     for (const cell of cells) {
-      await executeCell(cell, controller);
+      await executeCell(cell, notebook, controller);
     }
   };
 
   const interruptHandler: NotebookExecutionHandlers["interruptHandler"] =
-    async () => {
-      if (currentRun === undefined) return;
+    async (notebook) => {
+      // See this module's own doc comment ("Why one module-scoped
+      // `currentRun` slot is safe") — this must not cancel a different
+      // notebook's genuinely-running cell just because this notebook's own
+      // queued cell is showing VS Code's "running" chrome too.
+      if (currentRun?.notebook !== notebook) return;
       // Finding 75/76 apply here exactly as they do to Run File's own Cancel
       // (`commands.ts`'s `cancelRun`): a failed server-side cancel is logged,
       // not silently discarded, and even a successful one does not guarantee

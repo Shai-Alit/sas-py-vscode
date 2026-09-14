@@ -55,9 +55,17 @@ export type BindingMemento = Pick<vscode.Memento, "get" | "update">;
 export type BindingLog = Pick<vscode.LogOutputChannel, "debug">;
 
 export class SessionBindingStore {
+  /**
+   * `purpose`, added ADR-0035: threaded straight through to
+   * {@link sessionBindingKey}, so a second store built with `"notebook"` reads
+   * and writes an entirely different `workspaceState` key per profile than the
+   * default (Run File's own, unchanged) store does — see that function's own
+   * doc comment.
+   */
   constructor(
     private readonly state: BindingMemento,
     private readonly log: BindingLog,
+    private readonly purpose?: string,
   ) {}
 
   /**
@@ -73,7 +81,7 @@ export class SessionBindingStore {
    * reach the deployment.
    */
   read(profileId: string): SessionBinding | undefined {
-    const raw: unknown = this.state.get(sessionBindingKey(profileId));
+    const raw: unknown = this.state.get(this.key(profileId));
     if (raw === undefined) return undefined;
 
     const binding = parseBinding(raw);
@@ -89,10 +97,7 @@ export class SessionBindingStore {
 
   /** Remembers the session this workspace is using with a profile. */
   async write(profileId: string, binding: SessionBinding): Promise<void> {
-    await this.state.update(
-      sessionBindingKey(profileId),
-      serializeBinding(binding),
-    );
+    await this.state.update(this.key(profileId), serializeBinding(binding));
   }
 
   /**
@@ -103,6 +108,10 @@ export class SessionBindingStore {
    * to say leaves nothing written down.
    */
   async clear(profileId: string): Promise<void> {
-    await this.state.update(sessionBindingKey(profileId), undefined);
+    await this.state.update(this.key(profileId), undefined);
+  }
+
+  private key(profileId: string): string {
+    return sessionBindingKey(profileId, this.purpose);
   }
 }

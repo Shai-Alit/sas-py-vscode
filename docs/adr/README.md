@@ -51,7 +51,7 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0009](0009-coverage-scope.md) | Coverage measures what the unit tier can reach, and the exclusion is a checked rule | Accepted |
 | [0010](0010-compute-client-is-hand-written.md) | The Compute client is hand-written against the observed wire shape, not a vendored generated client | Accepted |
 | [0011](0011-choosing-where-python-runs.md) | Where Python runs is a visible per-workspace target, not a reinterpretation of the run button | Accepted — its "Default: Viya" paragraph is superseded by [ADR-0020](0020-run-target-defaults-to-local.md) |
-| [0012](0012-compute-session-lifetime-and-storage.md) | A compute session belongs to a workspace and a profile, and its id is a hint | Accepted |
+| [0012](0012-compute-session-lifetime-and-storage.md) | A compute session belongs to a workspace and a profile, and its id is a hint | Accepted — its "one session per (workspace, profile)" framing is narrowed by [ADR-0035](0035-notebook-gets-its-own-compute-session.md) to "one session per (workspace, profile, surface)"; everything else is unchanged |
 | [0013](0013-signing-in-opens-a-session.md) | Signing in opens a compute session, and only from the command | Accepted |
 | [0014](0014-python-is-submitted-as-an-uploaded-file.md) | Python is submitted as an uploaded file and run with `infile=`, not inlined in a `SUBMIT` block | Accepted |
 | [0015](0015-the-execution-backend-seam.md) | The execution backend seam takes opaque bytes and returns a streaming handle | Accepted |
@@ -74,3 +74,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0032](0032-content-cut-paste.md) | Right-click Cut/Paste ships as a SAS Content move interaction, alongside drag-and-drop | Accepted |
 | [0033](0033-cas-adapter-shape.md) | `CasAdapter` is one concrete class built the way `ContentAdapter` is (endpoint plus token, no session), not the way `LibraryAdapter` is | Accepted |
 | [0034](0034-table-source-abstraction.md) | The data viewer panel is generalized behind a `TableSource` interface, not forked or forced through `LibraryAdapter`'s view machinery | Accepted |
+| [0035](0035-notebook-gets-its-own-compute-session.md) | A notebook cell runs against its own compute session, not Run File's — `PROC PYTHON` has one interpreter namespace per session, so the two surfaces cannot safely share one | Accepted |

@@ -162,8 +162,36 @@ export function activate(context: vscode.ExtensionContext): void {
     { transport },
   );
   context.subscriptions.push(sessions);
+
+  // ADR-0035: the notebook controller's own compute session, entirely
+  // separate from `sessions` above. `PROC PYTHON` has exactly one interpreter
+  // namespace per session, so a notebook (which must persist across its own
+  // cells) and Run File (which resets on every whole-file run,
+  // `freshNamespace: true` since Phase 3) cannot safely share one — the
+  // 2026-09-14 manual pass found that collision the hard way when 9b's first
+  // cut gave them the same session. Built from the same `profiles`/`transport`
+  // (it follows the same active profile Run File does — there is still no
+  // per-notebook profile choice, `notebookController.ts`'s own doc comment),
+  // but its own `SessionBindingStore` namespaced `"notebook"` so a reload
+  // reattaches to *this* session and not Run File's (`binding.ts`'s own doc
+  // comment on `sessionBindingKey`'s `purpose` parameter). See
+  // `notebookController.ts`'s own doc comment for the full account.
+  const notebookSessions = new ComputeSessionManager(
+    profiles,
+    new SessionBindingStore(context.workspaceState, output, "notebook"),
+    output,
+    { transport },
+  );
+  context.subscriptions.push(notebookSessions);
+
   const { connect, disconnect, forgetProfile, onDidChangeConnection } =
-    registerComputeCommands(context, sessions, profiles, output);
+    registerComputeCommands(
+      context,
+      sessions,
+      profiles,
+      output,
+      notebookSessions,
+    );
 
   // Registered last, and only because signing in connects (and signing out
   // disconnects, added in Phase 3's 3f slice): the commands need a way to
@@ -211,16 +239,29 @@ export function activate(context: vscode.ExtensionContext): void {
     forgetProfile,
   };
 
-  // Phase 9b: one `BackendCache` shared between Run File and the notebook
-  // controller registered below, so a notebook cell and a Run File
-  // invocation against the same profile reuse one connected
-  // `ProcPythonBackend` rather than each holding an independent one — see
-  // `./run/backendCache`'s own doc comment. Disposed here, not by either
-  // registrar: both are handed it via their own `backendCache`
-  // dep/parameter, which — the same rule `RunCommandDeps`'s other injectable
-  // fields already follow — means neither one owns its lifecycle.
+  // Phase 9b: a `BackendCache` for Run File's own `sessions` — see
+  // `./run/backendCache`'s own doc comment. Disposed here, not by the
+  // registrar it is handed to: `registerRunCommands` takes it via its own
+  // `backendCache` dep, the same rule `RunCommandDeps`'s other injectable
+  // fields already follow, which means it does not own the cache's lifecycle.
   const backendCache = createBackendCache(runSessions, output);
   context.subscriptions.push(backendCache);
+
+  // ADR-0035: the notebook controller's own `BackendCache`, wrapping
+  // `notebookSessions` above rather than `sessions` — a second, independent
+  // one-backend-per-profile cache, not a second handle onto Run File's. See
+  // `notebookController.ts`'s own doc comment for why they were split.
+  const notebookRunSessions = {
+    connect: () => notebookSessions.connect(),
+    isBusy: (profileId: string) => notebookSessions.isBusy(profileId),
+    startSubmission: (profileId: string) =>
+      notebookSessions.startSubmission(profileId),
+    endSubmission: (profileId: string) => {
+      notebookSessions.endSubmission(profileId);
+    },
+  };
+  const notebookBackendCache = createBackendCache(notebookRunSessions, output);
+  context.subscriptions.push(notebookBackendCache);
 
   registerRunCommands(
     context,
@@ -326,9 +367,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // Phase 9a: a NotebookController against VS Code's own `jupyter-notebook`
   // type — no serializer of this extension's own, per ADR-0024. The 9a spike
   // (`phase-9.md`) confirmed this needs no `ms-toolsai.jupyter` dependency.
-  // Phase 9b: real execution, against the same `backendCache` Run File uses
-  // above, rather than a second independent backend per profile.
-  registerNotebookController(context, output, backendCache);
+  // Phase 9b: real execution, against `notebookBackendCache` — this
+  // controller's own cache, wrapping its own compute session, not Run File's
+  // (ADR-0035; `notebookController.ts`'s own doc comment).
+  registerNotebookController(context, output, notebookBackendCache);
 }
 
 export function deactivate(): void {

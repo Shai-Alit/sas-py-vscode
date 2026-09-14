@@ -17,37 +17,75 @@ squash `6884e49` — a hands-on spike confirmed `.ipynb` opens as a notebook
 and a `NotebookController` contributing no serializer is selectable as its
 kernel with **zero** other extensions installed, so
 [ADR-0024](docs/adr/0024-notebooks-are-ipynb-native.md) needs no amendment.
-**9b (controller + execution) is code-complete 2026-09-14.** Real
-execution: `src/run/backendCache.ts` lifts the one-backend-per-profile cache
-out of `commands.ts`'s own private closure (a straight move, unchanged
-behaviour) so `extension.ts` can share one instance between Run File and
-the notebook controller; `src/notebook/notebookController.ts`'s
-`createNotebookExecutionHandlers` wires `executeHandler` to
-`ExecutionBackend.execute()` with `freshNamespace: false` and
-`interruptHandler` to `cancel()` (Finding 75/76's caveats apply the same
-way they do to Run File's own Cancel). Decided this slice, not left
-implicit: the kernel picker alone is a notebook's run-target equivalent —
-no separate status-bar toggle needed (ADR-0011/0020's own concept does not
-extend to notebooks); and cell output renders `text/plain` live as it
-streams, with `text/html`/`image/png` given an honest "not rendered yet"
-placeholder and 9c left to build the real renderer (full reasoning in
-`notebookController.ts`'s own doc comment). `npm run coverage` green — 1681
-unit tests, coverage 95.94/95.48/95.81/95.94 (up from 95.92/95.46/95.75/95.92);
+**9b (controller + execution) is code-complete 2026-09-14, including a
+same-day architecture correction (ADR-0035) found by the manual pass before
+any of this was pushed.** Real execution:
+`src/notebook/notebookController.ts`'s `createNotebookExecutionHandlers`
+wires `executeHandler` to `ExecutionBackend.execute()` with
+`freshNamespace: false` and `interruptHandler` to `cancel()` (Finding
+75/76's caveats apply the same way they do to Run File's own Cancel).
+Decided this slice, not left implicit: the kernel picker alone is a
+notebook's run-target equivalent — no separate status-bar toggle needed
+(ADR-0011/0020's own concept does not extend to notebooks); and cell output
+renders `text/plain` live as it streams, with `text/html`/`image/png` given
+an honest "not rendered yet" placeholder and 9c left to build the real
+renderer (full reasoning in `notebookController.ts`'s own doc comment).
+**The manual pass (§9.8/§9.9) found the first cut's session sharing was
+destructive, not merely incomplete**: `src/run/backendCache.ts` (lifted out
+of `commands.ts`'s private closure, a straight move) was first handed to
+*both* Run File and the notebook controller as one shared instance — but
+`PROC PYTHON` has exactly one interpreter namespace per compute session, so
+Run File's own `freshNamespace: true` (every whole-file run, unchanged
+since Phase 3) silently wiped the notebook's variables the instant both
+were used against the same profile. Fixed same day by
+[ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md): the
+notebook controller now gets its own `ComputeSessionManager`, its own
+`purpose`-namespaced `SessionBindingStore` (`binding.ts`'s
+`sessionBindingKey` gained an optional `purpose` parameter — `undefined`
+for Run File's own binding, so every existing install's binding keeps
+reattaching unchanged), and its own `BackendCache`; `extension.ts` now
+builds two of each instead of one shared pair. `Disconnect`/Sign Out end
+both sessions; `Connect` and the status bar stay scoped to Run File's
+session only. `backendCache.ts` itself needed no change — it was already
+just a cache keyed on `connection.profileId`. A related, smaller fix from
+the same pass (§9.8): a cell run right after an interrupted one can sit
+with no output for as long as the interrupted statement takes to actually
+finish server-side (Finding 76); `notebookController.ts` now shows an
+honest, cause-agnostic "still no output" notice after 3 seconds rather than
+silence — real tracking for a precise message was considered and carried
+forward to `phase-11.md` instead, matching Phase 4c's own call on the
+identical gap for Run File. `npm run coverage` green — 1685 unit tests (up
+from 1675 at the original cut), coverage 95.94/95.48/95.81/95.94 (unchanged
+throughout — `.c8rc.json`'s 95.8/95.8/95.6/95.4 floor cleared with room);
 `backendCache.ts` turned out **not** to need a `.c8rc.json` exclusion (it
 imports `vscode` only for types, so the unit tier can reach it —
-`test/unit/run-backend-cache.test.ts` covers it directly at 99.39% lines,
+`test/unit/run-backend-cache.test.ts` covers it directly at 99.4% lines,
 reusing `test/helpers/recorded-connection.ts`). `npm run test:integration`
-green — 409 passing (up from 406): three new cases in
-`test/integration/notebook/execution.test.ts`, driven against a **fake**
-`NotebookController`/`NotebookCellExecution` rather than a real one (a real
-one refuses `createNotebookCellExecution` unless VS Code's own kernel
-picker already selected it — state that test has no reason to fight, since
-both are plain structural interfaces in `@types/vscode`, not classes).
-`controller.test.ts`'s 9a regression still passes, lightened to assert a
-terminal `executionSummary` is reached rather than the now-superseded
-placeholder message. Full account in `phase-9.md`'s 9b Runbook entry.
-**Adversarial self-review not yet run — that is the next step before this
-branch is pushed or a PR opened**, per `CLAUDE.md`.
+green — 411 passing (up from 406 at 9a): `execution.test.ts`'s five cases
+(streamed success, busy refusal, the two waiting-notice cases, interrupt-
+then-recover), driven against a **fake** `NotebookController`/
+`NotebookCellExecution` rather than a real one (a real one refuses
+`createNotebookCellExecution` unless VS Code's own kernel picker already
+selected it — state that test has no reason to fight, since both are plain
+structural interfaces in `@types/vscode`, not classes). `controller.test.ts`'s
+9a regression still passes, lightened to assert a terminal
+`executionSummary` is reached rather than the now-superseded placeholder
+message. Full account in `phase-9.md`'s 9b Runbook entry.
+**§9.8/§9.9 need a fresh live re-run against the corrected code — left for
+Sean.** **Adversarial self-review ran 2026-09-14 against the full diff
+(ADR-0035 split included) — three findings, all verified independently and
+folded into the branch before push:** a real wrong-target `interruptHandler`
+bug (it cancelled whatever `currentRun` held regardless of which notebook
+Interrupt was actually pressed on — fixed by having `currentRun` record its
+own notebook and checking it); a fire-and-forget `appendOutput` with no
+explanation, unlike every other swallowed promise in this codebase (fixed
+with the same comment convention); and "Disconnect ends both sessions"
+(ADR-0035) having no test, automated or manual — not reachable at the unit
+or integration tier (`registerComputeCommands` needs a real extension host),
+so recorded instead as a new, unchecked manual-test item (§9.11). `npm run
+verify` and `npm run test:integration` both green after folding the fixes
+in — same 1685 unit / 411 integration counts as before, since no tests were
+added or removed. Full account in `phase-9.md`'s 9b Runbook entry.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -177,7 +215,7 @@ Phase 6→7/8 checkpoint but was missed then. Per-phase detail
 | 6 — SAS Content explorer | ✅ **done — 6a–6e all merged.** SAS Content tree, open/save `FileSystemProvider`, create/rename/move/delete, drag-and-drop, favourites, recycle bin, Cut/Paste. Final PR [#162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash `a74f756`. `npm run verify` green (1580 unit; coverage 95.57/95.51/95.26/95.57). Phase 6→7/8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). | `docs/phases/phase-8.md` |
-| 9 — Notebooks | **9a done, merged as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172).** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged). **9b (controller + execution) code-complete 2026-09-14 — adversarial review not yet run.** `src/run/backendCache.ts` shares one cached backend between Run File and the notebook controller; `notebookController.ts` wires real execution (`freshNamespace: false`) and interrupt-to-cancel; kernel picker alone is the notebook run-target equivalent, no status-bar extension. `npm run coverage`/`test:integration` green (1681 unit, 95.94/95.48/95.81/95.94; 409 integration). | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **9a done, merged as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172).** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged). **9b (controller + execution) code-complete 2026-09-14 — adversarial review run, three findings folded in, ready to push.** `notebookController.ts` wires real execution (`freshNamespace: false`) and interrupt-to-cancel, now notebook-scoped after the review's wrong-target-interrupt finding; kernel picker alone is the notebook run-target equivalent, no status-bar extension. The manual pass found the first cut's session sharing with Run File destructive (one `PROC PYTHON` namespace per session); fixed same day by [ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md) — the notebook controller now runs against its own, separate compute session. `npm run coverage`/`test:integration` green (1685 unit, 95.94/95.48/95.81/95.94; 411 integration). §9.8/§9.9/§9.11 need a fresh live re-run. | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

@@ -483,6 +483,23 @@ recommendation, not a dependency lock._
   (streamed success, busy refusal, interrupt-then-recover) plus
   `controller.test.ts`'s updated 9a/9b regression.
 
+  **Manual test items updated in the same slice, not left for a later
+  housekeeping catch-up — and restructured, not just reworded, after a
+  first draft buried the basic "does a cell actually run" tests under the
+  9a section header while the new 9b section jumped straight to interrupt
+  (caught on review before this was even handed off — see this file's own
+  9b commit history for the correction).** The 9a section
+  (`docs/dev/manual-tests/phase-9.md`) now holds only §9.1, the
+  registration/kernel-picker question 9b didn't change; its old §9.2–§9.5,
+  which tested 9a's own placeholder `executeHandler`, are gone (that
+  placeholder no longer exists). The new "Real execution (phase 9b)"
+  section leads with the fundamentals — §9.2 run + streamed output, §9.3
+  namespace persistence across cells, §9.4 a raised traceback, §9.5 no
+  active profile, §9.6 theme legibility — **before** the
+  interrupt/busy/session-sharing/placeholder items (§9.7–§9.10), with an
+  explicit note that those later items are moot if §9.2 doesn't pass.
+  **Not yet run** — needs a live Viya connection, left for Sean.
+
   **Adversarial self-review: not yet run — this is the handoff point.**
   Per `CLAUDE.md`, the review happens before the branch is pushed; nothing
   in this slice has been pushed or opened as a PR yet.

@@ -385,24 +385,107 @@ recommendation, not a dependency lock._
   notebook UI, multi-cell behaviour, no-Viya-connection-needed, and theme
   legibility.
 
-☐ **9b — Controller + execution.**
+☑ **9b — Controller + execution.** Code-complete 2026-09-14.
 
-- ☐ Decide and implement the backend-sharing refactor: lift `backends`/
+- ☑ Decide and implement the backend-sharing refactor: lift `backends`/
   `backendFor` (or an equivalent) out of `createRunCommandHandlers`'s
   private closure so a `NotebookController` and the Run File commands share
   one cached backend per profile, rather than each holding an independent
-  one.
-- ☐ Decide whether the run-target (ADR-0011/0020) status-bar concept extends
+  one. **Done** — `src/run/backendCache.ts` (`createBackendCache`,
+  `BackendCache`, `CachedBackend`), a straight move of `commands.ts`'s own
+  pre-9b `backends`/`guardFor`/`backendFor`/dispose-loop, unchanged in
+  behaviour. `createRunCommandHandlers` now takes `deps.backendCache`
+  (optional, defaults to a fresh instance — same "defaults to the real
+  thing, injectable for sharing or testing" shape every other
+  `RunCommandDeps` field already uses); `extension.ts` builds exactly one
+  `BackendCache` and hands it to both `registerRunCommands` and
+  `registerNotebookController`, so a notebook cell and a Run File
+  invocation against the same profile reuse one connected backend. An
+  unexpected bonus this move surfaced: `backendCache.ts` imports `vscode`
+  only for types (`LogOutputChannel`, `Disposable`), so unlike `commands.ts`
+  itself it is not `vscode`-runtime-dependent — `check-coverage-scope.mjs`
+  and `test/unit/coverage-scope.test.ts` both caught that it therefore
+  belongs in the unit tier, not `.c8rc.json`'s exclude list, so a first
+  attempt to exclude it was reverted in favour of real unit coverage
+  (`test/unit/run-backend-cache.test.ts`, exercising the reuse/reconnect/
+  orphan-close/dispose paths directly against `test/helpers/
+  recorded-connection.ts`'s simulated wire — 99.39% lines on the module).
+- ☑ Decide whether the run-target (ADR-0011/0020) status-bar concept extends
   to notebooks, or whether the kernel picker alone is the notebook's
   equivalent choice (Plan, above) — not an implicit default either way.
-- ☐ Wire `NotebookController.executeHandler` to `ExecutionBackend.execute()`
+  **Decided: the kernel picker alone.** Selecting "Python on Viya" as a
+  notebook's kernel is already an explicit, per-notebook choice with no
+  button-ownership ambiguity to arbitrate, so `notebookController.ts` never
+  reads `RunTargetStore` and a cell run never checks `targets.readiness()`
+  the way `runNow`/`resetPythonState` do — it only needs an active profile,
+  which `BackendCache.backendFor()`'s own `sessions.connect()` call already
+  reports the absence of, the same way it does for Run File. Full reasoning
+  in `notebookController.ts`'s own doc comment.
+- ☑ Wire `NotebookController.executeHandler` to `ExecutionBackend.execute()`
   with `freshNamespace: false` (already documented for exactly this case,
   `backend.ts:80-93`), and the interrupt handler to the existing
   `cancelJob`/`cancelRun` path — same Finding 75/76 caveat applies (a
-  cancelled cell's statement still runs to completion).
-- ☐ `test/helpers/recorded-<notebook-or-controller>.ts`, reusing
+  cancelled cell's statement still runs to completion). **Done** —
+  `src/notebook/notebookController.ts`'s `createNotebookExecutionHandlers`,
+  the same seam-vs-registration split `commands.ts` draws between
+  `createRunCommandHandlers`/`registerRunCommands`. `controller
+  .interruptHandler`, not per-cell cancellation tokens: the VS Code API's
+  own doc comment recommends an interrupt handler for exactly this
+  "REPL-style controller interrupts whatever is running" shape, matching
+  upstream's own `_interruptHandler → session.cancel?.()`. **A scope
+  decision beyond the punch list's own three bullets, made and recorded
+  here rather than left implicit:** cell output renders `text/plain`
+  inline, live, via `NotebookCellOutputItem.stdout` as it streams; `text/
+  html`/`image/png` get one honest placeholder line each (the same shape
+  `outputChannel.ts` already uses for the same two mime arms) rather than
+  guessing whether VS Code core's own built-in renderers for those types
+  work with no `ms-toolsai.jupyter` installed — that question is 9c's own
+  spike, not assumed here; and `application/vnd.python.traceback` produces
+  no separate output at all, since its content already streamed as
+  `text/plain` ahead of it (`src/run/render.ts`'s own doc comment), with a
+  raised cell instead getting VS Code's own red-X indicator from
+  `execution.end(false, …)`. Full mime-by-mime reasoning in
+  `notebookController.ts`'s own doc comment.
+- ☑ `test/helpers/recorded-<notebook-or-controller>.ts`, reusing
   `recorded-proc-python.ts`'s fixtures where the wire shape is identical
   (it is — the backend seam doesn't know it's being called from a notebook).
+  **No new helper file needed** — `test/helpers/recorded-connection.ts`
+  (already built for `commands-backend.test.ts` in Phase 4a) is reused as-is,
+  by both `test/unit/run-backend-cache.test.ts` and
+  `test/integration/notebook/execution.test.ts`. The latter drives
+  `createNotebookExecutionHandlers` against a **fake** `vscode
+  .NotebookController`/`NotebookCellExecution` (not a real, registered one):
+  a real `NotebookController.createNotebookCellExecution` throws "notebook
+  controller is NOT associated to notebook" unless VS Code's own
+  kernel-picker state already selected it — state this suite has no reason
+  to fight, since `NotebookController`/`NotebookCell`/`NotebookCellExecution`
+  are plain structural interfaces in `@types/vscode`, not classes, so a fake
+  satisfying only the members actually called is the same "fake the vscode
+  surface that isn't the thing under test" shape `commands.test.ts`'s own
+  `fakeOutputChannel()` already uses. Found the hard way: a first attempt
+  used a real throwaway controller and every case failed with "notebook
+  controller is NOT associated to notebook", an unhandled rejection VS Code
+  raised before any job was ever created; fixed by fully faking the
+  controller/execution rather than fighting kernel selection.
+  `controller.test.ts`'s own 9a regression still proves the real,
+  activation-registered controller reaches a terminal execution state with
+  no Jupyter extension installed — lightened from asserting the now-gone
+  placeholder message to asserting a terminal `executionSummary` is
+  reached, since 9b replaced the placeholder it used to pin.
+
+  `npm run typecheck`/`lint`/`format:check`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts`/`build` all green. `npm run
+  coverage` green — 1681 unit tests (up from 1675), coverage
+  95.94/95.48/95.81/95.94 lines/branches/functions/statements (up from
+  95.92/95.46/95.75/95.92, `.c8rc.json`'s 95.8/95.8/95.6/95.4 floor cleared
+  with room, no ratchet raise needed this slice). `npm run test:integration`
+  green — 409 passing (up from 406): `execution.test.ts`'s three new cases
+  (streamed success, busy refusal, interrupt-then-recover) plus
+  `controller.test.ts`'s updated 9a/9b regression.
+
+  **Adversarial self-review: not yet run — this is the handoff point.**
+  Per `CLAUDE.md`, the review happens before the branch is pushed; nothing
+  in this slice has been pushed or opened as a PR yet.
 
 ☐ **9c — Renderers + diagnostics.**
 

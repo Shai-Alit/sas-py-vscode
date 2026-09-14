@@ -11,36 +11,43 @@ along the way ([ADR-0022](docs/adr/0022-drop-viya-35-support.md)).
 
 **Phase 8 (CAS and SWAT) is fully complete — 8a–8c all merged 2026-09-14.** A read-only CAS tree (servers, global caslibs, tables, and — once loaded — columns, no compute session needed — [ADR-0033](docs/adr/0033-cas-adapter-shape.md)); `pythonOnViya.insertCasConnectionSnippet` delivers a fresh CAS token via the same never-logged fileref-upload path Python source itself uses, never via inline submitted code (Finding 8.6); and CAS tables open in the same paged, sortable, filterable data-viewer panel Phase 7 built, generalized behind a `TableSource` interface rather than forked or forced through `LibraryAdapter`'s own view machinery ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final merge: 8c as [PR #171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green throughout (1703 unit; coverage 95.92/95.46/95.75/95.92). **The Phase 8→9 between-phase housekeeping (`HOUSEKEEPING.md`) ran and closed 2026-09-14** — see the "Phase 8→9 housekeeping" section below for what it found and fixed. The full slice-by-slice narrative that used to live here has moved to `docs/status-archive.md`, per this file's own archival rule.
 
-**Phase 9 (Notebooks) has started — 9a (dependency spike + controller
-registration) is code-complete 2026-09-14.** A hands-on spike (not a
-documentation guess) confirmed `.ipynb` opens as a notebook and a
-`NotebookController` contributing no serializer is selectable as its kernel
-with **zero** other extensions installed — `ms-toolsai.jupyter` is not a
-dependency, so [ADR-0024](docs/adr/0024-notebooks-are-ipynb-native.md) (this
-extension's notebooks are ipynb-native, no bespoke format) needs no
-amendment. `src/notebook/notebookController.ts` registers a real
-`NotebookController` against VS Code's own `jupyter-notebook` type, wired
-from `src/extension.ts`; its `executeHandler` is a deliberate placeholder
-("Running notebook cells on SAS Viya isn't implemented yet.") since real
-execution against a Viya session is 9b's own slice, gated on lifting
-`backends`/`backendFor` out of `createRunCommandHandlers`'s private closure
-in `src/run/commands.ts` first. `npm run coverage` green (1675 unit,
-`src/notebook/notebookController.ts` excluded from unit-tier scope in
-`.c8rc.json` like every other `vscode`-importing registrar); `npm run
-test:integration` green (406 passing), including a new permanent regression
-(`test/integration/notebook/controller.test.ts`) that formalises the spike —
-the existing test host already launches with `--disable-extensions`, so this
-test is itself continuous proof no Jupyter extension is required. See
-`phase-9.md`'s 9a Runbook entry for the full account, including two
-environment-only snags hit and fixed along the way (a stale `.vscode-test/`
-cache and `ELECTRON_RUN_AS_NODE` breaking a directly-launched Electron
-binary — neither is a defect in this slice's own code). **Adversarial
-self-review run before any push — no blocking findings**; two non-blocking
-observations were checked independently and both confirmed not worth acting
-on (`phase-9.md`'s 9a Runbook entry has the detail). **Manual test items run
-2026-09-14 (Sean): all five pass** — `docs/dev/manual-tests/phase-9.md`
-9.1–9.5. **Committed locally on `feat/9a-notebook-controller`; not yet
-pushed, no PR opened.**
+**Phase 9 (Notebooks) is in progress.** 9a (dependency spike + controller
+registration) is done, merged 2026-09-14 as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172),
+squash `6884e49` — a hands-on spike confirmed `.ipynb` opens as a notebook
+and a `NotebookController` contributing no serializer is selectable as its
+kernel with **zero** other extensions installed, so
+[ADR-0024](docs/adr/0024-notebooks-are-ipynb-native.md) needs no amendment.
+**9b (controller + execution) is code-complete 2026-09-14.** Real
+execution: `src/run/backendCache.ts` lifts the one-backend-per-profile cache
+out of `commands.ts`'s own private closure (a straight move, unchanged
+behaviour) so `extension.ts` can share one instance between Run File and
+the notebook controller; `src/notebook/notebookController.ts`'s
+`createNotebookExecutionHandlers` wires `executeHandler` to
+`ExecutionBackend.execute()` with `freshNamespace: false` and
+`interruptHandler` to `cancel()` (Finding 75/76's caveats apply the same
+way they do to Run File's own Cancel). Decided this slice, not left
+implicit: the kernel picker alone is a notebook's run-target equivalent —
+no separate status-bar toggle needed (ADR-0011/0020's own concept does not
+extend to notebooks); and cell output renders `text/plain` live as it
+streams, with `text/html`/`image/png` given an honest "not rendered yet"
+placeholder and 9c left to build the real renderer (full reasoning in
+`notebookController.ts`'s own doc comment). `npm run coverage` green — 1681
+unit tests, coverage 95.94/95.48/95.81/95.94 (up from 95.92/95.46/95.75/95.92);
+`backendCache.ts` turned out **not** to need a `.c8rc.json` exclusion (it
+imports `vscode` only for types, so the unit tier can reach it —
+`test/unit/run-backend-cache.test.ts` covers it directly at 99.39% lines,
+reusing `test/helpers/recorded-connection.ts`). `npm run test:integration`
+green — 409 passing (up from 406): three new cases in
+`test/integration/notebook/execution.test.ts`, driven against a **fake**
+`NotebookController`/`NotebookCellExecution` rather than a real one (a real
+one refuses `createNotebookCellExecution` unless VS Code's own kernel
+picker already selected it — state that test has no reason to fight, since
+both are plain structural interfaces in `@types/vscode`, not classes).
+`controller.test.ts`'s 9a regression still passes, lightened to assert a
+terminal `executionSummary` is reached rather than the now-superseded
+placeholder message. Full account in `phase-9.md`'s 9b Runbook entry.
+**Adversarial self-review not yet run — that is the next step before this
+branch is pushed or a PR opened**, per `CLAUDE.md`.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -170,7 +177,7 @@ Phase 6→7/8 checkpoint but was missed then. Per-phase detail
 | 6 — SAS Content explorer | ✅ **done — 6a–6e all merged.** SAS Content tree, open/save `FileSystemProvider`, create/rename/move/delete, drag-and-drop, favourites, recycle bin, Cut/Paste. Final PR [#162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash `a74f756`. `npm run verify` green (1580 unit; coverage 95.57/95.51/95.26/95.57). Phase 6→7/8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). | `docs/phases/phase-8.md` |
-| 9 — Notebooks | **9a (spike + controller registration) code-complete 2026-09-14 — adversarial review done, no blocking findings; manual test items 9.1–9.5 all pass (Sean, 2026-09-14); committed locally, not yet pushed, no PR.** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged); `src/notebook/notebookController.ts` registers a `NotebookController` against `jupyter-notebook` with a placeholder `executeHandler` — real execution is 9b. `npm run coverage`/`test:integration` green. | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **9a done, merged as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172).** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged). **9b (controller + execution) code-complete 2026-09-14 — adversarial review not yet run.** `src/run/backendCache.ts` shares one cached backend between Run File and the notebook controller; `notebookController.ts` wires real execution (`freshNamespace: false`) and interrupt-to-cancel; kernel picker alone is the notebook run-target equivalent, no status-bar extension. `npm run coverage`/`test:integration` green (1681 unit, 95.94/95.48/95.81/95.94; 409 integration). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

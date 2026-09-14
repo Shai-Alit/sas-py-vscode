@@ -5,13 +5,16 @@
  * Slice 3d-i's commands: `selectRunTarget`, `Run File`, `Run Selection`,
  * `Cancel`, `Reset Python state`.
  *
- * This is the first module that ever constructs a `ProcPythonBackend` from a
- * live `ComputeConnection` — nothing before this slice turned a session into
- * something that can run Python. One backend is held per profile, reused
- * across runs for as long as the underlying `ComputeConnection` object is the
- * same one `ComputeSessionManager` hands back; a reconnect (a new session, a
- * new dialect resolution) gets a fresh backend rather than one carrying the
- * old session's fileref/run counters.
+ * The one-backend-per-profile cache this module built for itself in 3d-i —
+ * one `ProcPythonBackend` per profile, reused across runs for as long as the
+ * underlying `ComputeConnection` object is the same one `ComputeSessionManager`
+ * hands back, with a reconnect (a new session, a new dialect resolution)
+ * getting a fresh backend rather than one carrying the old session's
+ * fileref/run counters — moved to `./backendCache` in Phase 9's 9b slice, so a
+ * `NotebookController` could share it instead of duplicating it. This module
+ * still owns *when* it is consulted (`backendCache.backendFor()`, called from
+ * `runNow`/`resetPythonState`/`showEnvironmentImpl`), just no longer the cache
+ * itself; see `./backendCache`'s own doc comment for the full reasoning.
  *
  * ADR-0011 governs everything about *which* target a run goes to and how the
  * target is chosen; this module is what a chosen target actually does. Two
@@ -32,12 +35,10 @@ import * as vscode from "vscode";
 import type { ExecutionHandle, Program, Traceback } from "../backend/backend";
 import { localiseBackendProblem } from "../backend/messages";
 import type { BackendProblem } from "../backend/problems";
-import { ProcPythonBackend, type SubmissionGuard } from "../backend/procPython";
-import type {
-  ComputeConnection,
-  ComputeSessionManager,
-} from "../compute/sessionManager";
+import type { ProcPythonBackend } from "../backend/procPython";
+import type { ComputeSessionManager } from "../compute/sessionManager";
 import type { ProfileStore } from "../profile/store";
+import { createBackendCache, type BackendCache } from "./backendCache";
 import { RunDiagnostics } from "./diagnostics";
 import {
   ENVIRONMENT_SCHEME,
@@ -89,13 +90,6 @@ export type RunCommandSessions = Pick<
 /** What this module needs from `EnvironmentStore` — 3e's per-profile,
  * explicitly-refreshed cache of a stage-2 probe. */
 export type RunCommandEnvironment = Pick<EnvironmentStore, "get" | "set">;
-
-/** One backend per profile, held for as long as the connection it was built
- * from is still the live one. */
-interface CachedBackend {
-  readonly connection: ComputeConnection;
-  readonly backend: ProcPythonBackend;
-}
 
 /**
  * The ports this module would otherwise reach for on the `vscode` namespace
@@ -150,6 +144,14 @@ export interface RunCommandDeps {
    * after 3d-i's own `registerCommand` collision (this module's doc comment
    * explains that split in full). */
   environmentDocuments?: EnvironmentDocumentProvider | undefined;
+  /** Defaults to a fresh `BackendCache` (`./backendCache`) over `sessions`.
+   * Supplying one hands its lifecycle to the caller — same rule as
+   * `outputChannel`/`resultPanel` above — and is how a `NotebookController`
+   * shares one cached backend per profile with Run File, rather than each
+   * holding an independent one. `extension.ts` is the one real caller that
+   * does this; see `docs/phases/phase-9.md`'s Plan section, "What needs real
+   * design work, not a port", for why the sharing matters. */
+  backendCache?: BackendCache | undefined;
   /** Defaults to `vscode.workspace.onDidCloseTextDocument`. Phase 5d-iv: a
    * closed document's Problems entry (`src/run/diagnostics.ts`) is cleared
    * here. Injectable so an integration test fires it synchronously rather
@@ -218,7 +220,7 @@ export function createRunCommandHandlers(
   const environmentDocuments =
     deps.environmentDocuments ??
     new EnvironmentDocumentProvider((profileId) => environment.get(profileId));
-  const backends = new Map<string, CachedBackend>();
+  const backendCache = deps.backendCache ?? createBackendCache(sessions, log);
   /** The one run this window can have in flight, so the Cancel command can
    * find its handle without the progress notification being the only thing
    * that knows it. `undefined` whenever no `execute()` is outstanding — never
@@ -331,65 +333,6 @@ export function createRunCommandHandlers(
     void vscode.window.showErrorMessage(message);
   };
 
-  const guardFor = (profileId: string): SubmissionGuard => ({
-    isBusy: () => sessions.isBusy(profileId),
-    startSubmission: () => sessions.startSubmission(profileId),
-    endSubmission: () => {
-      sessions.endSubmission(profileId);
-    },
-  });
-
-  /**
-   * Connects the active profile and returns the backend for it, reusing one
-   * already built from the same `ComputeConnection`. `undefined` means
-   * `sessions.connect()` already reported why — a dead token, an untrusted
-   * folder, no profile — and there is nothing further to say here.
-   */
-  const backendFor = async (): Promise<CachedBackend | undefined> => {
-    const connection = await sessions.connect();
-    if (connection === undefined) return undefined;
-
-    const cached = backends.get(connection.profileId);
-    if (cached?.connection === connection) {
-      // Idempotent and I/O-free (`ExecutionBackend.connect()`'s own
-      // contract) — always re-marking a cached backend connected is what
-      // makes it safe to hand back one `cancelRun` closed underneath a
-      // `reset()`: closing sets `connected = false` and there is no other
-      // hook that would otherwise notice and reconnect it.
-      await cached.backend.connect();
-      return cached;
-    }
-
-    if (cached?.backend.busy) {
-      // A reconnect landed while the old backend still had a run or a reset
-      // in flight (a new `ComputeConnection` for the same profile — a
-      // reattach, a new dialect resolution). Overwriting the cache entry
-      // below would otherwise orphan it: `cancelRun`'s reset-interrupt path
-      // only ever looks at what `backends` holds *now*, so the old backend
-      // would keep running with nothing left able to reach it. Closing it
-      // here is the same "cancel whatever is in flight, then disconnect"
-      // `close()` already does for every other caller of it.
-      await cached.backend.close();
-    }
-
-    const backend = new ProcPythonBackend(
-      connection.client,
-      connection.session,
-      connection.generation.dialect,
-      guardFor(connection.profileId),
-      (reason) => {
-        log.warn(reason);
-      },
-    );
-    // Never performs I/O (ExecutionBackend's own contract) — this only marks
-    // the backend ready to accept `execute()`/`reset()` calls.
-    await backend.connect();
-
-    const entry: CachedBackend = { connection, backend };
-    backends.set(connection.profileId, entry);
-    return entry;
-  };
-
   const reportNotReady = (reason: "local" | "no-profile"): void => {
     report(
       reason === "local"
@@ -475,7 +418,7 @@ export function createRunCommandHandlers(
       return;
     }
 
-    const built = await backendFor();
+    const built = await backendCache.backendFor();
     if (built === undefined) return;
     const { backend, connection } = built;
 
@@ -524,11 +467,12 @@ export function createRunCommandHandlers(
       outputChannel.writeRunHeader(connection.profileName, description);
       resultPanel.startRun(program.origin);
       // Phase 4d: reset the Problems entry alongside the other two surfaces,
-      // at the point a run actually begins — not before `backendFor()`,
-      // where a connect failure or a `busy` refusal would clear Problems
-      // while the output channel and result panel still showed the previous
-      // run. A run that now passes, or fails before producing a traceback,
-      // leaves nothing stale; keyed on the origin URI, the key `publish` sets.
+      // at the point a run actually begins — not before
+      // `backendCache.backendFor()`, where a connect failure or a `busy`
+      // refusal would clear Problems while the output channel and result
+      // panel still showed the previous run. A run that now passes, or fails
+      // before producing a traceback, leaves nothing stale; keyed on the
+      // origin URI, the key `publish` sets.
       diagnostics.clearFor(program.origin.uri);
       const handle = executed.value;
       currentRun = { backend, handle };
@@ -614,9 +558,9 @@ export function createRunCommandHandlers(
     // No `execute()` handle in flight, but a `reset()` might be — it
     // produces none, so the only way the seam lets a caller interrupt one is
     // `close()`, which cancels whatever is running and then disconnects.
-    // `backendFor()` always re-marks a reused backend connected first, which
-    // is what makes closing it here safe for whatever this window asks for
-    // next.
+    // `backendCache.backendFor()` always re-marks a reused backend connected
+    // first, which is what makes closing it here safe for whatever this
+    // window asks for next.
     //
     // `currentReset` names the exact backend a reset is running on, tracked
     // by `resetPythonState` for the duration of its own call — not
@@ -641,7 +585,7 @@ export function createRunCommandHandlers(
       return;
     }
 
-    const built = await backendFor();
+    const built = await backendCache.backendFor();
     if (built === undefined) return;
     const { backend, connection } = built;
 
@@ -724,13 +668,14 @@ export function createRunCommandHandlers(
       return;
     }
 
-    // Checked from `profiles.get()` — never `backendFor()` — so that a cache
-    // hit really does cost nothing: `backendFor()` calls `sessions.connect()`,
-    // which for a profile this window has no live session for yet means a
-    // real network round trip (and possibly an interactive auth prompt), not
-    // the no-op this function's own doc comment promises for the cache-hit
-    // case. Caught on adversarial review of this slice's first draft, which
-    // connected unconditionally before ever consulting the cache.
+    // Checked from `profiles.get()` — never `backendCache.backendFor()` — so
+    // that a cache hit really does cost nothing: `backendFor()` calls
+    // `sessions.connect()`, which for a profile this window has no live
+    // session for yet means a real network round trip (and possibly an
+    // interactive auth prompt), not the no-op this function's own doc comment
+    // promises for the cache-hit case. Caught on adversarial review of this
+    // slice's first draft, which connected unconditionally before ever
+    // consulting the cache.
     if (!forceProbe) {
       const profile = profiles.get(readiness.profileName);
       if (profile !== undefined && environment.get(profile.id) !== undefined) {
@@ -739,7 +684,7 @@ export function createRunCommandHandlers(
       }
     }
 
-    const built = await backendFor();
+    const built = await backendCache.backendFor();
     if (built === undefined) return;
     const { backend, connection } = built;
 
@@ -837,21 +782,16 @@ export function createRunCommandHandlers(
       if (deps.environmentDocuments === undefined) {
         environmentDocuments.dispose();
       }
-      // Unlike `ComputeSessionManager.dispose()` — which has nothing worth
-      // tearing down server-side, and says so — a busy `ProcPythonBackend`
-      // has a real interrupt `close()` can send. Fired, not awaited: this
-      // method is synchronous, the window is closing regardless, and there
-      // is nowhere to await it that VS Code would honour, the same
-      // reasoning `ComputeSessionManager.dispose()` gives for not joining
-      // an in-flight `connect()`. If the interrupt never lands before the
-      // process exits, the SAS-side run keeps executing to its own
-      // conclusion, unwatched rather than orphaned — this window has simply
-      // stopped being the one that cares. Safe to call on every cached
-      // backend regardless of whether it is actually busy: past the cancel
-      // branch, `close()`'s own contract is a no-op. Raised on review.
-      for (const cached of backends.values()) {
-        void cached.backend.close();
-      }
+      // Same rule as every other field above: only dispose a cache this
+      // constructor built for itself. `extension.ts` supplies its own shared
+      // instance (`deps.backendCache`), which a notebook controller may still
+      // be holding a reference to — closing every cached backend out from
+      // under it here would be wrong in exactly the way disposing a
+      // caller-supplied `outputChannel` would be. `./backendCache`'s own
+      // `dispose()` doc comment has the reasoning for *why* closing every
+      // cached backend, fired and not awaited, is the right thing when this
+      // constructor does own the cache.
+      if (deps.backendCache === undefined) backendCache.dispose();
     },
   };
 }

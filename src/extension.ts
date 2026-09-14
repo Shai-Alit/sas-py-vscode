@@ -24,6 +24,7 @@ import { TablePropertiesPanelManager } from "./data/tablePropertiesPanel";
 import { registerNotebookController } from "./notebook/notebookController";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
+import { createBackendCache } from "./run/backendCache";
 import { registerRunCommands } from "./run/commands";
 import { createEnvironmentStatusBarItem } from "./run/environmentStatusBar";
 import { EnvironmentStore } from "./run/environmentStore";
@@ -200,17 +201,30 @@ export function activate(context: vscode.ExtensionContext): void {
   // connection is gone (`BackendProblem` `backend-gone`), it tells
   // `src/compute` to drop it and re-sync the context key, rather than
   // leaving Connect hidden until the user finds Disconnect on their own.
+  const runSessions = {
+    connect,
+    isBusy: (profileId: string) => sessions.isBusy(profileId),
+    startSubmission: (profileId: string) => sessions.startSubmission(profileId),
+    endSubmission: (profileId: string) => {
+      sessions.endSubmission(profileId);
+    },
+    forgetProfile,
+  };
+
+  // Phase 9b: one `BackendCache` shared between Run File and the notebook
+  // controller registered below, so a notebook cell and a Run File
+  // invocation against the same profile reuse one connected
+  // `ProcPythonBackend` rather than each holding an independent one — see
+  // `./run/backendCache`'s own doc comment. Disposed here, not by either
+  // registrar: both are handed it via their own `backendCache`
+  // dep/parameter, which — the same rule `RunCommandDeps`'s other injectable
+  // fields already follow — means neither one owns its lifecycle.
+  const backendCache = createBackendCache(runSessions, output);
+  context.subscriptions.push(backendCache);
+
   registerRunCommands(
     context,
-    {
-      connect,
-      isBusy: (profileId) => sessions.isBusy(profileId),
-      startSubmission: (profileId) => sessions.startSubmission(profileId),
-      endSubmission: (profileId) => {
-        sessions.endSubmission(profileId);
-      },
-      forgetProfile,
-    },
+    runSessions,
     profiles,
     runTargets,
     environment,
@@ -219,7 +233,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // `onDidSignOut` fires only on the deliberate path (palette / Accounts
     // menu), not on `onDidChangeSessions`'s diff, which also drops a profile a
     // slow renewal missed for one poll.
-    { onDidSignOut: auth.onDidSignOut },
+    { onDidSignOut: auth.onDidSignOut, backendCache },
   );
 
   // Phase 6a-ii: the read-only SAS Content tree in its own activity-bar view.
@@ -312,8 +326,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Phase 9a: a NotebookController against VS Code's own `jupyter-notebook`
   // type — no serializer of this extension's own, per ADR-0024. The 9a spike
   // (`phase-9.md`) confirmed this needs no `ms-toolsai.jupyter` dependency.
-  // Real execution against a Viya session is 9b's own slice.
-  registerNotebookController(context, output);
+  // Phase 9b: real execution, against the same `backendCache` Run File uses
+  // above, rather than a second independent backend per profile.
+  registerNotebookController(context, output, backendCache);
 }
 
 export function deactivate(): void {

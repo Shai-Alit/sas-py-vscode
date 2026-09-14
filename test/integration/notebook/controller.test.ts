@@ -19,11 +19,22 @@ import { extensionId } from "../../helpers/manifest";
  * pre-existing type — no serializer of its own. If that controller were not
  * real, or VS Code required `ms-toolsai.jupyter` to select any kernel for a
  * `jupyter-notebook`, running a cell below would either throw or leave the
- * cell with no output at all. See `docs/phases/phase-9.md`'s 9a Runbook
- * entry for the account of the hands-on spike this test formalises.
+ * cell execution stuck pending forever, never reaching a terminal state. See
+ * `docs/phases/phase-9.md`'s 9a Runbook entry for the account of the
+ * hands-on spike this test formalises.
+ *
+ * Phase 9b replaced the placeholder `executeHandler` this test used to pin
+ * with real execution (`notebookController.ts`'s own doc comment), so this
+ * test no longer asserts on a specific message — that would only be testing
+ * `sessions.connect()`'s own "no active profile" wording, a detail
+ * `execution.test.ts`'s own suite (against a recorded connection, not the
+ * real, profile-less test host) is the right place to pin, not this one.
+ * What stays worth proving here, permanently, is the 9a spike's own claim: a
+ * cell run through the *real*, activation-registered controller reaches a
+ * terminal state with no Jupyter extension installed at all.
  */
-describe("notebook controller (9a)", () => {
-  it("is auto-selected and executes a cell with no Jupyter extension installed", async () => {
+describe("notebook controller (9a/9b)", () => {
+  it("is auto-selected and reaches a terminal execution state with no Jupyter extension installed", async () => {
     const extension = vscode.extensions.getExtension(extensionId());
     assert.ok(extension);
     await extension.activate();
@@ -51,29 +62,13 @@ describe("notebook controller (9a)", () => {
       } catch (error) {
         lastError = error;
       }
-      if (cell.outputs.length > 0) break;
+      if (cell.executionSummary !== undefined) break;
       await new Promise((resolve) => setTimeout(resolve, 250));
     }
 
     assert.ok(
-      cell.outputs.length > 0,
-      `No output appeared on the cell within 10s (no controller was selected as the notebook's kernel). Last error: ${String(lastError)}`,
-    );
-
-    const output = cell.outputs[0];
-    assert.ok(output);
-    const item = output.items[0];
-    assert.ok(item);
-    assert.equal(
-      item.mime,
-      "application/vnd.code.notebook.error",
-      `Expected the 9a placeholder controller's error output; got mime "${item.mime}" instead — a different kernel may have been selected.`,
-    );
-
-    const decoded: unknown = JSON.parse(new TextDecoder().decode(item.data));
-    assert.equal(
-      (decoded as { message: string }).message,
-      "Running notebook cells on SAS Viya isn't implemented yet.",
+      cell.executionSummary !== undefined,
+      `The cell never reached a terminal execution state within 10s (no controller was selected as the notebook's kernel, or the run never settled). Last error: ${String(lastError)}`,
     );
   });
 });

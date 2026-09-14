@@ -46,6 +46,28 @@ export class SasCasTreeProvider
   private readonly changed = new vscode.EventEmitter<CasItem | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
 
+  /**
+   * Columns just served for a table this provider itself told VS Code had
+   * changed, keyed by {@link nodeId} — consumed by the very next
+   * {@link getColumnsAndRefreshIcon} call for that id, then discarded.
+   *
+   * **Caught in PR #173's own automated review (GitHub Actions bot,
+   * 2026-09-14), plausible not confirmed:** firing {@link onDidChangeTreeData}
+   * for a table while VS Code is mid-expanding that exact node matches the
+   * API's own "update the changed element ... and its children recursively
+   * (if shown)" contract — the node is shown, being expanded right now — so
+   * VS Code is expected to re-invoke `getChildren` for it immediately,
+   * re-running `adapter.getColumns` a second time. Idempotent (the second
+   * call sees `state === "loaded"` and does not fire again) but a real extra
+   * network round trip {@link getColumnsAndRefreshIcon}'s own doc comment
+   * claimed did not happen. This cache removes it: the columns that method
+   * already fetched are served straight back on that one expected re-entrant
+   * call rather than being fetched twice, and the entry is deleted the
+   * instant it is read so a later, unrelated collapse/re-expand of the same
+   * table always fetches for real rather than ever risking stale columns.
+   */
+  private readonly justLoaded = new Map<string, readonly CasItem[]>();
+
   dispose(): void {
     this.changed.dispose();
   }
@@ -137,13 +159,24 @@ export class SasCasTreeProvider
    * establishes is correct post-load, regardless of whether this call did
    * the loading or the table already was. VS Code re-renders the node from
    * this fresh object (matched to the existing row by `nodeId`, not by
-   * reference), so no extra network round trip is needed to re-list the
-   * caslib.
+   * reference), so no extra round trip is needed to re-list the caslib — but
+   * firing for a node that is itself mid-expansion is expected to make VS
+   * Code re-invoke `getChildren` for that same node immediately (the API's
+   * own "and its children recursively, if shown" contract); {@link
+   * justLoaded}'s own doc comment covers why that re-entrant call is served
+   * from cache rather than hitting `adapter.getColumns` again.
    */
   private async getColumnsAndRefreshIcon(
     adapter: CasAdapter,
     table: CasTableItem,
   ): Promise<CasItem[]> {
+    const id = nodeId(table);
+    const cached = this.justLoaded.get(id);
+    if (cached !== undefined) {
+      this.justLoaded.delete(id);
+      return [...cached];
+    }
+
     const wasUnloaded = table.state !== "loaded";
     const result = await adapter.getColumns(table);
     if (!result.ok) {
@@ -152,7 +185,10 @@ export class SasCasTreeProvider
       );
       return [];
     }
-    if (wasUnloaded) this.changed.fire({ ...table, state: "loaded" });
+    if (wasUnloaded) {
+      this.justLoaded.set(id, result.value);
+      this.changed.fire({ ...table, state: "loaded" });
+    }
     return [...result.value];
   }
 }

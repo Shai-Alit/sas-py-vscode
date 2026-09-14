@@ -48,11 +48,16 @@ function table(over: Partial<CasTableItem> = {}): CasTableItem {
 
 function adapterReturning(
   columns: CasResult<readonly CasItem[]> = { ok: true, value: [] },
-): CasAdapter {
+): CasAdapter & { getColumnsCalls: number } {
   // The provider calls only `getColumns` for a table node.
-  return {
-    getColumns: () => Promise.resolve(columns),
-  } as unknown as CasAdapter;
+  const adapter = {
+    getColumnsCalls: 0,
+    getColumns() {
+      adapter.getColumnsCalls += 1;
+      return Promise.resolve(columns);
+    },
+  };
+  return adapter as unknown as CasAdapter & { getColumnsCalls: number };
 }
 
 function makeProvider(adapter: CasAdapter | undefined): {
@@ -80,6 +85,44 @@ describe("SasCasTreeProvider", () => {
     assert.ok(refreshed !== undefined);
     assert.equal((refreshed as CasTableItem).state, "loaded");
     assert.equal((refreshed as CasTableItem).name, "CARS");
+  });
+
+  it("PR #173 review: serves VS Code's own re-entrant getChildren call from cache rather than fetching columns twice", async () => {
+    // Firing onDidChangeTreeData for a table while it is mid-expansion is
+    // expected to make VS Code re-invoke getChildren for that same node
+    // immediately (the API's own "and its children recursively, if shown"
+    // contract) — this simulates exactly that re-entrant call, passing back
+    // the fired element the way VS Code would.
+    const columns: CasResult<readonly CasItem[]> = {
+      ok: true,
+      value: [{ kind: "column", name: "x" } as unknown as CasItem],
+    };
+    const adapter = adapterReturning(columns);
+    const { provider, fired } = makeProvider(adapter);
+
+    const first = await provider.getChildren(table({ state: "unloaded" }));
+    assert.equal(adapter.getColumnsCalls, 1);
+    assert.equal(fired.length, 1);
+
+    const second = await provider.getChildren(fired[0] as CasTableItem);
+
+    assert.equal(
+      adapter.getColumnsCalls,
+      1,
+      "a re-entrant getChildren for the just-refreshed node must not re-fetch",
+    );
+    assert.deepEqual(second, first);
+  });
+
+  it("PR #173 review: a genuine later re-expand of the same table still fetches for real", async () => {
+    const adapter = adapterReturning({ ok: true, value: [] });
+    const { provider, fired } = makeProvider(adapter);
+
+    await provider.getChildren(table({ state: "unloaded" }));
+    await provider.getChildren(fired[0] as CasTableItem); // the re-entrant call
+    await provider.getChildren(table({ state: "unloaded" })); // a later, real re-expand
+
+    assert.equal(adapter.getColumnsCalls, 2);
   });
 
   it("does not fire a refresh for a table that was already loaded", async () => {

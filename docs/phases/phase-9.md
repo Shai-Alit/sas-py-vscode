@@ -663,17 +663,109 @@ recommendation, not a dependency lock._
   `npm run verify` and `npm run test:integration` green after folding both
   fixes in (numbers above).
 
-☐ **9c — Renderers + diagnostics.**
+☑ **9c — Renderers + diagnostics.** Code-complete 2026-09-14.
 
-- ☐ Build the small, per-mime-type notebook renderer script(s)
+- ☑ Build the small, per-mime-type notebook renderer script(s)
   (`contributes.notebookRenderer`), in upstream's `LogRenderer.ts`/
   `HTMLRenderer.ts` shape — dependency-free, no shared code with
   `ResultPanel`'s webview — reusing `resultPanelModel.ts`'s `RichOutput` →
   render-data reduction *logic* where it overlaps, not its transport.
-- ☐ Spike whether `RunDiagnostics`/`tracebackDiagnostics.ts` can target a
+  **Done, but not the way the punch list assumed — no renderer script was
+  needed at all, once the open question 9b's own doc comment left standing
+  was actually spiked rather than guessed at.** The installed VS Code's own
+  bundled `notebook-renderers` extension (publisher `vscode`, not
+  `ms-toolsai` — `resources/app/extensions/notebook-renderers/package.json`,
+  read directly, the same two-pronged rigor 9a's own spike used for `ipynb`)
+  registers a `notebookRenderer` for `image/gif`/`image/png`/`image/jpeg`/
+  `image/svg+xml`/`text/html`/`application/javascript` and several
+  `vscode.builtin`-prefixed mimes, with `requiresMessaging: "never"` — a
+  purely client-side renderer that needs zero cooperation from any
+  extension, installed or not. Upstream's own `LogRenderer.ts`/
+  `HTMLRenderer.ts` exist because `application/vnd.sas.compute.log.lines`/
+  `application/vnd.sas.ods.html5` are non-standard mimes VS Code has never
+  heard of; this project's own `RichOutput` union already uses the
+  *standard* `text/html`/`image/png` VS Code's own built-in renderer already
+  owns, so there was nothing left to build a renderer for. The proof this
+  finding is real and not a doc-reading guess: `controller.test.ts`'s 9a
+  regression is *continuous* evidence for it, the same way it already was
+  for `ipynb` — the integration host launches with `--disable-extensions`
+  (`runTest.ts`), which disables installed extensions, not the ones VS Code
+  itself bundles, so every CI run already proves the built-in renderer is
+  present with no `ms-toolsai.jupyter` needed. What that proof cannot
+  reach — whether the rendered pixels actually look right in a real
+  window — is `docs/dev/manual-tests/phase-9.md`'s new §9.12 (`text/html`)
+  and rewritten §9.10 (`image/png`, reset to unchecked since the behaviour
+  it tests genuinely changed), left for Sean. Implemented as
+  `src/notebook/notebookRender.ts` (pure, `vscode`-free — the same "decide
+  *what*, not *how*" split `render.ts`/`resultPanelModel.ts` already draw,
+  now a third instance of it) plus `notebookController.ts`'s own
+  `appendRichOutput`, which turns a `NotebookOutputPiece` into a real
+  `vscode.NotebookCellOutputItem` (`.text(markup, "text/html")` for HTML;
+  the plain `new NotebookCellOutputItem(bytes, "image/png")` constructor,
+  `Buffer.from(base64, "base64")`-decoded, for the image — `.data()` has no
+  static factory the way `.text()`/`.stdout()`/`.error()` do). The two old
+  placeholder `vscode.l10n.t()` strings are gone.
+- ☑ Spike whether `RunDiagnostics`/`tracebackDiagnostics.ts` can target a
   notebook cell's `vscode-notebook-cell:` URI directly (Plan, above) before
   deciding whether notebooks need their own diagnostics story or inherit the
-  existing one nearly unmodified.
+  existing one nearly unmodified. **Confirmed by a real test, not just by
+  reading the code: `tracebackDiagnostics.ts`'s `mapFrameToOrigin`/
+  `primaryPosition` never inspect `ProgramOrigin.uri`'s scheme, so a cell's
+  `vscode-notebook-cell:` URI maps a `<string>` frame exactly like an
+  ordinary file's.** `RunDiagnostics` itself needed zero changes.
+  `notebookController.ts`'s `executeCell` now calls `diagnostics.clearFor`
+  at the same point `commands.ts`'s `runNow` does (right after `execute()`
+  succeeds), captures the trailing `application/vnd.python.traceback`
+  output the same way `drainOutputs` does, and calls `diagnostics.publish`
+  on a failed outcome with a captured traceback. **Decided: this module
+  gets its own `RunDiagnostics` instance (a second `DiagnosticCollection`),
+  not Run File's** — not because sharing one is unsafe (diagnostics are
+  keyed per-URI; a cell's URI and a file's URI never collide), but because
+  ADR-0035's own precedent already settled that a notebook gets its own
+  instance of shared infrastructure rather than a wired-through reference to
+  Run File's, and because Run File's own extra clearing hooks
+  (`onDidSignOut`, `onDidCloseTextDocument`, the run-target flipping to
+  Local — Phase 5d-iv) have no notebook equivalent to hook into (no
+  run-target concept at all, 9b's own "kernel picker alone" decision).
+  **A scope decision made and recorded here, not left implicit: a stale
+  Problems entry for a notebook cell that outlives a sign-out or a closed
+  notebook is a known, accepted gap**, the same "disproportionate" call
+  Phase 4c made for Run File's own comparably narrow waiting-cell-message
+  gap — threading `onDidSignOut`/close events through `extension.ts` a
+  second time for a surface a person will, in the ordinary case, just
+  re-run was judged not worth it this slice. Carried to `phase-11.md` as a
+  candidate, not decided against permanently. New manual item §9.13
+  (`docs/dev/manual-tests/phase-9.md`) covers the raised-cell Problems entry
+  and its independence from Run File's own entries, left for Sean.
+
+  `npm run typecheck`/`lint`/`format:check`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts`/`build` all green. `npm run
+  coverage` green — **1725 unit tests** (up from 1693 at 9b), coverage
+  **95.97/95.48/95.84/95.97** lines/branches/functions/statements
+  (`.c8rc.json`'s 95.8/95.8/95.6/95.4 floor cleared with room, no ratchet
+  raise needed) — `src/notebook/notebookRender.ts` at 100% (new,
+  `test/unit/notebook-render.test.ts`, mirroring `run-render.test.ts`'s own
+  shape one mime arm at a time). `npm run test:integration` green — **430
+  passing** (up from 419 at 9b): `test/integration/notebook/execution
+  .test.ts` gained a "rich output rendering (9c)" suite (`appendRichOutput`
+  driven directly with a synthetic `RichOutput` — the recorded-connection
+  wire's `getFiles`/`getDirectoryMembers` never produces a real `text/html`/
+  `image/png` output for a real run to stream, per 3c-i's own fixture doc
+  comment, so this is the one piece of this module's own logic that suite
+  cannot reach end to end) and a "Problems-panel diagnostics (9c)" suite
+  (one test: publish on a raised cell, clear on the next run — the same
+  `TRACEBACK_LINES` shape `commands-diagnostics.test.ts` already uses,
+  through the real simulated wire this time, since the traceback capture
+  path only exists once a real `ProcPythonBackend` streams one).
+
+  **Manual test items updated in the same slice**: §9.10 (`docs/dev/
+  manual-tests/phase-9.md`) reworded from the placeholder-text expectation
+  to real inline rendering and reset to unchecked — the behaviour it tests
+  genuinely changed, the same rule §9.8/§9.9 followed at 9b. New "Rich
+  output rendering and diagnostics (phase 9c)" section added: §9.12
+  (`text/html`, a pandas DataFrame repr) and §9.13 (a raised cell's
+  Problems-panel entry, and its independence from Run File's own entries).
+  **Left for Sean, not yet run.**
 
 ☐ **9d — Export.**
 

@@ -42,7 +42,9 @@ File's, since [ADR-0035](../../adr/0035-notebook-gets-its-own-compute-session.md
 including the two scope decisions this slice made: the kernel picker alone
 is a notebook's run-target equivalent (no status-bar toggle), and
 `text/html`/`image/png` output gets an honest placeholder rather than a real
-rendering (9c's own job).
+rendering (9c's own job). **9c then landed the real rendering** — see
+"Rich output rendering and diagnostics (phase 9c)" below, which also covers
+the new Problems-panel entry for a raised cell.
 
 **§9.2–§9.5 are the basic capability this whole slice exists to add —
 run them first and don't skip ahead to §9.6 on the assumption they pass.**
@@ -163,15 +165,17 @@ wants no profile signed in.
   state survives its own reload and is never touched by Run File — rather
   than the literal cross-surface variable visibility the first cut could
   not safely deliver.
-- [x] **9.10** **`text/html`/`image/png` output gets an honest "not yet",
-  not silence or a crash** — run a cell that writes one of ADR-0019's
-  captured files, e.g.
+- [ ] **9.10** **`image/png` output renders as a real, inline image — not a
+  placeholder** — run a cell that writes one of ADR-0019's captured files,
+  e.g.
   `import matplotlib.pyplot as plt; plt.plot([1,2,3]); plt.savefig("fig.png")`.
   **(live)**
-  **Expect:** the cell's output includes a line reading "[an image was
-  produced — rich rendering in a notebook cell isn't implemented yet]" —
-  not a broken image icon, not nothing. (9c is where this becomes a real
-  inline image.)
+  **Expect:** the cell's output shows the actual plotted image inline, via
+  VS Code's own built-in notebook renderer — no placeholder text, no broken
+  image icon (`docs/phases/phase-9.md`'s 9c Runbook entry).
+  **(2026-09-14) reworded and reset to unchecked — 9c replaced the
+  placeholder text this item used to test with real rendering; needs a
+  fresh live run.**
 - [x] **9.11** **Disconnect ends both sessions, not just Run File's** — with
   a notebook cell already run once (so the notebook's own, separate
   compute session is live — [ADR-0035](../../adr/0035-notebook-gets-its-own-compute-session.md))
@@ -188,3 +192,42 @@ wants no profile signed in.
   existing integration suite (`test/integration/compute/commands.test.ts`)
   deliberately never opens a real session — so this item is this
   behaviour's only coverage until that changes.
+
+## Rich output rendering and diagnostics (phase 9c)
+
+`docs/phases/phase-9.md`'s 9c Runbook entry has the full account:
+`src/notebook/notebookRender.ts` (pure, `vscode`-free — the same "decide
+*what*, not *how to show it*" split `render.ts`/`resultPanelModel.ts` already
+draw) decides what each `RichOutput` mime arm becomes; `notebookController
+.ts`'s `appendRichOutput` turns that into a real
+`vscode.NotebookCellOutputItem`. **No renderer script of this extension's
+own was needed** — `text/html`/`image/png` are standard mimes VS Code's own
+bundled `notebook-renderers` extension already renders, confirmed the same
+two-pronged way 9a confirmed `.ipynb` needs no `ms-toolsai.jupyter` (manifest
+inspection, and `controller.test.ts`'s own continuous proof under
+`--disable-extensions`). `RunDiagnostics` also now publishes for a raised
+cell, via this module's own `DiagnosticCollection` — not Run File's (see
+`notebookController.ts`'s own doc comment, "Diagnostics — the Problems
+panel", for why the two stay separate rather than sharing one).
+
+**Pre-work:** a signed-in Viya profile with `PROC PYTHON` available, same as
+§9.2–§9.9 above.
+
+- [ ] **9.12** **`text/html` output renders as real HTML, not a placeholder
+  and not literal markup** — run a cell that produces an HTML repr, e.g. a
+  small pandas DataFrame as the cell's last expression:
+  `import pandas as pd; pd.DataFrame({"a": [1, 2]})`. **(live)**
+  **Expect:** the cell's output shows the rendered table — not the literal
+  `<table>...</table>` markup as text, and not a placeholder line.
+- [ ] **9.13** **A raised exception also gets a Problems-panel entry, at the
+  cell's own position, cleared on the next run** — in a fresh cell, run
+  something that raises with a mappable frame, e.g.
+  `def f():` / `    return 1 / 0` / `f()` as three lines of one cell.
+  **(live)**
+  **Expect:** the Problems panel (**View: Toggle Problems**) shows one entry
+  sourced "Python on Viya", positioned at the `return 1 / 0` line — clicking
+  it jumps to that line in the cell. Run the same cell again with the bug
+  fixed (e.g. `return 1`): **Expect** the entry is gone. Separately: with a
+  `.py` file open that also has an unrelated Viya-run error published
+  against it (Run File, Phase 4d), confirm the two Problems entries coexist
+  independently — fixing or clearing one must not touch the other.

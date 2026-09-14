@@ -100,6 +100,34 @@ branch actually produces: **1693 unit tests**, coverage
 **95.95/95.48/95.83/95.95**; **419 integration** passing (418 post-merge,
 +1 for the new regression case).
 
+**9c (renderers + diagnostics) is code-complete 2026-09-14, and needed less
+than the punch list assumed — no renderer script at all.** The open question
+9b's own doc comment left standing (whether VS Code core's built-in
+renderers show `text/html`/`image/png` with no `ms-toolsai.jupyter`
+installed) was spiked, not guessed at: the installed VS Code's own bundled
+`notebook-renderers` extension (publisher `vscode`) already renders both,
+`requiresMessaging: "never"`, with `controller.test.ts`'s existing
+`--disable-extensions` run as continuous proof it needs no Jupyter
+extension — the same evidentiary bar 9a's own `ipynb` spike set. Since this
+project's own `RichOutput` union already uses those standard mimes, there
+was nothing for upstream's `LogRenderer.ts`/`HTMLRenderer.ts`-shaped script
+to do; `src/notebook/notebookRender.ts` (new, pure, mirroring `render.ts`/
+`resultPanelModel.ts`'s own "decide what, not how" split) plus
+`notebookController.ts`'s `appendRichOutput` build the real
+`vscode.NotebookCellOutputItem`s directly. `RunDiagnostics` also now applies
+to a raised cell — confirmed by a real test that `tracebackDiagnostics.ts`'s
+position maths needs no change for a `vscode-notebook-cell:` URI — via this
+module's own `DiagnosticCollection`, not Run File's; a stale Problems entry
+outliving a sign-out or closed notebook is a deliberate, recorded gap
+(carried to `phase-11.md`), the same "disproportionate" call Phase 4c made
+for a comparably narrow Run File gap. `npm run coverage` green (**1725**
+unit, up from 1693; coverage **95.97/95.48/95.84/95.97**); `npm run
+test:integration` green (**430** passing, up from 419). Manual test items:
+§9.10 reworded to test real image rendering and reset to unchecked (the
+placeholder it used to test is gone); new §9.12 (`text/html`) and §9.13
+(Problems-panel entry) added — **left for Sean, not yet run.** Full account
+in `phase-9.md`'s 9c Runbook entry. **9d (export) not started.**
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:
@@ -237,7 +265,7 @@ Phase 6→7/8 checkpoint but was missed then. Per-phase detail
 | 6 — SAS Content explorer | ✅ **done — 6a–6e all merged.** SAS Content tree, open/save `FileSystemProvider`, create/rename/move/delete, drag-and-drop, favourites, recycle bin, Cut/Paste. Final PR [#162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash `a74f756`. `npm run verify` green (1580 unit; coverage 95.57/95.51/95.26/95.57). Phase 6→7/8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14 — one known gap (tree icon refresh) deferred to Phase 10/11. | `docs/phases/phase-8.md` |
-| 9 — Notebooks | **9a done, merged as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172).** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged). **9b (controller + execution) code-complete 2026-09-14 — adversarial review run, three findings folded in, ready to push.** `notebookController.ts` wires real execution (`freshNamespace: false`) and interrupt-to-cancel, now notebook-scoped after the review's wrong-target-interrupt finding; kernel picker alone is the notebook run-target equivalent, no status-bar extension. The manual pass found the first cut's session sharing with Run File destructive (one `PROC PYTHON` namespace per session); fixed same day by [ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md) — the notebook controller now runs against its own, separate compute session. §9.8/§9.9/§9.11 ran live 2026-09-14 and all pass. PR #176's AI review raised two findings (a missing two-notebook interrupt regression test; stale post-merge test counts in this file/`phase-9.md`), both fixed and folded in. `npm run coverage`/`test:integration` green (1693 unit, 95.95/95.48/95.83/95.95; 419 integration). | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **9a/9b done and merged** ([PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172), [PR #176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)) — no `ms-toolsai.jupyter` dependency; real execution against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)). **9c (renderers + diagnostics) code-complete 2026-09-14, not yet pushed.** No renderer script needed — VS Code's own built-in `notebook-renderers` extension already renders `text/html`/`image/png`, confirmed live; `RunDiagnostics` now also publishes for a raised cell, via this module's own `DiagnosticCollection`. `npm run coverage`/`test:integration` green (1725 unit, 95.97/95.48/95.84/95.97; 430 integration). **9d (export) not started.** | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

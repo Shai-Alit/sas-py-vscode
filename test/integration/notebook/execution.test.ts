@@ -44,10 +44,12 @@ import assert from "node:assert/strict";
 import * as vscode from "vscode";
 
 import {
+  appendRichOutput,
   createNotebookExecutionHandlers,
   NOTEBOOK_TYPE,
 } from "../../../src/notebook/notebookController";
 import { createBackendCache } from "../../../src/run/backendCache";
+import { RunDiagnostics } from "../../../src/run/diagnostics";
 import { testLogChannel } from "../../helpers/auth-host";
 import {
   createRecordedConnection,
@@ -474,5 +476,129 @@ describe("notebook execution (9b)", () => {
         result.outputs().map(textOf),
       )}`,
     );
+  });
+
+  describe("rich output rendering (9c)", () => {
+    // `appendRichOutput` is driven directly with a synthetic `RichOutput`
+    // rather than through a real run — `notebookController.ts`'s own doc
+    // comment on this function explains why: the recorded-connection wire's
+    // `getFiles`/`getDirectoryMembers` never produces a real `text/html`/
+    // `image/png` output for `handle.outputs` to stream.
+
+    it("renders text/html as a real text/html cell output", async () => {
+      const { cell } = await openCell("pass");
+      const created = fakeExecution(cell);
+
+      await appendRichOutput(created.execution, {
+        mime: "text/html",
+        data: "<table></table>",
+      });
+
+      const outputs = created.outputs();
+      assert.equal(outputs.length, 1);
+      const item = outputs[0]?.items[0];
+      assert.ok(item);
+      assert.equal(item.mime, "text/html");
+      assert.equal(new TextDecoder().decode(item.data), "<table></table>");
+    });
+
+    it("renders image/png as a real image/png cell output", async () => {
+      const { cell } = await openCell("pass");
+      const created = fakeExecution(cell);
+      const base64 = Buffer.from("not really a png, just bytes").toString(
+        "base64",
+      );
+
+      await appendRichOutput(created.execution, {
+        mime: "image/png",
+        data: base64,
+      });
+
+      const outputs = created.outputs();
+      assert.equal(outputs.length, 1);
+      const item = outputs[0]?.items[0];
+      assert.ok(item);
+      assert.equal(item.mime, "image/png");
+      assert.equal(Buffer.from(item.data).toString("base64"), base64);
+    });
+
+    it("renders nothing for a structured traceback — already streamed as text/plain", async () => {
+      const { cell } = await openCell("pass");
+      const created = fakeExecution(cell);
+
+      await appendRichOutput(created.execution, {
+        mime: "application/vnd.python.traceback",
+        data: { message: "ZeroDivisionError: division by zero", frames: [] },
+      });
+
+      assert.equal(created.outputs().length, 0);
+    });
+  });
+
+  describe("Problems-panel diagnostics (9c)", () => {
+    // Same wire this suite's other tests drive — `commands-diagnostics
+    // .test.ts`'s own `TRACEBACK_LINES` shape, forwarded verbatim by the
+    // simulated wire since every pushed line is `type: "normal"`
+    // (`logFilter.ts` does not treat that as noise).
+    const TRACEBACK_LINES = [
+      "Traceback (most recent call last):",
+      '  File "<string>", line 1, in <module>',
+      "ZeroDivisionError: division by zero",
+    ];
+
+    it("publishes one Problems-panel entry for a raised cell, then clears it on the next run", async () => {
+      const recorded = createRecordedConnection({
+        profileId: PROFILE_ID,
+        profileName: PROFILE_NAME,
+      });
+      const sessions = recordedSessions(recorded);
+      const backendCache = createBackendCache(sessions, log);
+      disposables.push(backendCache);
+      const collection = vscode.languages.createDiagnosticCollection(
+        "test-notebook-diagnostics",
+      );
+      disposables.push(collection);
+      const diagnostics = new RunDiagnostics({
+        createCollection: () => collection,
+      });
+      const handlers = createNotebookExecutionHandlers(
+        backendCache,
+        log,
+        undefined,
+        diagnostics,
+      );
+      const executions = new Map<vscode.NotebookCell, FakeExecution>();
+      const controller = fakeController(executions);
+      const { notebook, cell } = await openCell("a = 1 / 0");
+
+      const executing = handlers.executeHandler([cell], notebook, controller);
+      await flush();
+      const job = recorded.currentJob();
+      assert.ok(job !== undefined);
+      for (const line of TRACEBACK_LINES) job.push(line);
+      job.finish(false, "ZeroDivisionError: division by zero");
+      await executing;
+
+      const published = collection.get(cell.document.uri) ?? [];
+      assert.equal(published.length, 1);
+      const diagnostic = published[0];
+      assert.ok(diagnostic);
+      assert.equal(diagnostic.message, "ZeroDivisionError: division by zero");
+      assert.equal(diagnostic.source, "Python on Viya");
+
+      // The same cell run again clears the prior entry — `executeCell` calls
+      // `clearFor` as soon as `execute()` succeeds, before this run even
+      // produces output, exactly where `commands.ts`'s own `runNow` does.
+      const secondRun = handlers.executeHandler([cell], notebook, controller);
+      await flush();
+      const job2 = recorded.currentJob();
+      assert.ok(job2 !== undefined);
+      assert.notEqual(job2, job, "a fresh job for the second run");
+      job2.push("done\n");
+      job2.finish(true, undefined);
+      await secondRun;
+
+      assert.deepEqual([...(collection.get(cell.document.uri) ?? [])], []);
+    });
   });
 });

@@ -49,7 +49,7 @@ function adapterWith(routes: readonly RecordedCasRoute[]): {
   calls: RecordedCasCall[];
 } {
   const { client, calls } = recordedCasClient(routes);
-  return { adapter: new CasAdapter(client), calls };
+  return { adapter: new CasAdapter(client, "https://cas.example.com"), calls };
 }
 
 function server(overrides: Partial<CasServerItem> = {}): CasServerItem {

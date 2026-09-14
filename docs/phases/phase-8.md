@@ -611,6 +611,21 @@ types' doc comments cite findings densely (a deliberate convention here, not
 flagged as excessive); `STATUS.md`'s own "review not yet run" note (written
 before this pass) is now corrected.
 
+**Codex review on the open PR (#171) found one real, blocking issue**: the
+`TableSource.key` `CasTableSource` builds only included
+`server.caslib.table`, not the profile/endpoint — unlike `LibraryTableSource`'s
+own `${profileId}\n...` key — so switching to a different profile or endpoint
+exposing a same-named server/caslib/table would have revealed a panel still
+bound to the previous deployment's `CasAdapter`. Fixed by giving `CasAdapter`
+its own `endpoint` field (set from `CasSession.adapterFor`'s own cache key)
+and folding it into `CasTableSource.key`, mirroring `LibraryTableSource`;
+covered by a new regression test in `cas-data-viewer.test.ts` opening the same
+table names against two different endpoints and asserting neither reveals the
+other's panel. The same review's second, non-blocking observation — that the
+`TableSource` generalization is architecture-decision-weight and, unlike every
+other decision of that weight in this project, had no ADR of its own — is now
+[ADR-0034](../adr/0034-table-source-abstraction.md).
+
 **Left open, deliberately, not settled by this slice:** CSV export for a CAS
 table (Finding 8.13's own closing note — `rowSets` may or may not offer a
 `rowsAsCSV`-equivalent relation; nobody has looked), and whether the CAS-side

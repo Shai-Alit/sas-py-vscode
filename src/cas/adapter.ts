@@ -104,7 +104,15 @@ const SERVERS_LINK: Link = {
 };
 
 export class CasAdapter {
-  constructor(private readonly client: CasClient) {}
+  constructor(
+    private readonly client: CasClient,
+    /** The deployment this adapter's `client` was built against —
+     * `CasSession.adapterFor`'s own cache key. `CasTableSource` folds this
+     * into its panel-dedup `key` (mirroring `LibraryAdapter.profileId`) so
+     * switching to a different profile/endpoint never reveals a panel still
+     * bound to a previous deployment's adapter. */
+    readonly endpoint: string,
+  ) {}
 
   /** Every CAS server on this deployment — one request, no per-item
    * follow-up: unlike Phase 7's sparse `librefs` listing, the servers

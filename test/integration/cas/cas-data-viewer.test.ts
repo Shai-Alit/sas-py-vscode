@@ -110,9 +110,10 @@ const CASMANAGEMENT_COLUMNS_HREF = `${TABLES_HREF}/LOOKUP_TABLE/columns`;
 function casTableSource(
   routes: readonly RecordedCasRoute[],
   state: "loaded" | "unloaded" = "loaded",
+  endpoint = "https://cas.example.com",
 ): { source: CasTableSource; calls: RecordedCasCall[] } {
   const { client, calls } = recordedCasClient(routes);
-  const adapter = new CasAdapter(client);
+  const adapter = new CasAdapter(client, endpoint);
   return { source: new CasTableSource(adapter, table(state)), calls };
 }
 
@@ -372,13 +373,41 @@ describe("DataViewerPanelManager opening a CAS table (8c)", () => {
       createPanel: () => fake.panel,
     });
     const { client, calls } = recordedCasClient(OPEN_ROUTES_LOADED);
-    const adapter = new CasAdapter(client);
+    const adapter = new CasAdapter(client, "https://cas.example.com");
 
     await manager.open(new CasTableSource(adapter, table("loaded")));
     assert.equal(calls.length, 2, "openTable's dataTable fetch, then columns");
 
     await manager.open(new CasTableSource(adapter, table("loaded")));
     assert.equal(calls.length, 2, "no new request for the same table");
+  });
+
+  it("does not reveal a panel opened against a different endpoint for the same server/caslib/table names", async () => {
+    // Regression test for the finding on PR #171: the dedup `key` must be
+    // scoped by deployment, not just by server/caslib/table name, or
+    // switching profiles/endpoints would reveal a panel still bound to the
+    // previous deployment's `CasAdapter` — a cross-deployment data leak.
+    const fake = fakePanel();
+    const manager = new DataViewerPanelManager(extensionUri, {
+      createPanel: () => fake.panel,
+    });
+    const first = recordedCasClient(OPEN_ROUTES_LOADED);
+    const firstAdapter = new CasAdapter(first.client, "https://a.example.com");
+    const second = recordedCasClient(OPEN_ROUTES_LOADED);
+    const secondAdapter = new CasAdapter(
+      second.client,
+      "https://b.example.com",
+    );
+
+    await manager.open(new CasTableSource(firstAdapter, table("loaded")));
+    assert.equal(first.calls.length, 2);
+
+    await manager.open(new CasTableSource(secondAdapter, table("loaded")));
+    assert.equal(
+      second.calls.length,
+      2,
+      "a different endpoint's own panel must issue its own requests, not reveal the first endpoint's panel",
+    );
   });
 
   it("closes without a server-side view to discard, unlike a Library table", async () => {

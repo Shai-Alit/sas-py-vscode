@@ -80,7 +80,7 @@ export class CasSession<A extends AccountLike = AccountLike> {
         : { transport: this.deps.transport }),
       token: async () => await this.tokenFor(endpoint),
     });
-    const adapter = new CasAdapter(client);
+    const adapter = new CasAdapter(client, endpoint);
     this.adapters.set(endpoint, adapter);
     return adapter;
   }

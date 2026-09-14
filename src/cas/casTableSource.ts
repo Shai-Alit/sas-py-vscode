@@ -40,11 +40,17 @@ export class CasTableSource implements TableSource {
     private readonly adapter: CasAdapter,
     private readonly table: CasTableItem,
   ) {
-    // Qualified by server too, mirroring `casTree.ts`'s own node id — a
-    // caslib/table name pair is not guaranteed unique across two CAS servers
-    // on the same deployment, even though this project has only ever
-    // observed one.
-    this.key = `cas:${table.serverName}.${table.caslibName}.${table.name}`;
+    // `\n`-joined against the endpoint, mirroring `LibraryTableSource`'s own
+    // `${profileId}\n...` key: a server/caslib/table name triple is not
+    // guaranteed unique *across two deployments* that happen to expose the
+    // same names, so the endpoint must be part of the dedup key too, or
+    // switching profiles could reveal a panel still bound to the previous
+    // deployment's `CasAdapter` — a cross-deployment data leak. Qualified by
+    // server as well, mirroring `casTree.ts`'s own node id: a caslib/table
+    // name pair is not guaranteed unique across two CAS servers on the same
+    // deployment either, even though this project has only ever observed
+    // one.
+    this.key = `cas:${adapter.endpoint}\n${table.serverName}.${table.caslibName}.${table.name}`;
     this.title = `${table.caslibName}.${table.name}`;
   }
 

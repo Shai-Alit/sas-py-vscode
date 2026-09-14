@@ -214,9 +214,16 @@ panel", for why the two stay separate rather than sharing one).
 §9.2–§9.9 above.
 
 - [ ] **9.12** **`text/html` output renders as real HTML, not a placeholder
-  and not literal markup** — run a cell that produces an HTML repr, e.g. a
-  small pandas DataFrame as the cell's last expression:
-  `import pandas as pd; pd.DataFrame({"a": [1, 2]})`. **(live)**
+  and not literal markup** — run a cell that writes and then repr's a real
+  HTML file, ADR-0019's own capture mechanism, the same shape
+  `docs/dev/manual-tests/phase-3.md`'s own pandas example uses (there is no
+  implicit `_repr_html_` capture — `docs/running-python.md`'s own "no
+  implicit capture" note):
+  `import pandas as pd; pd.DataFrame({"a": [1, 2]}).to_html("table.html")`.
+  **(live)** **(2026-09-14, adversarial review Finding 6): reworded — the
+  original repro (a bare `DataFrame` as the cell's last expression, with no
+  `.to_html(...)` file write) cannot produce a `text/html` output at all and
+  would have read as a rendering bug.**
   **Expect:** the cell's output shows the rendered table — not the literal
   `<table>...</table>` markup as text, and not a placeholder line.
 - [ ] **9.13** **A raised exception also gets a Problems-panel entry, at the
@@ -231,3 +238,36 @@ panel", for why the two stay separate rather than sharing one).
   `.py` file open that also has an unrelated Viya-run error published
   against it (Run File, Phase 4d), confirm the two Problems entries coexist
   independently — fixing or clearing one must not touch the other.
+  **Then (2026-09-14, adversarial review Finding 2): close the notebook
+  editor tab (with the raised-cell entry from above still showing in
+  Problems) and reopen the same `.ipynb`.** **Expect:** the Problems entry is
+  gone — closing the notebook now clears every one of its own cells' entries
+  (`notebookController.ts`'s own `handleNotebookClosed`), not just the one
+  that happened to run last. Before this fix, a `vscode-notebook-cell:` URI
+  was reused verbatim on reopen (same notebook URI, same cell handle), so a
+  stale entry could resurface against whichever cell now holds that handle
+  rather than merely outliving its own cell — the bar to check is not just
+  "does it disappear" but "does it disappear before the reopen, and not
+  reattach to the wrong cell after".
+- [ ] **9.14** **An embedded `<script>` in `text/html` output never runs** —
+  adversarial review, 2026-09-14 (Finding 1): a raw run through VS Code's own
+  built-in notebook renderer executes an embedded `<script>` tag with no
+  gate but workspace trust (already satisfied for any code this extension
+  runs at all); `src/notebook/htmlSanitize.ts` now sanitizes every
+  `text/html` output before it reaches that renderer
+  ([ADR-0036](../../adr/0036-notebook-html-output-is-sanitized.md)). This
+  item is the one thing the automated suite cannot prove — that the real
+  built-in renderer, given this sanitizer's actual output, truly never
+  executes anything. **(live)**
+  in one cell — writing the file is enough to trigger ADR-0019's capture, the
+  same "no implicit capture, but no trailing expression needed either" shape
+  §9.10's `plt.savefig(...)`-only cell already relies on:
+  `import pandas as pd; d = pd.DataFrame({"a": [1]}); html = d.to_html().replace("</table>", "</table><script>alert(1)</script>"); open("table.html", "w").write(html)`
+  — a `<script>` planted inside otherwise-real pandas HTML, the same way a
+  malicious payload would arrive.
+  **Expect:** the cell's output shows the rendered table with **no** alert
+  dialog, no `<script>` text visible anywhere in the output, and the
+  extension host's own log (**Python on Viya** output channel, or
+  **Developer: Toggle Developer Tools**) shows no error from the injected
+  script having tried and failed to run — it must not run at all, not merely
+  fail loudly.

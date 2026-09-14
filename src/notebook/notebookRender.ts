@@ -29,6 +29,18 @@
  * rendering for becomes a real piece, the same total-over-the-union shape
  * `resultPanelModel.ts`'s `toRenderItem` already uses for the result panel.
  *
+ * ## `text/html` is sanitized, not trusted (adversarial review, 2026-09-14)
+ *
+ * Unlike the result panel (`resultPanelModel.ts`), this module has no CSP to
+ * lean on — VS Code core's own bundled `notebook-renderers` extension owns
+ * the rendering, not a webview this extension controls, and that renderer
+ * really does execute an embedded `<script>`. `./htmlSanitize.ts`'s own doc
+ * comment has the full design; the short version is an allow-list rebuild,
+ * not a deny-list edit, so `text/html` here can only ever become inert markup
+ * by construction, the same guarantee ADR-0021 gets from CSP and
+ * [ADR-0036](../../docs/adr/0036-notebook-html-output-is-sanitized.md)
+ * records for this surface.
+ *
  * ## Why `application/vnd.python.traceback` still produces nothing
  *
  * Unchanged from 9b's own decision (`../notebookController.ts`'s doc
@@ -40,6 +52,7 @@
  */
 
 import type { RichOutput } from "../backend/backend";
+import { sanitizeHtml } from "./htmlSanitize";
 
 /** One piece of cell output, reduced from {@link RichOutput} to exactly what
  * `../notebookController.ts`'s `appendRichOutput` needs to build a real
@@ -50,7 +63,9 @@ export type NotebookOutputPiece =
   | { readonly kind: "stdout"; readonly text: string }
   /** `markup` is inserted as real `text/html`, not escaped text — VS Code's
    * own built-in notebook renderer is what actually shows it; this module
-   * only decides that it should. */
+   * only decides that it should. Already run through `./htmlSanitize.ts`'s
+   * `sanitizeHtml`, so it is safe to insert as-is — see this module's own
+   * doc comment ("`text/html` is sanitized, not trusted"). */
   | { readonly kind: "html"; readonly markup: string }
   /** `base64` is `RichOutput.data` verbatim — no data-URI prefix (that is a
    * result-panel/webview concern, `resultPanelModel.ts`'s own doc comment);
@@ -69,7 +84,7 @@ export function toNotebookOutputPieces(
     case "text/plain":
       return [{ kind: "stdout", text: output.data }];
     case "text/html":
-      return [{ kind: "html", markup: output.data }];
+      return [{ kind: "html", markup: sanitizeHtml(output.data) }];
     case "image/png":
       return [{ kind: "image", base64: output.data }];
     case "application/vnd.python.traceback":

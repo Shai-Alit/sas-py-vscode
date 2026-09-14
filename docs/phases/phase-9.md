@@ -767,6 +767,139 @@ recommendation, not a dependency lock._
   Problems-panel entry, and its independence from Run File's own entries).
   **Left for Sean, not yet run.**
 
+  **Adversarial self-review ran 2026-09-14 against the full diff, before any
+  of it was pushed — ten findings, one blocking, all verified independently
+  and folded into the branch.**
+
+  - **Finding 1 (blocking, security).** `text/html` output reached VS Code's
+    own built-in notebook renderer as real, unsanitized markup — that
+    renderer executes an embedded `<script>` tag (`renderHTML()`'s
+    `element.innerHTML` assignment followed by `domEval()`), gated only by
+    workspace trust, which ADR-0002 already keeps open for any code this
+    extension runs at all. This directly contradicted
+    [ADR-0021](../adr/0021-result-panel-webview.md)'s own load-bearing
+    decision that a `<script>` inside `text/html` output must stay inert —
+    and the notebook case is worse than the panel's, since a notebook's
+    outputs serialize into the `.ipynb` on save and re-execute on reopen
+    with no Viya round trip, including for someone who opens a file a
+    colleague sent them. **Sean's call, asked before any fix was written:
+    sanitize the markup before it reaches VS Code's renderer**, rather than
+    building this extension's own CSP-locked notebook renderer or accepting
+    the risk via an ADR amendment. `src/notebook/htmlSanitize.ts` (new, pure,
+    no `vscode` import) is an allow-list tokenizer/re-serializer, not a
+    deny-list edit — its own doc comment has the full design (raw-text
+    handling for `<script>`/`<style>`/etc., a CSS deny-substring check for
+    `style`, an inline-`data:`-image-only `<img src>`). No new dependency:
+    ADR-0005 already flags "the first runtime dependency" as the day its own
+    currently-vacuous production audit gate stops being vacuous, and this
+    surface (library `_repr_html_` output, not arbitrary documents) did not
+    need one to solve.
+    [ADR-0036](../adr/0036-notebook-html-output-is-sanitized.md) records the
+    decision, cross-referenced from ADR-0021 so the two surfaces' answers to
+    the same threat don't read as contradicting each other by accident.
+    `test/unit/notebook-html-sanitize.test.ts` (24 cases, 100%
+    lines/functions) covers script stripping (including one hidden inside a
+    dropped raw-text element's own content, so it can never resurface as a
+    tag boundary), event-handler attributes, CSS exfil vectors in `style`,
+    non-`data:` `<img src>`, comments, entities, and the sanitizer's own
+    parser-edge cases (unterminated tags/comments/raw-text, mismatched close
+    tags, HTML5's "a trailing `/` doesn't self-close a non-void element"
+    rule). New manual item §9.13 verifies the one thing no automated test
+    can: that the real built-in renderer, given this sanitizer's actual
+    output, truly executes nothing.
+  - **Finding 2.** A closed notebook's Problems-panel entries outlived it,
+    and the gap was a misattribution risk, not just staleness: a
+    `vscode-notebook-cell:` URI is `CellUri.generate(notebook, handle)`, and
+    a fresh model's handle pool restarts at `0` on reopen, so a stale entry
+    could resurface against whichever cell next holds that same handle.
+    Fixed, not carried to `phase-11.md` — the deferral reasoning
+    (`onDidSignOut` needing `extension.ts` wiring a second time) did not
+    apply to the close case, since `registerNotebookController` already has
+    `context` to subscribe with. `NotebookExecutionHandlers` gained
+    `handleNotebookClosed`, the same "plain function of a document, not the
+    real subscription" shape `executeHandler`/`interruptHandler` already
+    use, wired to a real `vscode.workspace.onDidCloseNotebookDocument` in
+    `registerNotebookController` and callable directly in
+    `execution.test.ts` with no real editor tab to open and close. Sign-out
+    remains the accepted, narrower gap the doc comment already named.
+    New manual step under §9.13: close and reopen the notebook, confirm the
+    entry is gone rather than reattached to the wrong cell.
+  - **Finding 3.** Run File's and the notebook's own `RunDiagnostics`
+    default-constructed under the same collection name, which VS Code logs
+    as "already exists" and silently renames the second on every
+    activation. `RunDiagnosticsDeps` gained an optional `name`
+    (`diagnostics.ts`); the notebook's own default now passes
+    `"pythonOnViyaNotebook"` — Run File's own default string, the one
+    `phase-4.md` pins verbatim, is unchanged.
+  - **Finding 4.** Six existing 9b integration tests leaked a real
+    `DiagnosticCollection` each (never disposed), each re-triggering
+    Finding 3's warning. Fixed: all six now push `handlers.diagnostics` onto
+    the suite's own `disposables`, the same pattern the one test that
+    already injected diagnostics used.
+  - **Finding 5.** The existing diagnostics test asserted only length,
+    message and source — never the position the slice's own doc comment
+    claimed was "confirmed, not assumed." Fixed: the cell is now two source
+    lines, so asserting `range.start.line === 1` actually distinguishes a
+    correct mapping from a bug that always reports line 0. Also added: a
+    "no frame maps" case (a library-only stack publishes nothing, the same
+    `tracebackDiagnostics.ts` rule `commands.ts`'s own tests already cover)
+    and the close/reopen case Finding 2 needed anyway.
+  - **Finding 6.** §9.12's original repro (a bare `DataFrame` as a cell's
+    last expression) cannot produce a `text/html` output at all —
+    `richOutput.ts` only captures a file written to the working directory
+    (ADR-0019), and there is no implicit `_repr_html_` capture
+    (`docs/running-python.md`). Reworded to
+    `DataFrame(...).to_html("table.html")`, the same shape
+    `phase-3.md`'s own manual test and §9.10's `plt.savefig(...)`-only cell
+    already use.
+  - **Finding 7.** `diagnostics.ts`'s own "What gets published, and when"
+    section named only `commands.ts` as a caller; `notebookController.ts` is
+    a second one now, with different clearing rules. One sentence added.
+  - **Finding 9.** Image output carried no alt text, unlike the result
+    panel's own `labels.imageAlt`. `appendRichOutput` gained an `imageIndex`
+    parameter (`executeCell` counts image outputs as they stream and passes
+    the running total) and sets `NotebookCellOutput.metadata.vscode_altText`
+    — the field VS Code's own built-in renderer's `getAltText` actually
+    reads — to `vscode.l10n.t("Output image {0}", …)`, the exact string
+    `resultPanel.ts` already uses.
+  - **Finding 8.** `l10n/bundle.l10n.json` looked stale in the reviewing
+    session's own working copy. Turned out not to be a branch issue at
+    all: the file is generated and gitignored (`.gitignore`'s own comment,
+    "generated, not authored"), never a committed artifact — running
+    `npm run l10n:extract` locally reproduces it from source on demand, and
+    doing so this session (picking up this slice's own new
+    `vscode.l10n.t()` call alongside everything else) produced a byte-
+    identical file to what was already on disk. Nothing to fix in the PR.
+  - **Finding 10.** Noted, not fixed here, per the finding's own framing —
+    a rejected `appendOutput` mid-stream (a notebook closed mid-run) skips
+    `execution.end`, pre-existing since 9b. Carried to `phase-11.md`.
+
+  Every fix folded into the branch before push, per this project's own
+  adversarial-review rule. `npm run verify` (format, lint, typecheck,
+  copyright, secrets, coverage-scope, contracts, build, coverage) green —
+  **1749 unit tests** (up from 1725), coverage **96.03/95.51/95.9/96.03**
+  (statements/branches/functions/lines; `.c8rc.json`'s 95.8/95.4/95.6/95.8
+  floor cleared, no ratchet raise needed) —
+  `src/notebook/htmlSanitize.ts` at 100% lines/100% functions (two
+  single-line `/* c8 ignore next */` markers on `noUncheckedIndexedAccess`
+  fallbacks a non-optional regex capture group can never actually take, the
+  same category `tracebackDiagnostics.ts`'s own `primaryFrame` doc comment
+  already names and designs around). `npm run docs:build`/`docs:links:self`/
+  `docs:samples` green (the new ADR and manual-test cross-links resolve).
+  **`npm run test:integration` could not be run this session** — the
+  sandboxed environment's cached VS Code test binary reports a Node version
+  string for `--version` rather than launching the real Electron host
+  (`Code.exe: bad option: --disable-extensions`), reproduced after a full
+  re-download, so this is an environment limitation, not a code issue.
+  `execution.test.ts` gained three net-new integration cases (a sanitizer
+  end-to-end check under "rich output rendering," a "no frame maps" and a
+  "closed notebook clears every cell" case under "Problems-panel
+  diagnostics") and enhanced two existing ones (position-asserting
+  diagnostics, alt-text-asserting image render) — all typecheck clean
+  against the real `@types/vscode` surface, but **unverified by an actual
+  run this session; needs a fresh `npm run test:integration` before this
+  ships.**
+
 ☐ **9d — Export.**
 
 - ☐ Scope this slice only after 9b/9c land — likely small or droppable,

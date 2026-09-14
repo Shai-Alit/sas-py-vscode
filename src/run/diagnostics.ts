@@ -12,8 +12,12 @@
  *
  * ## What gets published, and when
  *
- * `src/run/commands.ts` calls {@link RunDiagnostics.clearFor} at the start of
- * every run (keyed on the program's origin URI) and {@link
+ * Two callers, each against its **own** instance (constructor's own `name`
+ * doc): `src/run/commands.ts` for Run File, and `src/notebook/
+ * notebookController.ts` for a notebook cell (9c) — see that module's own
+ * doc comment, "Diagnostics — the Problems panel", for why they don't share
+ * one and what that costs. Both call {@link RunDiagnostics.clearFor} at the
+ * start of every run (keyed on the program's origin URI) and {@link
  * RunDiagnostics.publish} once, on a run that settled with `succeeded ===
  * false` **and** streamed a structured traceback. One `Diagnostic` is set,
  * at the innermost mappable (`<string>`) frame — the idiomatic
@@ -76,6 +80,16 @@ export interface RunDiagnosticsDeps {
    * tier can hand in a collection it retains a reference to and asserts on. */
   createCollection?:
     ((name: string) => vscode.DiagnosticCollection) | undefined;
+  /** `languages.createDiagnosticCollection`'s own `name` argument. Defaults
+   * to {@link COLLECTION_NAME} — the string `phase-4.md` pins verbatim for
+   * Run File's own instance, unchanged here. Override when a second
+   * `RunDiagnostics` is constructed in the same window (9c:
+   * `notebookController.ts`'s own instance) — two collections created under
+   * the same name make VS Code log a "already exists" warning and silently
+   * rename the second one, on every activation, for no functional reason
+   * (`Diagnostic.source` above, not this name, is what the Problems panel
+   * actually shows). */
+  name?: string | undefined;
 }
 
 export class RunDiagnostics implements vscode.Disposable {
@@ -85,7 +99,7 @@ export class RunDiagnostics implements vscode.Disposable {
     const create =
       deps.createCollection ??
       ((name: string) => vscode.languages.createDiagnosticCollection(name));
-    this.collection = create(COLLECTION_NAME);
+    this.collection = create(deps.name ?? COLLECTION_NAME);
   }
 
   /**

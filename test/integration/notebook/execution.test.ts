@@ -216,6 +216,7 @@ describe("notebook execution (9b)", () => {
     const backendCache = createBackendCache(sessions, log);
     disposables.push(backendCache);
     const handlers = createNotebookExecutionHandlers(backendCache, log);
+    disposables.push(handlers.diagnostics);
     const executions = new Map<vscode.NotebookCell, FakeExecution>();
     const controller = fakeController(executions);
     const { notebook, cell } = await openCell(
@@ -259,6 +260,7 @@ describe("notebook execution (9b)", () => {
     const backendCache = createBackendCache(sessions, log);
     disposables.push(backendCache);
     const handlers = createNotebookExecutionHandlers(backendCache, log);
+    disposables.push(handlers.diagnostics);
     const executions = new Map<vscode.NotebookCell, FakeExecution>();
     const controller = fakeController(executions);
     const first = await openCell("print(1)");
@@ -306,6 +308,7 @@ describe("notebook execution (9b)", () => {
     const backendCache = createBackendCache(sessions, log);
     disposables.push(backendCache);
     const handlers = createNotebookExecutionHandlers(backendCache, log, 10);
+    disposables.push(handlers.diagnostics);
     const executions = new Map<vscode.NotebookCell, FakeExecution>();
     const controller = fakeController(executions);
     const { notebook, cell } = await openCell("import time; time.sleep(1)");
@@ -342,6 +345,7 @@ describe("notebook execution (9b)", () => {
     const backendCache = createBackendCache(sessions, log);
     disposables.push(backendCache);
     const handlers = createNotebookExecutionHandlers(backendCache, log, 10);
+    disposables.push(handlers.diagnostics);
     const executions = new Map<vscode.NotebookCell, FakeExecution>();
     const controller = fakeController(executions);
     const { notebook, cell } = await openCell("print('right away')");
@@ -378,6 +382,7 @@ describe("notebook execution (9b)", () => {
     const backendCache = createBackendCache(sessions, log);
     disposables.push(backendCache);
     const handlers = createNotebookExecutionHandlers(backendCache, log);
+    disposables.push(handlers.diagnostics);
     const executions = new Map<vscode.NotebookCell, FakeExecution>();
     const controller = fakeController(executions);
     const { notebook, cell } = await openCell("while True: pass");
@@ -442,6 +447,7 @@ describe("notebook execution (9b)", () => {
     const backendCache = createBackendCache(sessions, log);
     disposables.push(backendCache);
     const handlers = createNotebookExecutionHandlers(backendCache, log);
+    disposables.push(handlers.diagnostics);
     const executions = new Map<vscode.NotebookCell, FakeExecution>();
     const controller = fakeController(executions);
     const a = await openCell("while True: pass");
@@ -502,24 +508,52 @@ describe("notebook execution (9b)", () => {
       assert.equal(new TextDecoder().decode(item.data), "<table></table>");
     });
 
-    it("renders image/png as a real image/png cell output", async () => {
+    it("sanitizes text/html before it reaches the cell — script stripped, table kept", async () => {
+      // End-to-end proof for adversarial review Finding 1, at the same seam
+      // `appendRichOutput`'s own unit-tested `text/html` case uses —
+      // `htmlSanitize.test.ts` covers the sanitizer's own design in depth;
+      // this just confirms the wiring actually calls it.
+      const { cell } = await openCell("pass");
+      const created = fakeExecution(cell);
+
+      await appendRichOutput(created.execution, {
+        mime: "text/html",
+        data: "<table><script>alert(1)</script></table>",
+      });
+
+      const item = created.outputs()[0]?.items[0];
+      assert.ok(item);
+      assert.equal(
+        new TextDecoder().decode(item.data),
+        "<table></table>",
+        "the <script> tag must not reach the cell's own text/html output",
+      );
+    });
+
+    it("renders image/png as a real image/png cell output, with alt text numbered per image in the run", async () => {
       const { cell } = await openCell("pass");
       const created = fakeExecution(cell);
       const base64 = Buffer.from("not really a png, just bytes").toString(
         "base64",
       );
 
-      await appendRichOutput(created.execution, {
-        mime: "image/png",
-        data: base64,
-      });
+      await appendRichOutput(
+        created.execution,
+        { mime: "image/png", data: base64 },
+        2, // as if this were the second image output/appendRichOutput call this run.
+      );
 
       const outputs = created.outputs();
       assert.equal(outputs.length, 1);
-      const item = outputs[0]?.items[0];
+      const output = outputs[0];
+      assert.ok(output);
+      const item = output.items[0];
       assert.ok(item);
       assert.equal(item.mime, "image/png");
       assert.equal(Buffer.from(item.data).toString("base64"), base64);
+      // Adversarial review, 2026-09-14 (Finding 9): VS Code's own built-in
+      // renderer reads alt text from output metadata, not from the item.
+      assert.equal(output.metadata?.vscode_altText, "Output image 2");
     });
 
     it("renders nothing for a structured traceback — already streamed as text/plain", async () => {
@@ -539,14 +573,19 @@ describe("notebook execution (9b)", () => {
     // Same wire this suite's other tests drive — `commands-diagnostics
     // .test.ts`'s own `TRACEBACK_LINES` shape, forwarded verbatim by the
     // simulated wire since every pushed line is `type: "normal"`
-    // (`logFilter.ts` does not treat that as noise).
+    // (`logFilter.ts` does not treat that as noise). Two source lines, not
+    // one — adversarial review, 2026-09-14 (Finding 5): a one-line cell can't
+    // tell a correct position assertion from a bug that always reports line
+    // 0, since both would pass. `y = 1 / 0` is the cell's *second* line, so
+    // asserting `range.start.line === 1` actually exercises the mapping
+    // rather than a coincidence.
     const TRACEBACK_LINES = [
       "Traceback (most recent call last):",
-      '  File "<string>", line 1, in <module>',
+      '  File "<string>", line 2, in <module>',
       "ZeroDivisionError: division by zero",
     ];
 
-    it("publishes one Problems-panel entry for a raised cell, then clears it on the next run", async () => {
+    it("publishes one Problems-panel entry, positioned at the raised line, then clears it on the next run", async () => {
       const recorded = createRecordedConnection({
         profileId: PROFILE_ID,
         profileName: PROFILE_NAME,
@@ -569,7 +608,7 @@ describe("notebook execution (9b)", () => {
       );
       const executions = new Map<vscode.NotebookCell, FakeExecution>();
       const controller = fakeController(executions);
-      const { notebook, cell } = await openCell("a = 1 / 0");
+      const { notebook, cell } = await openCell("x = 1\ny = 1 / 0");
 
       const executing = handlers.executeHandler([cell], notebook, controller);
       await flush();
@@ -585,6 +624,9 @@ describe("notebook execution (9b)", () => {
       assert.ok(diagnostic);
       assert.equal(diagnostic.message, "ZeroDivisionError: division by zero");
       assert.equal(diagnostic.source, "Python on Viya");
+      // 0-based: `y = 1 / 0` is the cell's second source line.
+      assert.equal(diagnostic.range.start.line, 1);
+      assert.equal(diagnostic.range.start.character, 0);
 
       // The same cell run again clears the prior entry — `executeCell` calls
       // `clearFor` as soon as `execute()` succeeds, before this run even
@@ -597,6 +639,96 @@ describe("notebook execution (9b)", () => {
       job2.push("done\n");
       job2.finish(true, undefined);
       await secondRun;
+
+      assert.deepEqual([...(collection.get(cell.document.uri) ?? [])], []);
+    });
+
+    it("publishes nothing when no frame maps — a SAS-side/library-only stack", async () => {
+      // Adversarial review, 2026-09-14 (Finding 5): `tracebackDiagnostics
+      // .ts`'s own "guessing a position would be worse than leaving it
+      // unmapped" rule (`diagnostics.ts`'s doc comment) needed a real test
+      // through this module too, not just through `commands.ts`'s.
+      const recorded = createRecordedConnection({
+        profileId: PROFILE_ID,
+        profileName: PROFILE_NAME,
+      });
+      const sessions = recordedSessions(recorded);
+      const backendCache = createBackendCache(sessions, log);
+      disposables.push(backendCache);
+      const collection = vscode.languages.createDiagnosticCollection(
+        "test-notebook-diagnostics-no-frame",
+      );
+      disposables.push(collection);
+      const diagnostics = new RunDiagnostics({
+        createCollection: () => collection,
+      });
+      const handlers = createNotebookExecutionHandlers(
+        backendCache,
+        log,
+        undefined,
+        diagnostics,
+      );
+      const executions = new Map<vscode.NotebookCell, FakeExecution>();
+      const controller = fakeController(executions);
+      const { notebook, cell } = await openCell("import somelib; somelib.f()");
+
+      const executing = handlers.executeHandler([cell], notebook, controller);
+      await flush();
+      const job = recorded.currentJob();
+      assert.ok(job !== undefined);
+      job.push("Traceback (most recent call last):");
+      job.push('  File "/opt/lib/somelib.py", line 10, in f');
+      job.push("ValueError: bad");
+      job.finish(false, "ValueError: bad");
+      await executing;
+
+      assert.deepEqual([...(collection.get(cell.document.uri) ?? [])], []);
+    });
+
+    it("clears every one of a closed notebook's cells, not just the one that ran", async () => {
+      // Adversarial review, 2026-09-14 (Finding 2): a `vscode-notebook-cell:`
+      // URI is `CellUri.generate(notebook, handle)` — a pure function of the
+      // notebook's own URI and the cell's handle, which restarts at 0 on
+      // reopen — so a closed notebook's stale entry could otherwise
+      // misattribute to whichever cell next holds that same handle.
+      // `handleNotebookClosed` is `registerNotebookController`'s own
+      // subscription body, exposed as a plain function so this test can call
+      // it directly against `openCell`'s real (but never shown) document,
+      // with no real editor tab to open and close.
+      const recorded = createRecordedConnection({
+        profileId: PROFILE_ID,
+        profileName: PROFILE_NAME,
+      });
+      const sessions = recordedSessions(recorded);
+      const backendCache = createBackendCache(sessions, log);
+      disposables.push(backendCache);
+      const collection = vscode.languages.createDiagnosticCollection(
+        "test-notebook-diagnostics-close",
+      );
+      disposables.push(collection);
+      const diagnostics = new RunDiagnostics({
+        createCollection: () => collection,
+      });
+      const handlers = createNotebookExecutionHandlers(
+        backendCache,
+        log,
+        undefined,
+        diagnostics,
+      );
+      const executions = new Map<vscode.NotebookCell, FakeExecution>();
+      const controller = fakeController(executions);
+      const { notebook, cell } = await openCell("x = 1\ny = 1 / 0");
+
+      const executing = handlers.executeHandler([cell], notebook, controller);
+      await flush();
+      const job = recorded.currentJob();
+      assert.ok(job !== undefined);
+      for (const line of TRACEBACK_LINES) job.push(line);
+      job.finish(false, "ZeroDivisionError: division by zero");
+      await executing;
+      assert.equal((collection.get(cell.document.uri) ?? []).length, 1);
+
+      handlers.handleNotebookClosed(notebook);
 
       assert.deepEqual([...(collection.get(cell.document.uri) ?? [])], []);
     });

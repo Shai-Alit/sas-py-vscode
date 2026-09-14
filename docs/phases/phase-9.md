@@ -133,6 +133,27 @@ decision either way).
   doesn't stand up its own" transfers directly even though none of the
   session code itself does (Phase 2's `Session` abstract base was already
   rejected wholesale — ADR-0015 — long before this phase).
+
+  > **Amended 2026-09-14, during 9b, before it was pushed.** This bullet's
+  > own "shared state" language was read literally during 9b's first cut —
+  > one `ProcPythonBackend` per profile, shared by Run File and the
+  > notebook controller — and the manual pass (§9.9) found that destructive:
+  > `PROC PYTHON` has one interpreter namespace per session, and this
+  > project's own Run File resets it on every whole-file run
+  > (`freshNamespace: true`, decided in Phase 3, which upstream's SAS-side
+  > execution has no equivalent of needing at all). Upstream's own literal
+  > session sharing works *for SAS code* precisely because SAS has nothing
+  > like a `PROC PYTHON` namespace reset to collide with; porting the shape
+  > without noticing that difference produced two individually-correct
+  > designs that destroy each other's state when actually shared. Fixed by
+  > [ADR-0035](../adr/0035-notebook-gets-its-own-compute-session.md): the
+  > notebook controller gets its own compute session instead. "Reuses the
+  > existing session *machinery*" still holds — the notebook's session is
+  > built from the exact same `ComputeSessionManager` class, `ProcPythonBackend`
+  > and `BackendCache` Run File's own uses, nothing bespoke — but "the same
+  > *session instance*" does not, and should not have been assumed from this
+  > bullet's own wording. See ADR-0035 and this file's own 9b Runbook entry
+  > for the full account.
 - **Sequential-cells-through-one-execute() semantics.** Upstream's
   `_execute(cells)` runs cells one at a time through `_doExecution`, matching
   this project's own backend, where `busy` already refuses a second
@@ -385,24 +406,262 @@ recommendation, not a dependency lock._
   notebook UI, multi-cell behaviour, no-Viya-connection-needed, and theme
   legibility.
 
-☐ **9b — Controller + execution.**
+☑ **9b — Controller + execution.** Code-complete 2026-09-14.
 
-- ☐ Decide and implement the backend-sharing refactor: lift `backends`/
+- ☑ Decide and implement the backend-sharing refactor: lift `backends`/
   `backendFor` (or an equivalent) out of `createRunCommandHandlers`'s
-  private closure so a `NotebookController` and the Run File commands share
-  one cached backend per profile, rather than each holding an independent
-  one.
-- ☐ Decide whether the run-target (ADR-0011/0020) status-bar concept extends
+  private closure so a `NotebookController` and the Run File commands can
+  each reach a cached backend per profile, rather than duplicating that
+  caching logic. **Done** — `src/run/backendCache.ts` (`createBackendCache`,
+  `BackendCache`, `CachedBackend`), a straight move of `commands.ts`'s own
+  pre-9b `backends`/`guardFor`/`backendFor`/dispose-loop, unchanged in
+  behaviour. An unexpected bonus this move surfaced: `backendCache.ts`
+  imports `vscode` only for types (`LogOutputChannel`, `Disposable`), so
+  unlike `commands.ts` itself it is not `vscode`-runtime-dependent —
+  `check-coverage-scope.mjs` and `test/unit/coverage-scope.test.ts` both
+  caught that it therefore belongs in the unit tier, not `.c8rc.json`'s
+  exclude list, so a first attempt to exclude it was reverted in favour of
+  real unit coverage (`test/unit/run-backend-cache.test.ts`, exercising the
+  reuse/reconnect/orphan-close/dispose paths directly against `test/helpers/
+  recorded-connection.ts`'s simulated wire — 99.39% lines on the module).
+  **Corrected same day, before this slice was ever pushed — see the "9.9 and
+  ADR-0035" entry below.** The very first cut had `extension.ts` build
+  *one* `BackendCache` and hand it to both `registerRunCommands` and
+  `registerNotebookController`, on the theory that "one connected backend
+  per profile" was the whole of what sharing meant. The 2026-09-14 manual
+  pass (§9.9) found that literal sharing destructive — `PROC PYTHON` has one
+  interpreter namespace per session, so Run File's own `freshNamespace: true`
+  wiped the notebook's state on every whole-file run. `extension.ts` now
+  builds **two** `BackendCache`s, from two independent `ComputeSessionManager`s
+  (ADR-0035) — `createBackendCache` itself did not need to change at all,
+  since it was already just a cache keyed on `connection.profileId` with no
+  assumption that only one caller would ever build one.
+- ☑ Decide whether the run-target (ADR-0011/0020) status-bar concept extends
   to notebooks, or whether the kernel picker alone is the notebook's
   equivalent choice (Plan, above) — not an implicit default either way.
-- ☐ Wire `NotebookController.executeHandler` to `ExecutionBackend.execute()`
+  **Decided: the kernel picker alone.** Selecting "Python on Viya" as a
+  notebook's kernel is already an explicit, per-notebook choice with no
+  button-ownership ambiguity to arbitrate, so `notebookController.ts` never
+  reads `RunTargetStore` and a cell run never checks `targets.readiness()`
+  the way `runNow`/`resetPythonState` do — it only needs an active profile,
+  which `BackendCache.backendFor()`'s own `sessions.connect()` call already
+  reports the absence of, the same way it does for Run File. Full reasoning
+  in `notebookController.ts`'s own doc comment.
+- ☑ Wire `NotebookController.executeHandler` to `ExecutionBackend.execute()`
   with `freshNamespace: false` (already documented for exactly this case,
   `backend.ts:80-93`), and the interrupt handler to the existing
   `cancelJob`/`cancelRun` path — same Finding 75/76 caveat applies (a
-  cancelled cell's statement still runs to completion).
-- ☐ `test/helpers/recorded-<notebook-or-controller>.ts`, reusing
+  cancelled cell's statement still runs to completion). **Done** —
+  `src/notebook/notebookController.ts`'s `createNotebookExecutionHandlers`,
+  the same seam-vs-registration split `commands.ts` draws between
+  `createRunCommandHandlers`/`registerRunCommands`. `controller
+  .interruptHandler`, not per-cell cancellation tokens: the VS Code API's
+  own doc comment recommends an interrupt handler for exactly this
+  "REPL-style controller interrupts whatever is running" shape, matching
+  upstream's own `_interruptHandler → session.cancel?.()`. **A scope
+  decision beyond the punch list's own three bullets, made and recorded
+  here rather than left implicit:** cell output renders `text/plain`
+  inline, live, via `NotebookCellOutputItem.stdout` as it streams; `text/
+  html`/`image/png` get one honest placeholder line each (the same shape
+  `outputChannel.ts` already uses for the same two mime arms) rather than
+  guessing whether VS Code core's own built-in renderers for those types
+  work with no `ms-toolsai.jupyter` installed — that question is 9c's own
+  spike, not assumed here; and `application/vnd.python.traceback` produces
+  no separate output at all, since its content already streamed as
+  `text/plain` ahead of it (`src/run/render.ts`'s own doc comment), with a
+  raised cell instead getting VS Code's own red-X indicator from
+  `execution.end(false, …)`. Full mime-by-mime reasoning in
+  `notebookController.ts`'s own doc comment.
+- ☑ `test/helpers/recorded-<notebook-or-controller>.ts`, reusing
   `recorded-proc-python.ts`'s fixtures where the wire shape is identical
   (it is — the backend seam doesn't know it's being called from a notebook).
+  **No new helper file needed** — `test/helpers/recorded-connection.ts`
+  (already built for `commands-backend.test.ts` in Phase 4a) is reused as-is,
+  by both `test/unit/run-backend-cache.test.ts` and
+  `test/integration/notebook/execution.test.ts`. The latter drives
+  `createNotebookExecutionHandlers` against a **fake** `vscode
+  .NotebookController`/`NotebookCellExecution` (not a real, registered one):
+  a real `NotebookController.createNotebookCellExecution` throws "notebook
+  controller is NOT associated to notebook" unless VS Code's own
+  kernel-picker state already selected it — state this suite has no reason
+  to fight, since `NotebookController`/`NotebookCell`/`NotebookCellExecution`
+  are plain structural interfaces in `@types/vscode`, not classes, so a fake
+  satisfying only the members actually called is the same "fake the vscode
+  surface that isn't the thing under test" shape `commands.test.ts`'s own
+  `fakeOutputChannel()` already uses. Found the hard way: a first attempt
+  used a real throwaway controller and every case failed with "notebook
+  controller is NOT associated to notebook", an unhandled rejection VS Code
+  raised before any job was ever created; fixed by fully faking the
+  controller/execution rather than fighting kernel selection.
+  `controller.test.ts`'s own 9a regression still proves the real,
+  activation-registered controller reaches a terminal execution state with
+  no Jupyter extension installed — lightened from asserting the now-gone
+  placeholder message to asserting a terminal `executionSummary` is
+  reached, since 9b replaced the placeholder it used to pin.
+- ☑ **Added same day, from the manual pass (§9.8/§9.9), before this slice was
+  ever pushed — not a separate slice, the punch list's own scope grew.**
+  - **§9.9 (real failure): the notebook and Run File shared one
+    `ProcPythonBackend`/interpreter per profile, and Run File's own
+    `freshNamespace: true` silently wiped the notebook's variables on every
+    whole-file run — worse, running the notebook again afterward showed the
+    wipe too, since it really was the same session. Root cause: `PROC
+    PYTHON` has exactly one interpreter namespace per compute session
+    (finding 38); there is no way for a "resets every run" surface and a
+    "persists forever" surface to share one safely.** Fixed by
+    [ADR-0035](../adr/0035-notebook-gets-its-own-compute-session.md): the
+    notebook controller now gets its own `ComputeSessionManager`, its own
+    `purpose`-namespaced `SessionBindingStore` (`binding.ts`'s
+    `sessionBindingKey` gained an optional `purpose` parameter, `undefined`
+    for Run File's own binding so every install's existing binding keeps
+    reattaching unchanged), and its own `BackendCache` — `extension.ts`
+    builds two of each instead of one shared instance. `Disconnect` (and
+    Sign Out) now end both sessions (`compute/commands.ts`'s
+    `registerComputeCommands` takes an optional second session manager to
+    also disconnect, quietly); `Connect` and the status bar stay scoped to
+    Run File's session only, unchanged, since the notebook's kernel picker
+    is already its own equivalent affordance. See ADR-0035 for the full
+    accounting, including the alternatives rejected (a warning before an
+    implicit reset; making Run File stop resetting by default) and the real
+    cost (two live sessions per profile when both surfaces are warm at
+    once, each still independently reaped after 15 idle minutes).
+  - **§9.8 (partial): a cell run right after an interrupted one can sit with
+    no output for as long as the interrupted statement takes to actually
+    finish server-side (Finding 76 — an interrupt's local abort clears
+    `backend.busy` well before the SAS-side statement it interrupted really
+    ends), and nothing on screen said why.** Given a real "why" requires
+    tracking an abandoned, already-cancelled statement — exactly what Phase
+    4c already declined to build for Run File's own identical gap, as
+    disproportionate — this adds only an honest, cause-agnostic notice
+    (`notebookController.ts`'s `executeCell`, `WAITING_NOTICE_DELAY_MS` =
+    3s): "still no output — this cell may simply be running long, or a
+    previous statement on this session may still be finishing" once a cell
+    has produced nothing for that long. Deliberately does not claim to know
+    the cause — an ordinary long-running cell with no output (this phase's
+    own `time.sleep(30)` test case included) looks identical from the
+    client's side, and a message that guessed wrong would be worse than
+    silence. Real tracking, for a precise message, is carried forward as a
+    candidate in `phase-11.md`'s "Also carried here" list, not decided
+    against permanently.
+
+  `npm run typecheck`/`lint`/`format:check`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts`/`build` all green — re-run after
+  the ADR-0035 split, not just after the original cut. `npm run coverage`
+  green — 1685 unit tests (up from 1675 at 9b's original cut, +4 for
+  ADR-0035's `binding.ts`/`bindingStore.ts` `purpose` cases), coverage
+  95.94/95.48/95.81/95.94 lines/branches/functions/statements (unchanged
+  from the original cut — `binding.ts`/`bindingStore.ts` stayed at 100%
+  throughout, `.c8rc.json`'s 95.8/95.8/95.6/95.4 floor cleared with room, no
+  ratchet raise needed this slice). `npm run test:integration` green — 411
+  passing (up from 406 at 9a; 409 after the original 9b cut, +2 for the
+  waiting-notice cases): `execution.test.ts`'s five cases total (streamed
+  success, busy refusal, the two waiting-notice cases, interrupt-then-
+  recover) plus `controller.test.ts`'s updated 9a/9b regression. No test
+  needed changing for the `BackendCache` split itself —
+  `execution.test.ts`'s own suite already built its own local `BackendCache`
+  per test rather than asserting anything about sharing with Run File.
+
+  **Manual test items updated in the same slice, not left for a later
+  housekeeping catch-up — and restructured, not just reworded, after a
+  first draft buried the basic "does a cell actually run" tests under the
+  9a section header while the new 9b section jumped straight to interrupt
+  (caught on review before this was even handed off — see this file's own
+  9b commit history for the correction).** The 9a section
+  (`docs/dev/manual-tests/phase-9.md`) now holds only §9.1, the
+  registration/kernel-picker question 9b didn't change; its old §9.2–§9.5,
+  which tested 9a's own placeholder `executeHandler`, are gone (that
+  placeholder no longer exists). The new "Real execution (phase 9b)"
+  section leads with the fundamentals — §9.2 run + streamed output, §9.3
+  namespace persistence across cells, §9.4 a raised traceback, §9.5 no
+  active profile, §9.6 theme legibility — **before** the
+  interrupt/busy/session-sharing/placeholder items (§9.7–§9.10), with an
+  explicit note that those later items are moot if §9.2 doesn't pass.
+
+  **Run 2026-09-14 (Sean): §9.1–§9.7, §9.10 pass; §9.8 partial and §9.9
+  failed — see this Runbook entry's own "Added same day" bullet above for
+  the root causes and fixes.** §9.8's expectation is reworded to describe
+  the honest waiting notice rather than silence; §9.9's is reworded to
+  describe the real guarantee ADR-0035 gives — a notebook's own state
+  persists across its own cells and across a reload, and Run File no longer
+  touches it, rather than the literal cross-surface `print(shared)` claim
+  the first cut could not actually deliver. Both reset to unchecked,
+  **needing a fresh live re-run** against the code above before this slice
+  is considered verified — left for Sean.
+
+  **Fresh live re-run, 2026-09-14 (Sean): §9.8, §9.9, and §9.11 (added by
+  the adversarial pass below) all pass against the corrected code** —
+  `docs/dev/manual-tests/phase-9.md` updated in place, all Phase 9 items now
+  checked.
+
+  **Adversarial self-review: run 2026-09-14, three findings, all folded in
+  before push.** Per `CLAUDE.md`, this ran against the full diff — the
+  ADR-0035 two-session split included, not only the original single-cache
+  9b cut. Nothing has been pushed or opened as a PR before this pass
+  completed. Each finding was verified independently before acting on it:
+
+  - **Wrong-target interrupt (real, not theoretical).**
+    `interruptHandler` cancelled whatever `currentRun` held, regardless of
+    which `vscode.NotebookDocument` VS Code actually called it for.
+    `execution.start()` and the `backend.busy` check are separated by two
+    `await`s, so a second notebook's own queued cell can already show VS
+    Code's "running"/Interrupt chrome while it is really about to be
+    busy-refused — hitting Interrupt there would have cancelled the
+    *other* notebook's genuinely-running cell instead. Fixed:
+    `currentRun` now records the `notebook` it belongs to, and
+    `interruptHandler` acts only when its own argument matches.
+  - **Fire-and-forget `appendOutput` with no explanation.** The
+    waiting-notice `setTimeout` callback's `execution.appendOutput(...)`
+    was `void`-fired with nothing said about why, unlike every other
+    fire-and-forget promise in this codebase (`backendCache.ts`'s
+    `dispose()`, `resultPanel.ts`'s `revealFrame`), which name why
+    swallowing is safe. Fixed: same swallow, now with the same comment
+    convention — a vanished cell or notebook is the only way this
+    rejects, and there is nothing further to do about it.
+  - **"Disconnect ends both sessions" (ADR-0035) had no test, automated or
+    manual.** Not reachable at the unit or integration tier:
+    `registerComputeCommands` only runs against real
+    `vscode.commands`/`EventEmitter` APIs, and the existing integration
+    suite (`test/integration/compute/commands.test.ts`) deliberately never
+    opens a live session. Recorded instead as `docs/dev/manual-tests/
+    phase-9.md` §9.11, unchecked, alongside §9.8/§9.9's own pending live
+    re-run.
+
+  `npm run verify` (format/lint/typecheck/copyright/secrets/
+  coverage-scope/contracts/build/coverage) green after folding all three
+  fixes in — 1685 unit tests, coverage unchanged at
+  95.94/95.48/95.81/95.94. One `@typescript-eslint/prefer-optional-chain`
+  lint error surfaced and was fixed during this pass:
+  `currentRun === undefined || currentRun.notebook !== notebook` rewritten
+  as `currentRun?.notebook !== notebook`. `npm run test:integration` green
+  — 411 passing, including `cancels the in-flight cell via
+  interruptHandler`, the case the interrupt fix touches most directly.
+
+  **PR #176's own AI review (2026-09-14) raised two findings on this slice,
+  both fixed and folded into the branch before push.** Recorded here, not
+  under "Probe findings" below — these are review findings about this
+  slice's own code and docs, not measured Viya wire behaviour, so they carry
+  no `9.x` finding number.
+
+  - **No regression test for the wrong-target-interrupt fix.** The fix
+    above (`currentRun?.notebook !== notebook`) has no test that actually
+    drives the two-notebook race it addresses — the suite's only interrupt
+    case exercises a single notebook. Fixed:
+    `test/integration/notebook/execution.test.ts` gained `"does not cancel
+    a different notebook's in-flight cell"` — starts a run on notebook A,
+    calls `interruptHandler` against a second notebook B that never ran
+    anything, and asserts A's own job runs to completion uninterrupted.
+  - **Stale test-count numbers.** By the time this PR was opened, `main` had
+    been merged into the branch (`5f2c7d5`), bringing in tests from Phase 8
+    work landed after 9b's own original cut — but this file and
+    `STATUS.md` still carried the pre-merge counts (1685 unit / 411
+    integration) while the PR description already carried the post-merge
+    ones (1693 unit / 418 integration), a mismatch the review caught.
+    Reconciled: a fresh `npm run verify` on the branch, with the new
+    regression test above folded in, produced **1693 unit tests**, coverage
+    **95.95/95.48/95.83/95.95**, and **419 integration** passing — the
+    numbers now recorded here and in `STATUS.md`.
+
+  `npm run verify` and `npm run test:integration` green after folding both
+  fixes in (numbers above).
 
 ☐ **9c — Renderers + diagnostics.**
 

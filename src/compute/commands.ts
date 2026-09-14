@@ -63,6 +63,20 @@
  * costs nothing and gives a session-dependent view exactly the signal it
  * needs, rather than that view re-deriving "did the connection change" by
  * polling the context key itself.
+ *
+ * ## Two sessions, one Disconnect (added ADR-0035)
+ *
+ * A profile can hold two independent compute sessions now — this module's own
+ * `sessions` (Run File, library browsing, CAS connect) and the notebook
+ * controller's own, entirely separate one (`extension.ts` builds both).
+ * `pythonOnViya.connected` and `onDidChangeConnection` stay scoped to *this*
+ * module's own `sessions`, unchanged — the notebook's own kernel picker is
+ * already its equivalent affordance (`notebookController.ts`'s own doc
+ * comment), so there is no second status-bar concept to keep honest here.
+ * `disconnect` is the one exception: it ends the optional `notebookSessions`
+ * handle too, quietly, because a user asking to free this profile's Viya
+ * resources means the whole profile, not just whichever session this module
+ * happens to track.
  */
 
 import * as vscode from "vscode";
@@ -121,6 +135,19 @@ export function registerComputeCommands(
   sessions: ComputeSessionManager,
   profiles: ComputeCommandProfiles,
   log: vscode.LogOutputChannel,
+  /**
+   * The notebook controller's own session manager, added ADR-0035 — `undefined`
+   * only in tests that do not care about it. An explicit *Disconnect* (or a
+   * sign-out, which calls this module's `disconnect` the same way) ends **both**
+   * sessions, not just Run File's: a user asking to free the deployment
+   * resource means the whole profile, and leaving the notebook's own session
+   * running until its independent 900-second reaper would be a surprise, not a
+   * feature. Always disconnected quietly — the primary `disconnect(options)`
+   * call above already produced whatever toast this action gets; a second
+   * "nothing to disconnect" message for a session the user never knew was
+   * separate would only confuse.
+   */
+  notebookSessions?: Pick<ComputeSessionManager, "disconnect">,
 ): ComputeCommandHandles {
   const connectionChanged = new vscode.EventEmitter<void>();
   context.subscriptions.push(connectionChanged);
@@ -143,6 +170,7 @@ export function registerComputeCommands(
 
   const disconnect = async (options?: { quiet?: boolean }): Promise<void> => {
     await sessions.disconnect(options);
+    await notebookSessions?.disconnect({ quiet: true });
     sync();
   };
 

@@ -65,6 +65,30 @@ describe("sessionBindingKey", () => {
       assert.throws(() => sessionBindingKey(blank));
     }
   });
+
+  it("keys on purpose too, once one is given (ADR-0035)", () => {
+    // The notebook controller's own binding must land under a different key
+    // than Run File's, or a reload would reattach it to the wrong session —
+    // or, worse, to whichever of the two last wrote the shared key.
+    assert.equal(
+      sessionBindingKey(PROFILE_ID, "notebook"),
+      `pythonOnViya.computeSession.notebook.${PROFILE_ID}`,
+    );
+    assert.notEqual(
+      sessionBindingKey(PROFILE_ID, "notebook"),
+      sessionBindingKey(PROFILE_ID),
+    );
+  });
+
+  it("leaves the no-purpose key unchanged, for every binding written before ADR-0035", () => {
+    // Every install that predates the notebook's own session must keep
+    // reattaching exactly as it always did — an install this ADR did not
+    // change should never see its Run File binding orphaned by a key change.
+    assert.equal(
+      sessionBindingKey(PROFILE_ID, undefined),
+      sessionBindingKey(PROFILE_ID),
+    );
+  });
 });
 
 describe("serializeBinding and parseBinding", () => {

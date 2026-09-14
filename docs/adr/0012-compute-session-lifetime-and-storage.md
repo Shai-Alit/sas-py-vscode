@@ -6,6 +6,25 @@
   stale, and whether an abandoned session is ever adopted
 - **Executed in:** slice `2a-ii`
 
+> **Amended 2026-09-14 ([ADR-0035](0035-notebook-gets-its-own-compute-session.md)),
+> narrowly.** This record's "one session per (workspace, profile)" framing —
+> in the Decision section below and its final Consequences bullet — is
+> narrowed to "one session per (workspace, profile, *surface*)", with exactly
+> two surfaces as of Phase 9's 9b slice: Run File and the notebook
+> controller. The reason is a constraint this ADR had no occasion to know
+> about in Phase 2: `PROC PYTHON` has exactly one interpreter namespace per
+> session, which means a surface that must reset on every run (Run File,
+> `freshNamespace: true` since Phase 3) and a surface that must persist
+> indefinitely (a notebook, `freshNamespace: false`) cannot share one session
+> without one destroying the other's state. Everything else this ADR
+> decided — the workspace grain, the stored id being a hint validated by use,
+> "a submission into a `running` session is refused, not queued," the
+> 900-second reaper, nothing user-identifying in the session name — is
+> unchanged, and now applies independently to each surface's own session. See
+> ADR-0035 for the full account, including what changed in
+> `ComputeSessionManager`'s persisted binding to give a second surface its
+> own reload-reattach entry.
+
 ## Context
 
 Slice 2a-i built the Compute client: create a session, wait out `pending`, delete
@@ -175,3 +194,5 @@ confirm it, and this ADR should be annotated when it does.
 **The stored id is a per-profile map, not a single value.** Two profiles hold
 live sessions simultaneously, which is the thing upstream's global singleton
 forecloses and a headline reason this client is hand-written (ADR-0010).
+*(Amended by ADR-0035: as of Phase 9's 9b slice, "per profile" is "per
+(profile, surface)" — see this record's own amendment note above.)*

@@ -105,6 +105,23 @@ checkpoint): three items deferred out of Phase 6 that never landed a home.**
   (above) remains a permanent, working alternative regardless — this
   closes the parity gap, it does not replace Cut/Paste.
 
+**Also carried here (added 2026-09-14, from Phase 9's 9b manual pass, §9.8):
+real tracking of an interrupted cell's abandoned statement, for a precise
+"waiting" message.** `notebookController.ts`'s `executeCell` gives a cell that
+sits with no output for `WAITING_NOTICE_DELAY_MS` an honest, cause-agnostic
+notice rather than silence — deliberately not a claim that a previous,
+interrupted statement is still finishing server-side, because the client has
+no way to know that (Finding 76: an interrupt's local abort clears
+`backend.busy` well before the SAS-side statement it interrupted actually
+ends, and nothing keeps a reference to that abandoned statement afterward).
+Building real tracking of it — enough to word the message precisely — is what
+Phase 4c already declined once for Run File's own identical gap, as
+disproportionate for that slice. Worth a harder look here: revisit whether a
+lightweight version (a session-scoped "last interrupted, not yet confirmed
+free" flag, cleared the next time a submission into that session succeeds)
+is now proportionate, now that notebooks make the scenario more common than
+Run File alone did. Not scoped as a slice yet — a candidate, not a commitment.
+
 **Also carried here (added 2026-09-14, from Phase 8's own post-merge fixes):
 a CAS tree table's icon does not flip from "unloaded" (cloud) to "loaded"
 after a JIT-load-on-expand, in a real VS Code window.** `src/cas/casTree.ts`'s

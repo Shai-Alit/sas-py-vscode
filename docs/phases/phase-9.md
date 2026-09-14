@@ -292,24 +292,80 @@ codebase survey and web research described in the Plan section above.
 building. Nothing here is a hard technical barrier — this is a
 recommendation, not a dependency lock._
 
-☐ **9a — Format decision.**
+☑ **9a — Format decision.** Code-complete 2026-09-14.
 
-- ☐ **Run the spike first, before anything else in this phase**: in a clean
+- ☑ **Run the spike first, before anything else in this phase**: in a clean
   VS Code profile with `ms-toolsai.jupyter` **not** installed, confirm
   whether a `.ipynb` file opens as a notebook at all, and whether a
   registered `NotebookController` for `jupyter-notebook` appears in its
-  kernel picker. This decides the rest of the phase's shape.
-- ☐ Register only a `NotebookController` (no serializer) against the
+  kernel picker. This decides the rest of the phase's shape. **Done, by two
+  independent checks, not one:** (1) reading the installed VS Code
+  (1.109.5)'s own bundled `ipynb` extension
+  (`resources/app/extensions/ipynb/package.json`) — publisher `vscode`, not
+  `ms-toolsai` — shows it, not `ms-toolsai.jupyter`, owns
+  `contributes.notebooks: [{type: "jupyter-notebook", selector: [{
+  filenamePattern: "*.ipynb"}]}]`, so `.ipynb` opening as a notebook does not
+  depend on the Jupyter extension being present at all; (2) a throwaway
+  `NotebookController` contributing no serializer of its own was launched via
+  `code --extensionDevelopmentPath=<spike ext> --user-data-dir=<empty>
+  --extensions-dir=<empty>` (nothing installed, not even this extension's
+  own real code) against a test `.ipynb`, and it was auto-selected as the
+  notebook's only candidate kernel and executed a cell end to end — proof
+  by successful execution, not just by inspecting a manifest. **Verdict:
+  `ms-toolsai.jupyter` is not a dependency of this feature; ADR-0024 needs no
+  amendment.**
+- ☑ Register only a `NotebookController` (no serializer) against the
   existing `jupyter-notebook` notebook type, per
   [ADR-0024](../adr/0024-notebooks-are-ipynb-native.md); add the
   `notebookKernel<X>`-style keyword VS Code's own guide recommends for
-  discoverability.
-- ☐ If the spike shows `.ipynb` files don't open as notebooks (or the
+  discoverability. **Done** — `src/notebook/notebookController.ts`
+  (`registerNotebookController`, wired from `src/extension.ts`); the
+  `notebookKernelPython` keyword was added to `package.json`. Real execution
+  against a Viya session is explicitly out of scope here — 9b's own slice,
+  gated on the `backends`/`backendFor` refactor (Plan, above) — so the
+  controller's `executeHandler` is a deliberate, honest placeholder: every
+  cell run reports "Running notebook cells on SAS Viya isn't implemented
+  yet." as a real cell error output, rather than either doing nothing or
+  surfacing VS Code's own generic no-handler error. Formalised as a
+  permanent regression test, not just a one-off spike:
+  `test/integration/notebook/controller.test.ts` opens an untitled
+  `jupyter-notebook`, runs its one cell, and asserts the placeholder error
+  appears — and since the integration host already launches with
+  `--disable-extensions` (`runTest.ts`), this test is itself continuous,
+  every-CI-run proof that no Jupyter extension is required, not a claim that
+  could go stale unnoticed.
+- ☑ If the spike shows `.ipynb` files don't open as notebooks (or the
   controller doesn't appear in the kernel picker) without `ms-toolsai.jupyter`
   installed: document it as a recommended or required companion extension
   (`docs/`, marketplace listing, `extensionDependencies`/`extensionPack` if
   warranted) and record the finding as an amendment to ADR-0024 — **not** a
-  reason to build a bespoke format instead.
+  reason to build a bespoke format instead. **N/A — the guarded condition
+  didn't occur.** The spike showed the opposite: `.ipynb` opens and a
+  registered controller is selectable with zero other extensions installed.
+  No companion-extension documentation and no ADR-0024 amendment are needed.
+
+  `npm run typecheck`/`lint`/`format:check`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts`/`docs:reference:check` all green.
+  `npm run coverage` green (1675 unit; coverage 95.92/95.46/95.75/95.92,
+  unaffected — `src/notebook/notebookController.ts` imports `vscode` and is
+  excluded from unit-tier scope in `.c8rc.json`, the same rule every other
+  pure-registrar module in this repo already follows —
+  `docs/adr/0009-coverage-scope.md`). `npm run test:integration` green — 406
+  passing, including `notebook controller (9a) ✔ is auto-selected and
+  executes a cell with no Jupyter extension installed`.
+  **Environment note, unrelated to this slice's code but worth recording:**
+  this run first failed twice for reasons that had nothing to do with the
+  source change — a stale `.vscode-test/` cache whose `Code.exe` had been
+  replaced by a copy of `node.exe` (cleared, so `@vscode/test-electron`
+  re-downloaded a genuine VS Code 1.137.0), and then `ELECTRON_RUN_AS_NODE=1`
+  being set in the shell, which makes any Electron binary launched directly
+  (bypassing the `code` CLI wrapper, which strips that variable) start as
+  headless Node instead of the real app — surfacing as "bad option:
+  --disable-extensions" from V8's own flag parser, not from VS Code. Unset it
+  before invoking `node out/test/integration/runTest.js` directly and the
+  run behaves normally. **Adversarial self-review: pending — handed to Sean
+  before any push, per this project's standing rule; this entry will be
+  updated once it returns.**
 
 ☐ **9b — Controller + execution.**
 

@@ -35,6 +35,7 @@
     "src/data/tablePropertiesPanel.ts",
     "src/data/tableSource.ts",
     "src/extension.ts",
+    "src/notebook/notebookController.ts",
     "src/profile/commands.ts",
     "src/profile/problems.ts",
     "src/profile/store.ts",

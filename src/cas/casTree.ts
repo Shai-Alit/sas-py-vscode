@@ -32,11 +32,12 @@ import { type CasAdapter } from "./adapter";
 import { describeCasProblem } from "./problems";
 import { nodePresentationOf } from "./presentation";
 import {
-  isCasColumn,
   isCaslib,
+  isCasColumn,
   isCasServer,
   isCasTable,
   type CasItem,
+  type CasTableItem,
 } from "./types";
 
 export class SasCasTreeProvider
@@ -44,6 +45,41 @@ export class SasCasTreeProvider
 {
   private readonly changed = new vscode.EventEmitter<CasItem | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
+
+  /**
+   * Columns just served for a table this provider itself told VS Code had
+   * changed, keyed by {@link nodeId} — consumed by the very next
+   * {@link getColumnsAndRefreshIcon} call for that id, then discarded.
+   *
+   * **Caught in PR #173's own automated review (GitHub Actions bot,
+   * 2026-09-14), plausible not confirmed:** firing {@link onDidChangeTreeData}
+   * for a table while VS Code is mid-expanding that exact node matches the
+   * API's own "update the changed element ... and its children recursively
+   * (if shown)" contract — the node is shown, being expanded right now — so
+   * VS Code is expected to re-invoke `getChildren` for it immediately,
+   * re-running `adapter.getColumns` a second time. Idempotent (the second
+   * call sees `state === "loaded"` and does not fire again) but a real extra
+   * network round trip {@link getColumnsAndRefreshIcon}'s own doc comment
+   * claimed did not happen. This cache removes it: the columns that method
+   * already fetched are served straight back on that one expected re-entrant
+   * call rather than being fetched twice, and the entry is deleted the
+   * instant it is read so a later, unrelated collapse/re-expand of the same
+   * table always fetches for real rather than ever risking stale columns.
+   *
+   * **Second-pass review, same PR: if that re-entrant call never arrives**
+   * (the node was collapsed before VS Code processed the fired event, or the
+   * CAS view was not visible when it fired) **an entry can outlive its one
+   * expected read.** Not bounded by a timer — guessing a "long enough" delay
+   * for an RPC round trip this class does not control would trade one race
+   * for another. Bounded instead by {@link refresh}, which clears this map
+   * outright: every path that can make a table's columns actually go stale
+   * server-side — the explicit **Refresh CAS** command, a profile switch,
+   * sign-in, sign-out — already calls it. The narrow residual window (a
+   * same-session, same-table re-expand with no intervening refresh of any
+   * kind after a re-entrant call that never came) is accepted, not solved —
+   * the entry it could serve is itself only ever moments stale.
+   */
+  private readonly justLoaded = new Map<string, readonly CasItem[]>();
 
   dispose(): void {
     this.changed.dispose();
@@ -62,8 +98,12 @@ export class SasCasTreeProvider
   ) {}
 
   /** Re-reads the whole tree. Called on refresh, profile change, sign-in and
-   * sign-out. */
+   * sign-out. Also drops any {@link justLoaded} entry still waiting for its
+   * expected re-entrant `getChildren` call (PR #173 review, second pass) —
+   * whatever a full re-read produces next is what should render, not a
+   * columns list cached from before this refresh was asked for. */
   refresh(): void {
+    this.justLoaded.clear();
     this.changed.fire(undefined);
   }
 
@@ -101,20 +141,70 @@ export class SasCasTreeProvider
 
     if (item !== undefined && isCasColumn(item)) return [];
 
+    if (item !== undefined && isCasTable(item)) {
+      return await this.getColumnsAndRefreshIcon(adapter, item);
+    }
+
     const result =
       item === undefined
         ? await adapter.getServers()
         : isCasServer(item)
           ? await adapter.getCaslibs(item)
-          : isCaslib(item)
-            ? await adapter.getTables(item)
-            : await adapter.getColumns(item);
+          : await adapter.getTables(item);
 
     if (!result.ok) {
       this.log.error(
         vscode.l10n.t("CAS: {0}", describeCasProblem(result.problem)),
       );
       return [];
+    }
+    return [...result.value];
+  }
+
+  /**
+   * Expanding an unloaded table triggers `CasAdapter.getColumns`'s own
+   * JIT-load `PUT` (Finding 8.3/8.8), but `table` is this caller's own stale
+   * reference — its `state` still reads `"unloaded"` afterward, because
+   * nothing re-fetches or mutates it, so `getTreeItem` kept drawing the
+   * cloud icon until the user ran **Refresh CAS** by hand. **Manual test
+   * finding, 2026-09-14**: the icon should flip the moment the load
+   * succeeds, with no refresh needed.
+   *
+   * Fixed by firing {@link onDidChangeTreeData} with a state-updated copy of
+   * `table` once `getColumns` succeeds — the same `{ ...table, state:
+   * "loaded" }` shape `CasAdapter.openTable`'s own doc comment already
+   * establishes is correct post-load, regardless of whether this call did
+   * the loading or the table already was. VS Code re-renders the node from
+   * this fresh object (matched to the existing row by `nodeId`, not by
+   * reference), so no extra round trip is needed to re-list the caslib — but
+   * firing for a node that is itself mid-expansion is expected to make VS
+   * Code re-invoke `getChildren` for that same node immediately (the API's
+   * own "and its children recursively, if shown" contract); {@link
+   * justLoaded}'s own doc comment covers why that re-entrant call is served
+   * from cache rather than hitting `adapter.getColumns` again.
+   */
+  private async getColumnsAndRefreshIcon(
+    adapter: CasAdapter,
+    table: CasTableItem,
+  ): Promise<CasItem[]> {
+    const id = nodeId(table);
+    const cached = this.justLoaded.get(id);
+    if (cached !== undefined) {
+      this.justLoaded.delete(id);
+      return [...cached];
+    }
+
+    const wasUnloaded = table.state !== "loaded";
+    const result = await adapter.getColumns(table);
+    if (!result.ok) {
+      this.log.error(
+        vscode.l10n.t("CAS: {0}", describeCasProblem(result.problem)),
+      );
+      return [];
+    }
+    if (wasUnloaded) {
+      this.justLoaded.set(id, result.value);
+      this.changed.fire({ ...table, state: "loaded" });
     }
     return [...result.value];
   }

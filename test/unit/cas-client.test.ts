@@ -65,6 +65,39 @@ function only(requests: readonly TransportRequest[]): TransportRequest {
   return request;
 }
 
+/** Like {@link transportReturning}, but answers one canned response per call,
+ * in order — for the `dataTable` redirect (Finding 8.11/8.14), which needs a
+ * `302` on the first request and a different response on the follow-up. */
+function transportSequence(responses: readonly StubResponse[]): {
+  transport: HttpTransport;
+  seen: TransportRequest[];
+  urls: string[];
+} {
+  const seen: TransportRequest[] = [];
+  const urls: string[] = [];
+  let next = 0;
+  const transport: HttpTransport = (url, init) => {
+    urls.push(url);
+    seen.push(init);
+    const response = responses[next];
+    next += 1;
+    assert.ok(
+      response !== undefined,
+      "transport called more times than expected",
+    );
+    const res: TransportResponse = {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      headers: response.headers ?? {},
+      text: () => Promise.resolve(response.body ?? ""),
+      bytes: () =>
+        Promise.resolve(new TextEncoder().encode(response.body ?? "")),
+    };
+    return Promise.resolve(res);
+  };
+  return { transport, seen, urls };
+}
+
 const SERVERS: Link = {
   rel: "getServers",
   href: "/casManagement/servers",
@@ -166,6 +199,128 @@ describe("cas/client", () => {
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "forbidden");
     assert.equal(result.problem.error.detail, "The user is not authorized.");
+  });
+
+  it("follows one GET redirect to a root-relative Location (Finding 8.11/8.14's dataTable 302)", async () => {
+    const { transport, seen, urls } = transportSequence([
+      {
+        status: 302,
+        headers: {
+          location:
+            "/casManagement/dataSources/cas~fs~cas-shared-default~fs~SystemData/tables/SASVIYATYPES",
+        },
+      },
+      {
+        status: 200,
+        headers: { "content-type": "application/vnd.sas.data.table+json" },
+        body: JSON.stringify({
+          name: "SASVIYATYPES",
+          links: [{ rel: "rows", href: "/rowSets/tables/.../rows" }],
+        }),
+      },
+    ]);
+    const client = createCasClient({
+      root: "https://viya.example.com",
+      token: () => "tok",
+      transport,
+    });
+    const result = await client.send({
+      link: {
+        rel: "dataTable",
+        href: "/dataTables/dataSources/cas~fs~cas-shared-default~fs~SystemData/tables/SASVIYATYPES",
+        responseType: "application/vnd.sas.data.table",
+      },
+    });
+    assert.ok(result.ok);
+    assert.equal(result.value.status, 200);
+    assert.deepEqual(
+      (result.value.body as { name: string }).name,
+      "SASVIYATYPES",
+    );
+    assert.equal(
+      urls[1],
+      "https://viya.example.com/casManagement/dataSources/cas~fs~cas-shared-default~fs~SystemData/tables/SASVIYATYPES",
+    );
+    // The same bearer token and Accept header travel on the followed request.
+    assert.equal(seen.length, 2);
+    const [, followed] = seen;
+    assert.ok(followed !== undefined);
+    assert.equal(followed.headers.authorization, "Bearer tok");
+    assert.equal(
+      followed.headers.accept,
+      "application/vnd.sas.data.table+json",
+    );
+  });
+
+  it("maps a transport failure on the followed request to cas-unreachable, naming the redirect target", async () => {
+    let calls = 0;
+    const transport: HttpTransport = (url) => {
+      calls += 1;
+      if (calls === 1) {
+        const res: TransportResponse = {
+          ok: false,
+          status: 302,
+          headers: { location: "/casManagement/dataSources/.../SASVIYATYPES" },
+          text: () => Promise.resolve(""),
+          bytes: () => Promise.resolve(new Uint8Array()),
+        };
+        return Promise.resolve(res);
+      }
+      return Promise.reject(new Error(`could not reach ${url}`));
+    };
+    const client = createCasClient({
+      root: "https://viya.example.com",
+      token: () => "tok",
+      transport,
+    });
+    const result = await client.send({
+      link: {
+        rel: "dataTable",
+        href: "/dataTables/dataSources/.../SASVIYATYPES",
+      },
+    });
+    assert.equal(calls, 2);
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "cas-unreachable");
+    assert.ok(
+      result.problem.detail.includes(
+        "/casManagement/dataSources/.../SASVIYATYPES",
+      ),
+    );
+  });
+
+  it("does not follow a redirect for a non-GET method", async () => {
+    const { client } = clientWith({
+      status: 302,
+      headers: { location: "/casManagement/somewhere-else" },
+    });
+    const result = await client.send({
+      link: {
+        rel: "updateState",
+        href: "/casManagement/.../state",
+        method: "PUT",
+      },
+    });
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "cas-rejected");
+  });
+
+  it("refuses a redirect Location pointing at another host", async () => {
+    const { client } = clientWith({
+      status: 302,
+      headers: { location: "https://elsewhere.example/x" },
+    });
+    const result = await client.send({ link: SERVERS });
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "foreign-link");
+  });
+
+  it("falls through to the ordinary non-2xx mapping when a redirect carries no Location", async () => {
+    const { client } = clientWith({ status: 302 });
+    const result = await client.send({ link: SERVERS });
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "cas-rejected");
+    assert.equal(result.problem.error.status, 302);
   });
 
   it("maps any other non-2xx to cas-rejected carrying the status", async () => {

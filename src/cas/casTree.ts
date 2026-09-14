@@ -32,11 +32,12 @@ import { type CasAdapter } from "./adapter";
 import { describeCasProblem } from "./problems";
 import { nodePresentationOf } from "./presentation";
 import {
-  isCasColumn,
   isCaslib,
+  isCasColumn,
   isCasServer,
   isCasTable,
   type CasItem,
+  type CasTableItem,
 } from "./types";
 
 export class SasCasTreeProvider
@@ -101,14 +102,16 @@ export class SasCasTreeProvider
 
     if (item !== undefined && isCasColumn(item)) return [];
 
+    if (item !== undefined && isCasTable(item)) {
+      return await this.getColumnsAndRefreshIcon(adapter, item);
+    }
+
     const result =
       item === undefined
         ? await adapter.getServers()
         : isCasServer(item)
           ? await adapter.getCaslibs(item)
-          : isCaslib(item)
-            ? await adapter.getTables(item)
-            : await adapter.getColumns(item);
+          : await adapter.getTables(item);
 
     if (!result.ok) {
       this.log.error(
@@ -116,6 +119,40 @@ export class SasCasTreeProvider
       );
       return [];
     }
+    return [...result.value];
+  }
+
+  /**
+   * Expanding an unloaded table triggers `CasAdapter.getColumns`'s own
+   * JIT-load `PUT` (Finding 8.3/8.8), but `table` is this caller's own stale
+   * reference — its `state` still reads `"unloaded"` afterward, because
+   * nothing re-fetches or mutates it, so `getTreeItem` kept drawing the
+   * cloud icon until the user ran **Refresh CAS** by hand. **Manual test
+   * finding, 2026-09-14**: the icon should flip the moment the load
+   * succeeds, with no refresh needed.
+   *
+   * Fixed by firing {@link onDidChangeTreeData} with a state-updated copy of
+   * `table` once `getColumns` succeeds — the same `{ ...table, state:
+   * "loaded" }` shape `CasAdapter.openTable`'s own doc comment already
+   * establishes is correct post-load, regardless of whether this call did
+   * the loading or the table already was. VS Code re-renders the node from
+   * this fresh object (matched to the existing row by `nodeId`, not by
+   * reference), so no extra network round trip is needed to re-list the
+   * caslib.
+   */
+  private async getColumnsAndRefreshIcon(
+    adapter: CasAdapter,
+    table: CasTableItem,
+  ): Promise<CasItem[]> {
+    const wasUnloaded = table.state !== "loaded";
+    const result = await adapter.getColumns(table);
+    if (!result.ok) {
+      this.log.error(
+        vscode.l10n.t("CAS: {0}", describeCasProblem(result.problem)),
+      );
+      return [];
+    }
+    if (wasUnloaded) this.changed.fire({ ...table, state: "loaded" });
     return [...result.value];
   }
 }

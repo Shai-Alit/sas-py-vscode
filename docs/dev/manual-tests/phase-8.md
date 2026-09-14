@@ -239,26 +239,55 @@ found and fixed for 7c-iii's CSV export.
 connection, signed in (no **Connect** needed). Have at least one table you
 can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
 
-- [ ] **8.21** **Opening a CAS table opens the shared data-viewer panel** —
+- [x] **8.21** **Opening a CAS table opens the shared data-viewer panel** —
   in the **CAS** tree, expand a caslib down to a table and click it (or use
   its context menu), the same gesture **SAS Libraries**' own table nodes use.
   **Expect:** the same paged/sortable/filterable grid Phase 7 built opens,
   populated with this table's real rows and columns — not an empty or
   errored panel.
-- [ ] **8.22** **Opening an unloaded table loads it first (JIT-load)** — pick
+  **(9/14/2026) failed** — opening a table (confirmed already loaded into
+  memory) showed "The CAS management service refused the request (HTTP
+  302). See the Python on Viya log for details." in the panel, with no
+  further detail in the log. Root-caused live: the `dataTable` relation
+  8c's own `CasAdapter.openTable` follows really does `302` on this
+  deployment (Finding 8.11 had already found this in prose but never pinned
+  the literal `Location`), and `CasClient.send` had no redirect handling at
+  all. **Fixed** — `src/cas/client.ts` now follows exactly one `GET`
+  redirect to a root-relative `Location`, re-probed and pinned as Finding
+  8.14; see `phase-8.md`'s "Post-merge fixes, 2026-09-14" Runbook entry.
+  **9/14/2026 passed** 
+- [x] **8.22** **Opening an unloaded table loads it first (JIT-load)** — pick
   a table you have not yet expanded or loaded this session and open it
   directly via the data viewer gesture above, without expanding it in the
   tree first.
   **Expect:** a short pause (the load `PUT`, Finding 8.3/8.8, the same one
   8a's own §8.5 exercises via the tree), then the grid populates — not an
   error, and not an empty grid.
-- [ ] **8.23** **Sort and filter work, independently and together** — in the
+- [-] **8.23** **Sort and filter work, independently and together** — in the
   opened panel, sort by a column, then clear it and filter instead, then
   apply both together.
   **Expect:** results update correctly for each combination, with no
   noticeable delay from a view-creation step — Finding 8.12 found CAS needs
   none, unlike a Compute session table.
-- [ ] **8.24** **Opening the same table twice reveals the existing panel,
+  **9/14/2026 failed** inputing a where clause fails with
+  "The CAS management service refused the request (HTTP 409). See the Python on Viya log for details. 2-6-2710405: 0x887ff995:TKCASDAL_WHERE_PARSEERROR"
+   in the panel and "2026-09-14 07:21:46.793 [warning] CAS: a row request over "P_FORD.BASEBALL" failed (the CAS management service returned HTTP 409 (2-6-2710405: 0x887ff995:TKCASDAL_WHERE_PARSEERROR, correlator 9f27da98-0e25-453a-879f-79c647b3337e))" in the log.
+  **Root-caused, same session:** the filter text itself
+  (`'CrHits'>200`) was invalid syntax — a quoted column name; Sean confirmed
+  live that the correct, unquoted form (`CrHits>200`) works. CAS correctly
+  refused it, but the message shown discarded CAS's own explanation: its
+  `details[]` array puts an opaque `"N-N-N: 0xHEX:SYMBOL"` diagnostic code
+  first and the actual parser sentence (`"ERROR: The WHERE clause '…' could
+  not be resolved."`) after it, and `readViyaError` was taking the first
+  entry — the code, not the sentence. Re-probed live and pinned as Finding
+  8.15. **Fixed** — `src/wire/viyaError.ts` now prefers the first
+  `ERROR:`-prefixed `details[]` entry; see `phase-8.md`'s "Post-merge fixes,
+  2026-09-14" Runbook entry, Bug 3. Not a client-side syntax validator —
+  an invalid filter still fails, now with CAS's own actionable sentence
+  instead of a bare code. **Awaiting live re-confirmation** — please retry
+  both the original `'CrHits'>200` (now expected to explain itself clearly)
+  and a valid filter/sort combination before checking this box.
+- [x] **8.24** **Opening the same table twice reveals the existing panel,
   not a duplicate** — with a CAS table already open, trigger the same open
   gesture on it again (from the tree or the Command Palette history).
   **Expect:** the existing panel is revealed/refocused; no second tab or
@@ -274,13 +303,30 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   available, note this box as not independently reachable** rather than
   forcing it — the same allowance §8.13 above takes for a single-CAS-server
   deployment.
-- [ ] **8.26** **Closing the panel disposes cleanly** — close the CAS
+- [x] **8.26** **Closing the panel disposes cleanly** — close the CAS
   table's data-viewer tab/panel.
   **Expect:** no error appears in **Python on Viya: Show Log** or the
   DevTools console; reopening the same table afterward opens a fresh panel
   with correct data, not a stale or broken one.
-- [ ] **8.27** **Legible in every theme** — with a CAS table open in the data
+- [x] **8.27** **Legible in every theme** — with a CAS table open in the data
   viewer, switch VS Code between a light theme, a dark theme, and a
   high-contrast theme.
   **Expect:** the grid renders correctly in all three, matching Phase 7's own
   data viewer — nothing CAS-specific to the rendering here.
+- [-] **8.28** **A table's icon flips to "loaded" the moment it finishes
+  loading, with no manual refresh** — found testing this section, though the
+  bug itself is in the **CAS** tree (phase 8a), not the data viewer: expand
+  a table you have not yet loaded this session (§8.5) and watch its own icon
+  as the columns appear, without running **Refresh CAS**.
+  **Expect:** the icon flips from the cloud glyph (§8.19) to the ordinary
+  table glyph as soon as the columns finish loading — not only after a
+  manual refresh.
+  **(9/14/2026) failed** — the icon stayed on the cloud glyph until
+  **Refresh CAS** was run by hand, even though the columns themselves loaded
+  and displayed correctly (§8.5 still passes on its own terms). Root cause:
+  `src/cas/casTree.ts`'s `getChildren` never told VS Code the table node had
+  changed after `CasAdapter.getColumns` triggered its JIT-load, so the node
+  kept rendering from its own stale, pre-load `state`. **Fixed** — it now
+  fires a tree refresh with a state-updated copy of the node once the load
+  succeeds; see `phase-8.md`'s "Post-merge fixes, 2026-09-14" Runbook entry.
+  **Awaiting live re-confirmation** before this box closes.

@@ -421,4 +421,58 @@ describe("notebook execution (9b)", () => {
     await secondRun;
     assert.equal(executions.get(another.cell)?.ended()?.success, true);
   });
+
+  it("does not cancel a different notebook's in-flight cell", async () => {
+    // Regression case for the adversarial-review finding
+    // (`notebookController.ts`'s own doc comment, "Why one module-scoped
+    // currentRun slot is safe"): `interruptHandler` used to cancel whatever
+    // `currentRun` held regardless of which notebook it was actually called
+    // for. Notebook B here never runs anything through this shared backend
+    // — `currentRun` only ever points at A's own job — but VS Code can still
+    // call `interruptHandler(B)`, e.g. from B's own queued cell showing
+    // "running" chrome while it is really about to be busy-refused. That
+    // must not reach A's genuinely running job.
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    const controller = fakeController(executions);
+    const a = await openCell("while True: pass");
+    const b = await openCell("print('b never ran')");
+
+    const runningA = handlers.executeHandler([a.cell], a.notebook, controller);
+    await flush();
+    const job = recorded.currentJob();
+    assert.ok(
+      job !== undefined,
+      "notebook A's run should have created its own job before this test proceeds",
+    );
+
+    await handlers.interruptHandler(b.notebook);
+
+    job.push("still running\n");
+    job.finish(true, undefined);
+    await runningA;
+
+    const result = executions.get(a.cell);
+    assert.ok(result);
+    assert.equal(
+      result.ended()?.success,
+      true,
+      "notebook B's interrupt must not have cancelled notebook A's own run",
+    );
+    assert.ok(
+      result
+        .outputs()
+        .some((output) => textOf(output).includes("still running")),
+      `expected A's own streamed output to have arrived uninterrupted; got: ${JSON.stringify(
+        result.outputs().map(textOf),
+      )}`,
+    );
+  });
 });

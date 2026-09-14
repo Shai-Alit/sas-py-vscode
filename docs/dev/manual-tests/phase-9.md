@@ -104,7 +104,7 @@ wants no profile signed in.
   step already in flight may keep running its own natural duration is the
   same one here). A cell run immediately afterward should start normally,
   not be refused as still busy.
-- [ ] **9.8** **A second cell run while one is still in flight is refused
+- [x] **9.8** **A second cell run while one is still in flight is refused
   as busy, not queued or silently dropped; a cell that has to wait behind an
   interrupted one's still-finishing statement says so honestly** — start a
   long-running cell (`import time; time.sleep(15)`), then, before it
@@ -131,7 +131,7 @@ wants no profile signed in.
   File's own identical gap; `phase-11.md`'s "Also carried here" list keeps
   it as a candidate. This item now tests the honest, cause-agnostic notice
   instead.
-- [ ] **9.9** **A notebook's own state persists across its own cells and
+- [x] **9.9** **A notebook's own state persists across its own cells and
   across a reload — and Run File, running against a different SAS session
   now, never touches it** — in a notebook cell: `k = 1`. Run it, then run a
   second cell with `print(k)` — confirms cell-to-cell persistence within the
@@ -172,7 +172,7 @@ wants no profile signed in.
   produced — rich rendering in a notebook cell isn't implemented yet]" —
   not a broken image icon, not nothing. (9c is where this becomes a real
   inline image.)
-- [ ] **9.11** **Disconnect ends both sessions, not just Run File's** — with
+- [x] **9.11** **Disconnect ends both sessions, not just Run File's** — with
   a notebook cell already run once (so the notebook's own, separate
   compute session is live — [ADR-0035](../../adr/0035-notebook-gets-its-own-compute-session.md))
   and Run File also used at least once on the same profile, run

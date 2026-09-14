@@ -587,6 +587,11 @@ recommendation, not a dependency lock._
   **needing a fresh live re-run** against the code above before this slice
   is considered verified — left for Sean.
 
+  **Fresh live re-run, 2026-09-14 (Sean): §9.8, §9.9, and §9.11 (added by
+  the adversarial pass below) all pass against the corrected code** —
+  `docs/dev/manual-tests/phase-9.md` updated in place, all Phase 9 items now
+  checked.
+
   **Adversarial self-review: run 2026-09-14, three findings, all folded in
   before push.** Per `CLAUDE.md`, this ran against the full diff — the
   ADR-0035 two-session split included, not only the original single-cache
@@ -629,6 +634,34 @@ recommendation, not a dependency lock._
   as `currentRun?.notebook !== notebook`. `npm run test:integration` green
   — 411 passing, including `cancels the in-flight cell via
   interruptHandler`, the case the interrupt fix touches most directly.
+
+  **PR #176's own AI review (2026-09-14) raised two findings on this slice,
+  both fixed and folded into the branch before push.** Recorded here, not
+  under "Probe findings" below — these are review findings about this
+  slice's own code and docs, not measured Viya wire behaviour, so they carry
+  no `9.x` finding number.
+
+  - **No regression test for the wrong-target-interrupt fix.** The fix
+    above (`currentRun?.notebook !== notebook`) has no test that actually
+    drives the two-notebook race it addresses — the suite's only interrupt
+    case exercises a single notebook. Fixed:
+    `test/integration/notebook/execution.test.ts` gained `"does not cancel
+    a different notebook's in-flight cell"` — starts a run on notebook A,
+    calls `interruptHandler` against a second notebook B that never ran
+    anything, and asserts A's own job runs to completion uninterrupted.
+  - **Stale test-count numbers.** By the time this PR was opened, `main` had
+    been merged into the branch (`5f2c7d5`), bringing in tests from Phase 8
+    work landed after 9b's own original cut — but this file and
+    `STATUS.md` still carried the pre-merge counts (1685 unit / 411
+    integration) while the PR description already carried the post-merge
+    ones (1693 unit / 418 integration), a mismatch the review caught.
+    Reconciled: a fresh `npm run verify` on the branch, with the new
+    regression test above folded in, produced **1693 unit tests**, coverage
+    **95.95/95.48/95.83/95.95**, and **419 integration** passing — the
+    numbers now recorded here and in `STATUS.md`.
+
+  `npm run verify` and `npm run test:integration` green after folding both
+  fixes in (numbers above).
 
 ☐ **9c — Renderers + diagnostics.**
 

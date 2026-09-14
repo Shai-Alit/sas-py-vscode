@@ -39,8 +39,7 @@ self-review run before any push — no blocking findings**; two non-blocking
 observations were checked independently and both confirmed not worth acting
 on (`phase-9.md`'s 9a Runbook entry has the detail). **Manual test items run
 2026-09-14 (Sean): all five pass** — `docs/dev/manual-tests/phase-9.md`
-9.1–9.5. **Committed locally on `feat/9a-notebook-controller`; not yet
-pushed, no PR opened.**
+9.1–9.5. **Merged as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172), squash `6884e49`.** 9b (controller + execution) is next.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -170,7 +169,7 @@ Phase 6→7/8 checkpoint but was missed then. Per-phase detail
 | 6 — SAS Content explorer | ✅ **done — 6a–6e all merged.** SAS Content tree, open/save `FileSystemProvider`, create/rename/move/delete, drag-and-drop, favourites, recycle bin, Cut/Paste. Final PR [#162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash `a74f756`. `npm run verify` green (1580 unit; coverage 95.57/95.51/95.26/95.57). Phase 6→7/8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). | `docs/phases/phase-8.md` |
-| 9 — Notebooks | **9a (spike + controller registration) code-complete 2026-09-14 — adversarial review done, no blocking findings; manual test items 9.1–9.5 all pass (Sean, 2026-09-14); committed locally, not yet pushed, no PR.** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged); `src/notebook/notebookController.ts` registers a `NotebookController` against `jupyter-notebook` with a placeholder `executeHandler` — real execution is 9b. `npm run coverage`/`test:integration` green. | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **9a (spike + controller registration) done — merged 2026-09-14 as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172), squash `6884e49`.** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged); `src/notebook/notebookController.ts` registers a `NotebookController` against `jupyter-notebook` with a placeholder `executeHandler` — real execution is 9b, now starting. | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

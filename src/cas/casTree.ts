@@ -65,6 +65,19 @@ export class SasCasTreeProvider
    * call rather than being fetched twice, and the entry is deleted the
    * instant it is read so a later, unrelated collapse/re-expand of the same
    * table always fetches for real rather than ever risking stale columns.
+   *
+   * **Second-pass review, same PR: if that re-entrant call never arrives**
+   * (the node was collapsed before VS Code processed the fired event, or the
+   * CAS view was not visible when it fired) **an entry can outlive its one
+   * expected read.** Not bounded by a timer — guessing a "long enough" delay
+   * for an RPC round trip this class does not control would trade one race
+   * for another. Bounded instead by {@link refresh}, which clears this map
+   * outright: every path that can make a table's columns actually go stale
+   * server-side — the explicit **Refresh CAS** command, a profile switch,
+   * sign-in, sign-out — already calls it. The narrow residual window (a
+   * same-session, same-table re-expand with no intervening refresh of any
+   * kind after a re-entrant call that never came) is accepted, not solved —
+   * the entry it could serve is itself only ever moments stale.
    */
   private readonly justLoaded = new Map<string, readonly CasItem[]>();
 
@@ -85,8 +98,12 @@ export class SasCasTreeProvider
   ) {}
 
   /** Re-reads the whole tree. Called on refresh, profile change, sign-in and
-   * sign-out. */
+   * sign-out. Also drops any {@link justLoaded} entry still waiting for its
+   * expected re-entrant `getChildren` call (PR #173 review, second pass) —
+   * whatever a full re-read produces next is what should render, not a
+   * columns list cached from before this refresh was asked for. */
   refresh(): void {
+    this.justLoaded.clear();
     this.changed.fire(undefined);
   }
 

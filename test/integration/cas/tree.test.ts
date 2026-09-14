@@ -125,6 +125,30 @@ describe("SasCasTreeProvider", () => {
     assert.equal(adapter.getColumnsCalls, 2);
   });
 
+  it("PR #173 review (second pass): refresh() clears a justLoaded entry whose re-entrant call never arrived", async () => {
+    // Simulates the bot's own scenario: the node was collapsed (or the view
+    // was hidden) before VS Code's expected re-entrant getChildren call ever
+    // reached this provider, so the cached columns are never consumed by it.
+    // An explicit refresh (Refresh CAS, a profile switch, sign-in/out) must
+    // still discard that stale entry rather than let a later, unrelated
+    // re-expand of the same table be served it.
+    const adapter = adapterReturning({ ok: true, value: [] });
+    const { provider } = makeProvider(adapter);
+
+    await provider.getChildren(table({ state: "unloaded" }));
+    assert.equal(adapter.getColumnsCalls, 1);
+    // No re-entrant call here — the entry sits unconsumed.
+
+    provider.refresh();
+    await provider.getChildren(table({ state: "unloaded" }));
+
+    assert.equal(
+      adapter.getColumnsCalls,
+      2,
+      "refresh() must drop the stale entry rather than let it be served later",
+    );
+  });
+
   it("does not fire a refresh for a table that was already loaded", async () => {
     const adapter = adapterReturning({ ok: true, value: [] });
     const { provider, fired } = makeProvider(adapter);

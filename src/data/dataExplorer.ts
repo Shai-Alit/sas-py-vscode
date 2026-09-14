@@ -68,6 +68,7 @@ import {
 } from "./dataDragAndDrop";
 import { SasLibraryTreeProvider } from "./dataTree";
 import type { DataViewerPanelManager } from "./dataViewerPanel";
+import { LibraryTableSource } from "./librarySource";
 import type { TablePropertiesPanelManager } from "./tablePropertiesPanel";
 import { isTable, type DataItem } from "./types";
 import type { ProfileStore } from "../profile/store";
@@ -152,16 +153,18 @@ export function registerDataExplorer(
         // land in the extension host as an unhandled rejection, visible to
         // no one — logged instead, so an unexpected failure to open a table
         // is at least diagnosable.
-        void panels.open(item, adapter).catch((error: unknown) => {
-          log.error(
-            vscode.l10n.t(
-              'SAS Libraries: could not open the data viewer panel for "{0}.{1}" ({2})',
-              item.libref,
-              item.name,
-              String(error),
-            ),
-          );
-        });
+        void panels
+          .open(new LibraryTableSource(adapter, item, log))
+          .catch((error: unknown) => {
+            log.error(
+              vscode.l10n.t(
+                'SAS Libraries: could not open the data viewer panel for "{0}.{1}" ({2})',
+                item.libref,
+                item.name,
+                String(error),
+              ),
+            );
+          });
       },
     ),
     vscode.commands.registerCommand(

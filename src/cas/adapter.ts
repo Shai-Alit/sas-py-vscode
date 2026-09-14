@@ -53,20 +53,45 @@ import {
   CASLIBS_REL,
   COLUMNS_REL,
   CONNECTION_REL,
+  DATA_TABLE_REL,
   LOAD_REL,
   readCaslibItem,
   readCasColumnItem,
   readCasConnectionInfo,
+  readCasRowItem,
   readCasServerItem,
   readCasTableItem,
+  ROWS_REL,
   SERVERS_REL,
   TABLES_REL,
   type CaslibItem,
   type CasColumnItem,
   type CasConnectionInfo,
+  type CasRowItem,
   type CasServerItem,
+  type CasSortSpec,
+  type CasTableDetail,
   type CasTableItem,
 } from "./types";
+
+/** The window of rows {@link CasAdapter.getRows} requests — `start`/`limit`
+ * map onto the `rows` collection's own query parameters (Finding 8.12),
+ * zero-based, the same shape `src/data/adapter.ts`'s `RowWindow` gives a
+ * Compute session table. */
+export interface CasRowWindow {
+  readonly start: number;
+  readonly limit: number;
+}
+
+/** One window of a CAS table's row data, as {@link CasAdapter.getRows}
+ * returns it. Unlike `src/data/adapter.ts`'s `RowsPage`, `count` has no
+ * documented case where it disappears (Finding 8.12 found it populated even
+ * under a combined sort+filter) — still optional at the type level since
+ * nothing here has probed every possible deployment. */
+export interface CasRowsPage {
+  readonly rows: readonly CasRowItem[];
+  readonly count: number | undefined;
+}
 
 /** The composed bootstrap link for the CAS servers collection — see this
  * module's own doc comment for why this one URL is written down rather than
@@ -79,7 +104,15 @@ const SERVERS_LINK: Link = {
 };
 
 export class CasAdapter {
-  constructor(private readonly client: CasClient) {}
+  constructor(
+    private readonly client: CasClient,
+    /** The deployment this adapter's `client` was built against —
+     * `CasSession.adapterFor`'s own cache key. `CasTableSource` folds this
+     * into its panel-dedup `key` (mirroring `LibraryAdapter.profileId`) so
+     * switching to a different profile/endpoint never reveals a panel still
+     * bound to a previous deployment's adapter. */
+    readonly endpoint: string,
+  ) {}
 
   /** Every CAS server on this deployment — one request, no per-item
    * follow-up: unlike Phase 7's sparse `librefs` listing, the servers
@@ -178,6 +211,109 @@ export class CasAdapter {
       if (column !== undefined) columns.push(column);
     }
     return { ok: true, value: columns };
+  }
+
+  /**
+   * Opens `table` for viewing (8c) — loads it first when necessary (the same
+   * gate {@link getColumns} already has), then follows {@link DATA_TABLE_REL}
+   * to the Data Tables API and reads its own {@link ROWS_REL} (Findings
+   * 8.11/8.12), since `casManagement` itself has no row-data relation at all.
+   *
+   * The returned {@link CasTableDetail} always reports `state: "loaded"` —
+   * see that interface's own doc comment for why this is correct even when
+   * `table.state` said otherwise a moment ago.
+   */
+  async openTable(
+    table: CasTableItem,
+    signal?: AbortSignal,
+  ): Promise<CasResult<CasTableDetail>> {
+    if (table.state !== "loaded") {
+      const loaded = await this.load(table, signal);
+      if (!loaded.ok) return loaded;
+    }
+
+    const dataTableLink = findLink(table.links, DATA_TABLE_REL);
+    if (dataTableLink === undefined) {
+      return linkMissing(
+        `table "${table.caslibName}.${table.name}"`,
+        DATA_TABLE_REL,
+      );
+    }
+
+    const result = await this.client.send({
+      link: dataTableLink,
+      ...withSignal(signal),
+    });
+    if (!result.ok) return result;
+
+    const rowsLink = findLink(readLinks(result.value.body), ROWS_REL);
+    if (rowsLink === undefined) {
+      return malformed(
+        result.value,
+        `table "${table.caslibName}.${table.name}"'s Data Tables representation`,
+        'and it carried no "rows" link',
+      );
+    }
+
+    return { ok: true, value: { ...table, state: "loaded", rowsLink } };
+  }
+
+  /**
+   * One window of a table's row data — a single request, never a walk to
+   * completion, the same "windowed, not collected" shape
+   * `src/data/adapter.ts`'s own `getRows` gives a Compute session table.
+   *
+   * **Sort and filter are both plain query parameters on every request, sent
+   * together — there is no `createView`/`deleteView` step of any kind.**
+   * Finding 8.12: `sortBy=key:direction` (comma-joined for more than one
+   * column) and `where=<clause>` both work directly on the `rows` link,
+   * together, in a single request, with `count` staying populated regardless
+   * — materially simpler than `LibraryAdapter.getRows`'s own view-creation
+   * dance, which exists only because a Compute session table's `where=` is
+   * silently ignored once a sort is active (Finding 7.16). Nothing here needs
+   * that workaround.
+   */
+  async getRows(
+    table: CasTableDetail,
+    window: CasRowWindow,
+    sort: readonly CasSortSpec[],
+    filter: string,
+    signal?: AbortSignal,
+  ): Promise<CasResult<CasRowsPage>> {
+    const parameters = [
+      `start=${String(window.start)}`,
+      `limit=${String(window.limit)}`,
+    ];
+    if (sort.length > 0) {
+      const clause = sort
+        .map((spec) => `${spec.key}:${spec.direction}`)
+        .join(",");
+      parameters.push(`sortBy=${encodeURIComponent(clause)}`);
+    }
+    if (filter !== "") parameters.push(`where=${encodeURIComponent(filter)}`);
+
+    const link: Link = {
+      ...table.rowsLink,
+      href: withQuery(table.rowsLink.href, parameters),
+    };
+    const result = await this.client.send({ link, ...withSignal(signal) });
+    if (!result.ok) return result;
+
+    const items = readItems(result.value);
+    if (items === undefined) {
+      return malformed(
+        result.value,
+        `table "${table.caslibName}.${table.name}"'s rows`,
+        'and it carried no "items" array',
+      );
+    }
+
+    const rows: CasRowItem[] = [];
+    for (const raw of items) {
+      const row = readCasRowItem(raw);
+      if (row !== undefined) rows.push(row);
+    }
+    return { ok: true, value: { rows, count: readCount(result.value.body) } };
   }
 
   /** `server`'s internal connection info (Finding 8.10) — 8b's own caller:
@@ -304,6 +440,15 @@ function readItems(response: CasResponse): readonly unknown[] | undefined {
   if (typeof body !== "object" || body === null) return undefined;
   const items: unknown = (body as { items?: unknown }).items;
   return Array.isArray(items) ? (items as readonly unknown[]) : undefined;
+}
+
+/** A collection body's own `count`, or `undefined` if absent or not a
+ * number — the same defensive read `src/data/adapter.ts`'s own `readCount`
+ * gives `items`. */
+function readCount(body: unknown): number | undefined {
+  if (typeof body !== "object" || body === null) return undefined;
+  const count = (body as { count?: unknown }).count;
+  return typeof count === "number" ? count : undefined;
 }
 
 /** Passes a signal through only when there is one, so the request object

@@ -48,3 +48,4 @@ under their category.
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` |
 | Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showTableProperties` |
 | Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportTableToCsv` |
+| Open Table | `Python on Viya: Open Table` | `pythonOnViya.openCasTable` |

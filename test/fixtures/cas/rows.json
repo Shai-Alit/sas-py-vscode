@@ -1,0 +1,24 @@
+{
+  "name": "rows",
+  "accept": "application/vnd.sas.data.row",
+  "start": 0,
+  "limit": 2,
+  "count": 12,
+  "version": 2,
+  "items": [
+    { "version": 1, "cells": ["ABC", 1.5] },
+    { "version": 1, "cells": ["DEF", 2.5] }
+  ],
+  "links": [
+    {
+      "method": "GET",
+      "rel": "self",
+      "href": "/rowSets/tables/cas~fs~cas-shared-default~fs~Public~fs~LOOKUP_TABLE/rows?start=0&limit=2"
+    },
+    {
+      "method": "GET",
+      "rel": "next",
+      "href": "/rowSets/tables/cas~fs~cas-shared-default~fs~Public~fs~LOOKUP_TABLE/rows?start=2&limit=2"
+    }
+  ]
+}

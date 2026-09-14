@@ -237,11 +237,28 @@ export function activate(context: vscode.ExtensionContext): void {
     { transport },
   );
 
+  // Phase 7b: the data viewer's own panel manager — one `WebviewPanel` per
+  // open table (`src/data/dataViewerPanel.ts`, ADR-0028), constructed here so
+  // its lifetime is the extension's own and every panel it opens is disposed
+  // on deactivation via `context.subscriptions` (wired inside
+  // `registerDataExplorer`, which owns the command that calls `.open`).
+  // Constructed before `registerCasExplorer` below (8c): both the "SAS
+  // Libraries" and "CAS" trees' own `openTable`/`openCasTable` commands share
+  // this one manager, each wrapping its own adapter in a `TableSource`
+  // (`LibraryTableSource`/`CasTableSource`) rather than each owning a
+  // separate panel manager.
+  const dataViewerPanels = new DataViewerPanelManager(context.extensionUri, {
+    log: output,
+  });
+
   // Phase 8a: the read-only CAS browsing tree, a third view inside the same
   // activity-bar container. Like SAS Content and unlike SAS Libraries, this
   // needs no compute session and opens no CAS session of its own (Finding
   // 8.2, ADR-0033) — an endpoint and a silent token are enough — so it is
   // registered the same way SAS Content is, with the same `transport`.
+  // Phase 8c: also takes `dataViewerPanels` — a CAS table node's own
+  // `pythonOnViya.openCasTable` command opens it in the same panel manager
+  // the "SAS Libraries" tree's `openTable` already shares.
   const casExplorer = registerCasExplorer(
     context,
     profiles,
@@ -250,6 +267,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onDidChangeSessions: auth.onDidChangeSessions,
       onDidSignOut: auth.onDidSignOut,
     },
+    dataViewerPanels,
     { transport },
   );
 
@@ -259,15 +277,6 @@ export function activate(context: vscode.ExtensionContext): void {
   // rather than alongside 8a above. Reuses 8a's own endpoint-keyed adapter
   // cache (`casExplorer.session`) rather than building a second one.
   registerCasConnectCommand(context, sessions, casExplorer.session, profiles);
-
-  // Phase 7b: the data viewer's own panel manager — one `WebviewPanel` per
-  // open table (`src/data/dataViewerPanel.ts`, ADR-0028), constructed here so
-  // its lifetime is the extension's own and every panel it opens is disposed
-  // on deactivation via `context.subscriptions` (wired inside
-  // `registerDataExplorer`, which owns the command that calls `.open`).
-  const dataViewerPanels = new DataViewerPanelManager(context.extensionUri, {
-    log: output,
-  });
 
   // Phase 7c-ii: the table properties/columns panel manager — fully static
   // (`src/data/tablePropertiesPanel.ts`), so unlike `dataViewerPanels` above

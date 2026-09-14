@@ -525,13 +525,112 @@ integration passing (`ELECTRON_RUN_AS_NODE` env-strip workaround, same
 long-standing quirk, not a regression), `tsc --noEmit`/`prettier --check`
 clean.
 
-☐ **8c — CAS tables in the data viewer.**
+☑ **8c — CAS tables in the data viewer.** Code-complete 2026-09-13. 7b's own
+React/ag-grid decision (done, Phase 7) unblocked this slice; a fresh probe
+pass (Findings 8.11–8.13) settled the real design question before any code —
+a CAS table's row data lives at the end of a `casManagement` →
+Data Tables API → `rowSets` relation chain, not in `casManagement` itself,
+and its sort/filter mechanism (plain query parameters, every request
+independent) is materially simpler than `LibraryAdapter`'s own
+view-creation dance.
 
-- ☐ Blocked on 7b's React/ag-grid-vs-hand-rolled decision existing to extend
-  — do not start designing this slice before that decision is made.
-- ☐ Paginated datasource backed by `casManagement`'s table/column/row
-  endpoints, following whatever shape 7b established for
-  `DataAccessApi`'s equivalent.
+- ☑ Blocked on 7b's React/ag-grid-vs-hand-rolled decision existing to
+  extend — **unblocked**, Phase 7 (7b/7c) is fully complete.
+- ☑ **Architecture decision, made with Sean before code (2026-09-13):
+  generalize `DataViewerPanelManager`/`OpenTablePanel` behind a small
+  `TableSource` interface (`src/data/tableSource.ts`), rather than fork a
+  second, near-duplicate panel or force CAS through Library's view-creation
+  machinery.** `LibraryAdapter`'s own view-creation/reuse/discard logic moved,
+  unchanged in behaviour, into a new `src/data/librarySource.ts`
+  (`LibraryTableSource`); `src/cas/casTableSource.ts`'s `CasTableSource` is a
+  thin, direct pass-through with no view state of its own, since Finding 8.12
+  found none is needed. `OpenTablePanel` itself now knows nothing about
+  either backend — it tracks only the (sort, filter) pair a reply should be
+  checked against for staleness, moved from view-creation-timing to
+  request-receipt-timing without changing the race behaviour six existing
+  tests already pinned. `dataViewerModel.ts`'s wire protocol
+  (`toWireColumns`/`toWireRows`) now reads `tableSource.ts`'s structural
+  `SourceColumn`/`SourceRow` shapes rather than `src/data/types.ts`'s
+  concrete ones directly, so it needs no CAS-specific branch either — both
+  `Column`/`RowItem` and the new `CasColumnItem`/`CasRowItem` already satisfy
+  the narrower shape.
+- ☑ `CasAdapter.openTable`/`getRows` (`src/cas/adapter.ts`) — `openTable`
+  loads an unloaded table first (the same gate `getColumns` already has),
+  follows the table's own `dataTable` relation to the Data Tables API, and
+  reads that representation's own `rows` relation into a `CasTableDetail`
+  (Finding 8.11); `getRows` builds `start`/`limit`/`sortBy`/`where=` query
+  parameters onto that link directly, no view of any kind (Finding 8.12).
+- ☑ A table node's own click/context-menu command,
+  `pythonOnViya.openCasTable` (`src/cas/casTree.ts`/`casExplorer.ts`,
+  `package.json`'s `view/item/context` entry) — the same one-argument
+  `command` shape `src/data/dataTree.ts`'s `pythonOnViya.openTable` already
+  established, opening the same shared `DataViewerPanelManager` instance
+  (constructed once in `src/extension.ts`, now built before
+  `registerCasExplorer` so both trees' own commands can share it) rather than
+  a second panel manager.
+- ☑ Test coverage: `test/unit/cas-adapter.test.ts` gained `openTable`/
+  `getRows` cases against two new fixtures (`test/fixtures/cas/data-table.json`,
+  `rows.json`, scrubbed from Findings 8.11/8.12's own probe shapes); a new
+  `test/integration/cas/cas-data-viewer.test.ts` exercises
+  `DataViewerPanelManager` opening a CAS table end to end (JIT-load, combined
+  sort+filter, `rowsError`, reveal-existing-panel, a no-op `close`);
+  `test/integration/data/data-viewer-panel.test.ts` (7b/7c, Library-backed)
+  updated to construct a `LibraryTableSource` rather than call the old
+  `(TableItem, LibraryAdapter)` signature — no behavioural change, every
+  existing case (including the view-creation race and dispose-time cleanup
+  tests) still passes unmodified in substance.
+
+`npm run coverage`/verify (Sean, 2026-09-13): 1675 unit tests passing,
+coverage 95.91%/95.46%/95.75%/95.91% lines/branches/functions/statements
+(`.c8rc.json`'s thresholds — 95.8/95.4/95.6/95.8 — cleared, no ratchet
+raise needed); `src/cas/casTableSource.ts` and `src/data/librarySource.ts`
+added to `.c8rc.json`'s exclude list (both import `vscode`, exercised at the
+integration tier instead) and `src/data/tableSource.ts` (types-only, compiles
+to an empty file) added alongside them, per `check-coverage-scope.mjs`'s own
+gate. `npm run test:integration`: 403 passing, including the 8 new
+`cas-data-viewer.test.ts` cases. `npm run check:docs` green — regenerated
+`docs/reference/commands.md` to add the new `openCasTable` entry.
+
+**Adversarial self-review, run before this PR opens (2026-09-13) — no
+blocking findings.** Checked and confirmed solid: every failure branch in
+`CasAdapter.openTable`/`getRows` has a dedicated unit test; the
+`OpenTablePanel` refactor preserves 7b/7c's own concurrency guarantees
+unchanged (the stale-request-still-gets-a-reply rule, the dispose-time
+`AbortController`, `LibraryTableSource.ensureReadTargetChain`'s own
+view-creation-race serialization, and `discardView`'s logging responsibility
+migrating from `OpenTablePanel` to `LibraryTableSource` in lockstep with the
+tests that assert on it); `getRows`'s `sortBy`/`where` query parameters are
+`encodeURIComponent`-escaped; the `TableSource`/`SourceColumn`/`SourceRow`/
+`SourceSortSpec` structural-typing seam keeps `src/cas/` and `src/data/`
+decoupled, as this project's conventions require, with neither importing
+from the other; `pythonOnViya.openCasTable` matches `openTable`'s own
+one-argument command shape, uses `l10n.t()`, and is `.catch()`-guarded rather
+than bare `void`; every new file carries the project's own copyright header.
+Two non-blocking observations, neither requiring a code change: the new CAS
+types' doc comments cite findings densely (a deliberate convention here, not
+flagged as excessive); `STATUS.md`'s own "review not yet run" note (written
+before this pass) is now corrected.
+
+**Codex review on the open PR (#171) found one real, blocking issue**: the
+`TableSource.key` `CasTableSource` builds only included
+`server.caslib.table`, not the profile/endpoint — unlike `LibraryTableSource`'s
+own `${profileId}\n...` key — so switching to a different profile or endpoint
+exposing a same-named server/caslib/table would have revealed a panel still
+bound to the previous deployment's `CasAdapter`. Fixed by giving `CasAdapter`
+its own `endpoint` field (set from `CasSession.adapterFor`'s own cache key)
+and folding it into `CasTableSource.key`, mirroring `LibraryTableSource`;
+covered by a new regression test in `cas-data-viewer.test.ts` opening the same
+table names against two different endpoints and asserting neither reveals the
+other's panel. The same review's second, non-blocking observation — that the
+`TableSource` generalization is architecture-decision-weight and, unlike every
+other decision of that weight in this project, had no ADR of its own — is now
+[ADR-0034](../adr/0034-table-source-abstraction.md).
+
+**Left open, deliberately, not settled by this slice:** CSV export for a CAS
+table (Finding 8.13's own closing note — `rowSets` may or may not offer a
+`rowsAsCSV`-equivalent relation; nobody has looked), and whether the CAS-side
+ephemeral per-request sessions Finding 8.13 observed are ever cleaned up
+automatically.
 
 ---
 
@@ -809,3 +908,119 @@ the Plan section flagged as undecided (no session-scoped caslib exists on
 differently from the single connections Finding 8.5 tested. All remain
 8b implementation-time probes (or a later slice's, for the session-scoped
 caslib question), not settled here.
+
+**Finding 8.11 — decisive, read-only, probed at 8c's own start (2026-09-13,
+`verde`): a CAS table's row data lives in neither `casManagement` nor a
+single follow-up hop, but at the end of a three-service chain, and the first
+hop is present on every table regardless of load state.** `casManagement`'s
+own apiMeta (`GET /casManagement/`) lists `getColumn`/`getColumns`/
+`getDistinctCount`/`getDistinctValues`/`getFrequency`/`getSummaryStatistics`
+among its relations but nothing that reads a row of data — confirmed by
+listing every relation name the root offers, not by absence alone. A table's
+own `casManagement` listing entry (`GET .../caslibs/{caslib}/tables`, the
+same collection Finding 8.2 already reads) carries a `dataTable` relation
+neither Finding 8.1 nor 8.2 recorded (both predate 8c's own row-data
+question): `GET .../tables/{table}` on `Formats.USERFORMATS3` (`unloaded`)
+returned it alongside `self`/`columns`/`updateState`/`delete` — **present on
+an unloaded table exactly as on a loaded one**, unlike the `columns` relation
+Finding 8.3 already found gated by load state. Following `dataTable`
+(`GET /dataTables/dataSources/cas~fs~{server}~fs~{caslib}/tables/{table}`,
+`Accept: application/vnd.sas.data.table+json` — reaching it directly returned
+a bare `302` to `/casManagement/dataSources/...` on the identical path
+segment; following the redirect, or requesting the `/dataTables/...` path
+directly with `-L`, both land on the same representation) returns a flat body
+(`name`/`providerId`/`dataSourceId`/`attributes`/`links`; no `rowCount`/
+`columnCount` at this level, unlike `casManagement`'s own table
+representation) whose own `links[]` carries the relation that actually reaches
+row data: `rows`, pointing at a **fourth** URI namespace,
+`/rowSets/tables/cas~fs~{server}~fs~{caslib}~fs~{table}/rows`. **Documented:**
+the CAS Management API's own reference names none of `dataTables`/`rowSets`
+at all — this chain is undocumented there, consistent with `casManagement`
+and the separate Data Tables/Row Sets APIs being different SAS REST services
+entirely. **Observed (Viya 4, 2026-09-13):** the chain above, on a table
+already loaded (`SystemData.SASVIYATYPES`, no mutation needed) and confirmed
+present-but-gated on an unloaded one (below). `src/cas/types.ts`'s
+`DATA_TABLE_REL`/`ROWS_REL` and `CasAdapter.openTable` are built from this
+finding directly.
+
+**Load-gating on the row-data path mirrors, but does not repeat, Finding
+8.3's shape.** `GET .../rowSets/tables/.../rows` against an *unloaded* table
+(`Formats.USERFORMATS3`) answered **`409`** — `"A table could not be
+loaded"` — not the `404` Finding 8.3 recorded for `casManagement`'s own
+`columns` relation on the same kind of table. The Data Tables API's *own*
+`columns` relation (a different, richer column listing than `casManagement`'s
+— `version`/`name`/`index`/`type`/`rawLength`/`formattedLength`/`indexed`,
+confirmed against `SystemData.SASVIYATYPES`, already loaded) does 404 exactly
+like Finding 8.3's. **8c does not use this second column listing at all** —
+`CasAdapter.openTable`'s own doc comment records the decision: `getColumns`
+(8a, already built, already gated on `table.state`) is reused unmodified for
+the viewer's own column definitions, since nothing in this project's `Column`
+vocabulary needs the extra fields the Data Tables API's richer listing
+carries. `CasAdapter.openTable` loads the table first via the same
+`casManagement` `updateState` PUT `getColumns` already uses (Finding 8.8) —
+inferred correct rather than independently re-probed, since both relations
+gate on the identical underlying CAS-side load state, and always stamps the
+returned `CasTableDetail.state` as `"loaded"` regardless of whether a load
+happened or the table already was, so a caller never re-triggers a redundant
+one.
+
+**Finding 8.12 — decisive, read-only: the `rows` collection accepts sort and
+filter as plain query parameters, together, in a single request, and needs no
+server-side view of any kind.** `GET .../rowSets/tables/.../rows?limit=5`
+(against `SystemData.SASVIYATYPES`, 177 rows, already loaded) returned
+`{version, name: "rows", accept: "application/vnd.sas.data.row", start,
+limit, count, items: [{version, cells: [...]}], links: [self, collection,
+next, last, up, sessionScoped, session]}` — structurally identical to
+`DataAccessApi`'s own rows collection (Finding 7.1), positional `cells`
+confirmed to align with the Data Tables API's own `columns` collection order.
+**`count` stayed populated at every combination tried** — plain, filtered
+(`where=Portfolio='Foundation'` → `count: 50`), sorted
+(`sortBy=Portfolio:descending`), and sorted-and-filtered together
+(`sortBy=DisplayName:ascending&where=Portfolio='Foundation'` → `count: 50`,
+correctly ordered) — **unlike** `DataAccessApi`'s own behaviour, where Finding
+7.15/7.17 found `count` disappears the moment either a filter or a
+sort-created view is involved. `sortBy` takes `key:direction`, comma-joined
+for more than one column (confirmed: `sortBy=Portfolio:ascending,
+DisplayName:descending` correctly sorted by the first key with the second
+breaking ties, in the specified directions) — a query-string encoding, not
+`DataAccessApi`'s own JSON request-body array. **No `sessionId` query
+parameter was needed anywhere in this chain** (mirroring Finding 8.2's
+casManagement-browsing reading), and no `createView`/`deleteView`-equivalent
+call exists at all: every `rows` request is independent and stateless from
+the caller's own point of view. This is the finding
+`CasAdapter.getRows`/`src/cas/casTableSource.ts`'s own doc comments cite for
+why 8c needed none of `LibraryAdapter`/`LibraryTableSource`'s view-creation
+machinery — `docs/phases/phase-8.md`'s own Plan section's 8c bullet expected
+this slice to follow "whatever shape 7b/7c established," and the sort/filter
+mechanism turned out simpler than that shape, not equivalent to it.
+
+**Finding 8.13 — observed but not fully characterised: a `rows` request
+causes the server to create a distinct, ephemeral CAS session per request,
+visible in the response's own `session` link, with no `sessionId` the caller
+ever supplies or manages.** Two `rows` requests against the same table,
+seconds apart, each carried a `links[].session` entry
+(`/dataSources/providers/cas/sources/cas-shared-default/sessions/{uuid}`)
+with a **different** UUID each time — confirmed by fetching the same window
+twice and comparing. Nothing in this project's own code creates, tracks, or
+closes any of these sessions; the `rows` request that creates one also reads
+its answer in the same round trip, and this project never fetches or acts on
+the `session` link itself. **Not settled here:** whether these sessions are
+cleaned up server-side automatically (a reasonable assumption for an
+ephemeral per-request resource, not independently confirmed), and whether a
+very fast sequence of scroll-triggered `rows` requests (a real ag-grid
+infinite-scroll pattern) could accumulate enough of them to matter on a
+resource-constrained deployment. This project's own client makes no
+`createSession`/`deleteSession` call of any kind for this path — if these
+sessions ever do need active management, that is undiscovered scope, not
+something 8c's own code silently papers over.
+
+**Not probed this session (8c), left open:** whether the CAS-side ephemeral
+sessions Finding 8.13 observed are ever cleaned up automatically (needs a
+CAS-admin-level introspection tool this project's own read-only probing
+cannot reach); a genuine second Viya 4 cadence/deployment for this chain
+specifically (`dataTable`/`rows`/`sortBy`/`where=` were all probed only
+against `verde`, the same single-cadence caveat every `casManagement` finding
+in this phase file already carries); and CSV export for a CAS table, which
+8c's own Runbook scope (below) does not include — `rowSets` may or may not
+offer a CSV-typed sibling relation the way `DataAccessApi`'s own
+`rowsAsCSV` does (Finding 7.15/7.20); nobody has looked.

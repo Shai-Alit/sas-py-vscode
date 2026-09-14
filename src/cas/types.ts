@@ -34,6 +34,19 @@
  * `CasTableItem.state` carries the listing's own `state` field so
  * `CasAdapter.getColumns` (`adapter.ts`) can check it before deciding whether
  * to load first — this module only reads the field, it does not act on it.
+ *
+ * ## 8c: a table's row data lives in a third service, not `casManagement`
+ *
+ * Findings 8.11/8.12 (`docs/phases/phase-8.md`): `casManagement` has no
+ * relation that reaches row data at all. A table's own listing entry carries
+ * a `dataTable` relation into a separate Data Tables API
+ * (`/dataTables/dataSources/cas~fs~{server}~fs~{caslib}/tables/{table}`),
+ * whose own representation carries the `rows` relation into a *fourth*
+ * service, `rowSets` (`/rowSets/tables/cas~fs~{server}~fs~{caslib}~fs~{table}/rows`).
+ * {@link CasTableDetail} is what `CasAdapter.openTable` resolves that chain
+ * down to — the one extra field ({@link CasTableDetail.rowsLink}) a table
+ * needs once it is opened for viewing, on top of everything {@link
+ * CasTableItem} already carries for the tree.
  */
 
 import { readLinks, type Link } from "../wire/links";
@@ -72,6 +85,22 @@ export const LOAD_REL = "updateState";
  * confirms the shape it resolves to. 8b's own relation: nothing before it
  * ever follows this link. */
 export const CONNECTION_REL = "connection";
+
+/** The relation on a table's own `casManagement` listing entry that reaches
+ * its representation in the separate Data Tables API (`/dataTables/...`) —
+ * Finding 8.11: present on every table entry regardless of load state, and
+ * that representation's own `rows` link (Finding 8.12) is the only way to
+ * read a CAS table's row data at all, since `casManagement` itself has no
+ * row-data relation of any kind. 8c's own relation: nothing before it ever
+ * follows this link. */
+export const DATA_TABLE_REL = "dataTable";
+
+/** The relation on a Data Tables API table representation (reached via
+ * {@link DATA_TABLE_REL}) that reaches its row data, in the separate
+ * `rowSets` service — Finding 8.12. Same relation name as {@link
+ * COLUMNS_REL}'s sibling on a different resource: `casManagement`'s own
+ * table listing entry has no `rows` relation of its own. */
+export const ROWS_REL = "rows";
 
 /** A CAS server — `cas-shared-default` on every deployment probed so far
  * (Finding 8.1), but this project has never assumed there is exactly one. */
@@ -112,6 +141,61 @@ export interface CasTableItem {
   readonly rowCount?: number | undefined;
   readonly columnCount?: number | undefined;
   readonly links: readonly Link[];
+}
+
+/**
+ * A table opened for viewing (8c) — `CasTableItem` plus the `rowsLink`
+ * {@link import("./adapter").CasAdapter.getRows} needs, resolved by following
+ * {@link DATA_TABLE_REL} to the Data Tables API and reading its own {@link
+ * ROWS_REL} (Findings 8.11/8.12). Extends `CasTableItem` rather than
+ * introducing a parallel shape: `CasAdapter.getColumns` already works against
+ * anything carrying a `CasTableItem`'s `links`/`state`, and a `CasTableDetail`
+ * still does (its own `columns` relation is untouched — 8c reuses 8a's
+ * existing `getColumns`, it does not re-fetch a second, richer column
+ * listing from the Data Tables API for a shape this project does not need).
+ *
+ * `state` is always `"loaded"` here, even on a `CasTableDetail` returned for
+ * a table that was `"unloaded"` when {@link
+ * import("./adapter").CasAdapter.openTable} was called — `openTable` loads it
+ * first (the same gate `getColumns` already has), so by the time this value
+ * exists the table always is, and stamping it here (rather than carrying the
+ * possibly-stale listing value forward) means a caller never re-triggers a
+ * redundant load.
+ */
+export interface CasTableDetail extends CasTableItem {
+  readonly rowsLink: Link;
+}
+
+/** One row of CAS table data — an ordered array of cell values, positionally
+ * matching the table's own column order, the same `{ cells: [...], version }`
+ * shape (Finding 8.12) `src/data/types.ts`'s `RowItem` reads for a Compute
+ * session table's rows. Declared separately rather than imported from there:
+ * this module stays independent of `src/data/`, per its own top-of-file doc
+ * comment, even though the two wire shapes happen to agree. */
+export interface CasRowItem {
+  readonly cells: readonly unknown[];
+}
+
+/** One column to sort a table's rows by, and the direction — Finding 8.13:
+ * unlike `src/data/types.ts`'s identically-shaped `SortSpec` (a `createView`
+ * request body's own array entry), this one is serialized as a
+ * `sortBy=key:direction` query-string fragment, comma-joined for more than
+ * one column (`CasAdapter.getRows`) — there is no request body and no
+ * server-side view involved for a CAS table's sort at all. */
+export interface CasSortSpec {
+  readonly key: string;
+  readonly direction: "ascending" | "descending";
+}
+
+/** Reads one entry of a table's `rows` collection (Finding 8.12). An entry
+ * with no `cells` array is dropped by the caller, the same tolerance {@link
+ * readCasColumnItem} gives a malformed member. */
+export function readCasRowItem(value: unknown): CasRowItem | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Record<string, unknown>;
+  const cells = raw.cells;
+  if (!Array.isArray(cells)) return undefined;
+  return { cells: cells as readonly unknown[] };
 }
 
 /** One column of a loaded CAS table (Finding 8.8). A narrower shape than

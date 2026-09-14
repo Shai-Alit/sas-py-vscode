@@ -363,9 +363,27 @@ recommendation, not a dependency lock._
   headless Node instead of the real app — surfacing as "bad option:
   --disable-extensions" from V8's own flag parser, not from VS Code. Unset it
   before invoking `node out/test/integration/runTest.js` directly and the
-  run behaves normally. **Adversarial self-review: pending — handed to Sean
-  before any push, per this project's standing rule; this entry will be
-  updated once it returns.**
+  run behaves normally.
+
+  **Adversarial self-review: run before any push, no blocking findings.**
+  Two non-blocking observations, both verified independently rather than
+  taken on faith: `controller.test.ts` opens a notebook editor via
+  `showNotebookDocument` and never closes it — checked against every other
+  file under `test/integration/` for an assumption that no notebook editors
+  are open, found none, so left as is (matches existing convention: no
+  integration test in this repo closes editors it opens); the polling
+  loop's caught error is retry-diagnostics inside a test, not a swallowed
+  error in production code, and the reviewer flagged it only to be explicit
+  about why it doesn't count against the "no swallowing catch blocks"
+  priority. Nothing folded into the branch as a result.
+
+  **Manual test items added**, not yet run:
+  `docs/dev/manual-tests/phase-9.md` 9.1–9.5 — the kernel picker entry
+  coexisting with `ms-toolsai.jupyter` rather than conflicting with it
+  (something the automated suite cannot check, since it always runs with
+  `--disable-extensions`), the placeholder error rendering for real in the
+  notebook UI, multi-cell behaviour, no-Viya-connection-needed, and theme
+  legibility.
 
 ☐ **9b — Controller + execution.**
 

@@ -274,6 +274,69 @@ describe("readViyaError", () => {
     }
   });
 
+  it("Finding 8.15: prefers an ERROR:-prefixed entry over an opaque code that comes first", () => {
+    // CAS's own details[] shape, probed live 2026-09-14 against a real
+    // WHERE-clause resolve failure: an opaque "N-N-N: 0xHEX:SYMBOL"
+    // diagnostic code sits first, ahead of the actual parser complaint.
+    // Picking the old "first non-path/non-correlator entry" would surface
+    // the code, not the message a user could act on.
+    const error = readViyaError(
+      409,
+      JSON.stringify({
+        version: 2,
+        httpStatusCode: 409,
+        message: "The action was not successful.",
+        details: [
+          "2-6-2710406: 0x887ff996:TKCASDAL_WHERE_RESOLVEERROR",
+          "ERROR: The WHERE clause ''Type'>5' could not be resolved.",
+          "ERROR: Failure opening table 'SASVIYATYPES'",
+          "ERROR: The action stopped due to errors.",
+          "path: /casRowSets/tables/cas~fs~cas-shared-default~fs~SystemData~fs~SASVIYATYPES/rows",
+          "correlator: 1066d340-0f0e-4098-92ba-492a52a5ce81",
+        ],
+      }),
+    );
+    assert.deepEqual(error, {
+      status: 409,
+      message: "The action was not successful.",
+      detail: "ERROR: The WHERE clause ''Type'>5' could not be resolved.",
+      correlator: "1066d340-0f0e-4098-92ba-492a52a5ce81",
+    });
+  });
+
+  it("Finding 8.15: the ERROR: preference also applies inside errors[0].details", () => {
+    const error = readViyaError(
+      409,
+      JSON.stringify({
+        details: ["path: /top", "correlator: top-correlator"],
+        errors: [
+          {
+            details: [
+              "2-6-2720327: 0x88bfc147:TKCASA_GEN_TABLE_NOT_LOADED",
+              "ERROR: The file or path 'COSTCHANGE' is not available in the file system.",
+              "ERROR: Table 'COSTCHANGE' could not be loaded.",
+            ],
+          },
+        ],
+      }),
+    );
+    assert.equal(
+      error.detail,
+      "ERROR: The file or path 'COSTCHANGE' is not available in the file system.",
+    );
+  });
+
+  it("falls back to the first entry when nothing is ERROR:-prefixed", () => {
+    // Compute's own shape (Finding 17) never carries this prefix — confirms
+    // the ERROR:-preference above is additive, not a behaviour change for
+    // every other service reusing this reader.
+    const error = readViyaError(
+      404,
+      JSON.stringify({ details: ["a plain sentence, no prefix at all"] }),
+    );
+    assert.equal(error.detail, "a plain sentence, no prefix at all");
+  });
+
   it("skips details entries that are not strings", () => {
     assert.deepEqual(
       readViyaError(404, JSON.stringify({ details: [null, 7, ["x"], "real"] })),

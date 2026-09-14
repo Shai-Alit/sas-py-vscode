@@ -650,6 +650,132 @@ table (Finding 8.13's own closing note — `rowSets` may or may not offer a
 ephemeral per-request sessions Finding 8.13 observed are ever cleaned up
 automatically.
 
+### Post-merge fixes, 2026-09-14
+
+Both found by Sean's own manual test pass against 8c and 8a
+(`docs/dev/manual-tests/phase-8.md`), after both slices had already merged —
+the same "fix found live, not guessed at" discipline 8a's own Finding 8.9 fix
+followed. Neither reopens the punch list above; both are code fixes on top of
+already-shipped, already-ticked slices.
+
+**Bug 1 — opening a CAS table failed with "refused the request (HTTP 302)"
+(manual-test item 8.21).** Root cause: Finding 8.11 had already found, in
+prose, that the `dataTable` relation `302`s to a `casManagement`-namespaced
+path carrying the same representation — but nobody had pinned the literal
+`Location` header, so 8c's own `CasAdapter.openTable` followed the relation
+exactly as documented in `src/cas/types.ts`, and `CasClient.send`
+(`src/cas/client.ts`) had no redirect handling at all, so the `302` fell
+through to the generic non-2xx mapping (`cas-rejected`) with no diagnosable
+detail. Re-probed live (Finding 8.14, above) to pin the exact `Location`
+shape before writing a fix, per `CLAUDE.md`'s "Don't guess about Viya —
+probe it." **Fixed:** `sendRequest` now follows exactly one `GET` redirect,
+resolving the `Location` through the same `resolveHref`/`ForeignLinkError`
+same-deployment check every other followed link already passes — a
+deployment that ever sent an absolute or protocol-relative `Location` would
+be refused exactly as an off-deployment link already is, not silently
+followed. A non-`GET` request is never redirected (nothing in this project
+sends one down this path today; the guard is defensive). Five new unit
+tests in `test/unit/cas-client.test.ts`: the happy-path follow (same bearer
+token and `Accept` header travel on the followed request), a non-`GET`
+request left unfollowed, a foreign-host `Location` refused, a redirect with
+no `Location` falling through to the ordinary non-2xx mapping, and a
+transport failure on the followed request itself mapping to
+`cas-unreachable` and naming the redirect target.
+
+**Bug 2 — a CAS table's icon never flipped from "unloaded" (cloud) to
+loaded (table) after expanding it, without a manual refresh.** Found the same
+session, testing 8a's own tree (not 8c) — expanding a table node runs
+`CasAdapter.getColumns`, which JIT-loads it first (Finding 8.3/8.8) exactly
+as designed, but `src/cas/casTree.ts`'s `getChildren` handed VS Code back
+only the columns; the table node's own `CasTableItem` reference — the one
+`getTreeItem` reads `state` from to pick the icon — was never re-fetched or
+mutated, so it kept reading `"unloaded"` until the user ran **Refresh CAS**
+by hand and the caslib's own table listing was re-read from the server.
+**Fixed:** `getChildren` now checks whether the table was unloaded before
+calling `getColumns`, and — only when that call succeeds — fires
+`onDidChangeTreeData` with a state-updated copy of the item (`{ ...table,
+state: "loaded" }`, the same shape `CasAdapter.openTable`'s own doc comment
+already establishes is correct post-load). VS Code matches the refreshed
+node to the existing row by `nodeId`, not by object reference, so no extra
+network round trip is needed to re-list the caslib. New file
+`test/integration/cas/tree.test.ts` (`casTree.ts` imports `vscode` and has
+no prior test of any kind, unit or integration) — four cases: a refresh
+fires with the loaded copy after an unloaded table's columns load
+successfully; no refresh fires for a table that was already loaded; no
+refresh fires when `getColumns` fails; `getChildren` never throws with no
+active deployment.
+
+**Refined twice more over PR #173's own review, both non-blocking:** firing
+`onDidChangeTreeData` for a node that is itself mid-expansion matches VS
+Code's own "and its children recursively (if shown)" contract, so a
+re-entrant `getChildren` call for that same node was expected immediately
+after — `getColumnsAndRefreshIcon` now caches the columns it just fetched
+(a `Map<string, readonly CasItem[]>` keyed by `nodeId`) and serves that one
+expected re-entrant call from cache instead of re-hitting
+`adapter.getColumns`, consuming the entry the instant it is read. A second
+pass then asked what happens if that re-entrant call never arrives (the
+node collapsed early, or the view was hidden) — `refresh()` now clears the
+whole cache, bounding the residual staleness window to "a same-session
+re-expand of that exact table with no intervening refresh, sign-in/out, or
+profile switch." Two more regression tests cover the re-entrant-call case
+and the `refresh()`-clears-a-stale-entry case.
+
+**Live re-confirmed 2026-09-14 (Sean): still fails.** Despite the fix (and
+both refinements) passing every unit and integration test written against
+it, the icon does not visibly flip in a real VS Code window. Root cause not
+found this session — `SasCasTreeProvider`'s own logic is exercised directly
+against a fake `EventEmitter` in `test/integration/cas/tree.test.ts`, never
+against a real `vscode.TreeView`, so a gap between "this class does the
+right thing" and "VS Code's real tree redraws from it" cannot be ruled out
+from these tiers alone. Per Sean's own call, not chased further inside this
+PR — **deferred to Phase 10/11 as a known gap**, `docs/dev/manual-tests/
+phase-8.md` item 8.28 marked `[-]` (known gap) rather than reopened as a
+punch-list item, and carried in [`phase-11.md`](phase-11.md).
+
+**Bug 3 — an invalid CAS filter's error message read as an unexplained
+server failure, not a syntax mistake (manual-test item 8.23).** Sean typed
+`'CrHits'>200` (a quoted column name — invalid; the correct form leaves it
+bare, confirmed live against the same table) into the filter box and got
+"The CAS management service refused the request (HTTP 409). See the Python
+on Viya log for details. (2-6-2710405:
+0x887ff995:TKCASDAL_WHERE_PARSEERROR, correlator …)" — technically correct
+(CAS did refuse malformed input, exactly as designed) but indistinguishable
+from a real service failure, even to an experienced Viya user, per Sean's
+own report. Root cause, re-probed live (Finding 8.15, above) rather than
+guessed at: CAS's own `details[]` array puts an opaque `"N-N-N:
+0xHEX:SYMBOL"` diagnostic code first and the actual, actionable parser
+sentence (`"ERROR: The WHERE clause '…' could not be resolved."`) after it —
+the reverse of Compute's own shape (Finding 17), which
+`src/wire/viyaError.ts`'s `readViyaError` was written against and so always
+picked the code. **Fixed:** `readViyaError` (shared by every Viya service
+this project reads an `application/vnd.sas.error+json` envelope from, not a
+CAS-specific file) now prefers the first `ERROR:`-prefixed `details[]` entry
+over whichever entry comes first, falling back to the old "first entry"
+rule when nothing carries that prefix — which is exactly Compute's own
+shape, so its behaviour is unchanged (existing tests for Finding 17 and
+Finding 7.18 both still pass unmodified). Three new unit tests in
+`test/unit/wire-viya-error.test.ts`: the CAS opaque-code-first shape at the
+top-level `details[]`, the same preference applied inside the nested
+`errors[0].details` fallback (Finding 7.18's own path), and a fallback case
+confirming a plain, unprefixed sentence (Compute's shape) still wins when no
+`ERROR:`-prefixed entry exists. **Not a client-side syntax-validation
+feature** — see Finding 8.15's own closing note. This is a message-clarity
+fix, not a behavior change to what CAS accepts or rejects: an invalid filter
+still fails with a `409`, now explained rather than opaque.
+
+`npx tsc --noEmit`/`eslint .`/`prettier --check` clean. `npm run coverage`:
+1711 unit tests passing (3 new, on top of Bug 1/2's already-landed 1708),
+coverage 95.93%/95.45%/95.77%/95.93% statements/branches/functions/lines — every
+`.c8rc.json` threshold cleared, no ratchet change needed, consistent with
+8c's own last-recorded figures. `src/wire/viyaError.ts` itself is 100% on
+all four axes. `npm run test:integration` not re-run for Bug 3 — the change
+is a pure function in a module `test/integration/cas/tree.test.ts` (Bug 2's
+new file) does not touch, and Bugs 1/2's own 416-passing integration run
+already covers this session's only VS Code–extension-host-dependent code.
+**Live re-confirmed 2026-09-14 (Sean): Bugs 1 and 3 (items 8.21, 8.23) both
+pass.** Bug 2 (item 8.28) does not — see its own entry above for the full
+account and the Phase 10/11 deferral.
+
 ---
 
 ## Probe findings
@@ -1042,3 +1168,101 @@ in this phase file already carries); and CSV export for a CAS table, which
 8c's own Runbook scope (below) does not include — `rowSets` may or may not
 offer a CSV-typed sibling relation the way `DataAccessApi`'s own
 `rowsAsCSV` does (Finding 7.15/7.20); nobody has looked.
+
+**Finding 8.14 — decisive, read-only, probed 2026-09-14 (`verde`) after a
+real bug: the `dataTable` relation's `302` (Finding 8.11) carries a
+root-relative, same-host `Location`, never pinned down to the literal header
+before now.** Finding 8.11 recorded the redirect's existence and destination
+in prose only, so 8c shipped (PR #171) without handling it — `CasClient.send`
+treated any non-2xx, the `302` included, as a hard failure, and a live open
+of a CAS table in the data viewer surfaced as an undiagnosable "The CAS
+management service refused the request (HTTP 302)" (Sean's manual test pass,
+`docs/dev/manual-tests/phase-8.md` item 8.21, 2026-09-14). Re-probed directly:
+`GET /dataTables/dataSources/cas~fs~cas-shared-default~fs~SystemData/tables/SASVIYATYPES`
+(`Accept: application/vnd.sas.data.table+json`, a bearer token, redirects not
+followed) answers `302` with `Location:
+/casManagement/dataSources/cas~fs~cas-shared-default~fs~SystemData/tables/SASVIYATYPES`
+— root-relative, same deployment, no scheme or host, and no
+`WWW-Authenticate` or other re-auth signal. Following that path directly with
+the identical bearer token and `Accept` header answers `200` with the Data
+Tables representation Finding 8.11 already described (`rows`/`columns`/
+`updateState` among its links). **Documented:** the CAS Management API's own
+reference names neither `dataTables` nor this redirect at all (Finding
+8.11's own note). **Observed (Viya 4, 2026-09-14):** the `Location` shape
+above — safe to resolve with the same `resolveHref`/`ForeignLinkError`
+same-deployment check every other followed link in this project already
+passes, since it is never absolute or protocol-relative. `src/cas/client.ts`
+now follows exactly one such redirect, only for a `GET`, reusing that check
+rather than teaching `src/auth/transport.ts` to follow redirects generally
+(that module's own "redirects are not followed" default exists to stop a
+bearer token travelling to a host named by a previous response, which a
+root-relative `Location` cannot do, but the mitigation stays defence in depth
+rather than being loosened project-wide for one relation's quirk). See this
+phase file's Runbook, "Post-merge fixes, 2026-09-14" below, for the code
+change.
+
+**Finding 8.15 — decisive, read-only, probed 2026-09-14 (`verde`) after a
+second real bug: the `rowSets` relation redirects too (a second, independent
+`302` from Finding 8.14's), and CAS's own error `details[]` puts an opaque
+diagnostic code before the human-readable sentence, not after.** Sean's own
+manual test pass (`docs/dev/manual-tests/phase-8.md` item 8.23, 2026-09-14)
+typed `'CrHits'>200` into the filter box against `P_FORD.BASEBALL` — a
+genuinely invalid `where=` clause (SAS WHERE-clause syntax leaves a column
+name bare; Sean confirmed live that `CrHits>200`, unquoted, works correctly)
+— and got back "The CAS management service refused the request (HTTP 409).
+See the Python on Viya log for details. (2-6-2710405:
+0x887ff995:TKCASDAL_WHERE_PARSEERROR, correlator …)" in the panel. CAS was
+doing exactly what it should — refusing malformed input — but the message
+this project showed read as an unexplained server failure, indistinguishable
+from a real one even to an experienced Viya user, with no hint that the
+filter's own syntax was the cause.
+
+Two things probed directly, against the already-loaded
+`SystemData.SASVIYATYPES` table (avoiding a mutating JIT-load `PUT` for this
+probe):
+
+1. `GET /rowSets/tables/cas~fs~cas-shared-default~fs~SystemData~fs~SASVIYATYPES/rows`
+   — the `rows` relation `CasAdapter.getRows` reads off a table's Data Tables
+   representation — **also** answered `302`, with `Location:
+   /casRowSets/tables/cas~fs~cas-shared-default~fs~SystemData~fs~SASVIYATYPES/rows`,
+   root-relative and same-deployment like Finding 8.14's. This is a second,
+   independent redirect on a second endpoint — not a re-observation of
+   8.11/8.14's `dataTable` one — and it was already followed correctly by
+   Bug 1's fix (above) purely because that fix follows *any* `GET` redirect
+   generically rather than special-casing the `dataTable` relation by name;
+   nothing further was needed here. Recorded so the next session does not
+   mistake this for the same redirect Finding 8.14 already pinned.
+2. `GET .../rows?where=%27Type%27%3E5` (a quoted-column-name clause, the same
+   shape as Sean's own `'CrHits'>200`) against that redirect's destination
+   answered `409`:
+   ```json
+   {"version":2,"httpStatusCode":409,"message":"The action was not successful.",
+    "details":["2-6-2710406: 0x887ff996:TKCASDAL_WHERE_RESOLVEERROR",
+     "ERROR: The WHERE clause ''Type'>5' could not be resolved.",
+     "ERROR: Failure opening table 'SASVIYATYPES'",
+     "ERROR: The action stopped due to errors.",
+     "path: /casRowSets/tables/…/rows","correlator: …"]}
+   ```
+   `details[0]` is an opaque `"N-N-N: 0xHEX:SYMBOL"` diagnostic code, not a
+   sentence — and the actual parser complaint,
+   `"ERROR: The WHERE clause ''Type'>5' could not be resolved."`, is
+   `details[1]`. **Documented:** neither the CAS Management API reference nor
+   Finding 7.18 (Compute's own `details[]` shape, a single human sentence
+   with no code line ahead of it) anticipated this ordering — Finding 7.18's
+   own fix to `src/wire/viyaError.ts` (shared by every Viya service this
+   project reads errors from) took the *first* non-`path:`/non-`correlator:`
+   `details[]` entry, which for Compute is always the human sentence but for
+   CAS is always this opaque code. **Observed (Viya 4, 2026-09-14):** every
+   CAS `details[]` array probed (this WHERE-clause case and a `409`
+   `TKCASA_GEN_TABLE_NOT_LOADED` case hit incidentally while probing) puts
+   its opaque code first and every human-readable line after it prefixed
+   `ERROR:`. **Fixed:** `readViyaError` now prefers the first
+   `ERROR:`-prefixed `details[]` entry, when there is one, over whichever
+   entry happens to come first — Compute's own shape carries no such prefix,
+   so its behaviour (and Finding 17's own test) is unchanged. See this phase
+   file's Runbook, "Post-merge fixes, 2026-09-14" below, for the code change.
+   **Not a client-side syntax-validation feature** — this project does not
+   parse or pre-validate a SAS WHERE clause before sending it (CAS's own
+   parser is the only correct arbiter of its own dialect); the fix is only
+   that CAS's *existing* explanation now reaches the user instead of being
+   discarded.

@@ -32,6 +32,27 @@
  * comes back `undefined` and the caller reads `text` instead — the same
  * `ContentResponse.text`-first design `src/content/client.ts`'s own raw-bytes
  * reply already relies on.
+ *
+ * ## One `GET` redirect is followed, deliberately, against `transport.ts`'s
+ * own "redirects are not followed" default
+ *
+ * Finding 8.11 recorded in prose that the `dataTable` relation's own `href`
+ * (`/dataTables/dataSources/...`) `302`s to a `casManagement`-namespaced
+ * path carrying the identical representation, but never pinned the literal
+ * `Location` header — so 8c shipped without handling it, and a real `GET`
+ * came back as a bare, undiagnosable "refused the request (HTTP 302)"
+ * instead of the table's Data Tables representation (Finding 8.14). Re-probed
+ * live: the `Location` is always a root-relative, same-deployment path
+ * (`/casManagement/dataSources/cas~fs~{server}~fs~{caslib}/tables/{table}`
+ * on this deployment), never an absolute URL — `transport.ts`'s own
+ * redirect-refusal exists to stop a bearer token travelling to a host named
+ * by whatever answered the previous request, and a root-relative `Location`
+ * cannot do that. `sendRequest` below follows **at most one** such redirect,
+ * only for a `GET`, and only after running the identical
+ * {@link resolveHref}/{@link ForeignLinkError} check every other followed
+ * link already passes — so a deployment that ever did send an absolute or
+ * protocol-relative `Location` would be refused exactly as `casManagement`
+ * itself refusing an off-deployment link already is, not silently followed.
  */
 
 import {
@@ -179,6 +200,39 @@ async function sendRequest(
     };
   }
 
+  if (method === "GET" && isRedirect(response.status)) {
+    const location = response.headers.location;
+    if (location !== undefined && location !== "") {
+      let redirectUrl: string;
+      try {
+        redirectUrl = resolveHref(config.root, location);
+      } catch (error) {
+        if (error instanceof ForeignLinkError) {
+          return {
+            ok: false,
+            reason: error.message,
+            problem: { code: "foreign-link", rel: link.rel, href: location },
+          };
+        }
+        throw error;
+      }
+
+      try {
+        response = await transport(redirectUrl, { method, headers, signal });
+        text = await response.text();
+      } catch (error) {
+        return {
+          ok: false,
+          reason: "could not reach the CAS management service",
+          problem: {
+            code: "cas-unreachable",
+            detail: `${method} ${location} — ${messageOf(error)}`,
+          },
+        };
+      }
+    }
+  }
+
   const contentType = response.headers["content-type"];
 
   if (response.status === 401) {
@@ -242,6 +296,22 @@ async function sendRequest(
       body: parsed,
     },
   };
+}
+
+/** Whether `status` is a redirect this module's own doc comment says
+ * `sendRequest` follows once, for a `GET` — Finding 8.11/8.14's `dataTable`
+ * `302`. Every common redirect status is recognised rather than just the one
+ * observed, since nothing about the reasoning is specific to `302` and a
+ * `GET` carries no body for 307/308's own body-preservation distinction to
+ * matter. */
+function isRedirect(status: number): boolean {
+  return (
+    status === 301 ||
+    status === 302 ||
+    status === 303 ||
+    status === 307 ||
+    status === 308
+  );
 }
 
 /** Whether a `Content-Type` promises JSON — the same rule

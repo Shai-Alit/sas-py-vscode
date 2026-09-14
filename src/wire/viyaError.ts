@@ -107,6 +107,54 @@ const PATH_PREFIX = "path:";
 const CORRELATOR_PREFIX = "correlator:";
 
 /**
+ * The prefix CAS's own `details` array puts on every actionable sentence —
+ * probed live 2026-09-14 (Finding 8.15, `docs/phases/phase-8.md`) against a
+ * real WHERE-clause parse failure: `details[0]` was the opaque
+ * `"2-6-2710406: 0x887ff996:TKCASDAL_WHERE_RESOLVEERROR"` diagnostic code,
+ * and the actual parser complaint —
+ * `"ERROR: The WHERE clause ''Type'>5' could not be resolved."` — was
+ * `details[1]`. {@link pickDetail}'s old "first non-path/non-correlator
+ * entry" rule picked the code, so a user who fat-fingered a filter (quoting a
+ * column name that should have been bare) saw only the code and a bare
+ * "refused the request (HTTP 409)" — indistinguishable from a real service
+ * failure, even to an experienced Viya user, and with no clue their own
+ * syntax was the cause. Preferring the first `ERROR:`-prefixed entry, when
+ * there is one, fixes this for CAS while leaving Compute's own shape
+ * (Finding 17: a single human sentence with no `ERROR:` prefix) reading
+ * exactly as before, since {@link pickDetail} falls back to the old rule
+ * whenever no entry carries this prefix.
+ */
+const ERROR_PREFIX = "ERROR:";
+
+/**
+ * The one entry worth surfacing out of a `details` array, after `path:`/
+ * `correlator:` machine entries are set aside — see {@link ERROR_PREFIX}'s
+ * own doc comment for why this prefers an `ERROR:`-prefixed entry over
+ * whichever one happens to come first. Shared between {@link readViyaError}'s
+ * top-level `details` read and its `errors[0].details` fallback (Finding
+ * 7.18), so both read a CAS-shaped array the same way.
+ */
+function pickDetail(entries: readonly unknown[]): string | undefined {
+  let first: string | undefined;
+  let firstError: string | undefined;
+  for (const entry of entries) {
+    if (typeof entry !== "string") continue;
+    const trimmed = entry.trim();
+    if (
+      trimmed.startsWith(CORRELATOR_PREFIX) ||
+      trimmed.startsWith(PATH_PREFIX)
+    ) {
+      continue;
+    }
+    first ??= trimmed;
+    if (firstError === undefined && trimmed.startsWith(ERROR_PREFIX)) {
+      firstError = trimmed;
+    }
+  }
+  return clip(firstError ?? first);
+}
+
+/**
  * Reads a Viya error response into the parts worth repeating.
  *
  * **Total.** It is handed the raw response text and a status, and it always
@@ -159,16 +207,15 @@ export function readViyaError(status: number, body: string): ViyaError {
   let correlator: string | undefined;
   const details: unknown = envelope.details;
   if (Array.isArray(details)) {
-    for (const entry of details as readonly unknown[]) {
+    const entries = details as readonly unknown[];
+    for (const entry of entries) {
       if (typeof entry !== "string") continue;
       const trimmed = entry.trim();
       if (trimmed.startsWith(CORRELATOR_PREFIX)) {
         correlator ??= clip(trimmed.slice(CORRELATOR_PREFIX.length).trim());
-        continue;
       }
-      if (trimmed.startsWith(PATH_PREFIX)) continue;
-      detail ??= clip(trimmed);
     }
+    detail = pickDetail(entries);
   }
 
   // A `createView`/`getRows` validation failure (an invalid `where=` or
@@ -188,17 +235,7 @@ export function readViyaError(status: number, body: string): ViyaError {
         const nestedDetails: unknown = (first as Record<string, unknown>)
           .details;
         if (Array.isArray(nestedDetails)) {
-          for (const entry of nestedDetails as readonly unknown[]) {
-            if (typeof entry !== "string") continue;
-            const trimmed = entry.trim();
-            if (
-              trimmed.startsWith(CORRELATOR_PREFIX) ||
-              trimmed.startsWith(PATH_PREFIX)
-            ) {
-              continue;
-            }
-            detail ??= clip(trimmed);
-          }
+          detail = pickDetail(nestedDetails as readonly unknown[]);
         }
       }
     }

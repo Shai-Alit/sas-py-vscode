@@ -21,6 +21,7 @@ import { registerContentExplorer } from "./content/contentExplorer";
 import { registerDataExplorer } from "./data/dataExplorer";
 import { DataViewerPanelManager } from "./data/dataViewerPanel";
 import { TablePropertiesPanelManager } from "./data/tablePropertiesPanel";
+import { registerNotebookController } from "./notebook/notebookController";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
 import { registerRunCommands } from "./run/commands";
@@ -307,6 +308,12 @@ export function activate(context: vscode.ExtensionContext): void {
     dataViewerPanels,
     tablePropertiesPanels,
   );
+
+  // Phase 9a: a NotebookController against VS Code's own `jupyter-notebook`
+  // type — no serializer of this extension's own, per ADR-0024. The 9a spike
+  // (`phase-9.md`) confirmed this needs no `ms-toolsai.jupyter` dependency.
+  // Real execution against a Viya session is 9b's own slice.
+  registerNotebookController(context, output);
 }
 
 export function deactivate(): void {

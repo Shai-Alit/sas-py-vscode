@@ -12,9 +12,9 @@ type — no serializer of this extension's own
 ([ADR-0024](../../adr/0024-notebooks-are-ipynb-native.md);
 `docs/phases/phase-9.md`'s 9a Runbook entry). This slice does not run
 Python: its `executeHandler` is a deliberate placeholder, since real
-execution against a Viya session is 9b's own slice. **Not yet run** — this
-section is new for Phase 9a and has no prior pass to compare against; every
-box below is a first assertion, not a re-check.
+execution against a Viya session is 9b's own slice. **Run 2026-09-14: all
+five items pass.** This section is new for Phase 9a and had no prior pass to
+compare against; every box below was a first assertion, not a re-check.
 
 **Pre-work:** none — this is the one section in this project's manual tests
 that needs **no** Viya connection, no signed-in profile, and no compute
@@ -25,7 +25,7 @@ suite cannot: that suite always runs with `--disable-extensions`, so it
 proves the controller works with **no** Jupyter extension present, not that
 it behaves sensibly alongside one.
 
-- [ ] **9.1** **"Python on Viya" appears in the kernel picker alongside
+- [x] **9.1** **"Python on Viya" appears in the kernel picker alongside
   Jupyter's own kernels, not instead of them** — create or open any `.ipynb`
   file. Click **Select Kernel** in the top right of the notebook editor (or
   the equivalent prompt on a brand-new notebook).
@@ -34,7 +34,7 @@ it behaves sensibly alongside one.
   release)" — alongside whatever Jupyter kernels `ms-toolsai.jupyter` already
   offers, not replacing them, and with no error dialog just from opening the
   picker.
-- [ ] **9.2** **Selecting it and running a cell reports an honest "not yet",
+- [x] **9.2** **Selecting it and running a cell reports an honest "not yet",
   not a crash or silent nothing** — select **Python on Viya** as the kernel,
   type `print("hello")` in a code cell, then run it (the ▷ gutter button or
   **Run All**).
@@ -42,18 +42,18 @@ it behaves sensibly alongside one.
   cells on SAS Viya isn't implemented yet." — not VS Code's own generic "no
   kernel" error, not a stack trace from this extension, and not an empty
   output with no indication anything happened.
-- [ ] **9.3** **Every cell in a multi-cell notebook gets the same
+- [x] **9.3** **Every cell in a multi-cell notebook gets the same
   placeholder, not just the first** — add a second and third cell, then
   **Run All**.
   **Expect:** all three cells show the same placeholder error, each with its
   own execution order number.
-- [ ] **9.4** **No Viya connection of any kind is needed** — sign out of
+- [x] **9.4** **No Viya connection of any kind is needed** — sign out of
   every profile (or leave none configured), then repeat §9.2.
   **Expect:** identical behaviour — the placeholder error, with no "sign in
   first" or "connect first" message. Unlike every other command this
   extension contributes, notebook execution does not check sign-in state at
   all yet, because it does not talk to Viya at all yet.
-- [ ] **9.5** **Legible in every theme** — with a cell showing the
+- [x] **9.5** **Legible in every theme** — with a cell showing the
   placeholder error, switch VS Code between a light theme, a dark theme, and
   a high-contrast theme.
   **Expect:** the kernel picker entry and the error output both render as

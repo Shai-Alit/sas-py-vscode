@@ -377,7 +377,7 @@ recommendation, not a dependency lock._
   about why it doesn't count against the "no swallowing catch blocks"
   priority. Nothing folded into the branch as a result.
 
-  **Manual test items added**, not yet run:
+  **Manual test items run 2026-09-14 (Sean): all five pass.**
   `docs/dev/manual-tests/phase-9.md` 9.1–9.5 — the kernel picker entry
   coexisting with `ms-toolsai.jupyter` rather than conflicting with it
   (something the automated suite cannot check, since it always runs with

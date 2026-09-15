@@ -124,7 +124,12 @@ extractor matches a line that starts with `## [X.Y.Z]`.
 
 ☐ **D2.** Set `version` in `package.json` to `X.Y.Z`. While here, decide
 whether this release is a `"preview": true` (marketplace shows a preview badge
-and a caveat) — appropriate while the extension is pre-1.0 and evolving.
+and a caveat) — appropriate while the extension is pre-1.0 and evolving. The
+flag comes off at 1.0.0 and not before; the gates are in `PRODUCTION_PLAN.md`
+§8, "Definition of done — 1.0". It ships inside the VSIX, so its removal belongs
+in the release PR itself (D4), not after the tag. Note that this is the
+Marketplace _Preview_ flag, not the pre-release channel — this project has never
+published with `vsce publish --pre-release`, and the two are not interchangeable.
 
 ☐ **D3.** Replace `media/icon.png` if it is still the generated `Py` wordmark
 stopgap. A designed 128×128 PNG, no transparency; keep `galleryBanner.color` in

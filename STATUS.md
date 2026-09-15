@@ -184,13 +184,15 @@ Runbook — see `phase-6.md`'s, `phase-8.md`'s, and `phase-9.md`'s own
   project's own fake-emitter test tiers. Recorded in
   `docs/phases/phase-11.md` and `phase-8.md`'s "Post-merge fixes,
   2026-09-14" Runbook entry.
-- **Hosted docs site** — deliberately **not planned** pre-1.0 (the VitePress
-  build runs as a CI link-check gate; nothing deploys the output). A standalone
+- **Hosted docs site** — deliberately **not planned**, and explicitly *not* a
+  1.0 gate (`PRODUCTION_PLAN.md` §8, "Definition of done — 1.0"). The VitePress
+  build runs as a CI link-check gate; nothing deploys the output. A standalone
   task if ever revisited, not a phase slice.
 
 No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
-issue tracking once past "preview".
+issue tracking once past "preview". That revisit is now a named 1.0 gate — see
+`PRODUCTION_PLAN.md` §8, "Definition of done — 1.0".
 
 ## Finding-numbering scheme changed 2026-09-09
 

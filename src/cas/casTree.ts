@@ -81,6 +81,32 @@ export class SasCasTreeProvider
    */
   private readonly justLoaded = new Map<string, readonly CasItem[]>();
 
+  /**
+   * Tables this provider has watched `CasAdapter.getColumns` JIT-load during
+   * this session, keyed by {@link nodeId} — consulted by {@link getTreeItem}
+   * so the node draws the "loaded" icon even though the `CasTableItem` VS
+   * Code still holds carries the listing's own stale `state: "unloaded"`.
+   *
+   * **This exists because `onDidChangeTreeData` matches by object identity,
+   * not by `TreeItem.id`** — the correction to PR #173's own stated premise,
+   * and the reason that fix passed every test yet never worked live (Sean,
+   * 2026-09-14). VS Code's `ExtHostTreeView` keeps `_nodes: Map<T, TreeNode>`
+   * keyed by the extension's own element *object*, and `_getHandlesToRefresh`
+   * starts with `elements.map(element => this._nodes.get(element))`. An
+   * element the extension never handed out — a `{ ...table, state: "loaded" }`
+   * spread copy, which is what PR #173 fired — is simply absent from that
+   * map, so it yields no handle, `_refresh` finds nothing to refresh, and the
+   * event is dropped with no error. `TreeItem.id` only shapes the *handle
+   * string* of a node already found by identity; it is never used to look one
+   * up. So the event must fire with the very object `getChildren` was handed,
+   * and the new state has to travel out-of-band — which is this set.
+   *
+   * Cleared by {@link refresh} along with {@link justLoaded}: once the caslib
+   * is re-listed, the server's own `state` is authoritative again and an
+   * override could only lie (a table unloaded server-side since).
+   */
+  private readonly loadedTables = new Set<string>();
+
   dispose(): void {
     this.changed.dispose();
   }
@@ -101,14 +127,26 @@ export class SasCasTreeProvider
    * sign-out. Also drops any {@link justLoaded} entry still waiting for its
    * expected re-entrant `getChildren` call (PR #173 review, second pass) —
    * whatever a full re-read produces next is what should render, not a
-   * columns list cached from before this refresh was asked for. */
+   * columns list cached from before this refresh was asked for — and every
+   * {@link loadedTables} override, for the same reason: the re-read carries
+   * the server's own `state`, which outranks anything observed earlier. */
   refresh(): void {
     this.justLoaded.clear();
+    this.loadedTables.clear();
     this.changed.fire(undefined);
   }
 
   getTreeItem(item: CasItem): vscode.TreeItem {
-    const shape = nodePresentationOf(item);
+    // A table this session watched load reads "loaded" here even though the
+    // item's own `state` is the caslib listing's stale value — see
+    // `loadedTables`. The copy never leaves this method: it feeds
+    // `nodePresentationOf` and nothing else, so it can never be mistaken for
+    // an element to fire `onDidChangeTreeData` with.
+    const shape = nodePresentationOf(
+      isCasTable(item) && this.loadedTables.has(nodeId(item))
+        ? { ...item, state: "loaded" }
+        : item,
+    );
     const node = new vscode.TreeItem(
       shape.label,
       shape.expandable
@@ -170,18 +208,24 @@ export class SasCasTreeProvider
    * finding, 2026-09-14**: the icon should flip the moment the load
    * succeeds, with no refresh needed.
    *
-   * Fixed by firing {@link onDidChangeTreeData} with a state-updated copy of
-   * `table` once `getColumns` succeeds — the same `{ ...table, state:
-   * "loaded" }` shape `CasAdapter.openTable`'s own doc comment already
-   * establishes is correct post-load, regardless of whether this call did
-   * the loading or the table already was. VS Code re-renders the node from
-   * this fresh object (matched to the existing row by `nodeId`, not by
-   * reference), so no extra round trip is needed to re-list the caslib — but
-   * firing for a node that is itself mid-expansion is expected to make VS
-   * Code re-invoke `getChildren` for that same node immediately (the API's
-   * own "and its children recursively, if shown" contract); {@link
-   * justLoaded}'s own doc comment covers why that re-entrant call is served
-   * from cache rather than hitting `adapter.getColumns` again.
+   * Fixed by firing {@link onDidChangeTreeData} once `getColumns` succeeds
+   * **with `table` itself — the very object VS Code handed in** — after
+   * recording its {@link nodeId} in {@link loadedTables} so {@link
+   * getTreeItem} draws the loaded icon for it. Firing the identical
+   * reference is not a stylistic preference: `onDidChangeTreeData` resolves
+   * an element through an identity-keyed map, so the state-updated *copy*
+   * PR #173 fired here was dropped without error, which is why that fix
+   * passed every test and still did nothing in a real window. {@link
+   * loadedTables}'s own doc comment has the full account.
+   *
+   * No extra round trip is needed to re-list the caslib — but firing for a
+   * node that is itself mid-expansion is expected to make VS Code re-invoke
+   * `getChildren` for that same node immediately (the API's own "and its
+   * children recursively, if shown" contract); {@link justLoaded}'s own doc
+   * comment covers why that re-entrant call is served from cache rather than
+   * hitting `adapter.getColumns` again. That call now arrives carrying the
+   * same object this one did, so it keys to the same {@link nodeId} — which
+   * is what {@link justLoaded} was already keyed by.
    */
   private async getColumnsAndRefreshIcon(
     adapter: CasAdapter,
@@ -204,7 +248,8 @@ export class SasCasTreeProvider
     }
     if (wasUnloaded) {
       this.justLoaded.set(id, result.value);
-      this.changed.fire({ ...table, state: "loaded" });
+      this.loadedTables.add(id);
+      this.changed.fire(table);
     }
     return [...result.value];
   }

@@ -3,6 +3,7 @@
 
 import assert from "node:assert/strict";
 
+import { ThemeIcon } from "vscode";
 import type * as vscode from "vscode";
 
 import { type CasAdapter } from "../../../src/cas/adapter";
@@ -18,6 +19,16 @@ import { type CasItem, type CasTableItem } from "../../../src/cas/types";
  * Code to redraw the node — the icon stayed "unloaded" (cloud) until the
  * user ran **Refresh CAS** by hand. Mirrors
  * `test/integration/content/tree.test.ts`'s own harness shape.
+ *
+ * **These tests were rewritten after PR #173's fix was found not to work
+ * live.** The originals asserted the fired element was a state-updated
+ * *copy* (`{ ...table, state: "loaded" }`) — which is exactly the defect:
+ * `onDidChangeTreeData` resolves an element through an identity-keyed map,
+ * so a copy the extension never handed out is dropped silently. Asserting
+ * the copy's *shape* could never catch that. The assertions below are on the
+ * two things that actually govern whether the icon flips in a real window:
+ * the fired element is the **identical object** VS Code passed in, and a
+ * subsequent `getTreeItem` for it yields the loaded icon.
  */
 
 function fakeLog(): { channel: vscode.LogOutputChannel; errors: string[] } {
@@ -72,19 +83,85 @@ function makeProvider(adapter: CasAdapter | undefined): {
   return { provider, errors, fired };
 }
 
+/** The `ThemeIcon` id `getTreeItem` chose for an item — `"cloud"` for an
+ * unloaded table, `"table"` for a loaded one (`src/cas/presentation.ts`). */
+function iconOf(provider: SasCasTreeProvider, item: CasItem): string {
+  const { iconPath } = provider.getTreeItem(item);
+  assert.ok(iconPath instanceof ThemeIcon, "expected a ThemeIcon");
+  return iconPath.id;
+}
+
 describe("SasCasTreeProvider", () => {
-  it("fires a refresh with a loaded copy after an unloaded table's columns load", async () => {
+  it("fires a refresh with the identical element after an unloaded table's columns load", async () => {
+    // The regression guard for the defect PR #173 shipped: VS Code resolves a
+    // fired element through `_nodes: Map<T, TreeNode>`, keyed by the object
+    // the extension itself handed out. A `{ ...table, state: "loaded" }` copy
+    // is absent from that map, so `_getHandlesToRefresh` yields no handle and
+    // the event is dropped with no error — the icon never flips, and no test
+    // that checks only the fired element's *shape* can tell.
     const adapter = adapterReturning({ ok: true, value: [] });
     const { provider, fired } = makeProvider(adapter);
+    const node = table({ state: "unloaded" });
 
-    const children = await provider.getChildren(table({ state: "unloaded" }));
+    const children = await provider.getChildren(node);
 
     assert.deepEqual(children, []);
     assert.equal(fired.length, 1);
-    const [refreshed] = fired;
-    assert.ok(refreshed !== undefined);
-    assert.equal((refreshed as CasTableItem).state, "loaded");
-    assert.equal((refreshed as CasTableItem).name, "CARS");
+    assert.strictEqual(
+      fired[0],
+      node,
+      "must fire the very object VS Code handed in — a copy is silently dropped",
+    );
+  });
+
+  it("draws the loaded icon for a table it watched load, without a refresh", async () => {
+    // The user-visible half: `state` on the item VS Code holds is still the
+    // caslib listing's stale "unloaded", so the flip has to come from the
+    // provider's own record of what it watched load.
+    const adapter = adapterReturning({ ok: true, value: [] });
+    const { provider } = makeProvider(adapter);
+    const node = table({ state: "unloaded" });
+
+    assert.equal(iconOf(provider, node), "cloud");
+    await provider.getChildren(node);
+
+    assert.equal(iconOf(provider, node), "table");
+    assert.equal(
+      node.state,
+      "unloaded",
+      "the element itself must not be mutated — VS Code's cache holds this object",
+    );
+  });
+
+  it("drops the loaded-icon override on refresh, deferring to the server's own state", async () => {
+    const adapter = adapterReturning({ ok: true, value: [] });
+    const { provider } = makeProvider(adapter);
+    const node = table({ state: "unloaded" });
+
+    await provider.getChildren(node);
+    assert.equal(iconOf(provider, node), "table");
+
+    provider.refresh();
+
+    assert.equal(
+      iconOf(provider, node),
+      "cloud",
+      "after a re-listing the server's own state is authoritative again",
+    );
+  });
+
+  it("keeps the unloaded icon when getColumns fails", async () => {
+    const adapter = adapterReturning({
+      ok: false,
+      reason: "the CAS management service refused the request",
+      problem: { code: "cas-rejected", error: { status: 404 } },
+    });
+    const { provider } = makeProvider(adapter);
+    const node = table({ state: "unloaded" });
+
+    await provider.getChildren(node);
+
+    assert.equal(iconOf(provider, node), "cloud");
   });
 
   it("PR #173 review: serves VS Code's own re-entrant getChildren call from cache rather than fetching columns twice", async () => {

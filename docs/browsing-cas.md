@@ -18,10 +18,9 @@ A table's icon tells you whether CAS has it loaded into memory: a cloud for
 data at rest, a table icon once it is loaded. Expanding a table to see its
 columns **loads it if it was not already loaded** — CAS has no way to answer
 "what columns does this have" without doing so, so this is a deliberate side
-effect of expanding the node, not an accident. A known gap: the icon does not
-always visibly flip from cloud to table right after this happens in a real VS
-Code window, even though the load itself succeeded — run **Refresh CAS** if
-you want to confirm a table's current state.
+effect of expanding the node, not an accident. The icon flips from cloud to
+table as the columns appear, so you can see that the load happened without
+refreshing anything.
 
 If more than one CAS server exists on your deployment, the tree lists all of
 them; most deployments have exactly one.
@@ -61,10 +60,6 @@ active compute session the same way any run does.
 - **"Sign in to SAS Viya to browse CAS."** You have a profile but no active
   sign-in. Run **Python on Viya: Sign In** — you do not need to connect first,
   just sign in.
-- **A table's icon still shows unloaded after you expanded it.** The load
-  itself happened; this is a known display gap, not a failed load. Refresh CAS
-  to see the current state, or open the table — a table you can open in the
-  grid is loaded regardless of what its icon shows.
 - **Your own CASUSER library is not in the tree.** Expected today — only
   global caslibs are shown; a session-scoped caslib is a known gap for a later
   release.
@@ -87,4 +82,4 @@ active compute session the same way any run does.
 - Probe findings 8.1–8.15 in
   [`docs/phases/phase-8.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-8.md)
   — the live CAS wire shapes this is built from, including the JIT-load
-  behaviour and the icon-refresh gap.
+  behaviour.

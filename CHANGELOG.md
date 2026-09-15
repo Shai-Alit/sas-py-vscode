@@ -27,6 +27,31 @@ called out under **Changed** with a migration note.
   this extension already borrows for everything else it does — never a
   credential you acquire or paste in yourself. See the new [Connecting to CAS
   from Python](docs/cas-python-connection.md) page.
+- **Run `.ipynb` notebooks on SAS Viya.** A new **Python on Viya** kernel
+  appears for any standard Jupyter notebook — VS Code's own built-in
+  notebook support, not a bespoke format and not a dependency on the
+  `ms-toolsai.jupyter` extension. Each notebook gets its own compute
+  session, persisting state across cells the same way a notebook is
+  expected to
+  ([ADR-0024](docs/adr/0024-notebooks-are-ipynb-native.md),
+  [ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)).
+- **Rich, sanitized cell output.** A notebook cell's plots, DataFrames and
+  other rich output render through VS Code's own built-in output
+  renderers, exactly like a local Jupyter kernel's would — `text/html`
+  output is sanitized before it ever reaches the renderer
+  ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)).
+- **Problems-panel entries for a raised notebook cell.** A cell that raises
+  an exception gets the same Problems-panel entry, positioned at the
+  raising line, that a failed **Run File** already gets.
+- **A local/remote Python package comparison, and a way to search it.** The
+  existing **Show Environment** document now also shows a "Local
+  comparison" section — what's installed on the active Viya profile but not
+  locally, what's local-only, and what's installed at a different version
+  on each side, compared against whatever local interpreter the Python
+  extension has selected (when one is selected; this Viya-side extension
+  still needs no local Python to run code). A new **Search Environment**
+  command opens a filterable quick pick over the same package list for a
+  fast lookup, without replacing the existing document.
 
 ### Changed
 

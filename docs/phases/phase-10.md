@@ -337,9 +337,37 @@ and the `commands.ts` changes are `vscode`-importing, so they're exercised
 here rather than at the unit tier — `.c8rc.json`'s exclude list gained
 exactly `localPythonEnvironment.ts`). New dependency:
 `@vscode/python-extension` 1.0.6 (devDependency, pinned exact — bundled by
-esbuild like every other runtime dependency in this project). Adversarial
-self-review pending before this lands — not pushed yet, per `CLAUDE.md`'s
-"before the PR exists" rule.
+esbuild like every other runtime dependency in this project).
+
+**Adversarial self-review, 2026-09-15 (before the PR exists, per
+`CLAUDE.md`).** One real finding: `environmentPanel.ts`'s
+`provideTextDocumentContent` called the new `await
+readActiveLocalEnvironment()`/`diffEnvironments(...)` path with no
+`try`/`catch` around it — `localPythonEnvironment.ts`'s own doc comment
+promises the whole path "degrades to unknown, never a thrown error," but
+that guarantee only actually held for `PythonExtension.api()` itself;
+`getActiveEnvironmentPath()`/`resolveEnvironment()` were called unguarded,
+so an extension-internal error (a misbehaving Conda/Poetry resolver, a
+stale/deleted interpreter) would have propagated out and broken the whole
+`Show environment` document — including the previously-reliable remote
+package list — instead of degrading only the new "Local comparison"
+section. **Fixed**: `readActiveLocalEnvironment`
+(`src/run/localPythonEnvironment.ts`) now wraps the
+`getActiveEnvironmentPath`/`resolveEnvironment` pair in its own
+`try`/`catch`, returning `{ kind: "unknown" }` on any failure from either
+call, matching the doc comment's existing promise rather than only the
+`api()` call. `npm run verify` (1771 unit, same coverage figures above) and
+`npm run test:integration` (436 passing) both re-run green after the fix.
+Everything else the review flagged (l10n coverage, PEP 503 normalisation,
+the `eslint.config.mjs` version-branching-rule workaround for
+`remoteVersion`/`localVersion`, `ensureProbedEnvironment`'s cache-vs-force
+logic, test quality, no secrets/`console.*`/`any`) read as solid — no
+further changes. Manual-test items 10.1–10.5 added to
+`docs/dev/manual-tests/phase-10.md`, including 10.3 as this exact
+regression's own live repro (a deleted interpreter folder must not blank
+the whole document). **Not pushed yet** — per this session's own
+instruction, waiting on Sean to run the manual-test pass before `git push`/
+`gh pr create`.
 
 ---
 

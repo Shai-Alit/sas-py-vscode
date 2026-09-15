@@ -32,7 +32,10 @@
  * `PythonExtension.api()` would find nothing to resolve.
  */
 
-import { PythonExtension } from "@vscode/python-extension";
+import {
+  PythonExtension,
+  type ResolvedEnvironment,
+} from "@vscode/python-extension";
 import * as vscode from "vscode";
 
 import {
@@ -79,8 +82,18 @@ export async function readActiveLocalEnvironment(): Promise<LocalEnvironment> {
   }
 
   const resource = vscode.window.activeTextEditor?.document.uri;
-  const active = api.environments.getActiveEnvironmentPath(resource);
-  const resolved = await api.environments.resolveEnvironment(active);
+  let resolved: ResolvedEnvironment | undefined;
+  try {
+    const active = api.environments.getActiveEnvironmentPath(resource);
+    resolved = await api.environments.resolveEnvironment(active);
+  } catch {
+    // `PythonExtension.api()` succeeding only promises the extension is
+    // installed — a misbehaving Conda/Poetry resolver or an extension-internal
+    // error in either call below is still possible, and this module's own doc
+    // comment promises the whole path degrades to `unknown`, never a thrown
+    // error, for every reason short of `api()` itself failing.
+    return { kind: "unknown" };
+  }
   if (resolved?.version === undefined) return { kind: "unknown" };
 
   const packages = await readLocalPackages(

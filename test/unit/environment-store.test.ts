@@ -51,7 +51,7 @@ const available: RuntimeCapabilities = {
   kind: "available",
   version: "3.12.12",
   executable: "/usr/bin/python3",
-  packages: [{ name: "numpy", version: "2.0.0" }],
+  packages: [{ name: "numpy", version: "2.0.0", importNames: ["numpy"] }],
 };
 
 describe("EnvironmentStore", () => {

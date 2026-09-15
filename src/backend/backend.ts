@@ -277,6 +277,17 @@ export interface BackendCapabilities {
 export interface PythonPackage {
   readonly name: string;
   readonly version: string;
+  /**
+   * The top-level Python `import` name(s) this distribution provides — not
+   * always the same as {@link name} (`Pillow` installs as `PIL`,
+   * `beautifulsoup4` as `bs4`, `PyYAML` as `yaml`). Added for 10b
+   * (`docs/phases/phase-10.md`'s Plan section, Finding 10.2's design
+   * correction): a Pylance stub has to be filed under the name someone
+   * actually writes in an `import` statement, not the PyPI distribution
+   * name, or it resolves nothing. Best-effort, never empty — see
+   * `environment.ts`'s probe source for the fallback chain.
+   */
+  readonly importNames: readonly string[];
 }
 
 /**

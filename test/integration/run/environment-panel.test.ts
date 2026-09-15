@@ -25,7 +25,7 @@ describe("EnvironmentDocumentProvider", () => {
         kind: "available",
         version: "3.12.12 (main)",
         executable: "/usr/bin/python3",
-        packages: [{ name: "numpy", version: "2.0.0" }],
+        packages: [{ name: "numpy", version: "2.0.0", importNames: ["numpy"] }],
       },
       probedAt: Date.parse("2026-08-27T12:00:00Z"),
     };
@@ -96,7 +96,7 @@ describe("EnvironmentDocumentProvider", () => {
         kind: "available",
         version: "3.12",
         executable: "/usr/bin/python3",
-        packages: [{ name: "numpy", version: "2.0.0" }],
+        packages: [{ name: "numpy", version: "2.0.0", importNames: ["numpy"] }],
       },
       probedAt: Date.now(),
     };

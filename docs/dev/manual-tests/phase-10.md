@@ -79,3 +79,116 @@ environment available to select.
   triggering a fresh probe — matching `Show environment`'s own cache-first
   default. Run **Python on Viya: Refresh environment**, then **Search
   environment** again: **Expect** the newly installed package now appears.
+
+## Pylance stub reflection (phase 10b)
+
+`docs/phases/phase-10.md`'s 10b Runbook entry has the full account, and its
+Probe findings section (Findings 10.1/10.2) has the two mechanical questions
+this session settled via the `pyright` CLI rather than a live VS Code window —
+this is the first hands-on confirmation of that behaviour against the real
+Pylance extension rather than its open-source engine alone. A fresh probe (via
+**Show environment** or **Refresh environment info**) writes generated
+catch-all stubs to `.pythonOnViya/typings/` for whatever the Local comparison
+section calls "only on this Viya profile", and points
+`python.analysis.stubPath` at that folder.
+
+**Pre-work:** a workspace folder open (not a single loose file — `stubPath`
+needs one), the Python extension **and** Pylance both installed and active,
+and a Viya profile connected whose package set includes something not
+installed in your local interpreter (or `pip uninstall` one locally that is
+on Viya, to manufacture a `remoteOnly` entry).
+
+- [ ] **10.6** **A `remoteOnly` package's import stops being flagged as fully
+  missing, after a reload** — in a `.py` file in the open workspace, write
+  `import <a Viya-only package's name>`. **(live)** **Expect (before any
+  refresh in this session):** if this is the first probe ever for this
+  profile, no stub exists yet, so the import may still show
+  `reportMissingImports`. Run **Python on Viya: Refresh environment info**.
+  **Expect:** a notification that Pylance stub information was updated and a
+  reload is needed, with a **Reload Window** action button on it (added on
+  adversarial review, `feat/phase-10b-pylance-stub-reflection` — previously
+  prose-only, naming the command but with nothing to click). Click that
+  button rather than running the command from the palette this time.
+  **Expect:** the window reloads, and the same import now shows no error, or
+  at worst a `reportMissingModuleSource` warning ("stub file not found") —
+  never `reportMissingImports`. Dismissing the notification without clicking
+  the button (or running **Developer: Reload Window** from the palette
+  instead) must still work exactly as before — the button is additive, not a
+  replacement for the existing path.
+- [ ] **10.7** **A package that already resolves locally is never stubbed —
+  no regression in real type information** — pick a package installed in
+  *both* your local environment and on Viya (e.g. one already in the
+  "different version locally than on Viya" bucket, or install the same
+  package locally that Viya has). **(live)** **Expect:** after a refresh and
+  reload, that package's own real completions/hover-type information in the
+  editor are unchanged from before this feature existed — no `Any`-typed
+  catch-all behaviour, and no new file for it under
+  `.pythonOnViya/typings/`.
+- [ ] **10.8** **A window reload is genuinely required — a stub-tree change
+  is not picked up live** — with the workspace already open and Pylance
+  already analysing, run **Refresh environment info** for a profile whose
+  remote package set changed since the last probe (add or remove one on the
+  Viya side, or simulate by `pip install`/`pip uninstall`-ing locally to
+  change what counts as `remoteOnly`). **(live)** **Expect:** the editor's
+  diagnostics for an affected import do **not** change until you actually
+  reload the window (or run **Python: Restart Language Server**) —
+  confirming Finding 10.1 holds for the real Pylance extension, not only the
+  `pyright` CLI this session used to establish it.
+- [ ] **10.9** **An already-customised `python.analysis.stubPath` is left
+  untouched, not overwritten** — before connecting, add
+  `"python.analysis.stubPath": "./my-own-stubs"` to the workspace's
+  `.vscode/settings.json` yourself. Run **Refresh environment info**.
+  **(live)** **Expect:** `.vscode/settings.json`'s `stubPath` value is
+  unchanged after the refresh (still `./my-own-stubs`); a notification and a
+  line in the **Python on Viya** output log both name the conflict (added on
+  adversarial review, `feat/phase-10b-pylance-stub-reflection` — the log line
+  alone left the user with no visible reason nothing happened);
+  `.pythonOnViya/typings/` may still be written to disk, but nothing points
+  Pylance at it. Remove the custom setting afterwards to restore the earlier
+  tests' behaviour.
+- [ ] **10.10** **A stale stub is pruned once its package stops being
+  `remoteOnly`** — after §10.6 has generated a stub for some package name,
+  `pip install` that same package locally (or otherwise make it resolve
+  locally), then run **Refresh environment info** again. **(live)** **Expect:**
+  that package's own subfolder under `.pythonOnViya/typings/` is deleted —
+  inspect the folder directly, or confirm after a reload that the import now
+  shows your local install's own real type information rather than the
+  generic catch-all.
+- [ ] **10.11** **No workspace folder open degrades quietly** — open a single
+  `.py` file with **File: Open File** (not a folder), connect a Viya profile,
+  and run **Show environment**. **(live)** **Expect:** the environment
+  document itself renders exactly as before (10.1–10.5 unaffected); no error
+  is shown to the user for the stub sync specifically, though the **Python on
+  Viya** log may note there was no workspace to write stubs into.
+- [ ] **10.12** **A generated stub never shadows the workspace's own source**
+  — adversarial review, `feat/phase-10b-pylance-stub-reflection`: create a
+  folder (or a `.py` file) at the workspace root whose name matches a
+  `remoteOnly` package's own top-level import name — e.g. if `pyyaml` is
+  `remoteOnly` and stubs to `yaml`, create an empty `yaml/` folder (with an
+  `__init__.py`) at the workspace root before running **Refresh environment
+  info**. **(live)** **Expect:** `.pythonOnViya/typings/` has no `yaml/`
+  entry after the refresh — inspect the folder directly — and Pylance's
+  diagnostics for the workspace's own `yaml/` module are unaffected by this
+  feature (no `Any`-typed catch-all behaviour). Remove the fixture folder
+  afterwards.
+- [ ] **10.13** **A second, unchanged refresh does not repeat the reload
+  notice** — after §10.6 or §10.8 has already produced one "reload the
+  window" notice for a profile, run **Refresh environment info** again with
+  nothing changed on either side. **(live)** (adversarial review,
+  `feat/phase-10b-pylance-stub-reflection`: an earlier version advised a
+  reload on every non-empty sync regardless of whether anything actually
+  changed — `stubGenerator.ts`'s `StubTreeSyncPlan.changed` fixes this.)
+  **Expect:** no "reload the window" notification this second time — the
+  environment document still refreshes normally, just silently on the stub
+  front.
+- [ ] **10.14** **`Search environment` shows the same reload notice
+  `Show environment` does, when its own probe changes the stub tree** —
+  clear this profile's cache (remove and re-add the profile, or otherwise
+  force an unprobed state), then run **Python on Viya: Search environment**
+  directly, without running **Show environment** first. **(live)**
+  (adversarial review, `feat/phase-10b-pylance-stub-reflection`: a
+  cache-miss `Search environment` probes and syncs stubs exactly like `Show
+  environment` does, but previously gave no signal that it had.) **Expect:**
+  once the picker appears, a "reload the window" notification has also
+  appeared (order between the two is not significant) — the same notice
+  §10.6 produces, not silence.

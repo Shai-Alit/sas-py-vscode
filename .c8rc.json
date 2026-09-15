@@ -45,6 +45,7 @@
     "src/run/environmentStatusBar.ts",
     "src/run/localPythonEnvironment.ts",
     "src/run/outputChannel.ts",
+    "src/run/pylanceStubSync.ts",
     "src/run/resultPanel.ts",
     "src/run/statusBar.ts",
     "src/run/targetStore.ts",

@@ -68,10 +68,69 @@ in `phase-10.md`'s Runbook. Manual-test items 10.1–10.5
 merge: 10a as [PR #178](https://github.com/Shai-Alit/sas-py-vscode/pull/178),
 squash `62cf217`.** `npm run verify` green throughout (1771 unit; coverage
 96.09/95.57/95.98/96.09); `npm run test:integration` green (436 passing).
-**10b (Pylance environment reflection) is unstarted** — its own first task
-is a hands-on VS Code+Pylance spike (`phase-10.md`'s Runbook) that needs an
-interactive session to run, deliberately held for later rather than
-blocking 10a on it (this Runbook's own recommended order is non-binding).
+**10b (Pylance environment reflection) is implemented and locally
+verified, not yet reviewed, manually tested, or opened as a PR.** Its own
+first task — the hands-on stub-path spike the Runbook named as needing an
+interactive session — ran this session via the `pyright` CLI (the
+open-source engine Pylance is built on) rather than a live VS Code window,
+since even Claude Code running directly on the developer's machine has no
+tool that can drive VS Code's UI or read its Problems panel; see
+`phase-10.md`'s "10b spike" Runbook entry. The spike settled both of its own
+questions (a `stubPath` change needs a window reload; a reload is always
+needed, not only sometimes) and surfaced one more, unplanned finding before
+any stub-generation code was written: a generated stub takes precedence over
+a same-named package that already resolves locally with real source,
+silently disabling real type-checking for it (Finding 10.2) — so stub
+generation is scoped to 10a's `remoteOnly` diff bucket, never every remote
+package as the Plan section originally described. A second design point (the
+existing Stage-2 probe only reports the PyPI *distribution* name, not the
+*import* name Pylance actually needs — `Pillow`/`PIL`, `beautifulsoup4`/`bs4`,
+and others) was raised to the developer before any code was written and
+decided: extend the probe's payload, not ship a feature that silently
+under-covers common packages. New: `src/run/stubGenerator.ts`,
+`src/run/stubPathSetting.ts` (pure, 100% unit-covered), and
+`src/run/pylanceStubSync.ts` (the `vscode`-importing shell — generated stubs
+live at their own `.pythonOnViya/typings/`, never the conventional bare
+`typings/`, and `python.analysis.stubPath` is written via
+`vscode.workspace.getConfiguration(...).update(...)` — the sanctioned API,
+simpler and safer than the hand-rolled JSON merge the Runbook originally
+planned — only when nothing already claims that setting at workspace scope).
+`npm run verify`'s full chain and `npm run test:integration` both green (see
+`phase-10.md`'s "10b verification" Runbook entry for numbers). Manual-test
+items 10.6–10.11 (`docs/dev/manual-tests/phase-10.md`) are written but not
+yet run — they need a real VS Code+Pylance window, which this session cannot
+open. **The pre-push adversarial self-review has now run and found four real,
+blocking defects, all fixed on this branch** — Finding 10.2's shadowing
+mitigation was only half the hazard (a generated stub could still shadow the
+user's own workspace source, not just an installed local package); the reload
+notice nagged on every unchanged refresh; `Search Environment` silently wrote
+to the workspace with no signal to the user; and three bare `catch {}` blocks
+discarded the real cause of a write failure, one of which could silently skip
+pruning a stale, shadowing stub. Full account, including the review's
+non-blocking items folded in and the ones left open for the developer to
+decide, in `phase-10.md`'s own "Adversarial self-review, 2026-09-15" Runbook
+entry. The four discussed-not-decided items from that pass were resolved with
+the developer the same day: `workspaceFolderValue` settled with evidence (no
+code change — only diverges from `workspaceValue` in a real multi-root
+workspace, out of scope today, carried to `phase-11.md`); local-unknown
+stubbing every remote package kept as-is; a `pythonOnViya.*` opt-out setting
+deferred to `phase-11.md`; and a "Reload Window" action button built onto the
+reload notice. **The developer then ran their own independent adversarial
+pass against the full branch** (`git diff main`, plus the allowed static
+gates run by hand) and found two more real findings: `commands.ts`'s own 10b
+wiring had a real injection seam nothing used, so the `changed`-based no-nag
+fix above was itself untested at the wiring level — fixed with a new
+purpose-built probe fixture (`test/helpers/recorded-probe-connection.ts`) and
+five new integration tests; and unsanitised Viya-sourced `name`/`version`
+strings could escape a generated stub's `#` comment via a newline — fixed
+(`stubGenerator.ts`'s new `sanitiseForComment`). Full account in
+`phase-10.md`'s Runbook. `npm run verify`'s full chain (1813 unit; coverage
+96.17/95.63/96.05/96.17), `npm run test:integration` (443 passing), and
+`npm run check:secrets` (502 files — this session also caught its own gap:
+`check:secrets` reads `git ls-files`, so new files went unscanned until
+staged) all green after every fix above. **Still to do before a PR: the
+manual-test pass (items 10.6–10.14, needing a real VS Code+Pylance window),
+then push.**
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -280,7 +339,7 @@ housekeeping checkpoint. Per-phase detail
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14 — one known gap (tree icon refresh) deferred to Phase 10/11. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
-| 10 — Viya environment awareness | 🔶 **in progress — 10a merged 2026-09-15** (local/remote diff + Search environment `QuickPick`). Final PR [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), squash `62cf217`. `npm run verify` green (1771 unit; coverage 96.09/95.57/95.98/96.09). 10b not started. | `docs/phases/phase-10.md` |
+| 10 — Viya environment awareness | 🔶 **in progress — 10a merged 2026-09-15** (local/remote diff + Search environment `QuickPick`). Final PR [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), squash `62cf217`. **10b (Pylance stub reflection) implemented 2026-09-15; a pre-push self-review and then the developer's own independent adversarial pass both ran the same day, together finding six real defects, all fixed on the branch** — `npm run verify` green (1813 unit; coverage 96.17/95.63/96.05/96.17); `npm run test:integration` green (443 passing). Manual test (items 10.6–10.14) and PR still to come. | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 

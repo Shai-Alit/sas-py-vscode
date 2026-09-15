@@ -67,6 +67,63 @@ describe("environment.ts — the stage-2 probe program and its parser", () => {
       const body = environmentProbeStatements().join("\n");
       assert.ok(body.includes(JSON.stringify(ENVIRONMENT_PROBE_FILENAME)));
     });
+
+    it("tries top_level.txt, then packages_distributions(), then a normalised guess, for import names (10b)", () => {
+      // Finding: `distribution.metadata['Name']` is the PyPI name, not always
+      // the `import` name — see `environment.ts`'s own doc comment. All three
+      // fallback steps must be present, each guarded so a failure in one falls
+      // through to the next rather than sinking the probe. `packages_distributions()`
+      // is built once, ahead of the per-distribution loop (it is a global
+      // reverse mapping, not something to call per distribution) — so it
+      // appears earlier in program order than the per-distribution
+      // `top_level.txt` read, even though `top_level.txt` is consulted first
+      // at runtime for a given distribution. This asserts runtime precedence
+      // by shape (a separate `if not import_names:` guard ahead of each later
+      // source, never `elif`, so an earlier populated value short-circuits
+      // every later guard) rather than matching the source's exact text —
+      // the previous version of this test asserted on one fallback's literal
+      // indentation and described the shape as `if … elif …`, which the real
+      // source never was; both broke on a routine reformat and neither
+      // tested behaviour a reformat could actually change.
+      const body = environmentProbeStatements().join("\n");
+      const topLevelIndex = body.indexOf(
+        "distribution.read_text('top_level.txt')",
+      );
+      const packagesDistributionsIndex = body.indexOf(
+        "importlib.metadata.packages_distributions()",
+      );
+      const fallbackGuessIndex = body.indexOf(
+        "[name.replace('-', '_').replace('.', '_')]",
+      );
+      assert.ok(topLevelIndex > 0, "expected a top_level.txt read");
+      assert.ok(
+        packagesDistributionsIndex > 0,
+        "expected a packages_distributions() call",
+      );
+      assert.ok(
+        fallbackGuessIndex > 0,
+        "expected a normalised-name last resort",
+      );
+      // Exactly two later sources, each behind its own `if not import_names:`
+      // guard — `top_level.txt` itself is read unconditionally (it runs
+      // first, nothing to skip yet), so only the two fallbacks after it need
+      // one.
+      const guardCount = body.split("if not import_names:").length - 1;
+      assert.equal(
+        guardCount,
+        2,
+        "expected exactly two `if not import_names:` fallback guards — " +
+          "packages_distributions(), then the normalised guess",
+      );
+      assert.ok(fallbackGuessIndex > topLevelIndex);
+      assert.ok(fallbackGuessIndex > packagesDistributionsIndex);
+      // `packages_distributions()` was added in Python 3.10 — this project
+      // does not get to assume a deployment's Python version, so the call is
+      // guarded rather than bare.
+      assert.ok(
+        body.includes("hasattr(importlib.metadata, 'packages_distributions')"),
+      );
+    });
   });
 
   describe("parseEnvironmentProbeFile", () => {
@@ -76,8 +133,8 @@ describe("environment.ts — the stage-2 probe program and its parser", () => {
           version: "3.12.12 (main)",
           executable: "/usr/bin/python3",
           packages: [
-            ["numpy", "2.0.0"],
-            ["pandas", "3.0.0"],
+            ["numpy", "2.0.0", ["numpy"]],
+            ["pandas", "3.0.0", ["pandas"]],
           ],
         }),
       );
@@ -89,10 +146,49 @@ describe("environment.ts — the stage-2 probe program and its parser", () => {
         version: "3.12.12 (main)",
         executable: "/usr/bin/python3",
         packages: [
-          { name: "numpy", version: "2.0.0" },
-          { name: "pandas", version: "3.0.0" },
+          { name: "numpy", version: "2.0.0", importNames: ["numpy"] },
+          { name: "pandas", version: "3.0.0", importNames: ["pandas"] },
         ],
       });
+    });
+
+    it("parses an import-name list that differs from the distribution name", () => {
+      // `Pillow` installs as `PIL` — the exact mismatch Finding 10.2's design
+      // correction exists for.
+      const bytes = new TextEncoder().encode(
+        JSON.stringify({
+          version: "3.12",
+          executable: "/usr/bin/python3",
+          packages: [["Pillow", "11.0.0", ["PIL"]]],
+        }),
+      );
+      const result = parseEnvironmentProbeFile(bytes);
+      if (result?.kind !== "available") {
+        assert.fail("expected an available result");
+      }
+      assert.deepEqual(result.packages, [
+        { name: "Pillow", version: "11.0.0", importNames: ["PIL"] },
+      ]);
+    });
+
+    it("accepts an empty import-name list rather than rejecting the entry", () => {
+      // The probe itself never produces one (its own fallback chain always
+      // lands on at least a normalised guess) — this asserts the parser does
+      // not impose a stricter rule than the shape it actually reads.
+      const bytes = new TextEncoder().encode(
+        JSON.stringify({
+          version: "3.12",
+          executable: "/usr/bin/python3",
+          packages: [["oddpkg", "1.0.0", []]],
+        }),
+      );
+      const result = parseEnvironmentProbeFile(bytes);
+      if (result?.kind !== "available") {
+        assert.fail("expected an available result");
+      }
+      assert.deepEqual(result.packages, [
+        { name: "oddpkg", version: "1.0.0", importNames: [] },
+      ]);
     });
 
     it("accepts an empty package list", () => {
@@ -131,23 +227,42 @@ describe("environment.ts — the stage-2 probe program and its parser", () => {
       assert.equal(parseEnvironmentProbeFile(missingExecutable), undefined);
     });
 
-    it("rejects a packages entry that is not a two-element string pair", () => {
-      const notAPair = new TextEncoder().encode(
+    it("rejects a packages entry that is not a three-element [name, version, importNames] triple", () => {
+      const tooShort = new TextEncoder().encode(
         JSON.stringify({
           version: "3.12",
           executable: "/usr/bin/python3",
-          packages: [["numpy"]],
+          packages: [["numpy", "2.0.0"]],
         }),
       );
       const notStrings = new TextEncoder().encode(
         JSON.stringify({
           version: "3.12",
           executable: "/usr/bin/python3",
-          packages: [["numpy", 2]],
+          packages: [["numpy", 2, ["numpy"]]],
         }),
       );
-      assert.equal(parseEnvironmentProbeFile(notAPair), undefined);
+      assert.equal(parseEnvironmentProbeFile(tooShort), undefined);
       assert.equal(parseEnvironmentProbeFile(notStrings), undefined);
+    });
+
+    it("rejects a packages entry whose importNames is not an array of strings", () => {
+      const notAnArray = new TextEncoder().encode(
+        JSON.stringify({
+          version: "3.12",
+          executable: "/usr/bin/python3",
+          packages: [["numpy", "2.0.0", "numpy"]],
+        }),
+      );
+      const notAllStrings = new TextEncoder().encode(
+        JSON.stringify({
+          version: "3.12",
+          executable: "/usr/bin/python3",
+          packages: [["numpy", "2.0.0", ["numpy", 2]]],
+        }),
+      );
+      assert.equal(parseEnvironmentProbeFile(notAnArray), undefined);
+      assert.equal(parseEnvironmentProbeFile(notAllStrings), undefined);
     });
 
     it("rejects a JSON value that is not an object", () => {

@@ -170,6 +170,34 @@ works the way `nodeId`'s own doc comment assumes, whether a bare state change
 needs an accompanying `collapsibleState` touch to force a redraw, or timing
 between the fire and VS Code's own re-render.
 
+**Also carried here (added 2026-09-15, from Phase 10b's pre-push adversarial
+review — two items discussed with the developer and deferred rather than
+built, `phase-10.md`'s "Adversarial self-review, 2026-09-15" Runbook entry
+has the full discussion).**
+
+- **A `pythonOnViya.*` setting to opt out of Pylance stub generation.** 10b
+  (`docs/python-environment.md`#quieting-pylances-false-unresolved-import-warnings)
+  writes a generated stub tree into the workspace and edits
+  `python.analysis.stubPath` on every fresh probe, with no way to turn it
+  off. Nobody has asked for one yet, and it's a real if bounded addition — a
+  new `package.json` configuration contribution plus wiring
+  (`src/run/pylanceStubSync.ts`) and a documentation update. A candidate for
+  whenever it is actually requested, not scoped as a slice yet.
+- **`stub-path-conflict`'s workspace-scope check needs `workspaceFolderValue`
+  too, if multi-root support is ever added to 10b.** Today
+  `pylanceStubSync.ts` only inspects
+  `WorkspaceConfiguration.inspect(...).workspaceValue`, which is provably
+  sufficient for the single-folder case this feature deliberately scopes
+  itself to (`pylanceStubSync.ts`'s own "Multi-root: the first workspace
+  folder only" doc comment) — `workspaceValue` and `workspaceFolderValue`
+  read the same `.vscode/settings.json` and always agree outside a real
+  multi-root workspace
+  ([microsoft/vscode#34386](https://github.com/microsoft/vscode/issues/34386)).
+  Whoever picks up multi-root support for the stub-sync feature needs to add
+  the `workspaceFolderValue` check at that point — this is not a gap today,
+  only a documented trap for that later work to not silently reintroduce
+  Finding 10.2's shadowing hazard at folder scope.
+
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,
 VS Code shows two separate rows (it only collapses profiles that produce the

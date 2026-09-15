@@ -45,14 +45,26 @@ import type { ComputeSessionManager } from "../compute/sessionManager";
 import type { ProfileStore } from "../profile/store";
 import { createBackendCache, type BackendCache } from "./backendCache";
 import { RunDiagnostics } from "./diagnostics";
+import { diffEnvironments } from "./environmentDiff";
 import {
   ENVIRONMENT_SCHEME,
   environmentDocumentUri,
   EnvironmentDocumentProvider,
 } from "./environmentPanel";
 import type { EnvironmentStore } from "./environmentStore";
+import { readActiveLocalEnvironment } from "./localPythonEnvironment";
 import { RunOutputChannel } from "./outputChannel";
+import {
+  syncPylanceStubs,
+  type PylanceStubSyncResult,
+} from "./pylanceStubSync";
 import { ResultPanel } from "./resultPanel";
+import type { StubbablePackage } from "./stubGenerator";
+import {
+  describeStubSyncOutcome,
+  selectPackagesToStub,
+  type StubSyncOutcome,
+} from "./stubSyncPlan";
 import { runTargetPickEntries } from "./target";
 import type { RunTargetStore } from "./targetStore";
 
@@ -60,6 +72,9 @@ import type { RunTargetStore } from "./targetStore";
 export const RUN_TARGET_CONTEXT_KEY = "pythonOnViya.runTarget";
 /** Gates the Cancel command's `enablement`. */
 export const RUNNING_CONTEXT_KEY = "pythonOnViya.running";
+/** VS Code's own built-in reload command — what the reload-advisable
+ * notice's action button runs (10b). */
+const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
 
 /** What this module needs from `ProfileStore`, narrowed the same way every
  * other command module narrows it. */
@@ -135,6 +150,16 @@ export interface RunCommandDeps {
    * system clipboard being available (the integration test host's CI leg
    * runs headless). */
   writeClipboardText?: ((text: string) => Thenable<void>) | undefined;
+  /** Defaults to `./pylanceStubSync`'s `syncPylanceStubs`. 10b: called once
+   * per fresh probe (never on a cache hit) from `ensureProbedEnvironment`,
+   * so a test can substitute a fake without touching a real workspace's
+   * filesystem or `settings.json` — the same reason every other real
+   * `vscode` call in this module is injectable. */
+  pylanceStubs?:
+    | ((
+        packages: readonly StubbablePackage[],
+      ) => Promise<PylanceStubSyncResult>)
+    | undefined;
   /** Defaults to a fresh `RunOutputChannel`. Supplying one hands its
    * lifecycle to the caller — this module then leaves it off
    * `context.subscriptions`, so a test can inspect it after the fact without
@@ -686,6 +711,83 @@ export function createRunCommandHandlers(
    * to interrupt it with — the same reason `resetPythonState`'s own progress
    * is `ProgressLocation.Window`, not `Notification`, below.
    */
+  /**
+   * 10b: after a genuinely fresh probe (never on a cache hit — a cache hit
+   * means nothing about the remote package set could have changed), syncs
+   * the Pylance stub tree and reports whether a window reload is worth
+   * telling the user about. Which packages get stubbed (`diff.remoteOnly`,
+   * or every remote package when the local environment itself is unknown —
+   * Finding 10.2, `phase-10.md`'s Probe findings) and what a completed sync
+   * means for the caller (reload notice? log line? both?) are
+   * `./stubSyncPlan.ts`'s own pure decisions — see that module's doc
+   * comment for why they live there rather than inline here: this file
+   * imports `vscode` and is excluded from the unit coverage tier
+   * altogether, and those decisions need no live backend probe to test on
+   * their own.
+   */
+  const syncStubsForFreshProbe = async (
+    remote: readonly PythonPackage[],
+  ): Promise<boolean> => {
+    const local = await readActiveLocalEnvironment();
+    const diff = diffEnvironments(
+      remote,
+      local.kind === "known" ? local.packages : undefined,
+    );
+
+    const { toStub, missing } = selectPackagesToStub(remote, diff);
+    for (const name of missing) {
+      log.warn(
+        `Pylance stub sync (10b): "${name}" was in the remote-only diff but not found in this profile's own package list; skipped.`,
+      );
+    }
+
+    const sync = deps.pylanceStubs ?? syncPylanceStubs;
+    const outcome: StubSyncOutcome = await sync(toStub);
+    const report = describeStubSyncOutcome(outcome);
+    if (report.logWarning !== undefined) log.warn(report.logWarning);
+    if (report.conflictValue !== undefined) {
+      inform(
+        vscode.l10n.t(
+          'Skipped Pylance stub generation: python.analysis.stubPath is already set to "{0}" in this workspace.',
+          report.conflictValue,
+        ),
+      );
+    }
+    return report.reloadAdvisable;
+  };
+
+  const informReloadAdvisable = (): void => {
+    // 10b, Finding 10.1: a running Pylance never picks up a stub-tree change
+    // on its own — this only ever runs after a fresh, non-cache-hit probe
+    // that `stubSyncPlan.ts`'s `describeStubSyncOutcome` says actually
+    // changed the stub tree (never on a cache hit, never when nothing
+    // needed stubbing, and never on a resync that reproduced exactly what
+    // was already on disk).
+    const message = vscode.l10n.t(
+      "Updated the Pylance stub information for this profile. Reload the window to see it reflected in your editor's diagnostics.",
+    );
+    // `deps.inform` bypasses this whole action-button path, not just the
+    // real `showInformationMessage` call — a test double has no user who
+    // could ever click the button, and every test in this suite runs inside
+    // the one shared extension host process, where a real
+    // `workbench.action.reloadWindow` would tear down the test run itself.
+    // Adversarial review, pre-push (`feat/phase-10b-pylance-stub-reflection`):
+    // added on top of the earlier review pass, which left this as prose-only.
+    const show = deps.inform;
+    if (show !== undefined) {
+      show(message);
+      return;
+    }
+    const reloadAction = vscode.l10n.t("Reload Window");
+    void vscode.window
+      .showInformationMessage(message, reloadAction)
+      .then((selected) => {
+        if (selected === reloadAction) {
+          void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+        }
+      });
+  };
+
   const ensureProbedEnvironment = async (
     forceProbe: boolean,
   ): Promise<
@@ -693,6 +795,16 @@ export function createRunCommandHandlers(
         readonly profileId: string;
         readonly profileName: string;
         readonly packages: readonly PythonPackage[];
+        /** 10b: true when this call's own fresh probe changed the Pylance
+         * stub tree on disk — never true on a cache hit, since nothing
+         * remote could have changed. `showEnvironmentImpl` and
+         * `searchEnvironmentImpl` both use this to decide whether a "reload
+         * the window" notice is worth showing (Finding 10.1: a running
+         * Pylance never picks the change up on its own) — a probe
+         * `searchEnvironment` itself triggered on a cache miss writes to
+         * the workspace exactly like a `showEnvironment`-triggered one
+         * does, so it owes the user the same notice, not silence. */
+        readonly reloadAdvisable: boolean;
       }
     | undefined
   > => {
@@ -719,6 +831,7 @@ export function createRunCommandHandlers(
             profileId: profile.id,
             profileName: readiness.profileName,
             packages: cached.capabilities.packages,
+            reloadAdvisable: false,
           };
         }
       }
@@ -733,11 +846,26 @@ export function createRunCommandHandlers(
       return undefined;
     }
 
-    const probed = await showProgress(
+    // 10b: the stub sync (a filesystem write plus a settings update) runs
+    // inside this same progress scope, not after it — folded in on
+    // adversarial review of this slice, which found the sync running
+    // unbounded and outside any progress UI at all once probing itself had
+    // finished, for what the docs' own figure names as "a few hundred"
+    // packages in the local-unknown case.
+    const { probed, reloadAdvisable } = await showProgress(
       vscode.ProgressLocation.Window,
       vscode.l10n.t("Checking the Python environment on SAS Viya…"),
       false,
-      async () => await backend.probeRuntime(),
+      async () => {
+        const probeResult = await backend.probeRuntime();
+        if (!probeResult.ok || probeResult.value.kind !== "available") {
+          return { probed: probeResult, reloadAdvisable: false };
+        }
+        const advisable = await syncStubsForFreshProbe(
+          probeResult.value.packages,
+        );
+        return { probed: probeResult, reloadAdvisable: advisable };
+      },
     );
     if (!probed.ok) {
       // `localiseBackendProblem`'s `runtime-unavailable`/`backend-failed` arms
@@ -768,6 +896,7 @@ export function createRunCommandHandlers(
       profileId: connection.profileId,
       profileName: connection.profileName,
       packages: probed.value.packages,
+      reloadAdvisable,
     };
   };
 
@@ -775,6 +904,7 @@ export function createRunCommandHandlers(
     const result = await ensureProbedEnvironment(forceProbe);
     if (result === undefined) return;
     await openEnvironmentDocument(result.profileId, result.profileName);
+    if (result.reloadAdvisable) informReloadAdvisable();
   };
 
   /**
@@ -789,6 +919,13 @@ export function createRunCommandHandlers(
   const searchEnvironmentImpl = async (): Promise<void> => {
     const result = await ensureProbedEnvironment(false);
     if (result === undefined) return;
+    // A cache miss here probes exactly like `showEnvironment` would (10a's
+    // own cache-first default), which since 10b can also write generated
+    // stubs and edit workspace settings — this owes the user the same
+    // reload notice `showEnvironmentImpl` gives for the identical sync,
+    // not silence just because the command that triggered it was a quick
+    // lookup rather than opening the document.
+    if (result.reloadAdvisable) informReloadAdvisable();
 
     const items = [...result.packages]
       .sort((a, b) => a.name.localeCompare(b.name))

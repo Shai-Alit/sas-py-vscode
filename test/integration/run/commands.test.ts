@@ -267,7 +267,7 @@ describe("run commands — guards", () => {
       kind: "available",
       version: "3.12.12",
       executable: "/usr/bin/python3",
-      packages: [{ name: "numpy", version: "2.0.0" }],
+      packages: [{ name: "numpy", version: "2.0.0", importNames: ["numpy"] }],
     });
     const { targets, handlers } = build(
       profiles,
@@ -305,8 +305,8 @@ describe("run commands — guards", () => {
       version: "3.12.12",
       executable: "/usr/bin/python3",
       packages: [
-        { name: "pandas", version: "3.0.0" },
-        { name: "numpy", version: "2.0.0" },
+        { name: "pandas", version: "3.0.0", importNames: ["pandas"] },
+        { name: "numpy", version: "2.0.0", importNames: ["numpy"] },
       ],
     });
     const copied: string[] = [];

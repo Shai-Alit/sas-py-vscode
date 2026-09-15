@@ -374,7 +374,35 @@ Local comparison section, live repro of the review fix above), 10.4
 (`Search environment` filters and copies `name==version` to the clipboard),
 10.5 (`Search environment` never force-probes a stale cache) — run and
 passed against a real VS Code window. 10a is now fully verified: checks,
-adversarial review, and manual test all green. PR opened for 10a.
+adversarial review, and manual test all green. PR opened for 10a
+([#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)).
+
+**PR #178 review, 2026-09-15.** Codex's automated review found one real,
+major-severity defect: `readActiveLocalEnvironment`
+(`src/run/localPythonEnvironment.ts`) trusted `ResolvedEnvironment`'s own
+TypeScript type, which declares `executable.sysPrefix` and
+`version.major`/`version.minor` as always populated once `version` itself
+is defined. Real `resolveEnvironment` calls don't always honour that —
+`sysPrefix` can come back `""` and `version.major`/`minor` `undefined`
+regardless (a documented vscode-python defect,
+[microsoft/vscode-python#20147](https://github.com/microsoft/vscode-python/issues/20147),
+confirmed by web search this session). The unguarded code would have built
+a `undefined/Lib/site-packages`-shaped path, which `readLocalPackages`
+reads back as an empty list — silently reporting *every* remote package as
+"remote-only" instead of the honest "local environment unknown" 10.2 tests
+for. **Fixed**: `sysPrefix`/`major`/`minor` are now checked for real values
+(not just checked against the type) before building the site-packages path,
+falling back to `{ kind: "unknown" }` otherwise — `localPythonEnvironment.ts`
+stays excluded from the coverage gate (`.c8rc.json`), same as before, since
+the integration test host cannot fabricate a `resolveEnvironment` result
+with this specific shape. The review's other finding — three Phase 9
+notebook bullets in this PR's `CHANGELOG.md` diff, which turned out to be a
+genuine backfill of entries PRs #172/#176/#177 never added when they merged
+— was acknowledged rather than split out: the entries are correct and
+belong under `## [Unreleased]` regardless of which PR adds them, so
+backfilling them here rather than opening a separate PR for a three-line
+gap was the pragmatic call. `npm run verify`'s full chain re-run green
+after the `localPythonEnvironment.ts` fix (see below); no other findings.
 
 ---
 

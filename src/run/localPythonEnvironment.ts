@@ -96,12 +96,22 @@ export async function readActiveLocalEnvironment(): Promise<LocalEnvironment> {
   }
   if (resolved?.version === undefined) return { kind: "unknown" };
 
+  // `ResolvedEnvironment`'s own type promises `sysPrefix`/`version.major`/
+  // `version.minor` are always populated once `version` itself is defined —
+  // but real `resolveEnvironment` calls have returned `sysPrefix` as `""`
+  // and `version.major`/`minor` as `undefined` regardless (a known
+  // vscode-python defect, microsoft/vscode-python#20147). Trusting the type
+  // here would build a `undefined/Lib/site-packages`-shaped path that reads
+  // back as an empty package list, reporting every remote package as
+  // "remote-only" instead of the honest "local environment unknown".
+  const { sysPrefix } = resolved.executable;
+  const { major, minor } = resolved.version;
+  if (!sysPrefix || typeof major !== "number" || typeof minor !== "number") {
+    return { kind: "unknown" };
+  }
+
   const packages = await readLocalPackages(
-    sitePackagesPath(
-      resolved.executable.sysPrefix,
-      resolved.version.major,
-      resolved.version.minor,
-    ),
+    sitePackagesPath(sysPrefix, major, minor),
     realFs,
   );
   return { kind: "known", version: resolved.version.sysVersion, packages };

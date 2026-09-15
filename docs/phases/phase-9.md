@@ -663,7 +663,9 @@ recommendation, not a dependency lock._
   `npm run verify` and `npm run test:integration` green after folding both
   fixes in (numbers above).
 
-☑ **9c — Renderers + diagnostics.** Code-complete 2026-09-14.
+☑ **9c — Renderers + diagnostics.** Code-complete 2026-09-14. Merged
+2026-09-15 as [PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177),
+squash `fa7222f`.
 
 - ☑ Build the small, per-mime-type notebook renderer script(s)
   (`contributes.notebookRenderer`), in upstream's `LogRenderer.ts`/

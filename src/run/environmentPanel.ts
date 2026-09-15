@@ -20,11 +20,13 @@
 
 import * as vscode from "vscode";
 
+import { diffEnvironments } from "./environmentDiff";
 import {
   renderEnvironmentDocument,
   type EnvironmentSnapshot,
 } from "./environmentDocument";
 import { type StoredEnvironment } from "./environmentStore";
+import { readActiveLocalEnvironment } from "./localPythonEnvironment";
 
 /** This feature's own URI scheme — nothing else in this codebase registers
  * a `TextDocumentContentProvider`, so there is no existing one to share. */
@@ -84,7 +86,7 @@ export class EnvironmentDocumentProvider
     ) => StoredEnvironment | undefined,
   ) {}
 
-  provideTextDocumentContent(uri: vscode.Uri): string {
+  async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const profileId = readProfileId(uri);
     const stored = profileId === undefined ? undefined : this.lookup(profileId);
 
@@ -108,16 +110,48 @@ export class EnvironmentDocumentProvider
       timeStyle: "short",
     }).format(new Date(stored.probedAt));
 
-    return renderEnvironmentDocument(profileName, probedAtDisplay, snapshot, {
-      title: vscode.l10n.t("Python on Viya — environment"),
-      profileLabel: vscode.l10n.t("Profile"),
-      probedLabel: vscode.l10n.t("Probed"),
-      interpreterLabel: vscode.l10n.t("Interpreter"),
-      executableLabel: vscode.l10n.t("Executable"),
-      packagesHeading: (count) =>
-        vscode.l10n.t("{0} installed packages:", count),
-      noPackages: vscode.l10n.t("No packages were reported."),
-    });
+    // Read fresh on every render, same as the cached probe above — 10a's
+    // diff is only ever as current as "whatever `ms-python.python` has
+    // active right now", and re-reading costs one local directory walk, not
+    // a network round trip.
+    const local = await readActiveLocalEnvironment();
+    const diff = diffEnvironments(
+      snapshot.packages,
+      local.kind === "known" ? local.packages : undefined,
+    );
+
+    return renderEnvironmentDocument(
+      profileName,
+      probedAtDisplay,
+      snapshot,
+      diff,
+      {
+        title: vscode.l10n.t("Python on Viya — environment"),
+        profileLabel: vscode.l10n.t("Profile"),
+        probedLabel: vscode.l10n.t("Probed"),
+        interpreterLabel: vscode.l10n.t("Interpreter"),
+        executableLabel: vscode.l10n.t("Executable"),
+        packagesHeading: (count) =>
+          vscode.l10n.t("{0} installed packages:", count),
+        noPackages: vscode.l10n.t("No packages were reported."),
+        diff: {
+          heading: vscode.l10n.t("Local comparison"),
+          localUnknown: vscode.l10n.t(
+            "The local Python environment is unknown — install and select an interpreter with the Python extension to compare it against this profile.",
+          ),
+          remoteOnlyHeading: (count) =>
+            vscode.l10n.t("{0} only on this Viya profile:", count),
+          localOnlyHeading: (count) =>
+            vscode.l10n.t("{0} only in the local environment:", count),
+          versionMismatchedHeading: (count) =>
+            vscode.l10n.t(
+              "{0} at a different version locally than on Viya:",
+              count,
+            ),
+          noneInBucket: vscode.l10n.t("(none)"),
+        },
+      },
+    );
   }
 
   /** Tells VS Code to re-render an already-open document for this profile —

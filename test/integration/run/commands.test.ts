@@ -285,6 +285,57 @@ describe("run commands — guards", () => {
     );
   });
 
+  it("refuses searchEnvironment when the target is Local, without connecting", async () => {
+    const profiles = fakeProfiles([]);
+    const recorder = fakeRecorder();
+    const { targets, handlers } = build(profiles, { ...recorder.deps });
+    await targets.setKind("local");
+
+    await handlers.searchEnvironment();
+    assert.equal(recorder.reported.length, 1);
+    assert.ok((recorder.reported[0] ?? "").includes("Local Python"));
+  });
+
+  it("searchEnvironment serves a cached probe without connecting, and copies the picked package to the clipboard", async () => {
+    const profiles = fakeProfiles(["verde"]);
+    const recorder = fakeRecorder();
+    const environment = new EnvironmentStore({ globalState: memoryMemento() });
+    await environment.set("p1", {
+      kind: "available",
+      version: "3.12.12",
+      executable: "/usr/bin/python3",
+      packages: [
+        { name: "pandas", version: "3.0.0" },
+        { name: "numpy", version: "2.0.0" },
+      ],
+    });
+    const copied: string[] = [];
+    const { targets, handlers } = build(
+      profiles,
+      {
+        ...recorder.deps,
+        // Picks the first item offered, which asserts the sort-by-name
+        // below too: passing "pandas" first into `environment.set` above
+        // and getting "numpy" back here would mean the picker were not
+        // sorting its items at all.
+        showQuickPick: (items) => Promise.resolve(items[0]),
+        writeClipboardText: (text) => {
+          copied.push(text);
+          return Promise.resolve();
+        },
+      },
+      { environment },
+    );
+    await targets.setKind("viya");
+
+    await handlers.searchEnvironment();
+
+    assert.equal(recorder.reported.length, 0);
+    assert.deepEqual(copied, ["numpy==2.0.0"]);
+    assert.equal(recorder.informed.length, 1);
+    assert.ok((recorder.informed[0] ?? "").includes("numpy==2.0.0"));
+  });
+
   it("tells the user to open a Python file when there is no suitable editor", async () => {
     const profiles = fakeProfiles(["verde"]);
     const recorder = fakeRecorder();

@@ -38,6 +38,24 @@ slice-by-slice narrative that used to live here has moved to
 [`docs/status-archive.md`](docs/status-archive.md), per this file's own
 archival rule.
 
+**Phase 10 (Viya environment awareness) is in progress — 10a merged pending
+review, 10b not started.** 10a (`docs/phases/phase-10.md`) adds a
+local/remote package diff to the existing `Show environment` document (a
+new "Local comparison" section, reading the local interpreter
+`ms-python.python` has active via `@vscode/python-extension` and
+`vscode.workspace.fs`, never `node:fs`) and a new filterable `Python on
+Viya: Search environment` `QuickPick`, additive to the existing plain-text
+document. Local/remote package names are matched PEP 503-normalised so a
+capitalisation difference alone is never reported as a false mismatch.
+`npm run verify`'s full chain and `npm run test:integration` both green
+locally (see `phase-10.md`'s own "10a verification" Runbook entry for
+numbers); this session's adversarial self-review is next, before anything
+is pushed. **10b (Pylance environment reflection) is unstarted** — its own
+first task is a hands-on VS Code+Pylance spike (`phase-10.md`'s Runbook)
+that needs an interactive session to run, deliberately held for later
+rather than blocking 10a on it (this Runbook's own recommended order is
+non-binding).
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:
@@ -224,7 +242,7 @@ housekeeping checkpoint. Per-phase detail
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14 — one known gap (tree icon refresh) deferred to Phase 10/11. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
-| 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
+| 10 — Viya environment awareness | 🔶 **in progress — 10a done 2026-09-14** (local/remote diff + Search environment `QuickPick`), pending adversarial review. 10b not started. | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 

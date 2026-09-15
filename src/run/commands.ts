@@ -32,7 +32,12 @@
 
 import * as vscode from "vscode";
 
-import type { ExecutionHandle, Program, Traceback } from "../backend/backend";
+import type {
+  ExecutionHandle,
+  Program,
+  PythonPackage,
+  Traceback,
+} from "../backend/backend";
 import { localiseBackendProblem } from "../backend/messages";
 import type { BackendProblem } from "../backend/problems";
 import type { ProcPythonBackend } from "../backend/procPython";
@@ -124,6 +129,12 @@ export interface RunCommandDeps {
   inform?: ((message: string) => void) | undefined;
   /** Defaults to `vscode.window.showErrorMessage`. */
   report?: ((message: string) => void) | undefined;
+  /** Defaults to `vscode.env.clipboard.writeText`. `searchEnvironment` (10a)
+   * is this module's only caller — injectable for the same reason every
+   * other real `vscode` call here is: a test should not depend on a real
+   * system clipboard being available (the integration test host's CI leg
+   * runs headless). */
+  writeClipboardText?: ((text: string) => Thenable<void>) | undefined;
   /** Defaults to a fresh `RunOutputChannel`. Supplying one hands its
    * lifecycle to the caller — this module then leaves it off
    * `context.subscriptions`, so a test can inspect it after the fact without
@@ -203,6 +214,12 @@ export interface RunCommandHandlers extends vscode.Disposable {
   /** Same document, but always re-probes first, even when a cached answer
    * already exists. */
   refreshEnvironment(): Promise<void>;
+  /** 10a's `Python on Viya: Search environment` — a filterable `QuickPick`
+   * over the current profile's cached packages, additive to {@link
+   * showEnvironment}'s own document rather than a replacement for it. Never
+   * force-probes, the same cache-first default `showEnvironment` itself
+   * uses when not asked to refresh. */
+  searchEnvironment(): Promise<void>;
 }
 
 export function createRunCommandHandlers(
@@ -645,14 +662,22 @@ export function createRunCommandHandlers(
   };
 
   /**
-   * `showEnvironment`/`refreshEnvironment`'s shared body.
+   * `showEnvironment`/`refreshEnvironment`/`searchEnvironment` (10a)'s
+   * shared body: ensures a probed environment is available for the current
+   * connection, probing once if `forceProbe` or nothing is cached yet, and
+   * hands back its packages. `undefined` means nothing could be shown — not
+   * ready, busy, or the probe itself failed — and every one of those paths
+   * has already reported itself to the user by the time this returns.
    *
-   * `forceProbe` is the only difference between the two commands: `false`
-   * opens a cached answer straight away with no network call at all, and
-   * `true` always re-probes first — `PRODUCTION_PLAN.md` §2.3's "a slow
-   * answer that changes rarely" is exactly why the cheap path exists, and its
-   * own "explicit refresh" is exactly why the expensive one has to be
-   * reachable on demand rather than only the first time.
+   * `forceProbe` is the only difference `showEnvironment`/`refreshEnvironment`
+   * see between themselves: `false` opens a cached answer straight away with
+   * no network call at all, and `true` always re-probes first —
+   * `PRODUCTION_PLAN.md` §2.3's "a slow answer that changes rarely" is
+   * exactly why the cheap path exists, and its own "explicit refresh" is
+   * exactly why the expensive one has to be reachable on demand rather than
+   * only the first time. `searchEnvironment` always passes `false` — a quick
+   * lookup has no business forcing a probe `showEnvironment` itself would
+   * not force.
    *
    * No `pythonOnViya.running`/Cancel wiring, unlike `runNow`/`resetPythonState`:
    * a probe shares their `busy`/serial contract (`ProcPythonBackend.probeRuntime`
@@ -661,11 +686,20 @@ export function createRunCommandHandlers(
    * to interrupt it with — the same reason `resetPythonState`'s own progress
    * is `ProgressLocation.Window`, not `Notification`, below.
    */
-  const showEnvironmentImpl = async (forceProbe: boolean): Promise<void> => {
+  const ensureProbedEnvironment = async (
+    forceProbe: boolean,
+  ): Promise<
+    | {
+        readonly profileId: string;
+        readonly profileName: string;
+        readonly packages: readonly PythonPackage[];
+      }
+    | undefined
+  > => {
     const readiness = targets.readiness();
     if (!readiness.ok) {
       reportNotReady(readiness.reason);
-      return;
+      return undefined;
     }
 
     // Checked from `profiles.get()` — never `backendCache.backendFor()` — so
@@ -678,19 +712,25 @@ export function createRunCommandHandlers(
     // consulting the cache.
     if (!forceProbe) {
       const profile = profiles.get(readiness.profileName);
-      if (profile !== undefined && environment.get(profile.id) !== undefined) {
-        await openEnvironmentDocument(profile.id, readiness.profileName);
-        return;
+      if (profile !== undefined) {
+        const cached = environment.get(profile.id);
+        if (cached?.capabilities.kind === "available") {
+          return {
+            profileId: profile.id,
+            profileName: readiness.profileName,
+            packages: cached.capabilities.packages,
+          };
+        }
       }
     }
 
     const built = await backendCache.backendFor();
-    if (built === undefined) return;
+    if (built === undefined) return undefined;
     const { backend, connection } = built;
 
     if (backend.busy) {
       reportProblem({ code: "busy", running: "a run in this window" });
-      return;
+      return undefined;
     }
 
     const probed = await showProgress(
@@ -709,16 +749,75 @@ export function createRunCommandHandlers(
       log.warn(probed.reason);
       forgetIfGone(probed.problem, connection.profileId);
       reportProblem(probed.problem);
-      return;
+      return undefined;
     }
 
     await environment.set(connection.profileId, probed.value);
     // Makes an already-open tab for this profile pick up the fresh answer —
-    // a no-op if nothing has it open. `openEnvironmentDocument` below always
+    // a no-op if nothing has it open. `openEnvironmentDocument` always
     // renders live from `environment.get()` regardless, so this is only for
     // the tab that is already showing the stale content right now.
     environmentDocuments.refresh(connection.profileId, connection.profileName);
-    await openEnvironmentDocument(connection.profileId, connection.profileName);
+    // `RuntimeCapabilities`'s type admits `"unprobed"` too, but a *successful*
+    // `probeRuntime()` never produces it — `backend.ts`'s own doc on that
+    // method says a probe result is `"available"` or a `BackendResult`
+    // failure, never a successful `"unprobed"`. Belt-and-braces, matching
+    // `environmentPanel.ts`'s own guard on the same union.
+    if (probed.value.kind !== "available") return undefined;
+    return {
+      profileId: connection.profileId,
+      profileName: connection.profileName,
+      packages: probed.value.packages,
+    };
+  };
+
+  const showEnvironmentImpl = async (forceProbe: boolean): Promise<void> => {
+    const result = await ensureProbedEnvironment(forceProbe);
+    if (result === undefined) return;
+    await openEnvironmentDocument(result.profileId, result.profileName);
+  };
+
+  /**
+   * `Python on Viya: Search environment` (10a) — a filterable `QuickPick`
+   * over the current profile's installed packages, additive to `Show
+   * environment`'s own plain-text document rather than a replacement for it:
+   * `docs/phases/phase-10.md`'s Plan section keeps 3e's own reasons for that
+   * document (editor-native search, split view, "a package list is a list")
+   * for the "read the whole thing" case, and adds this command for "find one
+   * package fast" instead of reopening that settled choice.
+   */
+  const searchEnvironmentImpl = async (): Promise<void> => {
+    const result = await ensureProbedEnvironment(false);
+    if (result === undefined) return;
+
+    const items = [...result.packages]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((pkg) => ({
+        label: pkg.name,
+        description: pkg.version,
+        pkg,
+      }));
+
+    const picked = await pick(items, {
+      title: vscode.l10n.t("Search Environment — {0}", result.profileName),
+      placeHolder: vscode.l10n.t(
+        "Filter the packages installed on this Viya profile",
+      ),
+      matchOnDescription: true,
+    });
+    if (picked === undefined) return;
+
+    const writeClipboardText =
+      deps.writeClipboardText ??
+      ((text: string) => vscode.env.clipboard.writeText(text));
+    await writeClipboardText(`${picked.pkg.name}==${picked.pkg.version}`);
+    inform(
+      vscode.l10n.t(
+        "Copied {0}=={1} to the clipboard.",
+        picked.pkg.name,
+        picked.pkg.version,
+      ),
+    );
   };
 
   const selectRunTarget = async (): Promise<void> => {
@@ -772,6 +871,7 @@ export function createRunCommandHandlers(
     selectRunTarget,
     showEnvironment: () => showEnvironmentImpl(false),
     refreshEnvironment: () => showEnvironmentImpl(true),
+    searchEnvironment: searchEnvironmentImpl,
     dispose: () => {
       targetChangeSubscription.dispose();
       documentCloseSubscription.dispose();
@@ -837,6 +937,9 @@ export function registerRunCommands(
     ),
     vscode.commands.registerCommand("pythonOnViya.refreshEnvironment", () =>
       handlers.refreshEnvironment(),
+    ),
+    vscode.commands.registerCommand("pythonOnViya.searchEnvironment", () =>
+      handlers.searchEnvironment(),
     ),
     // The one `TextDocumentContentProvider` this extension registers —
     // `createRunCommandHandlers` only constructs it (see this module's own

@@ -273,25 +273,41 @@ barrier — this is a recommendation, not a dependency lock._
   finding even though neither is a Viya wire fact (Probe findings section,
   below, explains why that's still the right place for it).
 
-☐ **10a — Environment view: search/filtering + local/remote diff.**
+☑ **10a — Environment view: search/filtering + local/remote diff.** Done
+2026-09-14 — Sean's own call this session to take 10a first and hold the
+10b spike for a later hands-on session, rather than block on it per this
+Runbook's own (non-binding) recommended order.
 
-- ☐ Local dist-info reader: given a `sysPrefix` (from
-  `@vscode/python-extension`'s `resolveEnvironment`), enumerate
-  `site-packages`/`Lib\site-packages`'s `*.dist-info`/`*.egg-info` entries and
-  parse each `METADATA`'s `Name`/`Version` — fixture-driven, no real local
-  Python required to test it.
-- ☐ Diff logic: remote packages (already in `RuntimeCapabilities`) vs. local
-  (above) → three buckets (remote-only, local-only, version-mismatched);
-  degrades to "local unknown" when `ms-python.python` is absent or has no
-  active environment, never a hard failure.
-- ☐ `Python on Viya: Search environment` — a new `QuickPick`-based command
-  with built-in filter-as-you-type, additive to (not replacing) `Show
-  environment`'s existing plain-text document (Plan, above — 3e's own
-  rationale for a plain-text document still stands for the "read the whole
-  thing" case).
-- ☐ Extend `environmentDocument.ts`'s rendered text with a diff section,
-  reusing `environmentStore.ts`'s existing cache — no new persistence needed
-  beyond what the local read produces on demand.
+- ☑ Local dist-info reader (`src/run/localPackages.ts`): given a
+  `sysPrefix` (from `@vscode/python-extension`'s `resolveEnvironment`),
+  enumerates `site-packages`'s `*.dist-info`/`*.egg-info` entries and parses
+  each `METADATA`/`PKG-INFO`'s `Name`/`Version` — pure, fixture-driven
+  (`test/unit/local-packages.test.ts`), no real local Python needed. The
+  real filesystem read (`src/run/localPythonEnvironment.ts`) uses
+  `vscode.workspace.fs`, not `node:fs` — that API reaches any `file://`
+  path regardless of workspace membership, so it covers an interpreter
+  installed anywhere on disk without widening `eslint.config.mjs`'s
+  Node-built-in allow-list (ADR-0003) at all; no ADR amendment was needed.
+- ☑ Diff logic (`src/run/environmentDiff.ts`): remote packages vs. local →
+  three buckets (remote-only, local-only, version-mismatched), names matched
+  PEP 503-normalised (so `My-Package`/`my_package` are not reported as a
+  false mismatch) while the displayed name stays whichever side reported
+  it; degrades to `local-unknown` when `ms-python.python` is absent, has no
+  active environment, or the environment cannot be resolved — never a hard
+  failure. 100% unit-covered.
+- ☑ `Python on Viya: Search environment` (`pythonOnViya.searchEnvironment`,
+  `src/run/commands.ts`) — a `QuickPick` over the current profile's cached
+  packages (sorted by name, VS Code's own built-in filter-as-you-type),
+  additive to (not replacing) `Show environment`'s existing plain-text
+  document. Never force-probes, matching `Show environment`'s own
+  cache-first default. Picking an entry copies `name==version` to the
+  clipboard (via an injectable port, `RunCommandDeps.writeClipboardText`,
+  so the integration suite never touches a real system clipboard).
+- ☑ Extended `environmentDocument.ts`'s rendered text with a "Local
+  comparison" section below the package list, reusing `environmentStore.ts`'s
+  existing cache — no new persistence. `environmentPanel.ts`'s
+  `provideTextDocumentContent` is now `async`, reading the local side fresh
+  on every render (one local directory walk, not a network call).
 
 ☐ **10b — Pylance environment reflection (after the spike above).**
 
@@ -309,6 +325,21 @@ barrier — this is a recommendation, not a dependency lock._
   (`ms-python.vscode-python-envs`) registration as a possible follow-on
   enhancement, not a dependency this phase requires (Plan, above) — a short
   `docs/` note, not code, unless a later session decides to build it.
+
+**10a verification, 2026-09-14.** `npm run verify`'s full chain green
+locally (`format:check`, `lint`, `typecheck`, `check:copyright`,
+`check:secrets`, `check:coverage-scope`, `check:contracts`, `build`,
+`coverage`): 1771 unit tests, coverage 96.09/95.57/95.98/96.09
+lines/branches/functions/statements, every new pure module
+(`environmentDiff.ts`, `environmentDocument.ts`, `localPackages.ts`) at
+100%. `npm run test:integration` also green, 436 passing (`localPythonEnvironment.ts`
+and the `commands.ts` changes are `vscode`-importing, so they're exercised
+here rather than at the unit tier — `.c8rc.json`'s exclude list gained
+exactly `localPythonEnvironment.ts`). New dependency:
+`@vscode/python-extension` 1.0.6 (devDependency, pinned exact — bundled by
+esbuild like every other runtime dependency in this project). Adversarial
+self-review pending before this lands — not pushed yet, per `CLAUDE.md`'s
+"before the PR exists" rule.
 
 ---
 

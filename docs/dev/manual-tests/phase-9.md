@@ -165,7 +165,7 @@ wants no profile signed in.
   state survives its own reload and is never touched by Run File — rather
   than the literal cross-surface variable visibility the first cut could
   not safely deliver.
-- [ ] **9.10** **`image/png` output renders as a real, inline image — not a
+- [x] **9.10** **`image/png` output renders as a real, inline image — not a
   placeholder** — run a cell that writes one of ADR-0019's captured files,
   e.g.
   `import matplotlib.pyplot as plt; plt.plot([1,2,3]); plt.savefig("fig.png")`.
@@ -213,7 +213,7 @@ panel", for why the two stay separate rather than sharing one).
 **Pre-work:** a signed-in Viya profile with `PROC PYTHON` available, same as
 §9.2–§9.9 above.
 
-- [ ] **9.12** **`text/html` output renders as real HTML, not a placeholder
+- [x] **9.12** **`text/html` output renders as real HTML, not a placeholder
   and not literal markup** — run a cell that writes and then repr's a real
   HTML file, ADR-0019's own capture mechanism, the same shape
   `docs/dev/manual-tests/phase-3.md`'s own pandas example uses (there is no
@@ -226,7 +226,7 @@ panel", for why the two stay separate rather than sharing one).
   would have read as a rendering bug.**
   **Expect:** the cell's output shows the rendered table — not the literal
   `<table>...</table>` markup as text, and not a placeholder line.
-- [ ] **9.13** **A raised exception also gets a Problems-panel entry, at the
+- [x] **9.13** **A raised exception also gets a Problems-panel entry, at the
   cell's own position, cleared on the next run** — in a fresh cell, run
   something that raises with a mappable frame, e.g.
   `def f():` / `    return 1 / 0` / `f()` as three lines of one cell.
@@ -249,7 +249,7 @@ panel", for why the two stay separate rather than sharing one).
   rather than merely outliving its own cell — the bar to check is not just
   "does it disappear" but "does it disappear before the reopen, and not
   reattach to the wrong cell after".
-- [ ] **9.14** **An embedded `<script>` in `text/html` output never runs** —
+- [x] **9.14** **An embedded `<script>` in `text/html` output never runs** —
   adversarial review, 2026-09-14 (Finding 1): a raw run through VS Code's own
   built-in notebook renderer executes an embedded `<script>` tag with no
   gate but workspace trust (already satisfied for any code this extension

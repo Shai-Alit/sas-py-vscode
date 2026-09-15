@@ -158,19 +158,26 @@ branch issue (nothing to fix); and a pre-existing 9b gap (a rejected
 
 `npm run verify` green — **1749 unit tests** (up from 1725), coverage
 **96.03/95.51/95.9/96.03** (statements/branches/functions/lines,
-`.c8rc.json`'s floor cleared with room). `npm run test:integration` **could
-not run this session** — the sandboxed environment's VS Code test binary
-reports a Node version string rather than launching the real Electron host,
-reproduced after a full re-download, an environment limitation rather than a
-code issue; `execution.test.ts` gained three net-new cases and enhanced two
-existing ones, all typecheck-clean against the real `@types/vscode` surface
-but **unverified by an actual run — needs a fresh `npm run test:integration`
-before this ships.** Manual test items: §9.10 reworded to test real image
-rendering and reset to unchecked (the placeholder it used to test is gone);
-§9.12 reworded (Finding 6's fix) and §9.13 gained a close/reopen step
-(Finding 2's fix); new §9.14 verifies the sanitizer's real-renderer behaviour
-— every one of §9.10/§9.12/§9.13/§9.14 **left for Sean, not yet run.** Full
-account in `phase-9.md`'s 9c Runbook entry. **9d (export) not started.**
+`.c8rc.json`'s floor cleared with room). `npm run test:integration` **ran
+green 2026-09-14 — 433 passing** (up from 419 at 9b's post-merge
+reconciliation). The prior session's "could not run" note was a
+misdiagnosis: `Code.exe: bad option: --disable-extensions` is the same
+`ELECTRON_RUN_AS_NODE`-leak already documented in `phase-5.md`'s 5d-iii
+Runbook entry, not an environment limitation — a shell spawned inside the
+VS Code extension host inherits `ELECTRON_RUN_AS_NODE=1` and other
+`VSCODE_*` vars, so `@vscode/test-electron` launches the downloaded
+`Code.exe` as bare Node; stripping those vars for the one command (5d-iii's
+own workaround) ran the real Electron host and all 433 cases passed,
+`execution.test.ts`'s three net-new cases and two enhanced ones included.
+Manual test items §9.10 (reworded to test real image rendering, reset to
+unchecked since the placeholder it used to test is gone), §9.12 (Finding 6's
+fix), §9.13 (Finding 2's close/reopen step), and new §9.14 (the sanitizer's
+real-renderer behaviour) **all ran live (Sean, 2026-09-14) and pass** —
+`docs/dev/manual-tests/phase-9.md` updated in place. **9c is fully
+verified — code, adversarial review, `npm run verify`, `npm run
+test:integration`, and the manual pass — with nothing outstanding before it
+ships.** Full account in `phase-9.md`'s 9c Runbook entry. **9d (export) not
+started.**
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -309,7 +316,7 @@ Phase 6→7/8 checkpoint but was missed then. Per-phase detail
 | 6 — SAS Content explorer | ✅ **done — 6a–6e all merged.** SAS Content tree, open/save `FileSystemProvider`, create/rename/move/delete, drag-and-drop, favourites, recycle bin, Cut/Paste. Final PR [#162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash `a74f756`. `npm run verify` green (1580 unit; coverage 95.57/95.51/95.26/95.57). Phase 6→7/8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14 — one known gap (tree icon refresh) deferred to Phase 10/11. | `docs/phases/phase-8.md` |
-| 9 — Notebooks | **9a/9b done and merged** ([PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172), [PR #176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)) — no `ms-toolsai.jupyter` dependency; real execution against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)). **9c (renderers + diagnostics) code-complete 2026-09-14, adversarial review folded in, not yet pushed** — pending a live manual pass and a fresh `npm run test:integration`. No renderer script needed — VS Code's own built-in `notebook-renderers` extension already renders `text/html`/`image/png`, confirmed live, now sanitized before render ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md), the review's one blocking finding); `RunDiagnostics` now also publishes for a raised cell, via this module's own `DiagnosticCollection`, and clears on notebook close. `npm run verify` green (1749 unit, 96.03/95.51/95.9/96.03); `test:integration` not run this session (environment could not launch the Electron test host). **9d (export) not started.** | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **9a/9b done and merged** ([PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172), [PR #176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)) — no `ms-toolsai.jupyter` dependency; real execution against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)). **9c (renderers + diagnostics) is fully verified 2026-09-14 — code, adversarial review, `npm run verify`, `npm run test:integration`, and the manual pass — and ready to push.** No renderer script needed — VS Code's own built-in `notebook-renderers` extension already renders `text/html`/`image/png`, confirmed live, now sanitized before render ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md), the review's one blocking finding); `RunDiagnostics` now also publishes for a raised cell, via this module's own `DiagnosticCollection`, and clears on notebook close. `npm run verify` green (1749 unit, 96.03/95.51/95.9/96.03); `npm run test:integration` green (433 passing). **9d (export) not started.** | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

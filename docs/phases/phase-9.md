@@ -886,19 +886,38 @@ recommendation, not a dependency lock._
   same category `tracebackDiagnostics.ts`'s own `primaryFrame` doc comment
   already names and designs around). `npm run docs:build`/`docs:links:self`/
   `docs:samples` green (the new ADR and manual-test cross-links resolve).
-  **`npm run test:integration` could not be run this session** — the
-  sandboxed environment's cached VS Code test binary reports a Node version
-  string for `--version` rather than launching the real Electron host
-  (`Code.exe: bad option: --disable-extensions`), reproduced after a full
-  re-download, so this is an environment limitation, not a code issue.
-  `execution.test.ts` gained three net-new integration cases (a sanitizer
-  end-to-end check under "rich output rendering," a "no frame maps" and a
-  "closed notebook clears every cell" case under "Problems-panel
-  diagnostics") and enhanced two existing ones (position-asserting
-  diagnostics, alt-text-asserting image render) — all typecheck clean
-  against the real `@types/vscode` surface, but **unverified by an actual
-  run this session; needs a fresh `npm run test:integration` before this
-  ships.**
+  `npm run test:integration` **ran green 2026-09-14** — **433 passing**, up
+  from 419 at 9b's post-merge reconciliation (430 right after this slice's
+  own two new suites, +3 more from the adversarial review's own net-new
+  cases below — the arithmetic checks out). The prior session's "could not
+  be run" note was a misdiagnosis, not a genuine environment limitation:
+  `Code.exe: bad option: --disable-extensions` is the same
+  `ELECTRON_RUN_AS_NODE` leak already documented in `phase-5.md`'s 5d-iii
+  Runbook entry — a shell spawned inside the VS Code extension host inherits
+  `ELECTRON_RUN_AS_NODE=1` plus other `VSCODE_*` vars, so
+  `@vscode/test-electron` launches the downloaded `Code.exe` as bare Node
+  instead of Electron, on any machine that shell runs on, sandboxed or not.
+  Stripping those vars for the one command (the same workaround 5d-iii
+  recorded) launched the real Electron host and all 433 cases passed,
+  including the three net-new adversarial-review cases (sanitizer
+  end-to-end, "no frame maps," "closed notebook clears every cell") and the
+  two enhanced ones (position-asserting diagnostics, alt-text-asserting
+  image render) the previous paragraph called typecheck-clean but
+  unverified — now verified for real.
+
+  **Manual test pass ran 2026-09-14 (Sean) — §9.10, §9.12, §9.13, and §9.14
+  all pass.** `docs/dev/manual-tests/phase-9.md` updated in place (all four
+  boxes ticked). §9.10 — reworded by this slice to test real `image/png`
+  rendering rather than the placeholder it used to check, and reset to
+  unchecked for that reason — renders as a real inline image, not a
+  placeholder, closing the one manual item this slice's own reword had left
+  unverified since 9b's own live pass predates the reword. §9.12 confirms
+  `text/html` renders as real, sanitized markup; §9.13 confirms a raised
+  cell gets a Problems-panel entry at the right position, cleared on the
+  next run and on notebook close; §9.14 confirms an embedded `<script>`
+  never executes. This slice is now fully verified — code, the adversarial
+  review, `npm run verify`, `npm run test:integration`, and the manual
+  pass — with nothing outstanding before it ships.
 
 ☐ **9d — Export.**
 

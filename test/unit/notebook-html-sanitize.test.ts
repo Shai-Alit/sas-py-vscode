@@ -68,6 +68,18 @@ describe("notebook/htmlSanitize", () => {
       );
     });
 
+    it("drops a style attribute that hides url( behind an HTML character reference", () => {
+      // &#x72; decodes to "r" once a real HTML parser builds the attribute
+      // value from source — a way to spell "url(" with no literal
+      // CSS-escape backslash and no literal danger substring either
+      // (adversarial review, 2026-09-15, PR #177, found after the backslash
+      // fix above). Any `&` at all is now rejected the same way.
+      const result = sanitizeHtml(
+        '<div style="background:&#x75;&#x72;&#x6c;&#40;https://evil.example/x&#41;">x</div>',
+      );
+      assert.equal(result, "<div>x</div>");
+    });
+
     it("drops a style attribute or block that hides url( behind a CSS escape", () => {
       // \75\72\6c( is "url(" once a real CSS parser decodes the hex escapes —
       // a substring check against the literal text alone walks straight past

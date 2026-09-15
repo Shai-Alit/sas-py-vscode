@@ -975,6 +975,30 @@ recommendation, not a dependency lock._
   fixes only — no integration case exercises `htmlSanitize.ts` directly).
   `npm run check:docs`/`check:secrets` green.
 
+  **A follow-up review on the same push (commit `8020b29`) found a fourth
+  bypass the backslash fix didn't close, same day.** `isDangerousCss` checks
+  the raw attribute-value text a `style="…"` attribute was written with —
+  but a real HTML parser entity-decodes an attribute's value on the way into
+  the DOM, a separate decoding step from the CSS-escape one the backslash
+  fix already covers. `style="background:&#x75;&#x72;&#x6c;&#40;https://
+  evil.example/x&#41;"` contains no literal `url(`, `@import`, etc. and no
+  backslash, so it passed `isDangerousCss` unchanged — reproduced against
+  the compiled sanitizer before fixing, confirming the raw (still-encoded)
+  attribute value is what this function sees, not what a browser would
+  build. Fixed the same way as the backslash case rather than reimplementing
+  entity decoding to check after it: any `&` at all in a style value or
+  block is now treated as dangerous too. (A `<style>` block's own raw-text
+  content is not actually entity-decoded by a real HTML parser — only
+  attribute values are — so this half of the rejection is defense-in-depth
+  rather than closing a reachable bypass there, and cheaper than proving the
+  distinction holds than getting it wrong would be.) New test:
+  "drops a style attribute that hides url( behind an HTML character
+  reference". `npm run verify` green — **1753 unit tests**, coverage
+  unchanged at 96.04/95.51/95.9/96.04; `npm run test:integration` unchanged
+  at 433 passing; `npm run check:docs`/`check:secrets` green. Replied to and
+  resolved all four review threads on PR #177 with the reproduction and fix
+  for each.
+
 ☐ **9d — Export.**
 
 - ☐ Scope this slice only after 9b/9c land — likely small or droppable,

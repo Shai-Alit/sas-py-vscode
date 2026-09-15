@@ -40,11 +40,12 @@
  * `<style>` is the one raw-text element kept (pandas' `Styler.to_html()`
  * needs it) — its content is treated as CSS, not HTML, and dropped wholesale
  * if it contains anything that could reach outside the page (`url(`,
- * `@import`, `expression(`, `-moz-binding`, `javascript:`, `behavior:`, or
- * any backslash — CSS lets those constructs be spelled as escapes, e.g.
- * `\75\72\6c(` for `url(`, so any escape at all is treated as dangerous
- * rather than decoded and re-checked). `style="…"` attribute values get the
- * same check.
+ * `@import`, `expression(`, `-moz-binding`, `javascript:`, `behavior:`, a
+ * backslash, or an `&` — CSS lets those constructs be spelled as escapes,
+ * e.g. `\75\72\6c(` for `url(`, and an HTML attribute value additionally
+ * lets them be spelled as character references, e.g. `&#x72;` for `r`, so
+ * either kind of encoding at all is treated as dangerous rather than decoded
+ * and re-checked). `style="…"` attribute values get the same check.
  *
  * No tag carries a URL-bearing attribute except `<img src>`, and that is
  * restricted to an inline `data:image/…;base64,…` value — the same
@@ -144,18 +145,23 @@ const NUMERIC_VALUE = /^\d+%?$/;
 const CSS_DANGER =
   /url\s*\(|@import|expression\s*\(|-moz-binding|javascript\s*:|behavior\s*:/i;
 
-/** A literal backslash anywhere in the value. CSS lets any character be
- * escaped, including as a hex code point (`\75\72\6c(` decodes to `url(`
- * once a real CSS parser resolves it), so a substring check against
- * {@link CSS_DANGER} alone can be walked straight past by encoding the very
- * text it looks for — adversarial review, 2026-09-15 (PR #177). Rather than
- * reimplement CSS escape decoding to check *after* it, any backslash at all
- * is treated as dangerous: legitimate `Styler.to_html()` output has no
- * reason to contain one, so this loses nothing real while closing the whole
- * class of escape-based obfuscation, not just the one encoding a review
- * happened to try. */
+/** A literal backslash or `&` anywhere in the value. Two independent ways
+ * exist to spell `url(` (or `@import`, `javascript:`, …) without the literal
+ * substring {@link CSS_DANGER} looks for ever appearing: a CSS escape
+ * (`\75\72\6c(` decodes to `url(` once a real CSS parser resolves it) or an
+ * HTML character reference (`&#x72;` decodes to `r` once a real HTML parser
+ * builds the attribute value from source — this one applies to a `style="…"`
+ * attribute specifically, since attribute values go through entity decoding
+ * on the way into the DOM the same way ordinary text content does).
+ * Adversarial review, 2026-09-15 (PR #177), found the backslash case first;
+ * a follow-up review the same day found the `&` case survived that fix.
+ * Rather than reimplement CSS-escape decoding and HTML-entity decoding to
+ * check *after* them both, either character at all is treated as dangerous:
+ * legitimate `Styler.to_html()` output has no reason to contain either, so
+ * this loses nothing real while closing the whole class of encoding-based
+ * obfuscation, not just the specific encodings a review happened to try. */
 function isDangerousCss(value: string): boolean {
-  return CSS_DANGER.test(value) || value.includes("\\");
+  return CSS_DANGER.test(value) || value.includes("\\") || value.includes("&");
 }
 
 /** Only an inline base64 raster image — the same `data:` restriction ADR-0021

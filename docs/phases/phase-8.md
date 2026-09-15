@@ -792,6 +792,90 @@ CSV export/table properties for a CAS table. `cas-python-connection.md` itself
 now cross-links to it. `npm run check:docs` (reference, samples, self-link
 check, VitePress build) and `check:secrets` both green.
 
+### Icon-flip gap: root cause found, 2026-09-15
+
+The "Post-merge fixes, 2026-09-14" Bug 2 above shipped a fix that passed
+every test written against it and still did nothing in a real window, and
+was deferred to Phase 10/11 with the root cause unfound. **Found.** The
+first candidate `phase-11.md`'s own carried-item entry listed — "whether
+`TreeItem.id`-based reconciliation actually works the way `nodeId`'s own doc
+comment assumes" — was the right one, and the answer is that it does not.
+
+**`onDidChangeTreeData` resolves a fired element by object identity, never
+by `TreeItem.id`.** Read directly out of VS Code's own
+`src/vs/workbench/api/common/extHostTreeViews.ts` rather than inferred:
+`ExtHostTreeView` keeps two maps in opposite directions — `_elements:
+Map<TreeItemHandle, T>` (handle → element) and `_nodes: Map<T, TreeNode>`
+(**element → node, keyed by the extension's own object**) — and
+`_getHandlesToRefresh` opens with `elements.map(element =>
+this._nodes.get(element))`. `id` only shapes the *handle string* of a node
+already found that way (`_createHandle` returns `` `1/${id}` `` when an id
+exists); nothing ever looks a node up by it. So Bug 2's `this.changed.fire({
+...table, state: "loaded" })` handed VS Code an object it had never been
+given: `_nodes.get()` returned `undefined`, no handle was collected,
+`_refresh` found nothing to refresh, and the event was discarded **with no
+error and no warning**. Bug 2's own write-up asserts the opposite ("VS Code
+matches the refreshed node to the existing row by `nodeId`, not by object
+reference") — that sentence is wrong, and left standing above as the record
+of what was believed at the time; this entry supersedes it.
+
+Why no test caught it: `test/integration/cas/tree.test.ts` asserted the
+fired element's **shape** (`state === "loaded"`), which is precisely the
+property a silently-dropped copy also has. Any test of that form passes
+whether or not VS Code would ever act on the event.
+
+**Fixed** in `src/cas/casTree.ts`: `getColumnsAndRefreshIcon` now fires with
+`table` itself — the very object `getChildren` was handed, and therefore the
+one in `_nodes` — and the new state travels out-of-band in a
+`loadedTables: Set<string>` of `nodeId`s that `getTreeItem` overlays when
+choosing the icon. The element is never mutated (VS Code's cache holds that
+object, and `CasTableItem`'s fields are `readonly`); `refresh()` clears the
+set alongside `justLoaded`, since a re-listing carries the server's own
+authoritative `state`. The `justLoaded` re-entrant-call cache is unaffected —
+it was already keyed by `nodeId`, and the re-entrant call now arrives
+carrying the same object, so it keys identically.
+
+Tests rewritten rather than added to, since the existing ones encoded the
+defect: the shape assertions are replaced by `assert.strictEqual(fired[0],
+node)` (the actual regression guard) plus icon assertions through
+`getTreeItem` — unloaded before the expand, loaded after, back to unloaded
+after `refresh()`, and unchanged when `getColumns` fails.
+
+**Live-confirmed 2026-09-15 (Sean): the icon flips.** Verified the way this
+gap's own history demanded — not from a green suite, but by building a
+`.vsix` from the fix, installing it, and watching a table node in a real VS
+Code window flip from the cloud glyph to the table glyph as its columns
+appeared, with no **Refresh CAS**. `npm run verify` and
+`npm run test:integration` green alongside it, but that was never the
+question here: the first fix was green too. Manual-test item 8.28 is ticked.
+
+**The gap is swept out of everywhere it was written down**, in this same
+change, per `CLAUDE.md`'s "Every claim carries its evidence":
+[`docs/browsing-cas.md`](../browsing-cas.md) loses both the body caveat on
+load-on-expand and the troubleshooting entry "A table's icon still shows
+unloaded after you expanded it" (and its "Where the details are" pointer to
+the gap); [`docs/troubleshooting.md`](../troubleshooting.md) loses its own
+"Browsing CAS" entry for it, a second user-facing copy the first sweep of
+this session missed and a repo-wide grep caught;
+[`phase-11.md`](phase-11.md) loses the carried item; `STATUS.md` loses the
+open-item bullet and has its Phase 8 paragraph and phase-index row
+corrected, both of which asserted the fix "still does not work." The only
+surviving mentions are historical by design: manual-test item 8.28's own
+dated 9/14 failure account, and `docs/status-archive.md`.
+
+**Which review this had, stated plainly: the pre-push adversarial pass was
+skipped, by Sean's explicit call.** `CLAUDE.md`'s "Adversarial self-review
+before the PR exists" applies to this change — it modifies source — and the
+prompt was handed over twice; Sean chose to go straight to the PR and let CI,
+Codex and the Claude reviewer run instead. Recorded here rather than left
+implicit, per that same section's "never describe a slice as 'reviewed' when
+only that pass has seen it; say which review it's had." The mitigating facts,
+for whoever reads this later: the defect this fixes was found by reading VS
+Code's own `extHostTreeViews.ts` source rather than by inference, the fix is
+~15 lines in one file, and — unlike its predecessor — it was confirmed live
+in a real VS Code window before the PR was opened, which is the evidence the
+adversarial pass would most have been looking for here.
+
 All probes below ran 2026-09-03 against `verde` (Viya 4), via the
 `viya-api-probe` skill. This phase predates the 2026-09-09 switch to
 phase-scoped `N.x` finding numbers (`STATUS.md`, repo-root `CLAUDE.md`) and

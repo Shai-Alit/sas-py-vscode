@@ -179,13 +179,6 @@ signing out, or switching the run target to Local.
 
 ## Browsing CAS
 
-**A table's icon still shows unloaded after you expanded it.** The load
-happened — CAS has to load a table to answer "what columns does this have,"
-which is what expanding it does — but the icon can fail to visibly flip from
-cloud to table afterward in a real VS Code window. A known, documented gap.
-Run **Refresh CAS**, or just open the table: it works regardless of what the
-icon shows. See [Browsing CAS](browsing-cas.md).
-
 **Your own CASUSER caslib is missing from the tree.** Expected today — only
 global caslibs are shown; a session-scoped caslib is not yet supported. See
 [Browsing CAS](browsing-cas.md).

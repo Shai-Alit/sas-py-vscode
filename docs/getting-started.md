@@ -100,12 +100,16 @@ plain text (a chart, a DataFrame rendered as a table).
 - **[Browsing SAS libraries](browsing-sas-libraries.md)** — a second tree view
   of the active session's SAS libraries, with a scrollable, sortable,
   filterable grid for any table in them, table properties, and a CSV export.
+- **[Browsing CAS](browsing-cas.md)** — a third tree view, for CAS servers,
+  caslibs and tables, that needs only a sign-in, not a connect.
 - **[Python and SAS libraries](data-access.md)** — reading and writing that
   same library data directly from your own Python code, with no local
   database driver and no second credential to manage.
 - **[Connecting to CAS from Python](cas-python-connection.md)** — one command
   gets your Python code an authenticated `swat.CAS()` connection, reusing the
   same Viya sign-in with no separate CAS credential of your own.
+- **[Notebooks](notebooks.md)** — open a `.ipynb` file and run its cells
+  against your own Viya compute session, no `ms-toolsai.jupyter` required.
 - **[The Python environment](python-environment.md)** — **Show Environment**
   lists the interpreter version and every package installed on it, so you can
   check whether something is there before you `import` it.

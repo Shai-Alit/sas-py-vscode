@@ -142,6 +142,25 @@ The outcomes:
   that changed since. **Not edited** — Phase 10 is being worked concurrently
   by another session, per this project's own separate-clone convention.
 
+## Documentation catch-up — done 2026-09-15
+
+A completeness pass, run during Phase 10 at the developer's request, found
+that Phase 8's CAS tree and Phase 9's notebooks had shipped with **no**
+user-facing documentation (Phase 8 had one page for the Python-side CAS
+connection, but it was never wired into `docs/README.md` or the VitePress
+nav and so was unreachable; Phase 9 had nothing at all), and that Phase 6's
+Cut/Paste move was undocumented too. Fixed in the same session: new
+[`docs/browsing-cas.md`](docs/browsing-cas.md) and
+[`docs/notebooks.md`](docs/notebooks.md), both registered in
+`docs/README.md` and `.vitepress/config.mjs`'s `nav`/`sidebar`; a Cut/Paste
+section added to `docs/browsing-sas-content.md`; cross-links added from
+`getting-started.md`, `faq.md`, `troubleshooting.md`, `running-python.md`,
+`browsing-sas-libraries.md`, and `cas-python-connection.md`. `npm run
+check:docs` (reference tables, samples, self-link check, VitePress build)
+and `check:secrets` both green throughout. Full accounts are each phase's own
+Runbook — see `phase-6.md`'s, `phase-8.md`'s, and `phase-9.md`'s own
+"Documentation catch-up, 2026-09-15" entries.
+
 ## Open items carried forward
 
 - **Open VSX namespace claim** — file the "Request ownership of a namespace"

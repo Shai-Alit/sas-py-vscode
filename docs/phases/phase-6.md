@@ -1256,6 +1256,16 @@ branches, which a 3-way merge does not deduplicate) was found and removed at
 this checkpoint — `docs/dev/manual-test-pass.md` now carries one copy of
 each, matching what was actually run.
 
+### Documentation catch-up, 2026-09-15
+
+`docs/browsing-sas-content.md` never mentioned 6e's Cut/Paste at all — it
+described only the drag-and-drop move. Found during a Phase 10
+documentation-completeness pass alongside the larger CAS/notebook gaps (see
+`phase-8.md`'s and `phase-9.md`'s own "Documentation catch-up" entries) and
+fixed in the same session: a short section on Cut/Paste as a
+drag-and-drop-equivalent move, and an [ADR-0032](../adr/0032-content-cut-paste.md)
+link. `npm run check:docs` green.
+
 ---
 
 ## Probe findings

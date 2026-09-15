@@ -404,6 +404,37 @@ backfilling them here rather than opening a separate PR for a three-line
 gap was the pragmatic call. `npm run verify`'s full chain re-run green
 after the `localPythonEnvironment.ts` fix (see below); no other findings.
 
+**PR #178 review, round 2, 2026-09-15 (after merging main's PR #179 docs
+into the branch).** Two more minor findings, both in
+`src/run/localPythonEnvironment.ts`, both fixed. First: `sitePackagesPath`
+reads the bare `process.platform` global rather than an import, so
+`eslint.config.mjs`'s `no-restricted-imports` rule (ADR-0003's enforcement
+mechanism) never sees it — and the call was unguarded, so a `ReferenceError`
+in an environment where `process` does not exist (a web extension host,
+which this module's own doc comment already names as a case it degrades
+for) would have propagated out of `readActiveLocalEnvironment`, through
+`environmentPanel.ts`'s unguarded `await`, and blanked the whole `Show
+environment` document — the identical failure shape the first adversarial
+review round already fixed twice over for the two calls above it. **Fixed**:
+the `readLocalPackages`/`sitePackagesPath` call is now wrapped in its own
+`try`/`catch`, degrading to `{ kind: "unknown" }` like every other early
+return in this function. Not a live bug today — `package.json` has no
+`browser` entry point, so a web host never actually runs this — but the gap
+in the graceful-degradation guarantee was real. The reviewer additionally
+suggested extending the ADR-0003 lint rule to catch bare
+`process`/`Buffer`-style globals, not just imports; left as a follow-up for
+Sean to decide on, not applied here — a lint-rule change is a wider,
+independent decision than this PR's own scope. Second: `LocalEnvironment`'s
+`known` arm carried a `version` field (`resolved.version.sysVersion`) that
+nothing downstream ever read — `environmentPanel.ts` only pulls
+`local.packages` out of it. **Fixed**: the field is dropped rather than
+kept for a hypothetical future consumer, per this project's own
+no-speculative-fields convention; nothing else referenced it (`grep -rn
+"LocalEnvironment"` before the change turned up only this file and
+`environmentPanel.ts`). `npm run verify` (1771 unit, same coverage figures)
+and `npm run test:integration` (436 passing) both re-ran green after both
+fixes.
+
 ---
 
 ## Probe findings

@@ -48,7 +48,6 @@ export type LocalEnvironment =
   | { readonly kind: "unknown" }
   | {
       readonly kind: "known";
-      readonly version: string;
       readonly packages: readonly LocalPackage[];
     };
 
@@ -110,11 +109,21 @@ export async function readActiveLocalEnvironment(): Promise<LocalEnvironment> {
     return { kind: "unknown" };
   }
 
-  const packages = await readLocalPackages(
-    sitePackagesPath(sysPrefix, major, minor),
-    realFs,
-  );
-  return { kind: "known", version: resolved.version.sysVersion, packages };
+  let packages: readonly LocalPackage[];
+  try {
+    packages = await readLocalPackages(
+      sitePackagesPath(sysPrefix, major, minor),
+      realFs,
+    );
+  } catch {
+    // `sitePackagesPath` reads the bare `process.platform` global, which
+    // does not exist in a web extension host — a `ReferenceError` there
+    // must degrade the same as every other reason this function returns
+    // `unknown`, not propagate out of `provideTextDocumentContent` and
+    // blank the whole `Show environment` document.
+    return { kind: "unknown" };
+  }
+  return { kind: "known", packages };
 }
 
 /**

@@ -12,6 +12,15 @@
   loading, or unvalidated messages crossing the extension/webview boundary" is
   explicitly in scope for a security report)
 - **Executed in:** slice 3d-ii
+- **See also:** [ADR-0036](0036-notebook-html-output-is-sanitized.md) —
+  9c's notebook cell surface renders the same `text/html` `RichOutput` arm,
+  but through VS Code core's own renderer, which this extension has no
+  webview of its own to set a CSP on. The notebook surface reaches an
+  equivalent guarantee (no embedded `<script>` executes) by sanitizing the
+  markup itself rather than by this record's own CSP mechanism — the two
+  ADRs do not contradict each other, but this one's "no script may execute"
+  section describes *this panel's own* mechanism only, not every surface
+  this extension renders `text/html` on.
 
 ## Context
 

@@ -100,6 +100,114 @@ branch actually produces: **1693 unit tests**, coverage
 **95.95/95.48/95.83/95.95**; **419 integration** passing (418 post-merge,
 +1 for the new regression case).
 
+**9c (renderers + diagnostics) is code-complete 2026-09-14, adversarial
+review folded in, not yet pushed — pending a live manual test pass and a
+fresh `npm run test:integration`, neither of which could run this session.**
+It needed less than the punch list assumed — no renderer script at all. The
+open question 9b's own doc comment left standing (whether VS Code core's
+built-in renderers show `text/html`/`image/png` with no `ms-toolsai.jupyter`
+installed) was spiked, not guessed at: the installed VS Code's own bundled
+`notebook-renderers` extension (publisher `vscode`) already renders both,
+`requiresMessaging: "never"`, with `controller.test.ts`'s existing
+`--disable-extensions` run as continuous proof it needs no Jupyter
+extension — the same evidentiary bar 9a's own `ipynb` spike set. Since this
+project's own `RichOutput` union already uses those standard mimes, there
+was nothing for upstream's `LogRenderer.ts`/`HTMLRenderer.ts`-shaped script
+to do; `src/notebook/notebookRender.ts` (new, pure, mirroring `render.ts`/
+`resultPanelModel.ts`'s own "decide what, not how" split) plus
+`notebookController.ts`'s `appendRichOutput` build the real
+`vscode.NotebookCellOutputItem`s directly. `RunDiagnostics` also now applies
+to a raised cell — confirmed by a real test that `tracebackDiagnostics.ts`'s
+position maths needs no change for a `vscode-notebook-cell:` URI — via this
+module's own `DiagnosticCollection`, not Run File's; a stale Problems entry
+outliving a sign-out is a deliberate, recorded gap (carried to
+`phase-11.md`), the same "disproportionate" call Phase 4c made for a
+comparably narrow Run File gap — the closed-notebook half of that gap turned
+out worse than "stale" and is fixed, not carried, below.
+
+**Adversarial self-review ran 2026-09-14, before any of this was pushed —
+ten findings, one blocking, all verified independently and folded into the
+branch.** The blocking one (Finding 1, security): `text/html` output reached
+VS Code's own built-in notebook renderer as real, unsanitized markup, which
+executes an embedded `<script>` — contradicting
+[ADR-0021](docs/adr/0021-result-panel-webview.md)'s own load-bearing "a
+`<script>` in `text/html` output must stay inert" decision, and worse than
+the result-panel case it contradicts because a notebook's outputs persist
+into the `.ipynb` and re-execute on reopen with no Viya round trip. **Sean's
+call: sanitize the markup, not build a second CSP-locked renderer or accept
+the risk.** `src/notebook/htmlSanitize.ts` (new, pure, no dependency added —
+ADR-0005's "first runtime dependency" trigger still hasn't fired) is an
+allow-list tokenizer/re-serializer, recorded in
+[ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md) and
+cross-referenced from ADR-0021. The other nine: a closed notebook's stale
+Problems entries could misattribute to the wrong cell after a reopen (fixed,
+not deferred — `handleNotebookClosed`); Run File's and the notebook's own
+`RunDiagnostics` collided on the same collection name (fixed, an optional
+`name` on `RunDiagnosticsDeps`); six integration tests leaked a
+`DiagnosticCollection` each (fixed); the one diagnostics test never actually
+asserted the published position (fixed, plus a "no frame maps" case); §9.12's
+repro could not produce a `text/html` output at all (fixed, reworded to
+`to_html(...)`); `diagnostics.ts`'s own doc comment under-named its callers
+(fixed); image output carried no alt text (fixed, parity with the result
+panel's own `labels.imageAlt`); the l10n bundle looked stale in the
+reviewing session's own working copy, but is gitignored/generated, not a
+branch issue (nothing to fix); and a pre-existing 9b gap (a rejected
+`appendOutput` mid-stream skips `execution.end`) is noted, carried to
+`phase-11.md`, not fixed here. Full account, finding by finding, in
+`phase-9.md`'s 9c Runbook entry.
+
+`npm run verify` green — **1749 unit tests** (up from 1725), coverage
+**96.03/95.51/95.9/96.03** (statements/branches/functions/lines,
+`.c8rc.json`'s floor cleared with room). `npm run test:integration` **ran
+green 2026-09-14 — 433 passing** (up from 419 at 9b's post-merge
+reconciliation). The prior session's "could not run" note was a
+misdiagnosis: `Code.exe: bad option: --disable-extensions` is the same
+`ELECTRON_RUN_AS_NODE`-leak already documented in `phase-5.md`'s 5d-iii
+Runbook entry, not an environment limitation — a shell spawned inside the
+VS Code extension host inherits `ELECTRON_RUN_AS_NODE=1` and other
+`VSCODE_*` vars, so `@vscode/test-electron` launches the downloaded
+`Code.exe` as bare Node; stripping those vars for the one command (5d-iii's
+own workaround) ran the real Electron host and all 433 cases passed,
+`execution.test.ts`'s three net-new cases and two enhanced ones included.
+Manual test items §9.10 (reworded to test real image rendering, reset to
+unchecked since the placeholder it used to test is gone), §9.12 (Finding 6's
+fix), §9.13 (Finding 2's close/reopen step), and new §9.14 (the sanitizer's
+real-renderer behaviour) **all ran live (Sean, 2026-09-14) and pass** —
+`docs/dev/manual-tests/phase-9.md` updated in place.
+
+**[PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177)'s own AI
+review then raised three findings against `htmlSanitize.ts` — two blocking,
+one non-blocking, all real — fixed and folded in before push, 2026-09-15.**
+Each was reproduced against the compiled sanitizer before fixing, not taken
+on faith: a malformed-but-spec-valid raw-text close tag (`</style/>`) walked
+past `findRawTextEnd`'s bare-`</style>`-only match and let a live `<script>`
+after it re-emit verbatim; and a backslash-escaped `url(`/`javascript:`
+(`\75\72\6c(` decodes to `url(`) slipped past `CSS_DANGER`'s literal
+substring check in both a `style=` attribute and a `<style>` block. Fixed:
+`findRawTextEnd` now matches the spec's full terminator set and reuses
+`findTagEnd`'s quote-aware scan for the real closing `>`; `isDangerousCss`
+now rejects any backslash at all rather than decoding CSS escapes to
+check after them. `npm run verify` green — **1752 unit tests** (up from
+1749), coverage **96.04/95.51/95.9/96.04**; `npm run test:integration`
+unchanged at 433 passing (unit-tier fixes only).
+
+**A follow-up review on that same push found a fourth bypass the backslash
+fix didn't close**: `isDangerousCss` checks a `style` attribute's *raw*
+source text, but a real HTML parser entity-decodes an attribute value on
+the way into the DOM — a separate decoding step from the CSS-escape one
+already covered. `style="background:&#x75;&#x72;&#x6c;&#40;https://
+evil.example/x&#41;"` has no literal `url(` and no backslash, so it passed
+unchanged — reproduced before fixing. Fixed the same way: any `&` at all in
+a style value or block is now dangerous too. `npm run verify` green —
+**1753 unit tests**, coverage unchanged; `npm run test:integration`
+unchanged at 433 passing. Replied to and resolved all four review threads
+on PR #177. Full account, including the reproduction and fix for each
+finding, in `phase-9.md`'s 9c Runbook entry.
+
+**9c is fully verified — code, both adversarial-review rounds, `npm run
+verify`, `npm run test:integration`, and the manual pass — with nothing
+outstanding before it ships.** **9d (export) not started.**
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:
@@ -237,7 +345,7 @@ Phase 6→7/8 checkpoint but was missed then. Per-phase detail
 | 6 — SAS Content explorer | ✅ **done — 6a–6e all merged.** SAS Content tree, open/save `FileSystemProvider`, create/rename/move/delete, drag-and-drop, favourites, recycle bin, Cut/Paste. Final PR [#162](https://github.com/Shai-Alit/sas-py-vscode/pull/162), squash `a74f756`. `npm run verify` green (1580 unit; coverage 95.57/95.51/95.26/95.57). Phase 6→7/8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-6.md` |
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14 — one known gap (tree icon refresh) deferred to Phase 10/11. | `docs/phases/phase-8.md` |
-| 9 — Notebooks | **9a done, merged as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172).** No `ms-toolsai.jupyter` dependency (confirmed live, ADR-0024 unchanged). **9b (controller + execution) code-complete 2026-09-14 — adversarial review run, three findings folded in, ready to push.** `notebookController.ts` wires real execution (`freshNamespace: false`) and interrupt-to-cancel, now notebook-scoped after the review's wrong-target-interrupt finding; kernel picker alone is the notebook run-target equivalent, no status-bar extension. The manual pass found the first cut's session sharing with Run File destructive (one `PROC PYTHON` namespace per session); fixed same day by [ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md) — the notebook controller now runs against its own, separate compute session. §9.8/§9.9/§9.11 ran live 2026-09-14 and all pass. PR #176's AI review raised two findings (a missing two-notebook interrupt regression test; stale post-merge test counts in this file/`phase-9.md`), both fixed and folded in. `npm run coverage`/`test:integration` green (1693 unit, 95.95/95.48/95.83/95.95; 419 integration). | `docs/phases/phase-9.md` |
+| 9 — Notebooks | **9a/9b done and merged** ([PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172), [PR #176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)) — no `ms-toolsai.jupyter` dependency; real execution against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)). **9c (renderers + diagnostics) is fully verified 2026-09-15 — code, two rounds of adversarial review, `npm run verify`, `npm run test:integration`, and the manual pass — pushed as [PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177).** No renderer script needed — VS Code's own built-in `notebook-renderers` extension already renders `text/html`/`image/png`, confirmed live, now sanitized before render ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); `RunDiagnostics` now also publishes for a raised cell, via this module's own `DiagnosticCollection`, and clears on notebook close. PR #177's own AI review found four sanitizer bypasses across two rounds (`</style/>`-shaped close tags, backslash-escaped `url(`, and — found in a follow-up review of the fix itself — HTML-entity-escaped `url(` in a `style` attribute), all fixed and folded in before push. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). **9d (export) not started.** | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | **scoped 2026-09-04**, not started | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |

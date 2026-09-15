@@ -663,17 +663,341 @@ recommendation, not a dependency lock._
   `npm run verify` and `npm run test:integration` green after folding both
   fixes in (numbers above).
 
-☐ **9c — Renderers + diagnostics.**
+☑ **9c — Renderers + diagnostics.** Code-complete 2026-09-14.
 
-- ☐ Build the small, per-mime-type notebook renderer script(s)
+- ☑ Build the small, per-mime-type notebook renderer script(s)
   (`contributes.notebookRenderer`), in upstream's `LogRenderer.ts`/
   `HTMLRenderer.ts` shape — dependency-free, no shared code with
   `ResultPanel`'s webview — reusing `resultPanelModel.ts`'s `RichOutput` →
   render-data reduction *logic* where it overlaps, not its transport.
-- ☐ Spike whether `RunDiagnostics`/`tracebackDiagnostics.ts` can target a
+  **Done, but not the way the punch list assumed — no renderer script was
+  needed at all, once the open question 9b's own doc comment left standing
+  was actually spiked rather than guessed at.** The installed VS Code's own
+  bundled `notebook-renderers` extension (publisher `vscode`, not
+  `ms-toolsai` — `resources/app/extensions/notebook-renderers/package.json`,
+  read directly, the same two-pronged rigor 9a's own spike used for `ipynb`)
+  registers a `notebookRenderer` for `image/gif`/`image/png`/`image/jpeg`/
+  `image/svg+xml`/`text/html`/`application/javascript` and several
+  `vscode.builtin`-prefixed mimes, with `requiresMessaging: "never"` — a
+  purely client-side renderer that needs zero cooperation from any
+  extension, installed or not. Upstream's own `LogRenderer.ts`/
+  `HTMLRenderer.ts` exist because `application/vnd.sas.compute.log.lines`/
+  `application/vnd.sas.ods.html5` are non-standard mimes VS Code has never
+  heard of; this project's own `RichOutput` union already uses the
+  *standard* `text/html`/`image/png` VS Code's own built-in renderer already
+  owns, so there was nothing left to build a renderer for. The proof this
+  finding is real and not a doc-reading guess: `controller.test.ts`'s 9a
+  regression is *continuous* evidence for it, the same way it already was
+  for `ipynb` — the integration host launches with `--disable-extensions`
+  (`runTest.ts`), which disables installed extensions, not the ones VS Code
+  itself bundles, so every CI run already proves the built-in renderer is
+  present with no `ms-toolsai.jupyter` needed. What that proof cannot
+  reach — whether the rendered pixels actually look right in a real
+  window — is `docs/dev/manual-tests/phase-9.md`'s new §9.12 (`text/html`)
+  and rewritten §9.10 (`image/png`, reset to unchecked since the behaviour
+  it tests genuinely changed), left for Sean. Implemented as
+  `src/notebook/notebookRender.ts` (pure, `vscode`-free — the same "decide
+  *what*, not *how*" split `render.ts`/`resultPanelModel.ts` already draw,
+  now a third instance of it) plus `notebookController.ts`'s own
+  `appendRichOutput`, which turns a `NotebookOutputPiece` into a real
+  `vscode.NotebookCellOutputItem` (`.text(markup, "text/html")` for HTML;
+  the plain `new NotebookCellOutputItem(bytes, "image/png")` constructor,
+  `Buffer.from(base64, "base64")`-decoded, for the image — `.data()` has no
+  static factory the way `.text()`/`.stdout()`/`.error()` do). The two old
+  placeholder `vscode.l10n.t()` strings are gone.
+- ☑ Spike whether `RunDiagnostics`/`tracebackDiagnostics.ts` can target a
   notebook cell's `vscode-notebook-cell:` URI directly (Plan, above) before
   deciding whether notebooks need their own diagnostics story or inherit the
-  existing one nearly unmodified.
+  existing one nearly unmodified. **Confirmed by a real test, not just by
+  reading the code: `tracebackDiagnostics.ts`'s `mapFrameToOrigin`/
+  `primaryPosition` never inspect `ProgramOrigin.uri`'s scheme, so a cell's
+  `vscode-notebook-cell:` URI maps a `<string>` frame exactly like an
+  ordinary file's.** `RunDiagnostics` itself needed zero changes.
+  `notebookController.ts`'s `executeCell` now calls `diagnostics.clearFor`
+  at the same point `commands.ts`'s `runNow` does (right after `execute()`
+  succeeds), captures the trailing `application/vnd.python.traceback`
+  output the same way `drainOutputs` does, and calls `diagnostics.publish`
+  on a failed outcome with a captured traceback. **Decided: this module
+  gets its own `RunDiagnostics` instance (a second `DiagnosticCollection`),
+  not Run File's** — not because sharing one is unsafe (diagnostics are
+  keyed per-URI; a cell's URI and a file's URI never collide), but because
+  ADR-0035's own precedent already settled that a notebook gets its own
+  instance of shared infrastructure rather than a wired-through reference to
+  Run File's, and because Run File's own extra clearing hooks
+  (`onDidSignOut`, `onDidCloseTextDocument`, the run-target flipping to
+  Local — Phase 5d-iv) have no notebook equivalent to hook into (no
+  run-target concept at all, 9b's own "kernel picker alone" decision).
+  **A scope decision made and recorded here, not left implicit: a stale
+  Problems entry for a notebook cell that outlives a sign-out or a closed
+  notebook is a known, accepted gap**, the same "disproportionate" call
+  Phase 4c made for Run File's own comparably narrow waiting-cell-message
+  gap — threading `onDidSignOut`/close events through `extension.ts` a
+  second time for a surface a person will, in the ordinary case, just
+  re-run was judged not worth it this slice. Carried to `phase-11.md` as a
+  candidate, not decided against permanently. New manual item §9.13
+  (`docs/dev/manual-tests/phase-9.md`) covers the raised-cell Problems entry
+  and its independence from Run File's own entries, left for Sean.
+
+  `npm run typecheck`/`lint`/`format:check`/`check:copyright`/`check:secrets`/
+  `check:coverage-scope`/`check:contracts`/`build` all green. `npm run
+  coverage` green — **1725 unit tests** (up from 1693 at 9b), coverage
+  **95.97/95.48/95.84/95.97** lines/branches/functions/statements
+  (`.c8rc.json`'s 95.8/95.8/95.6/95.4 floor cleared with room, no ratchet
+  raise needed) — `src/notebook/notebookRender.ts` at 100% (new,
+  `test/unit/notebook-render.test.ts`, mirroring `run-render.test.ts`'s own
+  shape one mime arm at a time). `npm run test:integration` green — **430
+  passing** (up from 419 at 9b): `test/integration/notebook/execution
+  .test.ts` gained a "rich output rendering (9c)" suite (`appendRichOutput`
+  driven directly with a synthetic `RichOutput` — the recorded-connection
+  wire's `getFiles`/`getDirectoryMembers` never produces a real `text/html`/
+  `image/png` output for a real run to stream, per 3c-i's own fixture doc
+  comment, so this is the one piece of this module's own logic that suite
+  cannot reach end to end) and a "Problems-panel diagnostics (9c)" suite
+  (one test: publish on a raised cell, clear on the next run — the same
+  `TRACEBACK_LINES` shape `commands-diagnostics.test.ts` already uses,
+  through the real simulated wire this time, since the traceback capture
+  path only exists once a real `ProcPythonBackend` streams one).
+
+  **Manual test items updated in the same slice**: §9.10 (`docs/dev/
+  manual-tests/phase-9.md`) reworded from the placeholder-text expectation
+  to real inline rendering and reset to unchecked — the behaviour it tests
+  genuinely changed, the same rule §9.8/§9.9 followed at 9b. New "Rich
+  output rendering and diagnostics (phase 9c)" section added: §9.12
+  (`text/html`, a pandas DataFrame repr) and §9.13 (a raised cell's
+  Problems-panel entry, and its independence from Run File's own entries).
+  **Left for Sean, not yet run.**
+
+  **Adversarial self-review ran 2026-09-14 against the full diff, before any
+  of it was pushed — ten findings, one blocking, all verified independently
+  and folded into the branch.**
+
+  - **Finding 1 (blocking, security).** `text/html` output reached VS Code's
+    own built-in notebook renderer as real, unsanitized markup — that
+    renderer executes an embedded `<script>` tag (`renderHTML()`'s
+    `element.innerHTML` assignment followed by `domEval()`), gated only by
+    workspace trust, which ADR-0002 already keeps open for any code this
+    extension runs at all. This directly contradicted
+    [ADR-0021](../adr/0021-result-panel-webview.md)'s own load-bearing
+    decision that a `<script>` inside `text/html` output must stay inert —
+    and the notebook case is worse than the panel's, since a notebook's
+    outputs serialize into the `.ipynb` on save and re-execute on reopen
+    with no Viya round trip, including for someone who opens a file a
+    colleague sent them. **Sean's call, asked before any fix was written:
+    sanitize the markup before it reaches VS Code's renderer**, rather than
+    building this extension's own CSP-locked notebook renderer or accepting
+    the risk via an ADR amendment. `src/notebook/htmlSanitize.ts` (new, pure,
+    no `vscode` import) is an allow-list tokenizer/re-serializer, not a
+    deny-list edit — its own doc comment has the full design (raw-text
+    handling for `<script>`/`<style>`/etc., a CSS deny-substring check for
+    `style`, an inline-`data:`-image-only `<img src>`). No new dependency:
+    ADR-0005 already flags "the first runtime dependency" as the day its own
+    currently-vacuous production audit gate stops being vacuous, and this
+    surface (library `_repr_html_` output, not arbitrary documents) did not
+    need one to solve.
+    [ADR-0036](../adr/0036-notebook-html-output-is-sanitized.md) records the
+    decision, cross-referenced from ADR-0021 so the two surfaces' answers to
+    the same threat don't read as contradicting each other by accident.
+    `test/unit/notebook-html-sanitize.test.ts` (24 cases, 100%
+    lines/functions) covers script stripping (including one hidden inside a
+    dropped raw-text element's own content, so it can never resurface as a
+    tag boundary), event-handler attributes, CSS exfil vectors in `style`,
+    non-`data:` `<img src>`, comments, entities, and the sanitizer's own
+    parser-edge cases (unterminated tags/comments/raw-text, mismatched close
+    tags, HTML5's "a trailing `/` doesn't self-close a non-void element"
+    rule). New manual item §9.13 verifies the one thing no automated test
+    can: that the real built-in renderer, given this sanitizer's actual
+    output, truly executes nothing.
+  - **Finding 2.** A closed notebook's Problems-panel entries outlived it,
+    and the gap was a misattribution risk, not just staleness: a
+    `vscode-notebook-cell:` URI is `CellUri.generate(notebook, handle)`, and
+    a fresh model's handle pool restarts at `0` on reopen, so a stale entry
+    could resurface against whichever cell next holds that same handle.
+    Fixed, not carried to `phase-11.md` — the deferral reasoning
+    (`onDidSignOut` needing `extension.ts` wiring a second time) did not
+    apply to the close case, since `registerNotebookController` already has
+    `context` to subscribe with. `NotebookExecutionHandlers` gained
+    `handleNotebookClosed`, the same "plain function of a document, not the
+    real subscription" shape `executeHandler`/`interruptHandler` already
+    use, wired to a real `vscode.workspace.onDidCloseNotebookDocument` in
+    `registerNotebookController` and callable directly in
+    `execution.test.ts` with no real editor tab to open and close. Sign-out
+    remains the accepted, narrower gap the doc comment already named.
+    New manual step under §9.13: close and reopen the notebook, confirm the
+    entry is gone rather than reattached to the wrong cell.
+  - **Finding 3.** Run File's and the notebook's own `RunDiagnostics`
+    default-constructed under the same collection name, which VS Code logs
+    as "already exists" and silently renames the second on every
+    activation. `RunDiagnosticsDeps` gained an optional `name`
+    (`diagnostics.ts`); the notebook's own default now passes
+    `"pythonOnViyaNotebook"` — Run File's own default string, the one
+    `phase-4.md` pins verbatim, is unchanged.
+  - **Finding 4.** Six existing 9b integration tests leaked a real
+    `DiagnosticCollection` each (never disposed), each re-triggering
+    Finding 3's warning. Fixed: all six now push `handlers.diagnostics` onto
+    the suite's own `disposables`, the same pattern the one test that
+    already injected diagnostics used.
+  - **Finding 5.** The existing diagnostics test asserted only length,
+    message and source — never the position the slice's own doc comment
+    claimed was "confirmed, not assumed." Fixed: the cell is now two source
+    lines, so asserting `range.start.line === 1` actually distinguishes a
+    correct mapping from a bug that always reports line 0. Also added: a
+    "no frame maps" case (a library-only stack publishes nothing, the same
+    `tracebackDiagnostics.ts` rule `commands.ts`'s own tests already cover)
+    and the close/reopen case Finding 2 needed anyway.
+  - **Finding 6.** §9.12's original repro (a bare `DataFrame` as a cell's
+    last expression) cannot produce a `text/html` output at all —
+    `richOutput.ts` only captures a file written to the working directory
+    (ADR-0019), and there is no implicit `_repr_html_` capture
+    (`docs/running-python.md`). Reworded to
+    `DataFrame(...).to_html("table.html")`, the same shape
+    `phase-3.md`'s own manual test and §9.10's `plt.savefig(...)`-only cell
+    already use.
+  - **Finding 7.** `diagnostics.ts`'s own "What gets published, and when"
+    section named only `commands.ts` as a caller; `notebookController.ts` is
+    a second one now, with different clearing rules. One sentence added.
+  - **Finding 9.** Image output carried no alt text, unlike the result
+    panel's own `labels.imageAlt`. `appendRichOutput` gained an `imageIndex`
+    parameter (`executeCell` counts image outputs as they stream and passes
+    the running total) and sets `NotebookCellOutput.metadata.vscode_altText`
+    — the field VS Code's own built-in renderer's `getAltText` actually
+    reads — to `vscode.l10n.t("Output image {0}", …)`, the exact string
+    `resultPanel.ts` already uses.
+  - **Finding 8.** `l10n/bundle.l10n.json` looked stale in the reviewing
+    session's own working copy. Turned out not to be a branch issue at
+    all: the file is generated and gitignored (`.gitignore`'s own comment,
+    "generated, not authored"), never a committed artifact — running
+    `npm run l10n:extract` locally reproduces it from source on demand, and
+    doing so this session (picking up this slice's own new
+    `vscode.l10n.t()` call alongside everything else) produced a byte-
+    identical file to what was already on disk. Nothing to fix in the PR.
+  - **Finding 10.** Noted, not fixed here, per the finding's own framing —
+    a rejected `appendOutput` mid-stream (a notebook closed mid-run) skips
+    `execution.end`, pre-existing since 9b. Carried to `phase-11.md`.
+
+  Every fix folded into the branch before push, per this project's own
+  adversarial-review rule. `npm run verify` (format, lint, typecheck,
+  copyright, secrets, coverage-scope, contracts, build, coverage) green —
+  **1749 unit tests** (up from 1725), coverage **96.03/95.51/95.9/96.03**
+  (statements/branches/functions/lines; `.c8rc.json`'s 95.8/95.4/95.6/95.8
+  floor cleared, no ratchet raise needed) —
+  `src/notebook/htmlSanitize.ts` at 100% lines/100% functions (two
+  single-line `/* c8 ignore next */` markers on `noUncheckedIndexedAccess`
+  fallbacks a non-optional regex capture group can never actually take, the
+  same category `tracebackDiagnostics.ts`'s own `primaryFrame` doc comment
+  already names and designs around). `npm run docs:build`/`docs:links:self`/
+  `docs:samples` green (the new ADR and manual-test cross-links resolve).
+  `npm run test:integration` **ran green 2026-09-14** — **433 passing**, up
+  from 419 at 9b's post-merge reconciliation (430 right after this slice's
+  own two new suites, +3 more from the adversarial review's own net-new
+  cases below — the arithmetic checks out). The prior session's "could not
+  be run" note was a misdiagnosis, not a genuine environment limitation:
+  `Code.exe: bad option: --disable-extensions` is the same
+  `ELECTRON_RUN_AS_NODE` leak already documented in `phase-5.md`'s 5d-iii
+  Runbook entry — a shell spawned inside the VS Code extension host inherits
+  `ELECTRON_RUN_AS_NODE=1` plus other `VSCODE_*` vars, so
+  `@vscode/test-electron` launches the downloaded `Code.exe` as bare Node
+  instead of Electron, on any machine that shell runs on, sandboxed or not.
+  Stripping those vars for the one command (the same workaround 5d-iii
+  recorded) launched the real Electron host and all 433 cases passed,
+  including the three net-new adversarial-review cases (sanitizer
+  end-to-end, "no frame maps," "closed notebook clears every cell") and the
+  two enhanced ones (position-asserting diagnostics, alt-text-asserting
+  image render) the previous paragraph called typecheck-clean but
+  unverified — now verified for real.
+
+  **Manual test pass ran 2026-09-14 (Sean) — §9.10, §9.12, §9.13, and §9.14
+  all pass.** `docs/dev/manual-tests/phase-9.md` updated in place (all four
+  boxes ticked). §9.10 — reworded by this slice to test real `image/png`
+  rendering rather than the placeholder it used to check, and reset to
+  unchecked for that reason — renders as a real inline image, not a
+  placeholder, closing the one manual item this slice's own reword had left
+  unverified since 9b's own live pass predates the reword. §9.12 confirms
+  `text/html` renders as real, sanitized markup; §9.13 confirms a raised
+  cell gets a Problems-panel entry at the right position, cleared on the
+  next run and on notebook close; §9.14 confirms an embedded `<script>`
+  never executes. This slice is now fully verified — code, the adversarial
+  review, `npm run verify`, `npm run test:integration`, and the manual
+  pass — with nothing outstanding before it ships.
+
+  **[PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177)'s own AI
+  review then raised three findings against `htmlSanitize.ts` — two
+  blocking, one non-blocking — all real, all fixed and folded in before
+  push, per this project's own review-findings policy.** Each was verified
+  independently first, by actually reproducing the bypass against the
+  compiled sanitizer before touching the code — the same discipline the
+  9b PR review findings got:
+
+  - **Blocking — `</style/>` and other malformed-but-spec-valid close tags
+    walked past the raw-text element boundary entirely.** `findRawTextEnd`
+    matched only a bare `</style>` (`\s*>` immediately after the name); a
+    real HTML5 tokenizer ends a raw-text element on `</style` followed by
+    *any* tag-name-terminating character (whitespace, `/`, or `>`).
+    `<style>a{}</style/><script>alert(1)</script></style>` therefore
+    skipped past the first `</style/>` looking for a bare match, found the
+    *second*, later `</style>` instead, and re-emitted everything in
+    between — the live `<script>` included — as "already-scanned, safe CSS
+    text" verbatim. Reproduced against the compiled sanitizer before
+    fixing. Fixed: `findRawTextEnd` now matches only the start of a
+    recognized end-tag name (a lookahead on the terminating character,
+    consuming nothing) and reuses `findTagEnd`'s own quote-aware scan to
+    find the real closing `>` from there — mirroring the spec instead of
+    guessing at one more literal pattern. Two new cases in
+    `notebook-html-sanitize.test.ts` cover the `/`- and
+    attribute-terminated forms; a third covers the fallback when even that
+    inner scan finds no real `>` before the end of input.
+  - **Blocking — a backslash-escaped `url(`/`javascript:` slipped past
+    `CSS_DANGER`'s literal substring check.** CSS lets any character be
+    escaped, including as a hex code point (`\75\72\6c(` decodes to `url(`
+    once a real parser resolves it); `CSS_DANGER`'s regex only recognizes
+    the literal, unescaped spelling. Reproduced: a `style` attribute value
+    built exactly this way passed `isDangerousCss` unchanged and was
+    re-emitted as a live `style="…"` attribute. Rather than reimplement
+    CSS escape decoding to check *after* it, `isDangerousCss` now also
+    rejects any value containing a literal backslash at all — legitimate
+    `Styler.to_html()` output has no reason to contain one, so this closes
+    the whole class of escape-based obfuscation rather than only the one
+    encoding the review happened to try. Same fix covers both the `style=`
+    attribute and a `<style>` block's own content, since both go through
+    `isDangerousCss`.
+  - **Non-blocking — flagged as the same underlying gap as the blocking
+    finding above, just a different encoding of it** (a backslash-escaped
+    `url(` reaching outside the page without necessarily executing
+    script). Closed by the same backslash-rejection fix; no separate
+    change needed.
+
+  `npm run verify` green after folding all three in — **1752 unit tests**
+  (up from 1749), coverage **96.04/95.51/95.9/96.04**
+  (`.c8rc.json`'s floor cleared with room; `htmlSanitize.ts` itself at
+  100%/96.55%/100%/100% lines/branches/functions/statements, the one
+  remaining uncovered branch the same pre-existing
+  `noUncheckedIndexedAccess` artifact noted above). `npm run
+  test:integration` green, unchanged at 433 passing (these were unit-tier
+  fixes only — no integration case exercises `htmlSanitize.ts` directly).
+  `npm run check:docs`/`check:secrets` green.
+
+  **A follow-up review on the same push (commit `8020b29`) found a fourth
+  bypass the backslash fix didn't close, same day.** `isDangerousCss` checks
+  the raw attribute-value text a `style="…"` attribute was written with —
+  but a real HTML parser entity-decodes an attribute's value on the way into
+  the DOM, a separate decoding step from the CSS-escape one the backslash
+  fix already covers. `style="background:&#x75;&#x72;&#x6c;&#40;https://
+  evil.example/x&#41;"` contains no literal `url(`, `@import`, etc. and no
+  backslash, so it passed `isDangerousCss` unchanged — reproduced against
+  the compiled sanitizer before fixing, confirming the raw (still-encoded)
+  attribute value is what this function sees, not what a browser would
+  build. Fixed the same way as the backslash case rather than reimplementing
+  entity decoding to check after it: any `&` at all in a style value or
+  block is now treated as dangerous too. (A `<style>` block's own raw-text
+  content is not actually entity-decoded by a real HTML parser — only
+  attribute values are — so this half of the rejection is defense-in-depth
+  rather than closing a reachable bypass there, and cheaper than proving the
+  distinction holds than getting it wrong would be.) New test:
+  "drops a style attribute that hides url( behind an HTML character
+  reference". `npm run verify` green — **1753 unit tests**, coverage
+  unchanged at 96.04/95.51/95.9/96.04; `npm run test:integration` unchanged
+  at 433 passing; `npm run check:docs`/`check:secrets` green. Replied to and
+  resolved all four review threads on PR #177 with the reproduction and fix
+  for each.
 
 ☐ **9d — Export.**
 

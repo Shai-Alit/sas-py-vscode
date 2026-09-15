@@ -75,7 +75,7 @@
  * unreachable), exactly the way it does for Run File, with no separate gate
  * this module has to add.
  *
- * ## Output — what renders here, and what 9c still owns
+ * ## Output — what renders here (9c)
  *
  * `text/plain` output renders in the cell as it streams, via
  * `NotebookCellOutputItem.stdout` — VS Code's own "this is a running
@@ -84,29 +84,80 @@
  * line at a time: a `print()`-heavy cell should read as one continuous
  * stream, not a wall of separately-bordered output blocks.
  *
- * `text/html` and `image/png` are **not** rendered inline yet — reported with
- * one honest placeholder line each, the same shape `outputChannel.ts` already
- * uses for the same two mime arms (`../run/render`'s own doc comment explains
- * why a text-only surface cannot show them; a notebook cell is not text-only,
- * but nothing here renders them for real yet either). `docs/phases/
- * phase-9.md`'s 9c slice is where a real per-mime-type notebook renderer
- * script lands, in upstream's `LogRenderer.ts`/`HTMLRenderer.ts` shape — this
- * slice does not reach for VS Code core's own built-in `text/html`/
- * `image/png` renderers as a shortcut, because whether those render
- * unmodified with no `ms-toolsai.jupyter` installed is exactly the kind of
- * client-side VS Code question 9a's own spike answered for `.ipynb` itself
- * and 9c has not yet answered for these — guessing would repeat the mistake
- * ADR-0024 exists to avoid.
+ * `text/html` and `image/png` now render for real, as their own standard
+ * mime types (`./notebookRender.ts`'s `toNotebookOutputPieces` decides
+ * *what*; `appendRichOutput` below decides *how to build the item*).
+ * 9b's own doc comment left this an open question — "whether [VS Code
+ * core's built-in renderers for these types] work with no `ms-toolsai.jupyter`
+ * installed is … a client-side VS Code question 9a's own spike answered for
+ * `.ipynb` itself and 9c has not yet answered for these." **9c's own spike
+ * answered it, the same two-pronged way 9a did**: the installed VS Code's own
+ * bundled `notebook-renderers` extension (publisher `vscode`, not
+ * `ms-toolsai` — `resources/app/extensions/notebook-renderers/package.json`)
+ * registers a `notebookRenderer` for `image/png`, `text/html` and several
+ * other standard mimes, with `requiresMessaging: "never"` — a purely
+ * client-side renderer needing no extension-host cooperation from anyone,
+ * installed or not. Unlike upstream's own `LogRenderer.ts`/`HTMLRenderer.ts`,
+ * this extension needs no renderer script of its own: those exist because
+ * `application/vnd.sas.compute.log.lines`/`application/vnd.sas.ods.html5` are
+ * *non-standard* mimes VS Code has never heard of, while this project's own
+ * `RichOutput` union already uses the standard `text/html`/`image/png` VS
+ * Code's own built-in renderer already owns. `controller.test.ts`'s 9a
+ * regression is this finding's own continuous proof for the built-in
+ * renderer's presence, the same way it already was for `ipynb`: the
+ * integration host launches with `--disable-extensions`
+ * (`runTest.ts`), which disables installed extensions, not the ones VS Code
+ * itself bundles — `notebook-renderers` is bundled the same way `ipynb` is,
+ * so every CI run already proves it is there with no `ms-toolsai.jupyter`
+ * needed. What that continuous proof cannot reach — whether the rendered
+ * pixels actually look right — is a real VS Code window question, left for
+ * `docs/dev/manual-tests/phase-9.md`'s new 9c items.
  *
- * `application/vnd.python.traceback` produces no separate cell output at
- * all — its content already arrived as ordinary `text/plain` output ahead of
- * it (`../run/render`'s own doc comment: `logFilter.ts`'s `isNoiseLine` passes
- * a real exception's log lines straight through), and a raised cell already
+ * `application/vnd.python.traceback` still produces no separate cell output —
+ * its content already arrived as ordinary `text/plain` output ahead of it
+ * (`../run/render`'s own doc comment: `logFilter.ts`'s `isNoiseLine` passes a
+ * real exception's log lines straight through), and a raised cell already
  * gets VS Code's own red-X execution-failure indicator from this module's
- * `execution.end(false, …)` call. 9c's diagnostics-porting spike is where a
- * *structured*, clickable rendering of the same failure (a Problems-panel
- * entry against the cell's own `vscode-notebook-cell:` URI) may add a second,
- * different use for the same `Traceback` — not a second text rendering of it.
+ * `execution.end(false, …)` call. What 9c adds instead is a *second, different*
+ * use of the same `Traceback` — see the next section.
+ *
+ * ## Diagnostics — the Problems panel (9c)
+ *
+ * `RunDiagnostics` (`../run/diagnostics`) ports with no change at all: its
+ * position maths (`../backend/tracebackDiagnostics.ts`'s `mapFrameToOrigin`/
+ * `primaryPosition`) never inspects `ProgramOrigin.uri`'s scheme, so a cell's
+ * own `vscode-notebook-cell:` URI maps a `<string>` frame exactly the way an
+ * ordinary file's URI does — confirmed, not assumed, by this slice's own new
+ * test case rather than by reading the code and guessing it would work. This
+ * module gets its **own** `RunDiagnostics` instance — a second
+ * `DiagnosticCollection`, not Run File's — the same shape ADR-0035 already
+ * settled for `BackendCache`/`ComputeSessionManager`: not because sharing one
+ * is unsafe (diagnostics are keyed per-URI, and a cell's URI and a file's URI
+ * never collide), but because nothing about the two surfaces' lifecycles is
+ * actually the same, and Run File's own extra clearing hooks (`onDidSignOut`,
+ * `onDidCloseTextDocument`, the run-target flipping to Local — Phase 5d-iv)
+ * do not apply to a notebook, which has no run-target concept at all (this
+ * module's own "kernel picker alone" decision, above) and stays open across a
+ * sign-out the same way any other open editor does. **Deliberately not
+ * ported**, and flagged here rather than silently assumed: a stale Problems
+ * entry for a notebook cell that outlives a sign-out. Phase 4c's own
+ * "disproportionate" call on a comparably narrow gap (`../run/commands.ts`'s
+ * own doc comment: precise waiting-cell tracking) is the model for treating
+ * this as a known, accepted gap rather than a reason to thread
+ * `onDidSignOut` through `extension.ts` a second time for a notebook that a
+ * person will, in the ordinary case, just re-run. Carried to `phase-11.md`
+ * as a candidate, not decided against permanently.
+ *
+ * **The closed-notebook half of that gap is fixed, not carried** —
+ * adversarial review, 2026-09-14 (Finding 2). `registerNotebookController`
+ * subscribes to `vscode.workspace.onDidCloseNotebookDocument` itself and
+ * clears every one of that notebook's cells — needing no `extension.ts`
+ * wiring, unlike sign-out — because the gap here was worse than "stale": a
+ * `vscode-notebook-cell:` URI is `CellUri.generate(notebook, handle)`, a pure
+ * function of the notebook's own URI and the cell's handle, and a fresh
+ * model's handle pool restarts at `0` on reopen, so a closed notebook's old
+ * entry could resurface **against whichever cell now holds that same
+ * handle**, not just outlive its own.
  *
  * ## Why one module-scoped `currentRun` slot is safe
  *
@@ -136,11 +187,17 @@
 
 import * as vscode from "vscode";
 
-import type { ExecutionHandle, Program, RichOutput } from "../backend/backend";
+import type {
+  ExecutionHandle,
+  Program,
+  RichOutput,
+  Traceback,
+} from "../backend/backend";
 import { localiseBackendProblem } from "../backend/messages";
 import type { ProcPythonBackend } from "../backend/procPython";
 import type { BackendCache } from "../run/backendCache";
-import { renderRichOutput } from "../run/render";
+import { RunDiagnostics } from "../run/diagnostics";
+import { toNotebookOutputPieces } from "./notebookRender";
 
 /** The id VS Code's kernel picker and `NotebookController.dispose()` key on. */
 export const NOTEBOOK_CONTROLLER_ID = "pythonOnViya.viyaNotebookKernel";
@@ -180,7 +237,25 @@ export function registerNotebookController(
   const handlers = createNotebookExecutionHandlers(backendCache, log);
   controller.executeHandler = handlers.executeHandler;
   controller.interruptHandler = handlers.interruptHandler;
-  context.subscriptions.push(controller);
+  // 9c: this module's own `RunDiagnostics`, not Run File's — see this
+  // module's own doc comment ("Diagnostics — the Problems panel") for why.
+  context.subscriptions.push(controller, handlers.diagnostics);
+  // Adversarial review, 2026-09-14 (Finding 2): a closed notebook's own
+  // cells keep whatever Problems-panel entries they had — closing a
+  // `vscode-notebook-cell:` URI reused the SAME URI (same handle) after a
+  // reopen (`CellUri.generate` is a pure function of the notebook URI and
+  // the cell handle, and the handle pool restarts at 0 per model), so a
+  // stale entry misattributes to whatever cell now holds that handle rather
+  // than merely outliving its own cell. Unlike sign-out (the doc comment's
+  // still-accepted gap, below), this needs no second wiring through
+  // `extension.ts` — the module already has `context` to subscribe with.
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseNotebookDocument((notebook) => {
+      if (notebook.notebookType === NOTEBOOK_TYPE) {
+        handlers.handleNotebookClosed(notebook);
+      }
+    }),
+  );
 
   log.info(
     vscode.l10n.t(
@@ -209,6 +284,20 @@ export interface NotebookExecutionHandlers {
   readonly interruptHandler: (
     notebook: vscode.NotebookDocument,
   ) => Promise<void>;
+  /** This module's own `DiagnosticCollection`, not Run File's — see this
+   * module's own doc comment ("Diagnostics — the Problems panel") for why.
+   * Exposed so `registerNotebookController` can dispose it, the same reason
+   * `RunCommandHandlers.diagnostics` is exposed for `commands.ts`. */
+  readonly diagnostics: RunDiagnostics;
+  /** Clears every one of `notebook`'s own cells from {@link diagnostics} —
+   * `registerNotebookController` wires this to the real
+   * `vscode.workspace.onDidCloseNotebookDocument`, exposed as a plain
+   * function of a `NotebookDocument` (not the subscription itself) for the
+   * same reason `executeHandler`/`interruptHandler` are: a test can call it
+   * directly against a document `openCell`-style helpers already build, with
+   * no real editor tab to open and close. See this module's own doc comment
+   * ("Diagnostics — the Problems panel") for why this needed fixing at all. */
+  readonly handleNotebookClosed: (notebook: vscode.NotebookDocument) => void;
 }
 
 /**
@@ -223,11 +312,25 @@ export interface NotebookExecutionHandlers {
  * real value — and exists as a parameter only so a test can shrink it rather
  * than wait out three real seconds; see `executeCell`'s own comment on what
  * it triggers and why.
+ *
+ * `diagnostics` defaults to a fresh {@link RunDiagnostics} — this module's
+ * own instance, not Run File's (see this module's own doc comment,
+ * "Diagnostics — the Problems panel") — and is injectable for the same
+ * reason `commands.ts`'s own `RunCommandDeps.diagnostics` is: a test can hand
+ * in one built over a `DiagnosticCollection` it retains and asserts on.
  */
 export function createNotebookExecutionHandlers(
   backendCache: BackendCache,
   log: vscode.LogOutputChannel,
   waitingNoticeDelayMs: number = WAITING_NOTICE_DELAY_MS,
+  // A distinct collection `name` from Run File's own default (`diagnostics
+  // .ts`'s own `COLLECTION_NAME`) — adversarial review, 2026-09-14 (Finding
+  // 3): two collections created under the same name make VS Code log an
+  // "already exists" warning and silently rename the second one, on every
+  // activation, with `extension.ts` now constructing one of each.
+  diagnostics: RunDiagnostics = new RunDiagnostics({
+    name: "pythonOnViyaNotebook",
+  }),
 ): NotebookExecutionHandlers {
   // See this module's own doc comment ("Why one module-scoped `currentRun`
   // slot is safe") for why a single slot, not one per notebook or per cell,
@@ -294,10 +397,23 @@ export function createNotebookExecutionHandlers(
       return;
     }
 
+    // 9c: reset the Problems-panel entry alongside the other output surfaces,
+    // at the point the run actually begins — the same placement, for the
+    // same reason, as `commands.ts`'s own `runNow`
+    // (`diagnostics.clearFor`'s own doc comment). Keyed on the cell's own
+    // document URI, which needs no special-casing here — see this module's
+    // own doc comment ("Diagnostics — the Problems panel").
+    diagnostics.clearFor(cell.document.uri);
     const handle = executed.value;
     currentRun = { notebook, backend, handle };
     try {
       let sawOutput = false;
+      let traceback: Traceback | undefined;
+      // Counts only image outputs within this run — `appendRichOutput`'s own
+      // doc comment, "Output image {0}" numbered the way a person looking at
+      // the cell would, the same `imageIndex` convention
+      // `resultPanelModel.ts`'s `labels.imageAlt` uses for the result panel.
+      let imageIndex = 0;
       // This phase's manual pass, §9.8: after an interrupted cell,
       // `backend.busy` clears as soon as the *local* abort settles
       // (`procPython.ts`'s own `cancel`/`busy`) — well before the SAS-side
@@ -341,7 +457,11 @@ export function createNotebookExecutionHandlers(
         for await (const output of handle.outputs) {
           sawOutput = true;
           clearTimeout(waitingNotice);
-          await appendRichOutput(execution, output);
+          if (output.mime === "application/vnd.python.traceback") {
+            traceback = output.data;
+          }
+          if (output.mime === "image/png") imageIndex += 1;
+          await appendRichOutput(execution, output, imageIndex);
         }
       } finally {
         clearTimeout(waitingNotice);
@@ -352,6 +472,17 @@ export function createNotebookExecutionHandlers(
         await appendError(execution, localiseBackendProblem(settled.problem));
         execution.end(false, Date.now());
         return;
+      }
+      // 9c: a run that raised, with a structured traceback to position it
+      // by, gets one Problems-panel entry at the innermost user frame — a
+      // no-op when no frame maps (a SAS-side error, or an all-library
+      // stack). Same call, same reasoning, as `commands.ts`'s own `runNow`.
+      if (!settled.value.succeeded && traceback !== undefined) {
+        diagnostics.publish(
+          program.origin,
+          traceback,
+          settled.value.diagnostics[0]?.message ?? traceback.message,
+        );
       }
       execution.end(settled.value.succeeded, Date.now());
     } finally {
@@ -390,7 +521,19 @@ export function createNotebookExecutionHandlers(
       if (!cancelled.ok) log.warn(cancelled.reason);
     };
 
-  return { executeHandler, interruptHandler };
+  const handleNotebookClosed: NotebookExecutionHandlers["handleNotebookClosed"] =
+    (notebook) => {
+      for (const cell of notebook.getCells()) {
+        diagnostics.clearFor(cell.document.uri);
+      }
+    };
+
+  return {
+    executeHandler,
+    interruptHandler,
+    diagnostics,
+    handleNotebookClosed,
+  };
 }
 
 /** One `NotebookCellOutput` carrying VS Code's own built-in error mime
@@ -408,35 +551,56 @@ async function appendError(
 }
 
 /** Turns one streamed {@link RichOutput} into what the cell shows — see this
- * module's own doc comment ("Output — what renders here, and what 9c still
- * owns") for the mime-by-mime reasoning. Reuses `../run/render`'s own
- * fixture-tested reduction rather than re-deciding which mime arms render
- * inline and which defer. */
-async function appendRichOutput(
+ * module's own doc comment ("Output — what renders here (9c)") for the
+ * mime-by-mime reasoning. `./notebookRender.ts`'s `toNotebookOutputPieces`
+ * decides *what* each mime arm becomes; this is the one place that turns
+ * that plain, `vscode`-free data into a real `vscode.NotebookCellOutputItem`.
+ * Exported (rather than kept module-private,
+ * like `appendError`) because it is the one piece of this module's own logic
+ * the recorded-connection test fixture cannot drive end to end — 3c-i's own
+ * `getFiles`/`getDirectoryMembers` simulated wire never writes to the working
+ * directory, so no `text/html`/`image/png` `RichOutput` ever reaches a real
+ * `ProcPythonBackend` running against it — see `test/integration/notebook/
+ * execution.test.ts`'s own tests for this function, driven directly with a
+ * synthetic `RichOutput` rather than through a real run.
+ *
+ * `imageIndex` gives an image piece the same "Output image {0}" alt text
+ * `resultPanelModel.ts`'s own `labels.imageAlt` gives the result panel —
+ * adversarial review, 2026-09-14 (Finding 9). `executeCell`'s own call site
+ * counts image outputs as they stream and passes the running total; a caller
+ * with only one image to append (this file's own tests included) can leave
+ * it at the default. VS Code's own built-in renderer reads it from
+ * `NotebookCellOutput.metadata.vscode_altText`
+ * (`notebook-renderers/src/index.ts`'s `getAltText`), not from the output
+ * item itself. */
+export async function appendRichOutput(
   execution: vscode.NotebookCellExecution,
   output: RichOutput,
+  imageIndex = 1,
 ): Promise<void> {
-  for (const line of renderRichOutput(output)) {
-    if (line.kind === "raw") {
+  for (const piece of toNotebookOutputPieces(output)) {
+    if (piece.kind === "stdout") {
       await execution.appendOutput(
         new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.stdout(line.text),
+          vscode.NotebookCellOutputItem.stdout(piece.text),
         ]),
       );
-      continue;
+    } else if (piece.kind === "html") {
+      await execution.appendOutput(
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.text(piece.markup, "text/html"),
+        ]),
+      );
+    } else {
+      const item = new vscode.NotebookCellOutputItem(
+        Buffer.from(piece.base64, "base64"),
+        "image/png",
+      );
+      await execution.appendOutput(
+        new vscode.NotebookCellOutput([item], {
+          vscode_altText: vscode.l10n.t("Output image {0}", String(imageIndex)),
+        }),
+      );
     }
-    await execution.appendOutput(
-      new vscode.NotebookCellOutput([
-        vscode.NotebookCellOutputItem.stdout(
-          line.mime === "image/png"
-            ? vscode.l10n.t(
-                "[an image was produced — rich rendering in a notebook cell isn't implemented yet]\n",
-              )
-            : vscode.l10n.t(
-                "[an HTML table was produced — rich rendering in a notebook cell isn't implemented yet]\n",
-              ),
-        ),
-      ]),
-    );
   }
 }

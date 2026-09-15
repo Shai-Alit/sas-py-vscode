@@ -982,3 +982,53 @@ anywhere in the repo or logs.
 > and that the docs honestly describe 3.5 as unverified. Viya 3.5 support is
 > dropped rather than shipped unverified, so neither applies: there is no
 > scaffold, and the docs make no claim about 3.5 at all.
+
+### Definition of done — 1.0
+
+The criteria above are v0.1.0's bar, and only that. 1.0.0 makes a different
+claim — not "this works" but "this is supported" — and ships when: each of Phase
+11's live-facing parity gaps is either fixed or explicitly re-classified as a
+documented known limitation, a deliberate call recorded per gap rather than
+silence (as of 2026-09-15 that means the CAS tree table icon that never flips
+from unloaded to loaded after a JIT load, and the Accounts-menu rows that
+identify neither this extension nor which profile is which); every row under
+`docs/dev/manual-tests/` has actually been run, with any row left unrun carrying
+a written reason — an environment that does not exist is an acceptable one, and
+5d-i's user-provided-CA row is the standing example; GitHub issue tracking is
+open with templates, because `STATUS.md` defers issue tracking precisely to this
+moment and an extension advertised as supported needs somewhere to send a bug;
+the Open VSX ownership request for the `shai-alit` namespace has been **filed**,
+though not necessarily granted, since the Eclipse Foundation's review queue is
+not ours to schedule; and `"preview": true` is removed from `package.json` in
+the same release that carries the 1.0.0 version bump.
+
+> **What 1.0 does not require.** Phase 12 (second execution backend) does not
+> gate it: §3.1 already holds that parity is the destination rather than the
+> release bar and that the post-v0.1.0 phase order is demand-driven, so a
+> capability nobody has asked for cannot be a precondition for supporting what
+> has already shipped. Neither does a hosted documentation site — the VitePress
+> build stays a CI link-check gate, and the documentation users actually read
+> ships inside the extension and the README.
+
+> **On the Preview flag specifically, because the two are easy to confuse.**
+> `"preview": true` is the Marketplace _Preview_ flag, a manifest field
+> ([extension manifest reference](https://code.visualstudio.com/api/references/extension-manifest)).
+> It is not the pre-release channel. This project has never published with
+> `vsce publish --pre-release` — `release.yml` publishes with
+> `--azure-credential` and no such flag — so every version published to date is
+> an ordinary stable-channel release that happens to wear the Preview badge. The
+> distinction matters because the exits are not alike. Leaving the pre-release
+> channel carries version-numbering consequences: a version published as
+> pre-release can never be republished as stable, and the convention is
+> `major.ODD.patch` for pre-release against `major.EVEN.patch` for stable
+> ([publishing extensions](https://code.visualstudio.com/api/working-with-extensions/publishing-extension)).
+> Dropping Preview is a one-line manifest change that takes effect on the next
+> publish and does nothing else. Recorded so that a future session reading
+> "remove the pre-release tag" does not reach for `--pre-release` and inherit a
+> numbering scheme this project does not use.
+
+> **Recorded 2026-09-15**, mid-Phase 10, when the question was asked and had no
+> written answer anywhere in the repository — §8's existing criteria turned out
+> to be v0.1.0's only. The gates above are Sean's calls, made the same day. Held
+> out of the repository until after 10a per `CLAUDE.md`'s plan-update policy,
+> rather than landing an unrelated plan edit on a source branch.

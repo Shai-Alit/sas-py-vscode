@@ -2259,3 +2259,224 @@ run" note. See `phase-8.md`'s 8c Runbook entry for the full account,
 including what is deliberately still open (CSV export for a CAS table;
 whether the CAS-side ephemeral per-request sessions Finding 8.13 observed are
 ever cleaned up automatically).
+
+**Phase 9 (Notebooks) is in progress.** 9a (dependency spike + controller
+registration) is done, merged 2026-09-14 as [PR #172](https://github.com/Shai-Alit/sas-py-vscode/pull/172),
+squash `6884e49` — a hands-on spike confirmed `.ipynb` opens as a notebook
+and a `NotebookController` contributing no serializer is selectable as its
+kernel with **zero** other extensions installed, so
+[ADR-0024](adr/0024-notebooks-are-ipynb-native.md) needs no amendment.
+**9b (controller + execution) is code-complete 2026-09-14, including a
+same-day architecture correction (ADR-0035) found by the manual pass before
+any of this was pushed.** Real execution:
+`src/notebook/notebookController.ts`'s `createNotebookExecutionHandlers`
+wires `executeHandler` to `ExecutionBackend.execute()` with
+`freshNamespace: false` and `interruptHandler` to `cancel()` (Finding
+75/76's caveats apply the same way they do to Run File's own Cancel).
+Decided this slice, not left implicit: the kernel picker alone is a
+notebook's run-target equivalent — no separate status-bar toggle needed
+(ADR-0011/0020's own concept does not extend to notebooks); and cell output
+renders `text/plain` live as it streams, with `text/html`/`image/png` given
+an honest "not rendered yet" placeholder and 9c left to build the real
+renderer (full reasoning in `notebookController.ts`'s own doc comment).
+**The manual pass (§9.8/§9.9) found the first cut's session sharing was
+destructive, not merely incomplete**: `src/run/backendCache.ts` (lifted out
+of `commands.ts`'s private closure, a straight move) was first handed to
+*both* Run File and the notebook controller as one shared instance — but
+`PROC PYTHON` has exactly one interpreter namespace per compute session, so
+Run File's own `freshNamespace: true` (every whole-file run, unchanged
+since Phase 3) silently wiped the notebook's variables the instant both
+were used against the same profile. Fixed same day by
+[ADR-0035](adr/0035-notebook-gets-its-own-compute-session.md): the
+notebook controller now gets its own `ComputeSessionManager`, its own
+`purpose`-namespaced `SessionBindingStore` (`binding.ts`'s
+`sessionBindingKey` gained an optional `purpose` parameter — `undefined`
+for Run File's own binding, so every existing install's binding keeps
+reattaching unchanged), and its own `BackendCache`; `extension.ts` now
+builds two of each instead of one shared pair. `Disconnect`/Sign Out end
+both sessions; `Connect` and the status bar stay scoped to Run File's
+session only. `backendCache.ts` itself needed no change — it was already
+just a cache keyed on `connection.profileId`. A related, smaller fix from
+the same pass (§9.8): a cell run right after an interrupted one can sit
+with no output for as long as the interrupted statement takes to actually
+finish server-side (Finding 76); `notebookController.ts` now shows an
+honest, cause-agnostic "still no output" notice after 3 seconds rather than
+silence — real tracking for a precise message was considered and carried
+forward to `phase-11.md` instead, matching Phase 4c's own call on the
+identical gap for Run File. `npm run coverage` green — 1685 unit tests (up
+from 1675 at the original cut), coverage 95.94/95.48/95.81/95.94 (unchanged
+throughout — `.c8rc.json`'s 95.8/95.8/95.6/95.4 floor cleared with room);
+`backendCache.ts` turned out **not** to need a `.c8rc.json` exclusion (it
+imports `vscode` only for types, so the unit tier can reach it —
+`test/unit/run-backend-cache.test.ts` covers it directly at 99.4% lines,
+reusing `test/helpers/recorded-connection.ts`). `npm run test:integration`
+green — 411 passing (up from 406 at 9a): `execution.test.ts`'s five cases
+(streamed success, busy refusal, the two waiting-notice cases, interrupt-
+then-recover), driven against a **fake** `NotebookController`/
+`NotebookCellExecution` rather than a real one (a real one refuses
+`createNotebookCellExecution` unless VS Code's own kernel picker already
+selected it — state that test has no reason to fight, since both are plain
+structural interfaces in `@types/vscode`, not classes). `controller.test.ts`'s
+9a regression still passes, lightened to assert a terminal
+`executionSummary` is reached rather than the now-superseded placeholder
+message. Full account in `phase-9.md`'s 9b Runbook entry.
+**§9.8/§9.9 need a fresh live re-run against the corrected code — left for
+Sean.** **Adversarial self-review ran 2026-09-14 against the full diff
+(ADR-0035 split included) — three findings, all verified independently and
+folded into the branch before push:** a real wrong-target `interruptHandler`
+bug (it cancelled whatever `currentRun` held regardless of which notebook
+Interrupt was actually pressed on — fixed by having `currentRun` record its
+own notebook and checking it); a fire-and-forget `appendOutput` with no
+explanation, unlike every other swallowed promise in this codebase (fixed
+with the same comment convention); and "Disconnect ends both sessions"
+(ADR-0035) having no test, automated or manual — not reachable at the unit
+or integration tier (`registerComputeCommands` needs a real extension host),
+so recorded instead as a new, unchecked manual-test item (§9.11). `npm run
+verify` and `npm run test:integration` both green after folding the fixes
+in — same 1685 unit / 411 integration counts as before, since no tests were
+added or removed. Full account in `phase-9.md`'s 9b Runbook entry.
+**§9.8/§9.9/§9.11 then ran live (Sean, 2026-09-14) and all pass** —
+`docs/dev/manual-tests/phase-9.md` updated in place. **PR #176's own AI
+review then raised two findings, both fixed and folded in before push, same
+day:** the wrong-target-interrupt fix (above) had no regression test
+covering the actual two-notebook race it addresses — `execution.test.ts`
+gained `"does not cancel a different notebook's in-flight cell"` to close
+that gap; and this file and `phase-9.md` still carried 9b's original-cut
+counts (1685 unit / 411 integration) after the branch had since merged
+`main`, while the PR description already carried the post-merge figures —
+reconciled here to what a fresh `npm run verify`/`test:integration` on the
+branch actually produces: **1693 unit tests**, coverage
+**95.95/95.48/95.83/95.95**; **419 integration** passing (418 post-merge,
++1 for the new regression case).
+
+**9c (renderers + diagnostics) is code-complete 2026-09-14, adversarial
+review folded in, not yet pushed — pending a live manual test pass and a
+fresh `npm run test:integration`, neither of which could run this session.**
+It needed less than the punch list assumed — no renderer script at all. The
+open question 9b's own doc comment left standing (whether VS Code core's
+built-in renderers show `text/html`/`image/png` with no `ms-toolsai.jupyter`
+installed) was spiked, not guessed at: the installed VS Code's own bundled
+`notebook-renderers` extension (publisher `vscode`) already renders both,
+`requiresMessaging: "never"`, with `controller.test.ts`'s existing
+`--disable-extensions` run as continuous proof it needs no Jupyter
+extension — the same evidentiary bar 9a's own `ipynb` spike set. Since this
+project's own `RichOutput` union already uses those standard mimes, there
+was nothing for upstream's `LogRenderer.ts`/`HTMLRenderer.ts`-shaped script
+to do; `src/notebook/notebookRender.ts` (new, pure, mirroring `render.ts`/
+`resultPanelModel.ts`'s own "decide what, not how" split) plus
+`notebookController.ts`'s `appendRichOutput` build the real
+`vscode.NotebookCellOutputItem`s directly. `RunDiagnostics` also now applies
+to a raised cell — confirmed by a real test that `tracebackDiagnostics.ts`'s
+position maths needs no change for a `vscode-notebook-cell:` URI — via this
+module's own `DiagnosticCollection`, not Run File's; a stale Problems entry
+outliving a sign-out is a deliberate, recorded gap (carried to
+`phase-11.md`), the same "disproportionate" call Phase 4c made for a
+comparably narrow Run File gap — the closed-notebook half of that gap turned
+out worse than "stale" and is fixed, not carried, below.
+
+**Adversarial self-review ran 2026-09-14, before any of this was pushed —
+ten findings, one blocking, all verified independently and folded into the
+branch.** The blocking one (Finding 1, security): `text/html` output reached
+VS Code's own built-in notebook renderer as real, unsanitized markup, which
+executes an embedded `<script>` — contradicting
+[ADR-0021](adr/0021-result-panel-webview.md)'s own load-bearing "a
+`<script>` in `text/html` output must stay inert" decision, and worse than
+the result-panel case it contradicts because a notebook's outputs persist
+into the `.ipynb` and re-execute on reopen with no Viya round trip. **Sean's
+call: sanitize the markup, not build a second CSP-locked renderer or accept
+the risk.** `src/notebook/htmlSanitize.ts` (new, pure, no dependency added —
+ADR-0005's "first runtime dependency" trigger still hasn't fired) is an
+allow-list tokenizer/re-serializer, recorded in
+[ADR-0036](adr/0036-notebook-html-output-is-sanitized.md) and
+cross-referenced from ADR-0021. The other nine: a closed notebook's stale
+Problems entries could misattribute to the wrong cell after a reopen (fixed,
+not deferred — `handleNotebookClosed`); Run File's and the notebook's own
+`RunDiagnostics` collided on the same collection name (fixed, an optional
+`name` on `RunDiagnosticsDeps`); six integration tests leaked a
+`DiagnosticCollection` each (fixed); the one diagnostics test never actually
+asserted the published position (fixed, plus a "no frame maps" case); §9.12's
+repro could not produce a `text/html` output at all (fixed, reworded to
+`to_html(...)`); `diagnostics.ts`'s own doc comment under-named its callers
+(fixed); image output carried no alt text (fixed, parity with the result
+panel's own `labels.imageAlt`); the l10n bundle looked stale in the
+reviewing session's own working copy, but is gitignored/generated, not a
+branch issue (nothing to fix); and a pre-existing 9b gap (a rejected
+`appendOutput` mid-stream skips `execution.end`) is noted, carried to
+`phase-11.md`, not fixed here. Full account, finding by finding, in
+`phase-9.md`'s 9c Runbook entry.
+
+`npm run verify` green — **1749 unit tests** (up from 1725), coverage
+**96.03/95.51/95.9/96.03** (statements/branches/functions/lines,
+`.c8rc.json`'s floor cleared with room). `npm run test:integration` **ran
+green 2026-09-14 — 433 passing** (up from 419 at 9b's post-merge
+reconciliation). The prior session's "could not run" note was a
+misdiagnosis: `Code.exe: bad option: --disable-extensions` is the same
+`ELECTRON_RUN_AS_NODE`-leak already documented in `phase-5.md`'s 5d-iii
+Runbook entry, not an environment limitation — a shell spawned inside the
+VS Code extension host inherits `ELECTRON_RUN_AS_NODE=1` and other
+`VSCODE_*` vars, so `@vscode/test-electron` launches the downloaded
+`Code.exe` as bare Node; stripping those vars for the one command (5d-iii's
+own workaround) ran the real Electron host and all 433 cases passed,
+`execution.test.ts`'s three net-new cases and two enhanced ones included.
+Manual test items §9.10 (reworded to test real image rendering, reset to
+unchecked since the placeholder it used to test is gone), §9.12 (Finding 6's
+fix), §9.13 (Finding 2's close/reopen step), and new §9.14 (the sanitizer's
+real-renderer behaviour) **all ran live (Sean, 2026-09-14) and pass** —
+`docs/dev/manual-tests/phase-9.md` updated in place.
+
+**[PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177)'s own AI
+review then raised three findings against `htmlSanitize.ts` — two blocking,
+one non-blocking, all real — fixed and folded in before push, 2026-09-15.**
+Each was reproduced against the compiled sanitizer before fixing, not taken
+on faith: a malformed-but-spec-valid raw-text close tag (`</style/>`) walked
+past `findRawTextEnd`'s bare-`</style>`-only match and let a live `<script>`
+after it re-emit verbatim; and a backslash-escaped `url(`/`javascript:`
+(`\75\72\6c(` decodes to `url(`) slipped past `CSS_DANGER`'s literal
+substring check in both a `style=` attribute and a `<style>` block. Fixed:
+`findRawTextEnd` now matches the spec's full terminator set and reuses
+`findTagEnd`'s quote-aware scan for the real closing `>`; `isDangerousCss`
+now rejects any backslash at all rather than decoding CSS escapes to
+check after them. `npm run verify` green — **1752 unit tests** (up from
+1749), coverage **96.04/95.51/95.9/96.04**; `npm run test:integration`
+unchanged at 433 passing (unit-tier fixes only).
+
+**A follow-up review on that same push found a fourth bypass the backslash
+fix didn't close**: `isDangerousCss` checks a `style` attribute's *raw*
+source text, but a real HTML parser entity-decodes an attribute value on
+the way into the DOM — a separate decoding step from the CSS-escape one
+already covered. `style="background:&#x75;&#x72;&#x6c;&#40;https://
+evil.example/x&#41;"` has no literal `url(` and no backslash, so it passed
+unchanged — reproduced before fixing. Fixed the same way: any `&` at all in
+a style value or block is now dangerous too. `npm run verify` green —
+**1753 unit tests**, coverage unchanged; `npm run test:integration`
+unchanged at 433 passing. Replied to and resolved all four review threads
+on PR #177. Full account, including the reproduction and fix for each
+finding, in `phase-9.md`'s 9c Runbook entry.
+
+**9c is fully verified and merged.** Final merge: 9c as
+[PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash
+`fa7222f`, merged 2026-09-15.
+
+**9d (export) scoped 2026-09-15, at the start of the Phase 9→10 housekeeping
+session — decided: dropped outright, no code written.** Every export use
+case upstream's own `toSAS.ts`/`toHTML.ts`/`saveOutput` cover is already
+served here with zero extension code, for two independent reasons: a
+`.ipynb` this extension writes is already a real, portable Jupyter notebook
+(ADR-0024) that any ipynb-aware tool can open, diff, or convert with no
+knowledge of this extension at all; and VS Code itself already covers both
+halves of what upstream's exporters do — the installed VS Code's own bundled
+`ipynb` extension (publisher `vscode`, `resources/app/extensions/ipynb/
+package.json`, read directly) contributes `notebook.cellOutput.copy`/
+`notebook.cellOutput.openInTextEditor` for any cell's output on any
+notebook, and whole-notebook Export (HTML/PDF/py) is `ms-toolsai.jupyter`'s
+own feature, backed by `nbconvert` (confirmed by web search against VS
+Code's own Jupyter-notebooks doc page and the `vscode-jupyter` wiki's Import
+Export page, not assumed) — building an equivalent ourselves would mean
+taking on exactly the local-Python/`nbconvert` dependency this project has
+never required and 9a already declined for execution, to duplicate
+something that already works for free the moment `ms-toolsai.jupyter` is
+installed, and does nothing for someone without it that a plain `jupyter
+nbconvert` from any terminal doesn't already do identically. No ADR
+amendment needed — this is the payoff ADR-0024 already named for going
+ipynb-native, not a new decision. Full reasoning in `phase-9.md`'s 9d
+Runbook entry. **Phase 9 (9a–9d) is now fully complete.**

@@ -287,6 +287,13 @@ integration atop backend mechanics Phases 2–5 already dialect-proofed.
 - **9d — Export.** *Small*, and possibly droppable outright (see "what does
   not port," above).
 
+  > **Amended 2026-09-15, once 9b/9c had landed and this slice was actually
+  > scoped: dropped outright, not merely small.** See the Runbook entry below
+  > for the research and reasoning — the short version is that every export
+  > use case this slice could have built is already served, either by
+  > `.ipynb`'s own portability (ADR-0024) or by VS Code core itself, with no
+  > code from this extension required either way.
+
 *Exit:* a user can create or open a Python notebook, select "Python on Viya"
 as its kernel, run cells against the same session and persistent Python
 namespace Run File already uses, see stdout/HTML/figures/tracebacks rendered
@@ -1001,11 +1008,56 @@ squash `fa7222f`.
   resolved all four review threads on PR #177 with the reproduction and fix
   for each.
 
-☐ **9d — Export.**
+☑ **9d — Export.** Scoped and decided 2026-09-15, once 9b/9c had landed —
+**dropped outright. No code written, none needed.**
 
-- ☐ Scope this slice only after 9b/9c land — likely small or droppable,
-  since the notebook is already a portable `.ipynb` per ADR-0024 (Plan,
-  above).
+- ☑ Scope this slice now that 9b/9c have landed. **Decision: drop it.** Every
+  export use case upstream's own `exporters/toSAS.ts`/`toHTML.ts` and
+  `saveOutput` exist to cover is already served here with zero code from this
+  extension, for two independent reasons:
+  - **The notebook itself needs no export path at all.** Per ADR-0024, a
+    `.ipynb` this extension produces is already a real, standards-compliant
+    Jupyter notebook — directly openable, diffable, and convertible by any
+    ipynb-aware tool (JupyterLab, GitHub's own rendering, `jupyter nbconvert`)
+    with no knowledge of this extension. Upstream needs `toSAS.ts`/`toHTML.ts`
+    only because `.sasnb` is a bespoke format nothing else can read; that
+    asymmetry doesn't exist here.
+  - **VS Code's own tooling already covers per-output and whole-notebook
+    export, and neither piece is something this project should duplicate.**
+    Checked directly against the installed VS Code (1.109.5), the same
+    two-pronged rigor 9a's and 9c's own spikes used — reading the relevant
+    bundled extension's manifest, not assuming from documentation:
+    - `resources/app/extensions/ipynb/package.json` (publisher `vscode`, no
+      `ms-toolsai.jupyter` involved) already contributes
+      `notebook.cellOutput.copy` and `notebook.cellOutput.openInTextEditor`
+      for **any** cell output on **any** notebook — the native equivalent of
+      upstream's own per-output `saveOutput` (ODS HTML / log), needing
+      nothing from this extension.
+    - VS Code's whole-notebook "Export" toolbar entry (HTML/PDF/py) is owned
+      by `ms-toolsai.jupyter`, not VS Code core, and works by shelling out to
+      `nbconvert` — confirmed by web search, not assumed (VS Code's own
+      Jupyter-notebooks doc page and the `vscode-jupyter` wiki's "Import
+      Export" page both describe the toolbar flow as Jupyter-extension
+      functionality backed by `nbconvert`). Building an equivalent ourselves
+      would mean taking on exactly the dependency this project has never
+      needed and 9a already declined for execution — a local Python/
+      `nbconvert` toolchain, contradicting `PRODUCTION_PLAN.md` §1's "no
+      local Python required" constraint — to duplicate a feature that
+      already works, for free, on any `.ipynb` this extension writes, the
+      moment `ms-toolsai.jupyter` is installed; and that does nothing at all
+      for someone who does not have it installed, since `jupyter nbconvert`
+      from any terminal already covers that case identically for every
+      `.ipynb` file, this extension's or not.
+
+  **No ADR amendment needed** — this is the consequence ADR-0024 already
+  named as the payoff of going ipynb-native
+  ("already directly openable, diffable, and exportable by every other
+  ipynb-aware tool," this file's own Plan section), not a new decision;
+  §3.1's parity table's existing "Notebooks | Phase 9 | We intend to exceed
+  upstream — ipynb rather than a bespoke format" row already covers it, since
+  export-for-free is part of that same "exceed" case rather than a gap
+  against it. No manual test needed — nothing shipped to test. **Phase 9
+  (9a–9d) is now fully complete.**
 
 ---
 

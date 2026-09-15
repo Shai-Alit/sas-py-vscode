@@ -122,6 +122,33 @@ free" flag, cleared the next time a submission into that session succeeds)
 is now proportionate, now that notebooks make the scenario more common than
 Run File alone did. Not scoped as a slice yet — a candidate, not a commitment.
 
+**Also carried here (added 2026-09-15, at the Phase 9→10 housekeeping
+checkpoint — should have landed with 9c's own merge but was missed until this
+checkpoint caught the gap between what `phase-9.md` claimed was carried and
+what actually was): two more Phase 9c gaps, both explicitly deferred rather
+than fixed.**
+
+- **A rejected `appendOutput` mid-stream skips `execution.end`.** If a
+  notebook is closed while a cell is still running, `notebookController.ts`'s
+  in-flight `execution.appendOutput(...)` calls reject, and nothing calls
+  `execution.end(...)` afterward — pre-existing since 9b, noted but not fixed
+  by 9c's own adversarial review (Finding 10, `phase-9.md`'s 9c Runbook
+  entry) since the failure mode is a closed notebook, not a live one a user
+  is still looking at.
+- **A stale Problems-panel entry for a notebook cell can outlive a sign-out.**
+  9c's own adversarial review (Finding 2) fixed the closed-notebook half of
+  this gap (`handleNotebookClosed`, wired to
+  `workspace.onDidCloseNotebookDocument`) but left the sign-out half open
+  deliberately — `RunDiagnostics.onDidSignOut`/`onDidCloseTextDocument`
+  clearing hooks (Phase 5d-iv) have no notebook equivalent to hook into, and
+  threading `onDidSignOut` through `extension.ts` a second time for a surface
+  a person will, in the ordinary case, just re-run was judged not worth it
+  that slice — the same "disproportionate" call Phase 4c made for Run File's
+  own comparably narrow waiting-cell-message gap. Worth revisiting alongside
+  the item above, since both are instances of the same shape: an execution
+  surface's terminal state going stale when the surface itself goes away
+  mid-run or post-run.
+
 **Also carried here (added 2026-09-14, from Phase 8's own post-merge fixes):
 a CAS tree table's icon does not flip from "unloaded" (cloud) to "loaded"
 after a JIT-load-on-expand, in a real VS Code window.** `src/cas/casTree.ts`'s

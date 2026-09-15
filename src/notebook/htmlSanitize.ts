@@ -40,8 +40,11 @@
  * `<style>` is the one raw-text element kept (pandas' `Styler.to_html()`
  * needs it) — its content is treated as CSS, not HTML, and dropped wholesale
  * if it contains anything that could reach outside the page (`url(`,
- * `@import`, `expression(`, `-moz-binding`, `javascript:`, `behavior:`).
- * `style="…"` attribute values get the same check.
+ * `@import`, `expression(`, `-moz-binding`, `javascript:`, `behavior:`, or
+ * any backslash — CSS lets those constructs be spelled as escapes, e.g.
+ * `\75\72\6c(` for `url(`, so any escape at all is treated as dangerous
+ * rather than decoded and re-checked). `style="…"` attribute values get the
+ * same check.
  *
  * No tag carries a URL-bearing attribute except `<img src>`, and that is
  * restricted to an inline `data:image/…;base64,…` value — the same
@@ -141,8 +144,18 @@ const NUMERIC_VALUE = /^\d+%?$/;
 const CSS_DANGER =
   /url\s*\(|@import|expression\s*\(|-moz-binding|javascript\s*:|behavior\s*:/i;
 
+/** A literal backslash anywhere in the value. CSS lets any character be
+ * escaped, including as a hex code point (`\75\72\6c(` decodes to `url(`
+ * once a real CSS parser resolves it), so a substring check against
+ * {@link CSS_DANGER} alone can be walked straight past by encoding the very
+ * text it looks for — adversarial review, 2026-09-15 (PR #177). Rather than
+ * reimplement CSS escape decoding to check *after* it, any backslash at all
+ * is treated as dangerous: legitimate `Styler.to_html()` output has no
+ * reason to contain one, so this loses nothing real while closing the whole
+ * class of escape-based obfuscation, not just the one encoding a review
+ * happened to try. */
 function isDangerousCss(value: string): boolean {
-  return CSS_DANGER.test(value);
+  return CSS_DANGER.test(value) || value.includes("\\");
 }
 
 /** Only an inline base64 raster image — the same `data:` restriction ADR-0021
@@ -262,19 +275,33 @@ function buildAttrs(
  * tag is content, never re-tokenized as markup. `end` of input counts as the
  * boundary when no closing tag appears, the same "nothing after this can be
  * trusted, stop" choice {@link sanitizeHtml}'s own unterminated-tag case
- * makes. */
+ * makes.
+ *
+ * The real HTML5 tokenizer ends a raw-text element on `</tagName` followed
+ * by *any* tag-name-terminating character — whitespace, `/`, or `>`, not
+ * only a bare `</tagName>` — and then consumes everything up to the next
+ * real `>` as that end tag's (bogus) attributes, the same way a real open
+ * tag's attributes are consumed. Requiring only `\s*>` here let
+ * `</style/>` walk straight past this function without ending the element,
+ * so content after it — including a live `<script>` — was re-emitted as
+ * "safe, already-scanned CSS text" verbatim (adversarial review, 2026-09-15,
+ * PR #177). Matching just the terminator and then reusing
+ * {@link findTagEnd}'s own quote-aware scan for the real `>` mirrors the
+ * spec instead of guessing at one more literal pattern. */
 function findRawTextEnd(
   html: string,
   start: number,
   tagName: string,
 ): { readonly contentEnd: number; readonly afterClose: number } {
-  const closeTag = new RegExp(`</${tagName}\\s*>`, "i");
-  const match = closeTag.exec(html.slice(start));
+  const closeStart = new RegExp(`</${tagName}(?=[\\s/>])`, "i");
+  const match = closeStart.exec(html.slice(start));
   if (match === null)
     return { contentEnd: html.length, afterClose: html.length };
+  const contentEnd = start + match.index;
+  const tagEnd = findTagEnd(html, contentEnd + match[0].length);
   return {
-    contentEnd: start + match.index,
-    afterClose: start + match.index + match[0].length,
+    contentEnd,
+    afterClose: tagEnd === undefined ? html.length : tagEnd.index + 1,
   };
 }
 

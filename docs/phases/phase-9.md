@@ -919,6 +919,62 @@ recommendation, not a dependency lock._
   review, `npm run verify`, `npm run test:integration`, and the manual
   pass — with nothing outstanding before it ships.
 
+  **[PR #177](https://github.com/Shai-Alit/sas-py-vscode/pull/177)'s own AI
+  review then raised three findings against `htmlSanitize.ts` — two
+  blocking, one non-blocking — all real, all fixed and folded in before
+  push, per this project's own review-findings policy.** Each was verified
+  independently first, by actually reproducing the bypass against the
+  compiled sanitizer before touching the code — the same discipline the
+  9b PR review findings got:
+
+  - **Blocking — `</style/>` and other malformed-but-spec-valid close tags
+    walked past the raw-text element boundary entirely.** `findRawTextEnd`
+    matched only a bare `</style>` (`\s*>` immediately after the name); a
+    real HTML5 tokenizer ends a raw-text element on `</style` followed by
+    *any* tag-name-terminating character (whitespace, `/`, or `>`).
+    `<style>a{}</style/><script>alert(1)</script></style>` therefore
+    skipped past the first `</style/>` looking for a bare match, found the
+    *second*, later `</style>` instead, and re-emitted everything in
+    between — the live `<script>` included — as "already-scanned, safe CSS
+    text" verbatim. Reproduced against the compiled sanitizer before
+    fixing. Fixed: `findRawTextEnd` now matches only the start of a
+    recognized end-tag name (a lookahead on the terminating character,
+    consuming nothing) and reuses `findTagEnd`'s own quote-aware scan to
+    find the real closing `>` from there — mirroring the spec instead of
+    guessing at one more literal pattern. Two new cases in
+    `notebook-html-sanitize.test.ts` cover the `/`- and
+    attribute-terminated forms; a third covers the fallback when even that
+    inner scan finds no real `>` before the end of input.
+  - **Blocking — a backslash-escaped `url(`/`javascript:` slipped past
+    `CSS_DANGER`'s literal substring check.** CSS lets any character be
+    escaped, including as a hex code point (`\75\72\6c(` decodes to `url(`
+    once a real parser resolves it); `CSS_DANGER`'s regex only recognizes
+    the literal, unescaped spelling. Reproduced: a `style` attribute value
+    built exactly this way passed `isDangerousCss` unchanged and was
+    re-emitted as a live `style="…"` attribute. Rather than reimplement
+    CSS escape decoding to check *after* it, `isDangerousCss` now also
+    rejects any value containing a literal backslash at all — legitimate
+    `Styler.to_html()` output has no reason to contain one, so this closes
+    the whole class of escape-based obfuscation rather than only the one
+    encoding the review happened to try. Same fix covers both the `style=`
+    attribute and a `<style>` block's own content, since both go through
+    `isDangerousCss`.
+  - **Non-blocking — flagged as the same underlying gap as the blocking
+    finding above, just a different encoding of it** (a backslash-escaped
+    `url(` reaching outside the page without necessarily executing
+    script). Closed by the same backslash-rejection fix; no separate
+    change needed.
+
+  `npm run verify` green after folding all three in — **1752 unit tests**
+  (up from 1749), coverage **96.04/95.51/95.9/96.04**
+  (`.c8rc.json`'s floor cleared with room; `htmlSanitize.ts` itself at
+  100%/96.55%/100%/100% lines/branches/functions/statements, the one
+  remaining uncovered branch the same pre-existing
+  `noUncheckedIndexedAccess` artifact noted above). `npm run
+  test:integration` green, unchanged at 433 passing (these were unit-tier
+  fixes only — no integration case exercises `htmlSanitize.ts` directly).
+  `npm run check:docs`/`check:secrets` green.
+
 ☐ **9d — Export.**
 
 - ☐ Scope this slice only after 9b/9c land — likely small or droppable,

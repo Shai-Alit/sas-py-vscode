@@ -68,6 +68,42 @@ describe("notebook/htmlSanitize", () => {
       );
     });
 
+    it("drops a style attribute or block that hides url( behind a CSS escape", () => {
+      // \75\72\6c( is "url(" once a real CSS parser decodes the hex escapes —
+      // a substring check against the literal text alone walks straight past
+      // it (adversarial review, 2026-09-15, PR #177). Any backslash at all is
+      // rejected rather than decoded and re-checked.
+      const attr = sanitizeHtml(
+        '<div style="background:\\75\\72\\6c(javascript:alert(1))">x</div>',
+      );
+      assert.equal(attr, "<div>x</div>");
+
+      const block = sanitizeHtml(
+        "<style>a{background:\\75rl(https://evil.example/x)}</style><p>ok</p>",
+      );
+      assert.equal(block, "<p>ok</p>");
+    });
+
+    it("ends a <style> block at </style followed by / or an attribute, not only a bare </style>", () => {
+      // The real HTML5 tokenizer ends a raw-text element on `</style`
+      // followed by any tag-name-terminating character (whitespace, `/`, or
+      // `>`), not only `</style>` itself. Requiring the bare form let
+      // `</style/>` walk past this element boundary entirely, so a live
+      // <script> right after it was re-emitted as "already-scanned, safe CSS
+      // text" verbatim (adversarial review, 2026-09-15, PR #177).
+      const selfClosingForm = sanitizeHtml(
+        "<style>a{}</style/><script>alert(1)</script></style>",
+      );
+      assert.equal(selfClosingForm, "<style>a{}</style>");
+      assert.ok(!selfClosingForm.includes("script"));
+
+      const bogusAttrForm = sanitizeHtml(
+        '<style>a{}</style foo="bar"><script>alert(1)</script></style>',
+      );
+      assert.equal(bogusAttrForm, "<style>a{}</style>");
+      assert.ok(!bogusAttrForm.includes("script"));
+    });
+
     it("drops an <img> whose src is not an inline base64 raster image", () => {
       const remote = sanitizeHtml('<img src="https://evil.example/track.png">');
       assert.equal(remote, "");
@@ -181,6 +217,12 @@ describe("notebook/htmlSanitize", () => {
 
     it("drops an unterminated <script>, consuming to the end of input", () => {
       assert.equal(sanitizeHtml("before<script>alert(1)"), "before");
+    });
+
+    it("still closes a <style> block whose bogus end-tag attributes are themselves unterminated", () => {
+      // </style/ with no real > after it at all — findRawTextEnd's own
+      // "nothing after this can be trusted" fallback for that inner scan.
+      assert.equal(sanitizeHtml("<style>a{}</style/"), "<style>a{}</style>");
     });
   });
 });

@@ -9,6 +9,11 @@ You can browse the tree, refresh it, **open and save files**,
 use the **Recycle Bin** to undo a delete. Dragging a file straight into an
 editor as a code snippet is a later release.
 
+Move works two ways: drag an item onto a folder, or use **Cut**/**Paste** from
+the right-click menu. They end up doing the same thing on the server — Paste
+calls the same move as a successful drag-and-drop drop — the difference is
+only in how you trigger it.
+
 ## What the tree shows
 
 Four top-level folders, matching SAS Studio:
@@ -51,7 +56,12 @@ Right-click an item in the tree for its actions:
   the tree; it does not rewrite the file's own stored name.
 - **Move** — drag a folder or file onto another folder. Drag several at once to
   move them together; a drop that is not a valid move (onto a file, onto the
-  item's own folder) is quietly ignored.
+  item's own folder) is quietly ignored. **Cut**, then **Paste** on the
+  destination folder, does the same move without dragging — useful when a
+  drag-and-drop target is awkward to reach, or you would rather not wonder
+  whether dropping onto a folder moves or copies (it always moves; there is no
+  copy). Only one item can be cut at a time, and Cut never appears on an item
+  already in the Recycle Bin or during a multi-selection.
 - **Delete** — on any folder or file. An ordinary folder or file is moved to
   the **Recycle Bin**, with no confirmation, because you can restore it. A
   top-level folder — one directly under **SAS Content** — has no recycle step;
@@ -118,6 +128,8 @@ It also refreshes itself when you switch connection profile or sign in or out.
 - [ADR-0026](adr/0026-content-adapter-shape.md) — why there is one content
   adapter and no factory or model layer, and why the listing is ordered by the
   extension rather than the server.
+- [ADR-0032](adr/0032-content-cut-paste.md) — why Cut/Paste ships alongside
+  drag-and-drop instead of replacing it.
 - Probe findings 97–101 and 6.1–6.15 in
   [`docs/phases/phase-6.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-6.md)
   — the live Folders/Files wire shapes this is built from: the `ETag`/`If-Match`

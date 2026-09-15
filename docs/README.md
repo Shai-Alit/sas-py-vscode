@@ -35,12 +35,17 @@ feature it describes. So far that is
 [Connecting to Viya](connecting.md), [Running Python](running-python.md),
 [Browsing SAS Content](browsing-sas-content.md),
 [Browsing SAS libraries](browsing-sas-libraries.md),
-[Python and SAS libraries](data-access.md), [Diagnostics](diagnostics.md),
+[Browsing CAS](browsing-cas.md),
+[Python and SAS libraries](data-access.md),
+[Connecting to CAS from Python](cas-python-connection.md),
+[Notebooks](notebooks.md), [Diagnostics](diagnostics.md),
 [The Python environment](python-environment.md) and
 [Troubleshooting](troubleshooting.md). A new top-level page has to be
 added to `nav` and `sidebar` in `.vitepress/config.mjs` as well — an
 unregistered page builds without complaint and is reachable only by typing its
-URL.
+URL. (`cas-python-connection.md` shipped in Phase 8 without that wiring and sat
+unreachable until the Phase 8/9 documentation catch-up in Phase 10 fixed it —
+see `STATUS.md`.)
 
 ## Rules
 

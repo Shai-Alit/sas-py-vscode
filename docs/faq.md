@@ -96,6 +96,33 @@ and SAS libraries](data-access.md).
 sortable, filterable grid, and can export one to CSV, all without a line of
 Python. See [Browsing SAS libraries](browsing-sas-libraries.md).
 
+**Can I browse CAS the same way?** Yes — the **CAS** view in the activity bar
+shows CAS servers, caslibs and tables, and opens a table in the same kind of
+grid. Unlike SAS Libraries, it needs only a sign-in, not a connect — CAS
+browsing goes straight to CAS, not through a compute session. CSV export and
+table properties are not built for a CAS table yet. See [Browsing
+CAS](browsing-cas.md).
+
+## Notebooks
+
+**Do I need `ms-toolsai.jupyter` to use a `.ipynb` file with this extension?**
+No — pick **Python on Viya** from the kernel picker and it works with nothing
+else installed. If you do have `ms-toolsai.jupyter` too, both kernel entries
+coexist without conflict. See [Notebooks](notebooks.md).
+
+**Does a notebook cell share the same session as Run File?** No — a notebook
+gets its own compute session, so running a cell does not disturb whatever Run
+File or Run Selection are doing in the same window, and vice versa. See
+[Notebooks](notebooks.md).
+
+**Why doesn't a bare `DataFrame` or `plt.show()` render as a cell's output?**
+Rich output is captured from a file your code writes, the same rule as
+[Running Python](running-python.md#the-result-panel) — call
+`fig.savefig(...)` or `df.to_html(...)` explicitly. There is no implicit
+capture of a cell's last expression. See [Notebooks](notebooks.md#output).
+
+## Everything else
+
 **Is any of this sent anywhere besides my Viya deployment?** No. There is no
 telemetry, and no setting to turn it off, because there is nothing collected
 to turn off. See [the README](https://github.com/Shai-Alit/sas-py-vscode#readme).

@@ -6,6 +6,10 @@ separate CAS credential to acquire, paste in, or store. It reuses the same
 Viya access token this extension already borrows per request for everything
 else it does.
 
+This page is about that Python-side connection. For a no-code look at CAS
+servers, caslibs and tables — no `swat` required — see [Browsing
+CAS](browsing-cas.md).
+
 ## Getting a connection
 
 1. Sign in and connect to SAS Viya, the same as running any Python code.

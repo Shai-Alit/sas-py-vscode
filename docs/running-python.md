@@ -190,6 +190,8 @@ repopulate them.
 
 ## Where the details are
 
+- [Notebooks](notebooks.md) — running cells in a `.ipynb` file against its own
+  compute session, sharing most of this same machinery.
 - [Diagnostics](diagnostics.md) — what a failed run looks like, and the
   Problems panel.
 - [The Python environment](python-environment.md) — what is installed on the

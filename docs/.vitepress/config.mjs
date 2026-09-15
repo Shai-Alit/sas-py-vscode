@@ -75,7 +75,13 @@ export default defineConfig({
           { text: "Running Python", link: "/running-python" },
           { text: "Browsing SAS Content", link: "/browsing-sas-content" },
           { text: "Browsing SAS libraries", link: "/browsing-sas-libraries" },
+          { text: "Browsing CAS", link: "/browsing-cas" },
           { text: "Python and SAS libraries", link: "/data-access" },
+          {
+            text: "Connecting to CAS from Python",
+            link: "/cas-python-connection",
+          },
+          { text: "Notebooks", link: "/notebooks" },
           { text: "Diagnostics", link: "/diagnostics" },
           { text: "The Python environment", link: "/python-environment" },
           { text: "Troubleshooting", link: "/troubleshooting" },

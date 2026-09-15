@@ -177,6 +177,45 @@ or a file that has been renamed or deleted since the run; and an entry clears
 at the start of the next run of that file, or on closing the editor tab,
 signing out, or switching the run target to Local.
 
+## Browsing CAS
+
+**A table's icon still shows unloaded after you expanded it.** The load
+happened — CAS has to load a table to answer "what columns does this have,"
+which is what expanding it does — but the icon can fail to visibly flip from
+cloud to table afterward in a real VS Code window. A known, documented gap.
+Run **Refresh CAS**, or just open the table: it works regardless of what the
+icon shows. See [Browsing CAS](browsing-cas.md).
+
+**Your own CASUSER caslib is missing from the tree.** Expected today — only
+global caslibs are shown; a session-scoped caslib is not yet supported. See
+[Browsing CAS](browsing-cas.md).
+
+**No Export to CSV or Table Properties on a CAS table.** Not built yet, unlike
+the same actions on a SAS Libraries table.
+
+## Notebooks
+
+**A figure or table never appears in a cell's output.** The same rule as the
+Result panel: rich output is captured from a file your code writes, not an
+implicit `plt.show()` or `_repr_html_` capture. Call `fig.savefig(...)` or
+`df.to_html(...)` explicitly. See [Notebooks](notebooks.md#output).
+
+**An embedded chart or widget in an HTML output does nothing.** If it depends
+on a `<script>` tag to render, that script never runs — the output is
+sanitized before it reaches VS Code's renderer, so a notebook you did not
+write cannot execute code just by being opened. The rest of the markup still
+renders. See [Notebooks](notebooks.md#output).
+
+**A cell sits with no output for a while after you cancel the one before
+it.** The interrupt stopped locally at once, but SAS may still be finishing
+the statement that was already running when you cancelled — the same
+limitation [Cancel](running-python.md#cancelling-a-run) has outside notebooks.
+A notice appears after a few seconds saying as much.
+
+**A Problems-panel entry from a notebook cell is still there after you sign
+out.** A known gap — closing the notebook clears its entries; signing out does
+not yet. See [Notebooks](notebooks.md#diagnostics).
+
 ## Reset, reconnect, or reload?
 
 - **Reset Python State** — the interpreter's namespace is wedged but the
@@ -199,8 +238,9 @@ administrator, worth trimming before a public issue.
 
 - [Signing in](signing-in.md) · [Connecting to Viya](connecting.md) ·
   [Running Python](running-python.md) · [Diagnostics](diagnostics.md) ·
-  [The Python environment](python-environment.md) — each has its own "When it
-  does not work" section for the area it covers.
+  [The Python environment](python-environment.md) · [Browsing
+  CAS](browsing-cas.md) · [Notebooks](notebooks.md) — each has its own "When
+  it does not work" section for the area it covers.
 - The **Probe findings** sections of the
   [phase files](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-4.md)
   record the measured deployment behaviour every entry here rests on.

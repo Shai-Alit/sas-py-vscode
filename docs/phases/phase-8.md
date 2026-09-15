@@ -776,9 +776,21 @@ already covers this session's only VS Code–extension-host-dependent code.
 pass.** Bug 2 (item 8.28) does not — see its own entry above for the full
 account and the Phase 10/11 deferral.
 
----
+### Documentation catch-up, 2026-09-15
 
-## Probe findings
+8c shipped with a user-facing doc page (`docs/cas-python-connection.md`) for
+the Python-side `swat.CAS()` connection, but **the CAS tree itself — browsing
+servers, caslibs, tables and columns, opening a table in the data viewer —
+had no user-facing documentation at all**, and the one page that did exist was
+never wired into `docs/README.md`'s index or `.vitepress/config.mjs`'s
+`nav`/`sidebar`, so it was unreachable except by typing its URL directly.
+Found during a Phase 10 documentation-completeness pass and fixed in the same
+session: new [`docs/browsing-cas.md`](../browsing-cas.md), registered in both
+places, covering the tree's on-demand load/JIT-load behaviour, the icon-refresh
+gap (see item 8.28 above), the global-caslib-only limitation, and the missing
+CSV export/table properties for a CAS table. `cas-python-connection.md` itself
+now cross-links to it. `npm run check:docs` (reference, samples, self-link
+check, VitePress build) and `check:secrets` both green.
 
 All probes below ran 2026-09-03 against `verde` (Viya 4), via the
 `viya-api-probe` skill. This phase predates the 2026-09-09 switch to

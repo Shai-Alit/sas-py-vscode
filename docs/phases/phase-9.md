@@ -1059,6 +1059,25 @@ squash `fa7222f`.
   against it. No manual test needed — nothing shipped to test. **Phase 9
   (9a–9d) is now fully complete.**
 
+### Documentation catch-up, 2026-09-15
+
+Phase 9 shipped ipynb-native execution, rich output rendering, and
+Problems-panel diagnostics for a notebook cell — 9a through 9d — with **no
+user-facing documentation page at all**: no `docs/notebooks.md`, and no
+mention of notebooks anywhere in `getting-started.md`, `faq.md`, or
+`troubleshooting.md`, a direct miss against `docs/README.md`'s own "docs ship
+with the slice" rule. Found during a Phase 10 documentation-completeness pass
+and fixed in the same session: new [`docs/notebooks.md`](../notebooks.md),
+registered in `docs/README.md` and `.vitepress/config.mjs`'s `nav`/`sidebar`,
+covering the dedicated per-notebook compute session (ADR-0035), the
+working-directory-diff rich-output capture notebooks share with Run File
+(ADR-0019) and how that differs from a Jupyter kernel's own auto-display, the
+`text/html` sanitizer (ADR-0036), and the two open gaps (a stale Problems
+entry outliving a sign-out; a rejected `appendOutput` on a mid-run notebook
+close) carried in `phase-11.md`. Cross-links added from `running-python.md`,
+`faq.md`, and `troubleshooting.md`. `npm run check:docs` (reference, samples,
+self-link check, VitePress build) and `check:secrets` both green.
+
 ---
 
 ## Probe findings

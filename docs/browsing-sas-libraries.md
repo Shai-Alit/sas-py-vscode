@@ -99,6 +99,8 @@ close the tab, refresh SAS Libraries, and try again.
 
 ## Where the details are
 
+- [Browsing CAS](browsing-cas.md) — the equivalent tree for CAS servers,
+  caslibs and tables, which needs no compute session the way this view does.
 - [Python and SAS libraries](data-access.md) — reading and writing this same
   library data from your own Python code with `SAS.sd2df` / `SAS.df2sd`, and
   dragging a table from this tree straight into an editor as code.

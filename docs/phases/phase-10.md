@@ -377,6 +377,15 @@ passed against a real VS Code window. 10a is now fully verified: checks,
 adversarial review, and manual test all green. PR opened for 10a
 ([#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)).
 
+**PR #178 also picked up two docs-only merges from `main` while it was
+open** — [#179](https://github.com/Shai-Alit/sas-py-vscode/pull/179) (the
+1.0 definition-of-done) and
+[#180](https://github.com/Shai-Alit/sas-py-vscode/pull/180) (the Phase
+8/9 documentation catch-up) — both merged cleanly (`STATUS.md` was the
+only file either touched that this branch also touched, and each landed in
+a different section of it), verified with `check:secrets`/`check:docs`
+after each merge, no conflicts.
+
 **PR #178 review, 2026-09-15.** Codex's automated review found one real,
 major-severity defect: `readActiveLocalEnvironment`
 (`src/run/localPythonEnvironment.ts`) trusted `ResolvedEnvironment`'s own
@@ -434,6 +443,11 @@ no-speculative-fields convention; nothing else referenced it (`grep -rn
 `environmentPanel.ts`). `npm run verify` (1771 unit, same coverage figures)
 and `npm run test:integration` (436 passing) both re-ran green after both
 fixes.
+
+**10a merged, 2026-09-15.** Squash-merged as
+[PR #178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), commit
+`62cf217`. This is 10a's final state — the punch-list item above is done;
+10b (below) is the only open work left in this phase.
 
 ---
 

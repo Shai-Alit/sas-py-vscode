@@ -21,7 +21,7 @@ probe already cached (run **Python on Viya: Show environment** once first if
 needed), and `ms-python.python` installed with a real local virtual
 environment available to select.
 
-- [ ] **10.1** **The Local comparison section reports a real three-way diff
+- [x] **10.1** **The Local comparison section reports a real three-way diff
   against the active local interpreter** — select a local virtual
   environment (via `ms-python.python`'s interpreter picker) whose installed
   packages differ from the Viya profile's — e.g. `pip install` one package
@@ -34,7 +34,7 @@ environment available to select.
   letter-casing on each side (e.g. `Pillow` locally, `pillow` on Viya, same
   version) must **not** appear in the version-mismatched bucket — PEP 503
   name normalisation should treat the two as the same package.
-- [ ] **10.2** **The Local comparison section degrades to an honest "unknown"
+- [x] **10.2** **The Local comparison section degrades to an honest "unknown"
   message, never an error, when there is no local interpreter to compare
   against** — with no workspace folder open (or no interpreter selected via
   `ms-python.python`'s picker — **Python: Select Interpreter** →
@@ -44,7 +44,7 @@ environment available to select.
   interpreter, full package list — with the "Local comparison" section
   showing a plain sentence that the local environment is unknown, not a
   blank section, an exception, or a broken document.
-- [ ] **10.3** **A local-side hiccup (a stale/deleted interpreter) does not
+- [x] **10.3** **A local-side hiccup (a stale/deleted interpreter) does not
   take down the rest of the document** — select a local interpreter via
   `ms-python.python`, confirm §10.1's diff renders, then delete or rename
   that interpreter's virtual-environment folder on disk (without reselecting
@@ -59,7 +59,7 @@ environment available to select.
   section falls back to the same "unknown" message as §10.2; the whole
   document must never fail to open or show an error in place of the
   previously-working Viya-side content.
-- [ ] **10.4** **`Python on Viya: Search environment` opens a filterable
+- [x] **10.4** **`Python on Viya: Search environment` opens a filterable
   picker over the cached package list and copies the picked entry to the
   clipboard** — run **Python on Viya: Search environment** for a profile with
   a cached probe. **(live)**
@@ -70,7 +70,7 @@ environment available to select.
   one entry. **Expect:** a toast reading "Copied `<name>`==`<version>` to the
   clipboard.", and pasting anywhere confirms the clipboard actually holds
   `name==version`.
-- [ ] **10.5** **`Search environment` never force-probes** — pick a profile
+- [x] **10.5** **`Search environment` never force-probes** — pick a profile
   whose cached probe is now stale (e.g. a package was installed on the Viya
   side since the last `Show environment`/`Refresh environment`), and run
   **Python on Viya: Search environment** without running **Refresh

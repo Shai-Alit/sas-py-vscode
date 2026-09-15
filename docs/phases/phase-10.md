@@ -365,9 +365,16 @@ logic, test quality, no secrets/`console.*`/`any`) read as solid — no
 further changes. Manual-test items 10.1–10.5 added to
 `docs/dev/manual-tests/phase-10.md`, including 10.3 as this exact
 regression's own live repro (a deleted interpreter folder must not blank
-the whole document). **Not pushed yet** — per this session's own
-instruction, waiting on Sean to run the manual-test pass before `git push`/
-`gh pr create`.
+the whole document).
+
+**Manual-test pass, 2026-09-15 (Sean).** All five items —
+10.1 (three-way diff, PEP 503 normalisation), 10.2 (honest "unknown" with
+no local interpreter), 10.3 (a deleted/stale interpreter degrades only the
+Local comparison section, live repro of the review fix above), 10.4
+(`Search environment` filters and copies `name==version` to the clipboard),
+10.5 (`Search environment` never force-probes a stale cache) — run and
+passed against a real VS Code window. 10a is now fully verified: checks,
+adversarial review, and manual test all green. PR opened for 10a.
 
 ---
 

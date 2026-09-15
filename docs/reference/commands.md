@@ -31,6 +31,7 @@ under their category.
 | Reset Python State | `Python on Viya: Reset Python State` | `pythonOnViya.resetPythonState` |
 | Show Environment | `Python on Viya: Show Environment` | `pythonOnViya.showEnvironment` |
 | Refresh Environment Info | `Python on Viya: Refresh Environment Info` | `pythonOnViya.refreshEnvironment` |
+| Search Environment | `Python on Viya: Search Environment` | `pythonOnViya.searchEnvironment` |
 | Refresh SAS Content | `Python on Viya: Refresh SAS Content` | `pythonOnViya.refreshContentExplorer` |
 | Refresh SAS Libraries | `Python on Viya: Refresh SAS Libraries` | `pythonOnViya.refreshDataExplorer` |
 | Refresh CAS | `Python on Viya: Refresh CAS` | `pythonOnViya.refreshCasExplorer` |

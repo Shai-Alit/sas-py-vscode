@@ -165,6 +165,11 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.searchEnvironment",
+        "title": "%command.searchEnvironment.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "pythonOnViya.refreshContentExplorer",
         "title": "%command.refreshContentExplorer.title%",
         "category": "%extension.category%",
@@ -601,6 +606,7 @@
     "@types/sinon": "22.0.0",
     "@types/vscode": "1.104.0",
     "@vscode/l10n-dev": "0.0.35",
+    "@vscode/python-extension": "1.0.6",
     "@vscode/test-electron": "3.1.0",
     "@vscode/vsce": "3.9.2",
     "ag-grid-community": "36.0.2",

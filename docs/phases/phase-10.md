@@ -273,25 +273,41 @@ barrier — this is a recommendation, not a dependency lock._
   finding even though neither is a Viya wire fact (Probe findings section,
   below, explains why that's still the right place for it).
 
-☐ **10a — Environment view: search/filtering + local/remote diff.**
+☑ **10a — Environment view: search/filtering + local/remote diff.** Done
+2026-09-14 — Sean's own call this session to take 10a first and hold the
+10b spike for a later hands-on session, rather than block on it per this
+Runbook's own (non-binding) recommended order.
 
-- ☐ Local dist-info reader: given a `sysPrefix` (from
-  `@vscode/python-extension`'s `resolveEnvironment`), enumerate
-  `site-packages`/`Lib\site-packages`'s `*.dist-info`/`*.egg-info` entries and
-  parse each `METADATA`'s `Name`/`Version` — fixture-driven, no real local
-  Python required to test it.
-- ☐ Diff logic: remote packages (already in `RuntimeCapabilities`) vs. local
-  (above) → three buckets (remote-only, local-only, version-mismatched);
-  degrades to "local unknown" when `ms-python.python` is absent or has no
-  active environment, never a hard failure.
-- ☐ `Python on Viya: Search environment` — a new `QuickPick`-based command
-  with built-in filter-as-you-type, additive to (not replacing) `Show
-  environment`'s existing plain-text document (Plan, above — 3e's own
-  rationale for a plain-text document still stands for the "read the whole
-  thing" case).
-- ☐ Extend `environmentDocument.ts`'s rendered text with a diff section,
-  reusing `environmentStore.ts`'s existing cache — no new persistence needed
-  beyond what the local read produces on demand.
+- ☑ Local dist-info reader (`src/run/localPackages.ts`): given a
+  `sysPrefix` (from `@vscode/python-extension`'s `resolveEnvironment`),
+  enumerates `site-packages`'s `*.dist-info`/`*.egg-info` entries and parses
+  each `METADATA`/`PKG-INFO`'s `Name`/`Version` — pure, fixture-driven
+  (`test/unit/local-packages.test.ts`), no real local Python needed. The
+  real filesystem read (`src/run/localPythonEnvironment.ts`) uses
+  `vscode.workspace.fs`, not `node:fs` — that API reaches any `file://`
+  path regardless of workspace membership, so it covers an interpreter
+  installed anywhere on disk without widening `eslint.config.mjs`'s
+  Node-built-in allow-list (ADR-0003) at all; no ADR amendment was needed.
+- ☑ Diff logic (`src/run/environmentDiff.ts`): remote packages vs. local →
+  three buckets (remote-only, local-only, version-mismatched), names matched
+  PEP 503-normalised (so `My-Package`/`my_package` are not reported as a
+  false mismatch) while the displayed name stays whichever side reported
+  it; degrades to `local-unknown` when `ms-python.python` is absent, has no
+  active environment, or the environment cannot be resolved — never a hard
+  failure. 100% unit-covered.
+- ☑ `Python on Viya: Search environment` (`pythonOnViya.searchEnvironment`,
+  `src/run/commands.ts`) — a `QuickPick` over the current profile's cached
+  packages (sorted by name, VS Code's own built-in filter-as-you-type),
+  additive to (not replacing) `Show environment`'s existing plain-text
+  document. Never force-probes, matching `Show environment`'s own
+  cache-first default. Picking an entry copies `name==version` to the
+  clipboard (via an injectable port, `RunCommandDeps.writeClipboardText`,
+  so the integration suite never touches a real system clipboard).
+- ☑ Extended `environmentDocument.ts`'s rendered text with a "Local
+  comparison" section below the package list, reusing `environmentStore.ts`'s
+  existing cache — no new persistence. `environmentPanel.ts`'s
+  `provideTextDocumentContent` is now `async`, reading the local side fresh
+  on every render (one local directory walk, not a network call).
 
 ☐ **10b — Pylance environment reflection (after the spike above).**
 
@@ -309,6 +325,115 @@ barrier — this is a recommendation, not a dependency lock._
   (`ms-python.vscode-python-envs`) registration as a possible follow-on
   enhancement, not a dependency this phase requires (Plan, above) — a short
   `docs/` note, not code, unless a later session decides to build it.
+
+**10a verification, 2026-09-14.** `npm run verify`'s full chain green
+locally (`format:check`, `lint`, `typecheck`, `check:copyright`,
+`check:secrets`, `check:coverage-scope`, `check:contracts`, `build`,
+`coverage`): 1771 unit tests, coverage 96.09/95.57/95.98/96.09
+lines/branches/functions/statements, every new pure module
+(`environmentDiff.ts`, `environmentDocument.ts`, `localPackages.ts`) at
+100%. `npm run test:integration` also green, 436 passing (`localPythonEnvironment.ts`
+and the `commands.ts` changes are `vscode`-importing, so they're exercised
+here rather than at the unit tier — `.c8rc.json`'s exclude list gained
+exactly `localPythonEnvironment.ts`). New dependency:
+`@vscode/python-extension` 1.0.6 (devDependency, pinned exact — bundled by
+esbuild like every other runtime dependency in this project).
+
+**Adversarial self-review, 2026-09-15 (before the PR exists, per
+`CLAUDE.md`).** One real finding: `environmentPanel.ts`'s
+`provideTextDocumentContent` called the new `await
+readActiveLocalEnvironment()`/`diffEnvironments(...)` path with no
+`try`/`catch` around it — `localPythonEnvironment.ts`'s own doc comment
+promises the whole path "degrades to unknown, never a thrown error," but
+that guarantee only actually held for `PythonExtension.api()` itself;
+`getActiveEnvironmentPath()`/`resolveEnvironment()` were called unguarded,
+so an extension-internal error (a misbehaving Conda/Poetry resolver, a
+stale/deleted interpreter) would have propagated out and broken the whole
+`Show environment` document — including the previously-reliable remote
+package list — instead of degrading only the new "Local comparison"
+section. **Fixed**: `readActiveLocalEnvironment`
+(`src/run/localPythonEnvironment.ts`) now wraps the
+`getActiveEnvironmentPath`/`resolveEnvironment` pair in its own
+`try`/`catch`, returning `{ kind: "unknown" }` on any failure from either
+call, matching the doc comment's existing promise rather than only the
+`api()` call. `npm run verify` (1771 unit, same coverage figures above) and
+`npm run test:integration` (436 passing) both re-run green after the fix.
+Everything else the review flagged (l10n coverage, PEP 503 normalisation,
+the `eslint.config.mjs` version-branching-rule workaround for
+`remoteVersion`/`localVersion`, `ensureProbedEnvironment`'s cache-vs-force
+logic, test quality, no secrets/`console.*`/`any`) read as solid — no
+further changes. Manual-test items 10.1–10.5 added to
+`docs/dev/manual-tests/phase-10.md`, including 10.3 as this exact
+regression's own live repro (a deleted interpreter folder must not blank
+the whole document).
+
+**Manual-test pass, 2026-09-15 (Sean).** All five items —
+10.1 (three-way diff, PEP 503 normalisation), 10.2 (honest "unknown" with
+no local interpreter), 10.3 (a deleted/stale interpreter degrades only the
+Local comparison section, live repro of the review fix above), 10.4
+(`Search environment` filters and copies `name==version` to the clipboard),
+10.5 (`Search environment` never force-probes a stale cache) — run and
+passed against a real VS Code window. 10a is now fully verified: checks,
+adversarial review, and manual test all green. PR opened for 10a
+([#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)).
+
+**PR #178 review, 2026-09-15.** Codex's automated review found one real,
+major-severity defect: `readActiveLocalEnvironment`
+(`src/run/localPythonEnvironment.ts`) trusted `ResolvedEnvironment`'s own
+TypeScript type, which declares `executable.sysPrefix` and
+`version.major`/`version.minor` as always populated once `version` itself
+is defined. Real `resolveEnvironment` calls don't always honour that —
+`sysPrefix` can come back `""` and `version.major`/`minor` `undefined`
+regardless (a documented vscode-python defect,
+[microsoft/vscode-python#20147](https://github.com/microsoft/vscode-python/issues/20147),
+confirmed by web search this session). The unguarded code would have built
+a `undefined/Lib/site-packages`-shaped path, which `readLocalPackages`
+reads back as an empty list — silently reporting *every* remote package as
+"remote-only" instead of the honest "local environment unknown" 10.2 tests
+for. **Fixed**: `sysPrefix`/`major`/`minor` are now checked for real values
+(not just checked against the type) before building the site-packages path,
+falling back to `{ kind: "unknown" }` otherwise — `localPythonEnvironment.ts`
+stays excluded from the coverage gate (`.c8rc.json`), same as before, since
+the integration test host cannot fabricate a `resolveEnvironment` result
+with this specific shape. The review's other finding — three Phase 9
+notebook bullets in this PR's `CHANGELOG.md` diff, which turned out to be a
+genuine backfill of entries PRs #172/#176/#177 never added when they merged
+— was acknowledged rather than split out: the entries are correct and
+belong under `## [Unreleased]` regardless of which PR adds them, so
+backfilling them here rather than opening a separate PR for a three-line
+gap was the pragmatic call. `npm run verify`'s full chain re-run green
+after the `localPythonEnvironment.ts` fix (see below); no other findings.
+
+**PR #178 review, round 2, 2026-09-15 (after merging main's PR #179 docs
+into the branch).** Two more minor findings, both in
+`src/run/localPythonEnvironment.ts`, both fixed. First: `sitePackagesPath`
+reads the bare `process.platform` global rather than an import, so
+`eslint.config.mjs`'s `no-restricted-imports` rule (ADR-0003's enforcement
+mechanism) never sees it — and the call was unguarded, so a `ReferenceError`
+in an environment where `process` does not exist (a web extension host,
+which this module's own doc comment already names as a case it degrades
+for) would have propagated out of `readActiveLocalEnvironment`, through
+`environmentPanel.ts`'s unguarded `await`, and blanked the whole `Show
+environment` document — the identical failure shape the first adversarial
+review round already fixed twice over for the two calls above it. **Fixed**:
+the `readLocalPackages`/`sitePackagesPath` call is now wrapped in its own
+`try`/`catch`, degrading to `{ kind: "unknown" }` like every other early
+return in this function. Not a live bug today — `package.json` has no
+`browser` entry point, so a web host never actually runs this — but the gap
+in the graceful-degradation guarantee was real. The reviewer additionally
+suggested extending the ADR-0003 lint rule to catch bare
+`process`/`Buffer`-style globals, not just imports; left as a follow-up for
+Sean to decide on, not applied here — a lint-rule change is a wider,
+independent decision than this PR's own scope. Second: `LocalEnvironment`'s
+`known` arm carried a `version` field (`resolved.version.sysVersion`) that
+nothing downstream ever read — `environmentPanel.ts` only pulls
+`local.packages` out of it. **Fixed**: the field is dropped rather than
+kept for a hypothetical future consumer, per this project's own
+no-speculative-fields convention; nothing else referenced it (`grep -rn
+"LocalEnvironment"` before the change turned up only this file and
+`environmentPanel.ts`). `npm run verify` (1771 unit, same coverage figures)
+and `npm run test:integration` (436 passing) both re-ran green after both
+fixes.
 
 ---
 

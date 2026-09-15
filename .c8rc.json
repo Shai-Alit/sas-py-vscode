@@ -43,6 +43,7 @@
     "src/run/diagnostics.ts",
     "src/run/environmentPanel.ts",
     "src/run/environmentStatusBar.ts",
+    "src/run/localPythonEnvironment.ts",
     "src/run/outputChannel.ts",
     "src/run/resultPanel.ts",
     "src/run/statusBar.ts",

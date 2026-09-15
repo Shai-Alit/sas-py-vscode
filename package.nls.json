@@ -17,6 +17,7 @@
   "command.resetPythonState.title": "Reset Python State",
   "command.showEnvironment.title": "Show Environment",
   "command.refreshEnvironment.title": "Refresh Environment Info",
+  "command.searchEnvironment.title": "Search Environment",
   "command.refreshContentExplorer.title": "Refresh SAS Content",
   "command.refreshDataExplorer.title": "Refresh SAS Libraries",
   "command.refreshCasExplorer.title": "Refresh CAS",

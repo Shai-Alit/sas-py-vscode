@@ -180,8 +180,11 @@ no existing subfolder under `.pythonOnViya/typings/` first.
   under a full reload while `requests` did downgrade under a language-server
   restart is not established — not investigated further this session, per
   the same standing direction not to chase root cause without being asked.
-  Recording both results side by side rather than treating this as
-  "confirmed fixed."
+  **Developer's own call, same day: the `babel` failure is set aside as
+  likely a mistake in how that attempt was run, not a reproduced product
+  defect** — not re-attempted, and not treated as resolved or explained,
+  just no longer blocking. §10.8 is marked passed on the strength of the
+  `requests` result (Finding 10.5).
 - [x] **10.9** **An already-customised `python.analysis.stubPath` is left
   untouched, not overwritten** — before connecting, add
   `"python.analysis.stubPath": "./my-own-stubs"` to the workspace's

@@ -1066,13 +1066,22 @@ window" notice — a full extension-host restart, ~60–90 seconds, this
 session's Viya connection dropped and requiring a manual reconnect — did
 **not** clear or downgrade the diagnostic; `babel` still read
 `reportMissingImports` afterward. Root cause not investigated this session,
-at the developer's direction. **Not yet resolved** — full account, and the
-developer's separate, standing objection to the reload cost itself
-(independent of whether this turns out to be a distinct bug), in the
-Runbook's "Manual test session, 2026-09-15" entry, above. This is a currently
-open, unresolved finding, not a settled one — treat it as blocking for 10b
-until either the diagnostic-clearing question or the reload-cost question (or
-both) has a real answer.
+at the developer's direction. Full account, and the developer's separate,
+standing objection to the reload cost itself (independent of whether this
+turns out to be a distinct bug), in the Runbook's "Manual test session,
+2026-09-15" entry, above. **Set aside, 2026-09-15, same day: after Finding
+10.5's `requests` re-test succeeded under the same shape of test, the
+developer's own call is that this result was likely a mistake in how the
+`babel` attempt was run, not a reproduced product defect.** Not re-attempted
+and not explained — kept here verbatim as the historical record rather than
+edited or removed, per this project's own "never rewrite history" rule —
+but no longer treated as blocking. The separate reload-cost objection this
+finding also carried is the thing the "Restart Language Server" design
+change (Runbook, above) was built to address, and Finding 10.5's own re-test
+confirms that change works as intended in the common case (~5–10 seconds, no
+dropped Viya connection) — the objection is addressed going forward, not
+because `babel`'s own result was explained, but because the cheap remedy
+that failed to exist when this finding was written now exists and works.
 
 **Finding 10.4 (2026-09-15) — the Python extension's language-server-restart
 command is `python.analysis.restartLanguageServer`, confirmed against a real
@@ -1110,9 +1119,12 @@ diagnostic to `reportMissingModuleSource` — the expected result. A
 subsequent **Reload Window** click made no further difference. This is the
 opposite outcome from Finding 10.3, where a full reload alone did not clear
 `babel`'s diagnostic at all. **Both findings stand as recorded** — this one
-does not supersede or explain Finding 10.3; the discrepancy between them
+does not explain Finding 10.3's own result; the discrepancy between them
 (different package, different remedy available, same session) is itself
-unexplained and not investigated further, at the developer's own direction.
+unexplained and not investigated further. **The developer's own call, same
+day: Finding 10.3's `babel` result is set aside as a likely mistake in how
+that attempt was run, not treated as a reproduced defect** — §10.8 is marked
+passed (`docs/dev/manual-tests/phase-10.md`) on the strength of this finding.
 A related, unplanned observation from the same re-test: reinstalling
 `requests` locally cleared its diagnostic with no restart or reload of any
 kind, suggesting Pylance live-detects a local-interpreter change through a

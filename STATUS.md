@@ -39,9 +39,9 @@ slice-by-slice narrative that used to live here has moved to
 archival rule.
 
 **Phase 10 (Viya environment awareness) is in progress — 10a merged
-2026-09-15, 10b implemented and manually tested but not yet reviewed or
-opened as a PR; one manual-test item and a separate design question are both
-open.** 10a (`docs/phases/phase-10.md`) adds a
+2026-09-15, 10b implemented, reviewed, and fully manually tested (all of
+10.1–10.14 green); not yet pushed or opened as a PR.** 10a
+(`docs/phases/phase-10.md`) adds a
 local/remote package diff to the existing `Show environment` document (a
 new "Local comparison" section, reading the local interpreter
 `ms-python.python` has active via `@vscode/python-extension` and
@@ -177,9 +177,21 @@ artefacts (`.vscode/settings.json` residue; `.pythonOnViya/` untracked
 because this repo's own `.gitignore` didn't exclude it, unlike what
 `docs/python-environment.md` tells users to do for theirs) — full account in
 `phase-10.md`'s Runbook, "Pre-push adversarial self-review of the design
-change, 2026-09-15" entry. **Still not yet a PR — §10.8 needs a live manual
-re-test against this change** (does "Restart Language Server" clear the
-diagnostic Finding 10.3 says a full reload didn't?) before it can open.
+change, 2026-09-15" entry. **§10.8 re-tested live against this change,
+2026-09-15 — passed.** Against `requests` (confirmed never previously
+stubbed): uninstalling it locally produced `reportMissingImports`; a fresh
+probe correctly left that unchanged; clicking **Restart Language Server**
+(~5–10 seconds, no dropped Viya connection) downgraded it to
+`reportMissingModuleSource` as expected. Recorded as **Finding 10.5**
+(`phase-10.md`) — which directly contradicts Finding 10.3's own `babel`
+result under a full reload alone, a discrepancy neither finding explains.
+**The developer's own call: Finding 10.3's `babel` result is set aside as a
+likely mistake in how that attempt was run, not a reproduced defect** — left
+in place verbatim as the historical record, no longer treated as blocking.
+§10.8 is marked passed on Finding 10.5's strength. **The full manual-test
+board for Phase 10 (items 10.1–10.14) is now all green.** Not yet pushed or
+opened as a PR — that's the next step, once the developer decides to take
+it.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

@@ -42,8 +42,8 @@
  * all — `tests`, `utils`, and similarly generic names turn up in real
  * `top_level.txt` listings often enough that the collision is not
  * hypothetical. `writeStubTree` below lists the (first) workspace folder's
- * own top-level directories and `.py` files and excludes any matching name
- * from the generated set (`stubGenerator.ts`'s own
+ * own top-level directories and `.py`/`.pyi` files and excludes any matching
+ * name from the generated set (`stubGenerator.ts`'s own
  * `excludeWorkspaceOwnedNames`) before ever writing anything — Pyright
  * resolves `stubPath` *before* workspace source, so a generated stub with a
  * colliding name would otherwise win and silently disable real
@@ -159,10 +159,13 @@ export interface RealFs {
   listTopLevelDirectories(uri: vscode.Uri): Promise<readonly string[]>;
   /** Top-level names at the *workspace* root (not the stub tree root) that a
    * generated stub must never shadow — every directory name, and every
-   * `.py` file's name with the extension stripped (`six.py` shadows a
-   * `six/` stub exactly as a `six/` package of the user's own would).
-   * `stubGenerator.ts`'s own `excludeWorkspaceOwnedNames` is what actually
-   * applies this list; see its doc comment for why it exists. Same
+   * `.py`/`.pyi` file's name with its extension stripped (`six.py` shadows a
+   * `six/` stub exactly as a `six/` package of the user's own would — and so
+   * does a hand-authored `six.pyi`, a common shape for a package that ships
+   * types only; a PR #182 review round found the first version of this only
+   * checked `.py`, so a workspace's own top-level `.pyi` was not protected at
+   * all). `stubGenerator.ts`'s own `excludeWorkspaceOwnedNames` is what
+   * actually applies this list; see its doc comment for why it exists. Same
    * missing-root handling as {@link listTopLevelDirectories}. */
   listWorkspaceRootNames(uri: vscode.Uri): Promise<readonly string[]>;
   createDirectory(uri: vscode.Uri): Promise<void>;
@@ -172,6 +175,39 @@ export interface RealFs {
    * anything a user typed, so there is nothing a recycle bin round trip
    * would protect. */
   deleteRecursively(uri: vscode.Uri): Promise<void>;
+}
+
+/** The extension-stripping/file-type half of {@link RealFs.listWorkspaceRootNames},
+ * pulled out so a test can pin it directly against fixture `readDirectory`
+ * tuples — `vscode.FileType` values are plain numeric constants, so this
+ * needs no real workspace folder open, only the `vscode` import itself
+ * (`test/integration/run/pylance-stub-sync.test.ts`, not the unit tier).
+ * A PR #182 review round found the first version of this only recognised
+ * `.py`, silently leaving a workspace's own top-level `.pyi` file (a common
+ * shape for a types-only package) unprotected from being shadowed by a
+ * generated stub of the same name — exercised only through a real
+ * `vscode.workspace.fs.readDirectory` call before this split, which is why
+ * nothing caught it. */
+export function namesOwningTopLevel(
+  entries: readonly (readonly [string, vscode.FileType])[],
+): readonly string[] {
+  const names: string[] = [];
+  for (const [name, type] of entries) {
+    if ((type & vscode.FileType.Directory) !== 0) {
+      names.push(name);
+      continue;
+    }
+    if ((type & vscode.FileType.File) === 0) continue;
+    // `.pyi` before `.py`: a hand-authored top-level `some_pkg.pyi` is
+    // exactly the "types only" shape this exclusion must also protect —
+    // see `RealFs.listWorkspaceRootNames`'s own doc comment.
+    if (name.endsWith(".pyi")) {
+      names.push(name.slice(0, -".pyi".length));
+    } else if (name.endsWith(".py")) {
+      names.push(name.slice(0, -".py".length));
+    }
+  }
+  return names;
 }
 
 const realFs: RealFs = {
@@ -195,15 +231,7 @@ const realFs: RealFs = {
       if (isMissingRoot(error)) return [];
       throw error;
     }
-    const names: string[] = [];
-    for (const [name, type] of entries) {
-      if ((type & vscode.FileType.Directory) !== 0) {
-        names.push(name);
-      } else if ((type & vscode.FileType.File) !== 0 && name.endsWith(".py")) {
-        names.push(name.slice(0, -".py".length));
-      }
-    }
-    return names;
+    return namesOwningTopLevel(entries);
   },
   createDirectory: (uri) =>
     Promise.resolve(vscode.workspace.fs.createDirectory(uri)),

@@ -171,8 +171,9 @@ export function topDirectory(relativePath: string): string {
 }
 
 /**
- * Drops any generated stub whose top-level name is already a real directory
- * or `.py` file at the workspace root — the half of Finding 10.2's shadowing
+ * Drops any generated stub whose top-level name is already a real directory,
+ * `.py` file, or `.pyi` file at the workspace root — the half of Finding
+ * 10.2's shadowing
  * hazard the `remoteOnly`-only scoping above does not cover. Pyright's own
  * documented import-resolution order puts `stubPath` *before* the workspace
  * for an absolute import

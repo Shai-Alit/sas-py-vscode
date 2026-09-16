@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import * as vscode from "vscode";
 
 import {
+  namesOwningTopLevel,
   syncPylanceStubs,
   writeStubTree,
   type RealFs,
@@ -39,6 +40,72 @@ describe("syncPylanceStubs — 10b's stub tree + stubPath sync", () => {
   it("degrades to no-workspace for an empty package list too", async () => {
     const result = await syncPylanceStubs([]);
     assert.deepEqual(result, { kind: "no-workspace" });
+  });
+});
+
+/**
+ * `namesOwningTopLevel` — the extension-stripping/file-type logic
+ * `RealFs.listWorkspaceRootNames`'s real implementation uses, pinned
+ * directly against fixture `readDirectory` tuples. A PR #182 review round
+ * found the first version only recognised `.py`, so a workspace's own
+ * top-level `.pyi` file (a common "types only" package shape) was never
+ * added to the excluded-names set at all — this suite exists so that
+ * regression, and its sibling cases, cannot come back unnoticed.
+ */
+describe("namesOwningTopLevel — which real workspace-root entries a generated stub must not shadow", () => {
+  const dir = (name: string): readonly [string, vscode.FileType] => [
+    name,
+    vscode.FileType.Directory,
+  ];
+  const file = (name: string): readonly [string, vscode.FileType] => [
+    name,
+    vscode.FileType.File,
+  ];
+
+  it("includes a directory name as-is", () => {
+    assert.deepEqual(namesOwningTopLevel([dir("numpy")]), ["numpy"]);
+  });
+
+  it("strips the .py extension off a single-file module", () => {
+    assert.deepEqual(namesOwningTopLevel([file("six.py")]), ["six"]);
+  });
+
+  it("strips the .pyi extension off a hand-authored top-level stub file", () => {
+    // The exact gap the review found: a types-only package shipped as a
+    // bare `mypkg.pyi` at the workspace root, with no `.py` counterpart.
+    assert.deepEqual(namesOwningTopLevel([file("mypkg.pyi")]), ["mypkg"]);
+  });
+
+  it("does not double-count a package that has both a .py and a .pyi at the top level", () => {
+    const names = [...namesOwningTopLevel([file("six.py"), file("six.pyi")])];
+    names.sort();
+    assert.deepEqual(names, ["six", "six"]);
+  });
+
+  it("ignores a file that is neither .py nor .pyi", () => {
+    assert.deepEqual(namesOwningTopLevel([file("README.md")]), []);
+  });
+
+  it("ignores a symlink or other non-file, non-directory entry", () => {
+    const symlink: readonly [string, vscode.FileType] = [
+      "odd",
+      vscode.FileType.SymbolicLink,
+    ];
+    assert.deepEqual(namesOwningTopLevel([symlink]), []);
+  });
+
+  it("handles a mixed real-world listing correctly", () => {
+    const names = [
+      ...namesOwningTopLevel([
+        dir("mypkg"),
+        file("six.py"),
+        file("typesonly.pyi"),
+        file("README.md"),
+        file(".gitignore"),
+      ]),
+    ];
+    names.sort();
+    assert.deepEqual(names, ["mypkg", "six", "typesonly"]);
   });
 });
 

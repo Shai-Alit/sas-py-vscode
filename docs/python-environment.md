@@ -103,9 +103,10 @@ Only what the Local comparison section above calls "only on this Viya
 profile" gets a generated stub — a package you already have installed
 locally keeps its own real type information, never a generic placeholder.
 The same protection extends to your own code: a top-level name that is
-already a real folder or `.py` file at your workspace root is never stubbed
-either, even when nothing local resolves it, since a generated stub would
-otherwise take precedence over your own source there.
+already a real folder, `.py` file, or `.pyi` file at your workspace root is
+never stubbed either, even when nothing local resolves it, since a generated
+stub would otherwise take precedence over your own source (or your own
+hand-authored stubs) there.
 
 **Reload the window (or restart the language server) to see the effect.**
 Pylance does not notice a changed `stubPath` or a regenerated stub tree on

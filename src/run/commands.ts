@@ -825,6 +825,10 @@ export function createRunCommandHandlers(
   const offerReloadRemedy = async (message: string): Promise<void> => {
     const reloadAction = vscode.l10n.t("Reload Window");
     const restartAction = vscode.l10n.t("Restart Language Server");
+    // `getCommands` itself failing (never observed, but not documented as
+    // impossible either) degrades the same way an absent command does:
+    // treat the restart option as unavailable rather than surfacing an
+    // error for a capability probe the user never asked for directly.
     const registered = await vscode.commands.getCommands(true).then(
       (all) => all.includes(RESTART_LANGUAGE_SERVER_COMMAND),
       () => false,

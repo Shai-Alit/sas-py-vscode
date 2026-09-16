@@ -98,7 +98,19 @@ and a Viya profile connected whose package set includes something not
 installed in your local interpreter (or `pip uninstall` one locally that is
 on Viya, to manufacture a `remoteOnly` entry).
 
-- [ ] **10.6** **A `remoteOnly` package's import stops being flagged as fully
+**Verifying without another reload:** once a test below has already produced
+one reload, later tests can often be checked without triggering a second one
+— inspect `.pythonOnViya/typings/` directly (does the expected package
+subfolder exist, and does its `__init__.pyi` have real content?) and
+`.vscode/settings.json` (does `python.analysis.stubPath` point at it?) rather
+than relying only on what the editor's squiggles show. This also avoids the
+false signal §10.8's first attempt hit: a package already stubbed by an
+earlier test changes its own diagnostic the moment its local install
+disappears, with no refresh involved at all — always confirm you're testing
+against a package this workspace has never stubbed before, by checking it has
+no existing subfolder under `.pythonOnViya/typings/` first.
+
+- [x] **10.6** **A `remoteOnly` package's import stops being flagged as fully
   missing, after a reload** — in a `.py` file in the open workspace, write
   `import <a Viya-only package's name>`. **(live)** **Expect (before any
   refresh in this session):** if this is the first probe ever for this
@@ -115,7 +127,7 @@ on Viya, to manufacture a `remoteOnly` entry).
   the button (or running **Developer: Reload Window** from the palette
   instead) must still work exactly as before — the button is additive, not a
   replacement for the existing path.
-- [ ] **10.7** **A package that already resolves locally is never stubbed —
+- [x] **10.7** **A package that already resolves locally is never stubbed —
   no regression in real type information** — pick a package installed in
   *both* your local environment and on Viya (e.g. one already in the
   "different version locally than on Viya" bucket, or install the same
@@ -124,7 +136,7 @@ on Viya, to manufacture a `remoteOnly` entry).
   editor are unchanged from before this feature existed — no `Any`-typed
   catch-all behaviour, and no new file for it under
   `.pythonOnViya/typings/`.
-- [ ] **10.8** **A window reload is genuinely required — a stub-tree change
+- [-] **10.8** **A window reload is genuinely required — a stub-tree change
   is not picked up live** — with the workspace already open and Pylance
   already analysing, run **Refresh environment info** for a profile whose
   remote package set changed since the last probe (add or remove one on the
@@ -134,7 +146,23 @@ on Viya, to manufacture a `remoteOnly` entry).
   reload the window (or run **Python: Restart Language Server**) —
   confirming Finding 10.1 holds for the real Pylance extension, not only the
   `pyright` CLI this session used to establish it.
-- [ ] **10.9** **An already-customised `python.analysis.stubPath` is left
+  **(9/15/2026) failed, partially.** First attempt used `saspy` — invalid
+  signal, discarded: `saspy` already had a generated stub on disk from an
+  earlier test today, so Pylance's downgrade to
+  `reportMissingModuleSource` happened the instant `pip uninstall saspy` ran,
+  before **Refresh environment info** was even invoked — nothing to do with
+  this feature's own sync. Re-run with `babel` (never stubbed in this
+  workspace before): uninstalling it locally correctly produced
+  `reportMissingImports` immediately, and running **Refresh environment
+  info** correctly left that diagnostic unchanged (first half of Finding 10.1
+  holds). But after accepting the "reload the window" notice and letting the
+  window fully reload, the `babel` import still showed
+  `reportMissingImports` — the diagnostic never downgraded. Root cause not
+  investigated this session (Sean's own call — see `phase-10.md`'s Runbook,
+  "Manual test session, 2026-09-15" entry, for the full account and the
+  separate, standing objection to the reload cost itself). **Not yet
+  re-verified after any fix.**
+- [x] **10.9** **An already-customised `python.analysis.stubPath` is left
   untouched, not overwritten** — before connecting, add
   `"python.analysis.stubPath": "./my-own-stubs"` to the workspace's
   `.vscode/settings.json` yourself. Run **Refresh environment info**.
@@ -146,7 +174,16 @@ on Viya, to manufacture a `remoteOnly` entry).
   `.pythonOnViya/typings/` may still be written to disk, but nothing points
   Pylance at it. Remove the custom setting afterwards to restore the earlier
   tests' behaviour.
-- [ ] **10.10** **A stale stub is pruned once its package stops being
+  **(9/15/2026) first attempt failed** — nothing reported in the output log;
+  root cause not investigated. **Re-run same day, passed**: notification read
+  exactly `Skipped Pylance stub generation: python.analysis.stubPath is
+  already set to "./my-own-stubs" in this workspace.`; output log carried a
+  matching `[warning]`-level line at 21:04:54. The working difference from
+  the first attempt was not established (the earlier attempt's own output
+  channel/log-level state was not captured) — noted so a future all-green
+  run of this suite doesn't read as "confirmed fixed" when it may just be
+  "not reproduced."
+- [x] **10.10** **A stale stub is pruned once its package stops being
   `remoteOnly`** — after §10.6 has generated a stub for some package name,
   `pip install` that same package locally (or otherwise make it resolve
   locally), then run **Refresh environment info** again. **(live)** **Expect:**
@@ -154,13 +191,27 @@ on Viya, to manufacture a `remoteOnly` entry).
   inspect the folder directly, or confirm after a reload that the import now
   shows your local install's own real type information rather than the
   generic catch-all.
-- [ ] **10.11** **No workspace folder open degrades quietly** — open a single
+  **(9/15/2026) passed** — used `babel` (already stubbed from §10.8's
+  `.pythonOnViya/typings/babel/` entry). Confirmed present beforehand, ran
+  `pip install babel` locally, ran **Refresh environment info**: the
+  `babel/` subfolder was deleted. Checked via direct folder inspection only,
+  not the reload-based alternate check, given §10.8's open finding about
+  reloads not reliably clearing diagnostics.
+- [x] **10.11** **No workspace folder open degrades quietly** — open a single
   `.py` file with **File: Open File** (not a folder), connect a Viya profile,
   and run **Show environment**. **(live)** **Expect:** the environment
   document itself renders exactly as before (10.1–10.5 unaffected); no error
   is shown to the user for the stub sync specifically, though the **Python on
   Viya** log may note there was no workspace to write stubs into.
-- [ ] **10.12** **A generated stub never shadows the workspace's own source**
+  **(9/15/2026) passed** — used **File → Close Folder** then **File → Open
+  File...** to get a genuine no-folder state (plain **File: Open File** alone
+  does not close an already-open folder). Document rendered normally with no
+  errors, checked at both **Info** and **Error** log levels; no log line
+  appeared either time, which the "Expect" already allows for since that line
+  is optional ("may note"), not required. Also tried running the open file
+  with no workspace open (not part of this test's own steps) — worked with
+  no errors.
+- [x] **10.12** **A generated stub never shadows the workspace's own source**
   — adversarial review, `feat/phase-10b-pylance-stub-reflection`: create a
   folder (or a `.py` file) at the workspace root whose name matches a
   `remoteOnly` package's own top-level import name — e.g. if `pyyaml` is
@@ -171,7 +222,16 @@ on Viya, to manufacture a `remoteOnly` entry).
   diagnostics for the workspace's own `yaml/` module are unaffected by this
   feature (no `Any`-typed catch-all behaviour). Remove the fixture folder
   afterwards.
-- [ ] **10.13** **A second, unchanged refresh does not repeat the reload
+  **(9/15/2026) passed** — used `matplotlib` instead of `yaml`: copied the
+  real installed `matplotlib/` package folder to the workspace root and
+  emptied its top-level `__init__.py` (a heavier fixture than the test's own
+  "empty folder" suggestion, but the same shape — a name the workspace now
+  owns at its root). After **Refresh environment info**,
+  `.pythonOnViya/typings/matplotlib/` was gone; `import matplotlib` in a
+  `.py` file showed no red squiggle and hovered normally (only the ordinary
+  "not accessed" unused-import hint, unrelated to this feature). Fixture
+  folder still needs deleting.
+- [x] **10.13** **A second, unchanged refresh does not repeat the reload
   notice** — after §10.6 or §10.8 has already produced one "reload the
   window" notice for a profile, run **Refresh environment info** again with
   nothing changed on either side. **(live)** (adversarial review,
@@ -181,7 +241,10 @@ on Viya, to manufacture a `remoteOnly` entry).
   **Expect:** no "reload the window" notification this second time — the
   environment document still refreshes normally, just silently on the stub
   front.
-- [ ] **10.14** **`Search environment` shows the same reload notice
+  **(9/15/2026) passed** — ran a second refresh with nothing changed since
+  §10.12's own refresh; no reload notice appeared, and the environment
+  document still refreshed normally.
+- [x] **10.14** **`Search environment` shows the same reload notice
   `Show environment` does, when its own probe changes the stub tree** —
   clear this profile's cache (remove and re-add the profile, or otherwise
   force an unprobed state), then run **Python on Viya: Search environment**
@@ -192,3 +255,9 @@ on Viya, to manufacture a `remoteOnly` entry).
   once the picker appears, a "reload the window" notification has also
   appeared (order between the two is not significant) — the same notice
   §10.6 produces, not silence.
+  **(9/15/2026) passed** — deleted and re-added the connection profile
+  (re-authenticated), ran **Search environment** directly with no prior
+  **Show environment**/**Refresh**. The routine "checking the environment"
+  progress indicator appeared, then the picker opened with a freshly-probed
+  package list, and the "reload the window" notification also appeared
+  alongside it.

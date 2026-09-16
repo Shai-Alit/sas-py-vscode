@@ -784,6 +784,120 @@ passing (438 + 5 new `commands-pylance-stub-sync.test.ts` cases).
 `npm run check:secrets` green, 502 files scanned (up from 492 — confirms the
 new files are now actually covered, not just present).
 
+**Manual test session, 2026-09-15 (Sean, real VS Code + Pylance window) —
+§10.8 fails on a fresh package; the reload cost itself is flagged as
+unacceptable.** First pass used `saspy`: uninstalling it locally produced the
+`reportMissingModuleSource` downgrade within seconds, before **Refresh
+environment info** was ever run — invalid signal, discarded, once traced to
+`saspy` already carrying a generated stub on disk from an earlier test today.
+Re-run against `babel` (confirmed never stubbed in this workspace before):
+uninstalling it locally correctly produced `reportMissingImports`
+immediately; running **Refresh environment info** correctly left that
+diagnostic unchanged (matches Finding 10.1's first half). Accepting the
+resulting "reload the window" notice and completing a real reload — full
+extension-host restart, ~60–90 seconds, every extension including this one
+restarting from scratch, and this session's Viya connection dropped and
+needing to be manually re-established — did **not** clear or downgrade the
+`babel` diagnostic; it still read `reportMissingImports` after the reload
+completed. Root cause not investigated this session, at the developer's own
+direction — recorded as an open, unresolved result (§10.8 in
+`docs/dev/manual-tests/phase-10.md` marked failed, not re-attempted since).
+
+**Standing objection, same session: the reload-required design itself,
+independent of whether §10.8 above turns out to be a separate bug.** Even
+where the reload does what Finding 10.1 says it should, paying a ~60–90
+second full window reload — every extension restarting, the current Viya
+connection dropped and requiring a manual reconnect — every time a refresh
+changes the remote-only package set, in exchange for a generic, attribute-less
+catch-all stub (10b's own stated non-goal is real type information; the best
+case is silencing `reportMissingImports` in favour of a `reportMissingModuleSource`
+warning) is judged by the developer to be an unacceptable cost as currently
+built, not a UX rough edge to note in passing. This needs a real design
+response before 10b can ship — candidates not yet evaluated: whether
+`python.analysis.stubPath` truly requires a full window reload for every
+change or only some (Finding 10.1's own evidence is from the `pyright` CLI and
+two upstream issue reports, not an exhaustive survey of what does and doesn't
+need one), whether the notice should be less frequent (batching, or only
+firing when the affected packages are actually imported somewhere in the open
+workspace), or whether the reload cost means the generated-stub approach
+itself needs reconsidering against 10a's existing diff view doing the same
+"tell the user what's missing" job without touching Pylance's own state at
+all. Not decided; carried here rather than in `STATUS.md`, since nothing is
+resolved yet.
+
+**Proposed design change, 2026-09-15 (research pass, in response to the
+standing objection above) — offer "Restart Language Server" ahead of
+"Reload Window", not instead of it.** Not yet implemented; written up here
+for a coding pass to act on, with a re-run of §10.8 afterward.
+
+*Problem this responds to.* `informReloadAdvisable` (`commands.ts`) currently
+offers exactly one remedy — a "Reload Window" action button running
+`workbench.action.reloadWindow` — every time a fresh probe changes the stub
+tree. That command tears down the entire extension host: every extension
+restarts, not just Pylance, and this project's own live Viya connection is
+among the casualties, needing a manual reconnect afterward. Measured cost in
+this session's own manual test: ~60–90 seconds. The standing objection above
+is that this cost, paid on every stub-changing refresh, is too high in
+exchange for what 10b's own stub ever promises (a bare catch-all, never real
+type information).
+
+*What web research (2026-09-15, this session) found.* Microsoft's own
+Pylance troubleshooting documentation states the recommended step after any
+`python.analysis.*` configuration change — `stubPath` included — is
+**Python: Restart Language Server**, not a full window reload
+([`pylance-release/docs/howto/unresolved-imports.md`](https://github.com/microsoft/pylance-release/blob/main/docs/howto/unresolved-imports.md),
+[`pylance-release/docs/howto/settings-troubleshooting.md`](https://github.com/microsoft/pylance-release/blob/main/docs/howto/settings-troubleshooting.md),
+both fetched this session). That command restarts only the Python language
+server process, not the whole extension host — it has no structural reason
+to touch this project's own Viya connection or any other extension, and
+should cost a small fraction of a full reload. It is not, however, fully
+reliable on its own: multiple `microsoft/pylance-release`/`microsoft/vscode-python`
+issues describe the command failing outright in some contexts (remote/SSH,
+dev containers) or not fully re-indexing a multi-root workspace afterward
+([Issue #2873](https://github.com/microsoft/pylance-release/issues/2873),
+[Issue #6405](https://github.com/microsoft/pylance-release/issues/6405), both
+fetched this session) — the pattern in these reports is "try it first, fall
+back to a full reload if it doesn't clear things up," not "it always works."
+
+*Proposed change.* `informReloadAdvisable`'s notice gains a second action
+button, offered alongside (not replacing) "Reload Window": a "Restart
+Language Server" action, presented first/primary, that runs the Python
+extension's own language-server-restart command. If the user picks it and
+diagnostics still don't reflect the change, "Reload Window" remains available
+as the fallback it already is today — this is additive, not a replacement of
+the existing remedy. The notice's own message text should say as much (something
+like "reload the window, or try restarting the Python language server
+first"), rather than implying the cheaper option is guaranteed to work.
+
+*What the coding pass needs to settle, not assume:*
+- **The real command ID.** GitHub issue titles reference `Python: Restart
+  Language Server`, and one issue's own title names
+  `python.analysis.restartLanguageServer` as the underlying command — but
+  that is the command ID as it appeared in someone else's bug report, not
+  confirmed against this project's own supported `ms-python.python`/Pylance
+  version range. Verify it directly (e.g. `vscode.commands.getCommands()`
+  against a real installed Python extension, or the extension's own
+  `package.json` `contributes.commands`) before wiring it in.
+- **Graceful handling when the command doesn't exist or throws** — per the
+  "command not found" reports above, this is a real, not hypothetical, case
+  for some environments. `informReloadAdvisable` must not let a missing/
+  failing restart command take down the notice or throw somewhere
+  unhandled; it should degrade to "Reload Window" being the only working
+  button, same as today.
+- **Whether Restart Language Server actually clears a stub-tree change that
+  a full Reload Window did not** — §10.8's own open result (Finding 10.3)
+  is that a genuine window reload, the heaviest remedy available, did not
+  clear `babel`'s diagnostic. This proposal does not explain that result and
+  is not a fix for it. If Restart Language Server also fails to clear the
+  same kind of case on re-test, that would deepen Finding 10.3 rather than
+  resolve it, and would point at something other than "which restart
+  mechanism" as the real cause — worth watching for specifically when §10.8
+  is re-run.
+
+*Non-goal:* this proposal is about the cost of the remedy, not a fix for
+Finding 10.3's own open question. Re-running §10.8 after this lands is what
+will show whether either question moves.
+
 ---
 
 ## Probe findings
@@ -851,9 +965,29 @@ exists to shadow). Folded into the Runbook's stub-generator item, above,
 rather than rewritten into the Plan section itself, per `CLAUDE.md`'s
 "amend, don't rewrite the core plan" rule.
 
-If 10b's implementation turns up a genuine Viya-side surprise (for example,
-whether an interpreter with an unusually large installed set makes the
-existing Stage-2 probe's fixed byte cap, `MAX_ENVIRONMENT_PROBE_BYTES`, worth
-revisiting now that the payload is growing an import-name list per package —
-untouched so far, but newly adjacent to this phase's own probe-payload
-widening), that would be Finding 10.3.
+**Finding 10.3 (2026-09-15) — a real VS Code + Pylance reload did not clear a
+`reportMissingImports` diagnostic for a newly-generated stub; the reload cost
+itself is separately judged unacceptable.** Live manual test (Sean), not the
+`pyright` CLI: with `babel` confirmed never previously stubbed in the test
+workspace, uninstalling it locally produced `reportMissingImports`
+immediately; **Refresh environment info** correctly left that diagnostic
+unchanged (matching Finding 10.1's first half, re-confirmed against real
+Pylance rather than only `pyright`). But completing the resulting "reload the
+window" notice — a full extension-host restart, ~60–90 seconds, this
+session's Viya connection dropped and requiring a manual reconnect — did
+**not** clear or downgrade the diagnostic; `babel` still read
+`reportMissingImports` afterward. Root cause not investigated this session,
+at the developer's direction. **Not yet resolved** — full account, and the
+developer's separate, standing objection to the reload cost itself
+(independent of whether this turns out to be a distinct bug), in the
+Runbook's "Manual test session, 2026-09-15" entry, above. This is a currently
+open, unresolved finding, not a settled one — treat it as blocking for 10b
+until either the diagnostic-clearing question or the reload-cost question (or
+both) has a real answer.
+
+If 10b's implementation turns up a further, genuine Viya-side surprise (for
+example, whether an interpreter with an unusually large installed set makes
+the existing Stage-2 probe's fixed byte cap, `MAX_ENVIRONMENT_PROBE_BYTES`,
+worth revisiting now that the payload is growing an import-name list per
+package — untouched so far, but newly adjacent to this phase's own
+probe-payload widening), that would be Finding 10.4.

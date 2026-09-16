@@ -39,7 +39,9 @@ slice-by-slice narrative that used to live here has moved to
 archival rule.
 
 **Phase 10 (Viya environment awareness) is in progress — 10a merged
-2026-09-15, 10b not started.** 10a (`docs/phases/phase-10.md`) adds a
+2026-09-15, 10b implemented and manually tested but not yet reviewed or
+opened as a PR; one manual-test item and a separate design question are both
+open.** 10a (`docs/phases/phase-10.md`) adds a
 local/remote package diff to the existing `Show environment` document (a
 new "Local comparison" section, reading the local interpreter
 `ms-python.python` has active via `@vscode/python-extension` and
@@ -128,9 +130,34 @@ strings could escape a generated stub's `#` comment via a newline — fixed
 96.17/95.63/96.05/96.17), `npm run test:integration` (443 passing), and
 `npm run check:secrets` (502 files — this session also caught its own gap:
 `check:secrets` reads `git ls-files`, so new files went unscanned until
-staged) all green after every fix above. **Still to do before a PR: the
-manual-test pass (items 10.6–10.14, needing a real VS Code+Pylance window),
-then push.**
+staged) all green after every fix above.
+
+**Manual-test pass (items 10.6–10.14), run 2026-09-15 (Sean, real VS
+Code+Pylance window) — 8 of 9 passed; §10.8 is open, and a separate design
+objection came out of the same session.** 10.6, 10.7, 10.9–10.14 all passed
+(`docs/dev/manual-tests/phase-10.md` has the per-item detail, including a
+first-attempt false start on §10.8 with `saspy` — discarded once traced to a
+stub already on disk from an earlier test today, unrelated to the feature's
+own sync — and a first-attempt failure on §10.9 with nothing logged, not
+reproduced on retry, cause not established). **§10.8 itself failed and is
+still open**: against `babel` (confirmed never previously stubbed), a fresh
+probe correctly left the `reportMissingImports` diagnostic unchanged before
+any reload — but after accepting the "reload the window" notice and
+completing a real reload, the diagnostic still did not clear or downgrade.
+Root cause not investigated, at the developer's own direction. Recorded as
+**Finding 10.3** (`phase-10.md`'s Probe findings section — open, not
+resolved) and in the Runbook's "Manual test session, 2026-09-15" entry.
+**Separately, the developer has flagged the reload-required design itself as
+unacceptable, independent of whether §10.8 is a distinct bug**: a ~60–90
+second full extension-host restart — every extension restarting, the current
+Viya connection dropped and needing a manual reconnect — every time a
+refresh changes the remote-only package set, in exchange for a bare,
+attribute-less catch-all stub, is judged too costly as currently built. Full
+account, including candidate directions not yet evaluated, in the same
+Runbook entry. **Not yet a PR — both §10.8 and the reload-design question are
+open, and per this project's own review rule, the adversarial pass and PR
+still wait on whatever those resolve to, not just a green manual-test
+board.**
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

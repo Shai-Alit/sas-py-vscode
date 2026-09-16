@@ -154,10 +154,32 @@ Viya connection dropped and needing a manual reconnect — every time a
 refresh changes the remote-only package set, in exchange for a bare,
 attribute-less catch-all stub, is judged too costly as currently built. Full
 account, including candidate directions not yet evaluated, in the same
-Runbook entry. **Not yet a PR — both §10.8 and the reload-design question are
-open, and per this project's own review rule, the adversarial pass and PR
-still wait on whatever those resolve to, not just a green manual-test
-board.**
+Runbook entry. **The reload-design objection has since been acted on:** a
+"Restart Language Server" action is now offered alongside "Reload Window" on
+every stub-changing refresh (`src/run/commands.ts`'s new `offerReloadRemedy`),
+matching Pylance's own troubleshooting docs' recommendation for a
+`python.analysis.*` change — it restarts only the language-server process,
+not the whole extension host, so it has no structural reason to touch this
+project's own Viya connection or any other extension. The button is only
+offered when `python.analysis.restartLanguageServer` is actually registered
+(checked live via `vscode.commands.getCommands()`), and a registered-but-
+failing restart is caught and falls back to offering the reload, never a
+silent dead end. The real command id was confirmed against a live installed
+`ms-python.python` 2026.4.0, not assumed from a bug report — **Finding 10.4**
+(`phase-10.md`). `npm run verify`'s full chain green (1813 unit tests,
+coverage unchanged at 96.17/95.63/96.05/96.17 — `src/run/commands.ts` stays
+outside the coverage tier, same as before this change). Full account in
+`phase-10.md`'s Runbook, "Design change implemented, 2026-09-15" entry.
+**The pre-push adversarial self-review of this design change has now run
+and found two small, non-blocking issues, both fixed**: an unhandled-
+rejection gap on `offerReloadRemedy`'s call site, and two dev-machine
+artefacts (`.vscode/settings.json` residue; `.pythonOnViya/` untracked
+because this repo's own `.gitignore` didn't exclude it, unlike what
+`docs/python-environment.md` tells users to do for theirs) — full account in
+`phase-10.md`'s Runbook, "Pre-push adversarial self-review of the design
+change, 2026-09-15" entry. **Still not yet a PR — §10.8 needs a live manual
+re-test against this change** (does "Restart Language Server" clear the
+diagnostic Finding 10.3 says a full reload didn't?) before it can open.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

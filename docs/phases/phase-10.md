@@ -825,10 +825,11 @@ itself needs reconsidering against 10a's existing diff view doing the same
 all. Not decided; carried here rather than in `STATUS.md`, since nothing is
 resolved yet.
 
-**Proposed design change, 2026-09-15 (research pass, in response to the
-standing objection above) — offer "Restart Language Server" ahead of
-"Reload Window", not instead of it.** Not yet implemented; written up here
-for a coding pass to act on, with a re-run of §10.8 afterward.
+**Design change implemented, 2026-09-15 (research pass, then a coding pass,
+both in response to the standing objection above) — offers "Restart Language
+Server" ahead of "Reload Window", not instead of it.** Implemented on this
+branch; manual re-run of §10.8 and the adversarial self-review are still to
+come.
 
 *Problem this responds to.* `informReloadAdvisable` (`commands.ts`) currently
 offers exactly one remedy — a "Reload Window" action button running
@@ -869,21 +870,32 @@ the existing remedy. The notice's own message text should say as much (something
 like "reload the window, or try restarting the Python language server
 first"), rather than implying the cheaper option is guaranteed to work.
 
-*What the coding pass needs to settle, not assume:*
+*What the coding pass needed to settle, not assume — and how it landed:*
 - **The real command ID.** GitHub issue titles reference `Python: Restart
   Language Server`, and one issue's own title names
   `python.analysis.restartLanguageServer` as the underlying command — but
   that is the command ID as it appeared in someone else's bug report, not
   confirmed against this project's own supported `ms-python.python`/Pylance
-  version range. Verify it directly (e.g. `vscode.commands.getCommands()`
-  against a real installed Python extension, or the extension's own
-  `package.json` `contributes.commands`) before wiring it in.
+  version range. **Settled as Finding 10.4** (below): confirmed directly
+  against a real installed `ms-python.python` 2026.4.0 on the developer's own
+  machine (`package.json`'s `contributes.commands`, plus its
+  `package.nls.json` title string), not left as an assumption from someone
+  else's bug report.
 - **Graceful handling when the command doesn't exist or throws** — per the
   "command not found" reports above, this is a real, not hypothetical, case
   for some environments. `informReloadAdvisable` must not let a missing/
   failing restart command take down the notice or throw somewhere
   unhandled; it should degrade to "Reload Window" being the only working
-  button, same as today.
+  button, same as today. **Implemented as two separate guards**, in the new
+  `offerReloadRemedy` (`src/run/commands.ts`): existence is checked live via
+  `vscode.commands.getCommands(true)` before the button is even offered —
+  absent, the notice degrades to reload-only, matching today's behaviour
+  exactly; and a `try`/`catch` around the restart command's own
+  `executeCommand` call means a registered-but-throwing command (the
+  remote/SSH/dev-container reports above) is caught, logged with the error's
+  own detail, and followed by a second, narrower notice offering the reload
+  fallback, rather than leaving the user with a dead end after a failed
+  click.
 - **Whether Restart Language Server actually clears a stub-tree change that
   a full Reload Window did not** — §10.8's own open result (Finding 10.3)
   is that a genuine window reload, the heaviest remedy available, did not
@@ -892,11 +904,88 @@ first"), rather than implying the cheaper option is guaranteed to work.
   same kind of case on re-test, that would deepen Finding 10.3 rather than
   resolve it, and would point at something other than "which restart
   mechanism" as the real cause — worth watching for specifically when §10.8
-  is re-run.
+  is re-run. **Still open** — this is a manual-test question, not something
+  the coding pass itself could settle.
+
+*Not exercised by the automated suite.* `src/run/commands.ts` is excluded
+from the coverage tier altogether (`.c8rc.json`), same as it was before this
+change — `offerReloadRemedy`'s actual button-click and restart-failure
+branches are real `vscode` UI paths with no test double reaching past
+`deps.inform`'s bypass, the same shape `informReloadAdvisable`'s original
+"Reload Window" click already had. `test/integration/run/commands-pylance-stub-sync.test.ts`'s
+existing cases still cover that the right message reaches `deps.inform` for
+every `StubSyncOutcome`; nothing there exercises which buttons a real notice
+offers or what a real button click does — that needs the live manual retest
+of §10.8.
 
 *Non-goal:* this proposal is about the cost of the remedy, not a fix for
 Finding 10.3's own open question. Re-running §10.8 after this lands is what
 will show whether either question moves.
+
+**Pre-push adversarial self-review of the design change, 2026-09-15
+(`git diff main` against the full branch, covering both the committed 10b
+work and the design-change diff above) — two small, non-blocking findings,
+both fixed.** Overall verdict: strong, no blocking issue — the review's one
+real, structural gate was §10.8's own outstanding manual re-test (below),
+already known and already why this branch had not been pushed.
+`offerReloadRemedy`'s own call, `void offerReloadRemedy(message)`, had no
+`.catch` — a rejection from the *outer* `showInformationMessage`/
+`getCommands` calls (not the inner restart-command call, which already had
+its own `try`/`catch`) would have surfaced as an unhandled promise
+rejection. **Fixed**: the call site now chains `.catch` and logs via the
+same `log.warn` pattern `offerReloadRemedy`'s own internal catch already
+uses. Separately, two dev-machine artefacts had crept into the working tree
+and were about to ride into the PR: `.vscode/settings.json` had gained
+`python.analysis.stubPath` (written by running **Refresh Environment Info**
+against this repo's own workspace during testing) and
+`sasjs-for-vscode.lintConfig` (an unrelated extension, no connection to this
+slice) — both reverted. And `.pythonOnViya/` — the same generated-stub
+directory `docs/python-environment.md` already tells *users* to add to
+their own `.gitignore` — was untracked-and-unignored in this repo's own
+`.gitignore`, the same gap that made it show up in `git status` throughout
+this slice; added. Re-verified after both fixes: `npx tsc --noEmit` clean,
+`npx prettier --check` clean, `npm run test:integration` green (443
+passing, unchanged).
+
+**Manual re-run of §10.8, 2026-09-15 (Sean, real VS Code + Pylance window,
+after the design change above landed) — Restart Language Server cleared the
+diagnostic; this directly contradicts the `babel` result in Finding 10.3,
+and is recorded as a new finding rather than treated as "confirmed fixed."**
+Used `requests` (confirmed never previously stubbed in this workspace, unlike
+`saspy`'s invalid first attempt). Sequence: `pip uninstall requests` locally
+→ `Import "requests" could not be resolved` (`reportMissingImports`)
+immediately; **Refresh environment info** → diagnostic unchanged before
+either button was clicked (first half of Finding 10.1 re-confirmed a second
+time). The notice read exactly "Updated the Pylance stub information for
+this profile. Try restarting the Python language server first — if
+diagnostics still don't reflect it, reload the window." with two buttons,
+**Restart Language Server** (primary) and **Reload Window** (secondary) —
+matches the design change above. Clicked **Restart Language Server**: took
+roughly 5–10 seconds (no extension-host restart, no dropped Viya
+connection, matching the design's own premise); the `requests` diagnostic
+then read `reportMissingModuleSource` — the expected downgrade. A further
+**Reload Window** click made no additional difference. **This is the
+opposite of what `babel` did under a full reload alone** (Finding 10.3) —
+same shape of test, same session, only the package and the available remedy
+differ. Root cause of the discrepancy not established; not investigated
+further, per the developer's own standing direction not to chase this
+without being asked. Recorded as **Finding 10.5** (Probe findings, below),
+side by side with Finding 10.3, rather than treating the new pass as having
+resolved or superseded the old failure.
+
+**A further, unplanned observation from the same session: reinstalling
+`requests` locally cleared its diagnostic entirely on its own, with no
+restart or reload of any kind.** This was not one of §10.8's own steps.
+Consistent with — and a plausible explanation in hindsight for — the
+`saspy` false start earlier in this same testing session (Finding
+10.3/§10.8's own note): Pylance appears to live-detect a change in what the
+*local interpreter* has installed without needing any restart, even though
+it does *not* live-detect a `stubPath`/generated-stub-tree change without
+one (Finding 10.1). These are evidently two different code paths inside
+Pylance with two different refresh behaviours, not one general "config
+changed" mechanism. Not independently verified beyond this one observation;
+noted for whoever next investigates Finding 10.3/10.5 rather than asserted
+as settled.
 
 ---
 
@@ -985,9 +1074,54 @@ open, unresolved finding, not a settled one — treat it as blocking for 10b
 until either the diagnostic-clearing question or the reload-cost question (or
 both) has a real answer.
 
+**Finding 10.4 (2026-09-15) — the Python extension's language-server-restart
+command is `python.analysis.restartLanguageServer`, confirmed against a real
+installed extension, not assumed from an issue report's title.** The
+"Proposed design change" Runbook entry above needed the real command ID
+before wiring a "Restart Language Server" button in behind it — GitHub issue
+titles reference the human-readable command name and one issue's own title
+happens to name the same underlying id, but that is the id as it appeared in
+someone else's bug report, not confirmed against this project's own
+supported version range. Method: read `contributes.commands` and
+`package.nls.json` directly out of the developer's own installed
+`ms-python.python` **2026.4.0** (`~/.vscode/extensions/ms-python.python-2026.4.0-win32-x64/package.json`)
+rather than a live `vscode.commands.getCommands()` call (no interactive VS
+Code session available this session, same constraint the 10b spike's own
+Runbook entry noted for Finding 10.1/10.2). Confirms: `"command":
+"python.analysis.restartLanguageServer"`, category `"Python"`, title string
+`"Restart Language Server"` — exactly the id and label the design change
+above wired in. **Design implication**: the real command's *existence* still
+gets checked live at runtime via `vscode.commands.getCommands(true)` before
+the button is offered (this finding confirms the id is correct for this
+project's supported version, not that every user's installed Python
+extension version will always have it) — see the Runbook entry's
+"Implemented as two separate guards" account, above.
+
+**Finding 10.5 (2026-09-15) — "Restart Language Server" cleared a
+never-before-stubbed package's diagnostic, contradicting Finding 10.3's
+`babel` result under a full reload.** Live manual re-test of §10.8 (Sean),
+after the "Restart Language Server" design change (Runbook, above) landed.
+With `requests` confirmed never previously stubbed in the workspace:
+uninstalling it locally produced `reportMissingImports`; **Refresh
+environment info** correctly left that unchanged before either notice
+button was clicked. Clicking **Restart Language Server** (~5–10 seconds, no
+extension-host restart, no dropped Viya connection) downgraded the
+diagnostic to `reportMissingModuleSource` — the expected result. A
+subsequent **Reload Window** click made no further difference. This is the
+opposite outcome from Finding 10.3, where a full reload alone did not clear
+`babel`'s diagnostic at all. **Both findings stand as recorded** — this one
+does not supersede or explain Finding 10.3; the discrepancy between them
+(different package, different remedy available, same session) is itself
+unexplained and not investigated further, at the developer's own direction.
+A related, unplanned observation from the same re-test: reinstalling
+`requests` locally cleared its diagnostic with no restart or reload of any
+kind, suggesting Pylance live-detects a local-interpreter change through a
+different path than it does a `stubPath`/stub-tree change (Finding 10.1) —
+noted, not independently verified.
+
 If 10b's implementation turns up a further, genuine Viya-side surprise (for
 example, whether an interpreter with an unusually large installed set makes
 the existing Stage-2 probe's fixed byte cap, `MAX_ENVIRONMENT_PROBE_BYTES`,
 worth revisiting now that the payload is growing an import-name list per
 package — untouched so far, but newly adjacent to this phase's own
-probe-payload widening), that would be Finding 10.4.
+probe-payload widening), that would be Finding 10.6.

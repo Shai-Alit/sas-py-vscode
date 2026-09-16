@@ -75,6 +75,13 @@ export const RUNNING_CONTEXT_KEY = "pythonOnViya.running";
 /** VS Code's own built-in reload command — what the reload-advisable
  * notice's action button runs (10b). */
 const RELOAD_WINDOW_COMMAND = "workbench.action.reloadWindow";
+/** The Python extension's own language-server-only restart, offered ahead of
+ * a full window reload for the same stub-tree change (10b design revision,
+ * `phase-10.md`'s "Proposed design change, 2026-09-15" and Finding 10.4) —
+ * confirmed against a real installed `ms-python.python` 2026.4.0's own
+ * `package.json` `contributes.commands`, not assumed from an issue report's
+ * title. */
+const RESTART_LANGUAGE_SERVER_COMMAND = "python.analysis.restartLanguageServer";
 
 /** What this module needs from `ProfileStore`, narrowed the same way every
  * other command module narrows it. */
@@ -764,7 +771,7 @@ export function createRunCommandHandlers(
     // needed stubbing, and never on a resync that reproduced exactly what
     // was already on disk).
     const message = vscode.l10n.t(
-      "Updated the Pylance stub information for this profile. Reload the window to see it reflected in your editor's diagnostics.",
+      "Updated the Pylance stub information for this profile. Try restarting the Python language server first — if diagnostics still don't reflect it, reload the window.",
     );
     // `deps.inform` bypasses this whole action-button path, not just the
     // real `showInformationMessage` call — a test double has no user who
@@ -778,14 +785,74 @@ export function createRunCommandHandlers(
       show(message);
       return;
     }
+    void offerReloadRemedy(message).catch((error) => {
+      log.warn(
+        `Pylance stub sync (10b): reload-remedy notice failed (${String(error)}).`,
+      );
+    });
+  };
+
+  /**
+   * 10b design revision (`phase-10.md`'s "Proposed design change,
+   * 2026-09-15", written up in response to the developer's standing
+   * objection to the reload-only design): a full `workbench.action.reloadWindow`
+   * tears down the whole extension host — every extension restarts, and this
+   * project's own live Viya connection is among the casualties, ~60–90s in
+   * the 2026-09-15 manual test session's own measurement. Pylance's own
+   * troubleshooting docs recommend `Python: Restart Language Server` first
+   * for any `python.analysis.*` change, `stubPath` included — it restarts
+   * only the language-server process, not the whole host, so it has no
+   * structural reason to touch this extension's own state or any other
+   * extension's.
+   *
+   * Offered *alongside* "Reload Window", never in place of it: some
+   * remote/SSH/dev-container reports say the restart command can fail or be
+   * absent outright, and separately Finding 10.3's own open result is that a
+   * genuine full reload didn't clear one real case — neither remedy is
+   * guaranteed, so the fallback has to stay reachable from the same notice.
+   *
+   * `RESTART_LANGUAGE_SERVER_COMMAND`'s existence is checked live via
+   * `vscode.commands.getCommands()` rather than assumed — the button is
+   * omitted entirely when it is not registered (an old/absent Python
+   * extension), which degrades to today's reload-only notice rather than
+   * offering a button that cannot work. If the command *is* registered but
+   * throws when run — the "real, not hypothetical" case the research above
+   * found — the failure is caught and logged, and a second, narrower notice
+   * offers the reload fallback rather than leaving the user with a dead end.
+   */
+  const offerReloadRemedy = async (message: string): Promise<void> => {
     const reloadAction = vscode.l10n.t("Reload Window");
-    void vscode.window
-      .showInformationMessage(message, reloadAction)
-      .then((selected) => {
-        if (selected === reloadAction) {
-          void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
-        }
-      });
+    const restartAction = vscode.l10n.t("Restart Language Server");
+    const registered = await vscode.commands.getCommands(true).then(
+      (all) => all.includes(RESTART_LANGUAGE_SERVER_COMMAND),
+      () => false,
+    );
+    const actions = registered ? [restartAction, reloadAction] : [reloadAction];
+    const selected = await vscode.window.showInformationMessage(
+      message,
+      ...actions,
+    );
+    if (selected === reloadAction) {
+      void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+      return;
+    }
+    if (selected !== restartAction) return;
+    try {
+      await vscode.commands.executeCommand(RESTART_LANGUAGE_SERVER_COMMAND);
+    } catch (error) {
+      log.warn(
+        `Pylance stub sync (10b): "${RESTART_LANGUAGE_SERVER_COMMAND}" failed (${String(error)}); offering a window reload instead.`,
+      );
+      const fallbackSelected = await vscode.window.showInformationMessage(
+        vscode.l10n.t(
+          "Restarting the Python language server failed. Reload the window instead?",
+        ),
+        reloadAction,
+      );
+      if (fallbackSelected === reloadAction) {
+        void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+      }
+    }
   };
 
   const ensureProbedEnvironment = async (

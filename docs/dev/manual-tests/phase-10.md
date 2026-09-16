@@ -136,7 +136,7 @@ no existing subfolder under `.pythonOnViya/typings/` first.
   editor are unchanged from before this feature existed — no `Any`-typed
   catch-all behaviour, and no new file for it under
   `.pythonOnViya/typings/`.
-- [-] **10.8** **A window reload is genuinely required — a stub-tree change
+- [x] **10.8** **A window reload is genuinely required — a stub-tree change
   is not picked up live** — with the workspace already open and Pylance
   already analysing, run **Refresh environment info** for a profile whose
   remote package set changed since the last probe (add or remove one on the
@@ -160,8 +160,28 @@ no existing subfolder under `.pythonOnViya/typings/` first.
   `reportMissingImports` — the diagnostic never downgraded. Root cause not
   investigated this session (Sean's own call — see `phase-10.md`'s Runbook,
   "Manual test session, 2026-09-15" entry, for the full account and the
-  separate, standing objection to the reload cost itself). **Not yet
-  re-verified after any fix.**
+  separate, standing objection to the reload cost itself).
+  **Re-run same day, after the "Restart Language Server" design change
+  landed, using `requests` (never stubbed in this workspace before):**
+  uninstalling it locally produced `reportMissingImports` immediately;
+  **Refresh environment info** correctly left that diagnostic unchanged
+  before either button was clicked (first half of Finding 10.1 re-confirmed).
+  The notice now reads "Updated the Pylance stub information for this
+  profile. Try restarting the Python language server first — if diagnostics
+  still don't reflect it, reload the window." with two buttons, **Restart
+  Language Server** (primary/blue) and **Reload Window** (secondary). Clicked
+  **Restart Language Server** — took roughly 5–10 seconds. The `requests`
+  diagnostic then read `reportMissingModuleSource` — the expected downgrade.
+  Running **Reload Window** afterward as well made no further difference (
+  still `reportMissingModuleSource`). **This directly contradicts the
+  `babel` result above** — same shape of test, same session, only the
+  package and the remedy differ (restart-language-server now available,
+  where `babel`'s run only had a full reload). Why `babel` didn't downgrade
+  under a full reload while `requests` did downgrade under a language-server
+  restart is not established — not investigated further this session, per
+  the same standing direction not to chase root cause without being asked.
+  Recording both results side by side rather than treating this as
+  "confirmed fixed."
 - [x] **10.9** **An already-customised `python.analysis.stubPath` is left
   untouched, not overwritten** — before connecting, add
   `"python.analysis.stubPath": "./my-own-stubs"` to the workspace's

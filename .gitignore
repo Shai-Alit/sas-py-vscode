@@ -26,6 +26,12 @@ l10n/bundle.l10n.json
 # Generated documentation output
 site/
 
+# Generated Pylance stubs (10b) — written into any workspace the extension
+# runs `Refresh Environment Info` against, this repo included when used as a
+# dev/test workspace. docs/python-environment.md tells users to add this to
+# their own workspace's .gitignore; it needs the same entry here.
+.pythonOnViya/
+
 # Editor and OS noise
 .DS_Store
 Thumbs.db

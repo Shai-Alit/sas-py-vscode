@@ -55,6 +55,7 @@ import type { EnvironmentStore } from "./environmentStore";
 import { readActiveLocalEnvironment } from "./localPythonEnvironment";
 import { RunOutputChannel } from "./outputChannel";
 import {
+  STUB_TREE_RELATIVE_PATH,
   syncPylanceStubs,
   type PylanceStubSyncResult,
 } from "./pylanceStubSync";
@@ -755,7 +756,8 @@ export function createRunCommandHandlers(
     if (report.conflictValue !== undefined) {
       inform(
         vscode.l10n.t(
-          'Skipped Pylance stub generation: python.analysis.stubPath is already set to "{0}" in this workspace.',
+          'Generated stubs at {0}, but left python.analysis.stubPath untouched: it is already set to "{1}" in this workspace.',
+          STUB_TREE_RELATIVE_PATH,
           report.conflictValue,
         ),
       );
@@ -833,7 +835,13 @@ export function createRunCommandHandlers(
       ...actions,
     );
     if (selected === reloadAction) {
-      void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+      try {
+        await vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+      } catch (error) {
+        log.warn(
+          `Pylance stub sync (10b): "${RELOAD_WINDOW_COMMAND}" failed (${String(error)}).`,
+        );
+      }
       return;
     }
     if (selected !== restartAction) return;
@@ -850,7 +858,13 @@ export function createRunCommandHandlers(
         reloadAction,
       );
       if (fallbackSelected === reloadAction) {
-        void vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+        try {
+          await vscode.commands.executeCommand(RELOAD_WINDOW_COMMAND);
+        } catch (fallbackError) {
+          log.warn(
+            `Pylance stub sync (10b): "${RELOAD_WINDOW_COMMAND}" failed (${String(fallbackError)}).`,
+          );
+        }
       }
     }
   };

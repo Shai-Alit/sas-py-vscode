@@ -80,6 +80,65 @@ describe("stubSyncPlan.ts — 10b's stub-sync decisions", () => {
       assert.deepEqual(toStub, []);
       assert.deepEqual(missing, []);
     });
+
+    it("drops a remoteOnly package whose import name already exists locally under a different distribution (Finding 10.2's PIL/Pillow gap)", () => {
+      // `Pillow` (distribution name) is `remoteOnly` by name — nothing local
+      // is called `Pillow` — but the local `site-packages` already has a
+      // `PIL/` directory from some other distribution. Stubbing `Pillow`
+      // would still file a `PIL/__init__.pyi` that shadows it.
+      const pillow = pkg("Pillow", ["PIL"]);
+      const diff: EnvironmentDiff = {
+        kind: "compared",
+        remoteOnly: [{ name: "Pillow", version: "11.0.0" }],
+        localOnly: [],
+        versionMismatched: [],
+      };
+
+      const { toStub, missing } = selectPackagesToStub([pillow], diff, ["PIL"]);
+
+      assert.deepEqual(toStub, []);
+      assert.deepEqual(missing, []);
+    });
+
+    it("matches a local top-level name case-insensitively", () => {
+      const mylib = pkg("some-dist", ["MyLib"]);
+      const diff: EnvironmentDiff = {
+        kind: "compared",
+        remoteOnly: [{ name: "some-dist", version: "1.0.0" }],
+        localOnly: [],
+        versionMismatched: [],
+      };
+
+      const { toStub } = selectPackagesToStub([mylib], diff, ["mylib"]);
+
+      assert.deepEqual(toStub, []);
+    });
+
+    it("still stubs a remoteOnly package whose import name does not collide locally", () => {
+      const numpy = pkg("numpy");
+      const diff: EnvironmentDiff = {
+        kind: "compared",
+        remoteOnly: [{ name: "numpy", version: "1.0.0" }],
+        localOnly: [],
+        versionMismatched: [],
+      };
+
+      const { toStub } = selectPackagesToStub([numpy], diff, ["PIL"]);
+
+      assert.deepEqual(toStub, [numpy]);
+    });
+
+    it("does not apply the local-name check to the local-unknown case", () => {
+      // `localTopLevelNames` should never be non-empty when the local
+      // environment itself could not be read, but this pins that this
+      // function does not accidentally start filtering that arm too.
+      const remote = [pkg("numpy", ["numpy"])];
+      const diff: EnvironmentDiff = { kind: "local-unknown" };
+
+      const { toStub } = selectPackagesToStub(remote, diff, ["numpy"]);
+
+      assert.deepEqual(toStub, remote);
+    });
   });
 
   describe("describeStubSyncOutcome", () => {

@@ -24,7 +24,7 @@
  */
 
 import type { EnvironmentDiff } from "./environmentDiff";
-import type { StubbablePackage } from "./stubGenerator";
+import { topLevelSegment, type StubbablePackage } from "./stubGenerator";
 
 /** What a stub sync should actually stub, plus any `remoteOnly` entry that
  * could not be resolved. */
@@ -45,23 +45,51 @@ export interface StubSelection {
 /**
  * Chooses which packages a stub sync should generate stubs for — 10b's
  * Finding 10.2 rule: only `diff.remoteOnly`, or every remote package when the
- * local environment itself is unknown and there is nothing local to shadow.
- * See `stubGenerator.ts`'s own doc comment, "Why only the caller's given
- * list", for the full reasoning this enforces.
+ * local environment itself is unknown. See `stubGenerator.ts`'s own doc
+ * comment, "Why only the caller's given list", for the full reasoning this
+ * enforces, including why the `local-unknown` arm is not narrowed further.
+ *
+ * `localTopLevelNames` closes a second, narrower gap in the same hazard:
+ * `diff.remoteOnly` is derived from a *distribution*-name comparison
+ * (`environmentDiff.ts`), but a generated stub is filed under a package's
+ * *import* name (`stubGenerator.ts`), and the two can differ (`Pillow`
+ * installs as `PIL`). A distribution that is genuinely `remoteOnly` by name
+ * can still claim an import name a *different*, locally-installed
+ * distribution already provides — see `localPackages.ts`'s own
+ * `LocalPackagesResult.topLevelNames` doc comment for the full "Viya has
+ * `pillow`, local has something else providing `PIL`" scenario. A candidate
+ * package is dropped from `toStub` entirely (not just the colliding import
+ * name) when any of its import names' top-level segment
+ * ({@link topLevelSegment}) matches, case-insensitively — the same
+ * case-folding `stubGenerator.ts`'s own `excludeWorkspaceOwnedNames` applies,
+ * for the same cross-platform reason.
  */
 export function selectPackagesToStub(
   remote: readonly StubbablePackage[],
   diff: EnvironmentDiff,
+  localTopLevelNames: readonly string[] = [],
 ): StubSelection {
   if (diff.kind === "local-unknown") return { toStub: remote, missing: [] };
+
+  const localNames = new Set(
+    localTopLevelNames.map((name) => name.toLowerCase()),
+  );
+  const shadowsLocalPackage = (pkg: StubbablePackage): boolean =>
+    pkg.importNames.some((name) =>
+      localNames.has(topLevelSegment(name).toLowerCase()),
+    );
 
   const byName = new Map(remote.map((pkg) => [pkg.name, pkg]));
   const toStub: StubbablePackage[] = [];
   const missing: string[] = [];
   for (const entry of diff.remoteOnly) {
     const pkg = byName.get(entry.name);
-    if (pkg === undefined) missing.push(entry.name);
-    else toStub.push(pkg);
+    if (pkg === undefined) {
+      missing.push(entry.name);
+      continue;
+    }
+    if (shadowsLocalPackage(pkg)) continue;
+    toStub.push(pkg);
   }
   return { toStub, missing };
 }

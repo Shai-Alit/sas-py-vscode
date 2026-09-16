@@ -178,20 +178,15 @@ has the full discussion).**
   new `package.json` configuration contribution plus wiring
   (`src/run/pylanceStubSync.ts`) and a documentation update. A candidate for
   whenever it is actually requested, not scoped as a slice yet.
-- **`stub-path-conflict`'s workspace-scope check needs `workspaceFolderValue`
-  too, if multi-root support is ever added to 10b.** Today
-  `pylanceStubSync.ts` only inspects
-  `WorkspaceConfiguration.inspect(...).workspaceValue`, which is provably
-  sufficient for the single-folder case this feature deliberately scopes
-  itself to (`pylanceStubSync.ts`'s own "Multi-root: the first workspace
-  folder only" doc comment) — `workspaceValue` and `workspaceFolderValue`
-  read the same `.vscode/settings.json` and always agree outside a real
-  multi-root workspace
-  ([microsoft/vscode#34386](https://github.com/microsoft/vscode/issues/34386)).
-  Whoever picks up multi-root support for the stub-sync feature needs to add
-  the `workspaceFolderValue` check at that point — this is not a gap today,
-  only a documented trap for that later work to not silently reintroduce
-  Finding 10.2's shadowing hazard at folder scope.
+- **Closed on the 10b branch itself, before this item ever reached Phase
+  11.** A PR #182 review round found the gap was not only a multi-root
+  concern as first scoped here — `stubPathSetting.ts`'s `decideStubPathAction`
+  only checked `workspaceValue`, which missed a `stubPath` set at *user/global*
+  scope even in the ordinary single-folder case, silently overriding it. Fixed
+  in `c81f9d5`: `decideStubPathAction` now takes `globalValue`,
+  `workspaceValue`, and `workspaceFolderValue` together, honouring VS Code's
+  own scope precedence. Kept as a one-paragraph record rather than deleted
+  outright, for the same reason the CAS tree icon-flip entry above is.
 
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,

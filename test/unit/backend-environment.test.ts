@@ -85,7 +85,8 @@ describe("environment.ts — the stage-2 probe program and its parser", () => {
       // indentation and described the shape as `if … elif …`, which the real
       // source never was; both broke on a routine reformat and neither
       // tested behaviour a reformat could actually change.
-      const body = environmentProbeStatements().join("\n");
+      const statements = environmentProbeStatements();
+      const body = statements.join("\n");
       const topLevelIndex = body.indexOf(
         "distribution.read_text('top_level.txt')",
       );
@@ -107,8 +108,15 @@ describe("environment.ts — the stage-2 probe program and its parser", () => {
       // Exactly two later sources, each behind its own `if not import_names:`
       // guard — `top_level.txt` itself is read unconditionally (it runs
       // first, nothing to skip yet), so only the two fallbacks after it need
-      // one.
-      const guardCount = body.split("if not import_names:").length - 1;
+      // one. Matched as a whole trimmed line, not a substring search: a
+      // substring count cannot tell `if not import_names:` apart from `elif
+      // not import_names:` (the substring is still present inside `elif`),
+      // so it would not have caught the exact `elif` regression the comment
+      // above warns against — the previous version of this assertion used
+      // `body.split(...).length` and would have passed unchanged.
+      const guardCount = statements.filter(
+        (line) => line.trim() === "if not import_names:",
+      ).length;
       assert.equal(
         guardCount,
         2,

@@ -22,11 +22,25 @@
  * generated stub takes precedence over a same-named package that already
  * resolves locally with real source — silently suppressing real
  * type-checking for it. So the caller must pass only 10a's `remoteOnly` diff
- * bucket (or every remote package, when the local environment itself is
- * unknown and there is nothing local to shadow) — never a package that
- * already resolves locally. This module has no way to enforce that itself
- * (it does not see the diff), so it trusts its input; the enforcement lives
- * at the one call site, `pylanceStubSync.ts`.
+ * bucket — or, when the local environment itself could not be read at all
+ * (`EnvironmentDiff`'s own `local-unknown` arm), every remote package. That
+ * second case is a deliberate accepted trade, not a claim that there is
+ * nothing local to shadow: `local-unknown` means the read failed —
+ * `ms-python.python` not installed, no active environment selected, or a
+ * resolve failure (`localPythonEnvironment.ts`'s own doc comment lists all
+ * three) — not that the interpreter has nothing installed. A user whose
+ * local interpreter is real but momentarily unreadable (the extension is
+ * still activating, say) can still get a stub that shadows it. Kept as-is
+ * rather than narrowed — the developer's own call, 2026-09-15
+ * (`phase-10.md`'s Runbook, "10b design revision" discussion) — on the
+ * reasoning that `local-unknown` is the uncommon transient case, not the
+ * steady state, and narrowing it (stubbing nothing, or only names a
+ * workspace-root check happens to clear) would under-cover the ordinary case
+ * this feature exists for. Never a package that already resolves locally
+ * once the local side *was* read successfully — that is what `remoteOnly`
+ * itself already guarantees. This module has no way to enforce either half
+ * itself (it does not see the diff), so it trusts its input; the enforcement
+ * lives at the one call site, `./stubSyncPlan.ts`'s `selectPackagesToStub`.
  *
  * ## Why one path segment, not the dotted import name in full
  *
@@ -68,8 +82,12 @@ export interface GeneratedStubFile {
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** The first dotted segment of an import name — see this module's own doc
- * comment, "Why one path segment, not the dotted import name in full". */
-function topLevelSegment(importName: string): string {
+ * comment, "Why one path segment, not the dotted import name in full".
+ * Exported so `./stubSyncPlan.ts`'s `selectPackagesToStub` can apply the same
+ * segment rule when checking a candidate package's import names against a
+ * local `site-packages` listing, without this module needing to know that
+ * caller's own shadowing concern. */
+export function topLevelSegment(importName: string): string {
   const dotIndex = importName.indexOf(".");
   return dotIndex === -1 ? importName : importName.slice(0, dotIndex);
 }
@@ -139,10 +157,15 @@ export function generateStubTree(
 
 /** The top-level directory name each entry in {@link GeneratedStubFile}
  * belongs to — what {@link planStubTreeSync} prunes by, and what
- * {@link excludeWorkspaceOwnedNames} shadow-checks by. Every path this
- * module generates is exactly `<segment>/__init__.pyi` (never a bare
- * filename with no directory), so no fallback for a missing `/` is needed —
- * one would be unreachable dead code, not defensiveness. */
+ * {@link excludeWorkspaceOwnedNames} shadow-checks by. Every path *this
+ * module's own* `generateStubTree` produces is exactly
+ * `<segment>/__init__.pyi` (never a bare filename with no directory), so
+ * nothing here builds one from anything else. This function is exported and
+ * takes an arbitrary `relativePath`, though — a caller outside this module
+ * could still hand it one with no `/`, in which case `indexOf("/")` returns
+ * `-1` and `slice(0, -1)` drops the last character rather than throwing.
+ * Not guarded against: nothing in this codebase does that today, and this
+ * type does not itself rule it out. */
 export function topDirectory(relativePath: string): string {
   return relativePath.slice(0, relativePath.indexOf("/"));
 }
@@ -150,15 +173,18 @@ export function topDirectory(relativePath: string): string {
 /**
  * Drops any generated stub whose top-level name is already a real directory
  * or `.py` file at the workspace root — the half of Finding 10.2's shadowing
- * hazard the `remoteOnly`-only scoping above does not cover. Pyright's
- * documented import-resolution order puts `stubPath` *before* workspace
- * source (`microsoft/pyright`'s own import-resolution docs, cited in
- * `phase-10.md`'s Probe findings), so a generated `tests/__init__.pyi` — a
- * top-level name a Viya-only distribution's `top_level.txt` can plausibly
- * claim (`tests`, `utils`, and similar generic names are common) — would
- * shadow the user's own `tests/` package, not just a same-named installed
- * distribution. `pylanceStubSync.ts` is the one caller that can list a real
- * workspace root; this function only applies the exclusion once it has.
+ * hazard the `remoteOnly`-only scoping above does not cover. Pyright's own
+ * documented import-resolution order puts `stubPath` *before* the workspace
+ * for an absolute import
+ * (https://github.com/microsoft/pyright/blob/main/docs/import-resolution.md,
+ * checked 2026-09-16 — a Pyright/Pylance behaviour, not a live-deployment
+ * question, so this is the documented shape itself, not a `phase-10.md`
+ * Probe finding), so a generated `tests/__init__.pyi` — a top-level name a
+ * Viya-only distribution's `top_level.txt` can plausibly claim (`tests`,
+ * `utils`, and similar generic names are common) — would shadow the user's
+ * own `tests/` package, not just a same-named installed distribution.
+ * `pylanceStubSync.ts` is the one caller that can list a real workspace
+ * root; this function only applies the exclusion once it has.
  *
  * Compared case-insensitively, not by exact name: Windows and macOS's
  * default filesystem (APFS, case-insensitive by default) resolve `MyLib/`

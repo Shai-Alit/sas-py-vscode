@@ -55,7 +55,6 @@ import type { EnvironmentStore } from "./environmentStore";
 import { readActiveLocalEnvironment } from "./localPythonEnvironment";
 import { RunOutputChannel } from "./outputChannel";
 import {
-  STUB_TREE_RELATIVE_PATH,
   syncPylanceStubs,
   type PylanceStubSyncResult,
 } from "./pylanceStubSync";
@@ -733,36 +732,74 @@ export function createRunCommandHandlers(
    * altogether, and those decisions need no live backend probe to test on
    * their own.
    */
+  // Set once a stub-path-conflict notice has actually been shown for a given
+  // conflicting value, so a stable conflict (the user has deliberately
+  // pointed `stubPath` elsewhere) is not re-announced on every "Refresh
+  // Environment Info" forever — only the first time this window sees it, or
+  // again if the conflicting value itself changes. Adversarial review,
+  // before this PR's push: the notice previously fired unconditionally on
+  // every fresh probe that hit the conflict outcome.
+  let lastInformedStubPathConflict: string | undefined;
+
   const syncStubsForFreshProbe = async (
     remote: readonly PythonPackage[],
   ): Promise<boolean> => {
-    const local = await readActiveLocalEnvironment();
-    const diff = diffEnvironments(
-      remote,
-      local.kind === "known" ? local.packages : undefined,
-    );
+    // The whole sync — including `readActiveLocalEnvironment` and
+    // `deps.pylanceStubs`, an injectable seam a future caller could make
+    // throw — runs ahead of `environment.set` in `ensureProbedEnvironment`,
+    // on the same probe result's critical path. This is a side feature; it
+    // must degrade to "no stub sync happened" rather than lose an
+    // already-successful probe. Adversarial review, before this PR's push.
+    try {
+      const local = await readActiveLocalEnvironment();
+      const diff = diffEnvironments(
+        remote,
+        local.kind === "known" ? local.packages : undefined,
+      );
+      const localTopLevelNames =
+        local.kind === "known" ? local.topLevelNames : [];
 
-    const { toStub, missing } = selectPackagesToStub(remote, diff);
-    for (const name of missing) {
+      const { toStub, missing } = selectPackagesToStub(
+        remote,
+        diff,
+        localTopLevelNames,
+      );
+      for (const name of missing) {
+        log.warn(
+          `Pylance stub sync (10b): "${name}" was in the remote-only diff but not found in this profile's own package list; skipped.`,
+        );
+      }
+
+      const sync = deps.pylanceStubs ?? syncPylanceStubs;
+      const outcome: StubSyncOutcome = await sync(toStub);
+      const report = describeStubSyncOutcome(outcome);
+      if (report.logWarning !== undefined) log.warn(report.logWarning);
+      if (
+        report.conflictValue !== undefined &&
+        report.conflictValue !== lastInformedStubPathConflict
+      ) {
+        lastInformedStubPathConflict = report.conflictValue;
+        // "Skipped generating", not "generated but left untouched": a PR
+        // #182 review round found a conflict must stop `syncPylanceStubs`
+        // before it ever writes the stub tree (see that module's own
+        // "decide before writing" doc comment) — so nothing at
+        // `STUB_TREE_RELATIVE_PATH` was written this time, and the previous
+        // wording (from an earlier round, when generation genuinely was
+        // unconditional) would now be false.
+        inform(
+          vscode.l10n.t(
+            'Skipped generating Pylance stubs: python.analysis.stubPath is already set to "{0}" in this workspace.',
+            report.conflictValue,
+          ),
+        );
+      }
+      return report.reloadAdvisable;
+    } catch (error) {
       log.warn(
-        `Pylance stub sync (10b): "${name}" was in the remote-only diff but not found in this profile's own package list; skipped.`,
+        `Pylance stub sync (10b): the sync itself failed unexpectedly (${String(error)}); the probe result is unaffected.`,
       );
+      return false;
     }
-
-    const sync = deps.pylanceStubs ?? syncPylanceStubs;
-    const outcome: StubSyncOutcome = await sync(toStub);
-    const report = describeStubSyncOutcome(outcome);
-    if (report.logWarning !== undefined) log.warn(report.logWarning);
-    if (report.conflictValue !== undefined) {
-      inform(
-        vscode.l10n.t(
-          'Generated stubs at {0}, but left python.analysis.stubPath untouched: it is already set to "{1}" in this workspace.',
-          STUB_TREE_RELATIVE_PATH,
-          report.conflictValue,
-        ),
-      );
-    }
-    return report.reloadAdvisable;
   };
 
   const informReloadAdvisable = (): void => {

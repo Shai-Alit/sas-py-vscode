@@ -26,6 +26,29 @@ export interface LocalPackage {
   readonly version: string;
 }
 
+/** {@link readLocalPackages}'s full result: the parsed distributions, plus
+ * every top-level importable name actually sitting in `site-packages` —
+ * not only the ones {@link LocalPackage} could attach a distribution to.
+ *
+ * `topLevelNames` exists for a gap `EnvironmentDiff`'s own distribution-name
+ * comparison cannot close: `diffEnvironments` matches a Viya package against
+ * a local one by *distribution* name (PEP 503-normalised), but a generated
+ * stub is filed under the package's *import* name
+ * (`stubGenerator.ts`/Finding 10.2's own design correction) — and the two
+ * can differ (`Pillow` installs as `PIL`). A Viya-only `pillow` distribution
+ * passes the distribution-name `remoteOnly` test cleanly even when a
+ * *different* local distribution already provides `PIL`, so a generated
+ * `PIL/__init__.pyi` would still shadow it. `topLevelNames` is every name
+ * this read actually saw at the `site-packages` root — regardless of which
+ * (if any) `*.dist-info`/`*.egg-info` entry claims it — so a caller can
+ * exclude a candidate stub by the name it would actually be *filed* under,
+ * the same way `stubGenerator.ts`'s own `excludeWorkspaceOwnedNames` excludes
+ * one by workspace-root name. */
+export interface LocalPackagesResult {
+  readonly packages: readonly LocalPackage[];
+  readonly topLevelNames: readonly string[];
+}
+
 /** The two filesystem operations this reader needs, narrowed the same way
  * every other injectable port in this codebase is. */
 export interface LocalPackageFs {
@@ -53,33 +76,49 @@ const EGG_INFO_SUFFIX = ".egg-info";
 export async function readLocalPackages(
   sitePackagesPath: string,
   fs: LocalPackageFs,
-): Promise<readonly LocalPackage[]> {
+): Promise<LocalPackagesResult> {
   let entries: readonly string[];
   try {
     entries = await fs.readdir(sitePackagesPath);
   } catch {
-    return [];
+    return { packages: [], topLevelNames: [] };
   }
 
   const packages: LocalPackage[] = [];
+  const topLevelNames = new Set<string>();
   for (const entry of entries) {
     const metadataFilename = distInfoMetadataFilename(entry);
-    if (metadataFilename === undefined) continue;
+    if (metadataFilename !== undefined) {
+      let text: string;
+      try {
+        text = await fs.readFile(
+          joinPath(sitePackagesPath, entry, metadataFilename),
+        );
+      } catch {
+        continue;
+      }
 
-    let text: string;
-    try {
-      text = await fs.readFile(
-        joinPath(sitePackagesPath, entry, metadataFilename),
-      );
-    } catch {
+      const parsed = parseMetadata(text);
+      if (parsed !== undefined) packages.push(parsed);
       continue;
     }
 
-    const parsed = parseMetadata(text);
-    if (parsed !== undefined) packages.push(parsed);
+    // Not a `*.dist-info`/`*.egg-info` entry — either a real importable
+    // top-level name (a package directory, a single-file module) or
+    // `__pycache__`/a stray non-package file. `LocalPackageFs.readdir` gives
+    // names only, no file-type bit (unlike `pylanceStubSync.ts`'s own
+    // `vscode.workspace.fs.readDirectory`-backed port), so this is a name
+    // heuristic, not a type check: strip a `.py` suffix for a single-file
+    // module, otherwise take the entry as-is (a package directory, in every
+    // real case). A stray non-package entry (a `.pth` file, say) still ends
+    // up in the set under its literal on-disk name — harmless, since nothing
+    // a real generated stub is ever named collides with a name like
+    // `some-file.pth`.
+    if (entry === "__pycache__") continue;
+    topLevelNames.add(entry.endsWith(".py") ? entry.slice(0, -3) : entry);
   }
 
-  return packages;
+  return { packages, topLevelNames: [...topLevelNames] };
 }
 
 /** `METADATA` (dist-info, the modern, PEP 566 form) or `PKG-INFO`

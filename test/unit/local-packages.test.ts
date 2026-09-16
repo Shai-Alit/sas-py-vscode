@@ -41,7 +41,7 @@ describe("localPackages.ts — reading a local site-packages tree", () => {
       },
     });
 
-    const packages = await readLocalPackages("/site-packages", fs);
+    const { packages } = await readLocalPackages("/site-packages", fs);
 
     assert.deepEqual(packages, [{ name: "numpy", version: "2.0.0" }]);
   });
@@ -55,20 +55,24 @@ describe("localPackages.ts — reading a local site-packages tree", () => {
       },
     });
 
-    const packages = await readLocalPackages("/site-packages", fs);
+    const { packages } = await readLocalPackages("/site-packages", fs);
 
     assert.deepEqual(packages, [{ name: "olddep", version: "1.2" }]);
   });
 
-  it("skips a non-dist-info, non-egg-info entry", async () => {
+  it("skips a non-dist-info, non-egg-info entry as a package, but still counts it as a top-level name", async () => {
     const fs = fakeFs({
       dirs: { "/site-packages": ["__pycache__", "numpy"] },
       files: {},
     });
 
-    const packages = await readLocalPackages("/site-packages", fs);
+    const { packages, topLevelNames } = await readLocalPackages(
+      "/site-packages",
+      fs,
+    );
 
     assert.deepEqual(packages, []);
+    assert.deepEqual(topLevelNames, ["numpy"]);
   });
 
   it("skips an entry whose metadata file cannot be read, rather than failing the whole read", async () => {
@@ -83,7 +87,7 @@ describe("localPackages.ts — reading a local site-packages tree", () => {
       },
     });
 
-    const packages = await readLocalPackages("/site-packages", fs);
+    const { packages } = await readLocalPackages("/site-packages", fs);
 
     assert.deepEqual(packages, [{ name: "pandas", version: "3.0.0" }]);
   });
@@ -99,7 +103,7 @@ describe("localPackages.ts — reading a local site-packages tree", () => {
       },
     });
 
-    const packages = await readLocalPackages("/site-packages", fs);
+    const { packages } = await readLocalPackages("/site-packages", fs);
 
     assert.deepEqual(packages, [{ name: "ok", version: "1.0" }]);
   });
@@ -107,9 +111,10 @@ describe("localPackages.ts — reading a local site-packages tree", () => {
   it("returns no packages, not an error, for a site-packages path that does not exist", async () => {
     const fs = fakeFs({ dirs: {}, files: {} });
 
-    const packages = await readLocalPackages("/nowhere", fs);
+    const { packages, topLevelNames } = await readLocalPackages("/nowhere", fs);
 
     assert.deepEqual(packages, []);
+    assert.deepEqual(topLevelNames, []);
   });
 
   it("trims trailing whitespace off a header value without eating an inner space", async () => {
@@ -121,8 +126,63 @@ describe("localPackages.ts — reading a local site-packages tree", () => {
       },
     });
 
-    const packages = await readLocalPackages("/site-packages", fs);
+    const { packages } = await readLocalPackages("/site-packages", fs);
 
     assert.deepEqual(packages, [{ name: "my spaced name", version: "1.0" }]);
+  });
+
+  describe("topLevelNames — closing the distribution-name/import-name gap (Finding 10.2)", () => {
+    it("reports a real site-packages entry even when no distribution claims it by that exact name", async () => {
+      // The `Pillow`/`PIL` case: a distribution named `Pillow` installs a
+      // top-level `PIL/` directory that shares no substring with its own
+      // dist-info name. `stubSyncPlan.ts`'s `selectPackagesToStub` is the
+      // caller that uses this to keep a same-named generated stub from
+      // shadowing it.
+      const fs = fakeFs({
+        dirs: { "/site-packages": ["Pillow-11.0.0.dist-info", "PIL"] },
+        files: {
+          "/site-packages/Pillow-11.0.0.dist-info/METADATA":
+            "Name: Pillow\nVersion: 11.0.0\n",
+        },
+      });
+
+      const { topLevelNames } = await readLocalPackages("/site-packages", fs);
+
+      assert.deepEqual(topLevelNames, ["PIL"]);
+    });
+
+    it("strips the .py suffix off a single-file module", async () => {
+      const fs = fakeFs({
+        dirs: { "/site-packages": ["six.py"] },
+        files: {},
+      });
+
+      const { topLevelNames } = await readLocalPackages("/site-packages", fs);
+
+      assert.deepEqual(topLevelNames, ["six"]);
+    });
+
+    it("excludes __pycache__ and dist-info/egg-info directories themselves", async () => {
+      const fs = fakeFs({
+        dirs: {
+          "/site-packages": [
+            "__pycache__",
+            "numpy-2.0.0.dist-info",
+            "olddep-1.2.egg-info",
+            "numpy",
+          ],
+        },
+        files: {
+          "/site-packages/numpy-2.0.0.dist-info/METADATA":
+            "Name: numpy\nVersion: 2.0.0\n",
+          "/site-packages/olddep-1.2.egg-info/PKG-INFO":
+            "Name: olddep\nVersion: 1.2\n",
+        },
+      });
+
+      const { topLevelNames } = await readLocalPackages("/site-packages", fs);
+
+      assert.deepEqual(topLevelNames, ["numpy"]);
+    });
   });
 });

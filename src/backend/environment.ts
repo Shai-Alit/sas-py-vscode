@@ -133,7 +133,7 @@ export const ENVIRONMENT_PROBE_FILENAME = "__pyvia_environment_probe__.json";
  * doc comment, "Import names, not only the distribution name"), which grows
  * the payload per package but not its order of magnitude — a name list is
  * typically one short string, rarely more than a handful. Left unchanged
- * here; Finding 10.3 is where a real deployment would be recorded if this cap
+ * here; Finding 10.6 is where a real deployment would be recorded if this cap
  * ever turns out to matter in practice (Probe findings, `phase-10.md`).
  */
 export const MAX_ENVIRONMENT_PROBE_BYTES = 1024 * 1024;

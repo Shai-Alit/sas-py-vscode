@@ -70,13 +70,23 @@ import {
 import { decideStubPathAction } from "./stubPathSetting";
 
 /** Relative to the (first) workspace folder's own root — the value handed to
- * `python.analysis.stubPath`, which itself resolves relative to the
- * workspace root regardless of which file `settings.json` lives in
- * (`microsoft/pylance-release#7178`, cited in `phase-10.md`'s Probe
- * findings). No leading `./`: `stubPath`'s own documented default
- * (`./typings`) uses one, but nothing in its resolution behaviour requires
- * it — a bare relative path is equivalent and simpler to build paths from. */
+ * `python.analysis.stubPath`. No leading `./`: `stubPath`'s own documented
+ * default (`./typings`) uses one, but nothing in its resolution behaviour
+ * requires it — a bare relative path is equivalent and simpler to build
+ * paths from. */
 export const STUB_TREE_RELATIVE_PATH = ".pythonOnViya/typings";
+/** The parent of {@link STUB_TREE_RELATIVE_PATH} — where the `.gitignore`
+ * below is written, so the whole generated tree (not just its own
+ * `typings/` subfolder) is covered. */
+const STUB_TREE_PARENT_RELATIVE_PATH = ".pythonOnViya";
+/** Written alongside the generated tree so a user's own workspace `git`
+ * ignores the whole `.pythonOnViya/` folder without being asked to add
+ * anything themselves — this project's own repo excludes it the same way in
+ * its own `.gitignore`; a generated workspace should not need the developer
+ * to notice and do the same by hand. `docs/python-environment.md`'s own
+ * "quieting Pylance" section documents this. */
+const GITIGNORE_RELATIVE_PATH = `${STUB_TREE_PARENT_RELATIVE_PATH}/.gitignore`;
+const GITIGNORE_CONTENT = "*\n";
 
 const STUB_PATH_SETTING_SECTION = "python.analysis";
 const STUB_PATH_SETTING_KEY = "stubPath";
@@ -136,7 +146,11 @@ function isMissingRoot(error: unknown): boolean {
   );
 }
 
-interface RealFs {
+/** Exported so `test/integration/run/pylance-stub-sync.test.ts` can supply a
+ * fake and drive {@link writeStubTree} directly — see that function's own
+ * doc comment for why this is the one piece of this module's logic testable
+ * without a real open workspace. */
+export interface RealFs {
   /** Direct child *directory* names — `vscode.workspace.fs.readDirectory`
    * returns files too, but only directories are ever meaningful entries
    * under a stub tree root. A root that does not exist yet (the very first
@@ -208,8 +222,16 @@ const realFs: RealFs = {
  * (`excludeWorkspaceOwnedNames`). Returns whether the tree's own top-level
  * listing actually changed — see `StubTreeSyncPlan.changed`'s doc comment
  * (`stubGenerator.ts`) for why that is not the same question as "was
- * anything written". */
-async function writeStubTree(
+ * anything written".
+ *
+ * Exported for `test/integration/run/pylance-stub-sync.test.ts`: this is the
+ * one piece of `syncPylanceStubs`'s own logic that does not need a real open
+ * workspace to exercise (`workspaceRoot`/`stubRoot` are plain `vscode.Uri`
+ * values a test can construct itself, and `fs` is already the injectable
+ * port below) — write ordering, the delete-recursive prune path, and the
+ * `.gitignore` write can all be pinned directly against a fake `RealFs`.
+ */
+export async function writeStubTree(
   workspaceRoot: vscode.Uri,
   stubRoot: vscode.Uri,
   packages: readonly StubbablePackage[],
@@ -236,6 +258,27 @@ async function writeStubTree(
     await fs.createDirectory(dirUri);
     await fs.writeFile(vscode.Uri.joinPath(dirUri, fileName), file.content);
   }
+
+  // Only when something is actually being written — an empty desired set
+  // with nothing to prune either leaves no `.pythonOnViya/` folder to
+  // protect, and writing a `.gitignore` into a directory this sync is about
+  // to leave otherwise-empty would only be clutter.
+  if (plan.toWrite.length > 0) {
+    // `workspaceRoot`, not `stubRoot`: `STUB_TREE_PARENT_RELATIVE_PATH` is
+    // `stubRoot`'s own parent, not a path under it. `createDirectory` first,
+    // matching every write above — already-existing is a documented no-op.
+    const parentUri = vscode.Uri.joinPath(
+      workspaceRoot,
+      STUB_TREE_PARENT_RELATIVE_PATH,
+    );
+    await fs.createDirectory(parentUri);
+    const gitignoreUri = vscode.Uri.joinPath(
+      workspaceRoot,
+      GITIGNORE_RELATIVE_PATH,
+    );
+    await fs.writeFile(gitignoreUri, GITIGNORE_CONTENT);
+  }
+
   return plan.changed;
 }
 
@@ -254,8 +297,39 @@ function describeError(error: unknown): string {
  * says is safe to stub — see `./stubGenerator.ts`'s own doc comment, "Why
  * only the caller's given list". This function trusts its input rather than
  * re-deriving the diff itself.
+ *
+ * Serialised across calls on a module-level queue
+ * ({@link runSerialisedAfterAnyPriorSync}) — two concurrent triggers (`Show
+ * environment` and `Search environment` both reaching a cache miss at once,
+ * say) would otherwise interleave `writeStubTree`'s own
+ * `deleteRecursively`/`createDirectory`/`writeFile` calls against the same
+ * stub tree. Adversarial review, before this PR's push.
  */
-export async function syncPylanceStubs(
+export function syncPylanceStubs(
+  packages: readonly StubbablePackage[],
+): Promise<PylanceStubSyncResult> {
+  return runSerialisedAfterAnyPriorSync(() => syncPylanceStubsNow(packages));
+}
+
+/** The tail of every `syncPylanceStubs` call so far, settled or not — chained
+ * onto (never replaced) so calls run one at a time, in the order they
+ * arrived, regardless of whether an earlier one succeeded, failed, or is
+ * still running. */
+let syncQueue: Promise<void> = Promise.resolve();
+
+function runSerialisedAfterAnyPriorSync<T>(run: () => Promise<T>): Promise<T> {
+  const result = syncQueue.then(run, run);
+  // Never let a rejection propagate into the queue itself — that would wedge
+  // every later call behind a permanently-rejected promise. Each call's own
+  // real result/error still reaches its own caller via `result` above.
+  syncQueue = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  return result;
+}
+
+async function syncPylanceStubsNow(
   packages: readonly StubbablePackage[],
 ): Promise<PylanceStubSyncResult> {
   const folder = vscode.workspace.workspaceFolders?.[0];
@@ -265,6 +339,37 @@ export async function syncPylanceStubs(
   }
 
   const stubRoot = vscode.Uri.joinPath(folder.uri, STUB_TREE_RELATIVE_PATH);
+
+  // Decide *before* writing anything: a conflicting `stubPath` means the
+  // user has deliberately pointed Pylance elsewhere, and this sync must not
+  // touch the workspace at all in that case — not even to write (or prune)
+  // a stub tree Pylance will never read. Reordered on adversarial review,
+  // before this PR's push: the previous version always wrote the tree first
+  // and only checked for a conflict afterwards, so a `stub-path-conflict`
+  // outcome could still leave a freshly-written `.pythonOnViya/typings/` on
+  // disk.
+  let config: vscode.WorkspaceConfiguration;
+  let decision: ReturnType<typeof decideStubPathAction>;
+  try {
+    config = vscode.workspace.getConfiguration(
+      STUB_PATH_SETTING_SECTION,
+      folder.uri,
+    );
+    const inspected = config.inspect<string>(STUB_PATH_SETTING_KEY);
+    decision = decideStubPathAction(
+      {
+        globalValue: inspected?.globalValue,
+        workspaceValue: inspected?.workspaceValue,
+        workspaceFolderValue: inspected?.workspaceFolderValue,
+      },
+      STUB_TREE_RELATIVE_PATH,
+    );
+  } catch (error) {
+    return { kind: "write-failed", detail: describeError(error) };
+  }
+  if (decision.kind === "conflict") {
+    return { kind: "stub-path-conflict", currentValue: decision.currentValue };
+  }
 
   let changed: boolean;
   try {
@@ -280,40 +385,21 @@ export async function syncPylanceStubs(
   // `"nothing-to-stub"` when there was truly nothing to do.
   if (packages.length === 0 && !changed) return { kind: "nothing-to-stub" };
 
-  try {
-    const config = vscode.workspace.getConfiguration(
-      STUB_PATH_SETTING_SECTION,
-      folder.uri,
-    );
-    const inspected = config.inspect<string>(STUB_PATH_SETTING_KEY);
-    const decision = decideStubPathAction(
-      {
-        globalValue: inspected?.globalValue,
-        workspaceValue: inspected?.workspaceValue,
-        workspaceFolderValue: inspected?.workspaceFolderValue,
-      },
-      STUB_TREE_RELATIVE_PATH,
-    );
-    if (decision.kind === "conflict") {
-      return {
-        kind: "stub-path-conflict",
-        currentValue: decision.currentValue,
-      };
-    }
-    if (decision.kind === "write") {
+  if (decision.kind === "write") {
+    try {
       await config.update(
         STUB_PATH_SETTING_KEY,
         STUB_TREE_RELATIVE_PATH,
         vscode.ConfigurationTarget.Workspace,
       );
-      // Pointing `stubPath` at the tree for the first time is itself a
-      // change worth a reload notice, even on the rare sync whose own file
-      // set happened to already match what a previous, unrelated write left
-      // on disk.
-      changed = true;
+    } catch (error) {
+      return { kind: "write-failed", detail: describeError(error) };
     }
-  } catch (error) {
-    return { kind: "write-failed", detail: describeError(error) };
+    // Pointing `stubPath` at the tree for the first time is itself a
+    // change worth a reload notice, even on the rare sync whose own file
+    // set happened to already match what a previous, unrelated write left
+    // on disk.
+    changed = true;
   }
 
   return { kind: "synced", changed };

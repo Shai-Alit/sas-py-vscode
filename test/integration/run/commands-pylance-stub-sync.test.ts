@@ -317,6 +317,33 @@ describe("run commands — 10b Pylance stub sync wiring (fresh probe)", () => {
     );
   });
 
+  it("does not repeat the stub-path-conflict notice on a second fresh probe with the same conflicting value", async () => {
+    // Adversarial review, before this PR's push: this notice previously
+    // fired unconditionally on every fresh probe that hit the conflict
+    // outcome, nagging on every "Refresh Environment Info" against a stable,
+    // deliberately-set `stubPath`.
+    const recorder = fakeRecorder();
+    const { pylanceStubs } = fakePylanceStubs({
+      kind: "stub-path-conflict",
+      currentValue: "./my-own-stubs",
+    });
+    const { channel } = recordingLog("10b wiring — conflict dedup");
+    const { targets, handlers } = build(
+      { ...recorder.deps, pylanceStubs },
+      channel,
+    );
+    await targets.setKind("viya");
+
+    await handlers.showEnvironment();
+    await handlers.refreshEnvironment();
+
+    assert.equal(
+      recorder.informed.length,
+      1,
+      `expected exactly one conflict notice across two fresh probes; got: ${JSON.stringify(recorder.informed)}`,
+    );
+  });
+
   it("logs the caught error's own detail for a write-failed outcome, with no user-facing message", async () => {
     const recorder = fakeRecorder();
     const { pylanceStubs } = fakePylanceStubs({

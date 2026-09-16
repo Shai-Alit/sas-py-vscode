@@ -107,11 +107,14 @@ already a real folder or `.py` file at your workspace root is never stubbed
 either, even when nothing local resolves it, since a generated stub would
 otherwise take precedence over your own source there.
 
-**Reload the window to see the effect.** Pylance does not notice a changed
-`stubPath` or a regenerated stub tree on its own — after a refresh that
-updated your stubs, run **Developer: Reload Window** (or
-**Python: Restart Language Server**) to see the updated diagnostics. A
-notification says when this is worth doing.
+**Reload the window (or restart the language server) to see the effect.**
+Pylance does not notice a changed `stubPath` or a regenerated stub tree on
+its own. A notification says when this is worth doing, and offers
+**Restart Language Server** first — it restarts only the Python
+language-server process, typically a few seconds, versus **Reload Window**'s
+~60–90 second full extension-host restart, which also drops your live Viya
+connection. Reload is still offered as a fallback, since a restart is not
+guaranteed to be registered or to succeed.
 
 **If `python.analysis.stubPath` is already set to something else** in your
 workspace — your own hand-authored stubs, say — Python on Viya leaves it
@@ -120,8 +123,9 @@ alone rather than overwriting your setup; a notification and a note in the
 `.pythonOnViya/typings` yourself (merged with whatever else you use
 `typings/` for) if you want both.
 
-You may want to add `.pythonOnViya/` to your own `.gitignore` — it is
-regenerated on every refresh and has nothing worth committing.
+Python on Viya writes its own `.gitignore` inside `.pythonOnViya/`, so you do
+not need to add anything to your own — the folder is regenerated on every
+refresh and has nothing worth committing.
 
 ## Probing does not touch your session
 

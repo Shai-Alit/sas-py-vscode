@@ -113,9 +113,13 @@ pruning a stale, shadowing stub. Full account, including the review's
 non-blocking items folded in and the ones left open for the developer to
 decide, in `phase-10.md`'s own "Adversarial self-review, 2026-09-15" Runbook
 entry. The four discussed-not-decided items from that pass were resolved with
-the developer the same day: `workspaceFolderValue` settled with evidence (no
-code change — only diverges from `workspaceValue` in a real multi-root
-workspace, out of scope today, carried to `phase-11.md`); local-unknown
+the developer the same day: `workspaceFolderValue` initially settled with no
+code change (it only diverges from `workspaceValue` in a real multi-root
+workspace, out of scope today, carried to `phase-11.md`) — **superseded
+2026-09-16**, when a PR #182 review round found the gap was broader than
+multi-root (a `stubPath` set at user/global scope was missed even in the
+ordinary single-folder case); fixed in `c81f9d5`, and `phase-11.md`'s own
+carried-item entry now records it closed; local-unknown
 stubbing every remote package kept as-is; a `pythonOnViya.*` opt-out setting
 deferred to `phase-11.md`; and a "Reload Window" action button built onto the
 reload notice. **The developer then ran their own independent adversarial

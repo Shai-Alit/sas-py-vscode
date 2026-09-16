@@ -313,7 +313,7 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   high-contrast theme.
   **Expect:** the grid renders correctly in all three, matching Phase 7's own
   data viewer — nothing CAS-specific to the rendering here.
-- [-] **8.28** **(known gap) A table's icon flips to "loaded" the moment it
+- [x] **8.28** **A table's icon flips to "loaded" the moment it
   finishes loading, with no manual refresh** — found testing this section,
   though the bug itself is in the **CAS** tree (phase 8a), not the data
   viewer: expand a table you have not yet loaded this session (§8.5) and
@@ -334,4 +334,15 @@ can open — any of `Public`/`Formats`/`Samples`/`SystemData`'s tables will do.
   found this session; per Sean's own call, not worth chasing further inside
   this PR. **Deferred to Phase 10/11 as a known gap** — see
   [`phase-11.md`](../../phases/phase-11.md)'s "carried here" list.
+  **(9/15/2026) passes** — root cause found and a second fix landed, then
+  confirmed live by Sean against a `.vsix` built from the fix: the icon flips
+  from cloud to table as the columns appear, with no **Refresh CAS**.
+  `onDidChangeTreeData` resolves a fired element by object identity, not by
+  `TreeItem.id`, so the state-updated *copy* the first fix fired was
+  discarded silently; `src/cas/casTree.ts` now fires the identical element
+  object and overlays the loaded state in `getTreeItem`. Full account:
+  [`phase-8.md`](../../phases/phase-8.md)'s "Icon-flip gap: root cause
+  found, 2026-09-15" Runbook entry. **This item is the reason that entry
+  insists on a live re-run** — the first fix passed every automated check
+  and still failed here, so a green suite was never sufficient evidence.
 

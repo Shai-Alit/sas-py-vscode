@@ -216,5 +216,11 @@ describe("stubGenerator.ts — 10b's Pylance stub tree", () => {
         ["numpy/__init__.pyi"],
       );
     });
+
+    it("drops a collision that differs only in case — Windows and default macOS resolve it as the same directory", () => {
+      const files = generateStubTree([pkg("mylib-viya", "1.0.0", ["mylib"])]);
+      const result = excludeWorkspaceOwnedNames(files, ["MyLib"]);
+      assert.deepEqual(result, []);
+    });
   });
 });

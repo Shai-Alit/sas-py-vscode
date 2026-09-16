@@ -159,13 +159,24 @@ export function topDirectory(relativePath: string): string {
  * shadow the user's own `tests/` package, not just a same-named installed
  * distribution. `pylanceStubSync.ts` is the one caller that can list a real
  * workspace root; this function only applies the exclusion once it has.
+ *
+ * Compared case-insensitively, not by exact name: Windows and macOS's
+ * default filesystem (APFS, case-insensitive by default) resolve `MyLib/`
+ * for an `import mylib` exactly as they would a same-cased directory, so a
+ * case-sensitive `Set.has` here would miss the shadow and generate a stub
+ * that still wins over the user's own module on those platforms. Linux's
+ * typical case-sensitive filesystem never needed the guard, but folding case
+ * everywhere costs nothing and keeps this function's answer independent of
+ * which OS it runs on.
  */
 export function excludeWorkspaceOwnedNames(
   files: readonly GeneratedStubFile[],
   workspaceRootNames: readonly string[],
 ): readonly GeneratedStubFile[] {
-  const owned = new Set(workspaceRootNames);
-  return files.filter((file) => !owned.has(topDirectory(file.relativePath)));
+  const owned = new Set(workspaceRootNames.map((name) => name.toLowerCase()));
+  return files.filter(
+    (file) => !owned.has(topDirectory(file.relativePath).toLowerCase()),
+  );
 }
 
 /** What {@link planStubTreeSync} says to do to bring a stub tree's on-disk

@@ -285,8 +285,13 @@ export async function syncPylanceStubs(
       STUB_PATH_SETTING_SECTION,
       folder.uri,
     );
+    const inspected = config.inspect<string>(STUB_PATH_SETTING_KEY);
     const decision = decideStubPathAction(
-      config.inspect<string>(STUB_PATH_SETTING_KEY)?.workspaceValue,
+      {
+        globalValue: inspected?.globalValue,
+        workspaceValue: inspected?.workspaceValue,
+        workspaceFolderValue: inspected?.workspaceFolderValue,
+      },
       STUB_TREE_RELATIVE_PATH,
     );
     if (decision.kind === "conflict") {

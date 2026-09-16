@@ -785,7 +785,7 @@ export function createRunCommandHandlers(
       show(message);
       return;
     }
-    void offerReloadRemedy(message).catch((error) => {
+    void offerReloadRemedy(message).catch((error: unknown) => {
       log.warn(
         `Pylance stub sync (10b): reload-remedy notice failed (${String(error)}).`,
       );

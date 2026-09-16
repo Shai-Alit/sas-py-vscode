@@ -273,7 +273,12 @@ export async function syncPylanceStubs(
     return { kind: "write-failed", detail: describeError(error) };
   }
 
-  if (packages.length === 0) return { kind: "nothing-to-stub" };
+  // A `changed` write here means stale stubs from a previous sync were just
+  // pruned (10a's diff no longer lists anything `remoteOnly`) — that still
+  // needs to reach the caller as `"synced"` so a reload notice fires and
+  // Pylance stops reading the now-deleted stub tree. Only report
+  // `"nothing-to-stub"` when there was truly nothing to do.
+  if (packages.length === 0 && !changed) return { kind: "nothing-to-stub" };
 
   try {
     const config = vscode.workspace.getConfiguration(

@@ -39,8 +39,9 @@ slice-by-slice narrative that used to live here has moved to
 archival rule.
 
 **Phase 10 (Viya environment awareness) is in progress — 10a merged
-2026-09-15, 10b implemented, reviewed, and fully manually tested (all of
-10.1–10.14 green); not yet pushed or opened as a PR.** 10a
+2026-09-15, 10b implemented, reviewed, fully manually tested (all of
+10.1–10.14 green), and opened as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182).** 10a
 (`docs/phases/phase-10.md`) adds a
 local/remote package diff to the existing `Show environment` document (a
 new "Local comparison" section, reading the local interpreter
@@ -189,9 +190,10 @@ result under a full reload alone, a discrepancy neither finding explains.
 likely mistake in how that attempt was run, not a reproduced defect** — left
 in place verbatim as the historical record, no longer treated as blocking.
 §10.8 is marked passed on Finding 10.5's strength. **The full manual-test
-board for Phase 10 (items 10.1–10.14) is now all green.** Not yet pushed or
-opened as a PR — that's the next step, once the developer decides to take
-it.
+board for Phase 10 (items 10.1–10.14) is now all green.** **10b opened as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182)**, branch
+`feat/phase-10b-pylance-stub-reflection` against `main` — awaiting review
+and merge.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

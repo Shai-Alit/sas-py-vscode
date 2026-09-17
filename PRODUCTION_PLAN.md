@@ -990,9 +990,13 @@ The criteria above are v0.1.0's bar, and only that. 1.0.0 makes a different
 claim — not "this works" but "this is supported" — and ships when: each of Phase
 11's live-facing parity gaps is either fixed or explicitly re-classified as a
 documented known limitation, a deliberate call recorded per gap rather than
-silence (as of 2026-09-15 that means the CAS tree table icon that never flips
-from unloaded to loaded after a JIT load, and the Accounts-menu rows that
-identify neither this extension nor which profile is which); every row under
+silence (as of 2026-09-16 that means the SAS Libraries tree's table icon not
+matching the CAS tree's own, a stale/dropped connection leaving a tree blank
+with no way back in, and the Accounts-menu rows that identify neither this
+extension nor which profile is which — see `phase-11.md`'s "Bugs found
+pre-release" and "Accounts-menu legibility" entries; the CAS tree icon-flip
+gap this note used to cite here was fixed and live-confirmed 2026-09-15, per
+`phase-8.md`); every row under
 `docs/dev/manual-tests/` has actually been run, with any row left unrun carrying
 a written reason — an environment that does not exist is an acceptable one, and
 5d-i's user-provided-CA row is the standing example; GitHub issue tracking is

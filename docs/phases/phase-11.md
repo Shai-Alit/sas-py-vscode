@@ -571,11 +571,12 @@ section above unless noted:
 
 ### Punch list
 
-- [ ] **11a — Interactive window (F7).** Code and automated tests done, one
-  pre-push adversarial review completed and every finding folded in locally
-  — **not yet pushed or merged**; **manual-test items 11.1–11.5
-  (`docs/dev/manual-tests/phase-11.md`) not yet run** — this box stays
-  unticked until both have happened. See this section's own Runbook entry,
+- [x] **11a — Interactive window (F7).** Code and automated tests done, one
+  pre-push adversarial review completed and every finding folded in locally,
+  pushed as [PR #192](https://github.com/Shai-Alit/sas-py-vscode/pull/192);
+  **manual-test items 11.1–11.5 (`docs/dev/manual-tests/phase-11.md`) all
+  pass**, 2026-09-17 — 11.2's own rich-output row needed a corrected repro
+  first (see this section's own Runbook entry, below). See that entry,
   below, for what shipped and what did not (the no-connection case in
   particular — carried to 11c/B1, not built here) and for the review-fix
   entry covering what the first review round found.
@@ -650,8 +651,9 @@ documented `ELECTRON_RUN_AS_NODE`-strip workaround this session rediscovered
 the need for the hard way before remembering it was already recorded.
 `npm run check:docs` green, including a new "The interactive window" section
 in `docs/running-python.md`. Manual-test items 11.1–11.5
-(`docs/dev/manual-tests/phase-11.md`) are written but **not yet run** — the
-punch-list box above stays unticked until Sean has.
+(`docs/dev/manual-tests/phase-11.md`) all pass, 2026-09-17 — see this
+section's own "11a manual-test pass, 2026-09-17" Runbook entry, below, for
+11.2's own rich-output detour.
 
 **What this slice deliberately did not build**: the no-connection case the
 original punch-list entry named. An interactive window with no active Viya
@@ -791,7 +793,12 @@ treating it as a defect; the same fix applies here.
 `docs/dev/manual-tests/phase-11.md`'s item 11.2 corrected in place: checkbox
 reverted from `[-]` to `[ ]` (per `setup.md`'s own tagging-legend rule —
 `[-]` means a confirmed, accepted gap, not an item awaiting a retest) and
-the repro reworded to the file-writing form, pending Sean's own retest.
+the repro reworded to the file-writing form. **Retested by Sean, 2026-09-17,
+with the corrected repro — passes**: `plt.savefig(...)`/`df.to_html(...)`
+both render inline in the interactive window's cell, confirming
+`interactiveWindow.ts` needs no change here — it was always exercising the
+same, already-working `notebookController.ts` rendering path. Item 11.2 and
+the 11a punch-list box above are both ticked.
 
 **That correction surfaced a real usability question, not just a test-repro
 mistake**: requiring an explicit file write for *any* rich output at all is

@@ -18,6 +18,108 @@ and any localisation bundles beyond English. Individually small, collectively th
 difference between "works" and "feels like a peer of the SAS extension."
 *Slices sized when the phase is reached.*
 
+**Priority order set 2026-09-16 (Sean's own call, ahead of everything else in
+this file): session startup/autoexec configuration and the new interactive-window
+feature (F7, below) go first** when this phase starts, ahead of the rest of the
+long tail above and the feature candidates below. Neither is sized yet — sizing
+happens when the phase is actually picked up, per this section's own rule — but
+the *order* is decided now so a future scoping session doesn't have to
+re-litigate it.
+
+**New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
+— not sized, not sequenced beyond the priority order above, and not yet
+triaged against §3.1's parity table).**
+
+- **F1 — A SQL-passthrough bridge for Python queries against SAS libnames.** A
+  custom UI for setting up and maintaining SAS libname definitions from the
+  extension, with Python calls against that library intercepted and rewritten
+  as a database-passthrough query run over the existing SAS connection, its
+  answer returned to Python. **Flagged, not scoped**: this is qualitatively
+  different from every other candidate here — it needs its own UI surface (new
+  webview or tree, unlike anything this project has built for *configuration*
+  rather than *browsing*), a Python-side interception mechanism this project
+  has never needed (today's model is "submit a whole program, capture its
+  output," never "rewrite one call inside it before it runs"), and a design
+  question about where the libname definitions themselves persist. Sean's own
+  assessment ("probably extremely complicated") matches: this reads as an
+  architecture-level candidate that may warrant its own phase and a dedicated
+  scoping pass with a hands-on spike, not a Phase 11 slice sized alongside
+  autoexec and snippets. Not decided here, per this project's own "treat
+  architecture-level changes as a deliberate event" rule — surfaced for Sean
+  to weigh against the rest of the backlog.
+- **F2 — Table properties for CAS tables.** Phase 7c already built this for SAS
+  library tables (`tablePropertiesPanel.ts`); Phase 8 never extended it to CAS.
+  Likely a straightforward reuse of the existing static panel against
+  `TableSource`'s CAS implementation, in the same spirit as Phase 8c's own
+  data-viewer reuse ([ADR-0034](../adr/0034-table-source-abstraction.md)).
+- **F3 — CSV export for CAS tables.** Same gap as F2, for `csvExportCommand.ts`
+  instead of the properties panel — Phase 7c-iii shipped it for SAS library
+  tables, Phase 8 never extended it to CAS. Likely the same shape of reuse as
+  F2, and worth scoping together with it since both are "the CAS tree is
+  missing a context-menu action the SAS Libraries tree already has."
+- **F6 — A UI panel of common commands, so users don't have to remember the
+  command palette.** A small view (Sean's own suggestion: under the CAS tree)
+  surfacing frequently-used commands as clickable entries rather than requiring
+  **Ctrl+Shift+P** and a remembered name. Needs a design pass on which commands
+  earn a spot (connect/disconnect, show/refresh/search environment, insert CAS
+  snippet, and run-file are the obvious candidates) before it's sized.
+- **F7 — An interactive window, matching VS Code's normal Python experience.**
+  **Grounding, not a design yet**: VS Code's own Python Interactive Window
+  (`Shift+Enter` / "Run Selection/Line in Python Interactive Window") is not
+  provided by `ms-python.python` itself — it is `ms-toolsai.jupyter`'s own
+  feature, and it requires either a real Jupyter server or, for its lighter
+  "Raw Kernel" mode, a local `ipykernel` reachable via ZeroMQ
+  ([code.visualstudio.com/docs/python/jupyter-support-py](https://code.visualstudio.com/docs/python/jupyter-support-py),
+  fetched 2026-09-16). That is a structurally different execution model from
+  anything this project runs today, and depending on it would reintroduce
+  exactly the local-Python dependency this project's own non-negotiable (§1)
+  and Phase 9's own ipynb-native decision
+  ([ADR-0024](../adr/0024-notebooks-are-ipynb-native.md)) both deliberately
+  avoided — a Viya profile has no local kernel process to connect to.
+  **The likely shape, by analogy with Phase 9**: a bespoke, this-project-owned
+  surface (a scratch document or a `NotebookController`-shaped experience) that
+  sends a selection to the *profile's own compute session* and shows the
+  result inline, matching the interactive window's user-facing shape without
+  actually integrating with `ms-toolsai.jupyter`'s kernel machinery — the same
+  choice Phase 9 made for notebooks generally, applied to a single-selection
+  REPL-like flow instead of a whole `.ipynb`. Not decided; a real design pass
+  and likely a hands-on spike (same shape as Phase 9's 9a spike and Phase 10's
+  10b spike) belong at the start of this slice, before any code is written.
+- **F8 — Interactive, sortable pandas DataFrame display**, distinct from the
+  existing SAS/CAS table data viewer (Phase 7b, Phase 8c) — this is about a
+  DataFrame value produced *during a run or in a notebook cell*, not a table
+  browsed from a tree. Sean's own proposed default cap: 100 rows and 20
+  columns, configurable. Likely reuses the existing React/ag-grid machinery
+  ([ADR-0028](../adr/0028-data-viewer-is-react-and-ag-grid.md)) as a rendering
+  target rather than building a new grid, but the cap, the trigger (every
+  DataFrame result, or an opt-in action), and how this interacts with the
+  Result panel's existing `RichOutput[]` shape are all open.
+
+**Bugs found pre-release (added 2026-09-16, from Sean's own hands-on use —
+not yet triaged for whether they're fixed ahead of the next release or as the
+start of this phase).**
+
+- **B1 — No connection means no clear way back in.** When the Viya connection
+  is down (a timed-out session, a dropped VPN), the CAS tree, SAS Content tree,
+  and SAS Libraries tree all currently just go blank, with nothing on screen
+  explaining why or offering a way to sign back in. Every one of these views
+  should always show *something* — an explanatory state and a way to
+  reconnect — never a silently empty tree.
+- **B2 — A stale connection breaks the SAS Libraries tree with no way back
+  except a full sign-out/sign-in cycle.** With a stale connection, the SAS
+  Libraries tree goes blank with no connect button, and **Connect to Viya**
+  itself is not offered in the command palette in that state — the only way
+  out is **Disconnect** (a full sign-out) followed by signing in again. If
+  re-authentication is genuinely required, the extension should say so
+  directly rather than leaving the user to discover the sign-out/sign-in dance
+  by trial and error.
+- **B3 — The SAS Libraries table icon doesn't match the CAS tree's.** SAS
+  Libraries currently shows tables with a generic `[ ]` icon; CAS tables use a
+  purpose-built loaded/unloaded table icon (Phase 8,
+  [`src/cas/casTree.ts`](../../src/cas/casTree.ts)). The SAS Libraries tree
+  should use the same icon for visual consistency between the two table
+  browsers.
+
 **Also carried here (added 2026-09-10/11, from the Phase 6→7/8 housekeeping
 checkpoint): three items deferred out of Phase 6 that never landed a home.**
 

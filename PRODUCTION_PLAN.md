@@ -577,10 +577,11 @@ true: the code landed under `src/{auth,backend,compute,dialects,profile}/`, and
 ratchet in `.c8rc.json` rather than a per-directory target; it has moved
 several times since this was written (3b, the post-3f floor raise on
 functions, then 4d's raise on lines/statements, then Phase 6's own raise on
-functions), so the actual current numbers are whatever `.c8rc.json` says
-today rather than a figure copied here — as of 2026-09-10 that's lines 94 /
-statements 94 / functions 94 / branches 95. The original ≥85% figure is
-long since passed.
+functions, then Phase 8→9 housekeeping's raise on all four), so the actual
+current numbers are whatever `.c8rc.json` says today rather than a figure
+copied here — as of 2026-09-14 that's lines 95.8 / statements 95.8 /
+functions 95.6 / branches 95.4. The original ≥85% figure is long since
+passed.
 Ratcheting beats an aspirational gate that gets disabled the first time it blocks
 a release.
 

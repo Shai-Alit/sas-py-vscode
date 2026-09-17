@@ -28,11 +28,14 @@
  * module's own commands hand back (via that diff), and never re-derives "the"
  * notebook by re-filtering the whole workspace a second time.
  *
- * The two tests below share this file's module-scoped extension-host state
+ * The three tests below share this file's module-scoped extension-host state
  * (`interactiveWindow.ts`'s own tracked notebook) deliberately, in that
  * order: the first proves a fresh open, the second proves reuse across two
  * separate command invocations — the exact behaviour a real user gets by
- * running two selections in a row without closing the window in between.
+ * running two selections in a row without closing the window in between —
+ * and the third closes that notebook and proves a fresh one gets created
+ * rather than an error or a silent no-op (manual-test item 11.5's own
+ * scenario, now also covered automatically).
  */
 
 import assert from "node:assert/strict";
@@ -102,12 +105,13 @@ describe("interactive window (11a)", () => {
   });
 
   it("runSelectionInInteractiveWindow appends and runs the selection as a new cell on that same notebook, reusing it across calls, and no-ops with nothing selected", async function () {
-    // Two full run-and-settle cycles, each with its own bounded
-    // `waitUntil` (kernel selection is asynchronous — see
-    // `interactiveWindow.ts`'s own doc comment), can together approach the
-    // suite's default 20s budget (`test/integration/index.ts`) with no
-    // margin left for the commands themselves.
-    this.timeout(40_000);
+    // Only the first of the two run-and-settle cycles below pays
+    // `CONTROLLER_SELECTION_TIMEOUT_MS`'s own bounded wait — the second
+    // reuses the same already-selected notebook and returns immediately
+    // (`interactiveWindow.ts`'s own doc comment on `selectedNotebooks`) — but
+    // one full wait plus two `waitUntil` polls still leaves little margin
+    // against the suite's default 20s budget (`test/integration/index.ts`).
+    this.timeout(20_000);
     assert.ok(
       theNotebook,
       "the previous test must have created the tracked notebook",
@@ -166,5 +170,52 @@ describe("interactive window (11a)", () => {
     assert.equal(notebook.cellCount, 2);
     assert.equal(notebook.cellAt(1).document.getText(), "print('cell two')");
     await waitUntil(() => notebook.cellAt(1).executionSummary !== undefined);
+  });
+
+  it("creates a fresh notebook after the tracked one is closed", async function () {
+    this.timeout(15_000);
+    assert.ok(
+      theNotebook,
+      "the earlier tests must have created the tracked notebook",
+    );
+    const closed = theNotebook;
+
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (
+          tab.input instanceof vscode.TabInputNotebook &&
+          tab.input.uri.toString() === closed.uri.toString()
+        ) {
+          await vscode.window.tabGroups.close(tab);
+        }
+      }
+    }
+    await waitUntil(() => closed.isClosed);
+
+    const document = await vscode.workspace.openTextDocument({
+      language: "python",
+      content: "print('after close')",
+    });
+    const editor = await vscode.window.showTextDocument(document);
+    editor.selection = new vscode.Selection(
+      0,
+      0,
+      0,
+      "print('after close')".length,
+    );
+
+    const baseline = new Set(interactiveNotebooks());
+    await vscode.commands.executeCommand(
+      "pythonOnViya.runSelectionInInteractiveWindow",
+    );
+
+    const created = newInteractiveNotebooks(baseline);
+    assert.equal(
+      created.length,
+      1,
+      "closing the tracked notebook then running a selection should create exactly one fresh notebook",
+    );
+    assert.notEqual(created[0], closed);
+    theNotebook = created[0];
   });
 });

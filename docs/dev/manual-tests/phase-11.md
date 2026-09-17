@@ -13,9 +13,10 @@ A bespoke, this-project-owned surface built on Phase 9's own ipynb-native
 (`docs/phases/phase-11.md`'s F7 write-up). **Not yet run** — new for 11a, no
 prior pass to compare against. `test/integration/notebook/
 interactiveWindow.test.ts` already proves the mechanism end to end (a real
-notebook, a real selection, a real run reaching a terminal state) with no
-live Viya connection needed at all; these boxes are about what a person
-actually sees, which that suite cannot check.
+notebook, a real selection, a real run reaching a terminal state, and — a
+third automated case — a fresh notebook getting created after the tracked
+one is closed) with no live Viya connection needed at all; these boxes are
+about what a person actually sees, which that suite cannot check.
 
 **Pre-work:** a Viya connection, the run target set to a Viya profile
 (`docs/running-python.md`'s own pre-work). Any `.py` file with at least two
@@ -40,10 +41,13 @@ lines is enough.
   every run. Define a variable in one cell's selection and reference it in
   the next; **expect** it resolves, proving the two cells share one
   interpreter namespace.
-- [ ] **11.4** **No selection is a no-op** — with nothing selected, run
-  **Run Selection in Interactive Window**. **Expect:** nothing happens — no
-  new cell, no error — matching Run Selection's own established behaviour
-  (`docs/running-python.md`).
+- [ ] **11.4** **No selection, or no active Python editor, informs rather
+  than silently doing nothing** — with nothing selected, run **Run Selection
+  in Interactive Window**; separately, run it with a non-Python file active.
+  **Expect:** an informational message ("Select some code to run." /
+  "Open a Python file to run it on SAS Viya.") and no new cell — matching
+  Run Selection's own established behaviour (`docs/running-python.md`), not
+  a silent no-op.
 - [ ] **11.5** **Reopening after close creates a fresh window, not an
   error** — close the interactive window's tab, then run **Run Selection in
   Interactive Window** again. **Expect:** a brand-new, empty interactive

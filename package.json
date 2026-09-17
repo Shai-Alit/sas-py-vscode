@@ -514,12 +514,12 @@
         },
         {
           "command": "pythonOnViya.openInteractiveWindow",
-          "when": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted",
+          "when": "editorLangId == python && isWorkspaceTrusted",
           "group": "pythonOnViya@3"
         },
         {
           "command": "pythonOnViya.runSelectionInInteractiveWindow",
-          "when": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted && editorHasSelection",
+          "when": "editorLangId == python && isWorkspaceTrusted && editorHasSelection",
           "group": "pythonOnViya@4"
         }
       ]

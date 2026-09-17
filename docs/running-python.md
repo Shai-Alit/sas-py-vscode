@@ -55,8 +55,9 @@ Viya: Run Selection in Interactive Window** appends your current selection to
 it as a new cell and runs it, building on whatever earlier cells left in the
 interpreter — the same namespace-sharing model as Run Selection above, just
 kept visible over time instead of overwritten. Both are in the Command
-Palette and the editor context menu; like Run File and Run Selection, an
-empty selection is a no-op rather than falling back to the current line.
+Palette and the editor context menu; like Run Selection, a non-Python active
+editor or an empty selection gets an informational message and no cell is
+added, rather than falling back to the current line.
 
 This is a purpose-built surface, not VS Code's own Python Interactive Window
 — that one belongs to `ms-toolsai.jupyter` and needs a local Jupyter kernel,

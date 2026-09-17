@@ -464,11 +464,14 @@ section above unless noted:
 
 ### Punch list
 
-- [ ] **11a — Interactive window (F7).** Code and automated tests done,
-  merged; **manual-test items 11.1–11.5 (`docs/dev/manual-tests/phase-11.md`)
-  not yet run** — this box stays unticked until Sean has. See this section's
-  own Runbook entry, below, for what shipped and what did not (the
-  no-connection case in particular — carried to 11c/B1, not built here).
+- [ ] **11a — Interactive window (F7).** Code and automated tests done, one
+  pre-push adversarial review completed and every finding folded in locally
+  — **not yet pushed or merged**; **manual-test items 11.1–11.5
+  (`docs/dev/manual-tests/phase-11.md`) not yet run** — this box stays
+  unticked until both have happened. See this section's own Runbook entry,
+  below, for what shipped and what did not (the no-connection case in
+  particular — carried to 11c/B1, not built here) and for the review-fix
+  entry covering what the first review round found.
 - [ ] **11b — CAS/SWAT SQL passthrough helper (F9).** Ship as documentation
   (`docs/cas-python-connection.md` or a new page) plus, if a snippet still
   reads as worthwhile once the doc is drafted, a small inserted-snippet
@@ -554,7 +557,114 @@ code needed. Nothing about *this* surface's own connection handling was
 built or found lacking — 11c/B1's broader connection-state work, if it
 changes that shared path, changes it for this surface too, for free.
 
-## Probe findings
+**Pre-push adversarial review, round 1 (2026-09-16), all findings fixed
+locally before any push.** Two blocking findings, four "should fix," several
+minor:
+
+- **Kernel-selection wait was effectively a fixed 10s delay on every run**,
+  not the real signal the module's own doc comment claimed —
+  `onDidChangeSelectedNotebooks` is edge-triggered, so a notebook already
+  selected (every run after the first into the same window) has no further
+  event to wait on, and the reviewer traced the new test's own
+  `this.timeout(40_000)` bump to exactly two of these timeouts firing in the
+  test host. **Fixed**: `registerInteractiveWindowCommands` now keeps one
+  long-lived `onDidChangeSelectedNotebooks` subscription for the extension's
+  whole lifetime, recording every notebook the controller has been selected
+  for in a module-scoped `Set`; `waitForControllerSelection` returns
+  immediately when the notebook is already in that set, and only a
+  genuinely fresh selection pays the bounded wait. The set is cleared on
+  deselection and on `onDidCloseNotebookDocument` so it cannot grow
+  unbounded across repeated open/close cycles.
+- **`notebook.cell.execute` was a single unguarded call**, unlike
+  `controller.test.ts`'s own 9a spike, which loops past exactly this kind of
+  transient kernel-resolution failure. **Fixed**: `executeCell` retries once
+  after a short pause on rejection, and surfaces a friendly
+  `showErrorMessage` if the retry also fails, rather than leaving VS Code's
+  own raw command-failure notification as the only feedback.
+- **The empty-selection/non-Python-editor guard was silent**, contradicting
+  its own doc comment's claim to mirror `runSelection`'s convention — that
+  command informs the user in both cases (`run/commands.ts`'s `runNow`).
+  **Fixed**: both guards now call `showInformationMessage` with the exact
+  same two strings `runNow` uses ("Open a Python file to run it on SAS
+  Viya." / "Select some code to run."), and the empty-selection guard also
+  now rejects a whitespace-only selection, matching `buildProgram`'s own
+  `text.trim() === ""` check exactly (it previously checked `isEmpty` only).
+  `docs/running-python.md` and manual-test item 11.4 updated to match —
+  both previously described (or, for 11.4, expected) an actually-silent
+  no-op.
+- **`getOrCreateInteractiveWindow` had an await race**: two calls landing
+  before the first `openNotebookDocument()` resolved could each create their
+  own notebook, orphaning one. **Fixed**: the in-flight creation promise is
+  now cached in a module-scoped variable and shared by any call that arrives
+  while it is outstanding.
+- **`applyEdit`'s boolean result was discarded**: a rejected edit (the
+  tracked notebook closing between the `isClosed` check and the edit) would
+  leave `notebook.cell.execute` targeting a cell range that was never
+  inserted. **Fixed**: a failed edit now retries once against a freshly
+  created notebook, and reports an error if that also fails, instead of
+  silently doing nothing.
+- **Three exports had no consumers** (`getOrCreateInteractiveWindow`,
+  `openInteractiveWindow`, `runSelectionInInteractiveWindow`), and their own
+  doc comments' claim that they were "exported for the integration test's
+  own direct use" was false — `interactiveWindow.test.ts`'s own doc comment
+  says the opposite, deliberately driving both commands through
+  `vscode.commands.executeCommand` rather than importing these directly.
+  **Fixed**: all three are no longer exported; only
+  `registerInteractiveWindowCommands` is.
+- **`reveal()` always opened `ViewColumn.Beside`**, which could open a
+  second editor of the same notebook when invoked while some other column
+  was already active. **Fixed**: `reveal` now checks
+  `vscode.window.tabGroups` for a column the notebook is already visible in
+  and reuses it, falling back to `Beside` only when it is not visible
+  anywhere.
+- **The context-menu entries for both commands were gated on
+  `pythonOnViya.runTarget == viya`**, a condition neither command's own code
+  ever checks — unlike Run File/Run Selection, which do gate on run target
+  in `runNow` itself. With the run target set to Local Python, both entries
+  vanished from the editor context menu while still working fine from the
+  Command Palette (which carries no such gate) — a real inconsistency, not a
+  deliberate design choice recorded anywhere. **Fixed**: the
+  `pythonOnViya.runTarget == viya` clause is removed from both
+  `editor/context` entries in `package.json`, so menu visibility now matches
+  what the commands actually do.
+- **Test gap**: "tracked notebook closed → a fresh one is created" was
+  manual-test item 11.5 only. **Fixed**: added as a third automated case in
+  `interactiveWindow.test.ts`.
+- **Not changed, recorded as a deliberate call**: `activeTextEditor` being a
+  focused cell inside the interactive window's own notebook (rather than the
+  originating `.py` file) is left as-is — running the command in that state
+  will append a cell from that cell's own selection, which is arguably
+  reasonable REPL behaviour (re-running an earlier cell's code into a new
+  one) rather than a bug, and building a special case for it would be new
+  design, not a fix to something broken. Flagged for whoever revisits this
+  surface, not solved here.
+- **Not changed, recorded as a deliberate call**: this module has no
+  unit-testable seam, unlike `notebookController.ts`/`run/commands.ts`,
+  which both split a handlers factory out from registration specifically so
+  ADR-0009's ".c8rc.json exclusion for vscode-only code" rule doesn't cost
+  unit coverage. Everything here — the guards, the retry logic, the index
+  arithmetic — is permanently outside the unit-coverage denominator,
+  covered only by `interactiveWindow.test.ts`'s integration suite.
+  Defensible at this module's size; not worth the extra indirection a
+  handlers-factory split would add for two commands this small.
+
+`npm run verify` green after these fixes (1,814 unit tests, coverage
+unchanged at 96.3/95.68/96.08/96.3 — `interactiveWindow.ts` stays
+`.c8rc.json`-excluded, so none of this fix set moves the unit-coverage
+numbers). `npm run test:integration` green too, via the documented
+`ELECTRON_RUN_AS_NODE`-strip workaround (457 passing — 454 pre-existing plus
+the two original interactive-window tests plus the one new "closed → fresh
+notebook" case), and the fix for the fixed-delay finding is directly visible
+in the numbers: the existing two-selection test dropped from needing
+`this.timeout(40_000)` (previously ~20s, two full kernel-selection timeouts)
+to completing in ~10.2s on one, so its own `this.timeout` was tightened to
+`20_000` to match. `npm run check:docs` green (VitePress build included).
+No second review round was judged necessary: every finding was either fixed
+exactly as recommended or is recorded above as a deliberate, narrow call,
+and nothing in the fix set touches new surface the first review didn't
+already cover.
+
+
 
 Findings in this section are numbered `11.x`, per the phase-scoped
 finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root

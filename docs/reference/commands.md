@@ -27,6 +27,8 @@ under their category.
 | Select Run Target | `Python on Viya: Select Run Target` | `pythonOnViya.selectRunTarget` |
 | Run File | `Python on Viya: Run File` | `pythonOnViya.runFile` |
 | Run Selection | `Python on Viya: Run Selection` | `pythonOnViya.runSelection` |
+| New Interactive Window | `Python on Viya: New Interactive Window` | `pythonOnViya.openInteractiveWindow` |
+| Run Selection in Interactive Window | `Python on Viya: Run Selection in Interactive Window` | `pythonOnViya.runSelectionInInteractiveWindow` |
 | Cancel | `Python on Viya: Cancel` | `pythonOnViya.cancelRun` |
 | Reset Python State | `Python on Viya: Reset Python State` | `pythonOnViya.resetPythonState` |
 | Show Environment | `Python on Viya: Show Environment` | `pythonOnViya.showEnvironment` |

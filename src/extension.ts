@@ -21,6 +21,7 @@ import { registerContentExplorer } from "./content/contentExplorer";
 import { registerDataExplorer } from "./data/dataExplorer";
 import { DataViewerPanelManager } from "./data/dataViewerPanel";
 import { TablePropertiesPanelManager } from "./data/tablePropertiesPanel";
+import { registerInteractiveWindowCommands } from "./notebook/interactiveWindow";
 import { registerNotebookController } from "./notebook/notebookController";
 import { registerProfileCommands } from "./profile/commands";
 import { ProfileStore } from "./profile/store";
@@ -370,7 +371,16 @@ export function activate(context: vscode.ExtensionContext): void {
   // Phase 9b: real execution, against `notebookBackendCache` — this
   // controller's own cache, wrapping its own compute session, not Run File's
   // (ADR-0035; `notebookController.ts`'s own doc comment).
-  registerNotebookController(context, output, notebookBackendCache);
+  const notebookController = registerNotebookController(
+    context,
+    output,
+    notebookBackendCache,
+  );
+
+  // Phase 11a: the interactive window, built on 9a's own `NOTEBOOK_TYPE` and
+  // this controller — see `interactiveWindow.ts`'s own doc comment for why
+  // this is a bespoke surface rather than VS Code's real Interactive Window.
+  registerInteractiveWindowCommands(context, notebookController);
 }
 
 export function deactivate(): void {

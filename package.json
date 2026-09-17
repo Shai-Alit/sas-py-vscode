@@ -144,6 +144,16 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.openInteractiveWindow",
+        "title": "%command.openInteractiveWindow.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.runSelectionInInteractiveWindow",
+        "title": "%command.runSelectionInInteractiveWindow.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "pythonOnViya.cancelRun",
         "title": "%command.cancelRun.title%",
         "category": "%extension.category%",
@@ -501,6 +511,16 @@
           "command": "pythonOnViya.runSelection",
           "when": "editorLangId == python && pythonOnViya.runTarget == viya && isWorkspaceTrusted && editorHasSelection",
           "group": "pythonOnViya@2"
+        },
+        {
+          "command": "pythonOnViya.openInteractiveWindow",
+          "when": "editorLangId == python && isWorkspaceTrusted",
+          "group": "pythonOnViya@3"
+        },
+        {
+          "command": "pythonOnViya.runSelectionInInteractiveWindow",
+          "when": "editorLangId == python && isWorkspaceTrusted && editorHasSelection",
+          "group": "pythonOnViya@4"
         }
       ]
     },

@@ -46,6 +46,27 @@ run often.
 If the active editor is not a Python file, or a Run Selection has nothing
 selected, the extension says so and does nothing.
 
+## The interactive window
+
+**Python on Viya: New Interactive Window** opens an empty, unsaved notebook
+beside your editor — a persistent, cell-by-cell history of what you have run,
+rather than the Result panel's "replaced by the next run" model. **Python on
+Viya: Run Selection in Interactive Window** appends your current selection to
+it as a new cell and runs it, building on whatever earlier cells left in the
+interpreter — the same namespace-sharing model as Run Selection above, just
+kept visible over time instead of overwritten. Both are in the Command
+Palette and the editor context menu; like Run File and Run Selection, an
+empty selection is a no-op rather than falling back to the current line.
+
+This is a purpose-built surface, not VS Code's own Python Interactive Window
+— that one belongs to `ms-toolsai.jupyter` and needs a local Jupyter kernel,
+which is exactly what this extension never assumes you have. What you get
+here is built on the same ipynb-native machinery [Notebooks](notebooks.md)
+uses: an ordinary code cell, run against your Viya compute session, with the
+same rich output and Problems-panel behaviour a `.ipynb` cell has. Closing
+the window's tab loses that history — it was never saved to a file, by
+design; if you want it to persist, use a real notebook instead.
+
 ## Watching the output
 
 Text output goes to a channel called **Python on Viya: Output**. It is

@@ -13,6 +13,8 @@
   "command.selectRunTarget.title": "Select Run Target",
   "command.runFile.title": "Run File",
   "command.runSelection.title": "Run Selection",
+  "command.openInteractiveWindow.title": "New Interactive Window",
+  "command.runSelectionInInteractiveWindow.title": "Run Selection in Interactive Window",
   "command.cancelRun.title": "Cancel",
   "command.resetPythonState.title": "Reset Python State",
   "command.showEnvironment.title": "Show Environment",

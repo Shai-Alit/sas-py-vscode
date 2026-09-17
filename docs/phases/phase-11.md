@@ -464,15 +464,11 @@ section above unless noted:
 
 ### Punch list
 
-- [ ] **11a — Interactive window (F7).** Short spike first (confirm an
-  unsaved, in-memory notebook of a custom `notebookType` opens and executes
-  end to end via the existing `NotebookController`); then a "New Interactive
-  Window" command and a "Run Selection/Line in Interactive Window" command
-  (from a `.py` editor, appends the selection as a new cell to the active
-  scratch notebook, creating one if none is open, and executes it). Manual
-  -test coverage for both commands, multiple scratch notebooks open at once,
-  and the no-connection case (ties into B1's own "always show something"
-  principle).
+- [ ] **11a — Interactive window (F7).** Code and automated tests done,
+  merged; **manual-test items 11.1–11.5 (`docs/dev/manual-tests/phase-11.md`)
+  not yet run** — this box stays unticked until Sean has. See this section's
+  own Runbook entry, below, for what shipped and what did not (the
+  no-connection case in particular — carried to 11c/B1, not built here).
 - [ ] **11b — CAS/SWAT SQL passthrough helper (F9).** Ship as documentation
   (`docs/cas-python-connection.md` or a new page) plus, if a snippet still
   reads as worthwhile once the doc is drafted, a small inserted-snippet
@@ -498,7 +494,65 @@ section above unless noted:
   no design exists yet beyond the long-tail sentence at the top of this
   file's Plan section.
 
----
+### 11a — Interactive window
+
+The short spike this slice's own punch-list entry called for turned out to
+already be settled: `controller.test.ts`'s 9a regression already proves an
+unsaved, in-memory notebook of `NOTEBOOK_TYPE` (`jupyter-notebook`, ADR-0024
+— not a custom type; this module's own doc comment and the Plan section
+above both originally assumed one would be needed, and neither was) opens
+and executes end to end via the real, activation-registered
+`NotebookController`, with no Jupyter extension installed. No new spike test
+was written; that existing one already carries the claim.
+
+**What shipped**, all in `src/notebook/interactiveWindow.ts`: two commands,
+`pythonOnViya.openInteractiveWindow` and
+`pythonOnViya.runSelectionInInteractiveWindow`, wired into
+`extension.ts` against the real `NotebookController`
+`registerNotebookController` already builds. A single module-scoped tracked
+notebook (re-created if closed) rather than a registry of many — nothing
+asked for more than one at a time. Kernel selection after creating a fresh
+notebook is asynchronous; rather than a fixed delay or a poll loop (the
+shape `controller.test.ts`'s own 9a spike used), this waits on
+`NotebookController.onDidChangeSelectedNotebooks` directly, bounded by a 10s
+timeout, then attempts the run regardless — the same "worst case is a
+one-time no-op" reasoning that spike's own retry loop relies on.
+
+**Run Selection in Interactive Window deliberately does not fall back to the
+current line** despite `phase-11.md`'s own "Run Selection/Line" phrasing
+(itself borrowed from VS Code's real command name): `run/commands.ts`'s
+`buildProgram` already decided, for the existing Run Selection command, that
+an empty selection means nothing to run, with no current-line fallback.
+Giving this command different behaviour for the same situation would be an
+unrequested inconsistency between two "run selection" commands in one
+extension, so it matches the existing one instead — a command that says what
+it does ("Run Selection in Interactive Window") rather than promising a
+fallback this project's own Run Selection has never had.
+
+**Verification:** `npm run verify` green (1,814 unit tests; coverage
+96.3/95.68/96.08/96.3 lines/branches/functions/statements, unchanged from
+Phase 10's baseline — `interactiveWindow.ts` is `.c8rc.json`-excluded, the
+unit tier cannot reach a module built entirely on `vscode`, the same rule
+`notebookController.ts` was already excluded under). `npm run test:integration`
+green (456 passing — 454 pre-existing plus two new, in
+`test/integration/notebook/interactiveWindow.test.ts`), run via the
+documented `ELECTRON_RUN_AS_NODE`-strip workaround this session rediscovered
+the need for the hard way before remembering it was already recorded.
+`npm run check:docs` green, including a new "The interactive window" section
+in `docs/running-python.md`. Manual-test items 11.1–11.5
+(`docs/dev/manual-tests/phase-11.md`) are written but **not yet run** — the
+punch-list box above stays unticked until Sean has.
+
+**What this slice deliberately did not build**: the no-connection case the
+original punch-list entry named. An interactive window with no active Viya
+connection opens fine (an empty notebook is not "blank with no
+explanation" — B1's own complaint is about a *tree* going silently empty,
+which does not apply here); a cell run with no connection fails through
+`notebookController.ts`'s own existing `backendCache.backendFor()` handling,
+the same path every other notebook cell already goes through with no new
+code needed. Nothing about *this* surface's own connection handling was
+built or found lacking — 11c/B1's broader connection-state work, if it
+changes that shared path, changes it for this surface too, for free.
 
 ## Probe findings
 

@@ -264,6 +264,16 @@ triaged against §3.1's parity table).**
      working-directory-diff capture picks them up completely unchanged. No
      change to `RichOutput`, the transport, or `richOutput.ts`.
 
+  **A tempting shortcut was probed and ruled out, not left unasked**: Finding
+  74/93's `>>>` REPL-prompt markers raised the question of whether the
+  embedded interpreter might already be running interactively enough to echo
+  a bare expression's value into the log somewhere unfiltered — which would
+  have meant reading the log differently instead of building the driver
+  above. **Finding 11.3** probed this directly against `verde` and found no:
+  the `>>>` prompt is cosmetic; neither test value ever appears anywhere in
+  either job's log. The driver-and-eval mechanism above is the only path to
+  this behaviour, not one option among several.
+
   **Why this cannot be scoped as an ordinary slice — it means amending
   ADR-0014, not working around it.** ADR-0014 states, project-wide, that
   "the bytes the editor holds are the bytes the interpreter reads, with
@@ -931,3 +941,60 @@ for whoever implements F9. **Cleanup:** the throwaway `casManagement` session
 and the compute session both `DELETE`d and confirmed `404` on read-back; the
 CAS session itself (`mysess`) was terminated by its own `cas ... terminate;`
 statement before that.
+
+### Finding 11.3 — A bare trailing expression's value is never produced anywhere in the log; the `>>>` prompt is cosmetic, not a real REPL echo
+
+Probed 2026-09-17, via `viya-api-probe`/`creds.json` against `verde` directly,
+prompted by a question raised while discussing **F10** (above): Finding
+74/93 (`docs/phases/phase-3.md`/`phase-5.md`) already established that
+`PROC PYTHON`'s log shows a genuine CPython startup banner and `>>>` REPL
+prompt markers on every run, even though the code arrives via file upload
+plus `infile=`, never typed interactively. That raised a real question worth
+settling before F10 assumes it needs a whole AST-splitting driver: **if the
+embedded interpreter is already behaving enough like a REPL to print `>>>`,
+does it also already call `sys.displayhook` on a bare trailing expression,
+with the value just sitting unfiltered in the log where nothing currently
+looks for it?** If so, F10 could have been a matter of *reading* the log
+differently, not changing what runs.
+
+**Documented:** nothing in `PROC PYTHON`'s own option list
+(`COMMAND ECHO INFILE RESTART SRC TERMINATE TIMEOUT`, ADR-0014 finding 34)
+or SAS's FedSQL/`PROC PYTHON` documentation describes an interactive
+display/echo behaviour for a submitted file's own trailing expression —
+Finding 93's own "accept and document" call was scoped to the banner and
+prompt characters themselves, not to what a REPL usually does with a
+result. This probe tests the specific, previously-unasked-and-unanswered
+question directly rather than infer an answer from the banner's presence.
+
+**Probe:** two throwaway compute-session jobs against `verde`'s "SAS Studio
+compute context" (the same one Finding 11.2 used), each a two-line file run
+via `proc python infile=<fileref>; run;` — first `x = 5` / bare `x` (a fresh
+session, printing the full startup banner), then, in the same session,
+`x = "hello"` / bare `x` (to disambiguate an auto-echoed `repr()` — which
+would show quotes — from some other artifact). Both jobs completed
+(`SYSCC`-equivalent: no error).
+
+**Observed:** the `>>>` prompt lines appear exactly as Finding 74/93 already
+described (one per submitted top-level statement, `normal`-typed, no
+source echoed alongside per ADR-0014). **Neither `5` nor `'hello'`/`hello`
+appears anywhere in either job's log, in any line, of any type** —
+checked across all four SAS log-line types this project's own
+`logFilter.ts` distinguishes (`normal`, `note`, `source`, `title`), not
+just the ones `isNoiseLine` currently drops. The full log content for both
+runs is recorded in this session's own transcript rather than duplicated
+here; the relevant fact is purely the absence.
+
+**What this establishes:** the `>>>` prompt is decorative — cosmetic
+interpreter-startup behaviour, not evidence of a real interactive
+read-eval-print loop underneath. `PROC PYTHON infile=` behaves, for a bare
+trailing expression, exactly like an ordinary non-interactive script run
+(`python file.py`): the value is evaluated and discarded, full stop. **This
+closes off one specific hypothesis for F10, cleanly and negatively**: there
+is no hidden channel to recover a bare expression's value from — nothing
+this project's own log filter is dropping, and no server-side flag left
+unprobed that would turn the echo on. F10's own mechanism (an AST-split
+"cell runner" that explicitly evaluates and displays the last expression)
+remains the only path to that behaviour; this finding removes a
+simpler-sounding alternative from consideration rather than opening one.
+**Cleanup:** both filerefs `DELETE`d (`204`), the session `DELETE`d (`204`)
+and confirmed gone (`404` on read-back).

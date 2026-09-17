@@ -1072,6 +1072,27 @@ list's staleness fails safe in both directions (Finding 10.7's closing
 paragraph), so the deferral is cheap. Worth revisiting if the list ever needs
 a second update.
 
+**Developer's independent adversarial pass, 2026-09-16 — no blocking
+findings; 10b merged.** Run against the full `git diff main` **before** the
+branch was pushed, per the working agreement. It confirmed the defects
+earlier rounds had already closed rather than reopening them (queue
+serialisation, the `stubPath` conflict check preceding the write,
+`.pyi`-vs-`.py` shadowing, case-folding on Windows and macOS, and path
+traversal via a malformed `top_level.txt` — `IDENTIFIER_PATTERN` rejects any
+segment containing `/` or `.` before it can reach `vscode.Uri.joinPath`),
+and spot-checked that every `10.x` citation in a code comment states
+something its finding actually establishes. One low-severity observation,
+verified and deliberately left alone: `topLevelSegment` truncates a dotted
+import name to its first segment, which is this module's documented
+namespace-package scope limit — see its "Why one path segment, not the
+dotted import name in full" doc section, and the matching user-facing entry
+under "What is not here yet" in `docs/python-environment.md` — not an
+oversight. Merged as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash
+`2842722`, in one commit and one push. **Phase 10 is complete with this
+merge** — 10a and 10b were its only two slices — so the Phase 10→11
+`HOUSEKEEPING.md` checkpoint is now the next thing due.
+
 ---
 
 ## Probe findings

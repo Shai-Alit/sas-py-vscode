@@ -38,10 +38,11 @@ slice-by-slice narrative that used to live here has moved to
 [`docs/status-archive.md`](docs/status-archive.md), per this file's own
 archival rule.
 
-**Phase 10 (Viya environment awareness) is in progress — 10a merged
-2026-09-15, 10b implemented, reviewed, fully manually tested (all of
-10.1–10.14 green), and opened as
-[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182).** 10a
+**Phase 10 (Viya environment awareness) is fully complete — 10a and 10b
+both merged, 2026-09-15 and 2026-09-16.** Those two slices were the whole
+phase. 10b (Pylance stub reflection) landed as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash
+`2842722`, fully manually tested beforehand (all of 10.1–10.14 green). 10a
 (`docs/phases/phase-10.md`) adds a
 local/remote package diff to the existing `Show environment` document (a
 new "Local comparison" section, reading the local interpreter
@@ -194,10 +195,9 @@ result under a full reload alone, a discrepancy neither finding explains.
 likely mistake in how that attempt was run, not a reproduced defect** — left
 in place verbatim as the historical record, no longer treated as blocking.
 §10.8 is marked passed on Finding 10.5's strength. **The full manual-test
-board for Phase 10 (items 10.1–10.14) is now all green.** **10b opened as
-[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182)**, branch
-`feat/phase-10b-pylance-stub-reflection` against `main` — awaiting review
-and merge.
+board for Phase 10 (items 10.1–10.14) is now all green.** **10b merged as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182)**, squash
+`2842722`, 2026-09-16.
 
 **Deep-dive pass on the open 10b branch, 2026-09-16 — the guard that was
 missing.** After several reviewer round trips on #182 that kept surfacing
@@ -238,9 +238,14 @@ passing**). Those are against freshly re-measured clean baselines of
 **1,796 unit / 453 integration** — note that earlier Phase 10 entries'
 `1813 unit; 443 integration` figures were taken with stale compiled tests
 still sitting in a local `out/` and are somewhat too high; `phase-10.md`'s
-Runbook entry explains the trap and how to avoid repeating it. **Not yet pushed** — the branch adds source and changes a
-documented invariant, so it goes to the developer's independent adversarial
-pass first, per the working agreement.
+Runbook entry explains the trap and how to avoid repeating it. The branch
+adds source and changes a documented invariant, so it went to the
+developer's independent adversarial pass **before** the push, per the
+working agreement. That pass returned **no blocking findings**; its one
+low-severity observation (`topLevelSegment`'s namespace-package truncation)
+was verified as documented, deliberate behaviour rather than a defect.
+Merged as squash `2842722`, 2026-09-16 — one commit, one push, one CI and
+reviewer cycle.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -440,7 +445,7 @@ housekeeping checkpoint. Per-phase detail
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14; its one deferred gap (tree icon refresh) was root-caused and fixed 2026-09-15 — `onDidChangeTreeData` matches a fired element by object identity, not `TreeItem.id` — and live-confirmed, so nothing from Phase 8 is carried forward. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
-| 10 — Viya environment awareness | 🔶 **in progress — 10a merged 2026-09-15** (local/remote diff + Search environment `QuickPick`). Final PR [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), squash `62cf217`. **10b (Pylance stub reflection) implemented 2026-09-15; a pre-push self-review and then the developer's own independent adversarial pass both ran the same day, together finding six real defects, all fixed on the branch**; opened as [PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182). **A deep-dive pass 2026-09-16 then found the guard all earlier rounds had missed — `stubPath` outranks Pylance's own bundled typeshed, so a generated stub silently replaced real stdlib and third-party types (Finding 10.7); fixed via the new `src/run/typeshedNames.ts`, with three smaller fixes alongside.** Finding 10.6 also closed the probe byte-cap question (11,049 bytes, 1.05% of the cap). `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Awaiting the developer's adversarial pass before the fixes are pushed. | `docs/phases/phase-10.md` |
+| 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + Search environment `QuickPick`; Pylance stub reflection). 10a as PR [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), squash `62cf217`. **10b implemented 2026-09-15; a pre-push self-review and then the developer's own independent adversarial pass both ran the same day, together finding six real defects, all fixed on the branch.** **A deep-dive pass 2026-09-16 then found the guard all earlier rounds had missed — `stubPath` outranks Pylance's own bundled typeshed, so a generated stub silently replaced real stdlib and third-party types (Finding 10.7); fixed via the new `src/run/typeshedNames.ts`, with three smaller fixes alongside.** Finding 10.6 also closed the probe byte-cap question (11,049 bytes, 1.05% of the cap). A second independent adversarial pass over the whole branch returned no blocking findings. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Merged as [PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `2842722`. | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 

@@ -56,7 +56,23 @@
  * offered to begin with." A namespace package's own top-level name still
  * stops being reported as fully missing; its submodules are unaffected
  * either way, exactly as they were before this feature existed.
+ *
+ * ## The third thing a generated stub can shadow
+ *
+ * Pyright resolves `stubPath` ahead of *everything* — so there are exactly
+ * three sources a generated stub can shadow, and this feature needs a guard
+ * for each. `selectPackagesToStub` (`./stubSyncPlan.ts`) covers installed
+ * local packages; {@link excludeWorkspaceOwnedNames} below covers the
+ * workspace's own source; {@link resolvesFromBundledTypeshed}
+ * (`./typeshedNames.ts`), applied in {@link generateStubTree}, covers
+ * Pylance's own bundled typeshed — both its stdlib half and its third-party
+ * stubs. That third one is the only one whose failure is silent, and it was
+ * missing until Finding 10.7 (`docs/phases/phase-10.md`'s Probe findings)
+ * measured it; see `./typeshedNames.ts`'s own doc comment for what each half
+ * costs.
  */
+
+import { resolvesFromBundledTypeshed } from "./typeshedNames";
 
 /** One package to generate a stub for — the minimal shape this module needs,
  * restated so it needs no import from `../backend/backend`'s `PythonPackage`
@@ -80,6 +96,20 @@ export interface GeneratedStubFile {
  * (an empty string, a stray non-identifier character) is skipped rather than
  * written as a directory name no `import` statement could ever reach anyway. */
 const IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** A name Python itself owns, which a `top_level.txt` can still list — live
+ * data from the deployment Finding 10.6 probed contains `__pycache__`, which
+ * {@link IDENTIFIER_PATTERN} accepts, so without this the generator would
+ * create a `__pycache__/__init__.pyi` in the user's workspace for a name no
+ * `import` statement ever names. Inert rather than harmful, but still a
+ * directory this feature has no business writing.
+ *
+ * A *single* leading underscore is deliberately not covered: `_yaml` (PyYAML)
+ * and `_cffi_backend` (cffi) are real importable top-level names, both present
+ * in that same probe's data. */
+function isPythonOwnedName(segment: string): boolean {
+  return segment.startsWith("__");
+}
 
 /** The first dotted segment of an import name — see this module's own doc
  * comment, "Why one path segment, not the dotted import name in full".
@@ -133,6 +163,17 @@ function stubFileContent(pkg: StubbablePackage): string {
  * can both ship a same-named compatibility shim), which one's version
  * populates the generated comment is at least deterministic rather than
  * input-order-dependent.
+ *
+ * Three kinds of name are dropped rather than stubbed, all three of them
+ * measured cases rather than hypothetical ones — Finding 10.6 found every one
+ * of these in a single live deployment's `top_level.txt` data: a name that is
+ * not a legal Python identifier ({@link IDENTIFIER_PATTERN} —
+ * `nvidia/cusparselt`, `tableauhyperapi/impl`, `wrapt-stubs`), a name Python
+ * itself owns ({@link isPythonOwnedName} — `__pycache__`), and a name Pylance
+ * already resolves from its own bundled typeshed
+ * ({@link resolvesFromBundledTypeshed}). All three exclusions are
+ * unconditional and need nothing from the caller, which is why they live here
+ * rather than in `./stubSyncPlan.ts` alongside the diff-dependent ones.
  */
 export function generateStubTree(
   packages: readonly StubbablePackage[],
@@ -144,6 +185,8 @@ export function generateStubTree(
     for (const importName of pkg.importNames) {
       const segment = topLevelSegment(importName);
       if (!IDENTIFIER_PATTERN.test(segment)) continue;
+      if (isPythonOwnedName(segment)) continue;
+      if (resolvesFromBundledTypeshed(segment)) continue;
       if (!byTopLevelName.has(segment)) byTopLevelName.set(segment, pkg);
     }
   }

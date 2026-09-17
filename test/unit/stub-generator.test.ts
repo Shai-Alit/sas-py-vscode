@@ -41,34 +41,96 @@ describe("stubGenerator.ts — 10b's Pylance stub tree", () => {
     });
 
     it("generates one file per import name when a distribution provides several", () => {
+      // Real `top_level.txt` data from the live Viya deployment Finding 10.6
+      // probed — matplotlib ships three separate top-level names.
       const files = generateStubTree([
-        pkg("PyYAML", "6.0.3", ["_yaml", "yaml"]),
+        pkg("matplotlib", "3.10.0", ["matplotlib", "mpl_toolkits", "pylab"]),
       ]);
       assert.deepEqual(files.map((file) => file.relativePath).sort(), [
-        "_yaml/__init__.pyi",
-        "yaml/__init__.pyi",
+        "matplotlib/__init__.pyi",
+        "mpl_toolkits/__init__.pyi",
+        "pylab/__init__.pyi",
       ]);
     });
 
     it("stubs only the top-level segment of a dotted (namespace-package) import name", () => {
-      // A catch-all `google/__init__.pyi` cannot make `google.protobuf`
-      // resolve as a submodule — see this module's own doc comment, "Why one
-      // path segment, not the dotted import name in full". Still stubs the
+      // A catch-all `zope/__init__.pyi` cannot make `zope.interface` resolve
+      // as a submodule — see this module's own doc comment, "Why one path
+      // segment, not the dotted import name in full". Still stubs the
       // top-level name itself, which is the honest claim this feature makes.
       const files = generateStubTree([
-        pkg("protobuf", "5.0.0", ["google.protobuf"]),
+        pkg("zope-interface", "7.2", ["zope.interface"]),
       ]);
       assert.deepEqual(
         files.map((file) => file.relativePath),
-        ["google/__init__.pyi"],
+        ["zope/__init__.pyi"],
       );
     });
 
     it("skips an import name that is not a legal Python identifier", () => {
+      // Not hypothetical: Finding 10.6's live probe found `nvidia/cusparselt`,
+      // `tableauhyperapi/impl` and `wrapt-stubs` in real `top_level.txt` data.
       const files = generateStubTree([
         pkg("oddpkg", "1.0.0", ["", "not-an-identifier", "9startswithdigit"]),
       ]);
       assert.deepEqual(files, []);
+    });
+
+    it("skips a name Python itself owns, but keeps a single-underscore one", () => {
+      // Both names are live Finding 10.6 data from one deployment:
+      // `__pycache__` really is listed in a shipped `top_level.txt`, and
+      // `_yaml` really is an importable top-level name (PyYAML's C
+      // extension). A blanket "starts with an underscore" rule would throw
+      // the second away too, so the guard is deliberately `__` only.
+      const files = generateStubTree([
+        pkg("oddwheel", "1.0.0", ["__pycache__"]),
+        pkg("PyYAML", "6.0.3", ["_yaml"]),
+      ]);
+      assert.deepEqual(
+        files.map((file) => file.relativePath),
+        ["_yaml/__init__.pyi"],
+      );
+    });
+
+    it("never stubs a stdlib name, however the package list reached it", () => {
+      // Finding 10.7: `stubPath` outranks typeshed's stdlib, so a generated
+      // `typing/__init__.pyi` silently disabled *all* real type checking for
+      // `typing` workspace-wide — measured as 1 error to 0 against pyright
+      // 1.1.414. Backport distributions named after a stdlib module are real
+      // (`typing`, `dataclasses`, `contextvars`), and neither the local-diff
+      // nor the workspace-root exclusion can ever see them: the stdlib is not
+      // in `site-packages` and not in the workspace.
+      const files = generateStubTree([
+        pkg("typing", "3.10.0.0", ["typing"]),
+        pkg("dataclasses", "0.8", ["dataclasses"]),
+      ]);
+      assert.deepEqual(files, []);
+    });
+
+    it("never stubs a name Pylance already has bundled third-party stubs for, but still stubs its siblings", () => {
+      // Finding 10.7's second half: for a typeshed-covered name, Pylance
+      // already reports `reportMissingModuleSource` — the warning this whole
+      // feature exists to reach — *and* supplies real types with it. A
+      // generated catch-all keeps the identical warning and throws the types
+      // away, so stubbing it is pure loss. `yaml` is typeshed-covered;
+      // PyYAML's other top-level name, `_yaml`, is not.
+      const files = generateStubTree([
+        pkg("PyYAML", "6.0.3", ["_yaml", "yaml"]),
+      ]);
+      assert.deepEqual(
+        files.map((file) => file.relativePath),
+        ["_yaml/__init__.pyi"],
+      );
+    });
+
+    it("applies the typeshed exclusion to a dotted import name's top-level segment", () => {
+      // protobuf's `google.protobuf` reduces to `google`, which typeshed
+      // covers — so the whole entry drops rather than producing a `google/`
+      // stub that would shadow typeshed's own.
+      assert.deepEqual(
+        generateStubTree([pkg("protobuf", "5.0.0", ["google.protobuf"])]),
+        [],
+      );
     });
 
     it("de-duplicates when two packages claim the same top-level import name, deterministically", () => {

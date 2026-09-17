@@ -100,11 +100,16 @@ export type PylanceStubSyncResult =
    * see `stubGenerator.ts`'s own doc comment on `StubTreeSyncPlan.changed`
    * for why the distinction matters. */
   | { readonly kind: "synced"; readonly changed: boolean }
-  /** Nothing needed stubbing this time — the desired tree is empty. Any
-   * previously-generated stubs are still pruned (a package that stops being
-   * `remoteOnly` must not leave a stale stub behind), but `stubPath` itself
-   * is left untouched: there is nothing useful to point it at, and setting
-   * it for an empty directory would only be a needless write. */
+  /** Nothing needed stubbing this time — the desired tree came out empty and
+   * there was nothing stale to prune either. Note "the *desired* tree",
+   * not "the caller passed no packages": every package it did pass can still
+   * be filtered out on the way through (a name the workspace root owns, a
+   * name that is not a legal identifier, a name Pylance already resolves from
+   * its own typeshed), which is why this is keyed off what
+   * {@link writeStubTree} actually wrote rather than off `packages.length`.
+   * `stubPath` is left untouched here: there is nothing useful to point it
+   * at, and pointing it at a directory this sync never created would earn a
+   * "not a valid directory" complaint from Pylance for no benefit. */
   | { readonly kind: "nothing-to-stub" }
   /** No workspace folder is open — there is nowhere on disk to write a stub
    * tree, and no `settings.json` for a workspace-scoped `stubPath` to live
@@ -245,12 +250,34 @@ const realFs: RealFs = {
     ),
 };
 
+/** What {@link writeStubTree} did, as the two independent facts its caller
+ * needs — see that function's own doc comment for why one boolean could not
+ * carry both. */
+export interface StubTreeWriteResult {
+  /** Whether the tree's own top-level directory listing actually changed —
+   * `StubTreeSyncPlan.changed` (`stubGenerator.ts`), verbatim. Drives the
+   * "reload the window" notice. */
+  readonly changed: boolean;
+  /** How many stub files this sync wrote — i.e. the size of the desired set
+   * after every exclusion. Zero means there is no generated tree on disk for
+   * `python.analysis.stubPath` to point at. */
+  readonly wrote: number;
+}
+
 /** Writes (or prunes) the stub tree at `stubRoot` for `packages`, excluding
  * any top-level name `workspaceRoot` already owns as real source
- * (`excludeWorkspaceOwnedNames`). Returns whether the tree's own top-level
- * listing actually changed — see `StubTreeSyncPlan.changed`'s doc comment
- * (`stubGenerator.ts`) for why that is not the same question as "was
- * anything written".
+ * (`excludeWorkspaceOwnedNames`).
+ *
+ * Returns both halves of what the caller needs, because they are genuinely
+ * different questions and a single boolean answered only one of them.
+ * `changed` is "did the top-level listing move" — see
+ * `StubTreeSyncPlan.changed`'s doc comment (`stubGenerator.ts`). `wrote` is
+ * "is there a tree on disk at all". A caller that conflates them writes
+ * `stubPath` for a directory that was never created: `packages` can be
+ * non-empty and still reduce to an empty desired set, once
+ * `excludeWorkspaceOwnedNames` and `generateStubTree`'s own
+ * identifier/typeshed exclusions have had their say. Found by this session's
+ * pre-push pass on PR #182, before it could reach a reviewer.
  *
  * Exported for `test/integration/run/pylance-stub-sync.test.ts`: this is the
  * one piece of `syncPylanceStubs`'s own logic that does not need a real open
@@ -264,7 +291,7 @@ export async function writeStubTree(
   stubRoot: vscode.Uri,
   packages: readonly StubbablePackage[],
   fs: RealFs,
-): Promise<boolean> {
+): Promise<StubTreeWriteResult> {
   const generated = generateStubTree(packages);
   const workspaceNames = await fs.listWorkspaceRootNames(workspaceRoot);
   const desired = excludeWorkspaceOwnedNames(generated, workspaceNames);
@@ -307,7 +334,7 @@ export async function writeStubTree(
     await fs.writeFile(gitignoreUri, GITIGNORE_CONTENT);
   }
 
-  return plan.changed;
+  return { changed: plan.changed, wrote: plan.toWrite.length };
 }
 
 /** `error instanceof Error ? error.message : String(error)` — the same
@@ -399,21 +426,33 @@ async function syncPylanceStubsNow(
     return { kind: "stub-path-conflict", currentValue: decision.currentValue };
   }
 
-  let changed: boolean;
+  let written: StubTreeWriteResult;
   try {
-    changed = await writeStubTree(folder.uri, stubRoot, packages, realFs);
+    written = await writeStubTree(folder.uri, stubRoot, packages, realFs);
   } catch (error) {
     return { kind: "write-failed", detail: describeError(error) };
   }
+  let { changed } = written;
 
   // A `changed` write here means stale stubs from a previous sync were just
   // pruned (10a's diff no longer lists anything `remoteOnly`) — that still
   // needs to reach the caller as `"synced"` so a reload notice fires and
   // Pylance stops reading the now-deleted stub tree. Only report
   // `"nothing-to-stub"` when there was truly nothing to do.
-  if (packages.length === 0 && !changed) return { kind: "nothing-to-stub" };
+  //
+  // Keyed off `written.wrote`, not `packages.length`: a caller can hand over
+  // packages that all get filtered out on the way through, and the two
+  // questions have different answers in exactly that case.
+  if (written.wrote === 0 && !changed) return { kind: "nothing-to-stub" };
 
-  if (decision.kind === "write") {
+  // `written.wrote > 0` is the precondition for pointing `stubPath` at the
+  // tree: `writeStubTree` only creates `stubRoot` as a side effect of writing
+  // a stub file into it, so setting the option when nothing was written names
+  // a directory that does not exist — Pylance answers that with a "stubPath
+  // ... is not a valid directory" complaint, and this sync would have claimed
+  // `changed: true` for it, nagging the user to reload a window for a tree
+  // that is not there.
+  if (written.wrote > 0 && decision.kind === "write") {
     try {
       await config.update(
         STUB_PATH_SETTING_KEY,

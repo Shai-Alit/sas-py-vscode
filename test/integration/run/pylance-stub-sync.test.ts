@@ -167,9 +167,9 @@ describe("writeStubTree — the stub-tree write/prune logic pylanceStubSync.ts u
   it("writes a stub file and a .gitignore alongside the tree, and reports changed:true", async () => {
     const { fs, events } = fakeRealFs();
 
-    const changed = await writeStubTree(workspaceRoot, stubRoot, [numpy], fs);
+    const result = await writeStubTree(workspaceRoot, stubRoot, [numpy], fs);
 
-    assert.equal(changed, true);
+    assert.deepEqual(result, { changed: true, wrote: 1 });
     assert.ok(
       events.some((e) => e === `write:${stubRoot.path}/numpy/__init__.pyi`),
       `expected a write for the numpy stub; got: ${JSON.stringify(events)}`,
@@ -192,9 +192,9 @@ describe("writeStubTree — the stub-tree write/prune logic pylanceStubSync.ts u
   it("prunes a stale top-level directory no longer in the desired set", async () => {
     const { fs, events } = fakeRealFs({ topLevelDirectories: ["oldpkg"] });
 
-    const changed = await writeStubTree(workspaceRoot, stubRoot, [numpy], fs);
+    const result = await writeStubTree(workspaceRoot, stubRoot, [numpy], fs);
 
-    assert.equal(changed, true);
+    assert.deepEqual(result, { changed: true, wrote: 1 });
     assert.ok(
       events.some((e) => e === `delete:${stubRoot.path}/oldpkg`),
       `expected oldpkg to be deleted; got: ${JSON.stringify(events)}`,
@@ -208,9 +208,9 @@ describe("writeStubTree — the stub-tree write/prune logic pylanceStubSync.ts u
   it("writes nothing at all — including no .gitignore — when there is nothing to stub and nothing to prune", async () => {
     const { fs, events } = fakeRealFs();
 
-    const changed = await writeStubTree(workspaceRoot, stubRoot, [], fs);
+    const result = await writeStubTree(workspaceRoot, stubRoot, [], fs);
 
-    assert.equal(changed, false);
+    assert.deepEqual(result, { changed: false, wrote: 0 });
     assert.deepEqual(events, []);
   });
 
@@ -220,9 +220,12 @@ describe("writeStubTree — the stub-tree write/prune logic pylanceStubSync.ts u
     // question as nothing changed.
     const { fs, events } = fakeRealFs({ topLevelDirectories: ["stale"] });
 
-    const changed = await writeStubTree(workspaceRoot, stubRoot, [], fs);
+    const result = await writeStubTree(workspaceRoot, stubRoot, [], fs);
 
-    assert.equal(changed, true);
+    // `wrote: 0` alongside `changed: true` is the exact pair
+    // `syncPylanceStubsNow` needs kept apart: a reload is worth announcing,
+    // but there is no tree left for `stubPath` to point at.
+    assert.deepEqual(result, { changed: true, wrote: 0 });
     assert.ok(events.some((e) => e === `delete:${stubRoot.path}/stale`));
     assert.ok(
       !events.some((e) => e.endsWith(".gitignore")),
@@ -233,9 +236,12 @@ describe("writeStubTree — the stub-tree write/prune logic pylanceStubSync.ts u
   it("excludes a package whose top-level name the workspace root already owns", async () => {
     const { fs, events } = fakeRealFs({ workspaceRootNames: ["numpy"] });
 
-    const changed = await writeStubTree(workspaceRoot, stubRoot, [numpy], fs);
+    const result = await writeStubTree(workspaceRoot, stubRoot, [numpy], fs);
 
-    assert.equal(changed, false);
+    // A non-empty `packages` that still reduces to `wrote: 0` — the case
+    // that made `syncPylanceStubsNow` stop keying its `stubPath` write off
+    // `packages.length`.
+    assert.deepEqual(result, { changed: false, wrote: 0 });
     assert.deepEqual(events, []);
   });
 

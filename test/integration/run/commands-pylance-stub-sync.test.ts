@@ -135,6 +135,24 @@ function fakePylanceStubs(result: PylanceStubSyncResult): {
   };
 }
 
+/** Like {@link fakePylanceStubs}, but answers a different scripted result on
+ * each successive call — for pinning the conflict-notice re-arming logic,
+ * which needs more than one fresh probe in a row to see anything interesting
+ * happen. The last entry repeats for any call beyond the scripted sequence. */
+function fakePylanceStubsSequence(results: readonly PylanceStubSyncResult[]): {
+  readonly pylanceStubs: RunCommandDeps["pylanceStubs"];
+} {
+  const queue = [...results];
+  let last: PylanceStubSyncResult = queue[0] ?? { kind: "no-workspace" };
+  return {
+    pylanceStubs: () => {
+      const next = queue.shift();
+      if (next !== undefined) last = next;
+      return Promise.resolve(last);
+    },
+  };
+}
+
 describe("run commands — 10b Pylance stub sync wiring (fresh probe)", () => {
   let torndown: (() => void)[] = [];
 
@@ -341,6 +359,40 @@ describe("run commands — 10b Pylance stub sync wiring (fresh probe)", () => {
       recorder.informed.length,
       1,
       `expected exactly one conflict notice across two fresh probes; got: ${JSON.stringify(recorder.informed)}`,
+    );
+  });
+
+  it("re-arms the stub-path-conflict notice once the conflict clears, even if the same value recurs later", async () => {
+    // A PR #182 review round found the dedup above never reset
+    // `lastInformedStubPathConflict`, so a conflict that cleared and later
+    // recurred with the exact same value would stay silently suppressed
+    // forever — indistinguishable from "still the same conflict as before".
+    const recorder = fakeRecorder();
+    const conflict = {
+      kind: "stub-path-conflict" as const,
+      currentValue: "./my-own-stubs",
+    };
+    const { pylanceStubs } = fakePylanceStubsSequence([
+      conflict,
+      { kind: "synced", changed: true }, // resolved in between
+      conflict, // recurs with the same value
+    ]);
+    const { channel } = recordingLog("10b wiring — conflict re-arm");
+    const { targets, handlers } = build(
+      { ...recorder.deps, pylanceStubs },
+      channel,
+    );
+    await targets.setKind("viya");
+
+    await handlers.showEnvironment();
+    await handlers.refreshEnvironment();
+    await handlers.refreshEnvironment();
+
+    assert.equal(
+      recorder.informed.filter((message) => message.includes("./my-own-stubs"))
+        .length,
+      2,
+      `expected the conflict notice once for each of its two separate occurrences; got: ${JSON.stringify(recorder.informed)}`,
     );
   });
 

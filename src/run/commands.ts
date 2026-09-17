@@ -774,10 +774,16 @@ export function createRunCommandHandlers(
       const outcome: StubSyncOutcome = await sync(toStub);
       const report = describeStubSyncOutcome(outcome);
       if (report.logWarning !== undefined) log.warn(report.logWarning);
-      if (
-        report.conflictValue !== undefined &&
-        report.conflictValue !== lastInformedStubPathConflict
-      ) {
+      if (report.conflictValue === undefined) {
+        // The conflict is gone (the setting was unset, or this sync's own
+        // `stubPath` write finally succeeded) — re-arm the notice. Without
+        // this, a conflict that clears and later *recurs* with the exact
+        // same value would stay silently suppressed forever: a PR #182
+        // review round found the original version never reset this field at
+        // all, so "same value as last time" and "same value, reintroduced
+        // after being resolved" were indistinguishable.
+        lastInformedStubPathConflict = undefined;
+      } else if (report.conflictValue !== lastInformedStubPathConflict) {
         lastInformedStubPathConflict = report.conflictValue;
         // "Skipped generating", not "generated but left untouched": a PR
         // #182 review round found a conflict must stop `syncPylanceStubs`

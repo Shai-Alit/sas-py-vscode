@@ -59,10 +59,12 @@ called out under **Changed** with a migration note.
   environment, and points Pylance's `python.analysis.stubPath` setting at
   them (added only if nothing already set that setting) — turning a hard
   `reportMissingImports` error into, at worst, a milder "stub only" warning.
-  A package already resolvable locally is never stubbed, so its own real
-  type information is never replaced by a generic placeholder — and neither
-  is a top-level name that is already your own file or folder at the
-  workspace root, even if nothing local resolves it. See [The Python
+  Nothing that already resolves to real types is given a placeholder: not a
+  package you have installed locally, not a top-level name that is already
+  your own file or folder at the workspace root, and not anything Pylance
+  already ships bundled stubs for — which includes the whole standard library
+  and several hundred popular third-party packages, where a generic stub
+  would be a downgrade rather than an improvement. See [The Python
   environment](docs/python-environment.md#quieting-pylances-false-unresolved-import-warnings).
 
 ### Changed

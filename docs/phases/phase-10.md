@@ -987,6 +987,91 @@ changed" mechanism. Not independently verified beyond this one observation;
 noted for whoever next investigates Finding 10.3/10.5 rather than asserted
 as settled.
 
+**Deep-dive pass before the adversarial review, 2026-09-16 — the guard that
+was missing, plus two seams next to it.** Undertaken because 10b had been
+round-tripped through several reviewer cycles without converging, so this
+pass went after the *class* of defect rather than the individual findings.
+The organising question turned out to be one nobody had asked: pyright
+resolves `stubPath` **ahead of everything else**, so what exactly can a
+generated stub shadow? The answer is three things, and 10b guarded two of
+them (installed local packages, via `selectPackagesToStub`; the workspace's
+own source, via `excludeWorkspaceOwnedNames`). The third — Pylance's own
+bundled typeshed, both its stdlib half and its third-party stubs — was
+unguarded, and is the only one of the three whose failure mode is silent.
+Measured directly against pyright 1.1.414 and recorded as **Finding 10.7**;
+the live payload measurement that closed the byte-cap question left open at
+the end of the previous session is **Finding 10.6**.
+
+Four changes came out of it, all local, none of them an architecture change:
+
+1. **The typeshed guard** (`src/run/typeshedNames.ts`, new). A generated
+   data module of 554 case-folded top-level names — typeshed's stdlib and
+   third-party halves — with a single `resolvesFromBundledTypeshed()`
+   predicate, applied as one more `continue` in `generateStubTree`. It is a
+   pure module (no `vscode` import), so it lands in the unit coverage tier
+   like its siblings.
+2. **`writeStubTree` now returns `{ changed, wrote }`** rather than one
+   boolean (`src/run/pylanceStubSync.ts`). The old shape forced
+   `syncPylanceStubsNow` to key its `stubPath` write off `packages.length`,
+   which is a different question from "did anything actually get written" —
+   and with the new exclusion those two answers diverge far more often. A
+   non-empty package list that filters down to nothing wrote no files, so
+   `stubRoot` was never created, yet the setting was pointed at it and
+   `changed: true` was claimed: Pylance answers that with a "stubPath ... is
+   not a valid directory" complaint, and the user gets nagged to reload a
+   window for a tree that is not there.
+3. **`EnvironmentStore` now validates what it reads back**
+   (`src/run/environmentStore.ts`). `globalState` has no schema version and
+   `Memento.get<T>()` casts unchecked, so every entry written before 10b made
+   `PythonPackage.importNames` required is a typed lie the moment this build
+   reads it. Nothing on today's cache-hit path dereferences it — this guards
+   the seam rather than fixing a live crash — and a failing entry is
+   *dropped* rather than defaulted, because the real import names are not
+   recoverable from what was stored and one silent re-probe is the right
+   cost.
+4. **`__pycache__` is no longer stubbed** (Finding 10.6's incidental
+   observation, above).
+
+Verified on the developer's machine, whole branch, once: `npm run verify`
+green end to end (`format:check`, `lint`, `typecheck`, `check:copyright`,
+`check:secrets` — 502 files scanned, `check:coverage-scope`,
+`check:contracts`, `build`, `coverage`) at **1,814 unit tests passing** and
+coverage **96.3 / 95.68 / 96.08 / 96.3** (statements / branches / functions /
+lines); `src/run` itself at 100% branch coverage. `npm run test:integration`
+green at **454 passing**. Both figures are against freshly measured clean
+baselines of **1,796 unit / 453 integration** at this branch's head commit —
+so this pass adds 18 unit tests and 1 integration test, which is exactly the
+number written.
+
+_Two local-environment traps worth knowing, both the same root cause, neither
+a repository defect. `tsc` does not delete orphaned output, and **both**
+runners take everything they find under `out/`: the integration runner loads
+every `.test.js` in its directory, and `.mocharc.json`'s spec glob is
+`out/test/unit/**/*.test.js`. A compiled test whose `.ts` no longer exists
+therefore keeps running forever._
+
+- _It can **fail** and look exactly like a real regression — here a pre-10b
+  `environment-store.test.js` with no source behind it failed against the new
+  validator, and cost a real detour before it was recognised._
+- _More insidiously, it can **pass** and silently inflate the counts this
+  file records. The `1813 unit; 443 integration` figures in earlier entries
+  above were measured that way and are ~17 and ~10 too high; they are left as
+  written, since they are the historical record of what those sessions
+  actually saw. CI never sees any of this (clean checkout, empty `out/`)._
+
+_`rm -rf out && npm run build && npm run compile:test` settles it locally,
+and is worth doing before recording any number in this file._
+
+**Deferred, not done** — enumerating Pylance's bundled `typeshed-fallback/`
+directory at runtime instead of shipping a generated list. It is the more
+robust design and would never go stale, but it needs a new filesystem port
+and a new parameter threaded through `generateStubTree` and
+`selectPackagesToStub` — an architecture change, which this project's working
+agreement says a session does not take unilaterally mid-slice. The static
+list's staleness fails safe in both directions (Finding 10.7's closing
+paragraph), so the deferral is cheap. Worth revisiting if the list ever needs
+a second update.
+
 ---
 
 ## Probe findings
@@ -1131,9 +1216,120 @@ kind, suggesting Pylance live-detects a local-interpreter change through a
 different path than it does a `stubPath`/stub-tree change (Finding 10.1) —
 noted, not independently verified.
 
-If 10b's implementation turns up a further, genuine Viya-side surprise (for
-example, whether an interpreter with an unusually large installed set makes
-the existing Stage-2 probe's fixed byte cap, `MAX_ENVIRONMENT_PROBE_BYTES`,
-worth revisiting now that the payload is growing an import-name list per
-package — untouched so far, but newly adjacent to this phase's own
-probe-payload widening), that would be Finding 10.6.
+**Finding 10.6 (2026-09-16) — the widened probe payload measured live: 11,049
+bytes for 264 distributions, 1.05% of `MAX_ENVIRONMENT_PROBE_BYTES`. The byte
+cap does not need revisiting.** This is the question the previous revision of
+this section anticipated as "would be Finding 10.6", now answered. Probed
+against the deployment's **SAS Studio compute context** (not the default first
+item a context listing returns, which on this deployment is a Visual
+Forecasting context with a different interpreter), running the same
+`importlib.metadata` walk the Stage-2 probe uses, widened to the
+`[name, version, importNames]` triples 10b introduced.
+
+| measured | value |
+| --- | --- |
+| interpreter | Python 3.12.12 |
+| distributions | 264 |
+| serialized payload | 11,049 bytes |
+| share of the 1 MiB cap | **1.05%** |
+| largest single package entry | 86 bytes |
+| distinct top-level import names | 245 |
+| `sys.stdlib_module_names` on that interpreter | 301 |
+| top-level import names colliding with the stdlib | **none** |
+| non-identifier import names | `nvidia/cusparselt`, `tableauhyperapi/impl`, `wrapt-stubs` |
+| distributions whose import names differ from the normalised distribution name | 77 |
+
+At ~42 bytes per distribution, reaching the cap would take on the order of
+**25,000 installed distributions** — so widening the payload to carry import
+names did not meaningfully erode the headroom, and
+`MAX_ENVIRONMENT_PROBE_BYTES` is left alone. Note this is arithmetic from one
+environment, not a measurement of a large one; see "not settled" below.
+
+Two incidental observations from the same run, both of which changed code in
+this slice:
+
+- **`__pycache__` appears as a top-level name in shipped `top_level.txt`
+  data.** It is a legal Python identifier, so `generateStubTree`'s existing
+  identifier guard admitted it, and the generator would have written a
+  `__pycache__/__init__.pyi` into the user's workspace for a name no `import`
+  statement ever names. Inert rather than harmful, but pointless; a
+  `startsWith("__")` guard now drops it. A *single* leading underscore is
+  deliberately still allowed — `_yaml` (PyYAML) and `_cffi_backend` (cffi) are
+  both real importable top-level names present in the same data.
+- **The SAS log wraps printed lines at roughly 115 characters**, splitting a
+  200-character line across two log entries with no continuation marker. This
+  is independent corroboration of an existing design decision rather than a
+  new one: the real Stage-2 probe writes its answer to a file in the session's
+  working directory and reads it back, precisely so a few hundred package
+  names cannot be line-wrapped into corruption — which is what
+  `docs/python-environment.md` already tells users it does.
+
+**Not settled by this probe**, explicitly:
+
+- **How many of this deployment's 245 top-level names Pylance already covers
+  from its bundled typeshed** — i.e. the live blast radius of Finding 10.7's
+  new exclusion. Two follow-up runs to capture the name list were refused by
+  the deployment with `HTTP 500` (`errorCode 5830`, compute process
+  initialization) at session creation, and the attempt was abandoned rather
+  than retried further. Finding 10.7 stands on its own direct pyright
+  measurements instead, which do not depend on this number.
+- **Any interpreter materially larger than 264 distributions.** The cap
+  conclusion above is extrapolated, not observed.
+
+**Finding 10.7 (2026-09-16) — `python.analysis.stubPath` outranks *every*
+other import source in pyright, including its own bundled typeshed, so a
+generated stub silently replaces real stdlib and third-party types.** This is
+the finding that changed 10b's design; it was not measured in the 10b spike
+(Findings 10.1/10.2), which tested whether a stub is *picked up*, never what
+it *displaces*.
+
+Documented shape first, per this project's probe discipline: pyright's own
+`docs/import-resolution.md` gives the resolution order as (1) `stubPath`,
+(2) workspace code and `extraPaths`, (3) installed packages, (4) typeshed
+stdlib, (5) typeshed third-party, (6) a same-directory last resort. Observed
+behaviour agreed with the documentation exactly — this is a case where the
+docs were right, and the finding is what follows *from* them rather than a
+contradiction of them.
+
+Measured with the `pyright` CLI at **1.1.414** (the open-source engine Pylance
+is built on, same stub-resolution logic), against a local Python 3.14.6, each
+case run twice — once with no generated stub, once with the catch-all
+`<name>/__init__.pyi` this feature writes:
+
+| case | without the generated stub | with it |
+| --- | --- | --- |
+| `typing` (typeshed **stdlib**) | 1 error (`reportReturnType`) | **0 errors, 0 warnings** |
+| `simplejson` (typeshed **third-party**, not installed locally) | `reportMissingModuleSource` warning **+** `reportAssignmentType` error caught | same warning, **error gone** |
+| `requests` (installed locally) | 1 error (`reportCallIssue`) | **0 errors** |
+
+Each row is a different lesson:
+
+- The **stdlib** row is the serious one. A distribution named after a stdlib
+  module is not hypothetical — `typing`, `dataclasses` and `contextvars` all
+  exist on PyPI as backports — and if one is installed on Viya but not
+  locally, 10b as previously written would stub it and silently disable real
+  type checking for that module across the whole workspace. Neither existing
+  guard could ever see it: the stdlib is not in `site-packages` (so the
+  local-diff exclusion misses it) and not in the workspace (so the
+  workspace-owned exclusion misses it).
+- The **third-party** row is a pure regression with no upside. For a
+  typeshed-covered name, Pylance *already* emits `reportMissingModuleSource` —
+  the exact downgrade this whole feature exists to achieve — **and** supplies
+  real types alongside it. Stubbing it keeps the identical warning and throws
+  the types away.
+- The **installed-locally** row re-confirms, from the pyright side, the
+  shadowing hazard that `selectPackagesToStub` was already written to avoid
+  (Finding 10.2), and shows that guard is load-bearing rather than defensive.
+
+**Consequence:** there are exactly **three** sources a generated stub can
+shadow, and 10b guarded two. The third is now covered by `src/run/typeshedNames.ts`
+— 281 stdlib plus 273 third-party top-level names (the third-party half
+derived from 201 distributions, with the stdlib overlap removed), 554
+case-folded distinct names, generated from pyright 1.1.414's
+`dist/typeshed-fallback/`. It is the only one of the three whose failure is
+silent, which is why it survived four prior review rounds.
+
+Staleness of that list fails safe in **both** directions, which is why a
+static list was acceptable: a name typeshed later adds that the list lacks
+means one package keeps exactly today's behaviour, and a name typeshed later
+drops means one package goes unstubbed. Neither produces a wrong diagnostic.

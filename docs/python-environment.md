@@ -98,15 +98,31 @@ squiggle becomes, at worst, a milder "stub only" warning
 add real completions or catch real type errors the way an actual
 `numpy`-stubs install would.
 
-**A package already resolvable in your local environment is never stubbed.**
-Only what the Local comparison section above calls "only on this Viya
-profile" gets a generated stub — a package you already have installed
-locally keeps its own real type information, never a generic placeholder.
-The same protection extends to your own code: a top-level name that is
-already a real folder, `.py` file, or `.pyi` file at your workspace root is
-never stubbed either, even when nothing local resolves it, since a generated
-stub would otherwise take precedence over your own source (or your own
-hand-authored stubs) there.
+**Nothing that already resolves to real types gets a generic stub.** Pylance
+gives a stub folder precedence over every other place it would look, so three
+kinds of name are deliberately left alone:
+
+- **Packages you already have installed locally.** Only what the Local
+  comparison section above calls "only on this Viya profile" is stubbed, so
+  anything you have installed keeps its own real type information rather than
+  a placeholder.
+- **Your own code.** A top-level name that is already a real folder, `.py`
+  file, or `.pyi` file at your workspace root is never stubbed, even when
+  nothing local resolves it, since a generated stub would otherwise take
+  precedence over your own source — or over your own hand-authored stubs.
+- **Anything Pylance already ships stubs for.** Pylance bundles typeshed,
+  which covers the whole standard library plus several hundred popular
+  third-party packages (`requests`, `yaml`, `six`, `dateutil`, `pytz` and so
+  on). For those you already get the milder "stub only" warning *and* real
+  type information, so a generic placeholder would be a strict downgrade —
+  and for a standard-library name it would quietly switch off real type
+  checking for that module across your entire workspace.
+
+The last two always apply. The first one depends on Python on Viya being able
+to read your local environment, which it does through the Python extension —
+**if that extension is not installed**, the comparison reports the local side
+as unknown and every package on the Viya profile is stubbed, including ones
+you have locally. Installing the Python extension is what restores it.
 
 **Reload the window (or restart the language server) to see the effect.**
 Pylance does not notice a changed `stubPath` or a regenerated stub tree on

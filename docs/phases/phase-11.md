@@ -18,15 +18,50 @@ and any localisation bundles beyond English. Individually small, collectively th
 difference between "works" and "feels like a peer of the SAS extension."
 *Slices sized when the phase is reached.*
 
-**Priority order set 2026-09-16 (Sean's own call, ahead of everything else in
-this file): session startup/autoexec configuration and the new interactive-window
-feature (F7, below) go first** when this phase starts, ahead of the rest of the
-long tail above and the feature candidates below. Neither is sized yet — sizing
-happens when the phase is actually picked up, per this section's own rule — but
-the *order* is decided now so a future scoping session doesn't have to
-re-litigate it. **F9 (below), added later the same day, is explicitly ordered
-behind F7** — Sean's own instruction when the candidate was proposed, not an
-inference from its position in the list below.
+**Priority order set 2026-09-16 (Sean's own call), sized and sequenced into
+slices 2026-09-16/17 once the phase was actually picked up:**
+
+1. **11a — F7, the interactive window.** Now grounded (see F7 below): the
+   built-in VS Code Interactive Window surface is off-limits to a published
+   extension regardless of the kernel question, so this slice builds a
+   bespoke surface on top of Phase 9's already-shipped `NotebookController`
+   infrastructure — an unsaved scratch notebook of this project's own
+   `notebookType`, plus a "Run Selection/Line" command that creates or
+   reuses one. A short spike (confirming the unsaved-notebook mechanism end
+   to end) belongs at the start of this slice, not the open-ended kind
+   Phase 9/10's spikes needed.
+2. **11b — F9, the CAS/SWAT explicit SQL passthrough helper.** Probed and
+   confirmed working against `verde` (Finding 11.2) ahead of sizing, so this
+   slice starts from a settled mechanism rather than an open probe question.
+   Ships as documentation plus, likely, a small inserted-snippet command
+   (F9's own text below has the shape) — smaller than 8b was.
+3. **11c — The three pre-release bugs (B1/B2/B3, below).** Folded into this
+   phase alongside F7/F9 rather than held for a separate pass: all three are
+   user-visible breakage in already-shipped trees (CAS/SAS Content/SAS
+   Libraries), not new scope, and none needs its own design pass.
+4. **11d — F2 + F3, CAS table properties and CSV export.** Folded in as a
+   single slice: both are the same shape of gap (a `TableSource`/panel
+   action Phase 7 built and Phase 8 never extended to CAS), sized together
+   per F3's own note above.
+5. **11e — Session startup/autoexec configuration**, from the long-tail list
+   above. A prior 2026-09-16 scoping session had this tied with F7 for first
+   priority in the phase; this session's own explicit re-prioritization named
+   only F7 and F9 as the two to go first, so it's carried here rather than
+   dropped — behind F7/F9/the bugs/F2+F3 rather than ahead of them, since
+   nobody has asked to relitigate its priority relative to the newer
+   candidates, but still inside this phase's scope rather than pushed out of
+   it. **Unlike 11a–11d, this one has no fleshed-out design yet** — the long
+   -tail sentence above is the only description this file has ever given it
+   (what "session startup" should configure: an autoexec-equivalent SAS/Python
+   snippet run automatically per new session, a workspace setting, or both).
+   Needs its own short scoping pass at the start of the slice, the way F7 and
+   F9 each got one across two 2026-09-16 sessions, before it's sized further.
+
+Everything else in this file — F1, F6, F8, and the items carried in from
+Phase 6/9/10 housekeeping — stays out of this phase's scope by Sean's own
+2026-09-16 call (see the scoping-session note in the Runbook, below), not
+because it was reconsidered and rejected. It remains here as this project's
+own record of the backlog, for whichever future phase picks it up.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -78,15 +113,44 @@ triaged against §3.1's parity table).**
   and Phase 9's own ipynb-native decision
   ([ADR-0024](../adr/0024-notebooks-are-ipynb-native.md)) both deliberately
   avoided — a Viya profile has no local kernel process to connect to.
-  **The likely shape, by analogy with Phase 9**: a bespoke, this-project-owned
-  surface (a scratch document or a `NotebookController`-shaped experience) that
-  sends a selection to the *profile's own compute session* and shows the
-  result inline, matching the interactive window's user-facing shape without
-  actually integrating with `ms-toolsai.jupyter`'s kernel machinery — the same
-  choice Phase 9 made for notebooks generally, applied to a single-selection
-  REPL-like flow instead of a whole `.ipynb`. Not decided; a real design pass
-  and likely a hands-on spike (same shape as Phase 9's 9a spike and Phase 10's
-  10b spike) belong at the start of this slice, before any code is written.
+  **A second, harder blocker found 2026-09-16 (web search): even setting the
+  kernel question aside, the built-in Interactive Window surface itself is
+  off-limits to a marketplace-published extension.** VS Code exposes it to
+  extension code only via the `interactiveWindow` *proposed* API — a
+  `vscode.notebooks.createNotebookController` registered against the core
+  `interactive` notebook view type still requires `enabledApiProposals` in
+  `package.json`, and per VS Code's own "Using Proposed API" documentation, an
+  extension built against any proposed API cannot be published
+  ([code.visualstudio.com/api/advanced-topics/using-proposed-api](https://code.visualstudio.com/api/advanced-topics/using-proposed-api),
+  [microsoft/vscode wiki, "Interactive Window Documentation"](https://github.com/microsoft/vscode/wiki/Interactive-Window-Documentation),
+  fetched 2026-09-16). This is decisive on its own, independent of the
+  kernel/execution-model question above: this project cannot integrate with
+  VS Code's actual Interactive Window at all and ship on the Marketplace, so
+  "matching VS Code's normal Python experience" can only ever mean *matching
+  its user-facing shape*, never reusing its surface.
+  **The shape this settles on, by analogy with Phase 9 and now considerably
+  cheaper than first estimated**: this project already owns a fully-built
+  ipynb-native `NotebookController` (Phase 9) against the profile's own
+  compute session, with sanitized rich output and Problems-panel diagnostics
+  — all stable, publishable APIs, because a *custom* `notebookType` (this
+  project's own, not the core `interactive` one) has none of the proposed-API
+  restriction. `vscode.workspace.openNotebookDocument(viewType, content)`
+  creates an **unsaved, in-memory** notebook of that type — the same
+  mechanism behind VS Code's own "Untitled-1.ipynb" — with no new execution
+  machinery needed at all. The likely net-new work is then narrow: a command
+  that opens (or reuses, if one is already open) such a scratch notebook, and
+  a "Run Selection/Line" command, bound from a `.py` editor, that appends the
+  selected text as a new cell to that scratch notebook and executes it —
+  giving the interactive window's user-facing shape (persistent history,
+  incremental execution, rich output) by riding entirely on Phase 9's already
+  -shipped infrastructure rather than building a new one. **Still not a full
+  design**: exact command names/keybindings, what happens with multiple
+  scratch notebooks or multiple profiles open at once, and whether a
+  hands-on spike is still warranted (probably a short one, to confirm the
+  unsaved-notebook-of-a-custom-type mechanism behaves as expected end to end
+  — not the open-ended kind Phase 9's 9a or Phase 10's 10b spikes needed,
+  since the execution model itself is no longer in question) belong at the
+  start of the slice, not decided here.
 - **F8 — Interactive, sortable pandas DataFrame display**, distinct from the
   existing SAS/CAS table data viewer (Phase 7b, Phase 8c) — this is about a
   DataFrame value produced *during a run or in a notebook cell*, not a table
@@ -120,24 +184,20 @@ triaged against §3.1's parity table).**
   credential surface — this sits directly on top of the existing
   `pythonOnViya.insertCasConnectionSnippet` (Phase 8b) connection, reusing its
   token-delivery and reconnect-on-auth-failure story unchanged. **Finding
-  11.1** (Probe findings, below) confirms at least one Snowflake-backed
-  caslib already exists somewhere reachable this session, so this candidate
-  has a real target to build and test against, not only a hypothetical one —
-  but that check ran through a different, separate mechanism than this
-  project's own `viya-api-probe` skill and was not cross-checked against
-  `verde` specifically, so treat it as weaker evidence than the rest of this
-  ledger; see the finding itself for exactly what it does and does not
-  establish. **Not yet probed at all, by either mechanism**: SAS's own
-  knowledge-base literature notes pass-through fidelity varies by connector
-  and version, so the exact `fedsql.execDirect`/`CONNECTION TO` syntax and
-  behaviour against a real caslib here needs its own live check — via
-  `viya-api-probe` against `verde`, this project's own sanctioned mechanism —
-  before this is written up as a confirmed pattern or shipped as a snippet.
-  Deliberately not run yet: it means executing a CAS action rather than a
-  read-only REST `GET`, and several of this deployment's other caslibs read
-  as customer- or business-identifying, so that probe wants an explicit
-  go-ahead first, same as any mutating or execution-shaped probe under this
-  project's own rules. **Distinct from
+  11.1** first suggested at least one Snowflake-backed caslib was reachable,
+  through a mechanism separate from and weaker than this project's own
+  `viya-api-probe`/`verde` evidence. **Probed and confirmed directly against
+  `verde` itself, 2026-09-16/17, with Sean's explicit go-ahead for the
+  execute-shaped step — see Finding 11.2.** `fedsql.execDirect`/`CONNECTION
+  TO` against `SNOWLIB`, a real Snowflake-backed caslib on `verde`, round
+  -trips a native Snowflake query's result cleanly through the exact
+  connection shape `buildCasConnectSnippet` already generates for Phase 8b.
+  One behavioural note worth carrying into F9's eventual documentation: an
+  explicit pass-through query runs single-threaded CAS-side regardless of
+  server size (`numReadNodes=1`, forced — Finding 11.2). **Still open**:
+  behaviour against a non-Snowflake connector type, and how a large result
+  set behaves — neither exercised by this probe; a full design/slice for F9
+  should treat those as untested, not assume they generalize. **Distinct from
   F1**: F1 intercepts arbitrary Python/pandas calls and rewrites them into
   passthrough SQL against a SAS *libname* — architecture-level, "probably
   extremely complicated" by Sean's own assessment. F9 has no interception at
@@ -360,7 +420,83 @@ RUNBOOK item 146.
 
 ## Runbook
 
-_Not yet reached — no punch list written yet._
+### Phase 11 scoping session, 2026-09-16/17
+
+Phase 10→11 housekeeping had already closed (`STATUS.md`); this session
+picked the phase up per Sean's own instruction to prioritize F7 (interactive
+window) and F9 (SQL passthrough helper) first, then fold in whatever else
+reasonably fits alongside them. Work done this session, all in the Plan
+section above unless noted:
+
+- **F7 grounded, not just re-described.** Web search confirmed a second,
+  independent blocker beyond the kernel/execution-model question the phase
+  file already carried: VS Code's built-in Interactive Window surface is
+  reachable from extension code only through the `interactiveWindow`
+  *proposed* API, and an extension using any proposed API cannot be
+  published to the Marketplace. This settles the design direction — a
+  bespoke surface reusing Phase 9's already-shipped `NotebookController`
+  infrastructure via an unsaved scratch notebook of this project's own
+  `notebookType` — considerably cheaper than the phase file's prior "likely
+  shape, not decided" framing suggested, since no new execution machinery is
+  needed, only two new commands.
+- **F9 probed and confirmed** via `viya-api-probe` against `verde`, with
+  Sean's explicit go-ahead for the one execute-shaped step (a compute-session
+  `fedsql.execDirect` call). See **Finding 11.2** below for the full account,
+  including a caslib-detail-vs-collection-listing wrinkle worth knowing and a
+  forced-single-node-read behavioural note worth documenting alongside F9
+  when it ships. Two throwaway CAS sessions (one `casManagement`, one
+  compute) were created for the probe and both confirmed deleted
+  (`404` on read-back) before this session moved on.
+- **Scope for the phase decided with Sean (`AskUserQuestion`):** F7, F9, the
+  three pre-release bugs (B1/B2/B3), and F2+F3 (CAS table properties/CSV
+  export) all ride together in this phase; F1, F6, F8, and the
+  Phase-6/9/10-carried items stay out, not because they were reconsidered,
+  but because they weren't asked for and several need their own design pass
+  first. Session startup/autoexec configuration — tied for first priority
+  with F7 in an earlier same-day session, per the Plan section's own note —
+  is kept in scope as **11e**, sequenced behind the four items actually named
+  this session, since dropping it silently would have contradicted that
+  earlier priority call.
+- **Punch list below sizes five slices** (11a–11e) in priority order. None
+  has started; sizing is a scoping estimate, not a commitment, per this
+  project's own "slices sized when the phase is reached" rule — now that it
+  has been.
+
+### Punch list
+
+- [ ] **11a — Interactive window (F7).** Short spike first (confirm an
+  unsaved, in-memory notebook of a custom `notebookType` opens and executes
+  end to end via the existing `NotebookController`); then a "New Interactive
+  Window" command and a "Run Selection/Line in Interactive Window" command
+  (from a `.py` editor, appends the selection as a new cell to the active
+  scratch notebook, creating one if none is open, and executes it). Manual
+  -test coverage for both commands, multiple scratch notebooks open at once,
+  and the no-connection case (ties into B1's own "always show something"
+  principle).
+- [ ] **11b — CAS/SWAT SQL passthrough helper (F9).** Ship as documentation
+  (`docs/cas-python-connection.md` or a new page) plus, if a snippet still
+  reads as worthwhile once the doc is drafted, a small inserted-snippet
+  command in the shape of `pythonOnViya.insertCasConnectionSnippet` —
+  decide which while drafting, not before. Document the forced
+  single-node-read behaviour (Finding 11.2) as an expectation, not a caveat
+  to work around.
+- [ ] **11c — Pre-release bug fixes (B1/B2/B3).** B1 (no-connection state
+  across CAS/SAS-Content/SAS-Libraries trees), B2 (stale-connection recovery
+  path for SAS Libraries, including surfacing **Connect to Viya** in that
+  state), B3 (SAS Libraries table icon parity with CAS's loaded/unloaded
+  icon, `src/cas/casTree.ts`). Worth checking whether B1 and B2 share enough
+  of a "connection state" mechanism to fix together rather than as three
+  independent patches — a design question for whoever starts this slice, not
+  decided here.
+- [ ] **11d — CAS table properties + CSV export (F2 + F3).** Extend
+  `tablePropertiesPanel.ts` and `csvExportCommand.ts` to `TableSource`'s CAS
+  implementation, matching Phase 8c's own reuse precedent
+  ([ADR-0034](../adr/0034-table-source-abstraction.md)).
+- [ ] **11e — Session startup/autoexec configuration.** Needs its own short
+  scoping pass first (what "session startup" configures, and whether it's a
+  workspace setting, a run-automatically-per-session snippet, or both) —
+  no design exists yet beyond the long-tail sentence at the top of this
+  file's Plan section.
 
 ---
 
@@ -398,3 +534,84 @@ works against any of those caslibs, whether this is the same deployment as
 three are open items for whoever picks up F9, and the first genuinely needs
 a `viya-api-probe` pass against `verde` before any code or documented pattern
 is written, per this project's own "don't guess about Viya — probe it" rule.
+**Closed by Finding 11.2, below**, which resolves all three via `verde`
+itself and this project's own `viya-api-probe` skill.
+
+### Finding 11.2 — FedSQL explicit pass-through against a Snowflake caslib confirmed working on `verde`
+
+Probed 2026-09-16/17, via `viya-api-probe`/`creds.json` against `verde`
+directly (the mechanism every other finding in this repository is scoped
+to), with Sean's explicit go-ahead for the execute-shaped step. This
+independently confirms Finding 11.1's premise on the deployment this
+project actually targets, rather than the separate, unverified one Finding
+11.1 touched.
+
+**Caslib check (read-only, `casManagement`):** `verde`'s single CAS server
+(`cas-shared-default`) has 69 caslibs; `GET .../caslibs/{name}` on the two
+whose names suggested a Snowflake connector confirmed one, `SNOWLIB`
+(`attributes.sourceType`/top-level `type: "snowflake"`), scoped to Sean's own
+`RND_DB`/`SEFORD` database/schema under his own `seford` connector uid — a
+personal sandbox caslib, not a shared production one, and safe to query
+without touching anything business-identifying. (The collection listing
+itself — `GET .../caslibs` — returns `casLibType`/`sourceType` as `null` for
+every item; the type only appears on the per-caslib detail resource,
+`GET .../caslibs/{name}`, at top-level `type` — worth knowing for anyone
+scripting a "find me a DBMS caslib" scan.)
+
+**Pass-through check (execute-shaped, approved):** a compute session under
+the "SAS Studio compute context" ran:
+
+```sas
+cas mysess;
+proc cas;
+  session mysess;
+  fedsql.execDirect result=r / query="select 1 as X from connection to SNOWLIB (select 1)";
+run;
+print r;
+quit;
+cas mysess terminate;
+```
+
+**Documented (SAS FedSQL Programming for CAS; SAS blog, "Python Integration
+to SAS Viya — Executing SQL on Snowflake", 2024-04-12):** `fedsql.execDirect`
+with a `select ... from connection to <caslib> (<native SQL>)` query runs the
+parenthesized SQL natively in the external database and returns the result
+as a FedSQL result set. **Observed (Viya 4, `verde`, 2026-09-16):** matches —
+the job completed cleanly, `fedsql` action-set loaded automatically, and the
+printed result (`X = 1`) is exactly the inner Snowflake query's own answer,
+round-tripped with no CAS-side transformation. Documentation confirmed, not
+contradicted, on this point.
+
+**One behavioural note the documentation above doesn't foreground:** the log
+carried `WARNING: Multi-node read is not allowed with the FedSQL execDirect
+action. The load will proceed with numReadNodes=1.` — an explicit
+pass-through query runs single-threaded on the CAS side regardless of the
+server's worker count. Worth a line in F9's eventual documentation as a
+performance expectation (a passthrough query is not accelerated by CAS's own
+parallelism, only by whatever the external database itself does), not a
+defect.
+
+**One raw-SAS probe wrinkle, not a finding about production code:** `PROC
+CAS` needs an explicit `CAS mysess;` global statement establishing a session
+before `session mysess;` can reference it — the first attempt, without it,
+failed with `ERROR: There is no server connection to execute the action`.
+This has no bearing on F9's actual Python/SWAT delivery path
+(`src/cas/connectSnippet.ts`'s `buildCasConnectSnippet`): `swat.CAS(host,
+port, password=token)` establishes the session as part of the constructor
+call itself, with no separate session-creation step for calling code to get
+right — confirmed by Sean from his own prior SWAT experience while this
+probe was running. Recorded here only so a future raw-SAS-shaped probe
+doesn't re-trip on the same thing.
+
+**What this establishes:** F9's core mechanism — loading the `fedsql` action
+set and calling `execDirect` with a `connection to`-style query, returning a
+usable result — works on `verde`, against a real Snowflake-backed caslib, via
+the exact connection shape `buildCasConnectSnippet` already generates for
+Phase 8b. **What it does not
+establish:** behaviour against caslib types this deployment's `SNOWLIB`
+doesn't exercise (a different connector, a query returning a large result
+set, an inner query the external database itself rejects) — those stay open
+for whoever implements F9. **Cleanup:** the throwaway `casManagement` session
+and the compute session both `DELETE`d and confirmed `404` on read-back; the
+CAS session itself (`mysess`) was terminated by its own `cas ... terminate;`
+statement before that.

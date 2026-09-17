@@ -77,6 +77,26 @@
  * `null` in the JSON that {@link parseEnvironmentProbeFile} then rejects
  * whole, read back as `backend-failed`. Dropping the unnameable few is the
  * honest answer: they have nothing this view can show anyway.
+ *
+ * ## Import names, not only the distribution name (10b)
+ *
+ * `distribution.metadata['Name']` is the PyPI *distribution* name, which is
+ * not always the name a Python `import` statement uses — `Pillow` installs as
+ * `PIL`, `beautifulsoup4` as `bs4`, `PyYAML` as `yaml`, and many others differ
+ * the same way. 10b's Pylance stub reflection needs the *import* name, so each
+ * package entry also carries a best-effort, never-empty list of them, tried in
+ * this order: (1) the distribution's own `top_level.txt` (the setuptools-era,
+ * per-distribution, most authoritative source, when present — read via
+ * `Distribution.read_text`, which works across both `dist-info` and
+ * `egg-info` layouts); (2) `importlib.metadata.packages_distributions()`
+ * (Python 3.10+, guarded by `hasattr` since this project does not get to
+ * assume a deployment's Python version, a global reverse mapping built once
+ * per probe run, not per distribution); (3) the distribution name itself with
+ * `-`/`.` normalised to `_`, the closest last-resort guess to how a name
+ * without either of the above was probably derived. Each of the first two
+ * steps is wrapped so a failure there degrades to the next step, the same
+ * "a broken distribution must not sink the whole probe" discipline above,
+ * extended rather than replaced.
  */
 
 import { type PythonPackage, type RuntimeCapabilities } from "./backend";
@@ -108,6 +128,13 @@ export const ENVIRONMENT_PROBE_FILENAME = "__pyvia_environment_probe__.json";
  * this. A file that somehow exceeds it is a malformed probe result, surfaced
  * as `backend-failed` like any other unparseable one, not something to grow
  * the buffer for.
+ *
+ * 10b widens each package entry with an import-name list (this module's own
+ * doc comment, "Import names, not only the distribution name"), which grows
+ * the payload per package but not its order of magnitude — a name list is
+ * typically one short string, rarely more than a handful. Left unchanged
+ * here; Finding 10.6 is where a real deployment would be recorded if this cap
+ * ever turns out to matter in practice (Probe findings, `phase-10.md`).
  */
 export const MAX_ENVIRONMENT_PROBE_BYTES = 1024 * 1024;
 
@@ -131,11 +158,24 @@ export function environmentProbeStatements(): readonly string[] {
 /** The probe's Python source, kept as one constant so
  * {@link environmentProbeStatements} and any test asserting against it read
  * the same text. See this module's own doc comment for why it is a
- * `def`/`try`/`finally`/`del` rather than bare top-level statements, and why
- * an unreadable distribution is skipped rather than allowed to fail the run. */
+ * `def`/`try`/`finally`/`del` rather than bare top-level statements, why an
+ * unreadable distribution is skipped rather than allowed to fail the run, and
+ * why each entry also carries an import-name list ("Import names, not only
+ * the distribution name"). */
 const PROBE_SOURCE = [
   "def __pyvia_probe_environment():",
   "    import sys, json, importlib.metadata",
+  "    try:",
+  "        if hasattr(importlib.metadata, 'packages_distributions'):",
+  "            reverse_map = importlib.metadata.packages_distributions()",
+  "        else:",
+  "            reverse_map = {}",
+  "    except Exception:",
+  "        reverse_map = {}",
+  "    dist_to_imports = {}",
+  "    for import_name, dist_names in reverse_map.items():",
+  "        for dist_name in dist_names:",
+  "            dist_to_imports.setdefault(dist_name, []).append(import_name)",
   "    packages = []",
   "    for distribution in importlib.metadata.distributions():",
   "        try:",
@@ -144,11 +184,22 @@ const PROBE_SOURCE = [
   "        except Exception:",
   "            name = version = None",
   "        if isinstance(name, str) and name and isinstance(version, str) and version:",
-  "            packages.append((name, version))",
+  "            import_names = None",
+  "            try:",
+  "                top_level = distribution.read_text('top_level.txt')",
+  "            except Exception:",
+  "                top_level = None",
+  "            if top_level:",
+  "                import_names = sorted(set(line.strip() for line in top_level.splitlines() if line.strip()))",
+  "            if not import_names:",
+  "                import_names = sorted(set(dist_to_imports.get(name, [])))",
+  "            if not import_names:",
+  "                import_names = [name.replace('-', '_').replace('.', '_')]",
+  "            packages.append((name, version, tuple(import_names)))",
   "    info = {",
   "        'version': sys.version.replace('\\n', ' '),",
   "        'executable': sys.executable,",
-  "        'packages': sorted(set(packages)),",
+  "        'packages': [[n, v, list(i)] for n, v, i in sorted(set(packages))],",
   "    }",
   `    with open(${JSON.stringify(ENVIRONMENT_PROBE_FILENAME)}, 'w', encoding='utf-8') as handle:`,
   "        json.dump(info, handle)",
@@ -202,21 +253,27 @@ export function parseEnvironmentProbeFile(
   return { kind: "available", version, executable, packages };
 }
 
-/** `packages`, or `undefined` if it is not an array of `[name, version]`
- * pairs of strings — the shape {@link PROBE_SOURCE} always produces, checked
- * rather than assumed for the same reason every other wire read in this
- * project is. */
+/** `packages`, or `undefined` if it is not an array of `[name, version,
+ * importNames]` triples — the shape {@link PROBE_SOURCE} always produces
+ * (widened from a `[name, version]` pair by 10b), checked rather than assumed
+ * for the same reason every other wire read in this project is. */
 function readPackages(value: unknown): readonly PythonPackage[] | undefined {
   if (!Array.isArray(value)) return undefined;
 
   const packages: PythonPackage[] = [];
   for (const item of value) {
-    if (!Array.isArray(item) || item.length !== 2) return undefined;
-    const [name, version] = item as readonly unknown[];
+    if (!Array.isArray(item) || item.length !== 3) return undefined;
+    const [name, version, importNames] = item as readonly unknown[];
     if (typeof name !== "string" || typeof version !== "string") {
       return undefined;
     }
-    packages.push({ name, version });
+    if (
+      !Array.isArray(importNames) ||
+      !importNames.every((entry) => typeof entry === "string")
+    ) {
+      return undefined;
+    }
+    packages.push({ name, version, importNames });
   }
   return packages;
 }

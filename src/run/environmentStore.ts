@@ -47,6 +47,61 @@ export type EnvironmentStorageContext = Pick<
   "globalState"
 >;
 
+/**
+ * Whether a persisted entry still matches the shape this build reads back.
+ *
+ * `globalState` is a JSON store with no schema version, and `Memento.get<T>()`
+ * casts whatever is in it to `T` without checking anything. That was harmless
+ * while {@link StoredEnvironment} only ever gained *optional* fields — but 10b
+ * made `PythonPackage.importNames` **required** (`backend.ts`'s own doc
+ * comment on it; `docs/phases/phase-10.md`'s Plan section), so every entry
+ * written by an earlier build is now a typed lie the moment this one reads it:
+ * `packages[i].importNames` is declared `readonly string[]` and is actually
+ * `undefined`, and `stubSyncPlan.ts`'s `shadowsLocalPackage` iterates it
+ * directly.
+ *
+ * Nothing on today's cache-hit path reaches that iteration — `commands.ts`
+ * syncs stubs only after a *fresh* probe — so this guards the seam rather than
+ * fixing a live crash. Dropping the entry, rather than patching a default
+ * into it, is deliberate: the real `importNames` are not derivable from what
+ * was stored, and the cost of dropping one is a single silent re-probe, which
+ * is exactly what a user upgrading into a feature that needs new probe data
+ * should get. The drop is durable as well as per-read — `set`/`forget` both
+ * rebuild from this method, so the stale entry stops being persisted the next
+ * time either runs.
+ *
+ * Takes `unknown`, not `StoredEnvironment | undefined`: that declared type is
+ * exactly the claim in doubt here, and accepting it would make every check
+ * below redundant *to the type checker* while remaining necessary at runtime —
+ * `@typescript-eslint/no-unnecessary-condition` says so out loud on the `null`
+ * guard. `unknown` is the honest parameter type for a value read back out of
+ * a schema-less JSON store.
+ */
+function isCurrentShape(stored: unknown): boolean {
+  if (typeof stored !== "object" || stored === null) return false;
+  const capabilities = (stored as Record<string, unknown>).capabilities;
+  if (typeof capabilities !== "object" || capabilities === null) return false;
+  // Same `as`-to-an-unknown-valued-record idiom `environment.ts`'s own
+  // `readPackages` uses to walk an unvalidated wire payload — never a cast to
+  // the destination type itself, which would assert exactly what is in doubt.
+  const fields = capabilities as Record<string, unknown>;
+  // `"unprobed"` carries no packages, so there is nothing here it can fail.
+  if (fields.kind !== "available") return true;
+  return (
+    Array.isArray(fields.packages) &&
+    fields.packages.every((entry: unknown) => {
+      if (typeof entry !== "object" || entry === null) return false;
+      const pkg = entry as Record<string, unknown>;
+      return (
+        typeof pkg.name === "string" &&
+        typeof pkg.version === "string" &&
+        Array.isArray(pkg.importNames) &&
+        pkg.importNames.every((name: unknown) => typeof name === "string")
+      );
+    })
+  );
+}
+
 export class EnvironmentStore {
   constructor(private readonly context: EnvironmentStorageContext) {}
 
@@ -86,10 +141,12 @@ export class EnvironmentStore {
   }
 
   private readAll(): Record<string, StoredEnvironment> {
-    return (
+    const all =
       this.context.globalState.get<Record<string, StoredEnvironment>>(
         ENVIRONMENT_CACHE_KEY,
-      ) ?? {}
+      ) ?? {};
+    return Object.fromEntries(
+      Object.entries(all).filter(([, stored]) => isCurrentShape(stored)),
     );
   }
 

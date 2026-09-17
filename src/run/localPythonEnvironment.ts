@@ -49,6 +49,11 @@ export type LocalEnvironment =
   | {
       readonly kind: "known";
       readonly packages: readonly LocalPackage[];
+      /** Every top-level importable name actually seen at `site-packages`'s
+       * root — see `localPackages.ts`'s own `LocalPackagesResult.topLevelNames`
+       * doc comment for why this is not simply derivable from `packages`
+       * above. */
+      readonly topLevelNames: readonly string[];
     };
 
 /** The real filesystem, adapted to {@link LocalPackageFs} via
@@ -109,9 +114,12 @@ export async function readActiveLocalEnvironment(): Promise<LocalEnvironment> {
     return { kind: "unknown" };
   }
 
-  let packages: readonly LocalPackage[];
+  let result: {
+    packages: readonly LocalPackage[];
+    topLevelNames: readonly string[];
+  };
   try {
-    packages = await readLocalPackages(
+    result = await readLocalPackages(
       sitePackagesPath(sysPrefix, major, minor),
       realFs,
     );
@@ -123,7 +131,11 @@ export async function readActiveLocalEnvironment(): Promise<LocalEnvironment> {
     // blank the whole `Show environment` document.
     return { kind: "unknown" };
   }
-  return { kind: "known", packages };
+  return {
+    kind: "known",
+    packages: result.packages,
+    topLevelNames: result.topLevelNames,
+  };
 }
 
 /**

@@ -39,7 +39,10 @@ slice-by-slice narrative that used to live here has moved to
 archival rule.
 
 **Phase 10 (Viya environment awareness) is in progress — 10a merged
-2026-09-15, 10b not started.** 10a (`docs/phases/phase-10.md`) adds a
+2026-09-15, 10b implemented, reviewed, fully manually tested (all of
+10.1–10.14 green), and opened as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182).** 10a
+(`docs/phases/phase-10.md`) adds a
 local/remote package diff to the existing `Show environment` document (a
 new "Local comparison" section, reading the local interpreter
 `ms-python.python` has active via `@vscode/python-extension` and
@@ -68,10 +71,176 @@ in `phase-10.md`'s Runbook. Manual-test items 10.1–10.5
 merge: 10a as [PR #178](https://github.com/Shai-Alit/sas-py-vscode/pull/178),
 squash `62cf217`.** `npm run verify` green throughout (1771 unit; coverage
 96.09/95.57/95.98/96.09); `npm run test:integration` green (436 passing).
-**10b (Pylance environment reflection) is unstarted** — its own first task
-is a hands-on VS Code+Pylance spike (`phase-10.md`'s Runbook) that needs an
-interactive session to run, deliberately held for later rather than
-blocking 10a on it (this Runbook's own recommended order is non-binding).
+**10b (Pylance environment reflection) is implemented and locally
+verified, not yet reviewed, manually tested, or opened as a PR.** Its own
+first task — the hands-on stub-path spike the Runbook named as needing an
+interactive session — ran this session via the `pyright` CLI (the
+open-source engine Pylance is built on) rather than a live VS Code window,
+since even Claude Code running directly on the developer's machine has no
+tool that can drive VS Code's UI or read its Problems panel; see
+`phase-10.md`'s "10b spike" Runbook entry. The spike settled both of its own
+questions (a `stubPath` change needs a window reload; a reload is always
+needed, not only sometimes) and surfaced one more, unplanned finding before
+any stub-generation code was written: a generated stub takes precedence over
+a same-named package that already resolves locally with real source,
+silently disabling real type-checking for it (Finding 10.2) — so stub
+generation is scoped to 10a's `remoteOnly` diff bucket, never every remote
+package as the Plan section originally described. A second design point (the
+existing Stage-2 probe only reports the PyPI *distribution* name, not the
+*import* name Pylance actually needs — `Pillow`/`PIL`, `beautifulsoup4`/`bs4`,
+and others) was raised to the developer before any code was written and
+decided: extend the probe's payload, not ship a feature that silently
+under-covers common packages. New: `src/run/stubGenerator.ts`,
+`src/run/stubPathSetting.ts` (pure, 100% unit-covered), and
+`src/run/pylanceStubSync.ts` (the `vscode`-importing shell — generated stubs
+live at their own `.pythonOnViya/typings/`, never the conventional bare
+`typings/`, and `python.analysis.stubPath` is written via
+`vscode.workspace.getConfiguration(...).update(...)` — the sanctioned API,
+simpler and safer than the hand-rolled JSON merge the Runbook originally
+planned — only when nothing already claims that setting at workspace scope).
+`npm run verify`'s full chain and `npm run test:integration` both green (see
+`phase-10.md`'s "10b verification" Runbook entry for numbers). Manual-test
+items 10.6–10.11 (`docs/dev/manual-tests/phase-10.md`) are written but not
+yet run — they need a real VS Code+Pylance window, which this session cannot
+open. **The pre-push adversarial self-review has now run and found four real,
+blocking defects, all fixed on this branch** — Finding 10.2's shadowing
+mitigation was only half the hazard (a generated stub could still shadow the
+user's own workspace source, not just an installed local package); the reload
+notice nagged on every unchanged refresh; `Search Environment` silently wrote
+to the workspace with no signal to the user; and three bare `catch {}` blocks
+discarded the real cause of a write failure, one of which could silently skip
+pruning a stale, shadowing stub. Full account, including the review's
+non-blocking items folded in and the ones left open for the developer to
+decide, in `phase-10.md`'s own "Adversarial self-review, 2026-09-15" Runbook
+entry. The four discussed-not-decided items from that pass were resolved with
+the developer the same day: `workspaceFolderValue` initially settled with no
+code change (it only diverges from `workspaceValue` in a real multi-root
+workspace, out of scope today, carried to `phase-11.md`) — **superseded
+2026-09-16**, when a PR #182 review round found the gap was broader than
+multi-root (a `stubPath` set at user/global scope was missed even in the
+ordinary single-folder case); fixed in `c81f9d5`, and `phase-11.md`'s own
+carried-item entry now records it closed; local-unknown
+stubbing every remote package kept as-is; a `pythonOnViya.*` opt-out setting
+deferred to `phase-11.md`; and a "Reload Window" action button built onto the
+reload notice. **The developer then ran their own independent adversarial
+pass against the full branch** (`git diff main`, plus the allowed static
+gates run by hand) and found two more real findings: `commands.ts`'s own 10b
+wiring had a real injection seam nothing used, so the `changed`-based no-nag
+fix above was itself untested at the wiring level — fixed with a new
+purpose-built probe fixture (`test/helpers/recorded-probe-connection.ts`) and
+five new integration tests; and unsanitised Viya-sourced `name`/`version`
+strings could escape a generated stub's `#` comment via a newline — fixed
+(`stubGenerator.ts`'s new `sanitiseForComment`). Full account in
+`phase-10.md`'s Runbook. `npm run verify`'s full chain (1813 unit; coverage
+96.17/95.63/96.05/96.17), `npm run test:integration` (443 passing), and
+`npm run check:secrets` (502 files — this session also caught its own gap:
+`check:secrets` reads `git ls-files`, so new files went unscanned until
+staged) all green after every fix above.
+
+**Manual-test pass (items 10.6–10.14), run 2026-09-15 (Sean, real VS
+Code+Pylance window) — 8 of 9 passed; §10.8 is open, and a separate design
+objection came out of the same session.** 10.6, 10.7, 10.9–10.14 all passed
+(`docs/dev/manual-tests/phase-10.md` has the per-item detail, including a
+first-attempt false start on §10.8 with `saspy` — discarded once traced to a
+stub already on disk from an earlier test today, unrelated to the feature's
+own sync — and a first-attempt failure on §10.9 with nothing logged, not
+reproduced on retry, cause not established). **§10.8 itself failed and is
+still open**: against `babel` (confirmed never previously stubbed), a fresh
+probe correctly left the `reportMissingImports` diagnostic unchanged before
+any reload — but after accepting the "reload the window" notice and
+completing a real reload, the diagnostic still did not clear or downgrade.
+Root cause not investigated, at the developer's own direction. Recorded as
+**Finding 10.3** (`phase-10.md`'s Probe findings section — open, not
+resolved) and in the Runbook's "Manual test session, 2026-09-15" entry.
+**Separately, the developer has flagged the reload-required design itself as
+unacceptable, independent of whether §10.8 is a distinct bug**: a ~60–90
+second full extension-host restart — every extension restarting, the current
+Viya connection dropped and needing a manual reconnect — every time a
+refresh changes the remote-only package set, in exchange for a bare,
+attribute-less catch-all stub, is judged too costly as currently built. Full
+account, including candidate directions not yet evaluated, in the same
+Runbook entry. **The reload-design objection has since been acted on:** a
+"Restart Language Server" action is now offered alongside "Reload Window" on
+every stub-changing refresh (`src/run/commands.ts`'s new `offerReloadRemedy`),
+matching Pylance's own troubleshooting docs' recommendation for a
+`python.analysis.*` change — it restarts only the language-server process,
+not the whole extension host, so it has no structural reason to touch this
+project's own Viya connection or any other extension. The button is only
+offered when `python.analysis.restartLanguageServer` is actually registered
+(checked live via `vscode.commands.getCommands()`), and a registered-but-
+failing restart is caught and falls back to offering the reload, never a
+silent dead end. The real command id was confirmed against a live installed
+`ms-python.python` 2026.4.0, not assumed from a bug report — **Finding 10.4**
+(`phase-10.md`). `npm run verify`'s full chain green (1813 unit tests,
+coverage unchanged at 96.17/95.63/96.05/96.17 — `src/run/commands.ts` stays
+outside the coverage tier, same as before this change). Full account in
+`phase-10.md`'s Runbook, "Design change implemented, 2026-09-15" entry.
+**The pre-push adversarial self-review of this design change has now run
+and found two small, non-blocking issues, both fixed**: an unhandled-
+rejection gap on `offerReloadRemedy`'s call site, and two dev-machine
+artefacts (`.vscode/settings.json` residue; `.pythonOnViya/` untracked
+because this repo's own `.gitignore` didn't exclude it, unlike what
+`docs/python-environment.md` tells users to do for theirs) — full account in
+`phase-10.md`'s Runbook, "Pre-push adversarial self-review of the design
+change, 2026-09-15" entry. **§10.8 re-tested live against this change,
+2026-09-15 — passed.** Against `requests` (confirmed never previously
+stubbed): uninstalling it locally produced `reportMissingImports`; a fresh
+probe correctly left that unchanged; clicking **Restart Language Server**
+(~5–10 seconds, no dropped Viya connection) downgraded it to
+`reportMissingModuleSource` as expected. Recorded as **Finding 10.5**
+(`phase-10.md`) — which directly contradicts Finding 10.3's own `babel`
+result under a full reload alone, a discrepancy neither finding explains.
+**The developer's own call: Finding 10.3's `babel` result is set aside as a
+likely mistake in how that attempt was run, not a reproduced defect** — left
+in place verbatim as the historical record, no longer treated as blocking.
+§10.8 is marked passed on Finding 10.5's strength. **The full manual-test
+board for Phase 10 (items 10.1–10.14) is now all green.** **10b opened as
+[PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182)**, branch
+`feat/phase-10b-pylance-stub-reflection` against `main` — awaiting review
+and merge.
+
+**Deep-dive pass on the open 10b branch, 2026-09-16 — the guard that was
+missing.** After several reviewer round trips on #182 that kept surfacing
+further issues, this pass went after the class of defect rather than the
+individual findings, and the organising question turned out to be one none of
+the earlier rounds had asked: pyright resolves `python.analysis.stubPath`
+**ahead of every other import source**, so what can a generated stub actually
+shadow? Three things — installed local packages, the workspace's own source,
+and Pylance's own bundled typeshed. 10b guarded the first two. The third was
+unguarded and is the only one whose failure is **silent**, which is why it
+survived four prior reviews: a generated stub for a standard-library name
+(`typing`, `dataclasses` and `contextvars` all exist as real PyPI backports)
+switches off real type checking for that module workspace-wide, measured as
+1 error to 0 against pyright 1.1.414, and a stub for a typeshed-covered
+third-party name is a pure regression — Pylance already emits the
+`reportMissingModuleSource` warning this whole feature exists to produce, and
+supplies real types alongside it. Recorded as **Finding 10.7**
+(`phase-10.md`). Fixed with a new pure module, `src/run/typeshedNames.ts`
+(554 case-folded top-level names generated from pyright 1.1.414's bundled
+typeshed), applied as one more exclusion in `generateStubTree`. Three smaller
+fixes rode along: `writeStubTree` now returns `{ changed, wrote }` so
+`stubPath` is never pointed at a directory that was never created;
+`EnvironmentStore` now validates entries read back out of `globalState`,
+dropping (not defaulting) any written before 10b made `PythonPackage.importNames`
+required; and `__pycache__` — which really does appear in shipped
+`top_level.txt` data — is no longer stubbed. The live probe that closed the
+`MAX_ENVIRONMENT_PROBE_BYTES` question left open at the end of the previous
+session is **Finding 10.6**: 11,049 bytes for 264 distributions, **1.05% of
+the 1 MiB cap**, so the widened payload does not warrant revisiting it. Full
+account, including what the probe did *not* settle and the one deferred
+follow-up (runtime enumeration of Pylance's typeshed, an architecture change
+not taken unilaterally), in `phase-10.md`'s "Deep-dive pass before the
+adversarial review" Runbook entry. Verified once, whole branch:
+`npm run verify` green end to end (**1,814** unit tests; coverage
+**96.3/95.68/96.08/96.3**; `src/run` at 100% branch coverage;
+`check:secrets` 502 files), `npm run test:integration` green (**454
+passing**). Those are against freshly re-measured clean baselines of
+**1,796 unit / 453 integration** — note that earlier Phase 10 entries'
+`1813 unit; 443 integration` figures were taken with stale compiled tests
+still sitting in a local `out/` and are somewhat too high; `phase-10.md`'s
+Runbook entry explains the trap and how to avoid repeating it. **Not yet pushed** — the branch adds source and changes a
+documented invariant, so it goes to the developer's independent adversarial
+pass first, per the working agreement.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -271,7 +440,7 @@ housekeeping checkpoint. Per-phase detail
 | 7 — Libraries and data viewer | ✅ **done — 7a–7d all merged 2026-09-11** (library/table tree, React+ag-grid data viewer with sort/filter/CSV export, table properties panel, Python↔library data exchange via `SAS.sd2df`/`df2sd`/`submit`). Final PR [#163](https://github.com/Shai-Alit/sas-py-vscode/pull/163), squash `7b32db0`. `npm run verify` green (1574 unit; coverage 95.62/95.54/95.38/95.62). Phase 7→8 housekeeping ran and closed 2026-09-11 (see above). | `docs/phases/phase-7.md` |
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14; its one deferred gap (tree icon refresh) was root-caused and fixed 2026-09-15 — `onDidChangeTreeData` matches a fired element by object identity, not `TreeItem.id` — and live-confirmed, so nothing from Phase 8 is carried forward. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
-| 10 — Viya environment awareness | 🔶 **in progress — 10a merged 2026-09-15** (local/remote diff + Search environment `QuickPick`). Final PR [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), squash `62cf217`. `npm run verify` green (1771 unit; coverage 96.09/95.57/95.98/96.09). 10b not started. | `docs/phases/phase-10.md` |
+| 10 — Viya environment awareness | 🔶 **in progress — 10a merged 2026-09-15** (local/remote diff + Search environment `QuickPick`). Final PR [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178), squash `62cf217`. **10b (Pylance stub reflection) implemented 2026-09-15; a pre-push self-review and then the developer's own independent adversarial pass both ran the same day, together finding six real defects, all fixed on the branch**; opened as [PR #182](https://github.com/Shai-Alit/sas-py-vscode/pull/182). **A deep-dive pass 2026-09-16 then found the guard all earlier rounds had missed — `stubPath` outranks Pylance's own bundled typeshed, so a generated stub silently replaced real stdlib and third-party types (Finding 10.7); fixed via the new `src/run/typeshedNames.ts`, with three smaller fixes alongside.** Finding 10.6 also closed the probe byte-cap question (11,049 bytes, 1.05% of the cap). `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Awaiting the developer's adversarial pass before the fixes are pushed. | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 

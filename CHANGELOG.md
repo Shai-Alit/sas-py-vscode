@@ -52,6 +52,20 @@ called out under **Changed** with a migration note.
   still needs no local Python to run code). A new **Search Environment**
   command opens a filterable quick pick over the same package list for a
   fast lookup, without replacing the existing document.
+- **Fewer false "unresolved import" warnings from Pylance for a package only
+  installed on Viya.** Every **Show Environment**, **Search Environment**, or
+  **Refresh Environment Info** call that reaches Viya now also generates a
+  minimal type stub for each package that's on Viya but not in your local
+  environment, and points Pylance's `python.analysis.stubPath` setting at
+  them (added only if nothing already set that setting) — turning a hard
+  `reportMissingImports` error into, at worst, a milder "stub only" warning.
+  Nothing that already resolves to real types is given a placeholder: not a
+  package you have installed locally, not a top-level name that is already
+  your own file or folder at the workspace root, and not anything Pylance
+  already ships bundled stubs for — which includes the whole standard library
+  and several hundred popular third-party packages, where a generic stub
+  would be a downgrade rather than an improvement. See [The Python
+  environment](docs/python-environment.md#quieting-pylances-false-unresolved-import-warnings).
 
 ### Changed
 

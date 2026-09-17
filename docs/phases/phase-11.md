@@ -165,6 +165,29 @@ here** — kept as a one-paragraph record rather than deleted outright, so a
 session that arrives via the 2026-09-14 cross-references does not go looking
 for an item that is no longer in this list.
 
+**Also carried here (added 2026-09-15, from Phase 10b's pre-push adversarial
+review — two items discussed with the developer and deferred rather than
+built, `phase-10.md`'s "Adversarial self-review, 2026-09-15" Runbook entry
+has the full discussion).**
+
+- **A `pythonOnViya.*` setting to opt out of Pylance stub generation.** 10b
+  (`docs/python-environment.md`#quieting-pylances-false-unresolved-import-warnings)
+  writes a generated stub tree into the workspace and edits
+  `python.analysis.stubPath` on every fresh probe, with no way to turn it
+  off. Nobody has asked for one yet, and it's a real if bounded addition — a
+  new `package.json` configuration contribution plus wiring
+  (`src/run/pylanceStubSync.ts`) and a documentation update. A candidate for
+  whenever it is actually requested, not scoped as a slice yet.
+- **Closed on the 10b branch itself, before this item ever reached Phase
+  11.** A PR #182 review round found the gap was not only a multi-root
+  concern as first scoped here — `stubPathSetting.ts`'s `decideStubPathAction`
+  only checked `workspaceValue`, which missed a `stubPath` set at *user/global*
+  scope even in the ordinary single-folder case, silently overriding it. Fixed
+  in `c81f9d5`: `decideStubPathAction` now takes `globalValue`,
+  `workspaceValue`, and `workspaceFolderValue` together, honouring VS Code's
+  own scope precedence. Kept as a one-paragraph record rather than deleted
+  outright, for the same reason the CAS tree icon-flip entry above is.
+
 **Also carried here (added 2026-09-09, from the Phase 5→6 manual test pass):
 Accounts-menu legibility.** With two profiles signed in whose auth flows differ,
 VS Code shows two separate rows (it only collapses profiles that produce the

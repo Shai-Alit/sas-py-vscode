@@ -2783,7 +2783,7 @@ describe("ProcPythonBackend", () => {
         JSON.stringify({
           version: "3.12.0",
           executable: "/usr/bin/python3",
-          packages: [["numpy", "2.0.0"]],
+          packages: [["numpy", "2.0.0", ["numpy"]]],
         }),
       );
       const { client, requests } = router({
@@ -2813,8 +2813,8 @@ describe("ProcPythonBackend", () => {
           version: "3.12.0 (test)",
           executable: "/opt/py/bin/python3",
           packages: [
-            ["numpy", "2.0.0"],
-            ["pandas", "3.0.0"],
+            ["numpy", "2.0.0", ["numpy"]],
+            ["pandas", "3.0.0", ["pandas"]],
           ],
         }),
       );
@@ -2838,8 +2838,8 @@ describe("ProcPythonBackend", () => {
         version: "3.12.0 (test)",
         executable: "/opt/py/bin/python3",
         packages: [
-          { name: "numpy", version: "2.0.0" },
-          { name: "pandas", version: "3.0.0" },
+          { name: "numpy", version: "2.0.0", importNames: ["numpy"] },
+          { name: "pandas", version: "3.0.0", importNames: ["pandas"] },
         ],
       });
       assert.deepEqual(backend.capabilities().runtime, result.value);

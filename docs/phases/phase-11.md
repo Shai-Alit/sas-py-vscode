@@ -61,7 +61,11 @@ Everything else in this file — F1, F6, F8, and the items carried in from
 Phase 6/9/10 housekeeping — stays out of this phase's scope by Sean's own
 2026-09-16 call (see the scoping-session note in the Runbook, below), not
 because it was reconsidered and rejected. It remains here as this project's
-own record of the backlog, for whichever future phase picks it up.
+own record of the backlog, for whichever future phase picks it up. **F10**
+(below) was added a day later, 2026-09-17, after this scope was already
+decided — same treatment: out of this phase's scope, recorded in detail so
+the design isn't lost, explicitly not authorized for implementation until a
+dedicated scoping session revisits it.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -205,6 +209,109 @@ triaged against §3.1's parity table).**
   `SAS.submit("proc sql; ...")` today (Phase 7d's own documented pattern).
   Ships either docs-only (7d's shape) or as a real snippet command (8b's
   shape) — not decided.
+- **F10 — Auto-display of a notebook cell's rich output, matching a real
+  Jupyter kernel, instead of requiring an explicit `savefig`/`to_html` file
+  write.** Added 2026-09-17, after 11a's own manual-test pass (item 11.2 in
+  `docs/dev/manual-tests/phase-11.md`) surfaced that `plt.show()` and a bare
+  `df.head()` as a cell's last line both produce nothing — expected, current
+  behaviour per [ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)
+  and documented in `docs/notebooks.md`'s "Output" section, but a real
+  usability gap for the exploratory, plot-as-you-go workflow notebooks exist
+  for at all: today, *any* plotting library that doesn't get an explicit
+  `fig.savefig(...)` call — including one that manages its own figures
+  without the user ever calling `plt.show()` — produces no output at all,
+  not just the `plt.show()` case.
+  **This candidate is deliberately unscoped and undecided — Sean's own
+  explicit call, 2026-09-17: this needs its own dedicated look, is not
+  something to decide in the middle of another slice, and nothing here is
+  authorization to implement any of it.** Recorded now, in this much detail,
+  specifically so the design that came out of that session's discussion
+  isn't lost before whoever picks this up next revisits it.
+
+  **The mechanism discussed, sketched at the level a future scoping session
+  would need to pick it up, not at implementation-ready detail:**
+  1. The cell's own text still uploads exactly as it does today — byte-exact,
+     unmodified, its own file. Nothing about *that* transfer changes.
+  2. A small, fixed, project-owned "cell runner" Python script — never
+     containing any user bytes, uploaded once per compute session rather than
+     inlined per cell — reads the cell's file, `ast.parse`s it, and splits
+     off the **last top-level statement** if (and only if) it is a bare
+     expression. Everything before it still runs with plain `exec()`; the
+     last expression, if there is one, is `eval`'d instead of discarded and
+     handed to a display step — the same split a real interactive Python
+     shell (`code.InteractiveInterpreter`/IPython's own `run_cell`) already
+     does, reimplemented here because `PROC PYTHON infile=` has no
+     interactive mode of its own (ADR-0014 finding 34's option enumeration —
+     `COMMAND, ECHO, INFILE, RESTART, SRC, TERMINATE, TIMEOUT` — has nothing
+     resembling one).
+  3. **At the end of every cell, unconditionally** — not gated on a
+     `plt.show()` call — the runner walks `matplotlib.pyplot.get_fignums()`,
+     saves every currently open figure to a uniquely-named `.png` in the
+     working directory, and closes it. This is the piece that actually
+     answers "ALL plotting won't work": it doesn't matter whether the code
+     called `show()`, called nothing, or used a library that manages its own
+     figures — anything left open when the cell finishes gets captured,
+     matching how Jupyter's own inline backend behaves (it doesn't hook
+     `show()` either; it flushes open figures as a post-execution step).
+  4. The display step (both for the trailing-expression case and for the
+     figure-flush case) should probably speak the general IPython display
+     protocol (`_repr_html_`/`_repr_png_`/`_repr_svg_`) rather than
+     hand-coding "pandas and matplotlib" as two special cases — cheap
+     additional reach, since several other libraries (Plotly, PIL, sympy)
+     already implement it.
+  5. Nothing about how output actually leaves the session changes — the
+     runner only ever *writes files*; ADR-0019's existing
+     working-directory-diff capture picks them up completely unchanged. No
+     change to `RichOutput`, the transport, or `richOutput.ts`.
+
+  **Why this cannot be scoped as an ordinary slice — it means amending
+  ADR-0014, not working around it.** ADR-0014 states, project-wide, that
+  "the bytes the editor holds are the bytes the interpreter reads, with
+  nothing in between that tokenises, escapes, or re-encodes them" and that a
+  `submit(code: string)`-shaped seam is foreclosed — restated in ADR-0019's
+  own "Constrained by" line as "nothing may wrap or inject code around a
+  user's own script." The mechanism above composes what actually reaches the
+  interpreter (the cell's own file, run *through* a driver, rather than run
+  directly) — exactly the shape that invariant currently forecloses,
+  project-wide, with no carve-out for notebooks today.
+  **Scoped narrowly, if it is ever done**: only the notebook/interactive
+  -window execution path would ever compose bytes this way — Run File and
+  Run Selection have no "last expression" or "figures left open across a
+  session" concept to begin with (a `.py` file runs top to bottom, once,
+  fresh-namespace by default) and this candidate proposes no change to
+  either.
+  **A plausible case that this does not reopen finding 33's actual hazard**
+  (a `SUBMIT`/`ENDSUBMIT` SAS-tokeniser hazard, from splicing untrusted text
+  into a SAS statement): the user's code never gets embedded as a string
+  literal anywhere under this sketch — it stays in its own untouched file,
+  and the driver only ever reads it from disk and hands it to `compile()`,
+  so there is no delimiter/escaping surface at all, at either the SAS or the
+  Python level. **That is an argument for why it might be safe to revisit,
+  not a decision that it is** — ADR-0014 is this project's own foundational,
+  "load-bearing" record by its own header, and reopening it needs the
+  developer's own explicit review, not an inference from this write-up.
+  **Real secondary costs a future slice would have to actually solve, not
+  just theorize about:** a traceback from inside the driver gains a new
+  wrapper frame (`tracebackDiagnostics.ts` would need to learn to drop it,
+  the same class of problem ADR-0014 already solved once for two `<stdin>`
+  frames — finding 39 — not a new one); the driver's own helper names must
+  never leak into the user's persistent cross-cell namespace
+  (`environment.ts`'s own probe already solved this exact shape of problem —
+  define-then-`del` inside one wrapping function — and the same discipline
+  would need to carry over here); and captured figure/table filenames need a
+  collision-safe naming policy now that the *extension*, not the user, picks
+  them (today's same-name-same-size-is-invisible caveat, ADR-0019's own
+  Consequences section, is easier to trip with machine-generated names than
+  user-chosen ones unless this is handled deliberately).
+  **Explicitly not decided, not sized, not sequenced — do not pick this up
+  as an implementation task without a dedicated scoping session first,**
+  the same "architecture-level changes are a deliberate event" rule this
+  project applies everywhere else (`CLAUDE.md`). Related but distinct from
+  **F8**, above: F8 is about routing a DataFrame value into the existing
+  ag-grid data viewer; F10 is about the underlying execution-model change
+  that would let *any* rich value display at all without an explicit file
+  write — if F10 ever happens, it would likely become the mechanism that
+  feeds F8's own trigger, rather than the two being unrelated.
 
 **Bugs found pre-release (added 2026-09-16, from Sean's own hands-on use —
 not yet triaged for whether they're fixed ahead of the next release or as the
@@ -664,7 +771,45 @@ exactly as recommended or is recorded above as a deliberate, narrow call,
 and nothing in the fix set touches new surface the first review didn't
 already cover.
 
+### 11a manual-test pass, 2026-09-17: rich-output gap investigated, found to be expected behaviour
 
+Sean's own manual pass hit item 11.2 with `plt.show()` and a bare `df.head()`
+as a cell's last line and got no rich output for either — filed as a
+"partial" result. Investigated this session: **not a defect in 11a's own
+code.** `interactiveWindow.ts` executes cells through the exact same
+`notebookController.ts` path (`executeCell`/`appendRichOutput`) an ordinary
+`.ipynb` cell already uses, and the underlying rule is
+[ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
+own, already-documented behaviour (`docs/notebooks.md`'s "Output" section):
+rich output is captured by noticing a file the user's own code **wrote**
+(`fig.savefig(...)`, `df.to_html(...)`), never by an implicit `plt.show()` or
+a bare trailing expression — `PROC PYTHON infile=` runs a plain script, with
+no REPL displayhook and no display for a figure to draw on. Phase 9's own
+manual pass hit this identical confusion once already (9.10/9.13's own
+"would have read as a rendering bug" note) and reworded its repro instead of
+treating it as a defect; the same fix applies here.
+`docs/dev/manual-tests/phase-11.md`'s item 11.2 corrected in place: checkbox
+reverted from `[-]` to `[ ]` (per `setup.md`'s own tagging-legend rule —
+`[-]` means a confirmed, accepted gap, not an item awaiting a retest) and
+the repro reworded to the file-writing form, pending Sean's own retest.
+
+**That correction surfaced a real usability question, not just a test-repro
+mistake**: requiring an explicit file write for *any* rich output at all is
+a genuine gap for the exploratory, plot-as-you-go workflow notebooks exist
+for — every plotting call that doesn't end in an explicit `savefig`,
+including ones from a library that manages its own figures without the user
+ever touching `plt.show()`, currently produces nothing. Discussed with Sean
+this session; the design that came out of it is recorded as **F10** in the
+Plan section above, in real implementation-relevant detail specifically so
+it survives to whoever picks it up. **Explicitly not decided and not
+started — Sean's own call**: this needs a dedicated scoping session of its
+own, is not something to settle inside 11a, and amends
+[ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md) (the
+"nothing may wrap or inject code around a user's own script" invariant),
+which this project treats as a foundational, load-bearing record that only
+gets reopened by explicit developer decision, not inferred from a write-up.
+**No code was written or changed for F10 this session** — this entry and
+F10's own Plan-section writeup are the entire output of this discussion.
 
 Findings in this section are numbered `11.x`, per the phase-scoped
 finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root

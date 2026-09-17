@@ -590,13 +590,15 @@ section above unless noted:
   below, for what shipped and what did not (the no-connection case in
   particular — carried to 11c/B1, not built here) and for the review-fix
   entry covering what the first review round found.
-- [ ] **11b — CAS/SWAT SQL passthrough helper (F9).** Ship as documentation
-  (`docs/cas-python-connection.md` or a new page) plus, if a snippet still
-  reads as worthwhile once the doc is drafted, a small inserted-snippet
-  command in the shape of `pythonOnViya.insertCasConnectionSnippet` —
-  decide which while drafting, not before. Document the forced
-  single-node-read behaviour (Finding 11.2) as an expectation, not a caveat
-  to work around.
+- [x] **11b — CAS/SWAT SQL passthrough helper (F9).** Shipped as
+  documentation (`docs/cas-python-connection.md`'s new "Running native SQL
+  against an external database" section) plus a small inserted-snippet
+  command, `pythonOnViya.insertCasSqlPassthroughSnippet` — decided worth
+  building once drafting the doc made clear the template itself needed no
+  network round trip at all, unlike 8b's own command. Documents the forced
+  single-node-read behaviour (Finding 11.2) as an expectation. See this
+  section's own Runbook entry, below, for what shipped and the design calls
+  made while drafting.
 - [ ] **11c — Pre-release bug fixes (B1/B2/B3).** B1 (no-connection state
   across CAS/SAS-Content/SAS-Libraries trees), B2 (stale-connection recovery
   path for SAS Libraries, including surfacing **Connect to Viya** in that
@@ -893,6 +895,80 @@ which this project treats as a foundational, load-bearing record that only
 gets reopened by explicit developer decision, not inferred from a write-up.
 **No code was written or changed for F10 this session** — this entry and
 F10's own Plan-section writeup are the entire output of this discussion.
+
+### 11b — CAS/SWAT SQL passthrough helper
+
+Both halves of the punch-list entry shipped together, in the same slice: the
+documentation and the inserted-snippet command, decided in favor of once
+drafting the doc made the shape of the command obvious rather than upfront.
+
+**The design call this slice made:** unlike `casConnectCommand.ts` (8b),
+which needs a live Compute session to deliver a fresh token into, F9's own
+pattern (`fedsql.execDirect`/`connection to`) needs nothing beyond a `conn`
+the user already has open from 8b's own command — the caslib name and the
+native query are things only the user can supply, never wire data this
+project fetches. That makes the command a fixed template with two VS Code
+snippet tabstops, not a network-bound flow: no progress notification, no
+`AbortSignal`, no server/adapter/session dependency at all, only the same
+"is there an active Python editor" check 8b's own command opens with. New
+files: `src/cas/sqlPassthroughSnippet.ts` (the `vscode`-free string builder,
+`buildCasSqlPassthroughSnippet`, mirroring `connectSnippet.ts`'s own
+`buildCasConnectSnippet` in shape but needing neither of `dragSnippet.ts`'s
+two escaping layers — every character in the template is this module's own,
+never wire data landing inside a Python or snippet-syntax literal) and
+`src/cas/casSqlPassthroughCommand.ts` (the command itself, following
+`casConnectCommand.ts`'s own "handlers factory, thin registration shell"
+split). Registered in `extension.ts` right after 8b's own command.
+
+**New command:** `pythonOnViya.insertCasSqlPassthroughSnippet` ("Insert CAS
+SQL Passthrough Snippet"), gated by the same `enablement:
+pythonOnViya.connected` 8b's own command uses — not because this command's
+body ever touches the connection, but because the snippet it inserts is
+meaningless without a `conn` for it to read, the same reasoning 8b's own
+gating already established for this palette. Inserts:
+
+```python
+conn.loadactionset("fedsql")
+result = conn.fedsql.execDirect(
+    query="select * from connection to ${1:CASLIB} (${2:select * from native_table})"
+)
+df = result["Result Set"]
+```
+
+as a real `vscode.SnippetString` via `editor.insertSnippet` (not
+`editor.edit`, unlike 8b — there is no untrusted wire value to worry about
+reinterpreting as snippet grammar here, so a real snippet is the more useful
+choice: the caslib name and native query are two independent tabstops a user
+tabs through and fills in directly), with the same "not a Python file"
+message 8b's own command reports.
+
+**Documentation:** `docs/cas-python-connection.md` gained a new "Running
+native SQL against an external database" section — the command, when to
+reach for it (a caslib backed by an external database connector), the
+mechanism, and Finding 11.2's forced single-node-read behaviour written as
+an expectation to plan around, not a caveat or a defect. `docs/reference/commands.md`
+regenerated (`npm run docs:reference`) to include the new command; the l10n
+bundle needed no `npm run l10n:extract` diff, since the one user-facing
+string this command reports (`"Open a Python file first, then run this
+command again."`) is character-for-character 8b's own already-extracted
+string, reused rather than duplicated.
+
+**Verification:** `npx tsc --noEmit`, `npx eslint`, and `npx prettier
+--check` all clean on every changed/new file.
+`src/cas/casSqlPassthroughCommand.ts` is `.c8rc.json`-excluded, alongside
+`casConnectCommand.ts`, for the same reason (built entirely on `vscode`, the
+unit tier cannot reach it) — covered instead by
+`test/integration/cas/sql-passthrough-command.test.ts`, mirroring
+`connect-command.test.ts`'s own shape (happy path, no active editor, wrong
+document language). `src/cas/sqlPassthroughSnippet.ts` is a plain unit test
+(`test/unit/cas-sql-passthrough-snippet.test.ts`), asserting the exact
+template text since — unlike `buildCasConnectSnippet` — there is no dynamic
+input to vary across cases.
+
+No probe was needed for this slice: F9's mechanism was already confirmed
+against `verde` by Finding 11.2 before this phase's own scoping session
+sized the slice, and nothing about wiring a static template into a command
+touches wire behaviour this project hasn't already observed.
 
 Findings in this section are numbered `11.x`, per the phase-scoped
 finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root

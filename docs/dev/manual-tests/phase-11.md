@@ -66,5 +66,32 @@ lines is enough.
   window opens and receives the cell — the extension does not try to revive
   the closed one or complain that it is gone.
 
-Add further numbered items here (`11.6`, `11.7`, …) as later Phase 11 slices
+## CAS/SWAT SQL passthrough helper (phase 11b)
+
+A fixed-template command, `pythonOnViya.insertCasSqlPassthroughSnippet`
+("Insert CAS SQL Passthrough Snippet") — no network call of its own, unlike
+**Insert CAS Connection Snippet**. `test/integration/cas/
+sql-passthrough-command.test.ts` already proves the mechanism (happy path,
+no active editor, wrong document language) with no live Viya connection
+needed; these boxes are about the end-to-end pattern actually working
+against a real, database-backed caslib, which that suite cannot check.
+
+**Pre-work:** a Viya connection to a deployment with at least one
+database-backed caslib (Snowflake, in this project's own probed case —
+Finding 11.2). Run **Insert CAS Connection Snippet** first to get a `conn`.
+
+- [ ] **11.6** **Insert CAS SQL Passthrough Snippet** — with `conn` already
+  in the file, run the command from the Command Palette. **Expect:** the
+  template from `docs/cas-python-connection.md`'s "Running native SQL
+  against an external database" section is inserted at the cursor, with the
+  caslib-name and native-query placeholders selected as the first tabstop —
+  tabbing through fills in `CASLIB` and the inner query in turn.
+- [ ] **11.7** **The snippet actually round-trips a native query** — fill in
+  a real caslib name and a native query the external database understands,
+  run the resulting cell. **Expect:** `df` comes back as a usable
+  `pandas.DataFrame` holding that query's own result, with no error, and the
+  session log shows the `numReadNodes=1` warning Finding 11.2 already
+  documented as expected rather than a defect.
+
+Add further numbered items here (`11.8`, `11.9`, …) as later Phase 11 slices
 land, the same way every other phase file did.

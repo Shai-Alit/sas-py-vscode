@@ -38,6 +38,7 @@ under their category.
 | Refresh SAS Libraries | `Python on Viya: Refresh SAS Libraries` | `pythonOnViya.refreshDataExplorer` |
 | Refresh CAS | `Python on Viya: Refresh CAS` | `pythonOnViya.refreshCasExplorer` |
 | Insert CAS Connection Snippet | `Python on Viya: Insert CAS Connection Snippet` | `pythonOnViya.insertCasConnectionSnippet` |
+| Insert CAS SQL Passthrough Snippet | `Python on Viya: Insert CAS SQL Passthrough Snippet` | `pythonOnViya.insertCasSqlPassthroughSnippet` |
 | New Folder | `Python on Viya: New Folder` | `pythonOnViya.createContentFolder` |
 | New File | `Python on Viya: New File` | `pythonOnViya.createContentFile` |
 | Rename | `Python on Viya: Rename` | `pythonOnViya.renameContentItem` |

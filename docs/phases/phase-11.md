@@ -783,6 +783,72 @@ exactly as recommended or is recorded above as a deliberate, narrow call,
 and nothing in the fix set touches new surface the first review didn't
 already cover.
 
+**PR #192 review round (Codex + the Claude reviewer, 2026-09-17), all
+should-fix findings fixed locally in one pass before the next push.** Both
+reviewers independently flagged the same defect; the Claude reviewer's
+independent pass also found one further race the first round's own
+`creatingTracked` fix didn't extend to:
+
+- **`getOrCreateInteractiveWindow` never recovered from a rejected
+  `openNotebookDocument()` call** (Codex, major; Claude reviewer,
+  correctness #1) — `creatingTracked` was cleared only on the success branch
+  of `.then`, so a rejection (untitled-notebook creation failing, or the
+  user cancelling a picker VS Code might show) left it set to the rejected
+  promise permanently: every later call to either command would just
+  re-await that same rejection, wedging the interactive window until a
+  window reload, and the rejection itself reached VS Code's raw
+  command-failure toast rather than this module's own friendly messaging.
+  **Fixed**: `creatingTracked`'s `.then` now takes a rejection handler too,
+  which clears the variable and rethrows, so the very next call starts a
+  fresh `openNotebookDocument()` attempt; both call sites
+  (`openInteractiveWindow`, `runSelectionInInteractiveWindow`, and the
+  closed-notebook retry inside the new `appendAndRunCell`) now wrap that call
+  in a `try`/`catch` and surface a `showErrorMessage` instead of letting the
+  rejection propagate unhandled.
+- **`runSelectionInInteractiveWindow` could race on `notebook.cellCount`
+  across two overlapping invocations** (Claude reviewer, correctness #2) — a
+  keybinding double-fire, or the command firing again before a previous
+  call's edit/execute had settled, could let both calls read the same
+  `cellCount` as their insertion index before either inserted; `applyEdit`
+  doesn't fail on a stale index, so both edits would succeed, but the second
+  insert would push the first call's own cell one slot along — one call's
+  `executeCell` would then run the other call's cell (potentially twice)
+  while its own appended cell never ran. The same class of bug
+  `creatingTracked` was already fixed to prevent for notebook creation, just
+  unaddressed for this read-index → insert → execute sequence. **Fixed**:
+  the critical section is now its own function, `appendAndRunCell`, and every
+  call chains its own invocation onto a module-scoped `pendingRun` promise
+  rather than running immediately — so two overlapping calls always execute
+  their critical sections one after the other, never interleaved. No new
+  automated test was added for this specifically: reliably forcing two
+  invocations to interleave at the exact right point is not something an
+  integration test can assert deterministically without instrumenting the
+  module's own internals, and the existing "two selections run without
+  losing an execution" integration test already exercises the sequential
+  (non-racing) path this change leaves unchanged.
+- **Minor, left as-is, per both reviewers' own "not blocking" framing**: (1)
+  the bounded 10s kernel-selection wait has no progress UI or cancellation,
+  unlike comparable waits in `sessionManager.ts`/`csvExportCommand.ts` — those
+  use dependency-injected `withProgress` wiring built for testability and
+  cancellation together, and adding the equivalent here (plumbing a
+  cancellation token through `waitForControllerSelection`, plus the test
+  seam to exercise it) is more than a should-fix-sized change for a wait
+  that's bounded and paid at most once per window; flagged for whoever next
+  touches this module rather than built speculatively here. (2) A dedicated
+  ADR for "bespoke interactive-window surface, not VS Code's real one" —
+  the decision is already recorded at ADR weight in this file's own F7
+  write-up and this module's doc comment; a standalone ADR file adds no new
+  information, so one wasn't created without Sean asking for it.
+
+`npm run verify` green after these fixes (1,814 unit tests unchanged;
+coverage unchanged at 96.3/95.68/96.08/96.3 — `interactiveWindow.ts` stays
+`.c8rc.json`-excluded). `npm run test:integration` green, same 457 passing
+(454 pre-existing plus the three from round 1), confirming the serialization
+change doesn't alter the sequential-call path's behavior. `npx tsc --noEmit`
+and `npx eslint src/notebook/interactiveWindow.ts` both clean. One push for
+this round, per the developer's own instruction to avoid re-triggering CI
+and both AI reviewers per commit.
+
 ### 11a manual-test pass, 2026-09-17: rich-output gap investigated, found to be expected behaviour
 
 Sean's own manual pass hit item 11.2 with `plt.show()` and a bare `df.head()`

@@ -87,8 +87,26 @@ let tracked: vscode.NotebookDocument | undefined;
  * land before the first `await` resolves would each see `tracked` as
  * `undefined` and each create their own notebook — the second orphaning the
  * first. Sharing the same promise means the second caller waits on the first
- * caller's own in-flight creation instead of starting a second one. */
+ * caller's own in-flight creation instead of starting a second one. Cleared
+ * on both the success *and* the failure branch — a rejected
+ * `openNotebookDocument()` call must not leave this permanently set, or every
+ * later call would just re-await the same stale rejection until a window
+ * reload. */
 let creatingTracked: Promise<vscode.NotebookDocument> | undefined;
+
+/** Serializes the read-`cellCount` → insert-cell → execute critical section
+ * in {@link runSelectionInInteractiveWindow} (via {@link appendAndRunCell}).
+ * Without this, two overlapping invocations — a keybinding double-fire, or
+ * the command firing again before a previous call's edit/execute has settled
+ * — could both read `notebook.cellCount` as the same index before either has
+ * inserted, so one call's cell lands at the other's index and one of the two
+ * appended cells never runs. This is the same class of race
+ * {@link creatingTracked} guards against for notebook creation, applied to
+ * appending and running a cell instead. Each call chains its own critical
+ * section onto this promise and waits its turn; `.catch(() => undefined)`
+ * keeps a prior call's own failure (already reported via its own
+ * `showErrorMessage`) from wedging every later call out of its turn. */
+let pendingRun: Promise<void> = Promise.resolve();
 
 /** Notebooks `NotebookController.onDidChangeSelectedNotebooks` has reported
  * as selected — see this module's own doc comment on why a long-lived
@@ -115,11 +133,17 @@ async function getOrCreateInteractiveWindow(): Promise<vscode.NotebookDocument> 
       NOTEBOOK_TYPE,
       new vscode.NotebookData([]),
     ),
-  ).then((notebook) => {
-    tracked = notebook;
-    creatingTracked = undefined;
-    return notebook;
-  });
+  ).then(
+    (notebook) => {
+      tracked = notebook;
+      creatingTracked = undefined;
+      return notebook;
+    },
+    (error: unknown) => {
+      creatingTracked = undefined;
+      throw error;
+    },
+  );
   return await creatingTracked;
 }
 
@@ -240,12 +264,73 @@ async function executeCell(
 async function openInteractiveWindow(
   controller: vscode.NotebookController,
 ): Promise<void> {
-  const notebook = await getOrCreateInteractiveWindow();
+  let notebook: vscode.NotebookDocument;
+  try {
+    notebook = await getOrCreateInteractiveWindow();
+  } catch {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t("Could not open the interactive window. Try again."),
+    );
+    return;
+  }
   controller.updateNotebookAffinity(
     notebook,
     vscode.NotebookControllerAffinity.Preferred,
   );
   await reveal(notebook);
+}
+
+/** The read-`cellCount` → insert-cell → execute critical section of
+ * {@link runSelectionInInteractiveWindow}, run only from inside
+ * {@link pendingRun}'s queue — see that variable's own doc comment for why
+ * this must never run concurrently with itself. `notebook` is the caller's
+ * already-created, already-revealed tracked notebook; this only reassigns
+ * its own local `target` if that notebook turns out to have closed by the
+ * time this call reaches the front of the queue. */
+async function appendAndRunCell(
+  controller: vscode.NotebookController,
+  notebook: vscode.NotebookDocument,
+  text: string,
+): Promise<void> {
+  let target = notebook;
+  let index = target.cellCount;
+  if (
+    !(await vscode.workspace.applyEdit(insertCellEdit(target, index, text)))
+  ) {
+    // The tracked notebook closed between the isClosed check inside
+    // getOrCreateInteractiveWindow and this edit; retry once against a fresh
+    // one rather than executing a cell range that was never inserted.
+    if (tracked === target) tracked = undefined;
+    try {
+      target = await getOrCreateInteractiveWindow();
+    } catch {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("Could not open the interactive window. Try again."),
+      );
+      return;
+    }
+    controller.updateNotebookAffinity(
+      target,
+      vscode.NotebookControllerAffinity.Preferred,
+    );
+    await reveal(target);
+    index = target.cellCount;
+    if (
+      !(await vscode.workspace.applyEdit(insertCellEdit(target, index, text)))
+    ) {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("Could not add the new cell. Try again."),
+      );
+      return;
+    }
+  }
+
+  await waitForControllerSelection(
+    controller,
+    target,
+    CONTROLLER_SELECTION_TIMEOUT_MS,
+  );
+  await executeCell(target, index);
 }
 
 /**
@@ -273,44 +358,26 @@ async function runSelectionInInteractiveWindow(
     return;
   }
 
-  let notebook = await getOrCreateInteractiveWindow();
+  let notebook: vscode.NotebookDocument;
+  try {
+    notebook = await getOrCreateInteractiveWindow();
+  } catch {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t("Could not open the interactive window. Try again."),
+    );
+    return;
+  }
   controller.updateNotebookAffinity(
     notebook,
     vscode.NotebookControllerAffinity.Preferred,
   );
   await reveal(notebook);
 
-  let index = notebook.cellCount;
-  if (
-    !(await vscode.workspace.applyEdit(insertCellEdit(notebook, index, text)))
-  ) {
-    // The tracked notebook closed between the isClosed check inside
-    // getOrCreateInteractiveWindow and this edit; retry once against a fresh
-    // one rather than executing a cell range that was never inserted.
-    if (tracked === notebook) tracked = undefined;
-    notebook = await getOrCreateInteractiveWindow();
-    controller.updateNotebookAffinity(
-      notebook,
-      vscode.NotebookControllerAffinity.Preferred,
-    );
-    await reveal(notebook);
-    index = notebook.cellCount;
-    if (
-      !(await vscode.workspace.applyEdit(insertCellEdit(notebook, index, text)))
-    ) {
-      void vscode.window.showErrorMessage(
-        vscode.l10n.t("Could not add the new cell. Try again."),
-      );
-      return;
-    }
-  }
-
-  await waitForControllerSelection(
-    controller,
-    notebook,
-    CONTROLLER_SELECTION_TIMEOUT_MS,
-  );
-  await executeCell(notebook, index);
+  const run = pendingRun
+    .catch(() => undefined)
+    .then(() => appendAndRunCell(controller, notebook, text));
+  pendingRun = run.catch(() => undefined);
+  await run;
 }
 
 /** Registers both commands and pushes their disposables onto

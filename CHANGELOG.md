@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until `1.0.0`, minor versions may contain breaking changes; they will always be
 called out under **Changed** with a migration note.
 
-## [Unreleased]
+## [0.1.3] - 2026-09-16
 
 ### Added
 
@@ -21,6 +21,13 @@ called out under **Changed** with a migration note.
   memory. Needs no compute session and opens no CAS session of its own — an
   endpoint and a token are enough
   ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)).
+- **Open a CAS table in the data viewer.** Click a table in the CAS view to
+  open it in the same paged, sortable, filterable data-viewer panel Phase 7
+  built for SAS library tables — no separate implementation, generalized
+  behind a `TableSource` abstraction
+  ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Table properties
+  and CSV export, already available for SAS library tables, are not yet
+  extended to CAS tables.
 - **Connect to CAS from Python with no separate credential.** Run **Insert
   CAS Connection Snippet** to get a Python snippet that opens an
   authenticated `swat.CAS()` connection, reusing the same Viya access token
@@ -64,7 +71,10 @@ called out under **Changed** with a migration note.
   your own file or folder at the workspace root, and not anything Pylance
   already ships bundled stubs for — which includes the whole standard library
   and several hundred popular third-party packages, where a generic stub
-  would be a downgrade rather than an improvement. See [The Python
+  would be a downgrade rather than an improvement. Pylance does not notice a
+  stub-tree change on its own — a notification after the sync offers
+  **Restart Language Server** (a few seconds, your Viya connection stays up)
+  ahead of the heavier **Reload Window** as a fallback. See [The Python
   environment](docs/python-environment.md#quieting-pylances-false-unresolved-import-warnings).
 
 ### Changed

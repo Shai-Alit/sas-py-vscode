@@ -24,7 +24,9 @@ feature (F7, below) go first** when this phase starts, ahead of the rest of the
 long tail above and the feature candidates below. Neither is sized yet — sizing
 happens when the phase is actually picked up, per this section's own rule — but
 the *order* is decided now so a future scoping session doesn't have to
-re-litigate it.
+re-litigate it. **F9 (below), added later the same day, is explicitly ordered
+behind F7** — Sean's own instruction when the candidate was proposed, not an
+inference from its position in the list below.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -94,6 +96,55 @@ triaged against §3.1's parity table).**
   target rather than building a new grid, but the cap, the trigger (every
   DataFrame result, or an opt-in action), and how this interacts with the
   Result panel's existing `RichOutput[]` shape are all open.
+- **F9 — CAS/SWAT explicit SQL passthrough helper** (added 2026-09-16, from a
+  separate conversation with Sean; **prioritized behind F7**, per the
+  priority-order note above). A documented pattern (and possibly a small
+  inserted-snippet command) for running native SQL directly against a
+  caslib's own external-database connection via CAS's FedSQL explicit
+  pass-through — `CONNECTION TO <engine> (...)`, available in FedSQL/CAS since
+  Viya 3.4 per SAS's own documentation, so no dialect-layer branching is
+  needed on that account — so a table's rows never have to load into CAS
+  memory before a user can query them. From SWAT this is one CAS action call:
+
+  ```python
+  conn.loadactionset("fedsql")
+  result = conn.fedsql.execDirect(
+      query="select ... from connection to snowflake ( ... native SQL ... )"
+  )
+  df = result["Result Set"]  # already a SASDataFrame / pandas.DataFrame
+  ```
+
+  Nothing is written to CAS memory unless a `casout=` is also given. **Smaller than 8b
+  was, not bigger**: the caslib already owns the credential to the external
+  database (configured by whoever defined the caslib), so there is no new
+  credential surface — this sits directly on top of the existing
+  `pythonOnViya.insertCasConnectionSnippet` (Phase 8b) connection, reusing its
+  token-delivery and reconnect-on-auth-failure story unchanged. **Finding
+  11.1** (Probe findings, below) confirms at least one Snowflake-backed
+  caslib already exists somewhere reachable this session, so this candidate
+  has a real target to build and test against, not only a hypothetical one —
+  but that check ran through a different, separate mechanism than this
+  project's own `viya-api-probe` skill and was not cross-checked against
+  `verde` specifically, so treat it as weaker evidence than the rest of this
+  ledger; see the finding itself for exactly what it does and does not
+  establish. **Not yet probed at all, by either mechanism**: SAS's own
+  knowledge-base literature notes pass-through fidelity varies by connector
+  and version, so the exact `fedsql.execDirect`/`CONNECTION TO` syntax and
+  behaviour against a real caslib here needs its own live check — via
+  `viya-api-probe` against `verde`, this project's own sanctioned mechanism —
+  before this is written up as a confirmed pattern or shipped as a snippet.
+  Deliberately not run yet: it means executing a CAS action rather than a
+  read-only REST `GET`, and several of this deployment's other caslibs read
+  as customer- or business-identifying, so that probe wants an explicit
+  go-ahead first, same as any mutating or execution-shaped probe under this
+  project's own rules. **Distinct from
+  F1**: F1 intercepts arbitrary Python/pandas calls and rewrites them into
+  passthrough SQL against a SAS *libname* — architecture-level, "probably
+  extremely complicated" by Sean's own assessment. F9 has no interception at
+  all: the user writes their own native SQL, the same way they already write
+  `SAS.submit("proc sql; ...")` today (Phase 7d's own documented pattern).
+  Ships either docs-only (7d's shape) or as a real snippet command (8b's
+  shape) — not decided.
 
 **Bugs found pre-release (added 2026-09-16, from Sean's own hands-on use —
 not yet triaged for whether they're fixed ahead of the next release or as the
@@ -315,4 +366,35 @@ _Not yet reached — no punch list written yet._
 
 ## Probe findings
 
-_No live-Viya probes recorded for this phase yet._
+Findings in this section are numbered `11.x`, per the phase-scoped
+finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root
+`CLAUDE.md`) — this is the first finding recorded for this phase, so it
+starts fresh at `11.1` rather than continuing any other phase's count.
+
+### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
+
+Checked 2026-09-16, read-only, while scoping candidate F9 (Plan, above) —
+**not** via this project's own `viya-api-probe` skill and `creds.json`, the
+mechanism every other finding in this repository was produced by. Instead,
+this ran through a separate MCP connector (`sas-viya-mcp`) already available
+in that session's environment. Its own authentication is opaque to this
+project (no `creds.json` involved), and which deployment it targets was not
+independently cross-checked against `verde`, the deployment every other
+finding here is explicitly scoped to. **Recorded as its own, flagged finding
+rather than folded in silently, precisely so it is not mistaken for a
+`viya-api-probe`/`verde` result later** — treat it as weaker evidence than
+the rest of this ledger until that mechanism/deployment question is settled.
+
+**What it actually showed:** `list_cas_servers` returned one CAS server
+(`cas-shared-default`); `list_caslibs` against it returned caslibs of type
+`snowflake` (three), `S3` (two), and `DNFS`/`PATH` (the remainder) — a
+read-only metadata listing only, no query run against any of them. **What it
+establishes:** F9's premise is grounded in a real environment rather than a
+hypothetical one — a DBMS-backed (Snowflake) caslib genuinely exists
+somewhere this session could reach. **What it does not establish:** whether
+FedSQL explicit pass-through (`fedsql.execDirect`/`CONNECTION TO`) actually
+works against any of those caslibs, whether this is the same deployment as
+`verde`, or anything about credential handling for that connector — all
+three are open items for whoever picks up F9, and the first genuinely needs
+a `viya-api-probe` pass against `verde` before any code or documented pattern
+is written, per this project's own "don't guess about Viya — probe it" rule.

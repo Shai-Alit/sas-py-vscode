@@ -76,6 +76,11 @@ const DENY = [
     test: (p) => /^(out|coverage|node_modules|\.vscode-test)\//.test(p),
   },
   {
+    name: "generated stub tree",
+    why: "`.pythonOnViya/` is Phase 10b's generated Pylance stub cache, written into a developer's own working tree from whatever Viya profile they last tested against — a real environment's own package names and versions, and no user's to ship",
+    test: (p) => /^\.pythonOnViya\//.test(p),
+  },
+  {
     name: "source map",
     why: "maps expose the original sources and are not used by the extension host in a published build",
     test: (p) => p.endsWith(".map"),
@@ -159,6 +164,7 @@ const SELF_TEST = [
   ["dist/extension.js.map", "source map"],
   ["out/src/extension.js", "build output"],
   ["node_modules/left-pad/index.js", "build output"],
+  [".pythonOnViya/typings/pandas/__init__.pyi", "generated stub tree"],
   ["creds.json", "credential"],
   ["config/creds.json", "credential"],
   [".env", "credential"],

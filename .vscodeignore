@@ -29,6 +29,14 @@ coverage/**
 # the CI docs job does run — and `vsce package` reads the working tree, so on a
 # machine that has built both, several megabytes of static site would ship.
 site/**
+# Phase 10b's generated Pylance stub tree, written into the workspace root by
+# `pythonOnViya.refreshEnvironment`/`showEnvironment` against whatever profile
+# a developer tested against locally. Already in `.gitignore` for the same
+# reason `docs/python-environment.md` tells *users* to add it to theirs, but
+# `vsce package` reads the working tree regardless of git — a machine that had
+# ever exercised this feature would otherwise ship a real environment's own
+# package names and versions inside the VSIX.
+.pythonOnViya/**
 
 .editorconfig
 .eslintcache

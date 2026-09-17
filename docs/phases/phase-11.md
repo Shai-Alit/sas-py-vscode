@@ -24,7 +24,9 @@ feature (F7, below) go first** when this phase starts, ahead of the rest of the
 long tail above and the feature candidates below. Neither is sized yet — sizing
 happens when the phase is actually picked up, per this section's own rule — but
 the *order* is decided now so a future scoping session doesn't have to
-re-litigate it.
+re-litigate it. **F9 (below), added later the same day, is explicitly ordered
+behind F7** — Sean's own instruction when the candidate was proposed, not an
+inference from its position in the list below.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -94,6 +96,48 @@ triaged against §3.1's parity table).**
   target rather than building a new grid, but the cap, the trigger (every
   DataFrame result, or an opt-in action), and how this interacts with the
   Result panel's existing `RichOutput[]` shape are all open.
+- **F9 — CAS/SWAT explicit SQL passthrough helper** (added 2026-09-16, from a
+  separate conversation with Sean; **prioritized behind F7**, per the
+  priority-order note above). A documented pattern (and possibly a small
+  inserted-snippet command) for running native SQL directly against a
+  caslib's own external-database connection via CAS's FedSQL explicit
+  pass-through — `CONNECTION TO <engine> (...)`, available in FedSQL/CAS since
+  Viya 3.4 per SAS's own documentation, so no dialect-layer branching is
+  needed on that account — so a table's rows never have to load into CAS
+  memory before a user can query them. From SWAT this is one CAS action call:
+
+  ```python
+  conn.loadactionset("fedsql")
+  result = conn.fedsql.execDirect(
+      query="select ... from connection to snowflake ( ... native SQL ... )"
+  )
+  df = result["Result Set"]  # already a SASDataFrame / pandas.DataFrame
+  ```
+
+  Nothing is written to CAS memory unless a `casout=` is also given. **Smaller than 8b
+  was, not bigger**: the caslib already owns the credential to the external
+  database (configured by whoever defined the caslib), so there is no new
+  credential surface — this sits directly on top of the existing
+  `pythonOnViya.insertCasConnectionSnippet` (Phase 8b) connection, reusing its
+  token-delivery and reconnect-on-auth-failure story unchanged. Confirmed
+  live (`sas-viya-mcp`, read-only, 2026-09-16) that this deployment already
+  has Snowflake-backed caslibs to build and test against — a real target, not
+  a hypothetical one. **Not yet probed**: SAS's own knowledge-base literature
+  notes pass-through fidelity varies by connector and version, so the exact
+  `fedsql.execDirect`/`CONNECTION TO` syntax and behaviour against a real
+  caslib here needs a live check before this is written up as a confirmed
+  pattern or shipped as a snippet — deliberately not run yet, since it means
+  executing a CAS action rather than a read-only REST `GET`, and several of
+  this deployment's other caslibs read as customer- or business-identifying,
+  so that probe wants an explicit go-ahead first, same as any mutating or
+  execution-shaped probe under this project's own rules. **Distinct from
+  F1**: F1 intercepts arbitrary Python/pandas calls and rewrites them into
+  passthrough SQL against a SAS *libname* — architecture-level, "probably
+  extremely complicated" by Sean's own assessment. F9 has no interception at
+  all: the user writes their own native SQL, the same way they already write
+  `SAS.submit("proc sql; ...")` today (Phase 7d's own documented pattern).
+  Ships either docs-only (7d's shape) or as a real snippet command (8b's
+  shape) — not decided.
 
 **Bugs found pre-release (added 2026-09-16, from Sean's own hands-on use —
 not yet triaged for whether they're fixed ahead of the next release or as the

@@ -61,12 +61,9 @@ import {
   deriveVariableName,
   deriveViewName,
 } from "./dragSnippet";
-import {
-  isTable,
-  readDraggedTables,
-  type DataItem,
-  type TableItem,
-} from "./types";
+import { type DataTreeNode } from "./dataTree";
+import { isTable, readDraggedTables, type TableItem } from "./types";
+import { isConnectionProblemNode } from "../connectionProblemNode";
 
 /** Private to this view — a drop only means something when the drag started
  * here, matching `contentDragAndDrop.ts`'s own single-MIME convention. */
@@ -129,7 +126,7 @@ function escapeForRegExp(value: string): string {
 
 export class SasLibraryDragAndDropController
   implements
-    vscode.TreeDragAndDropController<DataItem>,
+    vscode.TreeDragAndDropController<DataTreeNode>,
     vscode.DocumentDropEditProvider
 {
   readonly dragMimeTypes = [TABLE_MIME];
@@ -138,10 +135,15 @@ export class SasLibraryDragAndDropController
   constructor(private readonly deps: DataDragAndDropDeps = {}) {}
 
   handleDrag(
-    source: readonly DataItem[],
+    source: readonly DataTreeNode[],
     dataTransfer: vscode.DataTransfer,
   ): void {
-    const tables = source.filter(isTable);
+    // The 11c `ConnectionProblemNode` (B1) is never a real table — excluded
+    // before `isTable`, which is typed against `DataItem` only.
+    const tables = source.filter(
+      (item): item is TableItem =>
+        !isConnectionProblemNode(item) && isTable(item),
+    );
     if (tables.length === 0) return;
     dataTransfer.set(TABLE_MIME, new vscode.DataTransferItem(tables));
   }

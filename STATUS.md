@@ -358,10 +358,33 @@ numeric order; this file's own wording corrected), and pushed to
 tests; coverage 96.31/95.68/96.08/96.31) and `npm run check:docs` both
 re-ran green 2026-09-18** against the pushed branch, and
 [PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) is now open
-for these two follow-up commits. 11c (three
-pre-release bugs), 11d (CAS table properties/CSV export), and 11e (session
+for these two follow-up commits. **11c — the three pre-release bugs
+(B1/B2/B3)** is code-complete 2026-09-18: B1 (blank trees on a failed
+listing) is a new `ConnectionProblemNode` (`src/connectionProblemNode.ts`)
+each of the three browsing trees' `getChildren` now returns instead of `[]`;
+B2 (a stale SAS Libraries connection had no way back except **Disconnect**)
+is `SasLibraryTreeProvider` and (extended mid-session, Sean's own live
+report of the same gap in `Insert CAS Connection Snippet`)
+`casConnectCommand.ts` both now calling `forgetProfile` on a `session-gone`
+reading, so **Connect to Viya** re-syncs into the palette immediately; B3
+(SAS Libraries table icon) now matches CAS's loaded-table icon. B1 and B2
+turned out not to share one mechanism — CAS/SAS Content have no "connected"
+concept of their own (ADR-0033), SAS Libraries does — see `phase-11.md`'s
+own 11c Runbook entry for the full design account. A new
+`test/integration/data/tree.test.ts` was added (`dataTree.ts` had no test
+file at all before this slice); `test/integration/cas/tree.test.ts`,
+`test/integration/content/tree.test.ts`, and
+`test/integration/cas/connect-command.test.ts` all gained assertions for
+the new behaviour. `npm run verify` green (1,816 unit tests; coverage
+96.31/95.68/96.08/96.31), `npm run test:integration` green (465 passing),
+`npm run check:docs` green. Manual-test items 11.8–11.13 added to
+`docs/dev/manual-tests/phase-11.md`, not yet run — this needs a live
+deployment and a way to make a session go stale, which is Sean's to run.
+**Not yet pushed, no PR opened** — per this project's own "adversarial
+review before the PR exists" rule, next step is handing over the review
+prompt. 11d (CAS table properties/CSV export) and 11e (session
 startup/autoexec, still needing its own scoping pass) remain. Full plan,
-punch list, and probe findings (11.1–11.3) are in
+punch list, and probe findings (11.1–11.4) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
 completion was missed from this file at the time it merged — a housekeeping
 gap, caught and corrected only now, alongside 11b's own update, rather than

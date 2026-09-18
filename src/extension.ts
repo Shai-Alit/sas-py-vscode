@@ -334,7 +334,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // (`src/compute/casToken.ts`) — so it is wired against `sessions` here
   // rather than alongside 8a above. Reuses 8a's own endpoint-keyed adapter
   // cache (`casExplorer.session`) rather than building a second one.
-  registerCasConnectCommand(context, sessions, casExplorer.session, profiles);
+  // 11c (B2): `forgetProfile` is the same handle `runSessions` above already
+  // carries, so a `session-gone` this command discovers re-syncs
+  // `pythonOnViya.connected` too, not only a run's own.
+  registerCasConnectCommand(
+    context,
+    { current: (profileId) => sessions.current(profileId), forgetProfile },
+    casExplorer.session,
+    profiles,
+  );
 
   // Phase 11b: a fixed-template companion to 8b's command above, needing no
   // session/profile/adapter of its own — see `casSqlPassthroughCommand.ts`'s
@@ -369,6 +377,7 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     dataViewerPanels,
     tablePropertiesPanels,
+    forgetProfile,
   );
 
   // Phase 9a: a NotebookController against VS Code's own `jupyter-notebook`

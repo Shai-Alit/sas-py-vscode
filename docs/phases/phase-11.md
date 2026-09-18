@@ -599,14 +599,16 @@ section above unless noted:
   single-node-read behaviour (Finding 11.2) as an expectation. See this
   section's own Runbook entry, below, for what shipped and the design calls
   made while drafting.
-- [ ] **11c — Pre-release bug fixes (B1/B2/B3).** B1 (no-connection state
-  across CAS/SAS-Content/SAS-Libraries trees), B2 (stale-connection recovery
-  path for SAS Libraries, including surfacing **Connect to Viya** in that
-  state), B3 (SAS Libraries table icon parity with CAS's loaded/unloaded
-  icon, `src/cas/casTree.ts`). Worth checking whether B1 and B2 share enough
-  of a "connection state" mechanism to fix together rather than as three
-  independent patches — a design question for whoever starts this slice, not
-  decided here.
+- [x] **11c — Pre-release bug fixes (B1/B2/B3).** B1: a new
+  `ConnectionProblemNode` (`src/connectionProblemNode.ts`) each of the three
+  trees' `getChildren` now returns on a failed listing instead of `[]`. B2:
+  `SasLibraryTreeProvider` and `casConnectCommand.ts` (extended mid-session,
+  Sean's own report) now call `forgetProfile` on a `session-gone` reading, so
+  **Connect to Viya** reappears in the palette without needing **Disconnect**
+  first. B3: `src/data/presentation.ts`'s table icon changed to `"table"`,
+  matching CAS's loaded-table icon. B1 and B2 turned out not to share one
+  mechanism — see this section's own Runbook entry, below, for why and for
+  what shipped.
 - [ ] **11d — CAS table properties + CSV export (F2 + F3).** Extend
   `tablePropertiesPanel.ts` and `csvExportCommand.ts` to `TableSource`'s CAS
   implementation, matching Phase 8c's own reuse precedent
@@ -1005,6 +1007,88 @@ string. Updated together: the snippet builder, its unit test
 paragraph there explaining the triple-quote choice. No `swat`/CAS behaviour
 changed — this is Python string-literal syntax only, not a new probe
 finding.
+
+### 11c — Pre-release bug fixes (B1/B2/B3), 2026-09-18
+
+**The punch list's own open design question — whether B1 and B2 share enough
+of a mechanism to fix together — is answered by what each tree actually
+does today, not by a shared mechanism.** CAS and SAS Content have no
+"connected" concept of their own to flip (ADR-0033: CAS browsing needs only
+a token and an endpoint, never a compute session; SAS Content is the same).
+SAS Libraries does have one (`pythonOnViya.connected`, ADR-0027) and already
+had a third `viewsWelcome` state for it (`notConnected`) — the gap there was
+never the UI, it was that nothing told `src/compute` the cached session was
+actually dead. So B1 and B2 turned out to be two different shapes of the
+same underlying problem — a failed call with nowhere to render and no way to
+correct the extension's own stale belief — fixed by two small, independent
+pieces rather than one shared state machine:
+
+- **B1 — a new `ConnectionProblemNode`** (`src/connectionProblemNode.ts`,
+  `vscode`-dependent, deliberately kept out of the three domains' own
+  `vscode`-free item unions per each one's own top-of-file rule). Each
+  tree's own local `*TreeNode` type (`CasTreeNode`/`ContentTreeNode`/
+  `DataTreeNode`) widens `getChildren`'s return type to include it; a failed
+  listing — at whatever level it fails, not only the root — now returns one
+  of these instead of `[]`, carrying that domain's own already-existing
+  user-facing sentence (`localiseCasProblem`/`localiseContentProblem`/
+  `localiseDataProblem` — previously used only by each domain's one
+  network-facing command, per each `messages.ts`'s own doc comment, now also
+  by the read-only tree) and a click that runs that view's own refresh
+  command. The two `TreeDragAndDropController` implementations
+  (`contentDragAndDrop.ts`, `dataDragAndDrop.ts`) needed a matching type
+  widening plus a guard excluding the new node from what counts as
+  draggable or a valid drop target — a mechanical consequence of
+  `vscode.window.createTreeView`'s single shared type parameter across
+  `treeDataProvider` and `dragAndDropController`, not a design choice of its
+  own.
+- **B2 — `SasLibraryTreeProvider.getChildren` now calls `forgetProfile`**
+  (threaded in from `extension.ts`'s existing `ComputeCommandHandles`, the
+  same handle `src/run/commands.ts` already takes) when a listing's own
+  failure reads as `ComputeProblem` `session-gone` — the session this window
+  believed it still held is actually gone, discovered by *browsing* rather
+  than by running anything, a path the existing `backend-gone` handling
+  never covered. **Extended mid-session (Sean's own report) to
+  `src/cas/casConnectCommand.ts`'s `pythonOnViya.insertCasConnectionSnippet`
+  too**: that command's `writeCasToken` failure path already showed
+  `localiseComputeProblem`'s "no longer available" sentence for exactly this
+  case but never told `src/compute` its own cached connection was stale —
+  `compute/messages.ts`'s own doc comment says as much ("`session-gone` has
+  a message, and it is nearly always wrong to show it... the caller's
+  correct response is to start another one"), and this command was the one
+  caller not following that rule. Both call sites mirror
+  `run/commands.ts`'s own `forgetIfGone`. Before this fix the only way back
+  to a working **Connect** was **Disconnect** — a full sign-out-shaped
+  action — for a session that was never actually signed out.
+- **B3 — `src/data/presentation.ts`'s table icon changed from
+  `symbol-array` to `table`**, matching the icon `src/cas/presentation.ts`
+  draws for a *loaded* CAS table. SAS Libraries has no unloaded state of its
+  own to distinguish (a `DataAccessApi` table is whatever the session's own
+  libref already resolved — Phase 7 never needed a JIT-load concept), so
+  this is the one icon, not CAS's loaded/unloaded pair.
+
+**Test coverage added or changed**: `src/connectionProblemNode.ts` is
+`vscode`-only (added to `.c8rc.json`'s exclude list, matching the other
+tree-shell files); its behaviour is exercised through all three trees'
+integration tests rather than a standalone one. `test/integration/cas/tree.test.ts`
+and `test/integration/content/tree.test.ts` both gained an assertion on the
+connection-problem node's icon/command where their existing "logs and
+returns `[]` on a failed listing" case used to stop at the log. **A new
+`test/integration/data/tree.test.ts` was added — `dataTree.ts` had no test
+file at all before this slice**, a gap the Phase 7→8 housekeeping checkpoint
+never caught because `casTree.ts`/`contentTree.ts` already had theirs;
+covers the happy path, the `not-connected` case (no `forgetProfile` call —
+nothing to correct), the `session-gone` case (`forgetProfile` called with
+the right profile id), and a failure unrelated to the session being gone
+(`forgetProfile` not called). `test/integration/cas/connect-command.test.ts`
+gained a `forgotten` tracker on its harness and an assertion on the existing
+"reports a Compute problem from writeCasToken" case that `forgetProfile`
+now fires too. `test/unit/data-presentation.test.ts` updated for B3's icon
+change.
+
+`npm run verify` and the integration tier both green — see this session's
+own verify run for exact numbers, recorded in `STATUS.md`. No probe was
+needed: nothing here is Viya wire behaviour, it is this extension's own
+client-side state handling.
 
 Findings in this section are numbered `11.x`, per the phase-scoped
 finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root

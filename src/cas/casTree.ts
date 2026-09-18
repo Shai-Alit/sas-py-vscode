@@ -24,11 +24,26 @@
  * `pythonOnViya.openTable` already established, so this class stays free of
  * knowing anything about `DataViewerPanelManager` or `CasAdapter.openTable`/
  * `getColumns`/`getRows` itself. A column is always a leaf.
+ *
+ * ## 11c: a failed listing renders, it does not just log (B1)
+ *
+ * `getChildren`'s `!result.ok` branch used to log the {@link CasProblem} and
+ * return `[]` — indistinguishable on screen from a caslib that is genuinely
+ * empty. It now also returns one `ConnectionProblemNode`
+ * (`../connectionProblemNode.ts`), carrying `localiseCasProblem`'s own
+ * user-facing sentence and a click that runs this view's own refresh
+ * command. This is deliberately not the same mechanism as the `noProfile`/
+ * `signedOut` `viewsWelcome` states: CAS browsing has no "connected" concept
+ * of its own to flip (ADR-0033 — a token and an endpoint are all it ever
+ * needed), so a listing that fails despite a good token (a dropped VPN, the
+ * deployment itself unreachable) has no context-key transition to hang a
+ * `viewsWelcome` entry on. This node is what fills that gap.
  */
 
 import * as vscode from "vscode";
 
 import { type CasAdapter } from "./adapter";
+import { localiseCasProblem } from "./messages";
 import { describeCasProblem } from "./problems";
 import { nodePresentationOf } from "./presentation";
 import {
@@ -39,11 +54,24 @@ import {
   type CasItem,
   type CasTableItem,
 } from "./types";
+import {
+  connectionProblemTreeItem,
+  isConnectionProblemNode,
+  type ConnectionProblemNode,
+} from "../connectionProblemNode";
+
+/** What this tree hands VS Code: a real CAS item, or (B1) a synthetic node
+ * standing in for a listing that failed. */
+export type CasTreeNode = CasItem | ConnectionProblemNode;
+
+/** This tree's own refresh command (`package.json`) — what a
+ * {@link ConnectionProblemNode}'s click retries. */
+const REFRESH_COMMAND = "pythonOnViya.refreshCasExplorer";
 
 export class SasCasTreeProvider
-  implements vscode.TreeDataProvider<CasItem>, vscode.Disposable
+  implements vscode.TreeDataProvider<CasTreeNode>, vscode.Disposable
 {
-  private readonly changed = new vscode.EventEmitter<CasItem | undefined>();
+  private readonly changed = new vscode.EventEmitter<CasTreeNode | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
 
   /**
@@ -136,7 +164,9 @@ export class SasCasTreeProvider
     this.changed.fire(undefined);
   }
 
-  getTreeItem(item: CasItem): vscode.TreeItem {
+  getTreeItem(item: CasTreeNode): vscode.TreeItem {
+    if (isConnectionProblemNode(item)) return connectionProblemTreeItem(item);
+
     // A table this session watched load reads "loaded" here even though the
     // item's own `state` is the caslib listing's stale value — see
     // `loadedTables`. The copy never leaves this method: it feeds
@@ -173,7 +203,12 @@ export class SasCasTreeProvider
     return node;
   }
 
-  async getChildren(item?: CasItem): Promise<CasItem[]> {
+  async getChildren(item?: CasTreeNode): Promise<CasTreeNode[]> {
+    // Never expandable (see `connectionProblemTreeItem`), so VS Code should
+    // never ask — guarded anyway to keep the rest of this method typed
+    // against `CasItem`, not the wider `CasTreeNode`.
+    if (item !== undefined && isConnectionProblemNode(item)) return [];
+
     const adapter = this.currentAdapter();
     if (adapter === undefined) return [];
 
@@ -194,7 +229,13 @@ export class SasCasTreeProvider
       this.log.error(
         vscode.l10n.t("CAS: {0}", describeCasProblem(result.problem)),
       );
-      return [];
+      return [
+        {
+          kind: "connectionProblem",
+          message: localiseCasProblem(result.problem),
+          retryCommand: REFRESH_COMMAND,
+        },
+      ];
     }
     return [...result.value];
   }
@@ -230,7 +271,7 @@ export class SasCasTreeProvider
   private async getColumnsAndRefreshIcon(
     adapter: CasAdapter,
     table: CasTableItem,
-  ): Promise<CasItem[]> {
+  ): Promise<CasTreeNode[]> {
     const id = nodeId(table);
     const cached = this.justLoaded.get(id);
     if (cached !== undefined) {
@@ -244,7 +285,13 @@ export class SasCasTreeProvider
       this.log.error(
         vscode.l10n.t("CAS: {0}", describeCasProblem(result.problem)),
       );
-      return [];
+      return [
+        {
+          kind: "connectionProblem",
+          message: localiseCasProblem(result.problem),
+          retryCommand: REFRESH_COMMAND,
+        },
+      ];
     }
     if (wasUnloaded) {
       this.justLoaded.set(id, result.value);

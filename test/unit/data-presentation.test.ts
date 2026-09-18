@@ -37,7 +37,7 @@ describe("data/presentation nodePresentationOf", () => {
     assert.deepEqual(nodePresentationOf(table), {
       label: "CLASS",
       expandable: false,
-      icon: "symbol-array",
+      icon: "table",
       contextValue: CONTEXT_TABLE,
     });
   });

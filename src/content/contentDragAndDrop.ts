@@ -65,7 +65,9 @@ import { moveObjection } from "./contentMove";
 import { localiseContentProblem } from "./messages";
 import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
+import { type ContentTreeNode } from "./contentTree";
 import { resourceHrefOf, type ContentItem } from "./types";
+import { isConnectionProblemNode } from "../connectionProblemNode";
 
 /**
  * The drag payload — private to this view, so a drop only lands from a drag
@@ -100,7 +102,7 @@ export interface ContentDragAndDropDeps {
   viewId: string;
 }
 
-export class SasContentDragAndDropController implements vscode.TreeDragAndDropController<ContentItem> {
+export class SasContentDragAndDropController implements vscode.TreeDragAndDropController<ContentTreeNode> {
   readonly dragMimeTypes = [CONTENT_MIME];
   readonly dropMimeTypes = [CONTENT_MIME];
 
@@ -112,11 +114,15 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
   constructor(private readonly deps: ContentDragAndDropDeps) {}
 
   handleDrag(
-    source: readonly ContentItem[],
+    source: readonly ContentTreeNode[],
     dataTransfer: vscode.DataTransfer,
   ): void {
+    // The 11c `ConnectionProblemNode` (B1) is never a real content item —
+    // excluded before `nodePresentationOf`, which is typed against
+    // `ContentItem` only.
     const draggable = source.filter(
-      (item) => nodePresentationOf(item).draggable,
+      (item): item is ContentItem =>
+        !isConnectionProblemNode(item) && nodePresentationOf(item).draggable,
     );
     this.deps.log.debug(
       vscode.l10n.t(
@@ -130,13 +136,13 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
   }
 
   async handleDrop(
-    target: ContentItem | undefined,
+    target: ContentTreeNode | undefined,
     dataTransfer: vscode.DataTransfer,
     token: vscode.CancellationToken,
   ): Promise<void> {
-    // A drop on empty space has no target folder, and there is no synthetic
-    // "everything" folder to move into — nothing to do.
-    if (target === undefined) {
+    // A drop on empty space, or on the 11c `ConnectionProblemNode` (B1) —
+    // never a real folder — has nowhere to move into.
+    if (target === undefined || isConnectionProblemNode(target)) {
       this.deps.log.debug(
         vscode.l10n.t("SAS Content: handleDrop — no target, ignored"),
       );

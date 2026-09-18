@@ -13,6 +13,7 @@
     "src/backend/messages.ts",
     "src/cas/casConnectCommand.ts",
     "src/cas/casExplorer.ts",
+    "src/cas/casSqlPassthroughCommand.ts",
     "src/cas/casTableSource.ts",
     "src/cas/casTree.ts",
     "src/cas/messages.ts",

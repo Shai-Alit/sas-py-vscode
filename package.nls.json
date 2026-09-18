@@ -24,6 +24,7 @@
   "command.refreshDataExplorer.title": "Refresh SAS Libraries",
   "command.refreshCasExplorer.title": "Refresh CAS",
   "command.insertCasConnectionSnippet.title": "Insert CAS Connection Snippet",
+  "command.insertCasSqlPassthroughSnippet.title": "Insert CAS SQL Passthrough Snippet",
   "command.createContentFolder.title": "New Folder",
   "command.createContentFile.title": "New File",
   "command.renameContentItem.title": "Rename",

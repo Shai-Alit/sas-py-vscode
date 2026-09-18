@@ -315,6 +315,56 @@ checkpoint. Per-phase detail
 > at the between-phase boundary rather than letting this file grow without
 > bound.
 
+## Phase 11 (in progress)
+
+**Phase 11 (Remaining parity gaps) is in progress — 11a and 11b merged, 11c–11e
+still open.** A 2026-09-16/17 scoping session sized five slices in priority
+order (`docs/phases/phase-11.md`'s Plan section): **11a — the interactive
+window (F7)**, merged 2026-09-17 as
+[PR #192](https://github.com/Shai-Alit/sas-py-vscode/pull/192) — a bespoke,
+this-project-owned scratch-notebook surface built entirely on Phase 9's
+already-shipped `NotebookController` infrastructure, not VS Code's real
+Interactive Window (off-limits to a published extension regardless of the
+kernel question — see `phase-11.md`'s F7 write-up). `npm run verify` green
+(1,814 unit tests; coverage 96.3/95.68/96.08/96.3), `npm run test:integration`
+green (457 passing); manual-test items 11.1–11.5 all pass. **11b — the
+CAS/SWAT SQL passthrough helper (F9)**, shipped 2026-09-17 alongside its own
+`viya-api-probe` confirmation (Finding 11.2, against a real Snowflake-backed
+caslib on `verde`) that predated the slice itself — documentation
+(`docs/cas-python-connection.md`'s new "Running native SQL against an
+external database" section) plus a small, fully static
+`pythonOnViya.insertCasSqlPassthroughSnippet` command, needing no network
+round trip unlike 8b's own connection command. `npm run verify` green (1,816
+unit tests; coverage 96.31/95.68/96.08/96.31), `npm run test:integration`
+green (460 passing). **A pre-push adversarial review (code-review skill,
+high effort) caught that the snippet's/docs' `result["Result Set"]` claim
+was never actually probed — Finding 11.2 only exercised raw `PROC CAS`,
+never `swat` — so a follow-up probe ran against `verde` 2026-09-18 (Finding
+11.4) and confirmed the key is real (positive + negative control via `PROC
+CAS`, reasoned to generalize to `swat` since CAS result-member names are
+server-side); no code/doc change was needed, the claim as written was
+correct. The Finding 11.4 write-up landed as its own commit, `f2c0270`, on
+`feat/cas-sql-passthrough-snippet`. **Manual-test items 11.6–11.7 then ran
+and passed, 2026-09-18**, and that pass surfaced one usability fix, made in
+this session and still uncommitted as of 2026-09-18: the snippet's `query=`
+value now wraps in triple quotes (`'''...'''`) instead of a single pair of
+double quotes, so the user-filled native-query tabstop can carry the target
+database's own quoting (Snowflake's double-quoted identifiers, a `where`
+clause's single-quoted string literals) without having to escape anything —
+see `phase-11.md`'s own "11b manual-test pass and a triple-quote fix"
+Runbook entry. **Not yet pushed, no PR opened** — per this project's own
+"adversarial review before the PR exists" rule, still pending a final `npm
+run verify`/`check:docs` re-run after folding in this session's changes,
+then push + PR. 11c (three
+pre-release bugs), 11d (CAS table properties/CSV export), and 11e (session
+startup/autoexec, still needing its own scoping pass) remain. Full plan,
+punch list, and probe findings (11.1–11.3) are in
+[`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
+completion was missed from this file at the time it merged — a housekeeping
+gap, caught and corrected only now, alongside 11b's own update, rather than
+in 11a's own PR as `CLAUDE.md`'s own "STATUS.md is part of the slice" rule
+calls for.
+
 ## Phase index
 
 | Phase | Status | File |
@@ -331,7 +381,7 @@ checkpoint. Per-phase detail
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14; its one deferred gap (tree icon refresh) was root-caused and fixed 2026-09-15 — `onDidChangeTreeData` matches a fired element by object identity, not `TreeItem.id` — and live-confirmed, so nothing from Phase 8 is carried forward. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
-| 11 — Remaining parity gaps | not started | `docs/phases/phase-11.md` |
+| 11 — Remaining parity gaps | 🔄 **in progress — 11a and 11b merged 2026-09-17** (interactive window; CAS/SWAT SQL passthrough helper). See "Phase 11 (in progress)" above. | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 
 Each phase file bundles everything that phase needs: the plan section

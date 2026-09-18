@@ -61,3 +61,47 @@ same server, using the same token (`password=<token>`, no username) — see
 `swat`'s own ["Binary vs.
 REST"](https://sassoftware.github.io/python-swat/binary-vs-rest.html)
 documentation for when you would prefer that transport instead.
+
+## Running native SQL against an external database
+
+If a caslib is backed by an external database connector (Snowflake, for
+example), FedSQL's explicit pass-through lets you run that database's own
+native SQL directly against it, without first loading the table's rows into
+CAS memory. With `conn` already open (above), run **Insert CAS SQL
+Passthrough Snippet** from the Command Palette to insert:
+
+```python
+conn.loadactionset("fedsql")
+result = conn.fedsql.execDirect(
+    query='''select * from connection to CASLIB (select * from native_table)'''
+)
+df = result["Result Set"]
+```
+
+Replace `CASLIB` with the caslib's own name and the inner `select * from
+native_table` with your native query — everything between `connection to
+CASLIB ( ... )`'s parentheses runs unmodified in the external database
+itself; only its result set comes back through CAS. `result["Result Set"]`
+is already a `pandas.DataFrame` (a `SASDataFrame`, `swat`'s own subclass),
+ready to use like any other. Nothing is written to CAS memory unless the
+action is also given a `casout=`.
+
+The `query=` value is wrapped in triple quotes (`'''...'''`) rather than a
+single pair of double quotes, so you can freely use quotes inside your native
+query without escaping anything — for example, a Snowflake table or column
+name that needs double quotes around it, or a `where` clause comparing a
+string column with single quotes.
+
+**Expect single-threaded reads.** A pass-through query always runs with
+`numReadNodes=1` on the CAS side, regardless of how many worker nodes the
+server has — CAS does not parallelize a `connection to` query, only whatever
+the external database itself does. This is normal behaviour, not something
+to work around: confirmed against a real Snowflake-backed caslib (Finding
+11.2, `docs/phases/phase-11.md`), where the log's own `WARNING: Multi-node
+read is not allowed with the FedSQL execDirect action` line names it
+explicitly.
+
+The caslib already owns the credential to the external database — configured
+by whoever defined the caslib — so this needs no separate credential of its
+own; it rides on the same connection **Insert CAS Connection Snippet**
+already opened.

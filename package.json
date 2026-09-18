@@ -204,6 +204,12 @@
         "enablement": "pythonOnViya.connected"
       },
       {
+        "command": "pythonOnViya.insertCasSqlPassthroughSnippet",
+        "title": "%command.insertCasSqlPassthroughSnippet.title%",
+        "category": "%extension.category%",
+        "enablement": "pythonOnViya.connected"
+      },
+      {
         "command": "pythonOnViya.createContentFolder",
         "title": "%command.createContentFolder.title%",
         "category": "%extension.category%",

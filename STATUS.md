@@ -345,17 +345,20 @@ CAS`, reasoned to generalize to `swat` since CAS result-member names are
 server-side); no code/doc change was needed, the claim as written was
 correct. The Finding 11.4 write-up landed as its own commit, `f2c0270`, on
 `feat/cas-sql-passthrough-snippet`. **Manual-test items 11.6–11.7 then ran
-and passed, 2026-09-18**, and that pass surfaced one usability fix, made in
-this session and still uncommitted as of 2026-09-18: the snippet's `query=`
-value now wraps in triple quotes (`'''...'''`) instead of a single pair of
-double quotes, so the user-filled native-query tabstop can carry the target
-database's own quoting (Snowflake's double-quoted identifiers, a `where`
-clause's single-quoted string literals) without having to escape anything —
-see `phase-11.md`'s own "11b manual-test pass and a triple-quote fix"
-Runbook entry. **Not yet pushed, no PR opened** — per this project's own
-"adversarial review before the PR exists" rule, still pending a final `npm
-run verify`/`check:docs` re-run after folding in this session's changes,
-then push + PR. 11c (three
+and passed, 2026-09-18**, and that pass surfaced one usability fix: the
+snippet's `query=` value now wraps in triple quotes (`'''...'''`) instead of
+a single pair of double quotes, so the user-filled native-query tabstop can
+carry the target database's own quoting (Snowflake's double-quoted
+identifiers, a `where` clause's single-quoted string literals) without
+having to escape anything — see `phase-11.md`'s own "11b manual-test pass
+and a triple-quote fix" Runbook entry. Committed as `d1051f4`, alongside a
+pre-push adversarial review's two findings (Finding 11.4 reordered into
+numeric order; this file's own wording corrected), and pushed to
+`feat/cas-sql-passthrough-snippet`. **Final `npm run verify` (1,816 unit
+tests; coverage 96.31/95.68/96.08/96.31) and `npm run check:docs` both
+re-ran green 2026-09-18** against the pushed branch, and
+[PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) is now open
+for these two follow-up commits. 11c (three
 pre-release bugs), 11d (CAS table properties/CSV export), and 11e (session
 startup/autoexec, still needing its own scoping pass) remain. Full plan,
 punch list, and probe findings (11.1–11.3) are in

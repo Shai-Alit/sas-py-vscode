@@ -377,12 +377,20 @@ file at all before this slice); `test/integration/cas/tree.test.ts`,
 `test/integration/cas/connect-command.test.ts` all gained assertions for
 the new behaviour. `npm run verify` green (1,816 unit tests; coverage
 96.31/95.68/96.08/96.31), `npm run test:integration` green (465 passing),
-`npm run check:docs` green. Manual-test items 11.8–11.13 added to
-`docs/dev/manual-tests/phase-11.md`, not yet run — this needs a live
-deployment and a way to make a session go stale, which is Sean's to run.
-**Not yet pushed, no PR opened** — per this project's own "adversarial
-review before the PR exists" rule, next step is handing over the review
-prompt. 11d (CAS table properties/CSV export) and 11e (session
+`npm run check:docs` green. Manual-test items 11.8–11.14 added to
+`docs/dev/manual-tests/phase-11.md`. **The manual pass ran 2026-09-18 and
+all items passed.** Item 11.12 surfaced one design note: both insert-snippet
+commands vanished from the palette when the session was stale, because
+`enablement: pythonOnViya.connected` hid them. Resolved in this slice by
+removing that enablement from both commands and having each report "Connect
+to SAS Viya first, then run this command again." instead
+(`insertCasSqlPassthroughSnippet` gained `sessions`/`profiles` params to do
+so). **The pre-PR adversarial review has run twice (2026-09-18)** — once on
+the original 11c diff, once on the 11.12 follow-up, whose one finding (an
+`as never` cast in the new test) was folded in. `npm run verify` green after
+the fold-in (1,816 unit tests; coverage 96.31/95.68/96.08/96.31); the
+integration suite and `check:docs` were green before the final test-only
+fix. **Not yet pushed, no PR opened** — next step is commit, push, PR. 11d (CAS table properties/CSV export) and 11e (session
 startup/autoexec, still needing its own scoping pass) remain. Full plan,
 punch list, and probe findings (11.1–11.4) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own

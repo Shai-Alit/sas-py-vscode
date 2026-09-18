@@ -105,14 +105,14 @@ tree.test.ts`, `test/integration/content/tree.test.ts`, and the new
 faked adapter failure; these boxes are about the real end-to-end behaviour
 against a deployment that suite cannot exercise.
 
-- [ ] **11.8** **B1, CAS tree** — with the CAS tree already expanded, break
+- [x] **11.8** **B1, CAS tree** — with the CAS tree already expanded, break
   the connection (network/VPN), then expand a collapsed node or run
   **Refresh CAS**. **Expect:** a single row reading a plain-language
   explanation of the failure (not a raw error code), with a warning icon,
   instead of the tree just going empty. Clicking the row re-runs **Refresh
   CAS**; restoring the connection first and clicking again should bring the
   real tree back.
-- [ ] **11.9** **B1, SAS Content tree** — same steps as 11.8, against the SAS
+- [x] **11.9** **B1, SAS Content tree** — same steps as 11.8, against the SAS
   Content tree and **Refresh SAS Content**.
 - [ ] **11.10** **B1, SAS Libraries tree, a failure that is not the session
   being gone** — hardest to provoke on demand; if one comes up naturally
@@ -120,7 +120,7 @@ against a deployment that suite cannot exercise.
   warning-row-with-retry behaviour as 11.8/11.9 rather than a blank tree.
   Not blocking if none is reproducible this pass — the unit-adjacent
   integration test already covers this branch directly.
-- [ ] **11.11** **B2, SAS Libraries tree, a session that goes stale while
+- [x] **11.11** **B2, SAS Libraries tree, a session that goes stale while
   only browsing** — connect, expand the SAS Libraries tree once
   successfully, then let the compute session go stale (idle past 900
   seconds, or disconnect/reconnect the network under it) without running
@@ -128,16 +128,39 @@ against a deployment that suite cannot exercise.
   tree again. **Expect:** the connection-problem row (as 11.8/11.9), and —
   the actual bug report — **Connect to SAS Viya** is now offered again in
   the Command Palette, with no need to run **Disconnect** first.
-- [ ] **11.12** **B2, `Insert CAS Connection Snippet` against a stale
+- [x] **11.12** **B2, `Insert CAS Connection Snippet` against a stale
   session** — with a session already established, let it go stale the same
   way as 11.11, then run **Insert CAS Connection Snippet**
   (`pythonOnViya.insertCasConnectionSnippet`) from a `.py` file. **Expect:**
   an error message ("The SAS Viya session is no longer available…"), and —
   again the actual bug report — **Connect to SAS Viya** reappears in the
   palette immediately afterward, with no **Disconnect** needed in between.
-- [ ] **11.13** **B3, table icon parity** — open a caslib in the CAS tree
+  **(9/18/2026) pass** no insert cas connectoin snippet is available in the 
+  command palette at all until the user reconnects again. 
+  the command is just gone. on further inspection, all "insert" commands 
+  have now vanished. might be more favorable to leave these commands,
+  and offer a warning or error telling the user to reconnect. 
+  **Resolved (9/18/2026):** agreed — `enablement: pythonOnViya.connected` was
+  removed from both insert commands (`insertCasConnectionSnippet`,
+  `insertCasSqlPassthroughSnippet`) so they stay in the palette. Both now
+  report "Connect to SAS Viya first, then run this command again." when there
+  is no live session (8b's handler already had that branch; it was
+  unreachable behind the enablement). Same pattern as `runFile` and friends,
+  which are never palette-gated. **Re-verify:** with no session, each insert
+  command is listed and shows that message; after a stale-session run of
+  **Insert CAS Connection Snippet**, the "no longer available" error appears,
+  **Connect** returns, and the next insert attempt shows the connect-first
+  message.
+- [x] **11.13** **B3, table icon parity** — open a caslib in the CAS tree
   until a loaded table is visible, and open a library in the SAS Libraries
   tree. **Expect:** both trees draw the same table icon.
 
-Add further numbered items here (`11.14`, `11.15`, …) as later Phase 11
+- [x] **11.14** **B1, the problem row is inert to drag-and-drop** — with a
+  connection-problem row showing in the SAS Content tree (as 11.9) and again
+  in the SAS Libraries tree (as 11.11), try dragging the row itself, and
+  dragging a normal item onto it. **Expect:** the row cannot be dragged and
+  is not a valid drop target in either tree — nothing moves, no error
+  notification. Clicking it still runs Refresh.
+
+Add further numbered items here (`11.15`, `11.16`, …) as later Phase 11
 slices land, the same way every other phase file did.

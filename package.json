@@ -200,14 +200,12 @@
       {
         "command": "pythonOnViya.insertCasConnectionSnippet",
         "title": "%command.insertCasConnectionSnippet.title%",
-        "category": "%extension.category%",
-        "enablement": "pythonOnViya.connected"
+        "category": "%extension.category%"
       },
       {
         "command": "pythonOnViya.insertCasSqlPassthroughSnippet",
         "title": "%command.insertCasSqlPassthroughSnippet.title%",
-        "category": "%extension.category%",
-        "enablement": "pythonOnViya.connected"
+        "category": "%extension.category%"
       },
       {
         "command": "pythonOnViya.createContentFolder",

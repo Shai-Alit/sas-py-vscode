@@ -345,9 +345,13 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // Phase 11b: a fixed-template companion to 8b's command above, needing no
-  // session/profile/adapter of its own — see `casSqlPassthroughCommand.ts`'s
-  // own doc comment for why it is this much smaller.
-  registerCasSqlPassthroughCommand(context);
+  // adapter of its own — see `casSqlPassthroughCommand.ts`'s own doc comment.
+  // 11c: it only reads `sessions`/`profiles` to warn when not connected.
+  registerCasSqlPassthroughCommand(
+    context,
+    { current: (profileId) => sessions.current(profileId) },
+    profiles,
+  );
 
   // Phase 7c-ii: the table properties/columns panel manager — fully static
   // (`src/data/tablePropertiesPanel.ts`), so unlike `dataViewerPanels` above

@@ -336,7 +336,20 @@ external database" section) plus a small, fully static
 `pythonOnViya.insertCasSqlPassthroughSnippet` command, needing no network
 round trip unlike 8b's own connection command. `npm run verify` green (1,816
 unit tests; coverage 96.31/95.68/96.08/96.31), `npm run test:integration`
-green (460 passing); manual-test items 11.6–11.7 not yet run. 11c (three
+green (460 passing); manual-test items 11.6–11.7 not yet run. **A pre-push
+adversarial review (code-review skill, high effort) caught that the
+snippet's/docs' `result["Result Set"]` claim was never actually probed —
+Finding 11.2 only exercised raw `PROC CAS`, never `swat` — so a follow-up
+probe ran against `verde` 2026-09-18 (Finding 11.4) and confirmed the key is
+real (positive + negative control via `PROC CAS`, reasoned to generalize to
+`swat` since CAS result-member names are server-side); no code/doc change
+was needed, the claim as written was correct. 11b's own commit
+(`119d278` on `feat/cas-sql-passthrough-snippet`, not yet pushed) predates
+that finding and its write-up — the finding write-up itself is a second,
+uncommitted-as-of-2026-09-18 change on the same branch. **Not yet pushed,
+no PR opened** — per this project's own "adversarial review before the PR
+exists" rule, still pending a final `npm run verify`/`check:docs` re-run
+after folding in the Finding 11.4 write-up, then push + PR. 11c (three
 pre-release bugs), 11d (CAS table properties/CSV export), and 11e (session
 startup/autoexec, still needing its own scoping pass) remain. Full plan,
 punch list, and probe findings (11.1–11.3) are in

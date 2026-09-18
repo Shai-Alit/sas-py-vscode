@@ -80,13 +80,13 @@ against a real, database-backed caslib, which that suite cannot check.
 database-backed caslib (Snowflake, in this project's own probed case —
 Finding 11.2). Run **Insert CAS Connection Snippet** first to get a `conn`.
 
-- [ ] **11.6** **Insert CAS SQL Passthrough Snippet** — with `conn` already
+- [x] **11.6** **Insert CAS SQL Passthrough Snippet** — with `conn` already
   in the file, run the command from the Command Palette. **Expect:** the
   template from `docs/cas-python-connection.md`'s "Running native SQL
   against an external database" section is inserted at the cursor, with the
   caslib-name and native-query placeholders selected as the first tabstop —
   tabbing through fills in `CASLIB` and the inner query in turn.
-- [ ] **11.7** **The snippet actually round-trips a native query** — fill in
+- [x] **11.7** **The snippet actually round-trips a native query** — fill in
   a real caslib name and a native query the external database understands,
   run the resulting cell. **Expect:** `df` comes back as a usable
   `pandas.DataFrame` holding that query's own result, with no error, and the

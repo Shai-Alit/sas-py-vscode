@@ -73,7 +73,7 @@ Passthrough Snippet** from the Command Palette to insert:
 ```python
 conn.loadactionset("fedsql")
 result = conn.fedsql.execDirect(
-    query="select * from connection to CASLIB (select * from native_table)"
+    query='''select * from connection to CASLIB (select * from native_table)'''
 )
 df = result["Result Set"]
 ```
@@ -85,6 +85,12 @@ itself; only its result set comes back through CAS. `result["Result Set"]`
 is already a `pandas.DataFrame` (a `SASDataFrame`, `swat`'s own subclass),
 ready to use like any other. Nothing is written to CAS memory unless the
 action is also given a `casout=`.
+
+The `query=` value is wrapped in triple quotes (`'''...'''`) rather than a
+single pair of double quotes, so you can freely use quotes inside your native
+query without escaping anything — for example, a Snowflake table or column
+name that needs double quotes around it, or a `where` clause comparing a
+string column with single quotes.
 
 **Expect single-threaded reads.** A pass-through query always runs with
 `numReadNodes=1` on the CAS side, regardless of how many worker nodes the

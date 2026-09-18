@@ -930,7 +930,7 @@ gating already established for this palette. Inserts:
 ```python
 conn.loadactionset("fedsql")
 result = conn.fedsql.execDirect(
-    query="select * from connection to ${1:CASLIB} (${2:select * from native_table})"
+    query='''select * from connection to ${1:CASLIB} (${2:select * from native_table})'''
 )
 df = result["Result Set"]
 ```
@@ -973,84 +973,38 @@ Finding 11.2 itself observed: that finding's own probe ran raw `PROC CAS`
 (`fedsql.execDirect result=r / query=...; print r;`), never `swat`, and
 never inspected the result object's member names. Sean approved one more
 execute-shaped probe step to close this properly rather than ship the
-literal on faith — see **Finding 11.4**, below, which confirms it. This
-section's own earlier "no probe was needed" line is corrected by this entry
-existing at all.
+literal on faith — see **Finding 11.4**, below (recorded after Finding 11.3,
+since it was probed after 11.1–11.3 despite the narrative reaching it here
+first), which confirms it. This section's own earlier "no probe was needed"
+line is corrected by this entry existing at all.
 
-### Finding 11.4 — `fedsql.execDirect`'s result carries a member named `Result Set`, confirmed by both a positive and a negative control
+### 11b manual-test pass and a triple-quote fix, 2026-09-18
 
-Probed 2026-09-18, via `viya-api-probe`/`creds.json` against `verde` directly,
-with Sean's explicit go-ahead for the execute-shaped step (the same kind of
-approval Finding 11.2 already had). Prompted directly by the pre-push
-adversarial review finding above: 11b's own snippet and docs assert
-`result["Result Set"]` as fact, but Finding 11.2 never actually probed a
-`swat`-side call, only raw `PROC CAS`.
+**Manual-test items 11.6 and 11.7 (`docs/dev/manual-tests/phase-11.md`) run
+by Sean and passed** — the inserted template matches
+`docs/cas-python-connection.md`'s own copy with the caslib-name and
+native-query tabstops selected in order, and a real round trip against the
+same Snowflake-backed caslib Finding 11.2/11.4 used came back as a usable
+`pandas.DataFrame` with no error. 11b's full manual-test coverage
+(11.6–11.7) is now green, alongside 11a's (11.1–11.5).
 
-**The reasoning that made a `PROC CAS`-only re-probe sufficient, without
-standing up `swat`/Python at all** (Sean's own suggestion, mid-session): a
-CAS action's result-member names are a **server-side** attribute — the same
-member names appear regardless of which client library reads them, `swat`
-or SAS's own `PROC CAS` — so confirming the member exists via `PROC CAS`
-settles the wire-level half of the claim just as well as a `swat` call
-would, without the added complexity of standing up a CAS binary/REST
-connection from a throwaway Python probe script.
-
-**Probe (positive control):** the same job shape Finding 11.2 used, plus one
-new line explicitly indexing the result by the literal key in question:
-
-```sas
-cas mysess;
-proc cas;
-  session mysess;
-  fedsql.execDirect result=r / query="select 1 as X from connection to SNOWLIB (select 1)";
-run;
-print r;
-print r["Result Set"];
-quit;
-cas mysess terminate;
-```
-
-**Observed:** no `ERROR` anywhere in the log; `NOTE: The PROCEDURE CAS printed
-pages 1-2` — two real pages, one per `print` statement. `fedsql`'s own
-action-set load and the `numReadNodes=1` warning Finding 11.2 already
-documented both appear again unchanged.
-
-**Probe (negative control, same session shape, a deliberately wrong key):**
-
-```sas
-print r["TotallyNotARealKey"];
-```
-
-**Observed:** a materially different log signature — `WARNING: Variable
-'TotallyNotARealKey' is uninitialized. It has been set to missing.` and no
-"printed pages" `NOTE` at all. This confirms the positive control's silence
-is meaningful (a real, existing member), not an artifact of `PROC CAS`
-silently tolerating any key.
-
-**What this establishes:** `fedsql.execDirect`'s result object carries a
-member literally named `Result Set` on `verde`, confirmed at the wire/server
-level. **What this does not establish, and does not need to**: the exact
-Python type `swat` wraps that member in when read via `conn.fedsql.execDirect(...)["Result Set"]` —
-that is `swat`'s own client-side behaviour, not deployment-specific wire
-behaviour, and is documented directly by `swat`'s own reference
-documentation rather than needing a live probe: `CASResults` is "a subclass
-of Python's ordered dictionary" whose table-valued members `swat` returns as
-`SASDataFrame`, itself "a simple subclass of `pandas.DataFrame`" ([SWAT
-API Reference](https://sassoftware.github.io/python-swat/generated/swat.cas.results.CASResults.html);
-[`swat.SASDataFrame`](https://sassoftware.github.io/python-swat/generated/swat.dataframe.SASDataFrame.html),
-both fetched 2026-09-18). Together, the two closes the entire claim
-`sqlPassthroughSnippet.ts` and `docs/cas-python-connection.md` make: the
-member exists (probed, this finding) and `swat` exposes it as a
-`pandas.DataFrame` subclass (documented, `swat`'s own reference).
-**Cleanup:** both throwaway compute sessions (`mysess`, `mysess2`) were
-already gone by the time of the negative control's own `cas ... terminate;`
-statement; the compute session resource itself was `DELETE`d and confirmed
-`404` on read-back. **One operational wrinkle worth recording, not a finding
-about production code**: this probe's own first attempt hit a real VPN drop
-mid-session (a long idle gap between approval and execution) — the first
-throwaway compute session had already been cleaned up server-side by the
-time connectivity returned, confirmed via a `404` on that stale session id
-before a fresh one was created for the actual probe.
+**One change made as a direct result of that pass:** the `query=` value in
+`buildCasSqlPassthroughSnippet` (`src/cas/sqlPassthroughSnippet.ts`) now
+wraps in Python triple quotes (`'''...'''`) instead of a single pair of
+double quotes. Reasoning (Sean, from the manual test): the native-query
+tabstop is free-form text only the user supplies, and some databases need
+their own quoting inside it — Snowflake often requires double-quoted
+identifiers depending on how a table/column was created, and a `where`
+clause against a string value typically needs single quotes. A single
+double-quoted Python string forces the user to escape any `"` inside their
+own query to avoid ending the string early; triple-quoting removes that
+trap entirely, since neither `'` nor `"` alone closes a `'''`-delimited
+string. Updated together: the snippet builder, its unit test
+(`test/unit/cas-sql-passthrough-snippet.test.ts`), and
+`docs/cas-python-connection.md`'s own copy of the template, plus a new
+paragraph there explaining the triple-quote choice. No `swat`/CAS behaviour
+changed — this is Python string-literal syntax only, not a new probe
+finding.
 
 Findings in this section are numbered `11.x`, per the phase-scoped
 finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root
@@ -1222,3 +1176,78 @@ remains the only path to that behaviour; this finding removes a
 simpler-sounding alternative from consideration rather than opening one.
 **Cleanup:** both filerefs `DELETE`d (`204`), the session `DELETE`d (`204`)
 and confirmed gone (`404` on read-back).
+
+### Finding 11.4 — `fedsql.execDirect`'s result carries a member named `Result Set`, confirmed by both a positive and a negative control
+
+Probed 2026-09-18, via `viya-api-probe`/`creds.json` against `verde` directly,
+with Sean's explicit go-ahead for the execute-shaped step (the same kind of
+approval Finding 11.2 already had). Prompted directly by a pre-push
+adversarial review finding on 11b (above): 11b's own snippet and docs assert
+`result["Result Set"]` as fact, but Finding 11.2 never actually probed a
+`swat`-side call, only raw `PROC CAS`.
+
+**The reasoning that made a `PROC CAS`-only re-probe sufficient, without
+standing up `swat`/Python at all** (Sean's own suggestion, mid-session): a
+CAS action's result-member names are a **server-side** attribute — the same
+member names appear regardless of which client library reads them, `swat`
+or SAS's own `PROC CAS` — so confirming the member exists via `PROC CAS`
+settles the wire-level half of the claim just as well as a `swat` call
+would, without the added complexity of standing up a CAS binary/REST
+connection from a throwaway Python probe script.
+
+**Probe (positive control):** the same job shape Finding 11.2 used, plus one
+new line explicitly indexing the result by the literal key in question:
+
+```sas
+cas mysess;
+proc cas;
+  session mysess;
+  fedsql.execDirect result=r / query="select 1 as X from connection to SNOWLIB (select 1)";
+run;
+print r;
+print r["Result Set"];
+quit;
+cas mysess terminate;
+```
+
+**Observed:** no `ERROR` anywhere in the log; `NOTE: The PROCEDURE CAS printed
+pages 1-2` — two real pages, one per `print` statement. `fedsql`'s own
+action-set load and the `numReadNodes=1` warning Finding 11.2 already
+documented both appear again unchanged.
+
+**Probe (negative control, same session shape, a deliberately wrong key):**
+
+```sas
+print r["TotallyNotARealKey"];
+```
+
+**Observed:** a materially different log signature — `WARNING: Variable
+'TotallyNotARealKey' is uninitialized. It has been set to missing.` and no
+"printed pages" `NOTE` at all. This confirms the positive control's silence
+is meaningful (a real, existing member), not an artifact of `PROC CAS`
+silently tolerating any key.
+
+**What this establishes:** `fedsql.execDirect`'s result object carries a
+member literally named `Result Set` on `verde`, confirmed at the wire/server
+level. **What this does not establish, and does not need to**: the exact
+Python type `swat` wraps that member in when read via `conn.fedsql.execDirect(...)["Result Set"]` —
+that is `swat`'s own client-side behaviour, not deployment-specific wire
+behaviour, and is documented directly by `swat`'s own reference
+documentation rather than needing a live probe: `CASResults` is "a subclass
+of Python's ordered dictionary" whose table-valued members `swat` returns as
+`SASDataFrame`, itself "a simple subclass of `pandas.DataFrame`" ([SWAT
+API Reference](https://sassoftware.github.io/python-swat/generated/swat.cas.results.CASResults.html);
+[`swat.SASDataFrame`](https://sassoftware.github.io/python-swat/generated/swat.dataframe.SASDataFrame.html),
+both fetched 2026-09-18). Together, the two closes the entire claim
+`sqlPassthroughSnippet.ts` and `docs/cas-python-connection.md` make: the
+member exists (probed, this finding) and `swat` exposes it as a
+`pandas.DataFrame` subclass (documented, `swat`'s own reference).
+**Cleanup:** both throwaway compute sessions (`mysess`, `mysess2`) were
+already gone by the time of the negative control's own `cas ... terminate;`
+statement; the compute session resource itself was `DELETE`d and confirmed
+`404` on read-back. **One operational wrinkle worth recording, not a finding
+about production code**: this probe's own first attempt hit a real VPN drop
+mid-session (a long idle gap between approval and execution) — the first
+throwaway compute session had already been cleaned up server-side by the
+time connectivity returned, confirmed via a `404` on that stale session id
+before a fresh one was created for the actual probe.

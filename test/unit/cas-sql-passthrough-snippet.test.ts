@@ -20,7 +20,7 @@ describe("buildCasSqlPassthroughSnippet", () => {
       [
         'conn.loadactionset("fedsql")',
         "result = conn.fedsql.execDirect(",
-        '    query="select * from connection to ${1:CASLIB} (${2:select * from native_table})"',
+        "    query='''select * from connection to ${1:CASLIB} (${2:select * from native_table})'''",
         ")",
         'df = result["Result Set"]',
       ].join("\n"),

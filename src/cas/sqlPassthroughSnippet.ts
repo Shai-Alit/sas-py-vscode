@@ -24,12 +24,18 @@
  *
  * **This module must never import `vscode`.** `casSqlPassthroughCommand.ts`
  * is what wraps the result in `new vscode.SnippetString(...)`.
+ *
+ * The `query=` value is wrapped in Python triple quotes (`'''...'''`), not a
+ * single pair of double quotes, so the native query tabstop can freely
+ * contain the target database's own quoting — Snowflake identifiers
+ * double-quoted, string literals single-quoted — without the user having to
+ * escape anything to keep it inside this snippet's own string literal.
  */
 export function buildCasSqlPassthroughSnippet(): string {
   return [
     'conn.loadactionset("fedsql")',
     "result = conn.fedsql.execDirect(",
-    '    query="select * from connection to ${1:CASLIB} (${2:select * from native_table})"',
+    "    query='''select * from connection to ${1:CASLIB} (${2:select * from native_table})'''",
     ")",
     'df = result["Result Set"]',
   ].join("\n");

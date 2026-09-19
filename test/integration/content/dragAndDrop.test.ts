@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import type { ConnectionProblemNode } from "../../../src/connectionProblemNode";
 import type { ContentAdapter } from "../../../src/content/adapter";
 import type { ContentResult } from "../../../src/content/client";
 import { SasContentDragAndDropController } from "../../../src/content/contentDragAndDrop";
@@ -83,6 +84,12 @@ function controllerWith(moveItem: MoveItem): Harness {
   });
   return { controller, state, errors };
 }
+
+const problemNode: ConnectionProblemNode = {
+  kind: "connectionProblem",
+  message: "Could not load SAS Content.",
+  retryCommand: "pythonOnViya.refreshContentExplorer",
+};
 
 const notCalled: MoveItem = () => {
   throw new Error("moveItem should not be called");
@@ -176,6 +183,41 @@ describe("SAS Content drag-and-drop move", () => {
       transfer,
     );
     assert.equal(transfer.get(MIME), undefined);
+  });
+
+  it("handleDrag filters a ConnectionProblemNode out of the source (11c B1)", () => {
+    const { controller } = controllerWith(notCalled);
+
+    const mixed = new vscode.DataTransfer();
+    controller.handleDrag([problemNode, fileMember], mixed);
+    const payload = mixed.get(MIME)?.value as ContentItem[] | undefined;
+    assert.ok(payload);
+    assert.deepEqual(
+      payload.map((i) => i.id),
+      ["m1"],
+    );
+
+    const alone = new vscode.DataTransfer();
+    controller.handleDrag([problemNode], alone);
+    assert.equal(alone.get(MIME), undefined);
+  });
+
+  it("handleDrop rejects a ConnectionProblemNode target and never calls the adapter (11c B1)", async () => {
+    const holder = controllerWith(notCalled);
+    const transfer = new vscode.DataTransfer();
+    transfer.set(MIME, new vscode.DataTransferItem([fileMember]));
+    const tokenSource = new vscode.CancellationTokenSource();
+    try {
+      await holder.controller.handleDrop(
+        problemNode,
+        transfer,
+        tokenSource.token,
+      );
+    } finally {
+      tokenSource.dispose();
+    }
+    assert.equal(holder.state.refreshed, 0);
+    assert.equal(holder.errors.length, 0);
   });
 
   it("handleDrop moves the dragged member into the target folder, then refreshes", async () => {

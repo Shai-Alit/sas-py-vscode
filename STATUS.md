@@ -357,8 +357,8 @@ numeric order; this file's own wording corrected), and pushed to
 `feat/cas-sql-passthrough-snippet`. **Final `npm run verify` (1,816 unit
 tests; coverage 96.31/95.68/96.08/96.31) and `npm run check:docs` both
 re-ran green 2026-09-18** against the pushed branch, and
-[PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) is now open
-for these two follow-up commits. **11c — the three pre-release bugs
+[PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) merged for
+these two follow-up commits. **11c — the three pre-release bugs
 (B1/B2/B3)** is code-complete 2026-09-18: B1 (blank trees on a failed
 listing) is a new `ConnectionProblemNode` (`src/connectionProblemNode.ts`)
 each of the three browsing trees' `getChildren` now returns instead of `[]`;
@@ -390,7 +390,11 @@ the original 11c diff, once on the 11.12 follow-up, whose one finding (an
 `as never` cast in the new test) was folded in. `npm run verify` green after
 the fold-in (1,816 unit tests; coverage 96.31/95.68/96.08/96.31); the
 integration suite and `check:docs` were green before the final test-only
-fix. **Not yet pushed, no PR opened** — next step is commit, push, PR. 11d (CAS table properties/CSV export) and 11e (session
+fix. [PR #195](https://github.com/Shai-Alit/sas-py-vscode/pull/195) is open; its one
+review finding (no automated regression test for the drag-and-drop
+`ConnectionProblemNode` exclusion) was folded in as integration tests in
+`test/integration/data/drag-and-drop.test.ts` and
+`test/integration/content/dragAndDrop.test.ts`. 11d (CAS table properties/CSV export) and 11e (session
 startup/autoexec, still needing its own scoping pass) remain. Full plan,
 punch list, and probe findings (11.1–11.4) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own

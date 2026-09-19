@@ -8,7 +8,7 @@ import type * as vscode from "vscode";
 
 import { type CasAdapter } from "../../../src/cas/adapter";
 import { type CasResult } from "../../../src/cas/client";
-import { SasCasTreeProvider } from "../../../src/cas/casTree";
+import { SasCasTreeProvider, type CasTreeNode } from "../../../src/cas/casTree";
 import { type CasItem, type CasTableItem } from "../../../src/cas/types";
 
 /**
@@ -74,11 +74,11 @@ function adapterReturning(
 function makeProvider(adapter: CasAdapter | undefined): {
   provider: SasCasTreeProvider;
   errors: string[];
-  fired: (CasItem | undefined)[];
+  fired: (CasTreeNode | undefined)[];
 } {
   const { channel, errors } = fakeLog();
   const provider = new SasCasTreeProvider(() => adapter, channel);
-  const fired: (CasItem | undefined)[] = [];
+  const fired: (CasTreeNode | undefined)[] = [];
   provider.onDidChangeTreeData((item) => fired.push(item));
   return { provider, errors, fired };
 }
@@ -235,7 +235,7 @@ describe("SasCasTreeProvider", () => {
     assert.equal(fired.length, 0);
   });
 
-  it("does not fire a refresh when getColumns fails", async () => {
+  it("does not fire a refresh when getColumns fails, and renders a connection-problem node instead of a silent empty list (11c, B1)", async () => {
     const adapter = adapterReturning({
       ok: false,
       reason: "the CAS management service refused the request",
@@ -245,9 +245,16 @@ describe("SasCasTreeProvider", () => {
 
     const children = await provider.getChildren(table({ state: "unloaded" }));
 
-    assert.deepEqual(children, []);
+    assert.equal(children.length, 1);
     assert.equal(fired.length, 0);
     assert.equal(errors.length, 1);
+
+    const [node] = children;
+    assert.ok(node !== undefined);
+    const treeItem = provider.getTreeItem(node);
+    assert.ok(treeItem.iconPath instanceof ThemeIcon);
+    assert.equal(treeItem.iconPath.id, "warning");
+    assert.equal(treeItem.command?.command, "pythonOnViya.refreshCasExplorer");
   });
 
   it("never throws when there is no active deployment", async () => {

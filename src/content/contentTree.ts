@@ -64,11 +64,24 @@
  * is ever registered for it, and no `command` is attached, so it carries no
  * behaviour; it exists purely so the row has an identity VS Code's drag
  * machinery can hang onto.
+ *
+ * ## 11c: a failed listing renders, it does not just log (B1)
+ *
+ * `getChildren`'s `!result.ok` branch used to log the {@link ContentProblem}
+ * and return `[]` — indistinguishable on screen from a folder that is
+ * genuinely empty. It now also returns one `ConnectionProblemNode`
+ * (`../connectionProblemNode.ts`), carrying `localiseContentProblem`'s own
+ * user-facing sentence and a click that runs this view's own refresh
+ * command — the case the existing `noProfile`/`signedOut` `viewsWelcome`
+ * states do not reach: a profile that is signed in and still fails (a
+ * dropped VPN, the deployment itself unreachable), which has no context-key
+ * transition of its own to hang a third `viewsWelcome` entry on.
  */
 
 import * as vscode from "vscode";
 
 import { type ContentAdapter } from "./adapter";
+import { localiseContentProblem } from "./messages";
 import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
 import {
@@ -83,6 +96,19 @@ import {
   contentReadOnlyUriString,
   contentUriString,
 } from "./uri";
+import {
+  connectionProblemTreeItem,
+  isConnectionProblemNode,
+  type ConnectionProblemNode,
+} from "../connectionProblemNode";
+
+/** What this tree hands VS Code: a real content item, or (B1) a synthetic
+ * node standing in for a listing that failed. */
+export type ContentTreeNode = ContentItem | ConnectionProblemNode;
+
+/** This tree's own refresh command (`package.json`) — what a
+ * {@link ConnectionProblemNode}'s click retries. */
+const REFRESH_COMMAND = "pythonOnViya.refreshContentExplorer";
 
 /**
  * The per-request bound on a {@link SasContentTreeProvider.getParent} fetch,
@@ -95,9 +121,11 @@ import {
 const GET_PARENT_TIMEOUT_MS = 8_000;
 
 export class SasContentTreeProvider
-  implements vscode.TreeDataProvider<ContentItem>, vscode.Disposable
+  implements vscode.TreeDataProvider<ContentTreeNode>, vscode.Disposable
 {
-  private readonly changed = new vscode.EventEmitter<ContentItem | undefined>();
+  private readonly changed = new vscode.EventEmitter<
+    ContentTreeNode | undefined
+  >();
   readonly onDidChangeTreeData = this.changed.event;
 
   dispose(): void {
@@ -131,7 +159,9 @@ export class SasContentTreeProvider
     this.changed.fire(item);
   }
 
-  getTreeItem(item: ContentItem): vscode.TreeItem {
+  getTreeItem(item: ContentTreeNode): vscode.TreeItem {
+    if (isConnectionProblemNode(item)) return connectionProblemTreeItem(item);
+
     const shape = nodePresentationOf(item);
     const node = new vscode.TreeItem(
       shape.label,
@@ -191,7 +221,12 @@ export class SasContentTreeProvider
     return node;
   }
 
-  async getChildren(item?: ContentItem): Promise<ContentItem[]> {
+  async getChildren(item?: ContentTreeNode): Promise<ContentTreeNode[]> {
+    // Never expandable (see `connectionProblemTreeItem`), so VS Code should
+    // never ask — guarded anyway to keep the rest of this method typed
+    // against `ContentItem`, not the wider `ContentTreeNode`.
+    if (item !== undefined && isConnectionProblemNode(item)) return [];
+
     const adapter = this.currentAdapter();
     if (adapter === undefined) return [];
 
@@ -212,7 +247,13 @@ export class SasContentTreeProvider
           describeContentProblem(result.problem),
         ),
       );
-      return [];
+      return [
+        {
+          kind: "connectionProblem",
+          message: localiseContentProblem(result.problem),
+          retryCommand: REFRESH_COMMAND,
+        },
+      ];
     }
     return [...result.value];
   }
@@ -230,7 +271,8 @@ export class SasContentTreeProvider
    * cancellation token to thread; a failure there is logged like a failed
    * listing and the walk stops.
    */
-  async getParent(item: ContentItem): Promise<ContentItem | undefined> {
+  async getParent(item: ContentTreeNode): Promise<ContentItem | undefined> {
+    if (isConnectionProblemNode(item)) return undefined;
     if (isSasContentRoot(item) || isDelegateFolder(item)) return undefined;
 
     const adapter = this.currentAdapter();

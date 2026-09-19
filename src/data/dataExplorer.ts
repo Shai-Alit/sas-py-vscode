@@ -102,6 +102,11 @@ export function registerDataExplorer(
   events: DataExplorerEvents,
   panels: DataViewerPanelManager,
   propertiesPanels: TablePropertiesPanelManager,
+  /** (11c, B2) Drops a profile's cached connection and re-syncs
+   * `pythonOnViya.connected` — `ComputeCommandHandles.forgetProfile`, the
+   * same handle `src/run/commands.ts` already takes for the identical
+   * reason. See `SasLibraryTreeProvider`'s own constructor doc comment. */
+  forgetProfile: (profileId: string) => void,
 ): void {
   const currentAdapter = (): LibraryAdapter | undefined => {
     const profileId = profiles.active()?.profile.id;
@@ -110,7 +115,11 @@ export function registerDataExplorer(
       : new LibraryAdapter(sessions, profileId);
   };
 
-  const provider = new SasLibraryTreeProvider(currentAdapter, log);
+  const provider = new SasLibraryTreeProvider(
+    currentAdapter,
+    log,
+    forgetProfile,
+  );
   const dragAndDrop = new SasLibraryDragAndDropController();
 
   const view = vscode.window.createTreeView(DATA_VIEW_ID, {

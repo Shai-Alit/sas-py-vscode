@@ -181,6 +181,8 @@ function connection(): CasConnectCommandConnection {
 interface Harness {
   readonly reports: string[];
   readonly inserted: string[];
+  /** Profile ids `defaultSessions.forgetProfile` was called with (11c, B2). */
+  readonly forgotten: string[];
   build(overrides?: {
     sessions?: CasConnectCommandSessions;
     cas?: CasConnectCommandCas;
@@ -197,9 +199,11 @@ interface Harness {
 function harness(): Harness {
   const reports: string[] = [];
   const inserted: string[] = [];
+  const forgotten: string[] = [];
 
   const defaultSessions: CasConnectCommandSessions = {
     current: () => connection(),
+    forgetProfile: (profileId) => forgotten.push(profileId),
   };
   const defaultCas: CasConnectCommandCas = {
     adapterFor: (): CasConnectCommandAdapter => ({
@@ -219,6 +223,7 @@ function harness(): Harness {
   return {
     reports,
     inserted,
+    forgotten,
     build: (overrides = {}) =>
       createInsertCasConnectionSnippet(
         overrides.sessions ?? defaultSessions,
@@ -313,7 +318,9 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     await pythonDocument();
     const h = harness();
 
-    await h.build({ sessions: { current: () => undefined } })();
+    await h.build({
+      sessions: { current: () => undefined, forgetProfile: () => undefined },
+    })();
 
     assert.equal(h.reports.length, 1);
     assert.match(h.reports[0] ?? "", /Connect to SAS Viya/);
@@ -325,7 +332,7 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     // seam the command itself reads through.
     const h = harness();
     const insertCasConnectionSnippet = createInsertCasConnectionSnippet(
-      { current: () => connection() },
+      { current: () => connection(), forgetProfile: () => undefined },
       {
         adapterFor: (): CasConnectCommandAdapter => ({
           getServers: async () =>
@@ -405,7 +412,7 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     assert.equal(editor.document.getText(), "");
   });
 
-  it("reports a Compute problem from writeCasToken without touching the editor", async () => {
+  it("reports a Compute problem from writeCasToken without touching the editor, and re-syncs pythonOnViya.connected (11c, B2)", async () => {
     const editor = await pythonDocument();
     const h = harness();
 
@@ -415,12 +422,20 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
           client: failingComputeClient(),
           session: connection().session,
         }),
+        forgetProfile: (profileId) => h.forgotten.push(profileId),
       },
     })();
 
     assert.equal(h.reports.length, 1);
     assert.match(h.reports[0] ?? "", /session is no longer available/);
     assert.equal(editor.document.getText(), "");
+    // The 404 `failingComputeClient` answers with translates to
+    // `session-gone` (`writeCasToken`'s own retry/translate contract,
+    // `compute-cas-token.test.ts`) — this command must tell `src/compute`
+    // its own cached connection is stale, the same way a run discovering
+    // `backend-gone` already does, so **Connect** reappears in the palette
+    // instead of staying hidden until the user finds **Disconnect** first.
+    assert.deepEqual(h.forgotten, [PROFILE.id]);
   });
 
   it("reports a CAS problem from getServers without touching the editor", async () => {
@@ -590,6 +605,7 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
             session: connection().session,
           };
         },
+        forgetProfile: () => undefined,
       },
     })();
 

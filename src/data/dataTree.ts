@@ -32,19 +32,51 @@
  * No further context-menu actions beyond "Open" (sort/filter/export/
  * properties are 7c), no `getParent` (nothing reveals yet) — the same scope
  * line `src/content/contentTree.ts` drew for 6a-ii.
+ *
+ * ## 11c: a failed listing renders, it does not just log (B1/B2)
+ *
+ * This doc comment's own second paragraph above is now only half true: a
+ * `not-connected` failure — genuinely no cached session — still falls
+ * through to `viewsWelcome`. Everything else `!result.ok` can mean (a
+ * session that *was* cached but the server has since reaped, a permission
+ * error, a malformed response) used to log and return `[]` too —
+ * indistinguishable on screen from a library that is genuinely empty. It now
+ * returns one `ConnectionProblemNode` (`../connectionProblemNode.ts`)
+ * instead, carrying `localiseDataProblem`'s own user-facing sentence and a
+ * click that runs this view's own refresh command (B1). A `session-gone`
+ * reading specifically also calls {@link SasLibraryTreeProvider}'s own
+ * `forgetProfile` — see its constructor doc comment — so **Connect**
+ * reappears in the palette instead of staying hidden until the user finds
+ * **Disconnect** first (B2).
  */
 
 import * as vscode from "vscode";
 
 import { type LibraryAdapter } from "./adapter";
+import { localiseDataProblem } from "./messages";
 import { nodePresentationOf } from "./presentation";
 import { describeDataProblem } from "./problems";
 import { isLibrary, isTable, type DataItem } from "./types";
+import {
+  connectionProblemTreeItem,
+  isConnectionProblemNode,
+  type ConnectionProblemNode,
+} from "../connectionProblemNode";
+
+/** What this tree hands VS Code: a real library/table item, or (B1) a
+ * synthetic node standing in for a listing that failed. */
+export type DataTreeNode = DataItem | ConnectionProblemNode;
+
+/** This tree's own refresh command (`package.json`) — what a
+ * {@link ConnectionProblemNode}'s click retries. */
+const REFRESH_COMMAND = "pythonOnViya.refreshDataExplorer";
 
 export class SasLibraryTreeProvider
-  implements vscode.TreeDataProvider<DataItem>, vscode.Disposable
+  implements vscode.TreeDataProvider<DataTreeNode>, vscode.Disposable
 {
-  private readonly changed = new vscode.EventEmitter<DataItem | undefined>();
+  private readonly changed = new vscode.EventEmitter<
+    DataTreeNode | undefined
+  >();
   readonly onDidChangeTreeData = this.changed.event;
 
   dispose(): void {
@@ -60,10 +92,24 @@ export class SasLibraryTreeProvider
    *   exists.
    * @param log The extension's shared channel — a failed listing is logged
    *   here, not shown as a notification, matching the content tree.
+   * @param forgetProfile (11c, B2) Drops this window's cached connection for
+   *   a profile a listing has just discovered is actually gone
+   *   (`ComputeProblem` `session-gone`) and re-syncs `pythonOnViya.connected`
+   *   — the same `ComputeCommandHandles.forgetProfile` a run/reset/probe
+   *   already calls on `backend-gone` (`src/run/commands.ts`). Without this,
+   *   a session that dies while the user is only ever browsing — never
+   *   running anything — leaves `pythonOnViya.connected` stuck `true`:
+   *   **Connect** stays hidden from the palette (its `enablement` is
+   *   `!pythonOnViya.connected`) and the tree has no `viewsWelcome` state
+   *   left to fall into, since none of the three match a profile that is
+   *   signed in and believes itself connected. The only way out, before this
+   *   fix, was **Disconnect** — a full sign-out-shaped action — even though
+   *   nothing about the profile or the sign-in was actually wrong.
    */
   constructor(
     private readonly currentAdapter: () => LibraryAdapter | undefined,
     private readonly log: vscode.LogOutputChannel,
+    private readonly forgetProfile: (profileId: string) => void,
   ) {}
 
   /** Re-reads the whole tree. Called on refresh, profile change, connect,
@@ -72,7 +118,9 @@ export class SasLibraryTreeProvider
     this.changed.fire(undefined);
   }
 
-  getTreeItem(item: DataItem): vscode.TreeItem {
+  getTreeItem(item: DataTreeNode): vscode.TreeItem {
+    if (isConnectionProblemNode(item)) return connectionProblemTreeItem(item);
+
     const shape = nodePresentationOf(item);
     const node = new vscode.TreeItem(
       shape.label,
@@ -105,7 +153,12 @@ export class SasLibraryTreeProvider
     return node;
   }
 
-  async getChildren(item?: DataItem): Promise<DataItem[]> {
+  async getChildren(item?: DataTreeNode): Promise<DataTreeNode[]> {
+    // Never expandable (see `connectionProblemTreeItem`), so VS Code should
+    // never ask — guarded anyway to keep the rest of this method typed
+    // against `DataItem`, not the wider `DataTreeNode`.
+    if (item !== undefined && isConnectionProblemNode(item)) return [];
+
     const adapter = this.currentAdapter();
     if (adapter === undefined) return [];
 
@@ -124,7 +177,24 @@ export class SasLibraryTreeProvider
           describeDataProblem(result.problem),
         ),
       );
-      return [];
+      // (11c, B2) The session this listing tried to use is actually gone —
+      // not merely "never had one" (`not-connected`, decided before any
+      // request, `LibraryAdapter.require()`) — so this window's own belief
+      // that it still holds a connection is wrong. See this class's own
+      // constructor doc comment for `forgetProfile`.
+      if (
+        result.problem.code === "compute" &&
+        result.problem.problem.code === "session-gone"
+      ) {
+        this.forgetProfile(adapter.profileId);
+      }
+      return [
+        {
+          kind: "connectionProblem",
+          message: localiseDataProblem(result.problem),
+          retryCommand: REFRESH_COMMAND,
+        },
+      ];
     }
     return [...result.value];
   }

@@ -10,6 +10,7 @@ import { type ContentResult } from "../../../src/content/client";
 import { SasContentTreeProvider } from "../../../src/content/contentTree";
 import { SAS_CONTENT_ROOT, type ContentItem } from "../../../src/content/types";
 import { parseContentUri } from "../../../src/content/uri";
+import { isConnectionProblemNode } from "../../../src/connectionProblemNode";
 
 /**
  * `SasContentTreeProvider`'s mapping of a `ContentItem` onto a real
@@ -239,13 +240,15 @@ describe("SasContentTreeProvider", () => {
     const { provider } = makeProvider(() => adapterReturning(okResult(roots)));
     const children = await provider.getChildren();
     assert.deepEqual(
-      children.map((c) => c.name),
+      children
+        .filter((c): c is ContentItem => !isConnectionProblemNode(c))
+        .map((c) => c.name),
       ["SAS Content", "My Folder"],
     );
     provider.dispose();
   });
 
-  it("logs and returns [] when a listing fails, never throwing", async () => {
+  it("logs, and renders a connection-problem node instead of a silent empty list, when a listing fails (11c, B1)", async () => {
     const { provider, errors } = makeProvider(() =>
       adapterReturning({
         ok: false,
@@ -258,9 +261,19 @@ describe("SasContentTreeProvider", () => {
       }),
     );
     const children = await provider.getChildren();
-    assert.deepEqual(children, []);
+    assert.equal(children.length, 1);
     assert.equal(errors.length, 1);
     assert.match(errors[0] ?? "", /SAS Content:/);
+
+    const [node] = children;
+    assert.ok(node !== undefined);
+    const treeItem = provider.getTreeItem(node);
+    assert.ok(treeItem.iconPath instanceof vscode.ThemeIcon);
+    assert.equal(treeItem.iconPath.id, "warning");
+    assert.equal(
+      treeItem.command?.command,
+      "pythonOnViya.refreshContentExplorer",
+    );
     provider.dispose();
   });
 

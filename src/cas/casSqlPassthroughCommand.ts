@@ -11,13 +11,15 @@
  * to five network round trips behind a cancellable progress notification.
  * This one needs none — the snippet it inserts is a fixed template
  * (`sqlPassthroughSnippet.ts`) with two user-filled tabstops, assuming the
- * user already has a `conn` from 8b's own command in the same file. The only
- * two things worth checking before inserting are the same two
- * `casConnectCommand.ts` checks first: is there an active editor, and is it
- * a Python file. `enablement: pythonOnViya.connected` in `package.json` (not
- * checked again here) keeps the command out of the palette when there is no
- * connection for a `conn` to have come from, matching 8b's own gating,
- * even though this command's own body never touches the connection itself.
+ * user already has a `conn` from 8b's own command in the same file. It makes
+ * the same three checks `casConnectCommand.ts` makes first, in the same order
+ * and with the same wording: is there a connected session, is there an active
+ * editor, and is it a Python file. The connection check is a warning, not
+ * `enablement` in `package.json` (11c, manual test 11.12): a disabled command
+ * is dropped from the palette entirely, which reads as a bug once a session
+ * goes stale, whereas a message tells the user what to do. This command's own
+ * body never touches the connection — the check only mirrors 8b's, since a
+ * `conn` has to have come from a connected session.
  *
  * Same "handlers factory, thin registration shell" split as
  * `casConnectCommand.ts`'s own `createInsertCasConnectionSnippet`/
@@ -28,7 +30,17 @@
 
 import * as vscode from "vscode";
 
+import { type ProfileStore } from "../profile/store";
 import { buildCasSqlPassthroughSnippet } from "./sqlPassthroughSnippet";
+
+/** What this command reads from the profile store. */
+export type CasSqlPassthroughProfiles = Pick<ProfileStore, "active">;
+
+/** What this command reads from `ComputeSessionManager` — narrowed so a test
+ * need not stand up a whole manager. */
+export interface CasSqlPassthroughSessions {
+  current(profileId: string): unknown;
+}
 
 /**
  * The ports this module would otherwise reach for on the `vscode` namespace
@@ -47,6 +59,8 @@ export interface CasSqlPassthroughCommandDeps {
  * doc comment for why.
  */
 export function createInsertCasSqlPassthroughSnippet(
+  sessions: CasSqlPassthroughSessions,
+  profiles: CasSqlPassthroughProfiles,
   deps: CasSqlPassthroughCommandDeps = {},
 ): () => Promise<void> {
   const activeTextEditor =
@@ -56,6 +70,19 @@ export function createInsertCasSqlPassthroughSnippet(
     ((message: string) => void vscode.window.showErrorMessage(message));
 
   return async function insertCasSqlPassthroughSnippet(): Promise<void> {
+    const active = profiles.active();
+    if (
+      active === undefined ||
+      sessions.current(active.profile.id) === undefined
+    ) {
+      report(
+        vscode.l10n.t(
+          "Connect to SAS Viya first, then run this command again.",
+        ),
+      );
+      return;
+    }
+
     const editor = activeTextEditor();
     if (editor?.document.languageId !== "python") {
       report(
@@ -77,10 +104,15 @@ export function createInsertCasSqlPassthroughSnippet(
  */
 export function registerCasSqlPassthroughCommand(
   context: vscode.ExtensionContext,
+  sessions: CasSqlPassthroughSessions,
+  profiles: CasSqlPassthroughProfiles,
   deps: CasSqlPassthroughCommandDeps = {},
 ): void {
-  const insertCasSqlPassthroughSnippet =
-    createInsertCasSqlPassthroughSnippet(deps);
+  const insertCasSqlPassthroughSnippet = createInsertCasSqlPassthroughSnippet(
+    sessions,
+    profiles,
+    deps,
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand(
       "pythonOnViya.insertCasSqlPassthroughSnippet",

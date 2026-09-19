@@ -41,7 +41,7 @@ import {
   type SessionLike,
 } from "./contentSession";
 import { SasContentFileSystemProvider } from "./contentFileSystem";
-import { SasContentTreeProvider } from "./contentTree";
+import { SasContentTreeProvider, type ContentTreeNode } from "./contentTree";
 import { type ContentItem } from "./types";
 import { CONTENT_READONLY_SCHEME, CONTENT_SCHEME } from "./uri";
 
@@ -121,7 +121,7 @@ export function registerContentExplorer(
   // debug so a genuine VS Code-internal failure still leaves a trail. The view
   // is filled in below (the drag-and-drop controller it needs is built first);
   // `reveal` only runs on later user action, so `current` is set by then.
-  const viewRef: { current: vscode.TreeView<ContentItem> | undefined } = {
+  const viewRef: { current: vscode.TreeView<ContentTreeNode> | undefined } = {
     current: undefined,
   };
   const reveal = (item: ContentItem): Thenable<void> =>

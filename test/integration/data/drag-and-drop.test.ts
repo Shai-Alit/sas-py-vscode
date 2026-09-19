@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import type { ConnectionProblemNode } from "../../../src/connectionProblemNode";
 import { SasLibraryDragAndDropController } from "../../../src/data/dataDragAndDrop";
 import type { LibraryItem, TableItem } from "../../../src/data/types";
 
@@ -69,6 +70,28 @@ describe("SAS Libraries drag-and-drop (7d)", () => {
       payload.map((t) => t.name),
       ["CLASS"],
     );
+  });
+
+  it("handleDrag filters a ConnectionProblemNode out of the source (11c B1)", () => {
+    const controller = new SasLibraryDragAndDropController();
+    const problemNode: ConnectionProblemNode = {
+      kind: "connectionProblem",
+      message: "Could not load libraries.",
+      retryCommand: "pythonOnViya.refreshDataExplorer",
+    };
+
+    const mixed = new vscode.DataTransfer();
+    controller.handleDrag([problemNode, classTable], mixed);
+    const payload = mixed.get(TABLE_MIME)?.value as TableItem[] | undefined;
+    assert.ok(payload);
+    assert.deepEqual(
+      payload.map((t) => t.name),
+      ["CLASS"],
+    );
+
+    const alone = new vscode.DataTransfer();
+    controller.handleDrag([problemNode], alone);
+    assert.equal(alone.get(TABLE_MIME), undefined);
   });
 
   it("handleDrag sets nothing when no dragged item is a table", () => {

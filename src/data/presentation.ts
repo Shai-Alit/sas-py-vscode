@@ -25,12 +25,21 @@ export interface NodePresentation {
   /** `true` → the tree shows an expand chevron (collapsed). */
   readonly expandable: boolean;
   /** A `vscode.ThemeIcon` id — no bundled SVGs. Both ids are confirmed
-   * present in the codicon set VS Code ships (`database`, `symbol-array`). */
+   * present in the codicon set VS Code ships (`database`, `table`). */
   readonly icon: string;
   readonly contextValue: string;
 }
 
-/** The presentation for one item. */
+/** The presentation for one item.
+ *
+ * A table's icon is `"table"` (11c, B3) — the same id `src/cas/
+ * presentation.ts` draws for a *loaded* CAS table, for visual consistency
+ * between the two table browsers a manual test flagged as mismatched
+ * (`symbol-array`, a generic bracket glyph, here vs. CAS's purpose-built
+ * table icon). Unlike CAS, a SAS Libraries table has no unloaded state to
+ * distinguish (Phase 7 never needed one — a `DataAccessApi` table is
+ * whatever the session's own libref already resolved), so there is only the
+ * one icon to match, not CAS's loaded/unloaded pair. */
 export function nodePresentationOf(item: DataItem): NodePresentation {
   if (isLibrary(item)) {
     return {
@@ -43,7 +52,7 @@ export function nodePresentationOf(item: DataItem): NodePresentation {
   return {
     label: item.name,
     expandable: false,
-    icon: "symbol-array",
+    icon: "table",
     contextValue: CONTEXT_TABLE,
   };
 }

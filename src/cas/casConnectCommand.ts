@@ -55,6 +55,17 @@ export interface CasConnectCommandConnection {
  * need not stand up a whole manager. */
 export interface CasConnectCommandSessions {
   current(profileId: string): CasConnectCommandConnection | undefined;
+  /** (11c, B2) Drops this window's cached connection for a profile this
+   * command has just discovered is actually gone (`ComputeProblem`
+   * `session-gone`, from `writeCasToken` below) and re-syncs
+   * `pythonOnViya.connected` — `ComputeCommandHandles.forgetProfile`, the
+   * same handle `RunCommandSessions.forgetProfile` (`src/run/commands.ts`)
+   * takes for the identical reason. Without this, a session that dies
+   * between two runs left the user with no way back into the palette's
+   * **Connect** short of **Disconnect** first — this command reported
+   * `localiseComputeProblem`'s "no longer available" sentence but never told
+   * `src/compute` its own belief was stale. */
+  forgetProfile(profileId: string): void;
 }
 
 /** The two `CasAdapter` methods this command needs — narrowed the same way
@@ -278,6 +289,15 @@ export function createInsertCasConnectionSnippet(
             { signal: bridge.signal },
           );
           if (!written.ok) {
+            // (11c, B2) The session this command was using is actually gone
+            // — this window's own cached belief that `active.profile` still
+            // holds one is wrong. Mirrors `run/commands.ts`'s own
+            // `forgetIfGone`: re-sync `pythonOnViya.connected` so **Connect**
+            // reappears in the palette immediately, alongside the message
+            // below, rather than leaving **Disconnect** as the only way back.
+            if (written.problem.code === "session-gone") {
+              sessions.forgetProfile(active.profile.id);
+            }
             return token.isCancellationRequested
               ? undefined
               : localiseComputeProblem(written.problem);

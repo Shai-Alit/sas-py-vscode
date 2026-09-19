@@ -357,11 +357,46 @@ numeric order; this file's own wording corrected), and pushed to
 `feat/cas-sql-passthrough-snippet`. **Final `npm run verify` (1,816 unit
 tests; coverage 96.31/95.68/96.08/96.31) and `npm run check:docs` both
 re-ran green 2026-09-18** against the pushed branch, and
-[PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) is now open
-for these two follow-up commits. 11c (three
-pre-release bugs), 11d (CAS table properties/CSV export), and 11e (session
+[PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) merged for
+these two follow-up commits. **11c — the three pre-release bugs
+(B1/B2/B3)** is code-complete 2026-09-18: B1 (blank trees on a failed
+listing) is a new `ConnectionProblemNode` (`src/connectionProblemNode.ts`)
+each of the three browsing trees' `getChildren` now returns instead of `[]`;
+B2 (a stale SAS Libraries connection had no way back except **Disconnect**)
+is `SasLibraryTreeProvider` and (extended mid-session, Sean's own live
+report of the same gap in `Insert CAS Connection Snippet`)
+`casConnectCommand.ts` both now calling `forgetProfile` on a `session-gone`
+reading, so **Connect to Viya** re-syncs into the palette immediately; B3
+(SAS Libraries table icon) now matches CAS's loaded-table icon. B1 and B2
+turned out not to share one mechanism — CAS/SAS Content have no "connected"
+concept of their own (ADR-0033), SAS Libraries does — see `phase-11.md`'s
+own 11c Runbook entry for the full design account. A new
+`test/integration/data/tree.test.ts` was added (`dataTree.ts` had no test
+file at all before this slice); `test/integration/cas/tree.test.ts`,
+`test/integration/content/tree.test.ts`, and
+`test/integration/cas/connect-command.test.ts` all gained assertions for
+the new behaviour. `npm run verify` green (1,816 unit tests; coverage
+96.31/95.68/96.08/96.31), `npm run test:integration` green (465 passing),
+`npm run check:docs` green. Manual-test items 11.8–11.14 added to
+`docs/dev/manual-tests/phase-11.md`. **The manual pass ran 2026-09-18 and
+all items passed.** Item 11.12 surfaced one design note: both insert-snippet
+commands vanished from the palette when the session was stale, because
+`enablement: pythonOnViya.connected` hid them. Resolved in this slice by
+removing that enablement from both commands and having each report "Connect
+to SAS Viya first, then run this command again." instead
+(`insertCasSqlPassthroughSnippet` gained `sessions`/`profiles` params to do
+so). **The pre-PR adversarial review has run twice (2026-09-18)** — once on
+the original 11c diff, once on the 11.12 follow-up, whose one finding (an
+`as never` cast in the new test) was folded in. `npm run verify` green after
+the fold-in (1,816 unit tests; coverage 96.31/95.68/96.08/96.31); the
+integration suite and `check:docs` were green before the final test-only
+fix. [PR #195](https://github.com/Shai-Alit/sas-py-vscode/pull/195) is open; its one
+review finding (no automated regression test for the drag-and-drop
+`ConnectionProblemNode` exclusion) was folded in as integration tests in
+`test/integration/data/drag-and-drop.test.ts` and
+`test/integration/content/dragAndDrop.test.ts`. 11d (CAS table properties/CSV export) and 11e (session
 startup/autoexec, still needing its own scoping pass) remain. Full plan,
-punch list, and probe findings (11.1–11.3) are in
+punch list, and probe findings (11.1–11.4) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
 completion was missed from this file at the time it merged — a housekeeping
 gap, caught and corrected only now, alongside 11b's own update, rather than

@@ -20,6 +20,7 @@
     "src/compute/commands.ts",
     "src/compute/messages.ts",
     "src/compute/sessionManager.ts",
+    "src/connectionProblemNode.ts",
     "src/content/contentCommands.ts",
     "src/content/contentDragAndDrop.ts",
     "src/content/contentExplorer.ts",

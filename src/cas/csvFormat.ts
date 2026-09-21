@@ -99,9 +99,10 @@ const MAX_PAGE_ROWS = 500;
  * wide table can pass the transport's 1 MiB body cap
  * (`src/auth/transport.ts`'s `MAX_BODY_BYTES`). Capping cells per page keeps
  * an ordinary wide table comfortably under it; a table whose individual
- * values are far wider than average can still exceed it and fails as the same
- * `content-too-large` any other oversized read does, never a silent
- * truncation. */
+ * values are far wider than average can still exceed it. That fails the read —
+ * never a silent truncation — but `src/cas/client.ts` has no oversized-response
+ * case, so it surfaces as `cas-unreachable` with the cap named only in its
+ * detail. */
 const TARGET_CELLS_PER_PAGE = 30_000;
 
 /** Rows per page for a table with `columnCount` columns. */

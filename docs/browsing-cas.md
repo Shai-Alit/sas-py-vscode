@@ -95,9 +95,11 @@ active compute session the same way any run does.
 - **Your own CASUSER library is not in the tree.** Expected today — only
   global caslibs are shown; a session-scoped caslib is a known gap for a later
   release.
-- **An export stops with "content too large".** A page of a very wide table
-  exceeded the response-size cap this extension enforces. Nothing is written to
-  your destination; export a narrower table or view instead.
+- **An export stops with "Could not reach the CAS management service" and a
+  detail ending "the response body exceeded 1048576 bytes".** A page of a very
+  wide table exceeded the 1 MiB response-size cap this extension enforces. The
+  proxy advice in that message does not apply — the connection is fine. Nothing
+  is written to your destination; export a narrower table or view instead.
 - **A filter is refused with CAS's own error message.** CAS rejected the
   `WHERE`-clause syntax itself; the message is CAS's own wording, not this
   extension's.

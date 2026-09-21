@@ -54,10 +54,11 @@ import { type TableDetail } from "./types";
  * response-body cap (`src/auth/transport.ts`'s `MAX_BODY_BYTES`) for any
  * realistically wide table, while keeping the round-trip count low for a
  * large one. Not measured against a specific real table's row width; a table
- * wide enough to still exceed the cap at this page size surfaces as the same
- * `content-too-large` failure any other oversized read in this project
- * already does (`src/auth/transport.ts`'s `ResponseTooLargeError`), not a
- * silent truncation.
+ * wide enough to still exceed the cap at this page size fails the read
+ * (`src/auth/transport.ts`'s `ResponseTooLargeError`), not a silent
+ * truncation; only `src/content/client.ts` turns that into a dedicated
+ * `content-too-large` problem, so here it is reported as a generic
+ * request failure.
  */
 export const CSV_EXPORT_PAGE_SIZE = 500;
 

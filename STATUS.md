@@ -317,7 +317,7 @@ checkpoint. Per-phase detail
 
 ## Phase 11 (in progress)
 
-**Phase 11 (Remaining parity gaps) is in progress — 11a and 11b merged, 11c–11e
+**Phase 11 (Remaining parity gaps) is in progress — 11a–11d merged, 11e
 still open.** A 2026-09-16/17 scoping session sized five slices in priority
 order (`docs/phases/phase-11.md`'s Plan section): **11a — the interactive
 window (F7)**, merged 2026-09-17 as
@@ -394,19 +394,20 @@ fix. [PR #195](https://github.com/Shai-Alit/sas-py-vscode/pull/195) is open; its
 review finding (no automated regression test for the drag-and-drop
 `ConnectionProblemNode` exclusion) was folded in as integration tests in
 `test/integration/data/drag-and-drop.test.ts` and
-`test/integration/content/dragAndDrop.test.ts`. **11d (CAS table properties + CSV export, F2/F3) is
-code-complete 2026-09-19; the pre-PR adversarial review (no blocking
-findings) and manual pass (11.15-11.22) are done 2026-09-20, PR not yet
-opened:** two new commands on the
+`test/integration/content/dragAndDrop.test.ts`. **11d (CAS table properties + CSV export, F2/F3) merged
+2026-09-20 as [PR #197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)
+after a pre-PR adversarial review (no blocking findings) and a manual pass
+(11.15-11.22, all passing):** two new commands on the
 CAS table node, built by generalising the existing properties panel and CSV
 command behind a per-backend source rather than forking them; the CAS export
 formats CSV client-side because CAS's own `text/csv` pads numerics
 (Finding 11.5), and asks for confirmation above an estimated 100 MB (Finding
 11.6 found no server-side row cap). The same confirmation for SAS library
-tables is a recorded follow-up. `npm run test:integration` green (489
-passing).
+tables is a recorded follow-up, alongside a dedicated CAS problem for an
+oversized response and an opt-in CSV formula-injection guard (all three on
+the phase's punch list). `npm run test:integration` green (489 passing).
 11e (session startup/autoexec, still needing its own scoping pass) remains. Full plan,
-punch list, and probe findings (11.1–11.4) are in
+punch list, and probe findings (11.1–11.6) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
 completion was missed from this file at the time it merged — a housekeeping
 gap, caught and corrected only now, alongside 11b's own update, rather than

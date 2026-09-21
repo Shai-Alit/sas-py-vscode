@@ -636,6 +636,15 @@ section above unless noted:
   through `CasClient`. Then restore `docs/browsing-cas.md`'s "content too
   large" wording and the two comments corrected in 11d (`csvFormat.ts`,
   `csvExportModel.ts`). Consider the same for the Compute/library client.
+- [ ] **11d follow-up — opt-in CSV formula-injection guard (CAS).** Added
+  2026-09-20 from the PR #197 review. A text cell beginning `=`, `+`, `-` or
+  `@` is written as-is (documented in the two export sections for now). Idea:
+  a setting, default **off**, that prefixes such cells in character columns
+  only, in `formatCsvPage` (`src/cas/csvFormat.ts`); numerics stay untouched.
+  Off by default because the standard `'` prefix alters data (`-Bob` reads back
+  as `'-Bob` in pandas). The SAS library path relays the server's CSV
+  untouched (Finding 7.20), so guarding it means re-parsing every page — a
+  separate decision, not part of this item.
 - [ ] **11e — Session startup/autoexec configuration.** Needs its own short
   scoping pass first (what "session startup" configures, and whether it's a
   workspace setting, a run-automatically-per-session snippet, or both) —

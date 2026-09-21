@@ -196,20 +196,60 @@ function generateCommands(pkg, resolve) {
     return lines.join("\n");
   }
 
-  lines.push("| Command | Palette entry | ID |");
-  lines.push("| --- | --- | --- |");
+  const viewsByCommand = viewsShowingCommands(pkg, resolve);
+
+  lines.push("| Command | Palette entry | ID | Shown in view |");
+  lines.push("| --- | --- | --- | --- |");
   for (const command of commands) {
     const where = `contributes.commands.${command.command}`;
     const title = resolve(command.title, `${where}.title`);
     const category = resolve(command.category, `${where}.category`);
     const palette = category ? `${category}: ${title}` : title;
+    const views = viewsByCommand.get(command.command) ?? [];
     lines.push(
-      `| ${cell(title)} | ${code(palette)} | ${code(command.command)} |`,
+      `| ${cell(title)} | ${code(palette)} | ${code(command.command)} | ${cell(views.length > 0 ? views.join(", ") : "—")} |`,
     );
   }
-  lines.push("");
+  lines.push(
+    "",
+    "A command shown against a view is offered on that view's rows or title bar;",
+    "two commands can share a title and differ only by the view they belong to.",
+    "",
+  );
 
   return lines.join("\n");
+}
+
+/**
+ * For each command, the names of the views whose menus offer it — read from
+ * the `view == <id>` term of a menu entry's `when` clause. Without this the
+ * table cannot tell apart commands that share a title (a SAS Libraries table's
+ * "Open Table" and a CAS table's) except by ID. Only the `view` term is read:
+ * other menus (`commandPalette`, `editor/context`) name no view.
+ */
+function viewsShowingCommands(pkg, resolve) {
+  const viewNames = new Map();
+  for (const container of Object.values(pkg.contributes?.views ?? {})) {
+    for (const view of container) {
+      viewNames.set(
+        view.id,
+        resolve(view.name, `contributes.views.${view.id}.name`),
+      );
+    }
+  }
+
+  const byCommand = new Map();
+  for (const entries of Object.values(pkg.contributes?.menus ?? {})) {
+    for (const entry of entries) {
+      const match = /\bview == ([\w.]+)/.exec(entry.when ?? "");
+      const name = match === null ? undefined : viewNames.get(match[1]);
+      if (name === undefined) continue;
+      const names = byCommand.get(entry.command) ?? [];
+      if (!names.includes(name)) names.push(name);
+      byCommand.set(entry.command, names);
+    }
+  }
+  return byCommand;
 }
 
 function readJson(path) {

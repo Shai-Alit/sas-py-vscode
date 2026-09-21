@@ -20,6 +20,7 @@ import {
 import {
   CSV_EXPORT_PAGE_SIZE,
   exportTableToCsv,
+  streamCsvPages,
 } from "../../src/data/csvExportModel";
 import { readTableDetail, type TableItem } from "../../src/data/types";
 import {
@@ -199,5 +200,72 @@ describe("exportTableToCsv", () => {
       controller.signal,
     );
     assert.ok(result.ok);
+  });
+});
+
+describe("streamCsvPages", () => {
+  const failure = { ok: false, message: "boom", logDetail: "boom" } as const;
+
+  it("asks for the header on the first page only and advances by pageSize", async () => {
+    const asked: { start: number; limit: number; header: boolean }[] = [];
+    const pages = ["h\n1\n2\n", "3\n", ""];
+    const chunks: string[] = [];
+    const result = await streamCsvPages(
+      (window, header) => {
+        asked.push({ ...window, header });
+        return Promise.resolve({
+          ok: true,
+          value: pages[asked.length - 1] ?? "",
+        } as const);
+      },
+      2,
+      (chunk) => {
+        chunks.push(chunk);
+        return Promise.resolve();
+      },
+    );
+    assert.ok(result.ok);
+    assert.deepEqual(asked, [
+      { start: 0, limit: 2, header: true },
+      { start: 2, limit: 2, header: false },
+      { start: 4, limit: 2, header: false },
+    ]);
+    assert.deepEqual(chunks, ["h\n1\n2\n", "3\n"]);
+  });
+
+  it("returns a reader's own failure and stops writing", async () => {
+    let call = 0;
+    const chunks: string[] = [];
+    const result = await streamCsvPages(
+      () => {
+        call += 1;
+        return Promise.resolve(
+          call === 1 ? ({ ok: true, value: "h\n" } as const) : failure,
+        );
+      },
+      1,
+      (chunk) => {
+        chunks.push(chunk);
+        return Promise.resolve();
+      },
+    );
+    assert.equal(result, failure);
+    assert.deepEqual(chunks, ["h\n"]);
+  });
+
+  it("stops at a rejected sink rather than fetching further pages", async () => {
+    let reads = 0;
+    await assert.rejects(
+      streamCsvPages(
+        () => {
+          reads += 1;
+          return Promise.resolve({ ok: true, value: "x\n" } as const);
+        },
+        1,
+        () => Promise.reject(new Error("disk full")),
+      ),
+      /disk full/,
+    );
+    assert.equal(reads, 1);
   });
 });

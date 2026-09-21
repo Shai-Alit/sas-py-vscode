@@ -6,8 +6,6 @@ import assert from "node:assert/strict";
 import {
   escapeHtml,
   formatOptionalNumber,
-  formatOptionalText,
-  formatOptionalTimestamp,
   formatTimestamp,
 } from "../../src/data/tablePropertiesModel";
 
@@ -66,16 +64,6 @@ describe("data/tablePropertiesModel", function () {
     });
   });
 
-  describe("formatOptionalText", () => {
-    it("HTML-escapes a present value", () => {
-      assert.equal(formatOptionalText("<x>"), "&lt;x&gt;");
-    });
-
-    it("renders an empty cell for an absent value", () => {
-      assert.equal(formatOptionalText(undefined), "");
-    });
-  });
-
   describe("formatOptionalNumber", () => {
     it("locale-formats a present value", () => {
       assert.equal(formatOptionalNumber(1234), (1234).toLocaleString());
@@ -83,22 +71,6 @@ describe("data/tablePropertiesModel", function () {
 
     it("renders an empty cell for an absent value", () => {
       assert.equal(formatOptionalNumber(undefined), "");
-    });
-  });
-
-  describe("formatOptionalTimestamp", () => {
-    it("formats and HTML-escapes a present value", () => {
-      // A locale-formatted date never actually contains an HTML-significant
-      // character, but this still confirms the two are composed, not just
-      // that formatTimestamp alone works (already covered above).
-      assert.equal(
-        formatOptionalTimestamp("2026-03-04T20:36:21.880Z"),
-        escapeHtml(new Date("2026-03-04T20:36:21.880Z").toLocaleString()),
-      );
-    });
-
-    it("renders an empty cell for an absent value", () => {
-      assert.equal(formatOptionalTimestamp(undefined), "");
     });
   });
 });

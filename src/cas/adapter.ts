@@ -61,6 +61,7 @@ import {
   readCasRowItem,
   readCasServerItem,
   readCasTableItem,
+  readCasTableProperties,
   ROWS_REL,
   SERVERS_REL,
   TABLES_REL,
@@ -72,6 +73,7 @@ import {
   type CasSortSpec,
   type CasTableDetail,
   type CasTableItem,
+  type CasTableProperties,
 } from "./types";
 
 /** The window of rows {@link CasAdapter.getRows} requests — `start`/`limit`
@@ -256,6 +258,36 @@ export class CasAdapter {
     }
 
     return { ok: true, value: { ...table, state: "loaded", rowsLink } };
+  }
+
+  /**
+   * `table`'s own full representation for 11d's properties panel — loads the
+   * table first when it is not already `"loaded"` (the same gate
+   * {@link getColumns} has), then re-reads `self`: Finding 11.5, an unloaded
+   * table's representation carries no timestamps, encoding, or real
+   * row/column counts at all, so the listing entry the caller already holds
+   * is not enough.
+   */
+  async getTableProperties(
+    table: CasTableItem,
+    signal?: AbortSignal,
+  ): Promise<CasResult<CasTableProperties>> {
+    if (table.state !== "loaded") {
+      const loaded = await this.load(table, signal);
+      if (!loaded.ok) return loaded;
+    }
+
+    const link = findLink(table.links, "self");
+    if (link === undefined) {
+      return linkMissing(`table "${table.caslibName}.${table.name}"`, "self");
+    }
+
+    const result = await this.client.send({ link, ...withSignal(signal) });
+    if (!result.ok) return result;
+    return {
+      ok: true,
+      value: readCasTableProperties(result.value.body, table),
+    };
   }
 
   /**

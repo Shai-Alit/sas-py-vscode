@@ -309,6 +309,16 @@ export function activate(context: vscode.ExtensionContext): void {
     log: output,
   });
 
+  // Phase 7c-ii: the table properties/columns panel manager — fully static
+  // (`src/data/tablePropertiesPanel.ts`), so unlike `dataViewerPanels` above
+  // it needs no `extensionUri` (no bundled script/stylesheet) and no `log`
+  // (a failed fetch renders its own message directly in the panel, the same
+  // choice `dataViewerPanel.ts`'s own initial-load failure path already
+  // makes). Phase 11d: constructed ahead of `registerCasExplorer` because the
+  // CAS tree's own `showCasTableProperties` shares this one manager, exactly
+  // as `dataViewerPanels` above is shared.
+  const tablePropertiesPanels = new TablePropertiesPanelManager();
+
   // Phase 8a: the read-only CAS browsing tree, a third view inside the same
   // activity-bar container. Like SAS Content and unlike SAS Libraries, this
   // needs no compute session and opens no CAS session of its own (Finding
@@ -326,6 +336,7 @@ export function activate(context: vscode.ExtensionContext): void {
       onDidSignOut: auth.onDidSignOut,
     },
     dataViewerPanels,
+    tablePropertiesPanels,
     { transport },
   );
 
@@ -352,14 +363,6 @@ export function activate(context: vscode.ExtensionContext): void {
     { current: (profileId) => sessions.current(profileId) },
     profiles,
   );
-
-  // Phase 7c-ii: the table properties/columns panel manager — fully static
-  // (`src/data/tablePropertiesPanel.ts`), so unlike `dataViewerPanels` above
-  // it needs no `extensionUri` (no bundled script/stylesheet) and no `log`
-  // (a failed fetch renders its own message directly in the panel, the same
-  // choice `dataViewerPanel.ts`'s own initial-load failure path already
-  // makes).
-  const tablePropertiesPanels = new TablePropertiesPanelManager();
 
   // Phase 7a: the read-only "SAS Libraries" tree, a second view inside the
   // same activity-bar container 6a-ii created (the phase file's own

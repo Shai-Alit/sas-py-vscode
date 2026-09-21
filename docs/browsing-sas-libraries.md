@@ -70,6 +70,11 @@ the export fails partway, or if there is not enough free disk space to finish
 destination file — if one already existed at that path — is left exactly as it
 was. Nothing partial is ever left in its place.
 
+**The file is written as Viya returns it.** A text value that begins with `=`,
+`+`, `-` or `@` is not altered, so a spreadsheet application that opens the
+file can treat it as a formula. Open an export of a table you do not trust in a
+text editor or `pandas.read_csv`, not directly in a spreadsheet.
+
 ## Refreshing
 
 The view does not poll. Use the refresh button on the view's title bar, or

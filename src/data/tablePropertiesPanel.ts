@@ -32,14 +32,10 @@
 import * as vscode from "vscode";
 
 import { type LibraryAdapter } from "./adapter";
-import { localiseDataProblem } from "./messages";
-import {
-  escapeHtml,
-  formatOptionalNumber,
-  formatOptionalText,
-  formatOptionalTimestamp,
-} from "./tablePropertiesModel";
-import { type Column, type TableDetail, type TableItem } from "./types";
+import { LibraryPropertiesSource } from "./libraryPropertiesSource";
+import { type PropertiesSource, type PropertiesView } from "./propertiesSource";
+import { escapeHtml } from "./tablePropertiesModel";
+import { type TableItem } from "./types";
 
 const VIEW_TYPE = "pythonOnViya.tableProperties";
 
@@ -69,39 +65,33 @@ export class TablePropertiesPanelManager implements vscode.Disposable {
 
   constructor(private readonly deps: TablePropertiesPanelDeps = {}) {}
 
-  /** Opens `table`'s properties, using `adapter` (already bound to the
-   * active profile) for the one `openTable`/`getColumns` fetch this panel
-   * ever makes. Reveals the existing panel, without any new request, if this
-   * table's properties are already open.
+  /** Opens a SAS library table's properties — see {@link openSource}. */
+  async open(table: TableItem, adapter: LibraryAdapter): Promise<void> {
+    await this.openSource(new LibraryPropertiesSource(table, adapter));
+  }
+
+  /** Opens `source`'s properties, for the one fetch this panel ever makes.
+   * Reveals the existing panel, without any new request, if this table's
+   * properties are already open (`source.key` — profile/endpoint-scoped by
+   * each source, so two deployments' same-named tables never share a panel).
    *
    * Returns a promise that resolves once that fetch has settled
    * (successfully or not) — for the same reason `DataViewerPanelManager.open`
    * does: a command handler does not need it, but an integration test driving
    * this class directly does. */
-  async open(table: TableItem, adapter: LibraryAdapter): Promise<void> {
-    // Scoped by profile, not just libref.name — the identical cross-profile
-    // leak `DataViewerPanelManager.open` guards against (its own doc
-    // comment): two profiles can hold live sessions at once
-    // (`ComputeSessionManager.live`), and a table name like SASHELP.CLASS
-    // exists under virtually every deployment.
-    const key = `${adapter.profileId}\n${table.libref}.${table.name}`;
-    const existing = this.panels.get(key);
+  async openSource(source: PropertiesSource): Promise<void> {
+    const existing = this.panels.get(source.key);
     if (existing !== undefined) {
       existing.reveal();
       return;
     }
 
-    const title = vscode.l10n.t(
-      "Properties: {0}",
-      `${table.libref}.${table.name}`,
-    );
     const panel = new TablePropertiesPanel(
-      table,
-      adapter,
-      this.deps.createPanel?.(title) ?? createRealPanel(title),
-      () => this.panels.delete(key),
+      source,
+      this.deps.createPanel?.(source.title) ?? createRealPanel(source.title),
+      () => this.panels.delete(source.key),
     );
-    this.panels.set(key, panel);
+    this.panels.set(source.key, panel);
     await panel.start();
   }
 
@@ -124,8 +114,7 @@ class TablePropertiesPanel implements vscode.Disposable {
   private disposed = false;
 
   constructor(
-    private readonly table: TableItem,
-    private readonly adapter: LibraryAdapter,
+    private readonly source: PropertiesSource,
     private readonly panel: TablePropertiesWebviewPanel,
     private readonly onDisposed: () => void,
   ) {}
@@ -135,7 +124,7 @@ class TablePropertiesPanel implements vscode.Disposable {
   }
 
   async start(): Promise<void> {
-    this.panel.webview.html = buildLoadingHtml(this.table);
+    this.panel.webview.html = buildLoadingHtml(this.source.heading);
 
     this.subscriptions.push(
       this.panel.onDidDispose(() => {
@@ -147,49 +136,31 @@ class TablePropertiesPanel implements vscode.Disposable {
       }),
     );
 
-    // PR review, 2026-09-11 (Codex, Major): `openTable`/`getColumns` are
-    // total for every failure they anticipate (a `DataResult`, never a
-    // rejection) — *except* the one narrow path `dataExplorer.ts`'s own
-    // command handler already documents: `ComputeClient.send` rethrows
-    // whatever `resolveHref` throws that is not a `ForeignLinkError`. Before
-    // this `try` existed, that rejection propagated straight out of
-    // `start()` with the panel left stuck on "Loading…" forever — the
-    // command handler's own `.catch` still logged it, but nothing ever told
-    // the user. Rendering a failure here, then rethrowing, keeps both: the
-    // panel degrades to a real message, and the caller's own log entry still
-    // fires unchanged.
+    // PR review, 2026-09-11 (Codex, Major): a source's `load` is total for
+    // every failure it anticipates (a failed result, never a rejection) —
+    // *except* the one narrow path `dataExplorer.ts`'s own command handler
+    // already documents: `ComputeClient.send` rethrows whatever `resolveHref`
+    // throws that is not a `ForeignLinkError`. Before this `try` existed,
+    // that rejection propagated straight out of `start()` with the panel left
+    // stuck on "Loading…" forever — the command handler's own `.catch` still
+    // logged it, but nothing ever told the user. Rendering a failure here,
+    // then rethrowing, keeps both: the panel degrades to a real message, and
+    // the caller's own log entry still fires unchanged.
     try {
-      const opened = await this.adapter.openTable(
-        this.table,
-        this.controller.signal,
+      const loaded = await this.source.load(this.controller.signal);
+      this.render(
+        loaded.ok
+          ? buildPropertiesHtml(this.source.heading, loaded.value)
+          : buildFailureHtml(this.source.heading, loaded.message),
       );
-      if (!opened.ok) {
-        this.render(
-          buildFailureHtml(this.table, localiseDataProblem(opened.problem)),
-        );
-        return;
-      }
-
-      const columns = await this.adapter.getColumns(
-        opened.value,
-        this.controller.signal,
-      );
-      if (!columns.ok) {
-        this.render(
-          buildFailureHtml(this.table, localiseDataProblem(columns.problem)),
-        );
-        return;
-      }
-
-      this.render(buildPropertiesHtml(this.table, opened.value, columns.value));
     } catch (error) {
       this.render(
         buildFailureHtml(
-          this.table,
-          localiseDataProblem({
-            code: "compute",
-            problem: { code: "compute-unreachable", detail: messageOf(error) },
-          }),
+          this.source.heading,
+          vscode.l10n.t(
+            "Could not load the table properties ({0}).",
+            messageOf(error),
+          ),
         ),
       );
       throw error;
@@ -337,37 +308,31 @@ function panelHead(): string {
 </head>`;
 }
 
-/** Shown the instant the panel opens, before `openTable`/`getColumns` have
- * resolved — replaced in place once they do (success or failure). */
-function buildLoadingHtml(table: TableItem): string {
+/** Shown the instant the panel opens, before the source has loaded — replaced in place once they do (success or failure). */
+function buildLoadingHtml(heading: string): string {
   return `${panelHead()}
 <body>
-<h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
+<h1>${escapeHtml(heading)}</h1>
 <p>${escapeHtml(vscode.l10n.t("Loading…"))}</p>
 </body>
 </html>`;
 }
 
-/** Shown when `openTable` or `getColumns` fails — `message` is already
- * localised (`localiseDataProblem`), the same panel-facing text
- * `dataViewerPanel.ts`'s own `FailureMessage` carries for the identical pair
- * of calls. */
-function buildFailureHtml(table: TableItem, message: string): string {
+/** Shown when a source's load fails — `message` is already localised by the
+ * source, the same panel-facing text `dataViewerPanel.ts`'s own
+ * `FailureMessage` carries for the identical pair of calls. */
+function buildFailureHtml(heading: string, message: string): string {
   return `${panelHead()}
 <body>
-<h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
+<h1>${escapeHtml(heading)}</h1>
 <p class="python-on-viya-table-properties-failure">${escapeHtml(message)}</p>
 </body>
 </html>`;
 }
 
-/** The panel's real content: a "Properties" tab (three sections of
- * `TableDetail`'s own field set — matching `TablePropertiesViewer.ts`'s own
- * "General"/"Size"/"Technical" grouping) and a "Columns" tab (one row per
- * `Column`, its full field set). Every field is optional; an absent one
- * renders as an empty cell, via `tablePropertiesModel.ts`'s own
- * `formatOptional*` helpers, rather than this function branching on each one
- * itself.
+/** The panel's real content: a "Properties" tab (one titled table per
+ * {@link PropertiesView} section) and a "Columns" tab (the view's own grid).
+ * Every value is plain text from the source and is HTML-escaped here, once.
  *
  * **The two radio inputs are not wrapped in a container** — they, their
  * `<label>`s, and both `#python-on-viya-pane-*` divs are all direct children
@@ -384,110 +349,50 @@ function buildFailureHtml(table: TableItem, message: string): string {
  * `.python-on-viya-table-properties-tabs-underline` div standing in for the
  * old wrapper's visual bottom border (which cannot come back as a wrapper
  * without reintroducing the same bug). */
-function buildPropertiesHtml(
-  table: TableItem,
-  detail: TableDetail,
-  columns: readonly Column[],
-): string {
-  const row = (label: string, value: string): string => `
+function buildPropertiesHtml(heading: string, view: PropertiesView): string {
+  const sectionHtml = view.sections
+    .map((section) => {
+      const rows = section.rows
+        .map(
+          (row) => `
     <tr>
-      <td class="python-on-viya-table-properties-label">${escapeHtml(label)}</td>
-      <td>${value}</td>
-    </tr>`;
+      <td class="python-on-viya-table-properties-label">${escapeHtml(row.label)}</td>
+      <td>${escapeHtml(row.value)}</td>
+    </tr>`,
+        )
+        .join("");
+      return `<div class="python-on-viya-table-properties-section-title">${escapeHtml(section.title)}</div>
+<table class="python-on-viya-table-properties-table"><tbody>${rows}</tbody></table>`;
+    })
+    .join("\n");
 
-  const generalRows = [
-    row(vscode.l10n.t("Name"), escapeHtml(detail.name)),
-    row(vscode.l10n.t("Library"), escapeHtml(detail.libref)),
-    row(vscode.l10n.t("Type"), formatOptionalText(detail.type)),
-    row(vscode.l10n.t("Label"), formatOptionalText(detail.label)),
-    row(vscode.l10n.t("Engine"), formatOptionalText(detail.engine)),
-    row(
-      vscode.l10n.t("Extended Type"),
-      formatOptionalText(detail.extendedType),
-    ),
-  ].join("");
-
-  const sizeRows = [
-    row(vscode.l10n.t("Row Count"), formatOptionalNumber(detail.rowCount)),
-    row(
-      vscode.l10n.t("Column Count"),
-      formatOptionalNumber(detail.columnCount),
-    ),
-    row(
-      vscode.l10n.t("Logical Record Count"),
-      formatOptionalNumber(detail.logicalRecordCount),
-    ),
-    row(
-      vscode.l10n.t("Physical Record Count"),
-      formatOptionalNumber(detail.physicalRecordCount),
-    ),
-    row(
-      vscode.l10n.t("Record Length"),
-      formatOptionalNumber(detail.recordLength),
-    ),
-  ].join("");
-
-  const technicalRows = [
-    row(
-      vscode.l10n.t("Created"),
-      formatOptionalTimestamp(detail.creationTimeStamp),
-    ),
-    row(
-      vscode.l10n.t("Modified"),
-      formatOptionalTimestamp(detail.modifiedTimeStamp),
-    ),
-    row(
-      vscode.l10n.t("Compression Routine"),
-      formatOptionalText(detail.compressionRoutine),
-    ),
-    row(vscode.l10n.t("Encoding"), formatOptionalText(detail.encoding)),
-    row(
-      vscode.l10n.t("Bookmark Length"),
-      formatOptionalNumber(detail.bookmarkLength),
-    ),
-  ].join("");
-
-  const columnRows = columns
+  const headerHtml = view.columns.headers
+    .map((header) => `<th>${escapeHtml(header)}</th>`)
+    .join("\n");
+  const columnRows = view.columns.rows
     .map(
-      (column, index) => `
+      (cells) => `
     <tr>
-      <td>${String(index + 1)}</td>
-      <td>${escapeHtml(column.name)}</td>
-      <td>${escapeHtml(column.type)}</td>
-      <td>${formatOptionalNumber(column.length)}</td>
-      <td>${formatOptionalText(column.format)}</td>
-      <td>${formatOptionalText(column.informat)}</td>
-      <td>${formatOptionalText(column.label)}</td>
+      ${cells.map((cell) => `<td>${escapeHtml(cell)}</td>`).join("\n      ")}
     </tr>`,
     )
     .join("");
 
   return `${panelHead()}
 <body>
-<h1>${escapeHtml(`${table.libref}.${table.name}`)}</h1>
+<h1>${escapeHtml(heading)}</h1>
 <input type="radio" name="python-on-viya-table-properties-tab" id="python-on-viya-tab-properties" class="python-on-viya-table-properties-tab-input" checked>
 <label for="python-on-viya-tab-properties" class="python-on-viya-table-properties-tab-label">${escapeHtml(vscode.l10n.t("Properties"))}</label>
 <input type="radio" name="python-on-viya-table-properties-tab" id="python-on-viya-tab-columns" class="python-on-viya-table-properties-tab-input">
 <label for="python-on-viya-tab-columns" class="python-on-viya-table-properties-tab-label">${escapeHtml(vscode.l10n.t("Columns"))}</label>
 <div class="python-on-viya-table-properties-tabs-underline"></div>
 <div id="python-on-viya-pane-properties" class="python-on-viya-table-properties-pane">
-<div class="python-on-viya-table-properties-section-title">${escapeHtml(vscode.l10n.t("General Information"))}</div>
-<table class="python-on-viya-table-properties-table"><tbody>${generalRows}</tbody></table>
-<div class="python-on-viya-table-properties-section-title">${escapeHtml(vscode.l10n.t("Size Information"))}</div>
-<table class="python-on-viya-table-properties-table"><tbody>${sizeRows}</tbody></table>
-<div class="python-on-viya-table-properties-section-title">${escapeHtml(vscode.l10n.t("Technical Information"))}</div>
-<table class="python-on-viya-table-properties-table"><tbody>${technicalRows}</tbody></table>
+${sectionHtml}
 </div>
 <div id="python-on-viya-pane-columns" class="python-on-viya-table-properties-pane">
 <table class="python-on-viya-table-properties-table">
 <thead><tr>
-<th>#</th>
-<th>${escapeHtml(vscode.l10n.t("Name"))}</th>
-<th>${escapeHtml(vscode.l10n.t("Type"))}</th>
-<th>${escapeHtml(vscode.l10n.t("Length"))}</th>
-<th>${escapeHtml(vscode.l10n.t("Format"))}</th>
-<th>${escapeHtml(vscode.l10n.t("Informat"))}</th>
-<th>${escapeHtml(vscode.l10n.t("Label"))}</th>
+${headerHtml}
 </tr></thead>
 <tbody>${columnRows}</tbody>
 </table>

@@ -30,6 +30,8 @@ interface Manifest {
   };
   contributes?: {
     commands?: { command: string; title: string; category?: string }[];
+    views?: Record<string, { id: string; name: string }[]>;
+    menus?: Record<string, { command: string; when?: string }[]>;
     configuration?: {
       title: string;
       properties: Record<string, Record<string, unknown>>;
@@ -262,6 +264,49 @@ describe("docs reference generator", () => {
     const { commands } = generate();
     assert.match(commands, /`Python on Viya: Run File on Viya`/);
     assert.match(commands, /`pythonOnViya\.run`/);
+  });
+
+  it("names the view each command is offered in, so commands sharing a title can be told apart", () => {
+    const { commands } = generate(
+      {
+        contributes: {
+          commands: [
+            { command: "x.openTable", title: "%t%" },
+            { command: "x.openCasTable", title: "%t%" },
+            { command: "x.runFile", title: "%r%" },
+          ],
+          views: {
+            x: [
+              { id: "x.libraries", name: "%v.libraries%" },
+              { id: "x.cas", name: "%v.cas%" },
+            ],
+          },
+          menus: {
+            "view/item/context": [
+              { command: "x.openTable", when: "view == x.libraries && a" },
+              { command: "x.openCasTable", when: "view == x.cas && a" },
+            ],
+            "view/title": [
+              { command: "x.openTable", when: "view == x.libraries" },
+              { command: "x.openTable", when: "view == x.cas" },
+            ],
+            commandPalette: [{ command: "x.runFile", when: "false" }],
+          },
+        },
+      },
+      {
+        t: "Open Table",
+        r: "Run File",
+        "v.libraries": "SAS Libraries",
+        "v.cas": "CAS",
+      },
+    );
+    const row = (id: string) =>
+      commands.split("\n").find((line) => line.includes(`\`${id}\``)) ?? "";
+    // Deduplicated, in first-seen order; a command in no view menu gets a dash.
+    assert.match(row("x.openTable"), /\| SAS Libraries, CAS \|$/);
+    assert.match(row("x.openCasTable"), /\| CAS \|$/);
+    assert.match(row("x.runFile"), /\| — \|$/);
   });
 
   it("says so plainly when there is nothing to document", () => {

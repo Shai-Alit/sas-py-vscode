@@ -62,11 +62,16 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { type DataResult, type LibraryAdapter } from "./adapter";
-import { exportTableToCsv } from "./csvExportModel";
+import { type LibraryAdapter } from "./adapter";
+import {
+  type CsvExportFailure,
+  type CsvExportResult,
+  type CsvExportSource,
+} from "./csvExportModel";
+import { LibraryCsvSource } from "./libraryCsvSource";
 import { localiseDataProblem } from "./messages";
 import { describeDataProblem, type DataProblem } from "./problems";
-import { type TableDetail, type TableItem } from "./types";
+import { type TableItem } from "./types";
 import { abortOn, type CancellationLike } from "../compute/cancellation";
 
 /**
@@ -120,6 +125,15 @@ export interface CsvExportDeps {
   /** Defaults to `fs.promises.statfs` on the destination's own directory —
    * {@link ensureDiskSpace}'s own free-space read. */
   statfs?: ((directory: string) => Promise<FreeSpace>) | undefined;
+  /** Defaults to a modal warning with an "Export anyway" button. Asked only
+   * for a source that names a `confirmAboveBytes` threshold and only when the
+   * pre-flight estimate exceeds it; resolves `true` to go ahead. */
+  confirmLargeExport?:
+    | ((
+        estimatedBytes: number,
+        rowCount: number | undefined,
+      ) => Thenable<boolean>)
+    | undefined;
   readonly log: vscode.LogOutputChannel;
 }
 
@@ -142,55 +156,61 @@ const SIZE_ESTIMATE_SAMPLE_ROWS = 200;
 const DISK_SPACE_SAFETY_FACTOR = 1.2;
 
 /**
- * Estimates `table`'s CSV export size from a small first sample and its own
- * `rowCount`, then checks that the destination volume has enough free space
- * for it — Sean's own call (7c-iii): refuse to start an export that is
- * already unlikely to fit, rather than run out of disk space mid-stream.
+ * Estimates the export's total CSV size from a small first sample and the
+ * table's own row count — the shared basis of {@link ensureDiskSpace} and the
+ * large-export confirmation. `undefined` when there is nothing to estimate
+ * from (no row count, or an empty table).
  *
- * **A safety margin, not a guarantee either way.** The estimate assumes every
- * row is roughly as wide as the sampled ones (real SAS tables are usually
- * fairly regular, but a variable-length string column is not guaranteed to
- * be), and {@link DISK_SPACE_SAFETY_FACTOR} exists because of that
- * uncertainty, not to make the check exact. A table this check passes can
- * still run out for real — {@link runCsvExport}'s own per-write failure
- * handling is what actually catches that, unconditionally.
- *
- * `table.rowCount` absent, or `0`, skips the check entirely — nothing to
- * estimate from and, for `0`, nothing to fit. A `statfs` failure (an unusual
- * filesystem this project has not seen) does the same rather than blocking a
- * real export over a check that itself could not run.
+ * The estimate assumes every row is roughly as wide as the sampled ones (real
+ * tables are usually fairly regular, but a variable-length string column is
+ * not guaranteed to be), so callers treat it as a margin, not a measurement.
  */
-async function ensureDiskSpace(
-  adapter: LibraryAdapter,
-  table: TableDetail,
-  destinationPath: string,
-  statfs: (directory: string) => Promise<FreeSpace>,
+async function estimateExportBytes(
+  source: CsvExportSource,
+  rowCount: number | undefined,
   signal: AbortSignal,
-): Promise<DataResult<void>> {
-  const rowCount = table.rowCount;
+): Promise<CsvExportResult<number | undefined>> {
   if (rowCount === undefined || rowCount === 0) {
     return { ok: true, value: undefined };
   }
 
   const sampleLimit = Math.min(SIZE_ESTIMATE_SAMPLE_ROWS, rowCount);
-  const sample = await adapter.getRowsAsCsv(
-    table,
-    { start: 0, limit: sampleLimit },
-    true,
-    undefined,
-    signal,
-  );
+  const sample = await source.sample(sampleLimit, signal);
   if (!sample.ok) return sample;
 
-  // `.length` (UTF-16 code units), not a true byte count: real SAS table
-  // text is overwhelmingly ASCII/Latin-1, where the two agree closely enough
-  // for a safety-margined estimate — this is deliberately not exact.
+  // `.length` (UTF-16 code units), not a true byte count: real table text is
+  // overwhelmingly ASCII/Latin-1, where the two agree closely enough for a
+  // safety-margined estimate — this is deliberately not exact.
   const sampleSize = sample.value.length;
-  const estimatedBytes =
-    sampleLimit >= rowCount
-      ? sampleSize // the sample already is the whole table
-      : Math.ceil((sampleSize / sampleLimit) * rowCount);
+  return {
+    ok: true,
+    value:
+      sampleLimit >= rowCount
+        ? sampleSize // the sample already is the whole table
+        : Math.ceil((sampleSize / sampleLimit) * rowCount),
+  };
+}
 
+/**
+ * Checks that the destination volume has room for `estimatedBytes` — Sean's
+ * own call (7c-iii): refuse to start an export that is already unlikely to
+ * fit, rather than run out of disk space mid-stream.
+ *
+ * **A safety margin, not a guarantee either way.**
+ * {@link DISK_SPACE_SAFETY_FACTOR} exists because the estimate is uncertain,
+ * not to make the check exact. A table this check passes can still run out
+ * for real — {@link runSourceCsvExport}'s own per-write failure handling is
+ * what actually catches that, unconditionally.
+ *
+ * A `statfs` failure (an unusual filesystem this project has not seen) skips
+ * the check rather than blocking a real export over a check that itself could
+ * not run.
+ */
+async function ensureDiskSpace(
+  estimatedBytes: number,
+  destinationPath: string,
+  statfs: (directory: string) => Promise<FreeSpace>,
+): Promise<CsvExportResult<void>> {
   let available: number;
   try {
     const stats = await statfs(path.dirname(destinationPath));
@@ -200,36 +220,41 @@ async function ensureDiskSpace(
   }
 
   if (estimatedBytes * DISK_SPACE_SAFETY_FACTOR > available) {
-    return {
-      ok: false,
-      reason: "not enough free disk space for the estimated export size",
-      problem: {
-        code: "insufficient-disk-space",
-        estimatedBytes,
-        availableBytes: available,
-      },
-    };
+    return fromDataProblem({
+      code: "insufficient-disk-space",
+      estimatedBytes,
+      availableBytes: available,
+    });
   }
   return { ok: true, value: undefined };
 }
 
 /**
- * Runs `pythonOnViya.exportTableToCsv` for `item`: a save dialog, then a
- * cancellable progress notification that opens the table
- * (`LibraryAdapter.openTable`) and streams its rows to a temporary file next
- * to the chosen destination (`exportTableToCsv`,
- * `src/data/csvExportModel.ts`), renaming it onto the destination only once
- * that streaming completes successfully. A dismissed save dialog
- * (`uri === undefined`) is a silent no-op — the user changed their mind, not
- * a failure to report.
+ * Runs `pythonOnViya.exportTableToCsv` for a SAS library table — see
+ * {@link runSourceCsvExport}, which this only adapts `item`/`adapter` into.
  */
 export async function runCsvExport(
   item: TableItem,
   adapter: LibraryAdapter,
   deps: CsvExportDeps,
 ): Promise<void> {
+  await runSourceCsvExport(new LibraryCsvSource(item, adapter), deps);
+}
+
+/**
+ * Runs a CSV export for `source`: a save dialog, then a cancellable progress
+ * notification that opens the table and streams its rows to a temporary file
+ * next to the chosen destination, renaming it onto the destination only once
+ * that streaming completes successfully. A dismissed save dialog
+ * (`uri === undefined`) is a silent no-op — the user changed their mind, not
+ * a failure to report — and so is a declined large-export confirmation.
+ */
+export async function runSourceCsvExport(
+  source: CsvExportSource,
+  deps: CsvExportDeps,
+): Promise<void> {
   const showSaveDialog = deps.showSaveDialog ?? vscode.window.showSaveDialog;
-  const defaultName = `${item.libref}.${item.name}.csv`.toLowerCase();
+  const defaultName = `${source.name}.csv`.toLowerCase();
   const uri = await showSaveDialog({
     defaultUri: vscode.Uri.file(defaultName),
     filters: { CSV: ["csv"] },
@@ -253,12 +278,7 @@ export async function runCsvExport(
   const tempPath = `${uri.fsPath}.${randomUUID()}.tmp`;
 
   await withProgress(
-    vscode.l10n.t(
-      'Exporting "{0}.{1}" to {2}…',
-      item.libref,
-      item.name,
-      uri.fsPath,
-    ),
+    vscode.l10n.t('Exporting "{0}" to {1}…', source.name, uri.fsPath),
     async (token) => {
       const bridge = abortOn(token);
       let succeeded = false;
@@ -275,22 +295,46 @@ export async function runCsvExport(
       let stream: CsvOutputStream | undefined;
 
       try {
-        const opened = await adapter.openTable(item, bridge.signal);
+        const opened = await source.open(bridge.signal);
         if (!opened.ok) {
-          report(deps.log, item, opened.problem, bridge.signal.aborted);
+          report(deps.log, source, opened, bridge.signal.aborted);
           return;
         }
 
-        const spaceCheck = await ensureDiskSpace(
-          adapter,
-          opened.value,
-          uri.fsPath,
-          statfs,
+        const estimate = await estimateExportBytes(
+          source,
+          opened.value.rowCount,
           bridge.signal,
         );
-        if (!spaceCheck.ok) {
-          report(deps.log, item, spaceCheck.problem, bridge.signal.aborted);
+        if (!estimate.ok) {
+          report(deps.log, source, estimate, bridge.signal.aborted);
           return;
+        }
+
+        const estimatedBytes = estimate.value;
+        if (estimatedBytes !== undefined) {
+          // Asked before the disk check: there is no point telling someone
+          // there is not enough room for an export they were about to decline.
+          const threshold = source.confirmAboveBytes;
+          if (threshold !== undefined && estimatedBytes > threshold) {
+            const proceed = await confirmLargeExport(
+              source,
+              estimatedBytes,
+              opened.value.rowCount,
+              deps,
+            );
+            if (!proceed) return;
+          }
+
+          const spaceCheck = await ensureDiskSpace(
+            estimatedBytes,
+            uri.fsPath,
+            statfs,
+          );
+          if (!spaceCheck.ok) {
+            report(deps.log, source, spaceCheck, bridge.signal.aborted);
+            return;
+          }
         }
 
         const openedStream = createWriteStream(tempPath);
@@ -301,14 +345,12 @@ export async function runCsvExport(
           streamError ??= error;
         });
 
-        const result = await exportTableToCsv(
-          adapter,
-          opened.value,
+        const result = await source.stream(
           (chunk) => writeChunk(openedStream, chunk, () => streamError),
           bridge.signal,
         );
         if (!result.ok) {
-          report(deps.log, item, result.problem, bridge.signal.aborted);
+          report(deps.log, source, result, bridge.signal.aborted);
           return;
         }
 
@@ -327,9 +369,9 @@ export async function runCsvExport(
           const message = messageOf(error);
           deps.log.error(
             vscode.l10n.t(
-              'SAS Libraries: could not export "{0}.{1}" to CSV ({2})',
-              item.libref,
-              item.name,
+              '{0}: could not export "{1}" to CSV ({2})',
+              source.logPrefix,
+              source.name,
               message,
             ),
           );
@@ -344,7 +386,8 @@ export async function runCsvExport(
           await unlink(tempPath).catch((error: unknown) => {
             deps.log.debug(
               vscode.l10n.t(
-                "SAS Libraries: could not remove the incomplete export file {0} ({1})",
+                "{0}: could not remove the incomplete export file {1} ({2})",
+                source.logPrefix,
                 tempPath,
                 messageOf(error),
               ),
@@ -358,20 +401,62 @@ export async function runCsvExport(
 
 function report(
   log: vscode.LogOutputChannel,
-  item: TableItem,
-  problem: DataProblem,
+  source: CsvExportSource,
+  failure: CsvExportFailure,
   aborted: boolean,
 ): void {
   if (aborted) return;
   log.error(
     vscode.l10n.t(
-      'SAS Libraries: could not export "{0}.{1}" to CSV ({2})',
-      item.libref,
-      item.name,
-      describeDataProblem(problem),
+      '{0}: could not export "{1}" to CSV ({2})',
+      source.logPrefix,
+      source.name,
+      failure.logDetail,
     ),
   );
-  void vscode.window.showErrorMessage(localiseDataProblem(problem));
+  void vscode.window.showErrorMessage(failure.message);
+}
+
+/** A library-side {@link DataProblem} as the command's own failure shape —
+ * the one place this file's `insufficient-disk-space` refusal is turned into
+ * text. */
+function fromDataProblem(problem: DataProblem): CsvExportFailure {
+  return {
+    ok: false,
+    message: localiseDataProblem(problem),
+    logDetail: describeDataProblem(problem),
+  };
+}
+
+/** The modal "this is a big download" confirmation. */
+async function confirmLargeExport(
+  source: CsvExportSource,
+  estimatedBytes: number,
+  rowCount: number | undefined,
+  deps: CsvExportDeps,
+): Promise<boolean> {
+  if (deps.confirmLargeExport !== undefined) {
+    return await deps.confirmLargeExport(estimatedBytes, rowCount);
+  }
+  const exportAnyway = vscode.l10n.t("Export anyway");
+  const megabytes = Math.round(estimatedBytes / (1024 * 1024)).toLocaleString();
+  const choice = await vscode.window.showWarningMessage(
+    rowCount === undefined
+      ? vscode.l10n.t(
+          '"{0}" is large: about {1} MB as CSV. Exporting downloads every row over your connection and can take a long time. Export it anyway?',
+          source.name,
+          megabytes,
+        )
+      : vscode.l10n.t(
+          '"{0}" is large: {1} rows, about {2} MB as CSV. Exporting downloads every row over your connection and can take a long time. Export it anyway?',
+          source.name,
+          rowCount.toLocaleString(),
+          megabytes,
+        ),
+    { modal: true },
+    exportAnyway,
+  );
+  return choice === exportAnyway;
 }
 
 function realWithProgress<T>(

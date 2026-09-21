@@ -283,6 +283,16 @@
         "command": "pythonOnViya.openCasTable",
         "title": "%command.openCasTable.title%",
         "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.showCasTableProperties",
+        "title": "%command.showTableProperties.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.exportCasTableToCsv",
+        "title": "%command.exportTableToCsv.title%",
+        "category": "%extension.category%"
       }
     ],
     "viewsContainers": {
@@ -407,6 +417,14 @@
         {
           "command": "pythonOnViya.openCasTable",
           "when": "false"
+        },
+        {
+          "command": "pythonOnViya.showCasTableProperties",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.exportCasTableToCsv",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -494,6 +512,16 @@
         },
         {
           "command": "pythonOnViya.openCasTable",
+          "when": "view == pythonOnViya.casExplorer && viewItem == sasCas:table",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.showCasTableProperties",
+          "when": "view == pythonOnViya.casExplorer && viewItem == sasCas:table",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.exportCasTableToCsv",
           "when": "view == pythonOnViya.casExplorer && viewItem == sasCas:table",
           "group": "navigation"
         }

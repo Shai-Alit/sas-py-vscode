@@ -625,6 +625,17 @@ section above unless noted:
   session table pages (Finding 7.20 measured only `SASHELP.CLASS`; nothing
   larger has been exported), set `confirmAboveBytes` on `LibraryCsvSource`,
   and add manual-test items mirroring 11.19/11.20.
+- [ ] **11d follow-up — a `CasProblem` for an oversized response.** Added
+  2026-09-20 from the PR #197 review. `src/cas/client.ts` has no
+  `ResponseTooLargeError` case, so a CAS page over the transport's 1 MiB cap
+  (a very wide table's export or grid page) surfaces as `cas-unreachable` —
+  proxy troubleshooting advice, with the real cause only in the detail.
+  Mirror `content-too-large` (`src/content/client.ts`, `problems.ts`,
+  `messages.ts`): a dedicated variant carrying the cap, a message saying the
+  table/page is too wide, and a test driving a real `ResponseTooLargeError`
+  through `CasClient`. Then restore `docs/browsing-cas.md`'s "content too
+  large" wording and the two comments corrected in 11d (`csvFormat.ts`,
+  `csvExportModel.ts`). Consider the same for the Compute/library client.
 - [ ] **11e — Session startup/autoexec configuration.** Needs its own short
   scoping pass first (what "session startup" configures, and whether it's a
   workspace setting, a run-automatically-per-session snippet, or both) —

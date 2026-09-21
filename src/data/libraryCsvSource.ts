@@ -25,7 +25,7 @@ import { type TableDetail, type TableItem } from "./types";
 
 export class LibraryCsvSource implements CsvExportSource {
   readonly name: string;
-  readonly logPrefix = "SAS Libraries";
+  readonly logPrefix = vscode.l10n.t("SAS Libraries");
 
   private detail: TableDetail | undefined;
 

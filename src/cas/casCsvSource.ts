@@ -33,7 +33,7 @@ import {
 
 export class CasCsvSource implements CsvExportSource {
   readonly name: string;
-  readonly logPrefix = "CAS";
+  readonly logPrefix = vscode.l10n.t("CAS");
   /** Finding 11.6: a 555,856-row, 76-column table is roughly 500 MB as CSV and
    * takes on the order of one to two seconds per 500-row page — many minutes
    * to an hour — while a table of a few thousand rows is a few MB and seconds.

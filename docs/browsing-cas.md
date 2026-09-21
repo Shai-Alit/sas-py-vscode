@@ -35,9 +35,41 @@ filter — though the two are simpler underneath for CAS: there is no
 server-side view to create or discard, so a sort or filter is just part of
 every request rather than something built once and reused.
 
-**Export to CSV** and **Table Properties**, both available for a SAS Libraries
-table, are not built yet for a CAS table. Right-click a CAS table and you will
-not find either.
+## Table properties
+
+Right-click a table and choose **Table Properties** for a read-only summary in
+a new editor tab: which caslib and server it lives on, its row and column
+counts, who created it and when it was created, last modified and last
+accessed, its encoding, and a **Columns** tab listing every column's name,
+type, length and label. Fields CAS does not report (there is no "engine" or
+format/informat column here, unlike a SAS library table) are simply left out.
+
+As with opening a table, choosing this on a table that is not loaded yet loads
+it into CAS memory first — CAS reports no size or timestamps for a table that
+is not in memory.
+
+## Exporting a table to CSV
+
+Right-click a table and choose **Export to CSV**, then pick where to save the
+file. The export reads the table a page at a time and writes it to a temporary
+file next to your chosen destination, moving it into place only once every row
+has arrived, so cancelling — or a failure part-way — never leaves a
+half-written file where a good one was. It shows a cancellable progress
+notification while it runs.
+
+Two things differ from what CAS itself would hand back, both deliberately:
+numeric values are written without CAS's leading-space padding, and a missing
+numeric value is written as an empty field rather than CAS's `.`, so the file
+opens as numbers in a spreadsheet or `pandas.read_csv`. Text columns are
+written exactly as stored, spaces included.
+
+**Large tables ask first.** Exporting downloads every row over your
+connection, one page at a time, and a big table can take a long time — a table
+of about half a million rows and 76 columns is roughly 500 MB as CSV. When the
+estimated file size passes 100 MB, you are shown the row count and estimated
+size and asked to confirm before anything is written. Declining does nothing.
+The extension also checks the destination drive has room for the estimated
+size and refuses to start if it will not fit.
 
 ## Refreshing
 
@@ -63,8 +95,9 @@ active compute session the same way any run does.
 - **Your own CASUSER library is not in the tree.** Expected today — only
   global caslibs are shown; a session-scoped caslib is a known gap for a later
   release.
-- **No Export to CSV or Table Properties on a CAS table.** Not built yet —
-  both exist for a SAS Libraries table.
+- **An export stops with "content too large".** A page of a very wide table
+  exceeded the response-size cap this extension enforces. Nothing is written to
+  your destination; export a narrower table or view instead.
 - **A filter is refused with CAS's own error message.** CAS rejected the
   `WHERE`-clause syntax itself; the message is CAS's own wording, not this
   extension's.

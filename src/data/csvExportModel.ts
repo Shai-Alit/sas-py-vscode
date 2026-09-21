@@ -42,6 +42,7 @@
  */
 
 import {
+  type DataFailure,
   type DataResult,
   type LibraryAdapter,
   type RowWindow,
@@ -68,14 +69,94 @@ export const CSV_EXPORT_PAGE_SIZE = 500;
  */
 export type CsvSink = (chunk: string) => Promise<void>;
 
+/** A failed export step in the form the command layer reports — both
+ * strings already produced by whichever backend owns the failure, matching
+ * `TableSourceResult`'s own two-string shape (`./tableSource.ts`): `message`
+ * is a complete localised sentence for the user, `logDetail` the untranslated
+ * fragment written to the output channel. */
+export interface CsvExportFailure {
+  readonly ok: false;
+  readonly message: string;
+  readonly logDetail: string;
+}
+
+export type CsvExportResult<T> =
+  { readonly ok: true; readonly value: T } | CsvExportFailure;
+
+/**
+ * What `runCsvExport` (`./csvExportCommand.ts`) needs from a table's own
+ * backend — the seam 11d added so the one command (save dialog, progress,
+ * temp-file-then-rename, disk-space pre-flight) serves both a SAS library
+ * table and a CAS table. A source is bound to one already-identified table.
+ */
+export interface CsvExportSource {
+  /** The table's qualified display name, for the progress title and every
+   * message (`SASHELP.CLASS`, `MYCASLIB.SALES`). */
+  readonly name: string;
+  /** Named in every log line — "SAS Libraries" or "CAS", matching the tree the
+   * table was chosen from. */
+  readonly logPrefix: string;
+  /** When set, an export estimated to exceed this many bytes is confirmed
+   * with the user before it starts. Absent means never ask — a SAS library
+   * table's own export sets none yet (`docs/phases/phase-11.md`). */
+  readonly confirmAboveBytes?: number | undefined;
+  /** Resolves whatever must be opened before rows can be read; called once,
+   * first. `rowCount` is the backend's best knowledge of the table's size,
+   * for the disk-space and large-export pre-flight checks. */
+  open(
+    signal?: AbortSignal,
+  ): Promise<CsvExportResult<{ readonly rowCount: number | undefined }>>;
+  /** The first `limit` rows as CSV text, header included — the disk-space
+   * pre-flight's sample. */
+  sample(limit: number, signal?: AbortSignal): Promise<CsvExportResult<string>>;
+  /** Streams every row to `sink`; see {@link streamCsvPages}. */
+  stream(sink: CsvSink, signal?: AbortSignal): Promise<CsvExportResult<void>>;
+}
+
+/** Reads one window of CSV text — `includeHeader` is true only for the first
+ * page. Resolves `""` once the window is past the end of the table. */
+export type CsvPageReader<F extends { readonly ok: false }> = (
+  window: RowWindow,
+  includeHeader: boolean,
+  signal?: AbortSignal,
+) => Promise<{ readonly ok: true; readonly value: string } | F>;
+
+/**
+ * Streams a whole table to `sink` one `pageSize`-row window at a time, asking
+ * `read` for each — see this module's own doc comment for why a page boundary
+ * needs no separator of its own and why the loop has no page-count ceiling.
+ * Generic over the failure shape so a Library reader's `DataResult` and a
+ * CAS reader's own both pass through untouched.
+ *
+ * `signal`, when given, cancels the in-flight page request; the sink itself is
+ * not aborted here — closing the underlying stream is the caller's own job.
+ */
+export async function streamCsvPages<F extends { readonly ok: false }>(
+  read: CsvPageReader<F>,
+  pageSize: number,
+  sink: CsvSink,
+  signal?: AbortSignal,
+): Promise<{ readonly ok: true; readonly value: undefined } | F> {
+  let start = 0;
+  let first = true;
+
+  for (;;) {
+    const page = await read({ start, limit: pageSize }, first, signal);
+    if (!page.ok) return page;
+    if (page.value === "") break;
+
+    await sink(page.value);
+    first = false;
+    start += pageSize;
+  }
+
+  return { ok: true, value: undefined };
+}
+
 /**
  * Streams `table`'s full row set to `sink` as CSV text, one page at a time —
- * see this module's own doc comment for why a page boundary needs no
- * separator of its own and why the loop has no page-count ceiling.
- *
- * `signal`, when given, cancels the in-flight page request the same way
- * every other `LibraryAdapter` call already honours one; the sink itself is
- * not aborted here — closing the underlying stream is the caller's own job.
+ * the SAS-library specialisation of {@link streamCsvPages}: each page is the
+ * server's own `rowsAsCSV` response, relayed untouched.
  */
 export async function exportTableToCsv(
   adapter: LibraryAdapter,
@@ -83,25 +164,11 @@ export async function exportTableToCsv(
   sink: CsvSink,
   signal?: AbortSignal,
 ): Promise<DataResult<void>> {
-  let start = 0;
-  let first = true;
-
-  for (;;) {
-    const window: RowWindow = { start, limit: CSV_EXPORT_PAGE_SIZE };
-    const page = await adapter.getRowsAsCsv(
-      table,
-      window,
-      first,
-      undefined,
-      signal,
-    );
-    if (!page.ok) return page;
-    if (page.value === "") break;
-
-    await sink(page.value);
-    first = false;
-    start += CSV_EXPORT_PAGE_SIZE;
-  }
-
-  return { ok: true, value: undefined };
+  return await streamCsvPages<DataFailure>(
+    (window, first, pageSignal) =>
+      adapter.getRowsAsCsv(table, window, first, undefined, pageSignal),
+    CSV_EXPORT_PAGE_SIZE,
+    sink,
+    signal,
+  );
 }

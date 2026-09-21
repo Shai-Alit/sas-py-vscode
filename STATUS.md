@@ -394,8 +394,18 @@ fix. [PR #195](https://github.com/Shai-Alit/sas-py-vscode/pull/195) is open; its
 review finding (no automated regression test for the drag-and-drop
 `ConnectionProblemNode` exclusion) was folded in as integration tests in
 `test/integration/data/drag-and-drop.test.ts` and
-`test/integration/content/dragAndDrop.test.ts`. 11d (CAS table properties/CSV export) and 11e (session
-startup/autoexec, still needing its own scoping pass) remain. Full plan,
+`test/integration/content/dragAndDrop.test.ts`. **11d (CAS table properties + CSV export, F2/F3) is
+code-complete 2026-09-19; the pre-PR adversarial review (no blocking
+findings) and manual pass (11.15-11.22) are done 2026-09-20, PR not yet
+opened:** two new commands on the
+CAS table node, built by generalising the existing properties panel and CSV
+command behind a per-backend source rather than forking them; the CAS export
+formats CSV client-side because CAS's own `text/csv` pads numerics
+(Finding 11.5), and asks for confirmation above an estimated 100 MB (Finding
+11.6 found no server-side row cap). The same confirmation for SAS library
+tables is a recorded follow-up. `npm run test:integration` green (489
+passing).
+11e (session startup/autoexec, still needing its own scoping pass) remains. Full plan,
 punch list, and probe findings (11.1–11.4) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
 completion was missed from this file at the time it merged — a housekeeping

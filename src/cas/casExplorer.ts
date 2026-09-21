@@ -43,6 +43,8 @@ import * as vscode from "vscode";
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import type { HttpTransport } from "../auth/transport";
 import type { ProfileStore } from "../profile/store";
+import { CasCsvSource } from "./casCsvSource";
+import { CasPropertiesSource } from "./casPropertiesSource";
 import { CasTableSource } from "./casTableSource";
 import {
   CasSession,
@@ -51,7 +53,9 @@ import {
 } from "./casSession";
 import { SasCasTreeProvider } from "./casTree";
 import { isCasTable, type CasItem } from "./types";
+import { runSourceCsvExport } from "../data/csvExportCommand";
 import type { DataViewerPanelManager } from "../data/dataViewerPanel";
+import type { TablePropertiesPanelManager } from "../data/tablePropertiesPanel";
 
 /** The id of the tree view, matching `package.json`'s `contributes.views`. */
 export const CAS_VIEW_ID = "pythonOnViya.casExplorer";
@@ -103,6 +107,7 @@ export function registerCasExplorer(
   log: vscode.LogOutputChannel,
   authEvents: CasAuthEvents,
   panels: DataViewerPanelManager,
+  propertiesPanels: TablePropertiesPanelManager,
   deps: CasExplorerDeps = {},
 ): CasExplorerHandles {
   const session = new CasSession<Account>({
@@ -156,6 +161,50 @@ export function registerCasExplorer(
               ),
             );
           });
+      },
+    ),
+    // 11d: the same fire-and-forget/catch shape as `openCasTable` above, for
+    // the same reasons. Separate command ids from the SAS Libraries tree's
+    // `showTableProperties`/`exportTableToCsv` (one id cannot carry two
+    // handlers) — the same split `openTable`/`openCasTable` already make.
+    vscode.commands.registerCommand(
+      "pythonOnViya.showCasTableProperties",
+      (item?: CasItem) => {
+        if (item === undefined || !isCasTable(item)) return;
+        const adapter = session.adapterFor(activeEndpoint());
+        if (adapter === undefined) return;
+        void propertiesPanels
+          .openSource(new CasPropertiesSource(adapter, item))
+          .catch((error: unknown) => {
+            log.error(
+              vscode.l10n.t(
+                'CAS: could not open the table properties panel for "{0}.{1}" ({2})',
+                item.caslibName,
+                item.name,
+                String(error),
+              ),
+            );
+          });
+      },
+    ),
+    vscode.commands.registerCommand(
+      "pythonOnViya.exportCasTableToCsv",
+      (item?: CasItem) => {
+        if (item === undefined || !isCasTable(item)) return;
+        const adapter = session.adapterFor(activeEndpoint());
+        if (adapter === undefined) return;
+        void runSourceCsvExport(new CasCsvSource(adapter, item), {
+          log,
+        }).catch((error: unknown) => {
+          log.error(
+            vscode.l10n.t(
+              'CAS: could not export "{0}.{1}" to CSV ({2})',
+              item.caslibName,
+              item.name,
+              String(error),
+            ),
+          );
+        });
       },
     ),
     // A signed-in window may not have resolved its token yet when the view

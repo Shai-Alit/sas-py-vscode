@@ -13,6 +13,7 @@ import {
   readCasConnectionInfo,
   readCasServerItem,
   readCasTableItem,
+  readCasTableProperties,
   type CasServerItem,
   type CaslibItem,
   type CasTableItem,
@@ -249,6 +250,88 @@ describe("cas/types", () => {
         readCasConnectionInfo({ host: "h", port: "5570" }),
         undefined,
       );
+    });
+  });
+});
+
+describe("cas/types 11d additions", () => {
+  const table: CasTableItem = {
+    kind: "table",
+    serverName: "cas-shared-default",
+    caslibName: "Public",
+    name: "LOOKUP_TABLE",
+    links: [],
+  };
+
+  describe("readCasColumnItem", () => {
+    it("Finding 11.5: reads rawLength and label when present", () => {
+      const column = readCasColumnItem(
+        {
+          name: "AgeAtStart",
+          type: "double",
+          rawLength: 8,
+          label: "Age at Start",
+        },
+        table,
+      );
+      assert.ok(column);
+      assert.equal(column.rawLength, 8);
+      assert.equal(column.label, "Age at Start");
+    });
+
+    it("omits both when absent, or when the label is empty", () => {
+      const column = readCasColumnItem(
+        { name: "Scannable", type: "varchar", label: "" },
+        table,
+      );
+      assert.ok(column);
+      assert.equal(column.rawLength, undefined);
+      assert.equal(column.label, undefined);
+    });
+  });
+
+  describe("readCasTableProperties", () => {
+    it("reads every field it knows, taking identity from the table it was asked for", () => {
+      const properties = readCasTableProperties(
+        {
+          name: "SOMETHING_ELSE",
+          state: "loaded",
+          scope: "global",
+          rowCount: 177,
+          columnCount: 8,
+          created: "2026-09-19T11:59:27.317Z",
+          createdBy: "someone",
+          lastModified: "2026-09-19T11:59:27.336Z",
+          lastAccessed: "2026-09-19T11:59:27.780Z",
+          encoding: "utf-8",
+          characterSet: "UTF8",
+          repeated: false,
+        },
+        table,
+      );
+      assert.equal(properties.name, "LOOKUP_TABLE");
+      assert.equal(properties.caslibName, "Public");
+      assert.equal(properties.serverName, "cas-shared-default");
+      assert.equal(properties.rowCount, 177);
+      assert.equal(properties.columnCount, 8);
+      assert.equal(properties.createdBy, "someone");
+      assert.equal(properties.repeated, false);
+    });
+
+    it("drops absent, empty, and wrong-typed fields rather than defaulting them", () => {
+      const properties = readCasTableProperties(
+        { state: "", rowCount: "12", repeated: "no" },
+        table,
+      );
+      assert.equal(properties.state, undefined);
+      assert.equal(properties.rowCount, undefined);
+      assert.equal(properties.repeated, undefined);
+    });
+
+    it("reads a non-object body as a table with no optional fields", () => {
+      const properties = readCasTableProperties(undefined, table);
+      assert.equal(properties.name, "LOOKUP_TABLE");
+      assert.equal(properties.created, undefined);
     });
   });
 });

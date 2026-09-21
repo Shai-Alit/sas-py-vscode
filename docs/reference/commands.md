@@ -53,3 +53,5 @@ under their category.
 | Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showTableProperties` |
 | Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportTableToCsv` |
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openCasTable` |
+| Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showCasTableProperties` |
+| Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportCasTableToCsv` |

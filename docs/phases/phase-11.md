@@ -609,10 +609,22 @@ section above unless noted:
   matching CAS's loaded-table icon. B1 and B2 turned out not to share one
   mechanism — see this section's own Runbook entry, below, for why and for
   what shipped.
-- [ ] **11d — CAS table properties + CSV export (F2 + F3).** Extend
-  `tablePropertiesPanel.ts` and `csvExportCommand.ts` to `TableSource`'s CAS
-  implementation, matching Phase 8c's own reuse precedent
-  ([ADR-0034](../adr/0034-table-source-abstraction.md)).
+- [x] **11d — CAS table properties + CSV export (F2 + F3).** Code, automated
+  tests, docs, and manual-test items 11.15–11.22
+  (`docs/dev/manual-tests/phase-11.md`) written; pre-PR adversarial review
+  (no blocking findings) and the manual pass (all items pass, 2026-09-20)
+  done. Both existing
+  surfaces were generalised behind a small per-backend source
+  (`PropertiesSource`, `CsvExportSource`) rather than forked; see this
+  section's own Runbook entry, below.
+- [ ] **11d follow-up — large-table confirmation for SAS library tables.**
+  Added 2026-09-19 at Sean's request. CAS export now asks for confirmation
+  above an estimated 100 MB (`CsvExportSource.confirmAboveBytes`, 11d);
+  `LibraryCsvSource` sets no threshold, so a SAS library table's export never
+  asks. Do the same there: choose a threshold, probe how a large Compute
+  session table pages (Finding 7.20 measured only `SASHELP.CLASS`; nothing
+  larger has been exported), set `confirmAboveBytes` on `LibraryCsvSource`,
+  and add manual-test items mirroring 11.19/11.20.
 - [ ] **11e — Session startup/autoexec configuration.** Needs its own short
   scoping pass first (what "session startup" configures, and whether it's a
   workspace setting, a run-automatically-per-session snippet, or both) —
@@ -1090,6 +1102,81 @@ own verify run for exact numbers, recorded in `STATUS.md`. No probe was
 needed: nothing here is Viya wire behaviour, it is this extension's own
 client-side state handling.
 
+### 11d — CAS table properties and CSV export (F2/F3), 2026-09-19
+
+**What shipped.** Two new commands on the CAS tree's table node —
+`pythonOnViya.showCasTableProperties` and `pythonOnViya.exportCasTableToCsv` —
+separate ids from the SAS Libraries tree's own, the same split
+`openTable`/`openCasTable` already make (one command id cannot carry two
+handlers). Both reuse the existing surface rather than fork it:
+
+- **Properties.** `tablePropertiesPanel.ts` now renders a `PropertiesView`
+  (`src/data/propertiesSource.ts`, pure types) handed to it by a
+  `PropertiesSource`. `LibraryPropertiesSource` is 7c-ii's field set moved
+  out unchanged; `CasPropertiesSource` is new, reading `CasAdapter.getTableProperties`
+  (loads first if needed, then re-reads `self` — Finding 11.5) plus the
+  existing `getColumns`. Sources emit plain text and the panel escapes once,
+  so the module's old `formatOptionalText`/`formatOptionalTimestamp` (which
+  escaped) became dead and were removed with their tests.
+  `TablePropertiesPanelManager.open(table, adapter)` stays as a wrapper.
+- **CSV.** `runCsvExport` is now a wrapper over `runSourceCsvExport`, which
+  takes a `CsvExportSource` (`open`/`sample`/`stream`). The save dialog,
+  progress, temp-file-then-rename, and disk-space pre-flight are unchanged and
+  shared. `CasCsvSource` reads JSON pages and formats CSV client-side
+  (`src/cas/csvFormat.ts`) rather than relaying the server's `text/csv` —
+  Finding 11.5. Page size is `pageRowsFor(columnCount)` (30,000 cells/page,
+  at most 500 rows) to stay under the transport's 1 MiB body cap on wide
+  tables (Finding 11.6).
+- **Large-table confirmation (Sean's request, mid-slice).** `runSourceCsvExport`
+  asks — a modal warning naming the row count and estimated size, with an
+  "Export anyway" button — when a source names `confirmAboveBytes` and the
+  size estimate (the same sampled projection the disk-space check uses)
+  exceeds it. CAS sets 100 MB. It is asked *before* the disk check, and
+  declining is a silent no-op that creates no file. SAS library tables set no
+  threshold yet — tracked as the punch-list follow-up above.
+
+**Design calls worth knowing.** (1) The 100 MB threshold is a judgement, not a
+measured limit: Finding 11.6 found no server-side cap to anchor it to; it is
+about where a wide table becomes ~100 pages and minutes rather than seconds.
+(2) The estimate is a projection from the first 200 rows, so a table whose
+later rows run wider can pass — the same caveat the disk-space check already
+carries. (3) Missing/padded numerics are cleaned only by column *type*
+(`char`/`varchar` untouched, everything else trimmed, `.` -> empty); `date`/
+`datetime`/`decimal`/`int64` cell display was **not** probed (only `char`,
+`varchar`, `double` were reachable without loading more tables) — trimming is
+harmless for them but a `.`-for-missing reading is assumed, not observed.
+
+**Not built / carried:** a progress percentage during export (the row count is
+known, but the notification is indeterminate — same as the SAS library
+export); an unbounded-table safety net beyond the confirmation; a table size
+on the CAS Table Properties panel (raised in the manual pass — it would help
+judge the confirmation's estimate, but whether CAS exposes a byte size is
+unprobed, so it is a new feature, not a 11d fix).
+
+**Review and manual pass, 2026-09-20.** The pre-PR adversarial review found
+nothing blocking. Folded in: an isolation test for `LibraryCsvSource`
+(`test/integration/data/library-csv-source.test.ts`), since it had only been
+reached through the command. Deliberately not changed: (1) `CasCsvSource.open`
+reads one row for the live count and `sample` later reads the first N — one
+extra round-trip per export, and removing it means caching a page across the
+two calls; (2) `open()` runs before the confirmation, so a declined export of an
+unloaded CAS table can leave it loaded server-side — the row count the estimate
+needs comes from that same load. Manual items 11.15–11.22 all pass; on the
+555,856-row table the modal arrives only after a long wait (open, load,
+columns, count and a 200-row sample all precede it). A live read-only probe
+of that table's first 200 rows projects ~389 MB as CSV (~734 bytes/row; later
+windows ~970 bytes/row, ~520 MB), so the estimate errs low for it — still well
+over the 100 MB threshold. Integration suite 489 passing after the added test.
+
+**Tests.** `test/unit/cas-csv-format.test.ts` (new), plus additions to
+`cas-adapter.test.ts` (`getTableProperties`), `cas-types.test.ts`,
+`data-csv-export-model.test.ts` (`streamCsvPages`);
+`test/integration/cas/csv-export-and-properties.test.ts` (new) drives the real
+CAS sources through the real command/panel, and covers the confirmation
+through a fake source. Five new `vscode`-importing or types-only files added
+to `.c8rc.json`'s exclude list. `npm run test:integration` green (482
+passing).
+
 Findings in this section are numbered `11.x`, per the phase-scoped
 finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root
 `CLAUDE.md`) — this is the first finding recorded for this phase, so it
@@ -1335,3 +1422,49 @@ mid-session (a long idle gap between approval and execution) — the first
 throwaway compute session had already been cleaned up server-side by the
 time connectivity returned, confirmed via a `404` on that stale session id
 before a fresh one was created for the actual probe.
+
+
+### Finding 11.5 — A CAS table's own representation, `rows` as `text/csv`, and the space-padded numeric display
+
+Probed 2026-09-19, `verde`, Viya 4, read-only except one JIT load of
+`P_FORD.HEART` (Sean approved; unloaded again afterwards, `200`).
+**Documented:** the Row Sets reference (developer.sas.com) names `start`/
+`limit` paging and nothing about content types on a CAS table or a maximum.
+**Observed:**
+
+- `GET .../tables/{name}` (`self`) on an **unloaded** table carries no
+  timestamps, `encoding`, or real counts (`rowCount`/`columnCount` are `0`);
+  after `PUT .../state?value=loaded` the same link returns `created`,
+  `createdBy`, `lastModified`, `lastAccessed`, `encoding`, `characterSet`,
+  `scope`, `repeated`, and real counts. `getTableProperties` therefore loads
+  first.
+- `casManagement` columns carry `rawLength` (absent on some `varchar`s) and a
+  `label` (present on some columns, absent on others); no `format`/`informat`.
+- `GET /casRowSets/.../rows` with `Accept: text/csv` **works**: `200`,
+  `text/csv`, `start`/`limit` honoured, `includeColumnNames=true` adds a
+  header row, `sortBy`/`where` work on it, a page past the end is a `200` with
+  an empty body, RFC-4180 quoting for a comma-bearing field. (Same shape as
+  Finding 7.20.) A bad `where` is a `409` with CAS's own message.
+- **But numeric values arrive as formatted, space-padded strings, in both the
+  JSON `cells` and the CSV** — `"          29"`, and a missing numeric as
+  `"           ."`. Char/varchar are unpadded. So a straight relay of the
+  server CSV is not usable as a data file; the CAS export formats client-side.
+  **Not settled:** the same reading for `date`/`time`/`datetime`/`decimal`/
+  `int` columns.
+
+### Finding 11.6 — CAS enforces no row cap on `rows`; a large table is slow, not refused
+
+Probed 2026-09-19, `verde`, read-only, against `P_MTES.COMMERCIAL_PRESALES_ORION_V2`
+(555,856 rows x 76 columns, the largest loaded table in 69 caslibs). A
+`rows` request returned `200` at every size tried: `limit=500` -> 458 KB in
+1.6 s; `limit=5000` -> 4.6 MB in 2.4 s; `limit=100000` -> 96 MB in 29 s
+(exactly 100,000 items). A window at the tail returned the remaining 356 rows;
+`start` past the end returned `200` with zero items. `count` stayed populated
+throughout. **No server-side maximum was found**, and none is documented; the
+ceiling that bites is this client's own 1 MiB response cap
+(`src/auth/transport.ts`), which is why export pages are capped by cells
+(`pageRowsFor`). At ~915 bytes/row for that table, a full export is on the
+order of 500 MB and >1,000 page requests. **Not settled:** the maximum a
+single request could return before failing (only tried to 100,000 rows);
+behaviour on a far larger table; whether the per-request ephemeral CAS
+session (Finding 8.13) accumulates across a thousand-page export.

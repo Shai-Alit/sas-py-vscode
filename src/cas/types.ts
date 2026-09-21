@@ -214,6 +214,37 @@ export interface CasColumnItem {
   readonly name: string;
   readonly type: string;
   readonly formattedLength?: number | undefined;
+  /** The column's storage width in bytes — absent on a `varchar` (Finding
+   * 11.5 saw it missing on one column and present on another of the same
+   * type). */
+  readonly rawLength?: number | undefined;
+  readonly label?: string | undefined;
+}
+
+/**
+ * A table's own full `casManagement` representation (`GET` on its `self`
+ * link), the field set 11d's properties panel reads — Finding 11.5. A
+ * strictly richer read of the same resource `CasTableItem` reads a subset of
+ * from the listing: an **unloaded** table's representation omits every
+ * timestamp/size field entirely (Finding 11.5), so
+ * {@link import("./adapter").CasAdapter.getTableProperties} loads first,
+ * exactly as `getColumns`/`openTable` already do.
+ */
+export interface CasTableProperties {
+  readonly name: string;
+  readonly caslibName: string;
+  readonly serverName: string;
+  readonly state?: string | undefined;
+  readonly scope?: string | undefined;
+  readonly rowCount?: number | undefined;
+  readonly columnCount?: number | undefined;
+  readonly created?: string | undefined;
+  readonly createdBy?: string | undefined;
+  readonly lastModified?: string | undefined;
+  readonly lastAccessed?: string | undefined;
+  readonly encoding?: string | undefined;
+  readonly characterSet?: string | undefined;
+  readonly repeated?: boolean | undefined;
 }
 
 /** A CAS server's internal connection info (Finding 8.10) — 8b's own use:
@@ -336,6 +367,50 @@ export function readCasColumnItem(
     ...(typeof raw.formattedLength === "number"
       ? { formattedLength: raw.formattedLength }
       : {}),
+    ...(typeof raw.rawLength === "number" ? { rawLength: raw.rawLength } : {}),
+    ...(typeof raw.label === "string" && raw.label !== ""
+      ? { label: raw.label }
+      : {}),
+  };
+}
+
+/** Reads a table's own `self` representation for the properties panel. `table`
+ * supplies the identity fields, so a body that omits or mangles them still
+ * reads as the table that was asked for; every other field is optional and
+ * dropped when absent or the wrong type, the same tolerance every reader here
+ * gives a shape this project has not observed everywhere. */
+export function readCasTableProperties(
+  value: unknown,
+  table: CasTableItem,
+): CasTableProperties {
+  const raw =
+    typeof value === "object" && value !== null
+      ? (value as Record<string, unknown>)
+      : {};
+  const text = (key: string): string | undefined => {
+    const field = raw[key];
+    return typeof field === "string" && field !== "" ? field : undefined;
+  };
+  const count = (key: string): number | undefined => {
+    const field = raw[key];
+    return typeof field === "number" ? field : undefined;
+  };
+
+  return {
+    name: table.name,
+    caslibName: table.caslibName,
+    serverName: table.serverName,
+    state: text("state"),
+    scope: text("scope"),
+    rowCount: count("rowCount"),
+    columnCount: count("columnCount"),
+    created: text("created"),
+    createdBy: text("createdBy"),
+    lastModified: text("lastModified"),
+    lastAccessed: text("lastAccessed"),
+    encoding: text("encoding"),
+    characterSet: text("characterSet"),
+    repeated: typeof raw.repeated === "boolean" ? raw.repeated : undefined,
   };
 }
 

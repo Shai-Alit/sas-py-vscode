@@ -162,5 +162,46 @@ against a deployment that suite cannot exercise.
   is not a valid drop target in either tree — nothing moves, no error
   notification. Clicking it still runs Refresh.
 
-Add further numbered items here (`11.15`, `11.16`, …) as later Phase 11
+- [x] **11.15** **11d, CAS Table Properties (loaded table)** — in the CAS
+  tree, right-click a table that is already loaded and choose **Table
+  Properties**. **Expect:** a new tab titled `Properties: <caslib>.<table>`
+  with General/Size/Technical sections (name, caslib, server, state, scope,
+  created by, row/column counts, created/modified/last-accessed, encoding,
+  character set) and a **Columns** tab (#, name, type, length, label). No
+  "Engine"/"Format" fields. Choosing it again reveals the same tab.
+- [x] **11.16** **11d, CAS Table Properties (unloaded table)** — repeat on a
+  table showing as unloaded. **Expect:** it loads (the tree icon flips on the
+  next refresh) and the panel shows real counts and timestamps, not zeros.
+- [x] **11.17** **11d, CAS Export to CSV, a small table** — right-click a
+  small table (a few thousand rows) -> **Export to CSV**, save, and open the
+  file. **Expect:** a header row, then rows; **numeric columns have no
+  leading spaces and a missing numeric is an empty field, not `.`**; a text
+  value containing a comma is quoted. Open it in Excel or
+  `pandas.read_csv` and confirm numeric columns are numbers.
+- [x] **11.18** **11d, cancelling an export** — start an export of a mid-size
+  table and press Cancel on the progress notification. **Expect:** no file at
+  the destination (and an existing file you pointed at is untouched), no
+  leftover `.tmp` file beside it.
+- [x] **11.19** **11d, large-table confirmation** — export a table estimated
+  above 100 MB (on `verde`, `P_MTES.COMMERCIAL_PRESALES_ORION_V2`, roughly
+  555,000 rows). **Expect:** a modal warning naming the row count and an
+  estimated size in MB with **Export anyway**, shown before anything is
+  written.
+  **(9/20/2026) pass** — the modal did appear, only after a long wait: the
+  table is opened (and loaded if needed), its columns and row count read, and
+  a 200-row sample fetched before the estimate exists, all under the progress
+  notification. A first run read as "no modal" until it arrived.
+- [x] **11.20** **11d, declining the large-table confirmation** — dismiss the
+  11.19 dialog. **Expect:** nothing happens — no file, no error message. Then
+  choose **Export anyway** once (cancel it soon after via the progress
+  notification) and confirm it does start.
+- [x] **11.21** **11d, SAS Libraries regression** — on a SAS Libraries table,
+  run **Table Properties** and **Export to CSV**. **Expect:** exactly as
+  before this slice (both tabs populated; CSV written; **no** large-table
+  prompt for a small table).
+- [x] **11.22** **11d, an export failure** — start an export, then drop the
+  connection/VPN part-way. **Expect:** one error message, no destination
+  file, no `.tmp` left behind.
+
+Add further numbered items here (`11.23`, `11.24`, …) as later Phase 11
 slices land, the same way every other phase file did.

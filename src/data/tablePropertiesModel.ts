@@ -65,21 +65,8 @@ export function formatTimestamp(value: string): string {
   return value;
 }
 
-/** An optional string field, HTML-escaped, or an empty cell when absent —
- * `readTableDetail`/`readColumnItem` already drop an empty-string value to
- * `undefined`, so this only ever sees a real value or nothing. */
-export function formatOptionalText(value: string | undefined): string {
-  return value === undefined ? "" : escapeHtml(value);
-}
-
-/** An optional numeric field, locale-formatted, or an empty cell when
+/** An optional numeric field, locale-formatted, or an empty string when
  * absent. */
 export function formatOptionalNumber(value: number | undefined): string {
   return value === undefined ? "" : value.toLocaleString();
-}
-
-/** An optional timestamp field, formatted via {@link formatTimestamp} and
- * HTML-escaped, or an empty cell when absent. */
-export function formatOptionalTimestamp(value: string | undefined): string {
-  return value === undefined ? "" : escapeHtml(formatTimestamp(value));
 }

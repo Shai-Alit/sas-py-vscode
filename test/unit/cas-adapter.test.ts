@@ -743,6 +743,114 @@ describe("cas/adapter CasAdapter", () => {
     });
   });
 
+  describe("getTableProperties", () => {
+    /** Finding 11.5's own real shape for a loaded table (`verde`, scrubbed):
+     * the fields the properties panel reads, with the extras it ignores. */
+    const LOADED_SELF = {
+      name: "LOOKUP_TABLE",
+      caslibName: "Public",
+      serverName: "cas-shared-default",
+      state: "loaded",
+      scope: "global",
+      rowCount: 12,
+      columnCount: 2,
+      created: "2026-01-02T03:04:05.678Z",
+      createdBy: "someone",
+      lastModified: "2026-01-02T03:04:06.000Z",
+      lastAccessed: "2026-01-03T03:04:06.000Z",
+      encoding: "utf-8",
+      characterSet: "UTF8",
+      repeated: false,
+      disconnected: true,
+      attributes: { view: false },
+    };
+
+    it("reads a loaded table's own self representation, with no load request", async () => {
+      const { adapter, calls } = adapterWith([
+        { when: `${TABLES_HREF}/LOOKUP_TABLE`, reply: casOk(LOADED_SELF) },
+      ]);
+      const result = await adapter.getTableProperties(loadedTable());
+      assert.ok(result.ok);
+      assert.equal(result.value.rowCount, 12);
+      assert.equal(result.value.columnCount, 2);
+      assert.equal(result.value.created, "2026-01-02T03:04:05.678Z");
+      assert.equal(result.value.createdBy, "someone");
+      assert.equal(result.value.lastAccessed, "2026-01-03T03:04:06.000Z");
+      assert.equal(result.value.encoding, "utf-8");
+      assert.equal(result.value.characterSet, "UTF8");
+      assert.equal(result.value.scope, "global");
+      assert.equal(result.value.repeated, false);
+      assert.deepEqual(calls, [
+        { href: `${TABLES_HREF}/LOOKUP_TABLE`, method: "GET" },
+      ]);
+    });
+
+    it("Finding 11.5: loads an unloaded table first, because its own representation carries no timestamps or counts", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: (href, method) =>
+            href.startsWith(LOAD_HREF) && method === "PUT",
+          reply: casText("loaded"),
+        },
+        { when: `${TABLES_HREF}/LOOKUP_TABLE`, reply: casOk(LOADED_SELF) },
+      ]);
+      const result = await adapter.getTableProperties(unloadedTable());
+      assert.ok(result.ok);
+      assert.equal(result.value.rowCount, 12);
+      assert.deepEqual(calls, [
+        { href: `${LOAD_HREF}?value=loaded`, method: "PUT" },
+        { href: `${TABLES_HREF}/LOOKUP_TABLE`, method: "GET" },
+      ]);
+    });
+
+    it("returns the load failure as-is, without reading self", async () => {
+      const { adapter, calls } = adapterWith([
+        {
+          when: (href, method) =>
+            href.startsWith(LOAD_HREF) && method === "PUT",
+          reply: casFail({
+            code: "cas-rejected",
+            error: { status: 409, message: "table is busy" },
+          }),
+        },
+      ]);
+      const result = await adapter.getTableProperties(unloadedTable());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cas-rejected");
+      assert.equal(calls.length, 1);
+    });
+
+    it("reports link-missing when the table carries no self relation", async () => {
+      const { adapter, calls } = adapterWith([]);
+      const result = await adapter.getTableProperties({
+        ...loadedTable(),
+        links: [],
+      });
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "link-missing",
+        rel: "self",
+        resource: 'table "Public.LOOKUP_TABLE"',
+      });
+      assert.deepEqual(calls, []);
+    });
+
+    it("returns the request failure when reading self fails", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: `${TABLES_HREF}/LOOKUP_TABLE`,
+          reply: casFail({
+            code: "cas-rejected",
+            error: { status: 500 },
+          }),
+        },
+      ]);
+      const result = await adapter.getTableProperties(loadedTable());
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "cas-rejected");
+    });
+  });
+
   describe("getConnection", () => {
     function serverWithConnection(): CasServerItem {
       return server({

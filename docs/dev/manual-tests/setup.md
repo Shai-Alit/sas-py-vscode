@@ -24,7 +24,8 @@ Run it before a release ([release checklist](../../release-checklist.md) D6), an
 | [`phase-8.md`](phase-8.md) | CAS browsing, authenticated CAS session connect — phases 8a–8b |
 | [`phase-9.md`](phase-9.md) | Notebook controller registration, real execution, interrupt/busy, its own session separate from Run File's (ADR-0035) — phases 9a–9b |
 | [`phase-10.md`](phase-10.md) | Environment view: local/remote package diff, `Search environment` — phase 10a |
-| `phase-11.md` … `phase-12.md` | Stubs — no manual tests yet, these phases have not started |
+| [`phase-11.md`](phase-11.md) | Interactive window, CAS/SWAT SQL passthrough, connection-problem trees, CAS table properties/CSV export, session startup/autoexec — phases 11a–11e |
+| `phase-12.md` … `phase-13.md` | Stubs — no manual tests yet, these phases have not started |
 | [`misc.md`](misc.md) | Trust/enablement and regression spot-checks — phase-agnostic, run every pass |
 
 ## How to use this

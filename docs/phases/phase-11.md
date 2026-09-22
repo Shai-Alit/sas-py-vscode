@@ -56,31 +56,11 @@ slices 2026-09-16/17 once the phase was actually picked up:**
    snippet run automatically per new session, a workspace setting, or both).
    Needs its own short scoping pass at the start of the slice, the way F7 and
    F9 each got one across two 2026-09-16 sessions, before it's sized further.
-6. **11f — Ship an Agent Skill**, per
-   [ADR-0037](../adr/0037-ai-agent-integration-approach.md) and the
-   2026-09-21 research memo
-   ([`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md)).
-   A `.claude/skills/python-on-viya/SKILL.md` teaching an agent (Claude Code or
-   VS Code Copilot agent mode — both read `.claude/skills/` verbatim, per the
-   memo's Finding 14) how this project's execution model actually behaves:
-   upload-plus-`infile=` submission rather than inline `endsubmit;`, `SYSCC` as
-   a session variable, the interpreter banner/`>>>` markers as inherent output
-   rather than a defect (Finding 11.3), library/CAS naming, what the
-   environment probe reports, and the existing command surface. No production
-   code; added to Phase 11 by Sean's own 2026-09-22 call, folding in work the
-   research memo itself suggested would otherwise warrant a new phase — see
-   ADR-0037's "Alternatives considered" for that departure recorded explicitly.
-7. **11g — Spike: an in-process MCP server reachable by an external Claude Code
-   session**, per ADR-0037 (Option C). Exploratory only, not a commitment to
-   build the feature: the narrow question is whether an external Claude Code
-   CLI session can actually connect to a loopback HTTP MCP server run inside
-   the extension host, with a token handed over out of band, and whether the
-   server survives a VS Code window reload — neither is promised by any
-   documentation (research memo, "What would have to be settled before any
-   code", items 1–2). The spike's own outcome, recorded here once run, decides
-   whether a real Option C build gets scoped as a later slice or the project
-   falls back to Option B (`languageModelTools` over the existing pure
-   adapters), which ADR-0037 holds pending exactly this result.
+**AI-agent integration (formerly 11f/11g/11h here) moved to Phase 12,
+2026-09-22.** Briefly scoped into this phase per ADR-0037, then moved out the
+same day, before any work started — see this section's own Runbook entry,
+below, and [`docs/phases/phase-12.md`](phase-12.md) for the slices themselves
+(now 12a/12b/12c).
 
 Everything else in this file — F1, F6, F8, and the items carried in from
 Phase 6/9/10 housekeeping — stays out of this phase's scope by Sean's own
@@ -101,9 +81,18 @@ recorded here rather than silently dropped. `package.nls.json` and
 `l10n/bundle.l10n.json` stay the only bundle; no other-locale work is a
 candidate for this phase or a future one unless revisited.
 
-**Result panel styling options** — also named in the original one-liner,
-never scoped into 11a–11e and not decided either way. Still an open candidate
-for a future slice of this phase, or for reclassification, if picked up again.
+**Result panel styling options — closed, 2026-09-22 (Sean's own call).** Also
+named in the original one-liner, never scoped into 11a–11e, and never
+elaborated anywhere in this project's history beyond that one phrase — no
+ADR, design note, or linked issue exists for it. Closed rather than sized:
+what it would plausibly have meant (matching the editor's theme — fonts,
+colors, light/dark/high-contrast) is already true for free, since the panel's
+own stylesheet reads `--vscode-font-family`, `--vscode-foreground`, and
+similar theme variables directly
+([`resultPanel.ts:477`](../../src/run/resultPanel.ts)), not a hand-picked
+palette. No further candidate (font-size control, word-wrap toggle, output
+truncation) had anything concrete behind it either. Not a future candidate
+unless something specific comes up.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -679,7 +668,8 @@ section above unless noted:
   asks. Do the same there: choose a threshold, probe how a large Compute
   session table pages (Finding 7.20 measured only `SASHELP.CLASS`; nothing
   larger has been exported), set `confirmAboveBytes` on `LibraryCsvSource`,
-  and add manual-test items mirroring 11.19/11.20.
+  and add manual-test items mirroring 11.19/11.20. **Decided 2026-09-22
+  (Sean): build it.**
 - [ ] **11d follow-up — a `CasProblem` for an oversized response.** Added
   2026-09-20 from the PR #197 review. `src/cas/client.ts` has no
   `ResponseTooLargeError` case, so a CAS page over the transport's 1 MiB cap
@@ -691,15 +681,12 @@ section above unless noted:
   through `CasClient`. Then restore `docs/browsing-cas.md`'s "content too
   large" wording and the two comments corrected in 11d (`csvFormat.ts`,
   `csvExportModel.ts`). Consider the same for the Compute/library client.
-- [ ] **11d follow-up — opt-in CSV formula-injection guard (CAS).** Added
-  2026-09-20 from the PR #197 review. A text cell beginning `=`, `+`, `-` or
-  `@` is written as-is (documented in the two export sections for now). Idea:
-  a setting, default **off**, that prefixes such cells in character columns
-  only, in `formatCsvPage` (`src/cas/csvFormat.ts`); numerics stay untouched.
-  Off by default because the standard `'` prefix alters data (`-Bob` reads back
-  as `'-Bob` in pandas). The SAS library path relays the server's CSV
-  untouched (Finding 7.20), so guarding it means re-parsing every page — a
-  separate decision, not part of this item.
+  **Decided 2026-09-22 (Sean): build it.**
+- [ ] **11d follow-up — opt-in CSV formula-injection guard (CAS): moved to
+  Phase 12 as 12d, 2026-09-22.** Briefly decided "build it" the same day,
+  then Sean's own re-read (once the CAS-vs-library-export asymmetry was
+  raised) was that it needs more research than a punch-list build call gave
+  it credit for. See [`docs/phases/phase-12.md`](phase-12.md).
 - [x] **11e — Session startup/autoexec configuration.** Scoped 2026-09-20 to
   profile-level `sasOptions` + `autoExec` (SAS lines, inline or file), mirroring
   upstream; code, unit and integration tests, docs and manual-test items
@@ -713,20 +700,18 @@ section above unless noted:
   A bad line leaves the session `idle` with `sessionConditionCode` 3000 and the
   `ERROR` only in the session log (Finding 11.7). Read
   `/compute/sessions/{id}/log` after create when the code is nonzero and write
-  the `ERROR`/`WARNING` lines to the output channel.
+  the `ERROR`/`WARNING` lines to the output channel. **Decided 2026-09-22
+  (Sean): build it — never show a blind warning with nothing to help the user
+  fix it.**
 - [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
   11e by decision. Needs its own submission per session and an answer to
-  ADR-0014 and to `restart`/namespace lifetime before it is sized.
-- [ ] **11f — Ship an Agent Skill (Option A).** Scoped 2026-09-22
-  (ADR-0037). `.claude/skills/python-on-viya/SKILL.md`, documented as
-  copyable to `~/.claude/skills/`; no production code. See this section's
-  own Runbook entry, below, once written.
-- [ ] **11g — Spike: in-process MCP server reachable by Claude Code (Option
-  C).** Scoped 2026-09-22 (ADR-0037). Exploratory: settles whether an
-  external Claude Code session can connect to a loopback HTTP MCP server run
-  by the extension host and survive a window reload. Outcome recorded in
-  this section's own Runbook entry once run; decides whether a real build
-  gets scoped next or the project falls back to Option B.
+  ADR-0014 and to `restart`/namespace lifetime before it is sized. **Its own
+  investigation slice moved to Phase 12 as 12c, 2026-09-22** — this item
+  itself stays parked here until 12c reports back; see
+  [`docs/phases/phase-12.md`](phase-12.md).
+- [ ] **AI-agent integration (11f/11g/11h): moved to Phase 12 as 12a/12b/12c,
+  2026-09-22**, before any work started. See this section's own Runbook
+  entry, below, and [`docs/phases/phase-12.md`](phase-12.md).
 
 ### 11a — Interactive window
 
@@ -1346,29 +1331,63 @@ recorded run). **Manual pass, 2026-09-21: items 11.23–11.28 all pass.** 11.26
 first showed no warning for a bad autoExec line; that was Finding 11.8, fixed
 and re-run to a pass.
 
-### AI-agent integration scoping, 2026-09-22
+### Phase 11 follow-up decisions, and AI-agent integration moved to Phase 12, 2026-09-22
+
+Sean worked through the open decisions this file's punch list had been
+carrying, in one sitting; the account below is the net result rather than
+the two intermediate steps, since the middle one (briefly scoping
+AI-agent integration as 11f/11g/11h) was superseded the same day, before any
+work started against it.
+
+**What actually stays decided in Phase 11:**
+
+- **Three follow-ups: decided to build.** Large-table confirmation for SAS
+  library tables (11d), a `CasProblem` for an oversized response (11d), and
+  showing the text of an autoExec error (11e) — each recorded inline on its
+  own punch-list item, above. None has started.
+- **Result panel styling options: closed, not built.** The only description
+  this project ever gave it was the original one-line phase mention; no ADR,
+  design note, or concrete complaint backed it. What it would plausibly have
+  meant — following the editor's own theme — is already true, unprompted,
+  because the result panel's stylesheet reads VS Code's own CSS variables
+  directly (`resultPanel.ts:477`). Recorded in the Plan section's own
+  paragraph, above, rather than silently dropped.
+
+**What moved out of Phase 11 entirely, to Phase 12:**
 
 Sean brought a research memo written the previous day
 (`docs/research/ai-integration-2026-09-21.md`, now checked into the repo) that
 answered a question raised outside any phase: can this extension let a user
 plug an AI agent they already pay for — Claude Code above all — into it. The
-memo surveyed five options (skill, `languageModelTools`, an in-process MCP
-server also reachable externally, a standalone MCP server, and consuming a
-model in-extension) and recommended shipping the skill immediately and
-spiking the in-process-MCP-server option before committing to it. Its own
-view was that if any of this proceeds it should be a new phase, since Phase
-11 is scoped to parity gaps and this is net-new surface — Sean's explicit
-call was to fold it into Phase 11 instead, as two new slices. Recorded as
-[ADR-0037](../adr/0037-ai-agent-integration-approach.md), which also records
-that departure from the memo's own recommendation.
+memo surveyed five options and recommended shipping an Agent Skill immediately
+and spiking an in-process MCP server before committing to it — recorded as
+[ADR-0037](../adr/0037-ai-agent-integration-approach.md). The memo's own view
+was that this should be a new phase, since Phase 11 is scoped to parity gaps
+and this is net-new surface; Sean's first call was to fold it into Phase 11
+anyway, as 11f/11g. Separately, sizing the 11e Python-startup-snippet
+follow-up turned out to need its own investigation first (not enough insight
+into how it would actually work to decide it), so a third slice, 11h, was
+added the same way.
 
-Added to this phase's Plan section (above) and the punch list (below) as
-**11f** (ship the skill; no code) and **11g** (the spike; exploratory,
-outcome recorded here once run — decides whether a real build gets scoped
-next or the project falls back to registering `languageModelTools`
-instead). Neither slice has started as of this entry; both are unordered
-relative to 11d's three open follow-ups and 11e's two, beyond sitting last
-in the Plan section's priority list.
+Discussing all three together made the shape clear: none of this is a parity
+gap, all three are "needs research before it can be sized or built" work, and
+the 11d opt-in CSV formula-injection guard — briefly marked "decided: build
+it, CAS-only" earlier the same day — turned out to be exactly the same shape
+once the CAS-vs-library-export asymmetry was raised (an opt-in guard that
+silently only covers some of a user's CSV exports is the same blind-gap
+problem the autoExec-error follow-up above was scoped to avoid). Sean's
+revised call: all four move together into a phase of their own, and — since
+the existing Phase 12 was an unstarted three-sentence "second execution
+backend" stub with no work against it — that phase was renumbered to
+[Phase 13](phase-13.md) the same day so Phase 12 could be repurposed rather
+than collide with it.
+
+**Result:** 11f/11g/11h are now 12a/12b/12c, unchanged in substance; the
+CSV-guard follow-up is 12d. All four are recorded in
+[`docs/phases/phase-12.md`](phase-12.md), none started. Sean's explicit call:
+Phase 12 gates v1.0 — amended into `PRODUCTION_PLAN.md` §8. Phase 11's own
+remaining scope, after this move, is exactly the three follow-ups decided
+above; once those land, Phase 11 is done.
 
 ### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
 

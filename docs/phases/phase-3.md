@@ -1850,7 +1850,9 @@ hardening slice. See `docs/phases/phase-5.md` for what actually landed there.
 Moved to the per-phase files, which are now the source of truth: Phases 6–10 are
 each scoped and lettered in their own `docs/phases/phase-N.md` (see `STATUS.md`'s
 phase index), Phase 11 (remaining parity gaps) is sized when reached, and
-Phase 12 (a second execution backend) has no punch list by design — it is
+Phase 13 (a second execution backend, renumbered from Phase 12 on 2026-09-22
+when that number was repurposed for AI-agent integration — see
+`docs/phases/phase-13.md`) has no punch list by design — it is
 conditional on real usage showing that `PROC PYTHON` hurts. This stub's guessed
 branch names (`phase-10a-package-listing` etc.) predated that scoping and never
 matched — removed here the same way the Phase 4 and Phase 5 stubs above were,

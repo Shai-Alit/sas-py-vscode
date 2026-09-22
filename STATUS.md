@@ -258,9 +258,8 @@ The outcomes:
   namespace request was filed and has been granted: `GET
   https://open-vsx.org/api/shai-alit` returns `"verified": true`. The ⚠️
   unverified-publisher warning no longer applies. `PRODUCTION_PLAN.md` §8's
-  1.0 wording still describes this as merely "filed, not necessarily
-  granted" — a wording-only correction, held for the next phase-boundary
-  batch per this file's own plan-edit policy rather than made on its own.
+  wording is now amended to record the grant, alongside the Phase 12/13
+  renumbering (below).
 - **5d-i user-provided-CA live test** — the one unrun `manual-test-pass.md` row
   (§3). Needs a deployment whose certificate chain the OS does not already
   trust. Run it when such an environment exists.
@@ -273,9 +272,8 @@ The outcomes:
   observation once the source confirmed this extension only ever registers
   one provider label, in `docs/phases/phase-11.md`'s "Accounts-menu
   legibility" entry. Related: [#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42).
-  §8's 1.0 wording (`PRODUCTION_PLAN.md`) still lists this among Phase 11's
-  open gaps rather than its resolved ones — held for the same phase-boundary
-  batch as the Open VSX wording fix, above.
+  §8's 1.0 wording (`PRODUCTION_PLAN.md`) is now updated to record this and
+  every other named gap as closed.
 - **Hosted docs site** — deliberately **not planned**, and explicitly *not* a
   1.0 gate (`PRODUCTION_PLAN.md` §8, "Definition of done — 1.0"). The VitePress
   build runs as a CI link-check gate; nothing deploys the output. A standalone
@@ -439,15 +437,25 @@ backtracking-regex flag; and a documented, deliberate non-fix for a
 `NAME =VALUE` typo form) — all replied to, resolved, and folded in
 (`cd5b267`, `9d787e1`) before merge.
 
-**11f and 11g added to the phase's scope, 2026-09-22 (not yet started):**
-ship an Agent Skill teaching an agent this project's execution model (Option
-A, no code), then spike whether an external Claude Code session can reach an
-in-process MCP server run by the extension host (Option C) before committing
-to build it. From a 2026-09-21 AI-integration research memo, folded into
-Phase 11 by Sean's own call rather than a new phase — see
-[ADR-0037](docs/adr/0037-ai-agent-integration-approach.md) and
-`docs/phases/phase-11.md`'s "AI-agent integration scoping" Runbook entry for
-the full account, including the options held, deferred, or declined.
+**AI-agent integration work moved to a new Phase 12, 2026-09-22, and Phase
+12 gates v1.0.** Briefly scoped into Phase 11 as 11f/11g the same day (ship an
+Agent Skill; spike an in-process MCP server reachable by Claude Code), plus a
+third slice (11h) to investigate the separate Python-startup-snippet
+follow-up. All three, plus the 11d CSV-guard follow-up (which turned out to
+need the same kind of investigation), moved together into **Phase 12** as
+12a–12d — see [ADR-0037](docs/adr/0037-ai-agent-integration-approach.md) and
+`docs/phases/phase-12.md`. The previous "Phase 12" (second execution backend,
+never started) was renumbered to **Phase 13** the same day to make room —
+see `docs/phases/phase-13.md`. `PRODUCTION_PLAN.md` §8 is amended: Phase 12
+is now a v1.0 gate, Phase 13 explicitly is not, matching the phase this note
+used to describe.
+
+**Phase 11's own remaining scope, after that move, is three decided-to-build
+follow-ups** (11d large-table confirmation for SAS library tables, 11d
+`CasProblem` for an oversized response, 11e autoExec-error text) — none
+started. Once those land, Phase 11 is done. See `phase-11.md`'s "Phase 11
+follow-up decisions, and AI-agent integration moved to Phase 12" Runbook
+entry for the full account.
 
 Full plan, punch list, and probe findings (11.1–11.9) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
@@ -472,8 +480,9 @@ calls for.
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14; its one deferred gap (tree icon refresh) was root-caused and fixed 2026-09-15 — `onDidChangeTreeData` matches a fired element by object identity, not `TreeItem.id` — and live-confirmed, so nothing from Phase 8 is carried forward. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
-| 11 — Remaining parity gaps | 🔄 **in progress — 11a–11e merged; 11f (Agent Skill) and 11g (in-process MCP server spike) added to scope 2026-09-22, not yet started** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup; AI-agent integration per ADR-0037). See "Phase 11 (in progress)" above. | `docs/phases/phase-11.md` |
-| 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
+| 11 — Remaining parity gaps | 🔄 **in progress — 11a–11e merged; three follow-ups remain (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text), none started** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22. See "Phase 11 (in progress)" above. | `docs/phases/phase-11.md` |
+| 12 — AI-agent integration | not started — **gates v1.0** (`PRODUCTION_PLAN.md` §8) | `docs/phases/phase-12.md` |
+| 13 — Second execution backend | not started — does not gate v1.0 | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section
 (architecture, scope), the runbook punch list (commands, order, barriers), and

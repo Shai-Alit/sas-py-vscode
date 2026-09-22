@@ -81,6 +81,28 @@ slices 2026-09-16/17 once the phase was actually picked up:**
    whether a real Option C build gets scoped as a later slice or the project
    falls back to Option B (`languageModelTools` over the existing pure
    adapters), which ADR-0037 holds pending exactly this result.
+8. **11h — Spike: a Python startup snippet's submission mechanism and
+   namespace survival.** Added 2026-09-22, at Sean's own call: the 11e
+   follow-up below ("a Python startup snippet") could not be sized or
+   decided without more insight into how it would actually work, so this
+   slice investigates rather than builds. Exploratory only, no user-facing
+   feature. Open questions to settle and record here: what submission path a
+   startup snippet takes given ADR-0014 (all Python reaches the interpreter
+   as an uploaded file via `infile=`, never inlined) — is it its own job run
+   at session-create time, alongside `autoExec`'s SAS lines (11e), or
+   something else; whether its effect (imports, variables) actually survives
+   into the *first* real `Run File`/notebook-cell job the same way it
+   already survives between two ordinary runs in one session (probably
+   already implied by existing behaviour, but not specifically confirmed for
+   a job submitted before any user code has run); and, the harder question,
+   what **`proc python restart;`** (`RESTART_STATEMENT`,
+   `src/backend/procPython.ts`) does to a startup snippet's effect — does
+   **Reset Python Interpreter** silently drop it with nothing to tell the
+   user their setup is gone (the same blind-failure shape 11e's own
+   autoExec-error follow-up, above, was scoped to avoid), or does a reset
+   need to re-run it automatically. The spike's outcome — recorded here once
+   run — decides whether the startup-snippet follow-up gets sized into a
+   real slice or stays parked.
 
 Everything else in this file — F1, F6, F8, and the items carried in from
 Phase 6/9/10 housekeeping — stays out of this phase's scope by Sean's own
@@ -101,9 +123,18 @@ recorded here rather than silently dropped. `package.nls.json` and
 `l10n/bundle.l10n.json` stay the only bundle; no other-locale work is a
 candidate for this phase or a future one unless revisited.
 
-**Result panel styling options** — also named in the original one-liner,
-never scoped into 11a–11e and not decided either way. Still an open candidate
-for a future slice of this phase, or for reclassification, if picked up again.
+**Result panel styling options — closed, 2026-09-22 (Sean's own call).** Also
+named in the original one-liner, never scoped into 11a–11e, and never
+elaborated anywhere in this project's history beyond that one phrase — no
+ADR, design note, or linked issue exists for it. Closed rather than sized:
+what it would plausibly have meant (matching the editor's theme — fonts,
+colors, light/dark/high-contrast) is already true for free, since the panel's
+own stylesheet reads `--vscode-font-family`, `--vscode-foreground`, and
+similar theme variables directly
+([`resultPanel.ts:477`](../../src/run/resultPanel.ts)), not a hand-picked
+palette. No further candidate (font-size control, word-wrap toggle, output
+truncation) had anything concrete behind it either. Not a future candidate
+unless something specific comes up.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -721,7 +752,8 @@ section above unless noted:
   fix it.**
 - [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
   11e by decision. Needs its own submission per session and an answer to
-  ADR-0014 and to `restart`/namespace lifetime before it is sized.
+  ADR-0014 and to `restart`/namespace lifetime before it is sized. **Sean,
+  2026-09-22: cannot be decided yet — investigate first.** See 11h, below.
 - [ ] **11f — Ship an Agent Skill (Option A).** Scoped 2026-09-22
   (ADR-0037). `.claude/skills/python-on-viya/SKILL.md`, documented as
   copyable to `~/.claude/skills/`; no production code. See this section's
@@ -732,6 +764,13 @@ section above unless noted:
   by the extension host and survive a window reload. Outcome recorded in
   this section's own Runbook entry once run; decides whether a real build
   gets scoped next or the project falls back to Option B.
+- [ ] **11h — Spike: a Python startup snippet's submission mechanism and
+  namespace survival.** Added 2026-09-22, at Sean's own call, to inform the
+  11e follow-up above rather than build it directly. Settles the submission
+  path given ADR-0014, whether the snippet's effect survives into the first
+  real run, and what `proc python restart;` does to it. Outcome recorded in
+  this section's own Runbook entry once run; decides whether the
+  startup-snippet follow-up gets sized into a real slice or stays parked.
 
 ### 11a — Interactive window
 
@@ -1374,6 +1413,33 @@ next or the project falls back to registering `languageModelTools`
 instead). Neither slice has started as of this entry; both are unordered
 relative to 11d's three open follow-ups and 11e's two, beyond sitting last
 in the Plan section's priority list.
+
+### Phase 11 follow-up decisions, 2026-09-22
+
+Sean worked through the open decisions this file's punch list had been
+carrying, in one pass:
+
+- **All three 11d follow-ups (large-table confirmation for SAS library
+  tables, a `CasProblem` for an oversized response, the opt-in CSV
+  formula-injection guard) and the 11e autoExec-error follow-up: decided to
+  build**, each recorded inline on its own punch-list item above. None has
+  started.
+- **The 11e Python-startup-snippet follow-up: not decided, and correctly
+  so** — Sean's own read was that there wasn't enough insight into how it
+  would actually work to make the call, so rather than guess, this session
+  scoped an investigation instead: **11h**, added to the Plan section and
+  punch list above. 11h is a spike, the same shape as 11g — its job is to
+  answer the submission-mechanism and namespace-survival questions ADR-0014
+  and `RESTART_STATEMENT` (`src/backend/procPython.ts`) raise, not to build
+  the snippet feature itself. The startup-snippet follow-up stays open until
+  11h reports back.
+- **Result panel styling options: closed, not built.** The only description
+  this project ever gave it was the original one-line phase mention; no ADR,
+  design note, or concrete complaint backed it. What it would plausibly have
+  meant — following the editor's own theme — is already true, unprompted,
+  because the result panel's stylesheet reads VS Code's own CSS variables
+  directly (`resultPanel.ts:477`). Recorded in the Plan section's own
+  paragraph, above, rather than silently dropped.
 
 ### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
 

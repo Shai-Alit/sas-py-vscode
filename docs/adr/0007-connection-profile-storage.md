@@ -174,7 +174,8 @@ proves the schema can express a real profile that somebody else authored.
 
 **Porting the `if`/`then` discriminator anyway**, against a one-member
 `connectionType` enum, to leave room for a second connection type later. Rejected:
-Phase 12's second execution backend is a *backend*, not a second profile shape,
+Phase 13's second execution backend (renumbered from Phase 12, 2026-09-22 —
+see `docs/phases/phase-13.md`) is a *backend*, not a second profile shape,
 and a discriminator with one value is a comment written in JSON Schema. Note also
 that upstream's `if` blocks omit `"required": ["connectionType"]`, so a profile
 with no `connectionType` at all satisfies all four branches vacuously — a defect

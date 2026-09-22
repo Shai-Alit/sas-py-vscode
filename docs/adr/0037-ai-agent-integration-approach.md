@@ -1,6 +1,6 @@
 # ADR-0037 — AI-agent integration: ship an Agent Skill now, spike an in-process MCP server before committing further
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-09-22 (see below, same day)
 - **Date:** 2026-09-22
 - **Decides:** which of the AI-agent-integration options surveyed in
   [`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md)
@@ -9,8 +9,24 @@
 - **Constrained by:** [ADR-0002](0002-workspace-trust-posture.md) (workspace
   trust gates the token, not merely execution — a spiked agent tool surface
   inherits this without re-litigating it)
-- **Executed in:** Phase 11 slices 11f (Option A) and 11g (the Option C spike) —
-  see `docs/phases/phase-11.md`
+- **Executed in:** Phase 12 slices 12a (Option A) and 12b (the Option C
+  spike) — see `docs/phases/phase-12.md`
+
+> **Amended 2026-09-22, later the same day.** This decision was first folded
+> into Phase 11 as slices 11f/11g, per the Decision/Alternatives sections
+> below — accurate to the reasoning at the time and left as written rather
+> than rewritten to look prescient. Discussing this alongside a separate
+> Phase 11 follow-up (the CSV formula-injection guard, which turned out to
+> need its own research) made the shape clear: neither belongs in a
+> parity-gap phase, so both — plus 11h, the Python-startup-snippet spike this
+> ADR did not originally cover — moved together into a new **Phase 12**,
+> which repurposes a phase number previously assigned to an unstarted,
+> unrelated topic ("second execution backend", renumbered the same day to
+> Phase 13). **11f is now 12a; 11g is now 12b,** unchanged in substance. This
+> decision's substance — ship the skill, spike the server, hold/defer/decline
+> the rest — did not change; only which phase file and slice letters record
+> it. See `docs/phases/phase-11.md`'s and `docs/phases/phase-12.md`'s own
+> Runbook entries for the full account.
 
 ## Context
 

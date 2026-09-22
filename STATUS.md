@@ -254,18 +254,28 @@ The outcomes:
 
 ## Open items carried forward
 
-- **Open VSX namespace claim** — file the "Request ownership of a namespace"
-  issue on `EclipseFdn/open-vsx.org` for the `shai-alit` namespace (Sean's
-  Eclipse Foundation account) to clear the ⚠️ unverified-publisher warning on
-  every release. Blocks nothing; trust-signal only.
+- **Open VSX namespace claim — closed, confirmed 2026-09-22.** The `shai-alit`
+  namespace request was filed and has been granted: `GET
+  https://open-vsx.org/api/shai-alit` returns `"verified": true`. The ⚠️
+  unverified-publisher warning no longer applies. `PRODUCTION_PLAN.md` §8's
+  1.0 wording still describes this as merely "filed, not necessarily
+  granted" — a wording-only correction, held for the next phase-boundary
+  batch per this file's own plan-edit policy rather than made on its own.
 - **5d-i user-provided-CA live test** — the one unrun `manual-test-pass.md` row
   (§3). Needs a deployment whose certificate chain the OS does not already
   trust. Run it when such an environment exists.
-- **Phase 11 (parity gaps):** Accounts-menu legibility — with two profiles
-  signed in, VS Code shows separate rows but they don't identify the extension
-  or which profile each is (`Sean Ford (SAS Viya)` vs `sean.ford@sas.com
-  (Microsoft)`). Recorded in `docs/phases/phase-11.md`; related to
-  [#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42).
+- **Phase 11 (parity gaps): Accounts-menu legibility — closed as a documented
+  known limitation, 2026-09-22.** Two profiles for different deployments can
+  show an identical `<name> (SAS Viya)` row with nothing distinguishing which
+  profile signed in as which; not worth a code fix before 1.0 (Sean's call).
+  Documented in `docs/signing-in.md`'s "More than one deployment at once"
+  section; full record, including a correction to the original 2026-09-09
+  observation once the source confirmed this extension only ever registers
+  one provider label, in `docs/phases/phase-11.md`'s "Accounts-menu
+  legibility" entry. Related: [#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42).
+  §8's 1.0 wording (`PRODUCTION_PLAN.md`) still lists this among Phase 11's
+  open gaps rather than its resolved ones — held for the same phase-boundary
+  batch as the Open VSX wording fix, above.
 - **Hosted docs site** — deliberately **not planned**, and explicitly *not* a
   1.0 gate (`PRODUCTION_PLAN.md` §8, "Definition of done — 1.0"). The VitePress
   build runs as a CI link-check gate; nothing deploys the output. A standalone

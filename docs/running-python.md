@@ -214,6 +214,9 @@ repopulate them.
 
 - [Notebooks](notebooks.md) — running cells in a `.ipynb` file against its own
   compute session, sharing most of this same machinery.
+- [AI agent skill](agent-skill.md) — hand this project's execution model to
+  Claude Code or Copilot agent mode, so it stops assuming a plain interactive
+  Python REPL.
 - [Diagnostics](diagnostics.md) — what a failed run looks like, and the
   Problems panel.
 - [The Python environment](python-environment.md) — what is installed on the

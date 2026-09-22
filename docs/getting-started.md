@@ -115,6 +115,9 @@ plain text (a chart, a DataFrame rendered as a table).
   check whether something is there before you `import` it.
 - **[Diagnostics](diagnostics.md)** — how a failed run shows up in the
   Problems panel.
+- **[AI agent skill](agent-skill.md)** — a file you can hand Claude Code or
+  Copilot agent mode so it stops guessing at how `PROC PYTHON` actually
+  behaves.
 
 ## If something did not work
 

@@ -84,6 +84,7 @@ export default defineConfig({
           { text: "Notebooks", link: "/notebooks" },
           { text: "Diagnostics", link: "/diagnostics" },
           { text: "The Python environment", link: "/python-environment" },
+          { text: "AI agent skill", link: "/agent-skill" },
           { text: "Troubleshooting", link: "/troubleshooting" },
         ],
       },

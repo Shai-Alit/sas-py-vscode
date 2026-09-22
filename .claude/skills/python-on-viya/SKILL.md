@@ -1,0 +1,186 @@
+---
+name: "python-on-viya"
+description: "How Python actually executes when a workspace runs it on SAS Viya through the python-on-viya VS Code extension (PROC PYTHON, upload-plus-infile= submission, SYSCC as the real success signal, the interpreter banner and >>> prompts as inherent noise, one-run-at-a-time, library/CAS access via the SAS bridge object and swat). Use whenever writing, debugging, or explaining Python meant to run on a Viya profile in this workspace — before assuming the code behaves like a normal interactive REPL or a plain PROC PYTHON SUBMIT block."
+---
+
+This workspace runs Python through the **python-on-viya** VS Code extension,
+against a SAS Viya Compute session, via `PROC PYTHON`. That execution model has
+several properties that are not what you'd assume from an ordinary Python REPL
+or from a naive `PROC PYTHON SUBMIT` block, and getting them wrong produces
+advice or code that looks reasonable and doesn't work — or works but reports
+the wrong thing as an error. Read this before writing, debugging, or explaining
+code meant to run there.
+
+## How your code actually reaches the interpreter
+
+**Every run uploads your code as a file and executes it with `proc python
+infile=<fileref>;` — it is never inlined into a `submit;`/`endsubmit;` block.**
+The bytes you see in the editor are the bytes the interpreter reads, unparsed
+and unescaped, because nothing tokenises them as SAS source first. Two
+consequences:
+
+- **A stray `endsubmit;`-like string in your own source is not a hazard here.**
+  Don't add defensive escaping, don't rewrite a docstring to avoid the word, and
+  don't warn a user about it — that risk exists only for the inline-`submit`
+  design this project deliberately does not use.
+- **There is no meaningful sense in which your code is "echoed to the log and
+  then run."** The file's source is not echoed at all. What you see in the
+  transcript is Python's own output plus SAS's own `NOTE`s around the step.
+
+## `SYSCC`, not job/run state, is what "succeeded" means
+
+A run reporting "finished" is not the same as the code having succeeded — read
+or reason about the actual outcome, not the job's terminal state. In this
+project's own terms:
+
+- `0` — no error.
+- `1012` — an unhandled Python exception.
+- `3000` — a SAS-side error (a bad statement around the `PROC PYTHON` step, for
+  example a broken profile-level `autoExec` line).
+
+If you're asked to debug "the run said it finished but nothing happened" or
+"it says success but the output is wrong," this is the first thing to suspect,
+not a race condition or a caching problem.
+
+## The interpreter banner and `>>>` prompts are not a bug
+
+A run's transcript includes a `Python 3.x … / Type "help" …` banner (on **Run
+File**, and on the first **Run Selection** after connecting or a reset) and
+bare `>>>` lines around your code's own output. **This is inherent to `PROC
+PYTHON`** — it drives your code through an interactive interpreter and has no
+option to suppress either — and the extension deliberately does not strip
+them, because code that legitimately prints something starting with `>>>` must
+not have it silently removed. Don't tell a user this indicates a
+misconfiguration, and don't suggest a flag or setting to turn it off — none
+exists. If you need to distinguish real output from these markers when parsing
+a transcript, filter on the fixed banner text and a leading `>>>` yourself;
+there is no upstream option that does it for you.
+
+## Namespace lifecycle: three different things, don't conflate them
+
+- **Run File** clears the interpreter's globals first — a *fresh namespace* in
+  the *same* interpreter process — so a file never silently depends on state an
+  earlier run left behind.
+- **Run Selection** (and a cell in the interactive window or a notebook) does
+  **not** clear anything first — it builds on whatever earlier runs in the same
+  session left in the interpreter, the way a notebook cell builds on the cells
+  above it.
+- **Reset Python State** (`proc python restart;`) tears down and restarts the
+  *interpreter process itself* — imports and variables are gone — but the
+  **Compute session** underneath it, and everything that belongs to the
+  session rather than the interpreter (SAS librefs, filerefs, macro variables),
+  is untouched. This is a heavier operation than Run File's fresh namespace,
+  not the same thing under a different name.
+
+## Only one thing runs at a time, and it is refused, not queued
+
+The session executes a run, a reset, or an environment probe one at a time. If
+you script or suggest a sequence of extension commands, don't assume a second
+one queues behind the first — it is refused outright with a message naming
+what's in the way. Wait for the first to finish (or cancel it) before issuing
+the next.
+
+**Cancel** stops the local transcript and progress UI immediately, but it
+cannot interrupt a Python statement already executing inside SAS — a
+`time.sleep(60)` cancelled at six seconds still runs out its full minute
+server-side before the interpreter is torn down. Don't promise a user that
+cancel is instantaneous on the Viya side.
+
+## Reading and writing SAS library data
+
+The `SAS` bridge object (`PROC PYTHON`'s own, not something this extension
+implements) is available in every cell:
+
+```python
+df = SAS.sd2df("sashelp.class")          # read a table/view into a DataFrame
+SAS.df2sd(df, "work.results")             # write a DataFrame back as a table
+SAS.submit("proc sql; ... quit;")         # run arbitrary SAS code in-session
+```
+
+This works identically for `WORK`, `SASHELP`, and any site-registered libref,
+including one backed by an external database through SAS/ACCESS — from
+Python's side they're all just a libref name. `sd2df` reads the whole table
+into memory; for a large table or one behind an external engine, push a filter
+into SAS first with `SAS.submit("proc sql; create view work.x as select ...")`
+and read the view, rather than reading everything and filtering in pandas.
+
+**Never write a credential as a literal anywhere in the submitted Python.**
+`SAS.submit()` masks a `password=` value the way SAS always masks a `LIBNAME`
+echo, but the Python cell itself is echoed to the job log verbatim,
+unconditionally — a credential in a plain string, even outside a
+`SAS.submit()` call, leaks through that outer echo before any masking applies.
+Source it from an environment variable or `SAS.symget`, or better, use an
+already-provisioned site libref that carries no credential in the user's own
+code at all.
+
+## Connecting to CAS from Python
+
+A CAS connection is opened with `swat.CAS(...)`, authenticated by a Viya
+access token this extension already holds — never a separate CAS credential.
+The token has to reach the interpreter as a **file**, not a literal, for the
+same log-echo reason as above; the extension's own **Insert CAS Connection
+Snippet** command does this correctly (writes a fresh token to a session file,
+then reads it back). If you're writing this by hand for a user, follow that
+shape — read the token from a file, never assign `password="..."` to a string
+literal in a cell. The token is short-lived (minutes), while a `swat.CAS()`
+connection can outlive it; an auth failure after a session's been open a
+while usually means the token expired, not a code bug — reconnect with a
+fresh one rather than debugging the connection logic.
+
+For a caslib backed by an external database, **Insert CAS SQL Passthrough
+Snippet** gives the `conn.fedsql.execDirect(query='''select * from connection
+to CASLIB (...)''')` pattern — everything inside `connection to CASLIB(...)`
+runs unmodified in the external database; only the result set returns through
+CAS, as a `pandas.DataFrame` (a `SASDataFrame`). Note this always runs
+single-threaded on the CAS side (`numReadNodes=1`) regardless of cluster
+size — that's normal, not something to tune around.
+
+## What the environment actually contains
+
+Don't assume Python packages available on Viya match the user's local
+environment, and don't assume you can install one. **Show Environment**
+reports the interpreter version, executable path, and every installed
+distribution (from `importlib.metadata`, not `pip`), probed once per profile
+and cached thereafter — a cached answer can be stale relative to a recent
+admin change. **Search Environment** is the same data as a filterable quick
+pick. **Refresh Environment Info** re-probes. This is **read-only**: there is
+no command that installs a package, and suggesting `pip install` as a fix for
+a missing Viya-side package is wrong advice — that's the deployment admin's
+job. If a local Pylance-reported "unresolved import" conflicts with what Show
+Environment says is installed remotely, that's expected (Pylance analyses the
+*local* interpreter) and is not itself evidence of a real problem; the
+generated stubs this extension writes only silence the false warning; they add
+no real completions or type information.
+
+## The command surface
+
+Every command is under the **Python on Viya:** prefix in the Command Palette.
+The ones relevant to writing and running code:
+
+- **Select Run Target** — chooses whether the editor's run button targets
+  Local Python or a Viya profile; nothing here applies unless the target is a
+  Viya profile.
+- **Run File** / **Run Selection** — see namespace lifecycle above.
+- **New Interactive Window** / **Run Selection in Interactive Window** — a
+  persistent, cell-by-cell run history sharing the same namespace-building
+  model as Run Selection; not VS Code's own Jupyter-backed interactive window,
+  and needs no local kernel.
+- **Cancel** — see one-thing-at-a-time above.
+- **Reset Python State** — see namespace lifecycle above.
+- **Show Environment** / **Search Environment** / **Refresh Environment
+  Info** — see environment section above.
+- **Insert CAS Connection Snippet** / **Insert CAS SQL Passthrough Snippet** —
+  see CAS section above.
+- **Open Table** / **Table Properties** / **Export to CSV** (on a SAS Libraries
+  or CAS tree item) — browsing, not something Python code calls; only
+  meaningful with a specific table already selected in one of those trees, so
+  they don't appear in the Command Palette on their own.
+
+## Don't assume upstream `vscode-sas-extension` conventions apply
+
+This extension is a separate project, not a fork or extension of
+`sassoftware/vscode-sas-extension`. It runs Python (not SAS) via `PROC
+PYTHON`, on Viya 4 only (no Viya 3.5 dialect), and shares no command
+namespace, tree, or settings with the upstream SAS extension. Don't carry over
+assumptions from that project's SAS-submission model, its settings names, or
+its command names.

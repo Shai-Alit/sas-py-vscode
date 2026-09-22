@@ -139,6 +139,20 @@ under this number before today.
    were this phase's original reason for existing, and 12e is Phase 11
    leftover work riding along rather than this phase's own topic.
 
+### Punch list
+
+- [x] **12a — Agent Skill (Option A).** Shipped 2026-09-22, no production
+  code, per the plan. See this file's own Runbook entry, below, for what the
+  skill covers.
+- [ ] **12b — Spike: in-process MCP server reachable by an external Claude
+  Code session (Option C).** Not started.
+- [ ] **12c — Spike: Python startup snippet submission/namespace survival.**
+  Not started.
+- [ ] **12d — Research: CSV formula-injection guard for SAS library
+  exports.** Not started.
+- [ ] **12e — Three small, already-decided Phase 11 follow-ups.** Not
+  started.
+
 ---
 
 ## Runbook
@@ -173,6 +187,37 @@ closed) or a new phase of their own — Phase 12 is the next phase starting
 regardless, and none of the three needs its own investigation, so there is
 no reason to hold them out of it. None of the three has started as of this
 entry.
+
+### 12a shipped, 2026-09-22
+
+`.claude/skills/python-on-viya/SKILL.md`, per the Plan section above — no
+production code, matching the research memo's own estimate. Covers: the
+upload-plus-`infile=` submission mechanism and why an inline-`submit`
+escaping hazard doesn't apply here ([ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md));
+`SYSCC` as the real success signal (`0`/`1012`/`3000`) rather than job/run
+state; the interpreter banner and `>>>` prompts as inherent `PROC PYTHON`
+noise, not a defect (Finding 93, `phase-5.md`; Finding 11.3, `phase-11.md`);
+the three-way namespace-lifecycle distinction between Run File's fresh
+namespace, Run Selection's namespace-sharing, and Reset Python State's full
+interpreter restart; the one-thing-at-a-time execution model and Cancel's
+inability to interrupt a step already running inside SAS; reading/writing
+SAS library data via `SAS.sd2df`/`SAS.df2sd`/`SAS.submit` and the
+never-write-a-credential-as-a-literal rule (`docs/data-access.md`);
+connecting to CAS via `swat.CAS()` and FedSQL passthrough, both via their
+own insert-snippet commands rather than a hand-written token literal
+(`docs/cas-python-connection.md`); the environment probe's read-only scope
+and cache behaviour (`docs/python-environment.md`); and the full
+`pythonOnViya.*` command surface relevant to writing/running code. Reach is
+both Claude Code and VS Code Copilot agent mode, since both read
+`.claude/skills/` verbatim (research memo Finding 14).
+
+Classified as a docs-only change per `CLAUDE.md`'s adversarial-review
+section — it adds no source and changes no documented invariant, only
+documents existing ones — so the mandatory pre-PR adversarial pass does not
+apply. Verification run proportional to the change: `npx prettier --check`
+on the new file and `node scripts/check-secrets.mjs` (527 files scanned),
+both clean. `check:docs` was not run — it builds only the VitePress tree
+under `docs/`, which this file is outside of.
 
 ---
 

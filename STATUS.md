@@ -104,6 +104,17 @@ slice-by-slice narrative that used to live here has moved to
 [`docs/status-archive.md`](docs/status-archive.md), per this file's own
 archival rule.
 
+**Phase 12 started 2026-09-22. 12a (Agent Skill) shipped the same day** —
+`.claude/skills/python-on-viya/SKILL.md`, no production code, teaching an
+agent this project's actual execution model (upload-plus-`infile=`
+submission, `SYSCC` as the real success signal, the interpreter
+banner/`>>>` prompts as inherent noise, namespace lifecycle, one-run-at-a-
+time, library/CAS access, the read-only environment probe, and the command
+surface). Docs-only per `CLAUDE.md`'s adversarial-review section, so no
+mandatory pre-PR pass; `prettier --check` and `check:secrets` both clean.
+12b–12e not started — see `docs/phases/phase-12.md`'s Runbook for the full
+account.
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:
@@ -436,7 +447,7 @@ housekeeping checkpoint. Per-phase detail
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
-| 12 — AI-agent integration | not started — **gates v1.0** (`PRODUCTION_PLAN.md` §8). Five slices: 12a–12c (Agent Skill, MCP-server spike, Python-startup-snippet spike, from ADR-0037), 12d (CSV-guard research), and 12e (three small Phase 11 follow-ups, folded in 2026-09-22). | `docs/phases/phase-12.md` |
+| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. 12b/12c (MCP-server spike, Python-startup-snippet spike, from ADR-0037), 12d (CSV-guard research), and 12e (three small Phase 11 follow-ups) not started. | `docs/phases/phase-12.md` |
 | 13 — Second execution backend | not started — does not gate v1.0 | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section

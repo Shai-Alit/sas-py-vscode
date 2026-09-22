@@ -1008,9 +1008,10 @@ open with templates, because `STATUS.md` defers issue tracking precisely to this
 moment and an extension advertised as supported needs somewhere to send a bug;
 the Open VSX ownership request for the `shai-alit` namespace has been **filed**,
 though not necessarily granted, since the Eclipse Foundation's review queue is
-not ours to schedule; **Phase 12 (AI-agent integration) is complete** — see
-`docs/phases/phase-12.md`; and `"preview": true` is removed from `package.json`
-in the same release that carries the 1.0.0 version bump.
+not ours to schedule; **every Phase 12 (AI-agent integration) slice must be
+completed first** — see `docs/phases/phase-12.md`, currently not started;
+and `"preview": true` is removed from `package.json` in the same release that
+carries the 1.0.0 version bump.
 
 > **Amended 2026-09-22 (Sean's own call).** The Open VSX request named above
 > has since been confirmed **granted**, not merely filed — `GET

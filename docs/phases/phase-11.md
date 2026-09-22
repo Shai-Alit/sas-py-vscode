@@ -679,7 +679,8 @@ section above unless noted:
   asks. Do the same there: choose a threshold, probe how a large Compute
   session table pages (Finding 7.20 measured only `SASHELP.CLASS`; nothing
   larger has been exported), set `confirmAboveBytes` on `LibraryCsvSource`,
-  and add manual-test items mirroring 11.19/11.20.
+  and add manual-test items mirroring 11.19/11.20. **Decided 2026-09-22
+  (Sean): build it.**
 - [ ] **11d follow-up — a `CasProblem` for an oversized response.** Added
   2026-09-20 from the PR #197 review. `src/cas/client.ts` has no
   `ResponseTooLargeError` case, so a CAS page over the transport's 1 MiB cap
@@ -691,6 +692,7 @@ section above unless noted:
   through `CasClient`. Then restore `docs/browsing-cas.md`'s "content too
   large" wording and the two comments corrected in 11d (`csvFormat.ts`,
   `csvExportModel.ts`). Consider the same for the Compute/library client.
+  **Decided 2026-09-22 (Sean): build it.**
 - [ ] **11d follow-up — opt-in CSV formula-injection guard (CAS).** Added
   2026-09-20 from the PR #197 review. A text cell beginning `=`, `+`, `-` or
   `@` is written as-is (documented in the two export sections for now). Idea:
@@ -699,7 +701,8 @@ section above unless noted:
   Off by default because the standard `'` prefix alters data (`-Bob` reads back
   as `'-Bob` in pandas). The SAS library path relays the server's CSV
   untouched (Finding 7.20), so guarding it means re-parsing every page — a
-  separate decision, not part of this item.
+  separate decision, not part of this item. **Decided 2026-09-22 (Sean):
+  build it, off by default as scoped above.**
 - [x] **11e — Session startup/autoexec configuration.** Scoped 2026-09-20 to
   profile-level `sasOptions` + `autoExec` (SAS lines, inline or file), mirroring
   upstream; code, unit and integration tests, docs and manual-test items
@@ -713,7 +716,9 @@ section above unless noted:
   A bad line leaves the session `idle` with `sessionConditionCode` 3000 and the
   `ERROR` only in the session log (Finding 11.7). Read
   `/compute/sessions/{id}/log` after create when the code is nonzero and write
-  the `ERROR`/`WARNING` lines to the output channel.
+  the `ERROR`/`WARNING` lines to the output channel. **Decided 2026-09-22
+  (Sean): build it — never show a blind warning with nothing to help the user
+  fix it.**
 - [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
   11e by decision. Needs its own submission per session and an answer to
   ADR-0014 and to `restart`/namespace lifetime before it is sized.

@@ -98,14 +98,8 @@ unless something specific comes up.
 checkpoint, 2026-09-22.** Also named in the original one-liner alongside
 session startup, result panel styling, and localisation — but unlike those
 three, it never got its own closure or carry-forward decision anywhere in
-this file. What actually shipped under this phase is narrower than the
-one-liner: **F9's CAS/SWAT SQL passthrough snippet (11b)**, one specific
-command for one specific pattern. The broader ask — "snippets for common
-Viya patterns" in general — was never sized, scoped, or decided against; it
-just has no owner now that this phase is closed. Not decided here, per this
-project's own "don't invent a decision" discipline: recorded as a genuinely
-open, unscheduled item in `STATUS.md`'s "Open items carried forward" rather
-than folded into a phase nobody has actually assigned it to.
+this file. Recorded properly as **F11**, in the "New feature candidates"
+list below, rather than left as a loose paragraph here.
 
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
@@ -362,6 +356,24 @@ triaged against §3.1's parity table).**
   that would let *any* rich value display at all without an explicit file
   write — if F10 ever happens, it would likely become the mechanism that
   feeds F8's own trigger, rather than the two being unrelated.
+- **F11 — Snippets for common Viya patterns, general** (found unscoped
+  2026-09-22, at the Phase 11→12 housekeeping checkpoint, PR #204's own
+  review). Phase 11's original long-tail one-liner named "snippets for
+  common Viya patterns" alongside session startup, result panel styling,
+  and localisation — the other three each got a real decision (11e shipped
+  session startup; result panel styling was closed as already-satisfied;
+  localisation bundles were declined outright), but this one never did.
+  What actually shipped under the "snippets" banner is narrower than the
+  one-liner promised: **F9's CAS/SWAT SQL passthrough snippet (11b)**, one
+  command for one specific pattern (native SQL against a DBMS-backed
+  caslib). The broader idea — a general library of Viya-specific snippets,
+  the way `ms-python.python`'s own snippet contributions cover common
+  Python idioms — has no design, no candidate list of which patterns would
+  earn a spot (connection setup beyond CAS? common `PROC PYTHON` idioms?
+  library/data-exchange boilerplate from 7d?), and no owner now that Phase
+  11 is closed. **Flagged, not scoped, not sized** — the same treatment F1
+  and F6 got above — pending a dedicated look at which patterns actually
+  warrant a snippet before this is sequenced anywhere.
 
 **Bugs found pre-release (added 2026-09-16, from Sean's own hands-on use —
 not yet triaged for whether they're fixed ahead of the next release or as the

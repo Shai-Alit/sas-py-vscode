@@ -525,7 +525,7 @@ the working gap analysis, and it is the checklist to track parity against.
 | Status bar, connection state | Phase 3d-i / 3e | |
 | Session startup / autoexec configuration | Phase 11 | Python analogue of `autoExecLines` + `sasOptions` |
 | Result panel styling options | Phase 11; closed, 2026-09-22 — no code needed | Already true for free: the panel themes via VS Code's own CSS variables (`resultPanel.ts:477`), not a hand-picked palette (`phase-11.md`) |
-| Snippets | Phase 11 (partial); the general item is unscoped, found 2026-09-22 | The CAS/SWAT SQL passthrough snippet (F9, 11b) shipped; "snippets for common Viya patterns" more broadly was never otherwise scoped, sized, or closed — see `STATUS.md`'s "Open items carried forward" |
+| Snippets | Phase 11 (partial); the general item is unscoped, found 2026-09-22 | The CAS/SWAT SQL passthrough snippet (F9, 11b) shipped; "snippets for common Viya patterns" more broadly is flagged but not scoped — see `phase-11.md`'s **F11** |
 | Localisation | 0b (infrastructure); non-English bundles decided against, 2026-09-22 | Upstream ships 10 locales; this project stays English-only by deliberate choice, not a deferral (`phase-11.md`) |
 | **CAS / SWAT access** | Phase 8 | **Upstream has none** — we exceed it here |
 | Viya Python environment awareness | Phase 3e, extended in Phase 10 | No upstream equivalent. The package list ships with the first useful build, because you cannot write code against an interpreter you cannot see |

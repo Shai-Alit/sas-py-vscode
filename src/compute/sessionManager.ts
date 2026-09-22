@@ -710,7 +710,11 @@ export class ComputeSessionManager implements vscode.Disposable {
     );
     for (const problem of autoExec.problems) {
       this.log.warn(
-        `autoExec file "${problem.filePath}" was skipped: ${problem.reason}`,
+        vscode.l10n.t(
+          'autoExec file "{0}" was skipped: {1}',
+          problem.filePath,
+          problem.reason,
+        ),
       );
       this.inform(
         vscode.l10n.t(

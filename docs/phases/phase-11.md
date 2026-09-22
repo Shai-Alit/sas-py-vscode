@@ -1619,3 +1619,23 @@ after an `ERROR` was measured; any nonzero code is treated as a problem.
 **Not settled:** whether a failure reading the session should ever be louder
 than a debug log line (it currently only costs the warning).
 
+### Finding 11.9 — a duplicated option in `environment.options`: the later entry wins
+
+Probed 2026-09-21, `verde`, via `viya-api-probe`, with Sean's approval of the
+mutating steps (two throwaway sessions on the "SAS Studio compute context", each
+read back with `%put %sysfunc(getoption(pagesize))`; both deleted, `404`
+confirmed). Raised by the PR #199 AI review: `buildSessionOptions` orders profile
+options after the extension's own on the claim that the last setting wins, and
+Finding 11.7's rows all used distinct option names.
+
+**Documented / assumed:** SAS takes the last setting of an option. **Observed:**
+correct, and neither request was rejected.
+
+| `options` sent | `PAGESIZE` read back |
+|---|---|
+| `PAGESIZE MAX`, `PAGESIZE 60` | 60 |
+| `PAGESIZE 60`, `PAGESIZE MAX` | 32767 |
+
+**Not settled:** duplicates of options other than `PAGESIZE`; the same option
+given once as `-NAME` and once as `NAME`.
+

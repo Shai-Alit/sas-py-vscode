@@ -118,7 +118,9 @@ prompt; you edit them in `settings.json`.
 **`sasOptions`** are SAS system options set for the session. Write them as
 `NAME=VALUE`, `NAME VALUE`, or a bare switch like `NONUMBER`; the extension sends
 the form the compute service actually applies. Your options are applied after
-the extension's own (`PAGESIZE MAX`), so you can override one.
+the extension's own (`PAGESIZE MAX`), so you can override one: if an option
+appears twice, the later setting wins (checked against a live Viya 4
+deployment).
 
 **`autoExec`** is SAS code run once when the session starts, in the order
 listed. An entry is either a `line` of SAS, or a `file` on this machine whose

@@ -43,8 +43,9 @@ export function formatSasOption(raw: string): string {
 /**
  * The options for a new session: the extension's own first, then the profile's.
  *
- * Profile options come last so that a profile can override one of ours — SAS
- * takes the last setting of an option.
+ * Profile options come last so that a profile can override one of ours — when
+ * an option name appears twice in `environment.options`, the later one wins
+ * (Finding 11.9).
  */
 export function buildSessionOptions(
   base: readonly string[],
@@ -92,9 +93,13 @@ export async function resolveAutoExecLines(
       const text = await readTextFile(entry.filePath);
       // A file ending in a newline would otherwise send a trailing "" (and an
       // empty file `[""]`), which `buildSessionOptions` already filters for
-      // options but nothing probed for autoExecLines.
-      const body = text.replace(/(\r\n|\n|\r)+$/, "");
-      if (body !== "") lines.push(...body.split(/\r\n|\n|\r/));
+      // options but nothing probed for autoExecLines. Trimmed by popping, not
+      // by a trailing-newline regex, which CodeQL flags as backtracking-prone.
+      const fileLines = text.split(/\r\n|\n|\r/);
+      while (fileLines.length > 0 && fileLines[fileLines.length - 1] === "") {
+        fileLines.pop();
+      }
+      lines.push(...fileLines);
     } catch (error) {
       problems.push({
         filePath: entry.filePath,

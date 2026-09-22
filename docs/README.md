@@ -39,7 +39,8 @@ feature it describes. So far that is
 [Python and SAS libraries](data-access.md),
 [Connecting to CAS from Python](cas-python-connection.md),
 [Notebooks](notebooks.md), [Diagnostics](diagnostics.md),
-[The Python environment](python-environment.md) and
+[The Python environment](python-environment.md),
+[AI agent skill](agent-skill.md) and
 [Troubleshooting](troubleshooting.md). A new top-level page has to be
 added to `nav` and `sidebar` in `.vitepress/config.mjs` as well — an
 unregistered page builds without complaint and is reachable only by typing its

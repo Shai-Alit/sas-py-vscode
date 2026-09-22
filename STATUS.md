@@ -111,9 +111,18 @@ submission, `SYSCC` as the real success signal, the interpreter
 banner/`>>>` prompts as inherent noise, namespace lifecycle, one-run-at-a-
 time, library/CAS access, the read-only environment probe, and the command
 surface). Docs-only per `CLAUDE.md`'s adversarial-review section, so no
-mandatory pre-PR pass; `prettier --check` and `check:secrets` both clean.
-12b–12e not started — see `docs/phases/phase-12.md`'s Runbook for the full
-account.
+mandatory pre-PR pass — but Sean asked for a manual review anyway, since the
+skill's content is something an agent acts on. That review found and fixed
+three things: a real distribution gap (the skill has no path to an end user
+— `.claude/` is excluded from the packaged `.vsix` — closed by adding
+[`docs/agent-skill.md`](docs/agent-skill.md), wired into the site nav and
+cross-linked from `getting-started.md`/`running-python.md`); a `SYSCC`/
+`sessionConditionCode` conflation; and an overstated credential-leak claim
+that surfaced a possible pre-existing contradiction between ADR-0014 and
+`docs/data-access.md`, left open as a documented question rather than
+guessed at further. `prettier --check`, `check:secrets`, and `check:docs`
+(reference check, samples, self-links, VitePress build) all clean. 12b–12e
+not started — see `docs/phases/phase-12.md`'s Runbook for the full account.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

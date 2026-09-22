@@ -214,10 +214,67 @@ both Claude Code and VS Code Copilot agent mode, since both read
 Classified as a docs-only change per `CLAUDE.md`'s adversarial-review
 section — it adds no source and changes no documented invariant, only
 documents existing ones — so the mandatory pre-PR adversarial pass does not
-apply. Verification run proportional to the change: `npx prettier --check`
-on the new file and `node scripts/check-secrets.mjs` (527 files scanned),
-both clean. `check:docs` was not run — it builds only the VitePress tree
-under `docs/`, which this file is outside of.
+apply. Sean asked for a manual review anyway, since the skill ships content
+users will act on even though it is not code — see the next entry for what
+it found.
+
+### 12a manual review, 2026-09-22 — a distribution gap and two content bugs
+
+Requested by Sean despite 12a's docs-only classification, since the skill's
+content is something an agent will act on even though no source changed. Not
+run as the project's usual pre-PR pass (that pass's review prompt is written
+for TypeScript source and does not fit a skill file); done as a direct,
+targeted check of each claim in the new file against its cited source —
+ADR-0014, `phase-11.md`'s Finding 11.7, `phase-8.md`'s Finding 8.6, and
+`src/backend/logFilter.ts`'s own doc comment. Three findings, all resolved
+before this branch's diff was considered final:
+
+1. **Distribution gap (the reason this file — `agent-skill.md` — now
+   exists).** The skill has no path to an actual end user. `.vscodeignore`
+   excludes `.claude/**` from the packaged `.vsix` outright (with its own
+   comment: "None of it has meaning inside a published VSIX"), so installing
+   the extension puts nothing in a user's agent. The research memo's own
+   Option A text called for "document that users can copy it to
+   `~/.claude/skills/`" — that documentation did not exist. Fixed by adding
+   [`docs/agent-skill.md`](../agent-skill.md), wired into `.vitepress/config.mjs`'s
+   sidebar and `docs/README.md`'s page list, with cross-links added from
+   `getting-started.md` and `running-python.md`.
+2. **`SYSCC` conflated with `sessionConditionCode` (fixed).** The skill's
+   first draft illustrated `SYSCC=3000` with a broken profile-level
+   `autoExec` line — but a bad `autoExec` line surfaces as
+   `sessionConditionCode` (Finding 11.7, `phase-11.md`), a different,
+   session-level field checked once at session creation, not the job-level
+   `SYSCC` variable ADR-0014 defines. Would have sent an agent debugging an
+   autoExec failure to check the wrong signal. Fixed, with an explicit line
+   distinguishing the two added to the skill.
+3. **An overstated credential-leak mechanism (fixed).** The first draft
+   repeated `docs/data-access.md`'s claim that "the Python cell itself is
+   echoed to the job log verbatim, unconditionally" as the reason never to
+   write a credential literal. That claim appears to contradict ADR-0014 and
+   `src/backend/logFilter.ts`'s own doc comment, both of which state as a
+   probed, settled fact (finding 35) that `infile=` — the path every ordinary
+   run uses — echoes no source at all; the one *confirmed* instance of this
+   leak (Finding 8.6, `phase-8.md`) was through an inline `submit`/
+   `endsubmit` block, a different mechanism. Fixed by softening the skill's
+   wording to state the actionable rule (never write a credential literal;
+   `SAS.submit()`'s masking is narrow, not a guarantee) without asserting the
+   disputed broader mechanism, and citing Finding 8.6 specifically where a
+   concrete anchor was needed (the CAS section). **`docs/data-access.md` and
+   `docs/cas-python-connection.md` themselves were not changed** — the
+   apparent contradiction predates this slice and is either a stale claim in
+   those two pages or a real mechanism this session did not find; either way
+   it is a pre-existing-docs question, not a 12a scope item, and the
+   fastest way to settle it is a live probe (`SAS.submit()` with a
+   credential-shaped literal, then read the raw session log) rather than
+   more reading. Left open, flagged here rather than guessed at further.
+
+Verification re-run after the fixes and the new page: `npx prettier --check`
+and `node scripts/check-secrets.mjs` (528 files scanned) both clean on every
+touched file; `npm run check:docs` (reference check, samples, self-link
+check, VitePress build) run in full this time, since `agent-skill.md` sits
+inside the VitePress tree — all four steps green, self-link count 14 → 16
+(the two new GitHub blob links into `.claude/skills/.../SKILL.md` and
+`docs/phases/phase-12.md` both resolve).
 
 ---
 

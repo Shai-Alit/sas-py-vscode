@@ -35,12 +35,18 @@ project's own terms:
 
 - `0` — no error.
 - `1012` — an unhandled Python exception.
-- `3000` — a SAS-side error (a bad statement around the `PROC PYTHON` step, for
-  example a broken profile-level `autoExec` line).
+- `3000` — a SAS-side syntax error.
 
 If you're asked to debug "the run said it finished but nothing happened" or
 "it says success but the output is wrong," this is the first thing to suspect,
 not a race condition or a caching problem.
+
+**Don't confuse this with `sessionConditionCode`.** A bad profile-level
+`autoExec` line surfaces as a *different*, session-level field
+(`sessionConditionCode`, checked once when the session is created), not as
+`SYSCC` — `SYSCC` is read per submitted job, after the session already
+exists. If a user's session comes up `idle` with no run ever attempted,
+`SYSCC` isn't the signal to reach for.
 
 ## The interpreter banner and `>>>` prompts are not a bug
 
@@ -105,24 +111,27 @@ into SAS first with `SAS.submit("proc sql; create view work.x as select ...")`
 and read the view, rather than reading everything and filtering in pandas.
 
 **Never write a credential as a literal anywhere in the submitted Python.**
-`SAS.submit()` masks a `password=` value the way SAS always masks a `LIBNAME`
-echo, but the Python cell itself is echoed to the job log verbatim,
-unconditionally — a credential in a plain string, even outside a
-`SAS.submit()` call, leaks through that outer echo before any masking applies.
-Source it from an environment variable or `SAS.symget`, or better, use an
-already-provisioned site libref that carries no credential in the user's own
-code at all.
+`SAS.submit()` masks a `password=` value in the SAS code string you pass it,
+the same way SAS always masks a `LIBNAME` echo — but that masking is narrow
+(it applies only to that argument), so treat it as a courtesy, not a
+guarantee, and don't rely on it as the only protection. Source a credential
+from an environment variable or `SAS.symget` instead of writing it as a
+literal, or better, use an already-provisioned site libref that carries no
+credential in the user's own code at all.
 
 ## Connecting to CAS from Python
 
 A CAS connection is opened with `swat.CAS(...)`, authenticated by a Viya
 access token this extension already holds — never a separate CAS credential.
-The token has to reach the interpreter as a **file**, not a literal, for the
-same log-echo reason as above; the extension's own **Insert CAS Connection
-Snippet** command does this correctly (writes a fresh token to a session file,
-then reads it back). If you're writing this by hand for a user, follow that
-shape — read the token from a file, never assign `password="..."` to a string
-literal in a cell. The token is short-lived (minutes), while a `swat.CAS()`
+The token has to reach the interpreter as a **file**, not a literal — the
+extension's own **Insert CAS Connection Snippet** command does this correctly
+(writes a fresh token to a session file, then reads it back). This isn't
+optional caution: an inline `submit`/`endsubmit` block echoes its source
+verbatim into the session log, so a token assigned as a literal that way was
+confirmed to leak into the log in plaintext (Finding 8.6, `phase-8.md`) and
+had to be treated as compromised. If you're writing this by hand for a user,
+follow the file-based shape — read the token from a file, never assign
+`password="..."` to a string literal in a cell. The token is short-lived (minutes), while a `swat.CAS()`
 connection can outlive it; an auth failure after a session's been open a
 while usually means the token expired, not a code bug — reconnect with a
 fresh one rather than debugging the connection logic.

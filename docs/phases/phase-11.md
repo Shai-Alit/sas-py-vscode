@@ -56,6 +56,31 @@ slices 2026-09-16/17 once the phase was actually picked up:**
    snippet run automatically per new session, a workspace setting, or both).
    Needs its own short scoping pass at the start of the slice, the way F7 and
    F9 each got one across two 2026-09-16 sessions, before it's sized further.
+6. **11f — Ship an Agent Skill**, per
+   [ADR-0037](../adr/0037-ai-agent-integration-approach.md) and the
+   2026-09-21 research memo
+   ([`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md)).
+   A `.claude/skills/python-on-viya/SKILL.md` teaching an agent (Claude Code or
+   VS Code Copilot agent mode — both read `.claude/skills/` verbatim, per the
+   memo's Finding 14) how this project's execution model actually behaves:
+   upload-plus-`infile=` submission rather than inline `endsubmit;`, `SYSCC` as
+   a session variable, the interpreter banner/`>>>` markers as inherent output
+   rather than a defect (Finding 11.3), library/CAS naming, what the
+   environment probe reports, and the existing command surface. No production
+   code; added to Phase 11 by Sean's own 2026-09-22 call, folding in work the
+   research memo itself suggested would otherwise warrant a new phase — see
+   ADR-0037's "Alternatives considered" for that departure recorded explicitly.
+7. **11g — Spike: an in-process MCP server reachable by an external Claude Code
+   session**, per ADR-0037 (Option C). Exploratory only, not a commitment to
+   build the feature: the narrow question is whether an external Claude Code
+   CLI session can actually connect to a loopback HTTP MCP server run inside
+   the extension host, with a token handed over out of band, and whether the
+   server survives a VS Code window reload — neither is promised by any
+   documentation (research memo, "What would have to be settled before any
+   code", items 1–2). The spike's own outcome, recorded here once run, decides
+   whether a real Option C build gets scoped as a later slice or the project
+   falls back to Option B (`languageModelTools` over the existing pure
+   adapters), which ADR-0037 holds pending exactly this result.
 
 Everything else in this file — F1, F6, F8, and the items carried in from
 Phase 6/9/10 housekeeping — stays out of this phase's scope by Sean's own
@@ -662,6 +687,16 @@ section above unless noted:
 - [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
   11e by decision. Needs its own submission per session and an answer to
   ADR-0014 and to `restart`/namespace lifetime before it is sized.
+- [ ] **11f — Ship an Agent Skill (Option A).** Scoped 2026-09-22
+  (ADR-0037). `.claude/skills/python-on-viya/SKILL.md`, documented as
+  copyable to `~/.claude/skills/`; no production code. See this section's
+  own Runbook entry, below, once written.
+- [ ] **11g — Spike: in-process MCP server reachable by Claude Code (Option
+  C).** Scoped 2026-09-22 (ADR-0037). Exploratory: settles whether an
+  external Claude Code session can connect to a loopback HTTP MCP server run
+  by the extension host and survive a window reload. Outcome recorded in
+  this section's own Runbook entry once run; decides whether a real build
+  gets scoped next or the project falls back to Option B.
 
 ### 11a — Interactive window
 
@@ -1280,6 +1315,30 @@ green, `npm run test:integration` green (495 passing, as of the last
 recorded run). **Manual pass, 2026-09-21: items 11.23–11.28 all pass.** 11.26
 first showed no warning for a bad autoExec line; that was Finding 11.8, fixed
 and re-run to a pass.
+
+### AI-agent integration scoping, 2026-09-22
+
+Sean brought a research memo written the previous day
+(`docs/research/ai-integration-2026-09-21.md`, now checked into the repo) that
+answered a question raised outside any phase: can this extension let a user
+plug an AI agent they already pay for — Claude Code above all — into it. The
+memo surveyed five options (skill, `languageModelTools`, an in-process MCP
+server also reachable externally, a standalone MCP server, and consuming a
+model in-extension) and recommended shipping the skill immediately and
+spiking the in-process-MCP-server option before committing to it. Its own
+view was that if any of this proceeds it should be a new phase, since Phase
+11 is scoped to parity gaps and this is net-new surface — Sean's explicit
+call was to fold it into Phase 11 instead, as two new slices. Recorded as
+[ADR-0037](../adr/0037-ai-agent-integration-approach.md), which also records
+that departure from the memo's own recommendation.
+
+Added to this phase's Plan section (above) and the punch list (below) as
+**11f** (ship the skill; no code) and **11g** (the spike; exploratory,
+outcome recorded here once run — decides whether a real build gets scoped
+next or the project falls back to registering `languageModelTools`
+instead). Neither slice has started as of this entry; both are unordered
+relative to 11d's three open follow-ups and 11e's two, beyond sitting last
+in the Plan section's priority list.
 
 ### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
 

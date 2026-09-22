@@ -76,3 +76,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0034](0034-table-source-abstraction.md) | The data viewer panel is generalized behind a `TableSource` interface, not forked or forced through `LibraryAdapter`'s view machinery | Accepted |
 | [0035](0035-notebook-gets-its-own-compute-session.md) | A notebook cell runs against its own compute session, not Run File's — `PROC PYTHON` has one interpreter namespace per session, so the two surfaces cannot safely share one | Accepted |
 | [0036](0036-notebook-html-output-is-sanitized.md) | A notebook cell's `text/html` output is sanitized before render, not CSP-locked — this surface has no webview of its own to set a policy on | Accepted |
+| [0037](0037-ai-agent-integration-approach.md) | Ship an Agent Skill now (Option A); spike an in-process MCP server reachable by Claude Code before committing to it (Option C); hold, defer, or decline the rest | Accepted |

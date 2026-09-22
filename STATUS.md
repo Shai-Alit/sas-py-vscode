@@ -406,8 +406,9 @@ formats CSV client-side because CAS's own `text/csv` pads numerics
 tables is a recorded follow-up, alongside a dedicated CAS problem for an
 oversized response and an opt-in CSV formula-injection guard (all three on
 the phase's punch list). `npm run test:integration` green (489 passing).
-**11e (session startup: profile `sasOptions` + `autoExec`) is
-complete 2026-09-21, reviewed and manually tested, PR open:** scoped with Sean to
+**11e (session startup: profile `sasOptions` + `autoExec`) merged
+2026-09-21 as [PR #199](https://github.com/Shai-Alit/sas-py-vscode/pull/199),
+squash `e256d25`:** scoped with Sean to
 SAS-side startup only (a Python startup snippet is a recorded, unbuilt
 candidate). A `viya-api-probe` pass (Finding 11.7) found that the compute
 service silently ignores `NAME=VALUE` options — so 3f's `PAGESIZE=MAX` had
@@ -421,8 +422,24 @@ Connection Profile** carrying `sasOptions`/`autoExec` over) is folded in.
 A second review after manual testing (Finding 11.8: a `pending` create
 reports condition code 0, so the autoExec warning is now raised from a
 re-read of the settled session) found six issues, all folded in. **Manual-test
-items 11.23–11.28 all pass (2026-09-21).**
-Full plan, punch list, and probe findings (11.1–11.7) are in
+items 11.23–11.28 all pass (2026-09-21).** PR #199's own review, after it was
+open, raised four more comments (Finding 11.9 — the duplicate-option-wins
+claim, probed rather than softened; an `l10n.t()` gap; a CodeQL
+backtracking-regex flag; and a documented, deliberate non-fix for a
+`NAME =VALUE` typo form) — all replied to, resolved, and folded in
+(`cd5b267`, `9d787e1`) before merge.
+
+**11f and 11g added to the phase's scope, 2026-09-22 (not yet started):**
+ship an Agent Skill teaching an agent this project's execution model (Option
+A, no code), then spike whether an external Claude Code session can reach an
+in-process MCP server run by the extension host (Option C) before committing
+to build it. From a 2026-09-21 AI-integration research memo, folded into
+Phase 11 by Sean's own call rather than a new phase — see
+[ADR-0037](docs/adr/0037-ai-agent-integration-approach.md) and
+`docs/phases/phase-11.md`'s "AI-agent integration scoping" Runbook entry for
+the full account, including the options held, deferred, or declined.
+
+Full plan, punch list, and probe findings (11.1–11.9) are in
 [`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
 completion was missed from this file at the time it merged — a housekeeping
 gap, caught and corrected only now, alongside 11b's own update, rather than
@@ -445,7 +462,7 @@ calls for.
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14; its one deferred gap (tree icon refresh) was root-caused and fixed 2026-09-15 — `onDidChangeTreeData` matches a fired element by object identity, not `TreeItem.id` — and live-confirmed, so nothing from Phase 8 is carried forward. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
-| 11 — Remaining parity gaps | 🔄 **in progress — 11a–11d merged; 11e (session startup `sasOptions`/`autoExec`) complete, PR open** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export). See "Phase 11 (in progress)" above. | `docs/phases/phase-11.md` |
+| 11 — Remaining parity gaps | 🔄 **in progress — 11a–11e merged; 11f (Agent Skill) and 11g (in-process MCP server spike) added to scope 2026-09-22, not yet started** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup; AI-agent integration per ADR-0037). See "Phase 11 (in progress)" above. | `docs/phases/phase-11.md` |
 | 12 — Second execution backend | not started | `docs/phases/phase-12.md` |
 
 Each phase file bundles everything that phase needs: the plan section

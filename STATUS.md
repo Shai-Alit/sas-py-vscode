@@ -363,6 +363,15 @@ leaving them here: they're **Phase 12 slice 12e**
 (`docs/phases/phase-12.md`), added at the Phase 11→12 housekeeping
 checkpoint, 2026-09-22.
 
+- **"Snippets" — genuinely unscoped, found 2026-09-22 (PR #204 review).**
+  Named in Phase 11's own original one-liner alongside session startup,
+  result panel styling, and localisation, but — unlike those three — never
+  got a closure or carry-forward decision. What shipped: the narrow F9
+  CAS/SWAT SQL passthrough snippet (11b). The broader "snippets for common
+  Viya patterns" ask was never sized, scoped, or decided against; it has no
+  owner now that Phase 11 is closed. Not decided here — this is a flag, not
+  a call on whether/where it belongs. See `phase-11.md`'s Plan section.
+
 No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
 issue tracking once past "preview". That revisit is now a named 1.0 gate — see

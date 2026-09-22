@@ -2821,11 +2821,15 @@ used to describe.
 three decided-to-build follow-ups** (11d large-table confirmation for SAS
 library tables, 11d `CasProblem` for an oversized response, 11e
 autoExec-error text), with the note "once those land, Phase 11 is done."
-**Superseded the same day, at the Phase 11→12 housekeeping checkpoint**: Sean's
-call there was to close the phase now and carry the three forward as
-documented open items instead — see `phase-11.md`'s own "Phase 11→12
-housekeeping" Runbook entry, and `STATUS.md`'s "Open items carried forward"
-section, for where they live now.
+**Superseded the same day, at the Phase 11→12 housekeeping checkpoint**:
+Sean's call there was to close the phase now. A first pass at that
+checkpoint framed the three as "carried forward as documented open items,"
+on the model of Phase 8a's own open items — corrected within the same
+session once that comparison didn't hold (Phase 8a's items are each blocked
+on something external; these three had no blocker, just no slice). **The
+three are folded into Phase 12 as a new slice, 12e**, instead — see
+`phase-11.md`'s own "Phase 11→12 housekeeping" Runbook entry and
+`phase-12.md`'s own "12e added" Runbook entry for the full account.
 
 Full plan, punch list, and probe findings (11.1–11.9) are in
 `docs/phases/phase-11.md`. **Note**: 11a's own completion was missed from

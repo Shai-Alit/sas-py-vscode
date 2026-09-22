@@ -94,6 +94,19 @@ palette. No further candidate (font-size control, word-wrap toggle, output
 truncation) had anything concrete behind it either. Not a future candidate
 unless something specific comes up.
 
+**"Snippets" — found still unscoped, at the Phase 11→12 housekeeping
+checkpoint, 2026-09-22.** Also named in the original one-liner alongside
+session startup, result panel styling, and localisation — but unlike those
+three, it never got its own closure or carry-forward decision anywhere in
+this file. What actually shipped under this phase is narrower than the
+one-liner: **F9's CAS/SWAT SQL passthrough snippet (11b)**, one specific
+command for one specific pattern. The broader ask — "snippets for common
+Viya patterns" in general — was never sized, scoped, or decided against; it
+just has no owner now that this phase is closed. Not decided here, per this
+project's own "don't invent a decision" discipline: recorded as a genuinely
+open, unscheduled item in `STATUS.md`'s "Open items carried forward" rather
+than folded into a phase nobody has actually assigned it to.
+
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
 triaged against §3.1's parity table).**

@@ -526,7 +526,7 @@ the working gap analysis, and it is the checklist to track parity against.
 | Session startup / autoexec configuration | Phase 11 | Python analogue of `autoExecLines` + `sasOptions` |
 | Result panel styling options | Phase 11 | |
 | Snippets | Phase 11 | Viya-specific patterns; general Python is Pylance's job |
-| Localisation | 0b (infrastructure), Phase 11 (bundles) | Upstream ships 10 locales |
+| Localisation | 0b (infrastructure); non-English bundles decided against, 2026-09-22 | Upstream ships 10 locales; this project stays English-only by deliberate choice, not a deferral (`phase-11.md`) |
 | **CAS / SWAT access** | Phase 8 | **Upstream has none** — we exceed it here |
 | Viya Python environment awareness | Phase 3e, extended in Phase 10 | No upstream equivalent. The package list ships with the first useful build, because you cannot write code against an interpreter you cannot see |
 | Syntax highlighting, folding, completions, hover | — | Provided by `ms-python.python`/Pylance. Parity achieved by *not* building it. |

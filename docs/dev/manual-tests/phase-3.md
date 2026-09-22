@@ -52,7 +52,7 @@ unconfigured workspace is Local and contributes nothing to the editor
   `print("hello from viya")` → **Run File**.
   **Expect:** a run header, then `hello from viya` as plain stdout, then a
   “Finished” line, with **no SAS NOTEs** and **no page-break banners**
-  (`PAGESIZE=MAX`, 3f). The interpreter startup banner
+  (`PAGESIZE MAX` sent at session creation since 11e; Finding 11.7). The interpreter startup banner
   (`Python 3.12.12 … / Type "help" …`) **does** appear on a **Run File** (which
   restarts the interpreter first) and on the **first Run Selection after
   connect / Reset Python State**; bare `>>>` prompt markers appear on **every**

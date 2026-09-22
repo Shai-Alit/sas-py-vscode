@@ -27,6 +27,7 @@ import {
   CURRENT_PROFILE_VERSION,
   MAX_PROFILE_NAME_LENGTH,
   normaliseEndpoint,
+  readSessionSetup,
   type ViyaProfile,
 } from "./model";
 
@@ -204,6 +205,14 @@ export function scanSasProfiles(
 
     const clientId = readString(value.clientId);
     if (clientId !== undefined) profile.clientId = clientId;
+
+    // Upstream's `sasOptions` and `autoExec` have the same shape as ours.
+    const setup = readSessionSetup(value);
+    if (!setup.ok) {
+      skipped.push({ name: originalName, reason: setup.reason });
+      continue;
+    }
+    Object.assign(profile, setup.value);
 
     candidates.push({
       name,

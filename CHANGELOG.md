@@ -10,6 +10,46 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **An interactive window.** **New Interactive Window** opens a scratch
+  notebook on the same Viya-backed kernel notebooks use, and **Run Selection
+  in Interactive Window** sends the selected Python to it, so state persists
+  from one run to the next.
+- **Native SQL against an external database from CAS.** **Insert CAS SQL
+  Passthrough Snippet** inserts a `swat` snippet that runs a query in the
+  target database's own dialect through a DBMS-backed caslib. See [Connecting
+  to CAS from Python](docs/cas-python-connection.md).
+- **Table properties and CSV export for CAS tables.** The CAS view's table
+  nodes now offer **Table Properties** and **Export to CSV**, the same as SAS
+  library tables. The export asks for confirmation above an estimated 100 MB.
+- **Session startup settings on a connection profile.** A profile can now carry
+  `sasOptions` (SAS system options applied when the session starts) and
+  `autoExec` (SAS lines, inline or from a local file, run at session start).
+  **Import Connection Profiles** brings over the SAS extension's equivalent
+  fields. If an autoExec line fails, the session still connects and a message
+  says so. See [Connection profiles](docs/connection-profiles.md).
+
+### Changed
+
+- **Edit Connection Profile keeps `sasOptions` and `autoExec`.** They are
+  edited in `settings.json`, and the command previously rebuilt the profile
+  without them.
+
+### Fixed
+
+- **`PAGESIZE=MAX` was never applied.** The compute service silently ignores
+  `NAME=VALUE` session options, so the page-break banner suppression added in
+  3f had no effect. It is now sent as `PAGESIZE MAX`, and takes effect on new
+  sessions.
+- **Blank trees on a failed listing.** The SAS Content, SAS Libraries and CAS
+  views now show a connection-problem node instead of nothing.
+- **A stale connection had no way back.** When the compute session is gone, the
+  SAS Libraries view and **Insert CAS Connection Snippet** now let **Connect to
+  Viya** re-establish it directly instead of requiring **Disconnect** first.
+  Both insert-snippet commands stay in the palette and say to connect first.
+- **SAS Libraries table icon** now matches the CAS view's loaded-table icon.
+
 ## [0.1.3] - 2026-09-16
 
 ### Added

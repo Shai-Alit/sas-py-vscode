@@ -50,11 +50,10 @@
  * submission corpus's 14 runs, and one roughly every 58 lines in a
  * 5000-line run — and neither this filter nor the plain `error`/`normal`
  * output a user actually wants has any legitimate reason to arrive typed
- * `title`. `PAGESIZE=MAX` (`docs/phases/phase-3.md`'s own note under 3a) is
- * now sent at session creation too, in the same slice
- * (`sessionManager.ts`'s `open()`), so the banner is suppressed at the
- * source and this filter's own exclusion is a second, independent line of
- * defence rather than the only one. Neither change alters this filter's
+ * `title`. 3f also sent `PAGESIZE=MAX` at session creation, but that form was
+ * never applied (Finding 11.7: options need `PAGESIZE MAX`), so until 11e
+ * this filter's exclusion was the only defence against the banner. It is now
+ * a second, independent line of defence. Neither change alters this filter's
  * design in the way that matters: a banner still arrives as its own atomic,
  * already-typed log item, never as text spliced into a neighbouring line, so
  * "a page break splits the stdout region mid-stream" — the awkward case the

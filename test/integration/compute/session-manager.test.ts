@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import * as vscode from "vscode";
 
 import type {
@@ -61,6 +64,8 @@ function profile(init?: Partial<ViyaProfile>): ViyaProfile {
     id: init?.id ?? PROFILE_ID,
     endpoint: init?.endpoint ?? ENDPOINT,
     ...(init?.context === undefined ? {} : { context: init.context }),
+    ...(init?.sasOptions === undefined ? {} : { sasOptions: init.sasOptions }),
+    ...(init?.autoExec === undefined ? {} : { autoExec: init.autoExec }),
   };
 }
 
@@ -164,10 +169,16 @@ function cadenceBody(): unknown {
 }
 
 /** A session that has already settled, so nothing polls its state. */
-function sessionBody(init?: { state?: string }): unknown {
+function sessionBody(init?: {
+  state?: string;
+  conditionCode?: number;
+}): unknown {
   return {
     id: SESSION_ID,
     state: init?.state ?? "idle",
+    ...(init?.conditionCode === undefined
+      ? {}
+      : { sessionConditionCode: init.conditionCode }),
     attributes: { sessionInactiveTimeout: 900 },
     links: [
       { method: "GET", rel: "self", href: SESSION_PATH },
@@ -187,6 +198,14 @@ function ok(body: unknown, status = 200): ComputeResult<ComputeResponse> {
       text: JSON.stringify(body),
       body,
     },
+  };
+}
+
+/** The `text/plain` state resource: the bare word, no JSON quoting. */
+function stateText(state: string): ComputeResult<ComputeResponse> {
+  return {
+    ok: true,
+    value: { status: 200, notModified: false, text: state, body: undefined },
   };
 }
 
@@ -392,6 +411,204 @@ describe("compute session manager", () => {
     assert.deepEqual(bindings.read(PROFILE_ID), {
       id: SESSION_ID,
       context: CONTEXT,
+    });
+  });
+
+  describe("session startup setup (sasOptions / autoExec)", () => {
+    function createBody(scripted: Deployment): {
+      environment: { options: string[]; autoExecLines: string[] };
+    } {
+      const request = scripted.requests.find(
+        (r) => r.link.rel === "createSession",
+      );
+      assert.ok(request, "no createSession request was sent");
+      return request.body as {
+        environment: { options: string[]; autoExecLines: string[] };
+      };
+    }
+
+    it("sends the extension's own option in the form the service applies, and nothing else by default", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+      });
+      const { manager } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+      });
+
+      await manager.connect();
+
+      assert.deepEqual(createBody(scripted).environment, {
+        options: ["PAGESIZE MAX"],
+        autoExecLines: [],
+      });
+    });
+
+    it("adds the profile's options after ours and its autoExec lines, files included", async () => {
+      const file = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), "pyviya-autoexec-")),
+        "setup.sas",
+      );
+      fs.writeFileSync(file, "%let b=2;\r\n%let c=3;");
+      try {
+        const scripted = deployment({
+          contexts: ok(contextsBody()),
+          createSession: ok(sessionBody(), 201),
+          self: ok(sessionBody()),
+        });
+        const { manager, shown } = harness({
+          profiles: profileSource(
+            profile({
+              context: CONTEXT,
+              sasOptions: ["YEARCUTOFF=1950", "NONUMBER"],
+              autoExec: [
+                { type: "line", line: "%let a=1;" },
+                { type: "file", filePath: file },
+              ],
+            }),
+          ),
+          client: scripted.client,
+        });
+
+        await manager.connect();
+
+        assert.deepEqual(createBody(scripted).environment, {
+          options: ["PAGESIZE MAX", "YEARCUTOFF 1950", "NONUMBER"],
+          autoExecLines: ["%let a=1;", "%let b=2;", "%let c=3;"],
+        });
+        assert.deepEqual(shown.infos, []);
+      } finally {
+        fs.rmSync(path.dirname(file), { recursive: true, force: true });
+      }
+    });
+
+    it("skips an unreadable autoExec file, says so, and still connects with the rest", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        self: ok(sessionBody()),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [
+              { type: "line", line: "%let a=1;" },
+              {
+                type: "file",
+                filePath: path.join(os.tmpdir(), "pyviya-no-such-file.sas"),
+              },
+            ],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(
+        connection,
+        "a missing autoExec file must not fail the connect",
+      );
+      assert.deepEqual(createBody(scripted).environment.autoExecLines, [
+        "%let a=1;",
+      ]);
+      assert.equal(shown.infos.length, 1);
+      assert.match(shown.infos[0] ?? "", /pyviya-no-such-file\.sas/);
+    });
+
+    it("tells the user when their autoExec lines ran with an error (condition code 3000)", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        // Finding 11.8's shape: the create comes back `pending` with 0, the
+        // state poll settles it, and only the re-read says 3000.
+        createSession: ok(
+          sessionBody({ state: "pending", conditionCode: 0 }),
+          201,
+        ),
+        state: stateText("idle"),
+        self: ok(sessionBody({ conditionCode: 3000 })),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "this is not valid sas;" }],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "an autoExec error must not fail the connect");
+      assert.equal(shown.infos.length, 1);
+      assert.match(shown.infos[0] ?? "", /startup code/);
+    });
+
+    it("trusts the re-read, not the create response: create says 3000, re-read says 0, stays quiet", async () => {
+      // Pins Finding 11.8's invariant against a "fix" that prefers the create
+      // response's code over the settled session's.
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody({ conditionCode: 3000 }), 201),
+        self: ok(sessionBody({ conditionCode: 0 })),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "%let a=1;" }],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      await manager.connect();
+
+      assert.deepEqual(shown.infos, []);
+    });
+
+    it("still connects, without a warning, when re-reading the session for its condition code fails", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        self: gone(),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "%let a=1;" }],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "a failed re-read must not fail the connect");
+      assert.deepEqual(shown.infos, []);
+    });
+
+    it("stays quiet about a nonzero condition code when the profile has no autoExec", async () => {
+      // The code is the session's, not proof of anything the user wrote.
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(
+          { ...(sessionBody() as object), sessionConditionCode: 3000 },
+          201,
+        ),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(profile({ context: CONTEXT })),
+        client: scripted.client,
+      });
+
+      await manager.connect();
+
+      assert.deepEqual(shown.infos, []);
     });
   });
 

@@ -203,5 +203,38 @@ against a deployment that suite cannot exercise.
   connection/VPN part-way. **Expect:** one error message, no destination
   file, no `.tmp` left behind.
 
-Add further numbered items here (`11.23`, `11.24`, …) as later Phase 11
+- [x] **11.23** **11e, `sasOptions` are applied** — add `"sasOptions":
+  ["YEARCUTOFF=1950", "NONUMBER"]` to a profile in `settings.json`, run
+  **Disconnect**, connect, then run
+  `SAS.submit("%put YC=%sysfunc(getoption(yearcutoff));")` from a Python file.
+  **Expect:** `YC=1950` in the output. Remove the option, disconnect, reconnect,
+  repeat: `YC=1940`.
+- [x] **11.24** **11e, `autoExec` lines run** — add `"autoExec": [{"type":
+  "line", "line": "%let P11E=hello;"}]`, disconnect, connect, run
+  `SAS.submit("%put P11E=&P11E;")`. **Expect:** `P11E=hello`.
+- [x] **11.25** **11e, an autoExec file** — put `%let P11E=fromfile;` in a local
+  `.sas` file, reference it as `{"type": "file", "filePath": "<absolute path>"}`,
+  disconnect, connect, run the same `%put`. **Expect:** `P11E=fromfile`. Then
+  point the entry at a path that does not exist and reconnect: **Expect:** a
+  message naming the file, and the session still connects.
+- [x] **11.26** **11e, a bad autoExec line** — use `"autoExec": [{"type":
+  "line", "line": "this is not valid sas;"}, {"type": "line", "line": "%let
+  P11E=after;"}]`, disconnect, connect. **Expect:** the session connects, a
+  message says the session reported an error while running startup code, and `%put P11E=&P11E;`
+  prints `after` (later lines still ran).
+  **(9/21/2026) first run partial** — `after` printed, but no warning appeared
+  (Finding 11.8: a `pending` create reports condition code 0). Fixed by
+  re-reading the session once it settles. **Re-run 9/21/2026: passes.**
+- [x] **11.27** **11e, reattach keeps the old setup** — with a live session,
+  change `sasOptions`, then run **Reload Window** (not Disconnect) and run Python.
+  **Expect:** the previous session is reattached and the *old* option value is
+  still in effect until you Disconnect and reconnect.
+- [x] **11.28** **11e, profile edit and page banner** — run **Edit Connection
+  Profile** on a profile that has `sasOptions`/`autoExec` and change only the
+  endpoint or context. **Expect:** both fields are still in `settings.json`
+  afterwards. Separately, run a program that prints a lot of output on a fresh
+  session and confirm no repeated "The SAS System" page-break banner lines
+  appear (`PAGESIZE MAX` is now really applied, Finding 11.7).
+
+Add further numbered items here (`11.29`, `11.30`, …) as later Phase 11
 slices land, the same way every other phase file did.

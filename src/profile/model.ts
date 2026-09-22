@@ -71,7 +71,22 @@ export interface ViyaProfile {
    * probed here.
    */
   clientId?: string;
+  /**
+   * SAS system options for every session this profile starts, e.g.
+   * `["YEARCUTOFF=1950", "NONUMBER"]`. See `sessionSetup.ts` for the wire form.
+   * Applied when a session is *created*; a reattached session keeps its own.
+   */
+  sasOptions?: string[];
+  /**
+   * SAS code run once, at the start of every new session, in the order listed.
+   * Same creation-time rule as {@link sasOptions}.
+   */
+  autoExec?: AutoExecEntry[];
 }
+
+/** One `autoExec` entry: a line of SAS, or a local file of them. */
+export type AutoExecEntry =
+  { type: "line"; line: string } | { type: "file"; filePath: string };
 
 /** A profile the user asked for but that could not be stored as given. */
 export interface ProfileProblem {
@@ -379,7 +394,68 @@ function readProfile(name: string, raw: unknown): Result<ViyaProfile> {
     profile.clientId = raw.clientId.trim();
   }
 
+  const setup = readSessionSetup(raw);
+  if (!setup.ok) return setup;
+  Object.assign(profile, setup.value);
+
   return ok(profile);
+}
+
+/**
+ * Reads `sasOptions` and `autoExec` from a raw profile object.
+ *
+ * Strict: a malformed value rejects the profile, unlike an unknown key, which is
+ * dropped. These two fields change what runs on the server, so a value that
+ * cannot be understood must not degrade into "connect without it" unannounced.
+ * Empty arrays are treated as absent.
+ */
+export function readSessionSetup(
+  raw: Record<string, unknown>,
+): Result<Pick<ViyaProfile, "sasOptions" | "autoExec">> {
+  const setup: Pick<ViyaProfile, "sasOptions" | "autoExec"> = {};
+
+  if (raw.sasOptions !== undefined) {
+    if (
+      !Array.isArray(raw.sasOptions) ||
+      !raw.sasOptions.every((item) => typeof item === "string")
+    ) {
+      return fail("sasOptions must be an array of strings");
+    }
+    const options = raw.sasOptions
+      .map((item) => item.trim())
+      .filter((item) => item !== "");
+    if (options.length > 0) setup.sasOptions = options;
+  }
+
+  if (raw.autoExec !== undefined) {
+    if (!Array.isArray(raw.autoExec)) {
+      return fail("autoExec must be an array");
+    }
+    const entries: AutoExecEntry[] = [];
+    for (const item of raw.autoExec as unknown[]) {
+      if (
+        isRecord(item) &&
+        item.type === "line" &&
+        typeof item.line === "string"
+      ) {
+        entries.push({ type: "line", line: item.line });
+      } else if (
+        isRecord(item) &&
+        item.type === "file" &&
+        typeof item.filePath === "string" &&
+        item.filePath.trim() !== ""
+      ) {
+        entries.push({ type: "file", filePath: item.filePath.trim() });
+      } else {
+        return fail(
+          'each autoExec entry must be {"type": "line", "line": "..."} or {"type": "file", "filePath": "..."}',
+        );
+      }
+    }
+    if (entries.length > 0) setup.autoExec = entries;
+  }
+
+  return ok(setup);
 }
 
 /**

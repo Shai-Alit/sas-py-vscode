@@ -164,11 +164,22 @@ export interface ComputeSession {
   readonly etag?: string | undefined;
   /** `attributes.sessionInactiveTimeout` — 900 on the observed deployment. */
   readonly inactiveTimeoutSeconds?: number | undefined;
+  /**
+   * `sessionConditionCode` as this representation reported it: `0` for a clean
+   * start, `3000` after an `autoExecLines` statement raised an `ERROR` — while
+   * `state` still reads `idle` (Finding 11.7). Absent when not reported.
+   *
+   * **Not final on a create response** (Finding 11.8): a create that comes back
+   * `pending` reports `0`, and the `3000` only shows on a later `GET` of the
+   * session, so read it from {@link attachSession} once the session settles,
+   * not from `createSession`.
+   */
+  readonly conditionCode?: number | undefined;
   readonly links: readonly Link[];
 }
 
 export interface CreateSessionOptions {
-  /** SAS system options for the session environment, e.g. `PAGESIZE=MAX`. */
+  /** SAS system options for the session environment, e.g. `PAGESIZE MAX` (space, not `=` — Finding 11.7). */
   options?: readonly string[] | undefined;
   /** Lines run before anything else. Slice 3a's session setup uses this. */
   autoExecLines?: readonly string[] | undefined;
@@ -533,8 +544,8 @@ function withWait(href: string, seconds: number): string {
  * A session representation, or `undefined` if the body was not one.
  *
  * `id` and `state` are required; everything else the payload carries —
- * `applicationName`, `owner`, `serverId`, `creationTimeStamp`,
- * `sessionConditionCode` — is left on the wire until something needs it. Note
+ * `applicationName`, `owner`, `serverId`, `creationTimeStamp` —
+ * is left on the wire until something needs it. Note
  * that `applicationName` is the OAuth client id and `owner` is the user's email
  * address, so not reading them is also the reason neither can end up in a log.
  */
@@ -548,9 +559,14 @@ function readSession(response: ComputeResponse): ComputeSession | undefined {
   if (id === "" || state === "") return undefined;
 
   const timeout = readInactiveTimeout(body);
+  const code = (body as { sessionConditionCode?: unknown })
+    .sessionConditionCode;
   return {
     id,
     state,
+    ...(typeof code === "number" && Number.isFinite(code)
+      ? { conditionCode: code }
+      : {}),
     ...(response.etag === undefined ? {} : { etag: response.etag }),
     ...(timeout === undefined ? {} : { inactiveTimeoutSeconds: timeout }),
     links: readLinks(body),

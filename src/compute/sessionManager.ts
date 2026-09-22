@@ -75,6 +75,10 @@ import {
   type DialectResolution,
 } from "../dialects/resolve";
 import type { ViyaProfile } from "../profile/model";
+import {
+  buildSessionOptions,
+  resolveAutoExecLines,
+} from "../profile/sessionSetup";
 import type { ProfileStore } from "../profile/store";
 import { bindingMatches, type SessionBinding } from "./binding";
 import type { SessionBindingStore } from "./bindingStore";
@@ -220,8 +224,13 @@ export interface ComputeSessionDeps {
  * specific number: a finite `PAGESIZE` just moves the banner further apart,
  * and there is no value in it appearing at all for an interactive Python
  * session with no pages to break.
+ *
+ * **Written `PAGESIZE MAX`, with a space, since 11e (Finding 11.7).** The
+ * `PAGESIZE=MAX` form this constant shipped with is accepted and silently not
+ * applied — a probe on `verde` read `PAGESIZE` back as 60 — so the option was
+ * never actually in effect before this fix.
  */
-const SESSION_OPTIONS = ["PAGESIZE=MAX"];
+const SESSION_OPTIONS = ["PAGESIZE MAX"];
 
 export class ComputeSessionManager implements vscode.Disposable {
   /** Keyed on profile id. Two profiles may hold sessions at the same time. */
@@ -696,8 +705,24 @@ export class ComputeSessionManager implements vscode.Disposable {
       return undefined;
     }
 
+    const autoExec = await resolveAutoExecLines(profile.autoExec, (filePath) =>
+      this.readAutoExecFile(filePath),
+    );
+    for (const problem of autoExec.problems) {
+      this.log.warn(
+        `autoExec file "${problem.filePath}" was skipped: ${problem.reason}`,
+      );
+      this.inform(
+        vscode.l10n.t(
+          'The autoExec file "{0}" could not be read, so it was skipped. The rest of this profile\'s startup setup still ran.',
+          problem.filePath,
+        ),
+      );
+    }
+
     const created = await createSession(client, resolved.value, {
-      options: SESSION_OPTIONS,
+      options: buildSessionOptions(SESSION_OPTIONS, profile.sasOptions),
+      autoExecLines: autoExec.lines,
       signal,
     });
     if (!created.ok) {
@@ -729,6 +754,11 @@ export class ComputeSessionManager implements vscode.Disposable {
 
     const binding: SessionBinding = { id: settled.value.id, context };
     await this.bindings.write(profile.id, binding);
+
+    // After the binding, so a throw here cannot orphan a created session.
+    if (autoExec.lines.length > 0) {
+      await this.warnOnStartupCondition(client, settled.value.id, signal);
+    }
     this.log.info(
       vscode.l10n.t(
         'Started a SAS Viya session on compute context "{0}".',
@@ -736,6 +766,63 @@ export class ComputeSessionManager implements vscode.Disposable {
       ),
     );
     return await this.hold(active, context, client, settled.value, signal);
+  }
+
+  /**
+   * Warns when a session that ran the profile's `autoExec` lines reports a
+   * nonzero `sessionConditionCode`.
+   *
+   * A bad autoExec line does not fail the session — it comes up `idle` with the
+   * error only in the session log and code 3000 (Finding 11.7) — so without this
+   * the user's setup fails without a word. The code on a create response is not
+   * final (it may still be `pending` with 0), so it is read from a fresh `GET`
+   * of the settled session (Finding 11.8) and never from the create response.
+   *
+   * The code is session-wide, and the site's own autoexec runs first (Finding
+   * 11.7), so the wording does not claim the user's lines were the cause. A
+   * failed read only costs the warning, never the connect.
+   */
+  private async warnOnStartupCondition(
+    client: ComputeClient,
+    sessionId: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    let conditionCode: number | undefined;
+    try {
+      const reread = await attachSession(client, sessionId, { signal });
+      if (!reread.ok) {
+        this.log.debug(
+          `could not re-read the session to check its condition code: ${reread.reason}`,
+        );
+        return;
+      }
+      conditionCode = reread.value.conditionCode;
+    } catch (error) {
+      // `client.send` can reject rather than resolve a `ComputeResult`.
+      this.log.debug(
+        `could not re-read the session to check its condition code: ${String(error)}`,
+      );
+      return;
+    }
+    if (conditionCode === undefined || conditionCode === 0) return;
+
+    this.log.warn(
+      vscode.l10n.t(
+        "The session reported condition code {0} while running startup code.",
+        String(conditionCode),
+      ),
+    );
+    this.inform(
+      vscode.l10n.t(
+        "The session reported an error while running startup code. It is running, but some of your profile's startup setup may not have taken effect.",
+      ),
+    );
+  }
+
+  /** Reads a local file named by an `autoExec` entry, as UTF-8 text. */
+  private async readAutoExecFile(filePath: string): Promise<string> {
+    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+    return new TextDecoder("utf-8").decode(bytes);
   }
 
   /**

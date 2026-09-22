@@ -990,13 +990,17 @@ The criteria above are v0.1.0's bar, and only that. 1.0.0 makes a different
 claim — not "this works" but "this is supported" — and ships when: each of Phase
 11's live-facing parity gaps is either fixed or explicitly re-classified as a
 documented known limitation, a deliberate call recorded per gap rather than
-silence (as of 2026-09-16 that means the SAS Libraries tree's table icon not
-matching the CAS tree's own, a stale/dropped connection leaving a tree blank
-with no way back in, and the Accounts-menu rows that identify neither this
-extension nor which profile is which — see `phase-11.md`'s "Bugs found
-pre-release" and "Accounts-menu legibility" entries; the CAS tree icon-flip
-gap this note used to cite here was fixed and live-confirmed 2026-09-15, per
-`phase-8.md`); every row under
+silence. **As of 2026-09-22, every gap this criterion has ever named is
+closed:** the SAS Libraries tree's table icon (B3, fixed in 11c) and the
+stale/dropped connection leaving a tree blank with no way back in (B2, also
+fixed in 11c) are both resolved — see `phase-11.md`'s "Bugs found
+pre-release" entry; the CAS tree icon-flip gap this note first cited was
+fixed and live-confirmed 2026-09-15, per `phase-8.md`; and the Accounts-menu
+rows that identify neither this extension nor which profile is which were
+closed 2026-09-22 as a documented known limitation rather than a code fix —
+`phase-11.md`'s "Accounts-menu legibility" entry and `docs/signing-in.md`'s
+"More than one deployment at once" section. A gap discovered before 1.0
+ships still needs its own fix-or-document call; every row under
 `docs/dev/manual-tests/` has actually been run, with any row left unrun carrying
 a written reason — an environment that does not exist is an acceptable one, and
 5d-i's user-provided-CA row is the standing example; GitHub issue tracking is
@@ -1004,10 +1008,28 @@ open with templates, because `STATUS.md` defers issue tracking precisely to this
 moment and an extension advertised as supported needs somewhere to send a bug;
 the Open VSX ownership request for the `shai-alit` namespace has been **filed**,
 though not necessarily granted, since the Eclipse Foundation's review queue is
-not ours to schedule; and `"preview": true` is removed from `package.json` in
-the same release that carries the 1.0.0 version bump.
+not ours to schedule; **every Phase 12 (AI-agent integration) slice must be
+completed first** — see `docs/phases/phase-12.md`, currently not started;
+and `"preview": true` is removed from `package.json` in the same release that
+carries the 1.0.0 version bump.
 
-> **What 1.0 does not require.** Phase 12 (second execution backend) does not
+> **Amended 2026-09-22 (Sean's own call).** The Open VSX request named above
+> has since been confirmed **granted**, not merely filed — `GET
+> https://open-vsx.org/api/shai-alit` returns `"verified": true`. The bar
+> above is left as "filed" rather than tightened to "granted", since granting
+> was never in this project's control and the weaker bar already covers what
+> happened. Separately, **Phase 12 (AI-agent integration) is added to this
+> list** as a genuine new 1.0 gate — not a reversal of anything previously
+> said about "Phase 12", since no phase held that number when this section
+> was first written; the number was reused the same day a different,
+> unstarted topic ("second execution backend") was renumbered out of it to
+> [Phase 13](docs/phases/phase-13.md). See
+> [ADR-0037](docs/adr/0037-ai-agent-integration-approach.md) and
+> `docs/phases/phase-12.md` for what Phase 12 actually is and why it gates
+> 1.0 when Phase 13 (below) explicitly does not.
+
+> **What 1.0 does not require.** Phase 13 (second execution backend,
+> renumbered from Phase 12 on 2026-09-22 — see the amendment above) does not
 > gate it: §3.1 already holds that parity is the destination rather than the
 > release bar and that the post-v0.1.0 phase order is demand-driven, so a
 > capability nobody has asked for cannot be a precondition for supporting what

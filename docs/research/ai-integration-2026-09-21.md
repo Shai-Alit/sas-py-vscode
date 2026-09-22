@@ -4,8 +4,9 @@
 > 2026-09-21 research session (previously an external, project-folder-only
 > file). The decision this memo feeds is recorded in
 > [ADR-0037](../adr/0037-ai-agent-integration-approach.md); the resulting
-> Phase 11 slices (11f, 11g) are in
-> [`docs/phases/phase-11.md`](../phases/phase-11.md). Nothing below this line
+> slices (12a, 12b — briefly 11f/11g before a same-day move, per ADR-0037's
+> own amendment) are in
+> [`docs/phases/phase-12.md`](../phases/phase-12.md). Nothing below this line
 > was edited for the move — see ADR-0037 for what was actually decided and
 > why, since this memo is input to that decision, not the decision itself.
 

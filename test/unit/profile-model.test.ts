@@ -349,6 +349,52 @@ describe("resolveActiveProfile", () => {
   });
 });
 
+describe("readProfiles: sasOptions and autoExec", () => {
+  const read = (extra: Record<string, unknown>) =>
+    readProfiles({ P: { endpoint: "https://v.example.com", ...extra } });
+
+  it("reads options and both autoExec entry kinds", () => {
+    const { profiles, rejected } = read({
+      sasOptions: [" YEARCUTOFF=1950 ", "NONUMBER"],
+      autoExec: [
+        { type: "line", line: "%let a=1;" },
+        { type: "file", filePath: " /x/setup.sas " },
+      ],
+    });
+    assert.deepEqual(rejected, []);
+    assert.deepEqual(Object.values(profiles).at(0)?.sasOptions, [
+      "YEARCUTOFF=1950",
+      "NONUMBER",
+    ]);
+    assert.deepEqual(Object.values(profiles).at(0)?.autoExec, [
+      { type: "line", line: "%let a=1;" },
+      { type: "file", filePath: "/x/setup.sas" },
+    ]);
+  });
+
+  it("treats empty arrays as absent", () => {
+    const { profiles } = read({ sasOptions: [""], autoExec: [] });
+    assert.equal("sasOptions" in (Object.values(profiles).at(0) ?? {}), false);
+    assert.equal("autoExec" in (Object.values(profiles).at(0) ?? {}), false);
+  });
+
+  it("rejects the profile, not just the field, when either is malformed", () => {
+    for (const bad of [
+      { sasOptions: "NONUMBER" },
+      { sasOptions: [1] },
+      { autoExec: "libname a;" },
+      { autoExec: ["libname a;"] },
+      { autoExec: [{ type: "line" }] },
+      { autoExec: [{ type: "file", filePath: "  " }] },
+      { autoExec: [{ type: "shell", line: "x" }] },
+    ]) {
+      const { profiles, rejected } = read(bad);
+      assert.deepEqual(Object.keys(profiles), [], JSON.stringify(bad));
+      assert.equal(rejected.length, 1, JSON.stringify(bad));
+    }
+  });
+});
+
 describe("createProfile and secretKey", () => {
   it("stamps the current version and omits empty optional fields", () => {
     assert.deepEqual(

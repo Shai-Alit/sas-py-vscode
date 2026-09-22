@@ -292,6 +292,12 @@ async function editProfile(
       context: computeContext,
       clientId,
     }),
+    // Not asked for here — they are edited in settings.json — so carried over,
+    // or an edit of the endpoint would silently drop the profile's session setup.
+    ...(existing.sasOptions === undefined
+      ? {}
+      : { sasOptions: existing.sasOptions }),
+    ...(existing.autoExec === undefined ? {} : { autoExec: existing.autoExec }),
   };
 
   if (updated.clientId === undefined) {

@@ -21,7 +21,7 @@ forms, and the slice is not done until every case in it round-trips byte for byt
 — the quoting failures in §1.5 are silent, so the corpus is the only thing
 standing between a user and a program that runs and means something else. The
 **offset map** from submitted-block lines to editor lines, session options
-(`PAGESIZE=MAX` to suppress page-break headers), `freshNamespace` handling, the
+(`PAGESIZE=MAX` to suppress page-break headers — superseded: that form was never applied, see Finding 11.7 in `phase-11.md`), `freshNamespace` handling, the
 busy/serial contract, and success/failure detection. *Medium.*
 
 > **Amended 2026-08-16 by the 2-pre findings.** Submission is upload plus

@@ -645,11 +645,23 @@ section above unless noted:
   as `'-Bob` in pandas). The SAS library path relays the server's CSV
   untouched (Finding 7.20), so guarding it means re-parsing every page — a
   separate decision, not part of this item.
-- [ ] **11e — Session startup/autoexec configuration.** Needs its own short
-  scoping pass first (what "session startup" configures, and whether it's a
-  workspace setting, a run-automatically-per-session snippet, or both) —
-  no design exists yet beyond the long-tail sentence at the top of this
-  file's Plan section.
+- [x] **11e — Session startup/autoexec configuration.** Scoped 2026-09-20 to
+  profile-level `sasOptions` + `autoExec` (SAS lines, inline or file), mirroring
+  upstream; code, unit and integration tests, docs and manual-test items
+  11.23–11.28 written. Also fixes `PAGESIZE=MAX` never having been applied
+  (Finding 11.7). Pre-PR adversarial reviews done 2026-09-21 (first: one finding;
+  second, after manual testing and Finding 11.8: six findings, folded in);
+  manual-test items 11.23–11.28 all passed 2026-09-21 (11.26 after a re-run
+  following the Finding 11.8 fix).
+  See this section's own Runbook entry, below.
+- [ ] **11e follow-up — show the text of an autoExec error.** Added 2026-09-20.
+  A bad line leaves the session `idle` with `sessionConditionCode` 3000 and the
+  `ERROR` only in the session log (Finding 11.7). Read
+  `/compute/sessions/{id}/log` after create when the code is nonzero and write
+  the `ERROR`/`WARNING` lines to the output channel.
+- [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
+  11e by decision. Needs its own submission per session and an answer to
+  ADR-0014 and to `restart`/namespace lifetime before it is sized.
 
 ### 11a — Interactive window
 
@@ -1202,6 +1214,73 @@ finding-numbering scheme adopted 2026-09-09 (`STATUS.md`, repo-root
 `CLAUDE.md`) — this is the first finding recorded for this phase, so it
 starts fresh at `11.1` rather than continuing any other phase's count.
 
+### 11e — Session startup: `sasOptions` and `autoExec`, 2026-09-20
+
+**Scoped with Sean (2026-09-20):** SAS-side startup only, mirroring upstream's
+profile fields — `sasOptions` plus `autoExec` as `line` or `file` entries — and
+**not** a Python startup snippet. That one would need its own `PROC PYTHON`
+submission per session and interacts with ADR-0014's "nothing wraps the user's
+bytes" rule and with `restart`/namespace lifetime, so it is left as a candidate
+for a dedicated scoping pass, not built. `createSession` already accepted
+`options` and `autoExecLines`; nothing passed the latter, so 11e is profile
+schema, parsing, and wiring, plus the wire fix below.
+
+**What shipped.** `ViyaProfile` gains optional `sasOptions: string[]` and
+`autoExec: AutoExecEntry[]` (`src/profile/model.ts`; strict per-profile
+rejection when malformed, empty arrays read as absent). A new pure module
+`src/profile/sessionSetup.ts` formats options (first `=` -> space), merges them
+after the extension's own, and flattens `autoExec` (file reads injected).
+`ComputeSessionManager.open` builds both and passes them to `createSession`;
+files are read with `vscode.workspace.fs`, and an unreadable one is skipped with
+a message. The one create site serves Run File, the interactive window and
+notebooks alike. `ComputeSession` now carries `conditionCode`, and a nonzero one
+with autoExec present raises a message (Finding 11.7). The settings schema and
+`package.nls.json` describe both fields; **Edit Connection Profile** now carries
+them over (it rebuilt the profile from four fields and would have dropped them);
+**Import Connection Profiles** maps upstream's identical fields.
+
+**A pre-existing bug this fixed.** Finding 11.7: `SESSION_OPTIONS =
+["PAGESIZE=MAX"]` (3f) was accepted and never applied, so the page-break-banner
+suppression it was added for never took effect. It is now `"PAGESIZE MAX"`. This
+changes what sessions do (banners can no longer appear), which is the intent 3f
+documented.
+
+**Deliberately not built:** surfacing the *text* of an autoExec error — that
+means reading the session log, which no code here does yet; the message says an
+error occurred and the docs say where it is. Left as a follow-up on the punch
+list.
+
+**Pre-PR adversarial review (2026-09-21):** no blocking findings. One real gap,
+folded in: `editProfile`'s carry-over of `sasOptions`/`autoExec` had no test (the
+command had none at all). `test/integration/profile.test.ts` now runs **Edit
+Connection Profile** against a profile carrying both, with the prompts stubbed,
+and asserts they survive an endpoint edit. The reviewer also traced the trust
+question — a workspace `settings.json` naming an arbitrary `autoExec` file — to
+`runConnect`'s untrusted-workspace refusal, which precedes any session build, so
+no new hole. The reviewer also noticed `CHANGELOG.md`'s `[Unreleased]` was empty
+for all of 11a–11e; that was a real gap (`RUNBOOK.md` requires an entry per PR),
+not practice, and it is now filled for the whole phase.
+
+**PR #199 review (2026-09-21):** four comments, no blocking ones. Three were
+real and are fixed: the `log.warn` for a skipped autoExec file bypassed
+`vscode.l10n.t()`; `buildSessionOptions`'s ordering rested on "SAS takes the
+last setting", which no probe had established for a *duplicate* name in one
+`environment.options` array (probed, now Finding 11.9, and both the comment and
+`docs/connection-profiles.md` cite it); and CodeQL flagged the trailing-newline
+regex as backtracking-prone (replaced by popping empty trailing elements). The
+fourth pointed out that `NAME =VALUE` — an `=` one typo's worth of whitespace
+past the name — is passed through unchanged rather than normalised. That is left
+as it is, deliberately: nothing has probed what the service does with that form,
+and rewriting it would invent an intent the user may not have. The behaviour is
+now stated in `formatSasOption`'s doc comment and pinned by a test.
+
+**Verification:** `npm run verify` green (1,856 unit tests; coverage
+96.38/95.85/96.16/96.38; `check:secrets` 521 files), `npm run check:docs`
+green, `npm run test:integration` green (495 passing, as of the last
+recorded run). **Manual pass, 2026-09-21: items 11.23–11.28 all pass.** 11.26
+first showed no warning for a bad autoExec line; that was Finding 11.8, fixed
+and re-run to a pass.
+
 ### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
 
 Checked 2026-09-16, read-only, while scoping candidate F9 (Plan, above) —
@@ -1488,3 +1567,88 @@ order of 500 MB and >1,000 page requests. **Not settled:** the maximum a
 single request could return before failing (only tried to 100,000 rows);
 behaviour on a far larger table; whether the per-request ephemeral CAS
 session (Finding 8.13) accumulates across a thousand-page export.
+
+### Finding 11.7 — `environment.options` needs `NAME VALUE`; `NAME=VALUE` is silently ignored; a bad `autoExecLines` statement leaves the session `idle` with `sessionConditionCode` 3000
+
+Probed 2026-09-20/21, `verde`, via `viya-api-probe`, with Sean's explicit
+approval of the mutating steps (throwaway sessions on the "SAS Studio compute
+context", each followed by a job that read the effect back with `%put
+%sysfunc(getoption(...))`; every session deleted and confirmed `404`).
+
+**Documented (upstream `vscode-sas-extension`, `formatSASOptions`):** options
+go in `environment.options`, with `=` rewritten to a space (`["-PAGESIZE=MAX"]`
+-> `["-PAGESIZE MAX"]`). **Observed:** upstream is right, and this project's
+own `SESSION_OPTIONS = ["PAGESIZE=MAX"]` (shipped 3f, 2026-08-28) was **never
+applied**.
+
+| `options` sent | read back |
+|---|---|
+| `PAGESIZE=MAX`, `YEARCUTOFF=1950` | `PAGESIZE`=60, `YEARCUTOFF`=1940 (defaults; **accepted with no error, not applied**) |
+| `YEARCUTOFF 1951`, `PAGESIZE MAX` | 1951, 32767 |
+| `-YEARCUTOFF 1952`, `NONUMBER` | 1952, `NONUMBER` (leading `-` and a bare switch both work) |
+| `FMTSEARCH=(work sashelp)` | unchanged (same `=` behaviour) |
+| `LINESIZE 97`, `NOSUCHOPTION` | session `state: "failed"`; a job on it -> `400`, `errorCode` 5113, `details` `ERROR: Unrecognized SAS option name NOSUCHOPTION.` |
+
+**`autoExecLines`:** `%let X=hello;` and `libname p "/tmp";` both take effect in
+the session's global scope (`&X` resolved in a later job; `libref()` = 0). A
+statement that is not valid SAS does **not** fail the session: `state` is
+`idle`, lines after it still run, `ERROR 180-322` appears only in the session
+log, and the create response's `sessionConditionCode` is **3000** (superseded
+by Finding 11.8: that create had already settled to `idle`; a `pending` create
+reports 0) (a clean start is 0; `failureMessages` absent either way). The site's own autoexec runs first
+(its lines appear in the same session log).
+
+**Not settled:** whether `FMTSEARCH (work sashelp)` (space form with
+parentheses) is applied — only the `=` form was tried. The first two create
+attempts (both carrying autoExec lines) returned `500` "process initialization
+... timed out after 60 seconds" and did not recur on the later creates,
+including the identical bad-autoExec line, so this reads as a cold launcher
+rather than a property of autoExec (not proven). An autoExec that runs for
+minutes (would presumably hit that same 60 s initialization limit) was not
+tried. Viya 3.5 behaviour is moot (ADR-0022).
+
+### Finding 11.8 — a `pending` create response reports `sessionConditionCode` 0; the 3000 shows only on a later `GET` of the session
+
+Probed 2026-09-21, `verde`, via `viya-api-probe`, with Sean's approval of the
+mutating step (one throwaway session on the "SAS Studio compute context",
+deleted, `404` confirmed). Found by manual test 11.26: no warning was shown for
+a bad autoExec line.
+
+**Documented / assumed (Finding 11.7 as first written):** the create response's
+`sessionConditionCode` is 3000 after a bad autoExec line. **Observed:** that was
+true only for a create that had already come back `idle`. Sending
+`autoExecLines: ["this is not valid sas;", "%let P11E=after;"]`, the `201`
+create response was `state: "pending"`, `sessionConditionCode: 0`; the first
+`GET /compute/sessions/{id}` was still `pending` but already `3000`; the next
+was `idle`, `3000`. `waitWhilePending` keeps only `state`/`etag` from its polls,
+so the code was never seen and no warning fired. Two creates, two shapes
+(11.7's came back `idle`/3000, this one `pending`/0), so the create response's
+code is simply not final. The extension now re-reads the session
+(`attachSession`) once it settles, when the profile has autoExec lines, and
+warns in wording that does not blame the profile's lines: the code is
+session-wide and the site's own autoexec runs first (Finding 11.7). Only 3000
+after an `ERROR` was measured; any nonzero code is treated as a problem.
+
+**Not settled:** whether a failure reading the session should ever be louder
+than a debug log line (it currently only costs the warning).
+
+### Finding 11.9 — a duplicated option in `environment.options`: the later entry wins
+
+Probed 2026-09-21, `verde`, via `viya-api-probe`, with Sean's approval of the
+mutating steps (two throwaway sessions on the "SAS Studio compute context", each
+read back with `%put %sysfunc(getoption(pagesize))`; both deleted, `404`
+confirmed). Raised by the PR #199 AI review: `buildSessionOptions` orders profile
+options after the extension's own on the claim that the last setting wins, and
+Finding 11.7's rows all used distinct option names.
+
+**Documented / assumed:** SAS takes the last setting of an option. **Observed:**
+correct, and neither request was rejected.
+
+| `options` sent | `PAGESIZE` read back |
+|---|---|
+| `PAGESIZE MAX`, `PAGESIZE 60` | 60 |
+| `PAGESIZE 60`, `PAGESIZE MAX` | 32767 |
+
+**Not settled:** duplicates of options other than `PAGESIZE`; the same option
+given once as `-NAME` and once as `NAME`.
+

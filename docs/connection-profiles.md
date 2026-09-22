@@ -95,6 +95,52 @@ still works, and the reason for the skip is written to the log. Run **Python on
 Viya: Show Log** to see it. Nothing in the extension rewrites your settings file
 behind your back, so a typo stays a typo until you fix it.
 
+## Setting up every new session
+
+Two optional fields on a profile shape the SAS session it starts. Neither has a
+prompt; you edit them in `settings.json`.
+
+```json
+{
+  "pythonOnViya.connectionProfiles": {
+    "Production": {
+      "endpoint": "https://viya.example.com",
+      "sasOptions": ["YEARCUTOFF=1950", "NONUMBER"],
+      "autoExec": [
+        { "type": "line", "line": "libname mylib '/data/shared';" },
+        { "type": "file", "filePath": "C:/Users/me/sas/startup.sas" }
+      ]
+    }
+  }
+}
+```
+
+**`sasOptions`** are SAS system options set for the session. Write them as
+`NAME=VALUE`, `NAME VALUE`, or a bare switch like `NONUMBER`; the extension sends
+the form the compute service actually applies. Your options are applied after
+the extension's own (`PAGESIZE MAX`), so you can override one: if an option
+appears twice, the later setting wins (checked against a live Viya 4
+deployment).
+
+**`autoExec`** is SAS code run once when the session starts, in the order
+listed. An entry is either a `line` of SAS, or a `file` on this machine whose
+lines are run (use an absolute path). A file that cannot be read is skipped, and
+you are told which one.
+
+Two things to know:
+
+- **They apply to a *new* session only.** The extension reattaches to a session
+  it already has (they live for about 15 minutes when idle), and that session
+  keeps what it started with. After editing either field, run **Python on Viya:
+  Disconnect** and connect again.
+- **An autoExec statement that errors does not stop the session.** The
+  session starts, later lines still run, and you get a message saying the
+  session reported an error while running startup code. The error itself is in
+  the session's SAS log, which this extension does not show.
+
+The SAS extension's profiles use the same two fields, so **Import Connection
+Profiles** carries them across.
+
 ## Choosing which profile is active
 
 There are two levels, and the difference matters if you work in more than one

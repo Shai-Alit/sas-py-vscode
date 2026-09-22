@@ -594,6 +594,53 @@
               "clientId": {
                 "type": "string",
                 "markdownDescription": "%configuration.profile.clientId.description%"
+              },
+              "sasOptions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "markdownDescription": "%configuration.profile.sasOptions.description%"
+              },
+              "autoExec": {
+                "type": "array",
+                "items": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "line"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "type": {
+                          "const": "line"
+                        },
+                        "line": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "type",
+                        "filePath"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "type": {
+                          "const": "file"
+                        },
+                        "filePath": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                },
+                "markdownDescription": "%configuration.profile.autoExec.description%"
               }
             }
           }

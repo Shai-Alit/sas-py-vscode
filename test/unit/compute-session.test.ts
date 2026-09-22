@@ -304,6 +304,21 @@ describe("createSession", () => {
     });
   });
 
+  it("reads sessionConditionCode, so a failed autoexec line is visible (Finding 11.7)", async () => {
+    // 3000 with state `idle` is what a bad autoExecLines statement produced.
+    const failed = ok(
+      { ...(sessionBody() as object), sessionConditionCode: 3000 },
+      { status: 201 },
+    );
+    const clean = ok(sessionBody(), { status: 201 });
+    const a = await createSession(fake([failed]).client, context());
+    const b = await createSession(fake([clean]).client, context());
+
+    assert.ok(a.ok && b.ok);
+    assert.equal(a.value.conditionCode, 3000);
+    assert.equal(b.value.conditionCode, undefined);
+  });
+
   it("gives the session a stable name an administrator can search for", () => {
     // Not localised. It shows up in someone else's Environment Manager, and a
     // name that changes with the editor's display language is unsearchable.

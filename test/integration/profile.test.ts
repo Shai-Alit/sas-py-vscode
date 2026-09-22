@@ -122,6 +122,47 @@ describe("connection profiles in a real editor", () => {
     }
   });
 
+  it("keeps sasOptions and autoExec when a profile is edited (11e)", async () => {
+    // `editProfile` rebuilds the profile from the four fields it prompts for, so
+    // anything else has to be carried over explicitly. Those two are edited in
+    // settings.json only; losing them on an endpoint edit would be silent.
+    const sasOptions = ["YEARCUTOFF=1950", "NONUMBER"];
+    const autoExec = [{ type: "line", line: "%let P11E=hello;" }];
+    await setProfiles({
+      Prod: {
+        version: 1,
+        id: "edit-id",
+        endpoint: "https://viya.example.com",
+        sasOptions,
+        autoExec,
+      },
+    });
+
+    const window = vscode.window as {
+      showQuickPick: unknown;
+      showInputBox: unknown;
+    };
+    const originalQuickPick = window.showQuickPick;
+    const originalInputBox = window.showInputBox;
+    // Answers in prompt order: name, endpoint, context, client id. Leaving the
+    // client id empty avoids the secret prompt and SecretStorage entirely.
+    const answers = ["Prod", "https://edited.example.com", "", ""];
+    window.showQuickPick = (items: readonly { label: string }[]) =>
+      Promise.resolve(items[0]);
+    window.showInputBox = () => Promise.resolve(answers.shift());
+    try {
+      await vscode.commands.executeCommand("pythonOnViya.editProfile");
+    } finally {
+      window.showQuickPick = originalQuickPick;
+      window.showInputBox = originalInputBox;
+    }
+
+    const edited = config().get<ProfileMap>(PROFILES)?.Prod;
+    assert.equal(edited?.endpoint, "https://edited.example.com");
+    assert.deepEqual(edited.sasOptions, sasOptions);
+    assert.deepEqual(edited.autoExec, autoExec);
+  });
+
   it("runs the switch command with no profiles without throwing", async () => {
     // The empty case reaches an information message and returns. It is worth a
     // test because it is the state every new install starts in, and because a

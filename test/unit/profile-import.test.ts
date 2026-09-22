@@ -66,6 +66,31 @@ describe("scanSasProfiles", () => {
     ]);
   });
 
+  it("carries sasOptions and autoExec across, and skips a profile whose are malformed", () => {
+    const { candidates, skipped } = scanSasProfiles(
+      {
+        profiles: {
+          Good: {
+            ...rest("https://a.example.com"),
+            sasOptions: ["NONUMBER"],
+            autoExec: [{ type: "line", line: "%let a=1;" }],
+          },
+          Bad: { ...rest("https://b.example.com"), autoExec: "nope" },
+        },
+      },
+      { makeId: counter() },
+    );
+
+    assert.equal(candidates.length, 1);
+    assert.deepEqual(candidates.at(0)?.profile.sasOptions, ["NONUMBER"]);
+    assert.deepEqual(candidates.at(0)?.profile.autoExec, [
+      { type: "line", line: "%let a=1;" },
+    ]);
+    assert.deepEqual(skipped, [
+      { name: "Bad", reason: "autoExec must be an array" },
+    ]);
+  });
+
   it("reports the presence of a secret without carrying its value anywhere", () => {
     const { candidates } = scanSasProfiles(
       { profiles: { A: rest("https://a.example.com") } },

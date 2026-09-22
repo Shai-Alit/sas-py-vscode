@@ -92,6 +92,19 @@ decided — same treatment: out of this phase's scope, recorded in detail so
 the design isn't lost, explicitly not authorized for implementation until a
 dedicated scoping session revisits it.
 
+**Localisation bundles beyond English — decided against, 2026-09-22 (Sean's own
+call).** Named in this phase's original one-liner above alongside session
+startup, result panel styling, and snippets; unlike the other three it never
+got a slice, and it now won't: this project is not supporting anything beyond
+English at this point. Not a deferral to a later phase — a settled decision,
+recorded here rather than silently dropped. `package.nls.json` and
+`l10n/bundle.l10n.json` stay the only bundle; no other-locale work is a
+candidate for this phase or a future one unless revisited.
+
+**Result panel styling options** — also named in the original one-liner,
+never scoped into 11a–11e and not decided either way. Still an open candidate
+for a future slice of this phase, or for reclassification, if picked up again.
+
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
 triaged against §3.1's parity table).**
@@ -556,6 +569,23 @@ possible, the row's provider-facing name) a form that identifies the extension
 and the profile — and settle the `(Microsoft)`-vs-`(SAS Viya)` inconsistency for
 a corporate-creds profile. Related: `#42` itself (the same-label collapse) and
 RUNBOOK item 146.
+
+**Resolved 2026-09-22, by decision rather than by code: documented as a known
+limitation instead of fixed.** `AUTH_PROVIDER_ID`/`authProviderLabel()`
+(`src/auth/authProvider.ts`) show this extension registers exactly one
+authentication provider, labeled `SAS Viya` — so every row it adds already
+reads `<name> (SAS Viya)`. On that evidence the `(Microsoft)`-labeled row in
+the original 2026-09-09 observation was not a row this extension produced, and
+the paragraph above overstates what was established; left as its own record
+rather than rewritten, per this project's own practice of not deleting a
+superseded note outright. The real, still-open gap is narrower: two profiles
+for different deployments can show the identical `<name> (SAS Viya)` row, with
+nothing distinguishing which profile signed in as which. Sean's call: not
+worth a code change before 1.0 — a per-session label would need more than
+`#42`'s own display-name-collapse fix touches, for a menu most users glance at
+rather than rely on. Documented instead in `docs/signing-in.md`'s "More than
+one deployment at once" section. Closes this gap's §8 1.0 gate as a documented
+known limitation rather than a fix — see `STATUS.md`.
 
 
 ---

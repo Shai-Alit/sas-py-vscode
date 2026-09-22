@@ -140,10 +140,12 @@ a `SAS.submit()` argument carrying one is no safer (Finding 12.1, above) —
 both had to be treated as compromised when found. If you're writing this by
 hand for a user, follow the file-based shape — read the token from a file,
 never assign `password="..."` to a string literal in a cell, whether that
-literal reaches SAS via an inline block or via `SAS.submit()`. The token is short-lived (minutes), while a `swat.CAS()`
-connection can outlive it; an auth failure after a session's been open a
-while usually means the token expired, not a code bug — reconnect with a
-fresh one rather than debugging the connection logic.
+literal reaches SAS via an inline block or via `SAS.submit()`.
+
+The token is short-lived (minutes), while a `swat.CAS()` connection can
+outlive it; an auth failure after a session's been open a while usually
+means the token expired, not a code bug — reconnect with a fresh one rather
+than debugging the connection logic.
 
 For a caslib backed by an external database, **Insert CAS SQL Passthrough
 Snippet** gives the `conn.fedsql.execDirect(query='''select * from connection

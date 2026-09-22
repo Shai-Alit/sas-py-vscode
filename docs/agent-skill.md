@@ -20,7 +20,7 @@ excluded from the packaged `.vsix`, the same as this project's own internal
 contributor tooling, so installing "Python on Viya" from the Marketplace does
 not put anything in your agent's hands by itself.
 
-To use it, copy that one file into a location Claude Code or Copilot already
+To use it, copy that one file into either location Claude Code already
 scans:
 
 - **`<your-project>/.claude/skills/python-on-viya/SKILL.md`** — applies only
@@ -28,9 +28,14 @@ scans:
   to get it too.
 - **`~/.claude/skills/python-on-viya/SKILL.md`** — applies to every project
   you open with Claude Code, on this machine.
-- **VS Code Copilot agent mode** reads the identical file format from
-  `.github/skills/` (project-scoped) or `~/.copilot/skills/` (every
-  project), in place of the `.claude/` paths above.
+
+**One copy covers both agents.** VS Code's Copilot agent mode reads the same
+two `.claude/skills/` locations directly — that shared reach is the entire
+reason this shipped as a single file rather than two (see
+[ADR-0037](adr/0037-ai-agent-integration-approach.md)). Copilot separately
+scans `.github/skills/` (project) and `~/.copilot/skills/` (every project)
+too, if you already keep skills there for other tools, but you do not need a
+second copy in either of those for Copilot to see this one.
 
 Either way, keep the folder name (`python-on-viya`) and the file name
 (`SKILL.md`) — that is the shape both tools look for.

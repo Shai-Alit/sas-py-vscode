@@ -356,3 +356,43 @@ stage, before any engine-specific or password-handling code would run, so
 this probe does not establish that a well-formed statement leaks the same
 way — only that a malformed one does, and that no masking can be assumed as
 a safety net either way.
+
+### Adversarial review of the whole branch, 2026-09-22 — one real defect found and fixed
+
+Requested by Sean before this branch is pushed, covering all three of the
+above entries together (the skill, `agent-skill.md`, the probe correction),
+not just the original skill file. Same shape as the earlier manual review —
+a direct, targeted check of each claim against its cited source, since the
+project's standard TypeScript review prompt doesn't fit a docs-only diff.
+
+**One real defect, fixed:** `docs/agent-skill.md` told users that Copilot
+reads skills from `.github/skills/`/`~/.copilot/skills/` "in place of the
+`.claude/` paths" — implying a second copy was needed for Copilot. That
+directly contradicts the research memo's own Finding 14 and ADR-0037's
+reason for shipping this as one file rather than two: Copilot reads
+`.claude/skills/` and `~/.claude/skills/` **directly**, the same locations
+Claude Code does. A user following the original wording would have done
+unnecessary duplicate work, or worse, have concluded a `.claude/skills/`-only
+copy doesn't reach Copilot at all. Fixed: the page now states one copy
+covers both agents, and names `.github/skills/`/`~/.copilot/skills/` only as
+locations Copilot *additionally* scans, not a required second destination.
+
+**Also fixed, cosmetic:** an unwrapped, over-long source line in the skill's
+CAS section (introduced by an earlier find-and-replace edit), split back
+into normal paragraph width. No rendering defect — prettier passed
+throughout — just inconsistent with the file's own style.
+
+**Checked and found clean:** the compute-context UUID recorded in Finding
+12.1 above, against this project's own scrubbing rule — precedent already
+exists (`phase-2a.md`, `phase-2b.md`, `phase-3.md` all record Viya
+correlator/session ids, which are equally opaque and non-identifying); no
+real hostname, username, or token fragment from the probe session reached
+any committed file (checked by grepping the full diff for the actual host,
+the account's real email, and a token prefix — all clean); the small
+wiring diffs (`docs/README.md`, `getting-started.md`, `running-python.md`,
+`.vitepress/config.mjs`) all read correctly; `STATUS.md`'s phase-index row
+and narrative paragraph match what actually shipped.
+
+Verification re-run after the fix: `npx prettier --check` on both changed
+files and `npm run check:docs` (reference check, samples, self-links,
+VitePress build) both clean.

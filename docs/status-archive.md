@@ -2810,7 +2810,7 @@ Agent Skill; spike an in-process MCP server reachable by Claude Code), plus a
 third slice (11h) to investigate the separate Python-startup-snippet
 follow-up. All three, plus the 11d CSV-guard follow-up (which turned out to
 need the same kind of investigation), moved together into **Phase 12** as
-12a–12d — see [ADR-0037](docs/adr/0037-ai-agent-integration-approach.md) and
+12a–12d — see [ADR-0037](adr/0037-ai-agent-integration-approach.md) and
 `docs/phases/phase-12.md`. The previous "Phase 12" (second execution backend,
 never started) was renumbered to **Phase 13** the same day to make room —
 see `docs/phases/phase-13.md`. `PRODUCTION_PLAN.md` §8 is amended: Phase 12

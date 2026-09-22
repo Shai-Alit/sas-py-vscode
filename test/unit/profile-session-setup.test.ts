@@ -35,6 +35,10 @@ describe("formatSasOption", () => {
     );
     // The `=` is after whitespace, so it is part of the value, not the separator.
     assert.equal(formatSasOption("SET FOO=bar"), "SET FOO=bar");
+    // Same rule with only a typo's worth of whitespace in front of the `=`:
+    // sent as written, not rewritten into `NAME VALUE`.
+    assert.equal(formatSasOption("NAME =VALUE"), "NAME =VALUE");
+    assert.equal(formatSasOption("NAME = VALUE"), "NAME = VALUE");
   });
 
   it("trims surrounding whitespace, including after the separator", () => {

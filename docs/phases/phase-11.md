@@ -1261,6 +1261,19 @@ no new hole. The reviewer also noticed `CHANGELOG.md`'s `[Unreleased]` was empty
 for all of 11a–11e; that was a real gap (`RUNBOOK.md` requires an entry per PR),
 not practice, and it is now filled for the whole phase.
 
+**PR #199 review (2026-09-21):** four comments, no blocking ones. Three were
+real and are fixed: the `log.warn` for a skipped autoExec file bypassed
+`vscode.l10n.t()`; `buildSessionOptions`'s ordering rested on "SAS takes the
+last setting", which no probe had established for a *duplicate* name in one
+`environment.options` array (probed, now Finding 11.9, and both the comment and
+`docs/connection-profiles.md` cite it); and CodeQL flagged the trailing-newline
+regex as backtracking-prone (replaced by popping empty trailing elements). The
+fourth pointed out that `NAME =VALUE` — an `=` one typo's worth of whitespace
+past the name — is passed through unchanged rather than normalised. That is left
+as it is, deliberately: nothing has probed what the service does with that form,
+and rewriting it would invent an intent the user may not have. The behaviour is
+now stated in `formatSasOption`'s doc comment and pinned by a test.
+
 **Verification:** `npm run verify` green (1,856 unit tests; coverage
 96.38/95.85/96.16/96.38; `check:secrets` 521 files), `npm run check:docs`
 green, `npm run test:integration` green (495 passing, as of the last

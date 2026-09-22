@@ -31,7 +31,10 @@ import type { AutoExecEntry } from "./model";
  * switch are both accepted as-is.
  *
  * Only an `=` that comes before any whitespace is the separator; an `=` further
- * in belongs to the value and is left alone.
+ * in belongs to the value and is left alone. That holds even when the whitespace
+ * is only a typo's worth: `NAME =VALUE` is passed through as written, `=` and
+ * all, rather than guessed at — nothing has probed what the service makes of
+ * that form, and rewriting it would be inventing an intent the user may not have.
  */
 export function formatSasOption(raw: string): string {
   const option = raw.trim();

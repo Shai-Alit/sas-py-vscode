@@ -94,6 +94,13 @@ palette. No further candidate (font-size control, word-wrap toggle, output
 truncation) had anything concrete behind it either. Not a future candidate
 unless something specific comes up.
 
+**"Snippets" — found still unscoped, at the Phase 11→12 housekeeping
+checkpoint, 2026-09-22.** Also named in the original one-liner alongside
+session startup, result panel styling, and localisation — but unlike those
+three, it never got its own closure or carry-forward decision anywhere in
+this file. Recorded properly as **F11**, in the "New feature candidates"
+list below, rather than left as a loose paragraph here.
+
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
 triaged against §3.1's parity table).**
@@ -349,6 +356,24 @@ triaged against §3.1's parity table).**
   that would let *any* rich value display at all without an explicit file
   write — if F10 ever happens, it would likely become the mechanism that
   feeds F8's own trigger, rather than the two being unrelated.
+- **F11 — Snippets for common Viya patterns, general** (found unscoped
+  2026-09-22, at the Phase 11→12 housekeeping checkpoint, PR #204's own
+  review). Phase 11's original long-tail one-liner named "snippets for
+  common Viya patterns" alongside session startup, result panel styling,
+  and localisation — the other three each got a real decision (11e shipped
+  session startup; result panel styling was closed as already-satisfied;
+  localisation bundles were declined outright), but this one never did.
+  What actually shipped under the "snippets" banner is narrower than the
+  one-liner promised: **F9's CAS/SWAT SQL passthrough snippet (11b)**, one
+  command for one specific pattern (native SQL against a DBMS-backed
+  caslib). The broader idea — a general library of Viya-specific snippets,
+  the way `ms-python.python`'s own snippet contributions cover common
+  Python idioms — has no design, no candidate list of which patterns would
+  earn a spot (connection setup beyond CAS? common `PROC PYTHON` idioms?
+  library/data-exchange boilerplate from 7d?), and no owner now that Phase
+  11 is closed. **Flagged, not scoped, not sized** — the same treatment F1
+  and F6 got above — pending a dedicated look at which patterns actually
+  warrant a snippet before this is sequenced anywhere.
 
 **Bugs found pre-release (added 2026-09-16, from Sean's own hands-on use —
 not yet triaged for whether they're fixed ahead of the next release or as the
@@ -661,7 +686,8 @@ section above unless noted:
   surfaces were generalised behind a small per-backend source
   (`PropertiesSource`, `CsvExportSource`) rather than forked; see this
   section's own Runbook entry, below.
-- [ ] **11d follow-up — large-table confirmation for SAS library tables.**
+- [ ] **11d follow-up — large-table confirmation for SAS library tables:
+  moved to Phase 12 as 12e, 2026-09-22.**
   Added 2026-09-19 at Sean's request. CAS export now asks for confirmation
   above an estimated 100 MB (`CsvExportSource.confirmAboveBytes`, 11d);
   `LibraryCsvSource` sets no threshold, so a SAS library table's export never
@@ -669,8 +695,12 @@ section above unless noted:
   session table pages (Finding 7.20 measured only `SASHELP.CLASS`; nothing
   larger has been exported), set `confirmAboveBytes` on `LibraryCsvSource`,
   and add manual-test items mirroring 11.19/11.20. **Decided 2026-09-22
-  (Sean): build it.**
-- [ ] **11d follow-up — a `CasProblem` for an oversized response.** Added
+  (Sean): build it** — folded into Phase 12 as slice **12e** at the Phase
+  11→12 housekeeping checkpoint the same day, once it became clear "build
+  it" had never been given a phase or slice to land in. See
+  [`docs/phases/phase-12.md`](phase-12.md).
+- [ ] **11d follow-up — a `CasProblem` for an oversized response: moved to
+  Phase 12 as 12e, 2026-09-22.** Added
   2026-09-20 from the PR #197 review. `src/cas/client.ts` has no
   `ResponseTooLargeError` case, so a CAS page over the transport's 1 MiB cap
   (a very wide table's export or grid page) surfaces as `cas-unreachable` —
@@ -681,7 +711,9 @@ section above unless noted:
   through `CasClient`. Then restore `docs/browsing-cas.md`'s "content too
   large" wording and the two comments corrected in 11d (`csvFormat.ts`,
   `csvExportModel.ts`). Consider the same for the Compute/library client.
-  **Decided 2026-09-22 (Sean): build it.**
+  **Decided 2026-09-22 (Sean): build it** — folded into Phase 12 as slice
+  **12e** alongside the item above, same reason. See
+  [`docs/phases/phase-12.md`](phase-12.md).
 - [ ] **11d follow-up — opt-in CSV formula-injection guard (CAS): moved to
   Phase 12 as 12d, 2026-09-22.** Briefly decided "build it" the same day,
   then Sean's own re-read (once the CAS-vs-library-export asymmetry was
@@ -696,13 +728,15 @@ section above unless noted:
   manual-test items 11.23–11.28 all passed 2026-09-21 (11.26 after a re-run
   following the Finding 11.8 fix).
   See this section's own Runbook entry, below.
-- [ ] **11e follow-up — show the text of an autoExec error.** Added 2026-09-20.
+- [ ] **11e follow-up — show the text of an autoExec error: moved to Phase
+  12 as 12e, 2026-09-22.** Added 2026-09-20.
   A bad line leaves the session `idle` with `sessionConditionCode` 3000 and the
   `ERROR` only in the session log (Finding 11.7). Read
   `/compute/sessions/{id}/log` after create when the code is nonzero and write
   the `ERROR`/`WARNING` lines to the output channel. **Decided 2026-09-22
   (Sean): build it — never show a blind warning with nothing to help the user
-  fix it.**
+  fix it** — folded into Phase 12 as slice **12e** alongside the two items
+  above, same reason. See [`docs/phases/phase-12.md`](phase-12.md).
 - [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
   11e by decision. Needs its own submission per session and an answer to
   ADR-0014 and to `restart`/namespace lifetime before it is sized. **Its own
@@ -1388,6 +1422,66 @@ CSV-guard follow-up is 12d. All four are recorded in
 Phase 12 gates v1.0 — amended into `PRODUCTION_PLAN.md` §8. Phase 11's own
 remaining scope, after this move, is exactly the three follow-ups decided
 above; once those land, Phase 11 is done.
+
+### Phase 11→12 housekeeping, 2026-09-22 — phase closed, three follow-ups folded into Phase 12 as 12e
+
+Per `HOUSEKEEPING.md`, run once 11a–11e were merged and the AI-agent
+-integration/CSV-guard move to Phase 12 had landed (`61c03d0`). **Corrects
+the previous entry's own "once those land, Phase 11 is done" line**: Sean's
+call this session is that the phase closes now, with the three still-open
+follow-ups (large-table CSV confirmation for SAS library tables; a
+`CasProblem` for an oversized CAS response; surfacing autoExec-error text)
+not treated as gating the phase.
+
+**A first pass at this checkpoint described them as "carried forward as
+documented open items," matching Phase 8a's own three open items and the
+5d-i user-provided-CA test — a comparison that turned out not to hold.**
+Those precedents are each blocked on something external (a stale credential,
+an environment that doesn't exist yet); these three have no such blocker —
+each was already decided ("build it," 2026-09-22) with nothing left open
+except *when*, and "carried forward, no target phase yet" quietly left that
+unanswered rather than fixing it. Caught the same session, before this entry
+was finalized: **all three are folded into Phase 12 as a new slice, 12e**,
+sequenced after 12a–12d (see [`docs/phases/phase-12.md`](phase-12.md)) —
+small, already-decided, and Phase 12 is the next phase starting regardless,
+so there is no reason to leave them unscheduled. Each punch-list item above
+is updated in place to record the move.
+
+The checkpoint's other findings:
+
+- **ADRs correct.** [ADR-0037](../adr/0037-ai-agent-integration-approach.md)
+  and this file's own F7 write-up (used in place of a standalone ADR, a
+  deliberate call already recorded in the 11a Runbook entry) both still read
+  as correct and internally consistent with what shipped. Nothing to fix.
+- **One stale claim found and fixed in `PRODUCTION_PLAN.md` §3.1.** The
+  parity table's "Localisation" row still read `Phase 11 (bundles)`,
+  contradicting this file's own "decided against, 2026-09-22" call in the
+  Plan section above (non-English bundles are not a future candidate, not a
+  deferral) — corrected to say so.
+- **Renumbering cross-references checked, none stale.** Every reference to
+  the old "Phase 12 = second execution backend" meaning
+  (`docs/adr/0007-connection-profile-storage.md`, `phase-3.md`,
+  `PRODUCTION_PLAN.md` §8, `docs/dev/manual-tests/`) already points at Phase
+  13, per `phase-13.md`'s own account of the rename. Nothing to fix.
+- **Manual tests: complete except one already-documented gap.** 11.1–11.9
+  and 11.11–11.28 all pass; 11.10 (B1 on the SAS Libraries tree, for a
+  failure that isn't the session being gone) stays unchecked with its own
+  recorded reason ("hardest to provoke on demand... not blocking, the
+  integration test covers this branch directly") — nothing new to run.
+- **No scratch/pending files** existed to reconcile.
+- **Dependency advisories: clean.** 0 open Dependabot alerts (checked live
+  via `gh api`); `scripts/advisory-allowlist.json`'s `allowed` list is empty
+  and consistent. One open, unrelated PR (`#200`, dependabot's dev-tooling
+  group bump) — routine, no advisory attached.
+- **Coverage thresholds current, no ratchet needed.** `.c8rc.json`
+  (95.8/95.8/95.6/95.4) is cleared with margin by the last reported run
+  (96.38/95.85/96.16/96.38, 11e).
+- **Phase 12 scoping: no drift found, one gap fixed.** `phase-12.md`'s
+  original four slices (12a–12d) read consistently with ADR-0037 and with
+  this file's own account of the move. What was missing: the three Phase 11
+  follow-ups above had a "build it" decision but no phase or slice to land
+  in — fixed by giving them one, **12e**, in `phase-12.md`, rather than
+  leaving them open-ended.
 
 ### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
 

@@ -15,7 +15,7 @@ loop, conventions).
 Created 2026-09-22 (Sean's own call), moved out of Phase 11 the same day —
 see [`docs/phases/phase-11.md`](phase-11.md)'s "Phase 11 follow-up decisions,
 and AI-agent integration moved to Phase 12" Runbook entry for the full
-account of why. Three of this phase's four slices trace to a 2026-09-21
+account of why. Three of this phase's five slices trace to a 2026-09-21
 research memo
 ([`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md))
 answering whether the extension can let a user plug an AI agent they already
@@ -24,7 +24,12 @@ have — Claude Code above all — into it; the decision that memo fed is
 unrelated in topic — CSV formula-injection guard research, carried over from
 a Phase 11 (11d) follow-up — but shares the same shape: a real open question
 that needs investigation before it can be sized or built, the same reason
-12b/12c are spikes rather than builds.
+12b/12c are spikes rather than builds. **The fifth (12e) was added later the
+same day**, at the Phase 11→12 between-phase housekeeping checkpoint — three
+already-decided, already-scoped Phase 11 follow-ups that had a "build it"
+call but no slice to land in; unlike 12a–12d, none of it traces to the
+research memo and none of it is a spike, since nothing about any of the
+three is actually undecided.
 
 This phase repurposes a number previously assigned to a different, unstarted
 topic ("second execution backend"), renumbered the same day to
@@ -93,6 +98,46 @@ under this number before today.
    library-export cost/shape before anything is decided for either surface,
    rather than shipping the CAS-only version and leaving the library
    question open again.
+5. **12e — Three small, already-decided Phase 11 follow-ups.** Folded in
+   from `phase-11.md`'s own punch list at the Phase 11→12 between-phase
+   housekeeping checkpoint, 2026-09-22 (see that file's own "Phase 11→12
+   housekeeping" Runbook entry) — each already carried a "build it" decision
+   from the same day, but no phase or slice to land in:
+   - **Large-table CSV-export confirmation for SAS library tables.** Added
+     to Phase 11's punch list 2026-09-19, at Sean's request.
+     `CsvExportSource.confirmAboveBytes` (11d) already gates a CAS table's
+     CSV export above an estimated 100 MB; `LibraryCsvSource` sets no
+     threshold, so a SAS library table's export never asks. Needs a
+     threshold and a probe of how a large Compute session table actually
+     pages ([Finding 7.20](phase-7.md) only measured `SASHELP.CLASS`;
+     nothing larger has been exported), then `confirmAboveBytes` set on
+     `LibraryCsvSource` and manual-test items mirroring 11.19/11.20.
+   - **A `CasProblem` for an oversized CAS response.** Added 2026-09-20,
+     from the PR #197 review. `src/cas/client.ts` has no
+     `ResponseTooLargeError` case, so a CAS page over the transport's 1 MiB
+     cap (a very wide table's export or grid page) surfaces as
+     `cas-unreachable` — proxy-troubleshooting advice, with the real cause
+     only in the detail. Mirror `content-too-large`
+     (`src/content/client.ts`, `problems.ts`, `messages.ts`): a dedicated
+     variant carrying the cap, a message saying the table/page is too wide,
+     and a test driving a real `ResponseTooLargeError` through `CasClient`.
+     Then restore `docs/browsing-cas.md`'s "content too large" wording and
+     the two comments in `csvFormat.ts`/`csvExportModel.ts` that 11d left
+     pointing at this follow-up. Consider the same for the Compute/library
+     client.
+   - **Surface the text of an autoExec error.** Added 2026-09-20. A bad
+     `autoExec` line leaves the session `idle` with `sessionConditionCode`
+     3000 and the `ERROR` only in the session log
+     ([Finding 11.7](phase-11.md)) — 11e's own message says only that an
+     error occurred, not what it was. Read `/compute/sessions/{id}/log`
+     after create when the code is nonzero and write the `ERROR`/`WARNING`
+     lines to the output channel.
+
+   Unlike 12a–12d, none of this traces to the AI-agent-integration research
+   memo and none of it is a spike — each item is already scoped and decided,
+   just never given a slice until this checkpoint. Sequenced last: 12a–12d
+   were this phase's original reason for existing, and 12e is Phase 11
+   leftover work riding along rather than this phase's own topic.
 
 ---
 
@@ -109,6 +154,24 @@ substance (see `phase-11.md`'s own "Phase 11 follow-up decisions, and
 AI-agent integration moved to Phase 12" Runbook entry for the full account
 of what carried over and why); 12d is the CSV-guard research item, similarly
 carried over from 11d's follow-ups. None of the four has started as of this
+entry.
+
+### 12e added, 2026-09-22, at the Phase 11→12 between-phase housekeeping checkpoint
+
+The housekeeping checkpoint (`phase-11.md`'s own "Phase 11→12 housekeeping"
+Runbook entry) found that Phase 11's three remaining punch-list follow-ups —
+large-table CSV confirmation for SAS library tables, a `CasProblem` for an
+oversized CAS response, and surfacing autoExec-error text — each already
+carried a same-day "build it" decision but no phase or slice to land in. A
+first pass at the checkpoint described them as "carried forward as
+documented open items," on the model of Phase 8a's own open items; that
+comparison didn't hold, since Phase 8a's items are blocked on something
+external (a stale credential, a not-yet-existing environment) and these
+three are not blocked on anything — just unscheduled. Fixed by giving them a
+slice, **12e**, in this phase rather than Phase 11 (which is otherwise
+closed) or a new phase of their own — Phase 12 is the next phase starting
+regardless, and none of the three needs its own investigation, so there is
+no reason to hold them out of it. None of the three has started as of this
 entry.
 
 ---

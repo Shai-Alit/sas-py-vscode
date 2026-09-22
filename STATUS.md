@@ -77,6 +77,33 @@ archival rule. **The Phase 10→11 between-phase housekeeping
 (`HOUSEKEEPING.md`) ran and closed 2026-09-16** — see the "Phase 10→11
 housekeeping" section below for what it found.
 
+**Phase 11 (Remaining parity gaps) is done — 11a–11e all merged, 2026-09-17
+through 2026-09-21.** The interactive window (11a, F7), the CAS/SWAT SQL
+passthrough helper (11b, F9), three pre-release bug fixes (11c, B1/B2/B3),
+CAS table properties and CSV export (11d, F2/F3), and session startup via
+profile `sasOptions`/`autoExec` (11e) all shipped, each with its own
+pre-push adversarial review and manual-test pass — full account in
+[`docs/phases/phase-11.md`](docs/phases/phase-11.md). AI-agent integration
+and CSV-guard research were scoped into the phase the same day work wrapped,
+then moved out again, 2026-09-22, into a new [Phase
+12](docs/phases/phase-12.md), which now gates v1.0 in its place
+([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)) — the previous
+Phase 12 ("second execution backend", never started) renumbered to [Phase
+13](docs/phases/phase-13.md) to make room. `npm run verify` green throughout
+(1,856 unit tests; coverage 96.38/95.85/96.16/96.38), `npm run
+test:integration` green (495 passing), `npm run check:docs` green. **Three
+decided-to-build follow-ups remain open, none started** — a large-table CSV
+-export confirmation for SAS library tables, a `CasProblem` for an oversized
+CAS response, and surfacing autoExec-error text — each already decided
+"build it" but with no slice to land in; folded into Phase 12 as a new
+slice, **12e**, at the Phase 11→12 housekeeping checkpoint, rather than left
+open-ended (`docs/phases/phase-12.md`). **The Phase 11→12 between-phase
+housekeeping (`HOUSEKEEPING.md`) ran and closed 2026-09-22** — see the
+"Phase 11→12 housekeeping" section below for what it found. The full
+slice-by-slice narrative that used to live here has moved to
+[`docs/status-archive.md`](docs/status-archive.md), per this file's own
+archival rule.
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:
@@ -252,6 +279,54 @@ The outcomes:
   narrative — spike, both PRs, every review round, the manual-test session,
   and the 2026-09-16 deep-dive pass — moved to `docs/status-archive.md`.
 
+## Phase 11→12 housekeeping — done 2026-09-22
+
+The outcomes:
+
+- **ADRs correct.** [ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)
+  and `phase-11.md`'s own F7 write-up (used in place of a standalone ADR, a
+  deliberate call already recorded in its 11a Runbook entry) both read as
+  correct and internally consistent with what shipped. Nothing to fix.
+- **Punch list: 11a–11e complete; three follow-ups scheduled, not fixed
+  this session.** Large-table CSV confirmation for SAS library tables, a
+  `CasProblem` for an oversized CAS response, and surfacing autoExec-error
+  text are each decided ("build it") but unstarted. **First recorded here as
+  "carried forward as documented open items," on the model of Phase 8a's
+  own three open items — corrected within the same session**: Phase 8a's
+  items are each blocked on something external (a stale credential, a
+  not-yet-existing environment); these three are not blocked on anything,
+  just unscheduled, so "carried forward" understated the gap. Fixed by
+  giving them a slice: **12e**, in `docs/phases/phase-12.md`. See
+  `phase-11.md`'s own "Phase 11→12 housekeeping" Runbook entry, which also
+  corrects that file's earlier "once those land, Phase 11 is done" line.
+- **`RUNBOOK.md` / `PRODUCTION_PLAN.md`: one stale claim fixed.** §3.1's
+  parity table's "Localisation" row still read `Phase 11 (bundles)`,
+  contradicting `phase-11.md`'s own 2026-09-22 decision that non-English
+  bundles are not happening at all, ever — corrected. Coverage thresholds
+  (`.c8rc.json`, 95.8/95.8/95.6/95.4) are cleared with margin by the last
+  reported run (96.38/95.85/96.16/96.38, 11e); no ratchet raise needed.
+- **`STATUS.md` trimmed.** Phase 11's own entry (this checkpoint) was cut
+  down to a short paragraph and phase-index row; the full 11a–11e
+  narrative — every review round and both manual-test sessions — moved to
+  `docs/status-archive.md`.
+- **No scratch/pending files** existed to reconcile.
+- **Manual test pass: complete except one already-documented gap.**
+  11.1–11.9 and 11.11–11.28 (`docs/dev/manual-tests/phase-11.md`) all pass;
+  11.10 (B1 on the SAS Libraries tree, for a failure that isn't the session
+  being gone) stays unchecked with its own recorded reason — nothing new to
+  run.
+- **Dependency advisories: clean.** 0 open Dependabot alerts (checked live
+  via `gh api`); `scripts/advisory-allowlist.json`'s `allowed` list is empty
+  and consistent, nothing near expiry. One routine, unrelated open PR
+  (dependabot's dev-tooling group bump, #200) sits open — not a security
+  advisory, no action needed from this checkpoint.
+- **Phase 12 scoping: no drift found.** `phase-12.md`'s four slices
+  (12a–12d) read consistently with ADR-0037 and with `phase-11.md`'s own
+  account of the AI-agent-integration move; every renumbering
+  cross-reference (`docs/adr/0007-connection-profile-storage.md`,
+  `phase-3.md`, `PRODUCTION_PLAN.md` §8, `docs/dev/manual-tests/`) already
+  points at Phase 13, none stale.
+
 ## Open items carried forward
 
 - **Open VSX namespace claim — closed, confirmed 2026-09-22.** The `shai-alit`
@@ -278,6 +353,25 @@ The outcomes:
   1.0 gate (`PRODUCTION_PLAN.md` §8, "Definition of done — 1.0"). The VitePress
   build runs as a CI link-check gate; nothing deploys the output. A standalone
   task if ever revisited, not a phase slice.
+
+Three Phase 11 follow-ups (large-table CSV-export confirmation for SAS
+library tables, a `CasProblem` for an oversized CAS response, surfacing
+autoExec-error text) are **not** listed here: each already carried a
+same-day "build it" decision, so — unlike the items above — nothing about
+them was actually open except *when*. Fixed by scheduling them rather than
+leaving them here: they're **Phase 12 slice 12e**
+(`docs/phases/phase-12.md`), added at the Phase 11→12 housekeeping
+checkpoint, 2026-09-22.
+
+- **F11 — Snippets for common Viya patterns, general: genuinely unscoped,
+  found 2026-09-22 (PR #204 review).** Named in Phase 11's own original
+  one-liner alongside session startup, result panel styling, and
+  localisation, but — unlike those three — never got a closure or
+  carry-forward decision. What shipped: the narrow F9 CAS/SWAT SQL
+  passthrough snippet (11b). The broader library-of-snippets idea was never
+  sized, scoped, or decided against; it has no owner now that Phase 11 is
+  closed. Not decided here — flagged, not scoped, same treatment as F1/F6.
+  See `phase-11.md`'s "New feature candidates" list.
 
 No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
@@ -312,7 +406,9 @@ Phase 6→7/8 checkpoint but was missed then. Phase 9's own narrative,
 housekeeping checkpoint. Phase 10's own narrative — 10a, the 10b spike, both
 PRs and every review round, the manual-test session, and the 2026-09-16
 deep-dive pass — was appended 2026-09-16 at the Phase 10→11 housekeeping
-checkpoint. Per-phase detail
+checkpoint. Phase 11's own narrative — 11a–11e, every review round, and both
+manual-test sessions — was appended 2026-09-22 at the Phase 11→12
+housekeeping checkpoint. Per-phase detail
 (plan, punch list, probe findings) is bundled in each
 `docs/phases/phase-N.md`.
 
@@ -322,147 +418,6 @@ checkpoint. Per-phase detail
 > phase file, and move a completed phase's narrative into `status-archive.md`
 > at the between-phase boundary rather than letting this file grow without
 > bound.
-
-## Phase 11 (in progress)
-
-**Phase 11 (Remaining parity gaps) is in progress — 11a–11d merged, 11e
-complete, PR open.** A 2026-09-16/17 scoping session sized five slices in priority
-order (`docs/phases/phase-11.md`'s Plan section): **11a — the interactive
-window (F7)**, merged 2026-09-17 as
-[PR #192](https://github.com/Shai-Alit/sas-py-vscode/pull/192) — a bespoke,
-this-project-owned scratch-notebook surface built entirely on Phase 9's
-already-shipped `NotebookController` infrastructure, not VS Code's real
-Interactive Window (off-limits to a published extension regardless of the
-kernel question — see `phase-11.md`'s F7 write-up). `npm run verify` green
-(1,814 unit tests; coverage 96.3/95.68/96.08/96.3), `npm run test:integration`
-green (457 passing); manual-test items 11.1–11.5 all pass. **11b — the
-CAS/SWAT SQL passthrough helper (F9)**, shipped 2026-09-17 alongside its own
-`viya-api-probe` confirmation (Finding 11.2, against a real Snowflake-backed
-caslib on `verde`) that predated the slice itself — documentation
-(`docs/cas-python-connection.md`'s new "Running native SQL against an
-external database" section) plus a small, fully static
-`pythonOnViya.insertCasSqlPassthroughSnippet` command, needing no network
-round trip unlike 8b's own connection command. `npm run verify` green (1,816
-unit tests; coverage 96.31/95.68/96.08/96.31), `npm run test:integration`
-green (460 passing). **A pre-push adversarial review (code-review skill,
-high effort) caught that the snippet's/docs' `result["Result Set"]` claim
-was never actually probed — Finding 11.2 only exercised raw `PROC CAS`,
-never `swat` — so a follow-up probe ran against `verde` 2026-09-18 (Finding
-11.4) and confirmed the key is real (positive + negative control via `PROC
-CAS`, reasoned to generalize to `swat` since CAS result-member names are
-server-side); no code/doc change was needed, the claim as written was
-correct. The Finding 11.4 write-up landed as its own commit, `f2c0270`, on
-`feat/cas-sql-passthrough-snippet`. **Manual-test items 11.6–11.7 then ran
-and passed, 2026-09-18**, and that pass surfaced one usability fix: the
-snippet's `query=` value now wraps in triple quotes (`'''...'''`) instead of
-a single pair of double quotes, so the user-filled native-query tabstop can
-carry the target database's own quoting (Snowflake's double-quoted
-identifiers, a `where` clause's single-quoted string literals) without
-having to escape anything — see `phase-11.md`'s own "11b manual-test pass
-and a triple-quote fix" Runbook entry. Committed as `d1051f4`, alongside a
-pre-push adversarial review's two findings (Finding 11.4 reordered into
-numeric order; this file's own wording corrected), and pushed to
-`feat/cas-sql-passthrough-snippet`. **Final `npm run verify` (1,816 unit
-tests; coverage 96.31/95.68/96.08/96.31) and `npm run check:docs` both
-re-ran green 2026-09-18** against the pushed branch, and
-[PR #194](https://github.com/Shai-Alit/sas-py-vscode/pull/194) merged for
-these two follow-up commits. **11c — the three pre-release bugs
-(B1/B2/B3)** is code-complete 2026-09-18: B1 (blank trees on a failed
-listing) is a new `ConnectionProblemNode` (`src/connectionProblemNode.ts`)
-each of the three browsing trees' `getChildren` now returns instead of `[]`;
-B2 (a stale SAS Libraries connection had no way back except **Disconnect**)
-is `SasLibraryTreeProvider` and (extended mid-session, Sean's own live
-report of the same gap in `Insert CAS Connection Snippet`)
-`casConnectCommand.ts` both now calling `forgetProfile` on a `session-gone`
-reading, so **Connect to Viya** re-syncs into the palette immediately; B3
-(SAS Libraries table icon) now matches CAS's loaded-table icon. B1 and B2
-turned out not to share one mechanism — CAS/SAS Content have no "connected"
-concept of their own (ADR-0033), SAS Libraries does — see `phase-11.md`'s
-own 11c Runbook entry for the full design account. A new
-`test/integration/data/tree.test.ts` was added (`dataTree.ts` had no test
-file at all before this slice); `test/integration/cas/tree.test.ts`,
-`test/integration/content/tree.test.ts`, and
-`test/integration/cas/connect-command.test.ts` all gained assertions for
-the new behaviour. `npm run verify` green (1,816 unit tests; coverage
-96.31/95.68/96.08/96.31), `npm run test:integration` green (465 passing),
-`npm run check:docs` green. Manual-test items 11.8–11.14 added to
-`docs/dev/manual-tests/phase-11.md`. **The manual pass ran 2026-09-18 and
-all items passed.** Item 11.12 surfaced one design note: both insert-snippet
-commands vanished from the palette when the session was stale, because
-`enablement: pythonOnViya.connected` hid them. Resolved in this slice by
-removing that enablement from both commands and having each report "Connect
-to SAS Viya first, then run this command again." instead
-(`insertCasSqlPassthroughSnippet` gained `sessions`/`profiles` params to do
-so). **The pre-PR adversarial review has run twice (2026-09-18)** — once on
-the original 11c diff, once on the 11.12 follow-up, whose one finding (an
-`as never` cast in the new test) was folded in. `npm run verify` green after
-the fold-in (1,816 unit tests; coverage 96.31/95.68/96.08/96.31); the
-integration suite and `check:docs` were green before the final test-only
-fix. [PR #195](https://github.com/Shai-Alit/sas-py-vscode/pull/195) is open; its one
-review finding (no automated regression test for the drag-and-drop
-`ConnectionProblemNode` exclusion) was folded in as integration tests in
-`test/integration/data/drag-and-drop.test.ts` and
-`test/integration/content/dragAndDrop.test.ts`. **11d (CAS table properties + CSV export, F2/F3) merged
-2026-09-20 as [PR #197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)
-after a pre-PR adversarial review (no blocking findings) and a manual pass
-(11.15-11.22, all passing):** two new commands on the
-CAS table node, built by generalising the existing properties panel and CSV
-command behind a per-backend source rather than forking them; the CAS export
-formats CSV client-side because CAS's own `text/csv` pads numerics
-(Finding 11.5), and asks for confirmation above an estimated 100 MB (Finding
-11.6 found no server-side row cap). The same confirmation for SAS library
-tables is a recorded follow-up, alongside a dedicated CAS problem for an
-oversized response and an opt-in CSV formula-injection guard (all three on
-the phase's punch list). `npm run test:integration` green (489 passing).
-**11e (session startup: profile `sasOptions` + `autoExec`) merged
-2026-09-21 as [PR #199](https://github.com/Shai-Alit/sas-py-vscode/pull/199),
-squash `e256d25`:** scoped with Sean to
-SAS-side startup only (a Python startup snippet is a recorded, unbuilt
-candidate). A `viya-api-probe` pass (Finding 11.7) found that the compute
-service silently ignores `NAME=VALUE` options — so 3f's `PAGESIZE=MAX` had
-never been applied; now `PAGESIZE MAX`, with profile options formatted the same
-way — and that a bad autoExec line leaves the session `idle` with
-`sessionConditionCode` 3000, which now raises a message. `npm run verify` green
-(1,856 unit tests; coverage 96.38/95.85/96.16/96.38), `npm run
-test:integration` green (495 passing), `npm run check:docs` green. The pre-PR
-adversarial review found no blocking issue; its one gap (no test for **Edit
-Connection Profile** carrying `sasOptions`/`autoExec` over) is folded in.
-A second review after manual testing (Finding 11.8: a `pending` create
-reports condition code 0, so the autoExec warning is now raised from a
-re-read of the settled session) found six issues, all folded in. **Manual-test
-items 11.23–11.28 all pass (2026-09-21).** PR #199's own review, after it was
-open, raised four more comments (Finding 11.9 — the duplicate-option-wins
-claim, probed rather than softened; an `l10n.t()` gap; a CodeQL
-backtracking-regex flag; and a documented, deliberate non-fix for a
-`NAME =VALUE` typo form) — all replied to, resolved, and folded in
-(`cd5b267`, `9d787e1`) before merge.
-
-**AI-agent integration work moved to a new Phase 12, 2026-09-22, and Phase
-12 gates v1.0.** Briefly scoped into Phase 11 as 11f/11g the same day (ship an
-Agent Skill; spike an in-process MCP server reachable by Claude Code), plus a
-third slice (11h) to investigate the separate Python-startup-snippet
-follow-up. All three, plus the 11d CSV-guard follow-up (which turned out to
-need the same kind of investigation), moved together into **Phase 12** as
-12a–12d — see [ADR-0037](docs/adr/0037-ai-agent-integration-approach.md) and
-`docs/phases/phase-12.md`. The previous "Phase 12" (second execution backend,
-never started) was renumbered to **Phase 13** the same day to make room —
-see `docs/phases/phase-13.md`. `PRODUCTION_PLAN.md` §8 is amended: Phase 12
-is now a v1.0 gate, Phase 13 explicitly is not, matching the phase this note
-used to describe.
-
-**Phase 11's own remaining scope, after that move, is three decided-to-build
-follow-ups** (11d large-table confirmation for SAS library tables, 11d
-`CasProblem` for an oversized response, 11e autoExec-error text) — none
-started. Once those land, Phase 11 is done. See `phase-11.md`'s "Phase 11
-follow-up decisions, and AI-agent integration moved to Phase 12" Runbook
-entry for the full account.
-
-Full plan, punch list, and probe findings (11.1–11.9) are in
-[`docs/phases/phase-11.md`](docs/phases/phase-11.md). **Note**: 11a's own
-completion was missed from this file at the time it merged — a housekeeping
-gap, caught and corrected only now, alongside 11b's own update, rather than
-in 11a's own PR as `CLAUDE.md`'s own "STATUS.md is part of the slice" rule
-calls for.
 
 ## Phase index
 
@@ -480,8 +435,8 @@ calls for.
 | 8 — CAS and SWAT | ✅ **done — 8a–8c all merged.** CAS browsing tree ([ADR-0033](docs/adr/0033-cas-adapter-shape.md)), authenticated CAS session helper, CAS tables in the data viewer via a `TableSource` abstraction ([ADR-0034](docs/adr/0034-table-source-abstraction.md)). Final PR [#171](https://github.com/Shai-Alit/sas-py-vscode/pull/171), squash `bb80b92`. `npm run coverage` green (1703 unit; coverage 95.92/95.46/95.75/95.92). Phase 8→9 housekeeping ran and closed 2026-09-14 (see above). Three post-merge fixes landed as [PR #173](https://github.com/Shai-Alit/sas-py-vscode/pull/173), squash `c2478bb`, merged 2026-09-14; its one deferred gap (tree icon refresh) was root-caused and fixed 2026-09-15 — `onDidChangeTreeData` matches a fired element by object identity, not `TreeItem.id` — and live-confirmed, so nothing from Phase 8 is carried forward. | `docs/phases/phase-8.md` |
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
-| 11 — Remaining parity gaps | 🔄 **in progress — 11a–11e merged; three follow-ups remain (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text), none started** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22. See "Phase 11 (in progress)" above. | `docs/phases/phase-11.md` |
-| 12 — AI-agent integration | not started — **gates v1.0** (`PRODUCTION_PLAN.md` §8) | `docs/phases/phase-12.md` |
+| 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
+| 12 — AI-agent integration | not started — **gates v1.0** (`PRODUCTION_PLAN.md` §8). Five slices: 12a–12c (Agent Skill, MCP-server spike, Python-startup-snippet spike, from ADR-0037), 12d (CSV-guard research), and 12e (three small Phase 11 follow-ups, folded in 2026-09-22). | `docs/phases/phase-12.md` |
 | 13 — Second execution backend | not started — does not gate v1.0 | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section

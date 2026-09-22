@@ -68,6 +68,17 @@ account, because an account is identified by the deployment plus the Viya user i
 — not by the profile. Renaming a profile, or fixing a typo in your display name
 in Viya, does not sign you out.
 
+**Known limitation: two profiles can look alike.** Every row this extension adds
+is suffixed `(SAS Viya)` — that much reliably identifies **Python on Viya** as
+the source, since `pythonOnViya` is the only authentication provider it
+registers. What the row does *not* say is which **profile** it came from: the
+name shown is your Viya display name (see [above](#the-accounts-menu)), and two
+profiles for different deployments can easily show the same name side by side
+with nothing to tell them apart. There is no setting on this side that adds the
+profile or deployment to the row. Tracked as
+[#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42); not planned before
+1.0.
+
 ## Staying signed in
 
 Sign-ins survive a window reload and an editor restart. When you come back, the

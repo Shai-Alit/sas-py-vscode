@@ -118,11 +118,17 @@ three things: a real distribution gap (the skill has no path to an end user
 [`docs/agent-skill.md`](docs/agent-skill.md), wired into the site nav and
 cross-linked from `getting-started.md`/`running-python.md`); a `SYSCC`/
 `sessionConditionCode` conflation; and an overstated credential-leak claim
-that surfaced a possible pre-existing contradiction between ADR-0014 and
-`docs/data-access.md`, left open as a documented question rather than
-guessed at further. `prettier --check`, `check:secrets`, and `check:docs`
-(reference check, samples, self-links, VitePress build) all clean. 12b–12e
-not started — see `docs/phases/phase-12.md`'s Runbook for the full account.
+that surfaced a contradiction between ADR-0014 and `docs/data-access.md`.
+**That contradiction was settled the same day by a live probe against
+`verde`** — [Finding 12.1](docs/phases/phase-12.md) — confirming ADR-0014
+(the outer Python cell is never echoed) and refuting `data-access.md`'s
+"`SAS.submit()` masks a `password=`" claim: a `LIBNAME` statement's password
+came back in the raw log in full plaintext, unmasked, when the statement
+failed to parse. `docs/data-access.md` and `docs/cas-python-connection.md`
+are corrected accordingly. `prettier --check`, `check:secrets`, and
+`check:docs` (reference check, samples, self-links, VitePress build) all
+clean. 12b–12e not started — see `docs/phases/phase-12.md`'s Runbook for
+the full account.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

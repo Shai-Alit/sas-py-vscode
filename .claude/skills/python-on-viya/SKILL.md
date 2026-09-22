@@ -110,14 +110,21 @@ into memory; for a large table or one behind an external engine, push a filter
 into SAS first with `SAS.submit("proc sql; create view work.x as select ...")`
 and read the view, rather than reading everything and filtering in pandas.
 
-**Never write a credential as a literal anywhere in the submitted Python.**
-`SAS.submit()` masks a `password=` value in the SAS code string you pass it,
-the same way SAS always masks a `LIBNAME` echo — but that masking is narrow
-(it applies only to that argument), so treat it as a courtesy, not a
-guarantee, and don't rely on it as the only protection. Source a credential
-from an environment variable or `SAS.symget` instead of writing it as a
-literal, or better, use an already-provisioned site libref that carries no
-credential in the user's own code at all.
+**Never write a credential as a literal anywhere in the submitted Python,
+including inside a `SAS.submit()` argument.** The argument you pass to
+`SAS.submit()` is echoed into the session log as its own `source`-typed
+line — confirmed live (Finding 12.1, `phase-12.md`): a `LIBNAME` statement
+with a `password=` value came back in the raw log in full plaintext, with no
+masking applied, the moment the statement failed to parse (an invalid libref
+name). Don't assume SAS's usual `LIBNAME`-echo masking protects you here —
+that same probe found it does not, at least for a statement that fails
+before reaching engine-specific handling, so it isn't a safety net worth
+relying on. Source a credential from an environment variable or
+`SAS.symget` instead of writing it as a literal, or better, use an
+already-provisioned site libref that carries no credential in the user's own
+code at all. Note this is different from the *outer* Python cell itself,
+which the same probe confirmed is never echoed at all (ADR-0014) — the risk
+is specific to what you pass into `SAS.submit()`.
 
 ## Connecting to CAS from Python
 
@@ -128,10 +135,12 @@ extension's own **Insert CAS Connection Snippet** command does this correctly
 (writes a fresh token to a session file, then reads it back). This isn't
 optional caution: an inline `submit`/`endsubmit` block echoes its source
 verbatim into the session log, so a token assigned as a literal that way was
-confirmed to leak into the log in plaintext (Finding 8.6, `phase-8.md`) and
-had to be treated as compromised. If you're writing this by hand for a user,
-follow the file-based shape — read the token from a file, never assign
-`password="..."` to a string literal in a cell. The token is short-lived (minutes), while a `swat.CAS()`
+confirmed to leak into the log in plaintext (Finding 8.6, `phase-8.md`), and
+a `SAS.submit()` argument carrying one is no safer (Finding 12.1, above) —
+both had to be treated as compromised when found. If you're writing this by
+hand for a user, follow the file-based shape — read the token from a file,
+never assign `password="..."` to a string literal in a cell, whether that
+literal reaches SAS via an inline block or via `SAS.submit()`. The token is short-lived (minutes), while a `swat.CAS()`
 connection can outlive it; an auth failure after a session's been open a
 while usually means the token expired, not a code bug — reconnect with a
 fresh one rather than debugging the connection logic.

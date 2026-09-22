@@ -36,13 +36,15 @@ an old snippet.
 ## Why there is no `password="..."` literal to see
 
 The naive way to get a credential into a cell — writing it directly into a
-`SAS.submit()` block — leaks it into the job log in plaintext, because the
-job log echoes submitted source verbatim, unconditionally, the same property
-[Python and SAS libraries](data-access.md)'s own "Never write a credential as
-a literal" section warns about. The token this command delivers never
-travels through a submitted statement at all: it lands as a file's raw bytes,
-the same upload path this extension already uses to get your own `.py`
-source into the session, and the snippet only ever reads it back from disk.
+`SAS.submit()` call — leaks it into the job log in plaintext: the SAS code
+you pass to `SAS.submit()` is echoed into the log as its own line, and that
+echo cannot be relied on to mask a `password=` value (confirmed live,
+[Finding 12.1](phases/phase-12.md)) — the same property [Python and SAS
+libraries](data-access.md)'s own "Never write a credential as a literal"
+section warns about. The token this command delivers never travels through a
+submitted statement at all: it lands as a file's raw bytes, the same upload
+path this extension already uses to get your own `.py` source into the
+session, and the snippet only ever reads it back from disk.
 
 ## Reconnecting after a while
 

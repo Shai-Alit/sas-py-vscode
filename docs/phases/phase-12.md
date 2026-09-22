@@ -247,26 +247,20 @@ before this branch's diff was considered final:
    `SYSCC` variable ADR-0014 defines. Would have sent an agent debugging an
    autoExec failure to check the wrong signal. Fixed, with an explicit line
    distinguishing the two added to the skill.
-3. **An overstated credential-leak mechanism (fixed).** The first draft
-   repeated `docs/data-access.md`'s claim that "the Python cell itself is
-   echoed to the job log verbatim, unconditionally" as the reason never to
+3. **An overstated credential-leak mechanism (fixed at the time; fully
+   settled by a live probe the same day — see the next entry).** The first
+   draft repeated `docs/data-access.md`'s claim that "the Python cell itself
+   is echoed to the job log verbatim, unconditionally" as the reason never to
    write a credential literal. That claim appears to contradict ADR-0014 and
    `src/backend/logFilter.ts`'s own doc comment, both of which state as a
    probed, settled fact (finding 35) that `infile=` — the path every ordinary
    run uses — echoes no source at all; the one *confirmed* instance of this
    leak (Finding 8.6, `phase-8.md`) was through an inline `submit`/
-   `endsubmit` block, a different mechanism. Fixed by softening the skill's
-   wording to state the actionable rule (never write a credential literal;
-   `SAS.submit()`'s masking is narrow, not a guarantee) without asserting the
-   disputed broader mechanism, and citing Finding 8.6 specifically where a
-   concrete anchor was needed (the CAS section). **`docs/data-access.md` and
-   `docs/cas-python-connection.md` themselves were not changed** — the
-   apparent contradiction predates this slice and is either a stale claim in
-   those two pages or a real mechanism this session did not find; either way
-   it is a pre-existing-docs question, not a 12a scope item, and the
-   fastest way to settle it is a live probe (`SAS.submit()` with a
-   credential-shaped literal, then read the raw session log) rather than
-   more reading. Left open, flagged here rather than guessed at further.
+   `endsubmit` block, a different mechanism. Fixed at review time by
+   softening the skill's wording to state the actionable rule without
+   asserting the disputed broader mechanism. **Left open at review time as a
+   question needing a live probe — closed the same day; see Finding 12.1,
+   below, and the Runbook entry after this one.**
 
 Verification re-run after the fixes and the new page: `npx prettier --check`
 and `node scripts/check-secrets.mjs` (528 files scanned) both clean on every
@@ -276,10 +270,89 @@ inside the VitePress tree — all four steps green, self-link count 14 → 16
 (the two new GitHub blob links into `.claude/skills/.../SKILL.md` and
 `docs/phases/phase-12.md` both resolve).
 
+### 12a review's open credential-echo question, settled by probe, 2026-09-22
+
+The manual review above (item 3) flagged a contradiction it could not
+resolve by reading alone: ADR-0014/`logFilter.ts` say `infile=` echoes no
+source; `docs/data-access.md`/`docs/cas-python-connection.md` say the
+Python cell is echoed to the job log "verbatim, unconditionally." Settled by
+a live probe the same day — Finding 12.1, below. Short version: ADR-0014 was
+right about the outer Python cell (never echoed); `data-access.md` was wrong
+about that but right about the underlying danger, which turned out to be
+worse than its own wording said — `SAS.submit()`'s own argument is echoed,
+and the "masks a `password=`" claim did not hold in the one case tested (a
+`LIBNAME` statement that failed to parse came back with its password in
+full plaintext). `docs/data-access.md` and `docs/cas-python-connection.md`
+are corrected in the same commit as this entry, and the skill's own wording
+(already softened at review time) is tightened further to state the
+confirmed mechanism plainly rather than hedge. No adversarial-review
+re-run was needed — this is a probe-driven correction to prose already
+covered by the docs-only classification, not new source or a changed
+invariant.
+
 ---
 
 ## Probe findings
 
-_No live-Viya probes recorded for this phase yet. Any finding this phase
-produces is numbered `12.x`, per this project's per-phase finding-numbering
-scheme (see `CLAUDE.md`'s "Don't guess about Viya — probe it" section)._
+### Finding 12.1 — `infile=` echoes no Python source at all; a `SAS.submit()` `LIBNAME` statement is echoed unmasked when it fails to parse
+
+Probed 2026-09-22, via `viya-api-probe`/`creds.json` against `verde`, using a
+throwaway compute session (SAS Studio compute context, `id`
+`05543858-66ad-4715-b14a-41e0565fb4bd`) created and deleted within the
+probe — deletion confirmed by a follow-up `GET` on the session returning
+`404`.
+
+**Documented/claimed, in tension:** ADR-0014 (finding 35) and
+`src/backend/logFilter.ts`'s own doc comment state that `infile=` "echoes no
+source" at all. `docs/data-access.md` and `docs/cas-python-connection.md`
+stated the opposite for the *outer* Python cell — "the Python cell itself is
+echoed to the job log verbatim, unconditionally, regardless of
+`SAS.submit()`" — and that `SAS.submit()` "masks a `password=` value the
+same way SAS always does when it echoes a `LIBNAME` statement."
+
+**Method:** Uploaded a fileref (`probe01`) containing:
+
+```python
+_outer_secret = "OUTER_FAKE_CRED_9f3a7b21c4"
+try:
+    SAS.submit('libname _probelib nosuchengine user=probeuser password=INNER_FAKE_CRED_7d2e91ab55;')
+except Exception as e:
+    print("submit raised:", e)
+print("probe done")
+```
+
+Ran it the ordinary way (`proc python infile=probe01;` / `run;`, the same
+two-statement job `src/backend/procPython.ts` sends), then read the job's
+raw log directly (`GET .../jobs/{id}/log`) and searched for both fake
+strings. Both credential values are fabricated and were never real
+secrets.
+
+**Observed:**
+
+- The outer cell's own line — `_outer_secret = "OUTER_FAKE_CRED_9f3a7b21c4"`
+  — **never appears anywhere in the log.** Confirms ADR-0014/finding 35 in
+  full: `infile=` echoes no source, for the whole file, not merely the
+  wrapping `proc python` statement.
+- The `SAS.submit()` argument **is echoed**, as a `source`-typed log line,
+  character-for-character: `libname _probelib nosuchengine user=probeuser
+  password=INNER_FAKE_CRED_7d2e91ab55;` — **including the password in full
+  plaintext, with no masking applied** — immediately followed by SAS's own
+  parse error (`ERROR: _probelib is not a valid SAS name.` / `ERROR: Error
+  in the LIBNAME statement.`).
+- `SYSCC` read `0` afterward — the Python `try`/`except` caught the raised
+  exception, and the SAS-side `LIBNAME` error did not propagate to it.
+
+**Verdict:** `data-access.md`/`cas-python-connection.md`'s claim about the
+*outer* Python cell being echoed is **refuted — the opposite is true**,
+matching ADR-0014. Their claim that `SAS.submit()` masks a `password=`
+value is **also refuted, for this statement shape** — the password leaked
+in full plaintext, not merely "narrowly masked." Both docs, and the skill
+this phase shipped (12a), are corrected in the same commit as this finding.
+
+**Not settled:** whether a `LIBNAME` statement that parses successfully (a
+valid libref name, a real engine) is masked differently before failing
+later — at authentication, say. This statement failed at the naming/parse
+stage, before any engine-specific or password-handling code would run, so
+this probe does not establish that a well-formed statement leaks the same
+way — only that a malformed one does, and that no masking can be assumed as
+a safety net either way.

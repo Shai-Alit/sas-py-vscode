@@ -74,13 +74,14 @@ libraries](browsing-sas-libraries.md).
 
 ## Never write a credential as a literal
 
-`SAS.submit()` masks a `password=` value the same way SAS always does when it
-echoes a `LIBNAME` statement to the log — but the Python cell itself is
-echoed to the job log verbatim, unconditionally, regardless of `SAS.submit()`.
-A credential written as a literal string anywhere in the submitted Python —
-not just inside a `SAS.submit()` call — leaks through that outer echo before
-any masking has a chance to apply. Source a credential from a runtime value
-(an environment variable, or a macro variable via `SAS.symget`) instead of
-writing it in the cell, and prefer a site-assigned libref (already
-provisioned, no credential in your own code at all) over an ad hoc
-`SAS.submit("libname ...")` carrying one.
+Your Python cell's own source is never echoed anywhere — that much is safe
+([ADR-0014](adr/0014-python-is-submitted-as-an-uploaded-file.md); confirmed
+live, [Finding 12.1](phases/phase-12.md)). But the SAS code you pass to
+`SAS.submit()` is echoed into the session log as its own line, and that echo
+cannot be relied on to mask a `password=` value — the same probe found a
+`LIBNAME` statement's password come back in the log in full plaintext, with
+no masking applied, when the statement failed to parse. Source a credential
+from a runtime value (an environment variable, or a macro variable via
+`SAS.symget`) instead of writing it in a `SAS.submit()` call, and prefer a
+site-assigned libref (already provisioned, no credential in your own code at
+all) over an ad hoc `SAS.submit("libname ...")` carrying one.

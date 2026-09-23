@@ -15,7 +15,7 @@ loop, conventions).
 Created 2026-09-22 (Sean's own call), moved out of Phase 11 the same day —
 see [`docs/phases/phase-11.md`](phase-11.md)'s "Phase 11 follow-up decisions,
 and AI-agent integration moved to Phase 12" Runbook entry for the full
-account of why. Three of this phase's five slices trace to a 2026-09-21
+account of why. Three of this phase's eight slices trace to a 2026-09-21
 research memo
 ([`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md))
 answering whether the extension can let a user plug an AI agent they already
@@ -29,7 +29,15 @@ same day**, at the Phase 11→12 between-phase housekeeping checkpoint — three
 already-decided, already-scoped Phase 11 follow-ups that had a "build it"
 call but no slice to land in; unlike 12a–12d, none of it traces to the
 research memo and none of it is a spike, since nothing about any of the
-three is actually undecided.
+three is actually undecided. **The sixth, seventh and eighth (12f–12h) were
+added later the same day too**, from two pieces of work that happened
+entirely outside this repository: a hand-run of SAS's own VS Code extension
+(`SAS.sas-lsp`) in a `.sasnb` notebook against a Viya 4 deployment, and a
+dependency-licence inventory produced for an internal open-source-
+contribution request. Neither traces to the research memo either. 12f and
+12h are small and bounded; 12g is a spike on exactly 12b's terms — it
+answers what is cheap to answer and explicitly does not scope the build it
+might recommend.
 
 This phase repurposes a number previously assigned to a different, unstarted
 topic ("second execution backend"), renumbered the same day to
@@ -138,6 +146,139 @@ under this number before today.
    just never given a slice until this checkpoint. Sequenced last: 12a–12d
    were this phase's original reason for existing, and 12e is Phase 11
    leftover work riding along rather than this phase's own topic.
+6. **12f — Does `PROC PYTHON`'s "resuming state" `NOTE` reach our users, and
+   is it ever wrong when it does?** Added 2026-09-22 from Finding 12.2, in
+   this file's own Probe findings section below. SAS emits
+   `NOTE: Resuming Python state from previous PROC PYTHON invocation.` at the
+   `submit` statement when interpreter state survives between two
+   `proc python` steps in one Compute session. That much only *confirms* the
+   namespace-lifecycle model 12a's skill already documents; what it raises is
+   about this extension's own transcript, and needs no Viya probe at all —
+   run the extension and read the output channel:
+   - **Does the `NOTE` survive `logFilter.ts`'s noise filter and reach the
+     user?** On **Run File**, whose documented contract is a *fresh*
+     namespace, a user who reads "Resuming Python state" immediately after we
+     cleared globals would reasonably conclude the clear did not happen.
+     Establish both whether the filter passes it and whether Run File's
+     globals-clear runs before or after the step that emits it.
+   - **Does it still appear on the first run after Reset Python State?**
+     `proc python restart;` (`RESTART_STATEMENT`, `src/backend/procPython.ts`)
+     tears down the interpreter process, so a "resuming" `NOTE` there would be
+     flatly wrong on screen — a user-visible defect if it happens, nothing to
+     do if it does not.
+   - **Does it appear on the very first run in a brand-new session?**
+     Presumably not, which would make its presence a cheap "the interpreter
+     was already warm" signal — but build nothing on that without confirming
+     it, since the absence of a `NOTE` is exactly the kind of thing a Viya
+     release changes without announcement.
+
+   Outcome recorded here, plus a manual-test item under
+   `docs/dev/manual-tests/` (a Phase 12 file, if this is the first item to
+   need one). A perfectly good result is "the filter already drops it,
+   nothing to do" — the slice decides that, rather than assuming either way.
+7. **12g — Spike: inline graphics (`SAS.show`) and where our own pieces
+   already stand.** Added 2026-09-22 from Finding 12.3, below:
+   `SAS.show(plt)` renders a `matplotlib` figure directly in a cell
+   under SAS's own extension, and this extension surfaces no plot anywhere —
+   not in the run transcript, not in the interactive window, not in `.ipynb`
+   cell output. **Sean's explicit call, 2026-09-22: spike now, build
+   deferred.** Settle the cheap blocking questions in this phase; any build
+   they recommend is a separate, not-yet-scoped slice — the same boundary
+   12b and [ADR-0037](../adr/0037-ai-agent-integration-approach.md) already
+   set for Option C. Because this phase gates v1.0, *running* the spike is a
+   1.0 gate; whatever it recommends building is not.
+
+   **Two of the questions are already answered — by reading this
+   repository's own source, not by probing — and they change the shape of the
+   rest.** Recorded here so the spike starts from them:
+   - **A graphics path already exists; what is missing is `SAS.show`'s
+     ergonomics.**
+     [ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
+     rich-output capture (`src/backend/richOutput.ts`, `src/compute/files.ts`)
+     already diffs the session's files after every run, whitelists `.png` →
+     `image/png` and `.html`/`.htm` → `text/html`, caps at 10 MiB, decodes,
+     and both the result panel and a notebook cell already render both mimes.
+     A `plt.savefig("fig.png")` therefore already reaches the user today. So
+     the open question is not "can we display a figure" but whether an ODS
+     body file lands where that same diff already looks — which would make
+     this plumbing rather than a retrieval mechanism to invent.
+   - **The sanitizer does not strip `data:` URIs. It does drop SVG, and
+     that is the real constraint.** `src/notebook/htmlSanitize.ts` accepts
+     `<img src>` only when the value matches
+     `data:image/(png|jpe?g|gif|webp);base64,…`, and excludes `svg+xml`
+     deliberately ("an SVG can carry its own `<script>`"); `<svg>` is not an
+     allowed tag either, so an inline SVG element is dropped whole. ODS's
+     `svg_mode='inline'` output would therefore vanish from a notebook cell
+     while `bitmap_mode='inline'` output survives intact. **No
+     [ADR-0036](../adr/0036-notebook-html-output-is-sanitized.md) relaxation
+     is needed for the PNG path** — which removes the security decision this
+     was expected to be blocked behind. What replaces it is an asymmetry
+     worth confirming: the result panel sanitizes nothing and relies instead
+     on a nonce-locked CSP with `img-src … data:`
+     ([ADR-0021](../adr/0021-result-panel-webview.md),
+     `src/run/resultPanel.ts`), so the same body file may render differently
+     in the two surfaces.
+
+   **Left for the spike:**
+   - Does `SAS.show(plt)` execute at all under `proc python infile=`
+     ([ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md)) with
+     no ODS destination open — silently, with an error, or not at all? `SAS`
+     is `PROC PYTHON`'s own bridge object rather than anything either
+     extension implements, so it presumably already runs and simply has
+     nowhere to put its output; that must be established, not assumed. SAS's
+     notebook uses inline `submit;`/`endsubmit;`, a different mechanism.
+   - With an `ods html5(id=…) options(bitmap_mode='inline')` destination
+     opened around the run, where does the body file land, and does the
+     existing rich-output diff capture it unchanged? Forcing PNG
+     (`ods graphics / outputfmt=png`) is likely needed to keep the payload on
+     the arm the sanitizer passes.
+   - Does `SAS.show(df)` render a DataFrame as an ODS table by the same
+     route, and do we want that given the Phase 7 data viewer? Decide
+     deliberately rather than shipping a second way to look at a table
+     because it arrived free.
+   - The ODS preamble is noise to a Python developer *and* is the thing that
+     makes graphics possible. Any design has to hold both; log presentation
+     is already a defect class here, not output.
+
+   No production code ships from the spike itself, same as 12b.
+8. **12h — `NOTICE`: attribute the bundled third-party components.** Added
+   2026-09-22. Found while producing a dependency-licence inventory for an
+   internal open-source-contribution request — not by any review of this
+   repository, which is why it had gone unnoticed. `package.json` declares no
+   `dependencies` at all, so `npm ls --omit=dev` and every `--production`
+   licence tool return an empty set and read as "this redistributes nothing"
+   (`scripts/check-audit.mjs`'s own doc comment records the same emptiness
+   independently, for the vulnerability gate's purposes). Twelve packages are
+   redistributed anyway: `esbuild.mjs` statically inlines `react`,
+   `react-dom`, `react-is`, `scheduler`, `prop-types`, `object-assign`,
+   `loose-envify`, `js-tokens`, `ag-grid-community`, `ag-grid-react`,
+   `ag-stack` and `ag-charts-types` into `dist/webview/dataViewer.js`, which
+   ships in the `.vsix`. All twelve are MIT; AG Grid is the MIT Community
+   edition and no Enterprise package appears anywhere in the tree.
+
+   MIT asks for one thing — that the copyright notice and permission text
+   travel with the copies — and today that happens only partly. esbuild's
+   `legalComments` defaults to `eof` when bundling and this project does not
+   override it, so the built `dataViewer.js` does end with a
+   `/*! Bundled license information:` block; but it carries five
+   React-family notices and nothing else, each pointing at a `LICENSE` file
+   that does not travel with it, and the AG Grid packages ship no `@license`
+   banner at all so esbuild has nothing to preserve for them. The root
+   `NOTICE` covers the SAS-derived Apache-2.0 material thoroughly and says
+   nothing about any bundled npm component.
+
+   The work: append a "Bundled third-party components" section to `NOTICE`
+   listing the twelve packages with their copyright lines and one copy of the
+   MIT permission text. `NOTICE` already ships (it is not in
+   `.vscodeignore`), so packaging does not change and no build step is added.
+   Confirm the `legalComments` block against a `--production` build of
+   `dataViewer.js` while there — the default is independent of `minify`, so
+   it should be identical, but the bundle actually inspected was a
+   development build and that should not be assumed away. **Out of scope,
+   noted as the obvious follow-on:** a licence gate shaped like
+   `scripts/check-audit.mjs` — an allow-list of SPDX identifiers checked
+   against `package-lock.json` on every PR — which is what would keep this
+   from drifting again. Not scoped here.
 
 ### Punch list
 
@@ -159,6 +300,16 @@ under this number before today.
   exports.** Not started.
 - [ ] **12e — Three small, already-decided Phase 11 follow-ups.** Not
   started.
+- [ ] **12f — Does the "resuming Python state" `NOTE` reach our users, and
+  is it ever wrong?** Not started. Needs no Viya probe — run the extension
+  and read the transcript, on Run File and after Reset Python State.
+- [ ] **12g — Spike: inline graphics (`SAS.show`) / ODS HTML5.** Not
+  started. Spike only; the build it may recommend is a separate,
+  not-yet-scoped slice. Two of the four questions are already answered from
+  source — see the Plan section above.
+- [ ] **12h — `NOTICE`: attribute the twelve bundled MIT components.** Not
+  started. Append a "Bundled third-party components" section; no packaging
+  change.
 
 ---
 
@@ -422,9 +573,82 @@ tracked file changed; the spike server, its `node_modules`, and every
 `claude mcp` registration it created were run from and cleaned up in the
 session scratch directory, never this repository.
 
+### 12f, 12g and 12h added, 2026-09-22 — provenance, two decisions, and what was settled without probing
+
+**Where they came from.** Two pieces of work ran outside this repository on
+2026-09-22, and each left something this phase should carry rather than lose.
+The first was a hand-run of SAS's own VS Code extension (`SAS.sas-lsp`) in a
+`.sasnb` notebook against a Viya 4 deployment — a comparison exercise, not a
+defect hunt — which produced the two log fragments now recorded as Findings
+12.2 and 12.3. The second was a dependency-licence inventory produced for an
+internal open-source-contribution request, which turned up an attribution gap
+in `NOTICE` that no review of this repository had ever looked for. Both were
+held in a project-folder scratch file rather than committed while they were
+still only questions, per `CLAUDE.md`'s Runbook-hold rule; this entry is that
+file's reconciliation, and it is now marked as such rather than left to the
+next housekeeping checkpoint to rediscover.
+
+**Decision 1 (Sean, 2026-09-22): graphics get a spike now, and the build is
+deferred.** The alternative considered was scoping a build directly off the
+observation, which would have meant sizing a retrieval mechanism and a
+sanitizer change before knowing whether either was needed — and, as it turns
+out, at least one of them is not. 12g therefore answers the cheap blocking
+questions and stops, exactly the boundary 12b drew for Option C: it may
+recommend a build, it does not scope or start one. Because this phase gates
+v1.0, running the spike is itself a 1.0 gate; nothing it recommends building
+becomes one by implication.
+
+**Decision 2 (Sean, 2026-09-22): the `NOTICE` gap becomes its own punch-list
+item**, rather than staying a note in the licence inventory or riding along
+inside some other slice. It is a real, if small, compliance obligation with a
+known fix, and an item nobody has to remember is worth more than a
+well-written note somebody has to find.
+
+**Two of 12g's four questions were settled here, by reading this
+repository's own source rather than by probing — and the result is better
+than expected.** The scratch note called the sanitizer "the gotcha that
+decides the whole thing," on the reasonable assumption that a `text/html`
+sanitizer strips `data:` URIs and that relaxing it would be a security
+decision needing its own ADR. It does not: `src/notebook/htmlSanitize.ts`
+already accepts `<img src="data:image/(png|jpe?g|gif|webp);base64,…">`
+specifically, mirroring the `img-src … data:` directive ADR-0021 applies to
+the result panel's CSP. What it does reject is SVG — `svg+xml` is excluded
+from that pattern on purpose, and `<svg>` is not an allowed tag — so ODS's
+`svg_mode='inline'` output would disappear from a notebook cell while
+`bitmap_mode='inline'` output survives. The constraint moved from "a security
+decision" to "force PNG," which is a setting on an `ods graphics` statement.
+The second was the assumption that retrieving the body file off the session
+is unprobed and probably hard; ADR-0019's rich-output capture already diffs
+the session's files after every run and already whitelists `.htm`/`.html`
+and `.png`, so the real question is narrower — whether the body file lands
+where that diff already looks. Recorded as reasoning, not as findings:
+neither was measured against a deployment, and both are claims about this
+repository's own source, which the next reader can check directly.
+
+**Where the graphics item is *not* recorded.** The scratch note proposed it
+belonged on `phase-11.md`'s new-feature-candidates list alongside F1/F6/F11.
+It is deliberately not filed there. Phase 11 is closed, this session is not
+the one working that file, and `CLAUDE.md` is explicit that a discovery in
+one phase gets referenced from its own phase rather than written into
+another's — a rule this project has already paid for twice in merge
+conflicts. A slice in the open phase is the better home regardless, since the
+decision was to actually run the spike, not to park the idea.
+
+Docs-only: this entry, the Plan section's three new slices, the three
+punch-list boxes, Findings 12.2/12.3, and `STATUS.md`'s Phase 12 paragraph
+and row. No source, no changed invariant, nothing inside the VitePress tree —
+so `CLAUDE.md`'s mandatory pre-PR adversarial pass does not apply, and
+verification is `npx prettier --check` on the two touched files plus
+`node scripts/check-secrets.mjs`.
+
 ---
 
 ## Probe findings
+
+Findings in this file are numbered `12.x` — phase-scoped per `CLAUDE.md`'s
+numbering rule, continuing nothing from any other phase. Finding 12.1 came
+from a `viya-api-probe` run; 12.2 and 12.3 did not, and each says so and
+states what that limits it to.
 
 ### Finding 12.1 — `infile=` echoes no Python source at all; a `SAS.submit()` `LIBNAME` statement is echoed unmasked when it fails to parse
 
@@ -528,3 +752,88 @@ and narrative paragraph match what actually shipped.
 Verification re-run after the fix: `npx prettier --check` on both changed
 files and `npm run check:docs` (reference check, samples, self-links,
 VitePress build) both clean.
+
+### Finding 12.2 — `PROC PYTHON` announces that it resumed interpreter state between steps in one session
+
+Observed 2026-09-22. **Not from a `viya-api-probe` run**: this came from
+hand-running SAS's own VS Code extension (`SAS.sas-lsp`) in a `.sasnb`
+notebook against a Viya 4 deployment and reading the SAS log that notebook
+displayed. The method bounds what follows — the code path is SAS's inline
+`submit;`/`endsubmit;`, not this project's `proc python infile=`
+([ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md)), and the
+log is the one SAS's extension chose to show, not a raw
+`GET .../jobs/{id}/log`.
+
+**Observed**, at the `submit` statement of a second Python cell run in the
+same session:
+
+```
+36   proc python;
+37   submit
+NOTE: Resuming Python state from previous PROC PYTHON invocation.
+37 !       ;
+```
+
+**What it establishes.** Interpreter state — imports, globals — survives
+between separate `proc python` steps within one Compute session, and SAS
+announces the reuse rather than doing it silently. That is a *confirmation*
+of the namespace-lifecycle model 12a's skill already documents (Run
+Selection, an interactive-window cell and a notebook cell all build on what
+earlier runs left behind; Run File clears globals first; Reset Python State
+restarts the interpreter), not a discovery, and nothing in that model changes
+on the strength of it.
+
+**What it does not establish.** Anything at all about this extension.
+Whether the `NOTE` survives `src/backend/logFilter.ts`'s noise filter and
+reaches a user, whether it is emitted the same way under `infile=`, whether
+it appears after `proc python restart;` — where it would be flatly wrong —
+and whether it appears on a session's very first run are all open; that is
+12f's whole content. It is also no evidence about stability: nothing here
+says the wording or the presence of this `NOTE` is the same across Viya
+releases.
+
+No deployment-identifying detail appears in the fragment above; the numbers
+are the notebook's own line numbering.
+
+### Finding 12.3 — SAS's own extension opens a named ODS HTML5 destination, images inlined, before any user code runs
+
+Same session, same method, and the same caveats as Finding 12.2 — observed
+by hand-running SAS's extension, not by a `viya-api-probe` run.
+
+**Observed**, in the preamble emitted ahead of the cell's own code:
+
+```
+33   ods graphics on;
+34   ods html5(id=vscode) style=Ignite options(bitmap_mode='inline' svg_mode='inline');
+NOTE: Writing HTML5(VSCODE) Body file: sashtml2.htm
+```
+
+With that destination open, `SAS.show(plt)` on a `matplotlib` figure rendered
+a visible plot in the notebook cell.
+
+**What it establishes.** SAS's extension opens a *named* (`id=vscode`) HTML5
+destination before every run, so it can find its own output without colliding
+with an `ods html5` the user wrote themselves. `bitmap_mode='inline'` and
+`svg_mode='inline'` are the load-bearing options: they make ODS embed images
+as base64 `data:` URIs *inside* the body file instead of writing sibling
+image files. That distinction only matters because the server is remote — a
+referenced image file is a server-side path the editor cannot fetch, whereas
+an inlined one travels with the HTML. And the body file is an ordinary file
+written into the session (`sashtml2.htm`), not a special results channel.
+
+**What it does not establish.** That `SAS.show` behaves the same under
+`proc python infile=`; where the body file lands relative to the directory
+[ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
+rich-output diff already watches; or whether `SAS.show(df)` takes the same
+route for a DataFrame. Those are 12g's questions. It is also not evidence
+about `PROC PYTHON` in isolation: `SAS` is the procedure's own bridge object,
+but everything ODS-side here was set up by SAS's extension, not by the
+procedure.
+
+**Related, from this repository's own source rather than from the log** —
+recorded as reasoning in the Runbook entry above, not as a finding, because
+nothing about it was measured against a deployment: the notebook sanitizer
+(`src/notebook/htmlSanitize.ts`) already passes an inline
+`data:image/png;base64,…` in an `<img src>` and already rejects SVG, so the
+`bitmap_mode='inline'` half of this preamble targets the arm that survives
+and the `svg_mode='inline'` half targets the arm that does not.

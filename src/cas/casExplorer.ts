@@ -193,9 +193,13 @@ export function registerCasExplorer(
         if (item === undefined || !isCasTable(item)) return;
         const adapter = session.adapterFor(activeEndpoint());
         if (adapter === undefined) return;
-        void runSourceCsvExport(new CasCsvSource(adapter, item), {
-          log,
-        }).catch((error: unknown) => {
+        const guardFormulaInjection = vscode.workspace
+          .getConfiguration("pythonOnViya")
+          .get<boolean>("csvExport.guardFormulaInjection", false);
+        void runSourceCsvExport(
+          new CasCsvSource(adapter, item, guardFormulaInjection),
+          { log },
+        ).catch((error: unknown) => {
           log.error(
             vscode.l10n.t(
               'CAS: could not export "{0}.{1}" to CSV ({2})',

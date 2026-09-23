@@ -10,6 +10,10 @@
  * own `text/csv` the way `LibraryCsvSource` does — Finding 11.5: the CAS CSV
  * arrives with every numeric space-padded and every missing numeric a bare
  * `.`, so it is not a usable CSV as delivered.
+ *
+ * `guardFormulaInjection` (12e, off by default) is threaded straight through
+ * to every `formatCsvPage` call — cheap here since this class already builds
+ * every cell itself rather than relaying server bytes.
  */
 
 import * as vscode from "vscode";
@@ -47,6 +51,7 @@ export class CasCsvSource implements CsvExportSource {
   constructor(
     private readonly adapter: CasAdapter,
     private readonly table: CasTableItem,
+    private readonly guardFormulaInjection = false,
   ) {
     this.name = `${table.caslibName}.${table.name}`;
   }
@@ -111,7 +116,12 @@ export class CasCsvSource implements CsvExportSource {
     if (!page.ok) return fail(page.problem);
     return {
       ok: true,
-      value: formatCsvPage(this.columns, page.value.rows, includeHeader),
+      value: formatCsvPage(
+        this.columns,
+        page.value.rows,
+        includeHeader,
+        this.guardFormulaInjection,
+      ),
     };
   }
 }

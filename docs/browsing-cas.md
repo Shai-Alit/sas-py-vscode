@@ -63,8 +63,11 @@ numeric value is written as an empty field rather than CAS's `.`, so the file
 opens as numbers in a spreadsheet or `pandas.read_csv`. Text columns are
 written exactly as stored, spaces included. That includes a text value that
 begins with `=`, `+`, `-` or `@`, which a spreadsheet application that opens the
-file can treat as a formula — open an export of a table you do not trust in a
-text editor or `pandas.read_csv`, not directly in a spreadsheet.
+file can treat as a formula — turn on
+`pythonOnViya.csvExport.guardFormulaInjection` to have such a cell prefixed
+with a leading `'` instead (never applied to a numeric column, so a negative
+value is unaffected), or open an export of a table you do not trust in a text
+editor or `pandas.read_csv`, not directly in a spreadsheet.
 
 **Large tables ask first.** Exporting downloads every row over your
 connection, one page at a time, and a big table can take a long time — a table

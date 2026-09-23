@@ -49,7 +49,10 @@ function tableItem(): TableItem {
   };
 }
 
-function source(routes: readonly RecordedDataRoute[]): LibraryCsvSource {
+function source(
+  routes: readonly RecordedDataRoute[],
+  guardFormulaInjection = false,
+): LibraryCsvSource {
   const { client } = recordedDataClient(routes);
   const session: ComputeSession = { id: SESSION_ID, state: "idle", links: [] };
   const sessions: LibrarySessionSource = {
@@ -59,12 +62,21 @@ function source(routes: readonly RecordedDataRoute[]): LibraryCsvSource {
   return new LibraryCsvSource(
     tableItem(),
     new LibraryAdapter(sessions, "profile-1"),
+    guardFormulaInjection,
   );
 }
 
 const OPEN_ROUTE: RecordedDataRoute = {
   when: CLASS_HREF,
   reply: dataFixture("table-detail-class.json"),
+};
+
+// SASHELP.CLASS's own 5 columns (`columns-class.json`): Name/Sex are CHAR,
+// Age/Height/Weight are FLOAT — used by every 12e guard test below to
+// exercise both branches of the text/numeric partition on a real fixture.
+const COLUMNS_ROUTE: RecordedDataRoute = {
+  when: `${CLASS_HREF}/columns`,
+  reply: dataFixture("columns-class.json"),
 };
 
 describe("LibraryCsvSource", () => {
@@ -159,5 +171,127 @@ describe("LibraryCsvSource", () => {
     const streamed = await csv.stream(() => Promise.resolve());
     assert.ok(!streamed.ok);
     assert.equal(streamed.logDetail, "the table is not open yet");
+  });
+
+  describe("12e formula-injection guard", () => {
+    it("open does not read column metadata when the guard is off", async () => {
+      // No COLUMNS_ROUTE registered — a request to it would fail the route
+      // match and surface as a failure, so a passing `open` here is itself
+      // the assertion that the default path never asks.
+      const opened = await source([OPEN_ROUTE]).open();
+      assert.ok(opened.ok);
+    });
+
+    it("open reads column metadata once, only when the guard is on", async () => {
+      const opened = await source([OPEN_ROUTE, COLUMNS_ROUTE], true).open();
+      assert.ok(opened.ok);
+    });
+
+    it("sample is relayed untouched when the guard is off, even for a formula-shaped cell", async () => {
+      const csv = source([
+        OPEN_ROUTE,
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=3&includeColumnNames=true`,
+          reply: dataCsv("Name,Sex\n=SUM(A1:A9),M\n"),
+        },
+      ]);
+      assert.ok((await csv.open()).ok);
+      const sampled = await csv.sample(3);
+      assert.ok(sampled.ok);
+      assert.equal(sampled.value, "Name,Sex\n=SUM(A1:A9),M\n");
+    });
+
+    it("sample guards a character column's formula-shaped cell once turned on, and never guards the header", async () => {
+      const csv = source(
+        [
+          OPEN_ROUTE,
+          COLUMNS_ROUTE,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=3&includeColumnNames=true`,
+            reply: dataCsv("Name,Sex\n=SUM(A1:A9),M\n"),
+          },
+        ],
+        true,
+      );
+      assert.ok((await csv.open()).ok);
+      const sampled = await csv.sample(3);
+      assert.ok(sampled.ok);
+      assert.equal(sampled.value, "Name,Sex\n'=SUM(A1:A9),M\n");
+    });
+
+    it("stream never guards a numeric column, so a negative Age keeps its own leading '-'", async () => {
+      const csv = source(
+        [
+          OPEN_ROUTE,
+          COLUMNS_ROUTE,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=${PAGE_SIZE}&includeColumnNames=true`,
+            reply: dataCsv("Name,Sex,Age,Height,Weight\n@handle,F,-5,60,100\n"),
+          },
+          {
+            when: `${CLASS_HREF}/rows?start=${PAGE_SIZE}&limit=${PAGE_SIZE}`,
+            reply: dataCsv(""),
+          },
+        ],
+        true,
+      );
+      assert.ok((await csv.open()).ok);
+      const chunks: string[] = [];
+      const result = await csv.stream((chunk) => {
+        chunks.push(chunk);
+        return Promise.resolve();
+      });
+      assert.ok(result.ok);
+      assert.deepEqual(chunks, [
+        "Name,Sex,Age,Height,Weight\n'@handle,F,-5,60,100\n",
+      ]);
+    });
+
+    it("stream re-quotes a guarded field that also needs RFC-4180 quoting", async () => {
+      const csv = source(
+        [
+          OPEN_ROUTE,
+          COLUMNS_ROUTE,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=${PAGE_SIZE}&includeColumnNames=true`,
+            reply: dataCsv('Name,Sex,Age,Height,Weight\n"=a,b",F,12,60,100\n'),
+          },
+          {
+            when: `${CLASS_HREF}/rows?start=${PAGE_SIZE}&limit=${PAGE_SIZE}`,
+            reply: dataCsv(""),
+          },
+        ],
+        true,
+      );
+      assert.ok((await csv.open()).ok);
+      const chunks: string[] = [];
+      const result = await csv.stream((chunk) => {
+        chunks.push(chunk);
+        return Promise.resolve();
+      });
+      assert.ok(result.ok);
+      assert.deepEqual(chunks, [
+        'Name,Sex,Age,Height,Weight\n"\'=a,b",F,12,60,100\n',
+      ]);
+    });
+
+    it("open surfaces a failed column read as a failure with both strings", async () => {
+      const opened = await source(
+        [
+          OPEN_ROUTE,
+          {
+            when: `${CLASS_HREF}/columns`,
+            reply: dataFail({
+              code: "compute-rejected",
+              error: { status: 500 },
+            }),
+          },
+        ],
+        true,
+      ).open();
+      assert.ok(!opened.ok);
+      assert.notEqual(opened.message, "");
+      assert.notEqual(opened.logDetail, "");
+    });
   });
 });

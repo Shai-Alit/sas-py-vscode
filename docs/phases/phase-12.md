@@ -356,8 +356,11 @@ under this number before today.
   Run File always restarts — not only Reset Python State** (Finding 12.4).
   Viable, not parked; sizing it into a build slice is undecided. See this
   file's own Runbook entry.
-- [ ] **12e — Research: CSV formula-injection guard for SAS library
-  exports.** Not started.
+- [x] **12e — CSV formula-injection guard, both surfaces.** Built 2026-09-23
+  — researched the library-export cost the slice was scoped to settle, then
+  built an opt-in `pythonOnViya.csvExport.guardFormulaInjection` guard
+  (default off) covering both CAS and SAS-library CSV export. See this
+  file's own Runbook entry.
 - [ ] **12f — Three small, already-decided Phase 11 follow-ups.** Not
   started.
 - [ ] **12g — Does the "resuming Python state" `NOTE` reach our users, and
@@ -1019,6 +1022,117 @@ No verification commands apply beyond this phase file's own touch: no
 session and everything created in it were built and torn down entirely
 against `verde` — cleanup `DELETE` returned `204`, and a follow-up `GET` on
 the session id returned `404`.
+
+### 12e built, 2026-09-23 — the research settled the cost, and the guard shipped for both surfaces
+
+Per this slice's own Plan entry, the open question was whether the
+CAS-only formula-injection guard (briefly decided "build it, CAS-only" at
+the Phase 11→12 boundary, then pulled back into research once the
+CAS-vs-library asymmetry was raised — see `phase-11.md`'s "Phase 11 follow-up
+decisions" entry) should also cover a SAS library table's CSV export, and at
+what cost. No live Viya probe was needed — this is a question about this
+project's own source and about spreadsheet-application behaviour, not wire
+behaviour, so it was settled by reading `src/data/csvExportModel.ts`/
+`src/cas/csvFormat.ts` and by checking OWASP's own CSV-injection writeup
+(https://owasp.org/www-community/attacks/CSV_Injection, fetched live) rather
+than assumed.
+
+**What the research found.** CAS's own CSV export (`src/cas/csvFormat.ts`)
+already builds every cell from JSON, one at a time, so guarding it is a
+same-shape addition to work it already does — no new cost. A SAS library
+table's export (`src/data/csvExportModel.ts`) relays the server's own
+already-quoted `text/csv` response untouched, by design (Finding 7.20) — the
+real cost the Plan asked about is that guarding it means parsing that
+response back into fields with a correct RFC-4180 grammar (a quoted field can
+itself carry a comma or a literal newline; a naive `split` would misplace
+every column after the first such field) and re-encoding it, which this
+project had no code for. **The harder finding wasn't cost, it was
+correctness**: OWASP's own recommended fix — prefix a triggering cell with a
+leading `'` rather than deleting the character — matters here specifically
+because a numeric column's own leading `-` (a negative value) is not a
+formula-injection risk at all, and guarding it anyway would silently turn a
+number into text the moment the setting is on. Both APIs report a column's
+type, so the guard is scoped to a character column only (`CHAR`/`VARCHAR` for
+a SAS library table, Finding 7.14, `phase-7.md`; `char`/`varchar` for CAS)
+— a complete partition, since a SAS variable is one of exactly two base
+types, never a heuristic with a silent third case.
+
+**Decision: build it for both surfaces**, an opt-in setting
+(`pythonOnViya.csvExport.guardFormulaInjection`, default `false`, `window`
+scope) rather than parking the library half again — leaving it CAS-only
+would repeat the exact "protects some exports, not others, silently" shape
+this slice exists to avoid (the same reasoning 11e's autoExec-error
+follow-up already established for a different setting).
+
+**What shipped:**
+
+- `src/data/csvFormulaGuard.ts` (new, `vscode`-free) — `isTextColumnType`
+  (the shared char/varchar partition, case-insensitive) and
+  `escapeCsvFormula` (OWASP's leading-`'` prefix for a cell beginning with
+  `=`, `+`, `-`, or `@`), shared by both surfaces.
+- `src/data/csvParse.ts` (new, `vscode`-free) — a full RFC-4180 field-grammar
+  parser (`parseCsvPage`) for the library side's re-guard step, and `csvField`
+  (RFC-4180 quoting), moved here from `src/cas/csvFormat.ts` and re-exported
+  from there for that module's own existing callers/tests — the single
+  canonical definition now lives in `src/data`, which `src/cas` already
+  depends on elsewhere (`casCsvSource.ts` imports `../data/csvExportModel`),
+  rather than a second copy forcing a reverse dependency.
+- `src/cas/csvFormat.ts` — `formatCsvPage` takes an added
+  `guardFormulaInjection` parameter (default `false`); cheap, since it
+  already builds every cell itself. `src/cas/casCsvSource.ts`/
+  `src/cas/casExplorer.ts` thread the setting through.
+- `src/data/libraryCsvSource.ts` — the default, untouched-relay path
+  (`exportTableToCsv`) is completely unchanged when the guard is off, byte
+  for byte; only when it is on does `open` pay one extra `getColumns` request
+  (for the column types the guard needs) and does `sample`/`stream` route
+  each page through `parseCsvPage` → guard → `csvField` instead of relaying
+  it raw. `src/data/csvExportCommand.ts`/`src/data/dataExplorer.ts` thread
+  the setting through the same way.
+- The header row is never guarded on either surface — a column name is
+  metadata, not exported row data, matching the CAS side's pre-existing
+  behaviour.
+- `package.json`/`package.nls.json` — the new setting,
+  `docs/reference/settings.md` regenerated (`npm run docs:reference`).
+  `docs/browsing-sas-libraries.md`/`docs/browsing-cas.md` — the existing
+  "the file is written as Viya returns it" warning (from 11d) now also names
+  the setting as the fix.
+
+**A real bug found and fixed during testing, before this branch was
+considered done.** `LibraryCsvSource.sample()` called its own `guard()`
+helper unconditionally, with no gate on `this.guardFormulaInjection` — unlike
+`stream()`, which only takes the parse-and-reguard path when the setting is
+on. Since `this.columns` stays empty when the guard is off (`open` only
+populates it when the setting is on), every field's column-type lookup fell
+through to the method's own defensive `?? true` fallback and guarded
+everything regardless of the setting — the exact opposite of the "byte for
+byte untouched by default" guarantee this slice is built around. Caught by
+the integration test for that exact claim (`library-csv-source.test.ts`,
+"sample is relayed untouched when the guard is off"), which failed the first
+time it ran. Fixed by moving the off-switch into `guard()` itself
+(`if (!this.guardFormulaInjection || csvPageText === "") return csvPageText;`)
+so there is one place the no-op path is guaranteed, not two call sites that
+each have to remember it.
+
+**Verification.** `npx tsc --noEmit` and `npx tsc -p tsconfig.test.json
+--noEmit` clean; `npm run lint` clean (one `@typescript-eslint/
+restrict-plus-operands` finding in `csvParse.ts`'s character-by-character
+loop, from `noUncheckedIndexedAccess`'s `string | undefined` typing of
+`text[i]` — fixed with an explicit `if (ch === undefined) continue;` guard,
+unreachable given the loop's own bound but needed for the type checker);
+`npm run test:unit` (1,877 passing) and `npm run test:integration` (507
+passing, 12 new) both green — the integration run needed this session's own
+documented `ELECTRON_RUN_AS_NODE`-strip workaround for launching
+`@vscode/test-electron` from inside a Claude Code shell, not a defect in this
+change; `npm run coverage` green (96.41/95.83/96.2/96.41
+lines/branches/functions/statements, both new files at 100/100/100/100);
+`npm run check:copyright`/`check:secrets`/`check:coverage-scope`/
+`check:contracts`/`check:docs` (reference regen, samples, self-links,
+VitePress build) all clean. Manual-test items 12.1–12.7 added to
+`docs/dev/manual-tests/phase-12.md`, not yet run live.
+
+No Probe findings entry: nothing here depends on Viya wire behaviour, and
+Finding 7.14 (cited above, for the SAS-library column-type vocabulary) was
+already settled in `phase-7.md` before this slice started.
 
 ---
 

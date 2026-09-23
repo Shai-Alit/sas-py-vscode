@@ -70,10 +70,20 @@ the export fails partway, or if there is not enough free disk space to finish
 destination file — if one already existed at that path — is left exactly as it
 was. Nothing partial is ever left in its place.
 
-**The file is written as Viya returns it.** A text value that begins with `=`,
-`+`, `-` or `@` is not altered, so a spreadsheet application that opens the
-file can treat it as a formula. Open an export of a table you do not trust in a
-text editor or `pandas.read_csv`, not directly in a spreadsheet.
+**The file is written as Viya returns it, unless you turn on the
+formula-injection guard.** By default, a character column's text value that
+begins with `=`, `+`, `-` or `@` is not altered, so a spreadsheet application
+that opens the file can treat it as a formula. Turn on
+`pythonOnViya.csvExport.guardFormulaInjection` to have such a cell prefixed
+with a leading `'` instead, which every mainstream spreadsheet program already
+reads as "the rest of this cell is literal text" — the value looks the same
+once opened, only its interpretation changes. The guard only ever touches a
+character column; a numeric column's own leading `-` (a negative value) is
+left exactly as it is, since a spreadsheet never treats a cell that reads as a
+plain number as a formula. Off by default because reading each table's column
+types costs one extra request per export. With the guard off, open an export
+of a table you do not trust in a text editor or `pandas.read_csv`, not
+directly in a spreadsheet.
 
 ## Refreshing
 

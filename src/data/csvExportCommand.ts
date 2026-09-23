@@ -232,13 +232,21 @@ async function ensureDiskSpace(
 /**
  * Runs `pythonOnViya.exportTableToCsv` for a SAS library table — see
  * {@link runSourceCsvExport}, which this only adapts `item`/`adapter` into.
+ * `guardFormulaInjection` (12e, `pythonOnViya.csvExport.
+ * guardFormulaInjection`, off by default) is the caller's job to read from
+ * configuration — this function stays free of `vscode.workspace` reads the
+ * same way every other seam here is kept injectable/testable.
  */
 export async function runCsvExport(
   item: TableItem,
   adapter: LibraryAdapter,
   deps: CsvExportDeps,
+  guardFormulaInjection = false,
 ): Promise<void> {
-  await runSourceCsvExport(new LibraryCsvSource(item, adapter), deps);
+  await runSourceCsvExport(
+    new LibraryCsvSource(item, adapter, guardFormulaInjection),
+    deps,
+  );
 }
 
 /**

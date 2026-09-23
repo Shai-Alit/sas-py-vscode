@@ -299,6 +299,69 @@ describe("CAS table CSV export (11d)", () => {
       100 * 1024 * 1024,
     );
   });
+
+  describe("12e formula-injection guard", () => {
+    /** `columns.json`: `CODE` is `varchar` (text), `VALUE` is `double`
+     * (numeric) — a formula-shaped `CODE` and a negative `VALUE` exercise
+     * both halves of the guard's text/numeric partition in one page. */
+    const GUARD_ROWS_ROUTE: RecordedCasRoute = {
+      when: ROWS_HREF,
+      reply: (request) =>
+        /[?&]start=0(&|$)/.test(request.link.href)
+          ? casOk({
+              count: 1,
+              items: [{ version: 1, cells: ["=SUM(A1:A9)", -1.5] }],
+              links: [],
+            })
+          : casOk({ count: 1, items: [], links: [] }),
+    };
+
+    it("is off by default — the formula-shaped cell reaches the file untouched", async () => {
+      const { adapter } = adapterWith([
+        { when: DATA_TABLE_HREF, reply: casFixture("data-table.json") },
+        { when: COLUMNS_HREF, reply: casFixture("columns.json") },
+        GUARD_ROWS_ROUTE,
+      ]);
+      const { stream, chunks } = fakeStream();
+      const { log } = fakeLog();
+
+      await runSourceCsvExport(new CasCsvSource(adapter, table()), {
+        log,
+        showSaveDialog: () => Promise.resolve(SAVE_URI),
+        withProgress: (_title, run) =>
+          run(new vscode.CancellationTokenSource().token),
+        createWriteStream: () => stream,
+        rename: () => Promise.resolve(),
+        unlink: () => Promise.resolve(),
+        statfs: AMPLE_DISK,
+      });
+
+      assert.deepEqual(chunks, ["CODE,VALUE\n=SUM(A1:A9),-1.5\n"]);
+    });
+
+    it("once turned on, guards the character column only — the numeric column's own '-' is untouched", async () => {
+      const { adapter } = adapterWith([
+        { when: DATA_TABLE_HREF, reply: casFixture("data-table.json") },
+        { when: COLUMNS_HREF, reply: casFixture("columns.json") },
+        GUARD_ROWS_ROUTE,
+      ]);
+      const { stream, chunks } = fakeStream();
+      const { log } = fakeLog();
+
+      await runSourceCsvExport(new CasCsvSource(adapter, table(), true), {
+        log,
+        showSaveDialog: () => Promise.resolve(SAVE_URI),
+        withProgress: (_title, run) =>
+          run(new vscode.CancellationTokenSource().token),
+        createWriteStream: () => stream,
+        rename: () => Promise.resolve(),
+        unlink: () => Promise.resolve(),
+        statfs: AMPLE_DISK,
+      });
+
+      assert.deepEqual(chunks, ["CODE,VALUE\n'=SUM(A1:A9),-1.5\n"]);
+    });
+  });
 });
 
 describe("large-export confirmation (11d)", () => {

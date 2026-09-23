@@ -96,8 +96,10 @@ decided-to-build follow-ups remain open, none started** — a large-table CSV
 -export confirmation for SAS library tables, a `CasProblem` for an oversized
 CAS response, and surfacing autoExec-error text — each already decided
 "build it" but with no slice to land in; folded into Phase 12 as a new
-slice, **12e**, at the Phase 11→12 housekeeping checkpoint, rather than left
-open-ended (`docs/phases/phase-12.md`). **The Phase 11→12 between-phase
+slice, **12f** (labeled 12e at the housekeeping checkpoint; renumbered
+12f later the same day, once 12c was inserted ahead of it — see below),
+rather than left open-ended (`docs/phases/phase-12.md`). **The Phase 11→12
+between-phase
 housekeeping (`HOUSEKEEPING.md`) ran and closed 2026-09-22** — see the
 "Phase 11→12 housekeeping" section below for what it found. The full
 slice-by-slice narrative that used to live here has moved to
@@ -151,20 +153,52 @@ section, the actual build is a separate, not-yet-scoped slice, not started
 here, and still carries the ADR's named requirement for its own security
 review before any code merges.
 
-**Three more slices — 12f, 12g and 12h — were added 2026-09-22**, from two
-pieces of work that ran entirely outside this repository the same day.
-Hand-running SAS's own VS Code extension in a `.sasnb` notebook against a
-Viya 4 deployment produced Findings 12.2 and 12.3: `PROC PYTHON` emits a
+**12c (scope the actual Option C build) added and scoped 2026-09-22, the
+same day, once 12b returned viable/go** — inserted ahead of the phase's
+other unstarted slices, which renumbered old 12c→12d (Python-startup-snippet
+spike) and old 12d→12e (CSV-guard research). 12c's own deliverable — a
+design and punch list for a not-yet-numbered future build slice, no `src/`
+code — settles the tool surface (read-only `LibraryAdapter`/`CasAdapter`
+operations only; `ExecutionBackend` named as a separate, later,
+separately-reviewed decision), the token/lifecycle design (a
+`headersHelper`-shaped local secret independent of the Viya token,
+replacing the static-header design 12b found cannot self-heal on
+rotation), and what ADR-0037's own named pre-code security review must
+cover. **The audience-boundary question — external CLI agents only for
+v1, vs. also VS Code's own in-editor agent discovery — is fully settled,
+not just recommended.** Sean asked how to decide it with nothing
+documented; the answer was to probe VS Code's own behaviour directly
+rather than keep reasoning from absent docs, the same posture this
+project already takes toward Viya. A live Extension Development Host
+probe the same day found VS Code's core does automatically query an
+extension-registered `contributes.mcpServerDefinitionProviders` provider
+— but a VS Code core team member and a still-open `microsoft/vscode`
+issue ([#265912](https://github.com/microsoft/vscode/issues/265912))
+confirm that such a server never appears in the installed-servers surface
+VS Code points users at, so it cannot be trusted, started, stopped or
+removed there — a real, current, tracked product gap, not an unproven
+integration. Decision: build against the external-CLI path only for v1;
+revisit in-editor discovery once that VS Code issue closes. Full method
+and findings in `docs/phases/phase-12.md`'s "12c scoped" and "12c
+audience boundary settled" Runbook entries.
+
+**Three more slices — 12g, 12h and 12i — were added 2026-09-22**, from two
+pieces of work that ran entirely outside this repository the same day
+(labeled 12f/12g/12h when added; renumbered 12g/12h/12i the same day once
+12c's own insertion, above, shifted every later slice one letter — see
+"Letter collision reconciled" below). Hand-running SAS's own VS Code
+extension in a `.sasnb` notebook against a Viya 4 deployment produced
+Findings 12.2 and 12.3: `PROC PYTHON` emits a
 `NOTE: Resuming Python state from previous PROC PYTHON invocation.` when
-interpreter state survives between steps in one session (**12f** — does that
+interpreter state survives between steps in one session (**12g** — does that
 `NOTE` reach *our* transcript, and is it misleading on Run File or flatly
 wrong after Reset Python State? no Viya probe needed, just run the extension
 and read the output channel), and SAS's extension opens a named
 `ods html5(id=…)` destination with images inlined as base64 `data:` URIs
 before every run, which is how `SAS.show(plt)` renders a figure in a cell
-(**12g** — a spike, Sean's call: settle the cheap blocking questions, leave
+(**12h** — a spike, Sean's call: settle the cheap blocking questions, leave
 any build to a separate, not-yet-scoped slice, the same boundary 12b drew
-for Option C). Two of 12g's four questions are already answered from this
+for Option C). Two of 12h's four questions are already answered from this
 repository's own source, and favourably: the notebook sanitizer does **not**
 strip `data:` image URIs — it accepts inline PNG/JPEG/GIF/WebP and rejects
 SVG deliberately — so no [ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)
@@ -176,9 +210,22 @@ Separately, a dependency-licence inventory produced for an internal
 open-source-contribution request found that twelve MIT packages ship inside
 `dist/webview/dataViewer.js` despite `package.json` declaring no
 `dependencies` at all, and that the root `NOTICE` attributes none of them
-(**12h** — append a "Bundled third-party components" section; `NOTICE`
-already ships, so packaging does not change). 12c–12h are all unstarted —
+(**12i** — append a "Bundled third-party components" section; `NOTICE`
+already ships, so packaging does not change). 12d–12i are all unstarted —
 see `docs/phases/phase-12.md` for the full account.
+
+**Letter collision reconciled, 2026-09-22.** 12c's own insertion (above)
+and PR #207's 12f/12g/12h were scoped in two sessions working this phase
+concurrently from separate clones, this project's own established
+parallel-phases pattern — both independently reached for the next free
+letter after the same five-slice base, so 12c's branch and #207 each used
+`12f` for a different slice. Caught when 12c's branch rebased onto #207
+after it merged; resolved by a uniform shift preserving both sides' own
+relative order (12c's insertion point right after 12b stands; everything
+from the old 12c onward, #207's newly merged trio included, moves one
+letter later) rather than re-litigating which slice belongs where. Full
+account in `docs/phases/phase-12.md`'s own "Letter collision reconciled"
+Runbook entry.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -372,9 +419,11 @@ The outcomes:
   items are each blocked on something external (a stale credential, a
   not-yet-existing environment); these three are not blocked on anything,
   just unscheduled, so "carried forward" understated the gap. Fixed by
-  giving them a slice: **12e**, in `docs/phases/phase-12.md`. See
-  `phase-11.md`'s own "Phase 11→12 housekeeping" Runbook entry, which also
-  corrects that file's earlier "once those land, Phase 11 is done" line.
+  giving them a slice: **12f** (labeled 12e at this checkpoint; renumbered
+  12f later the same day, once 12c was inserted ahead of it), in
+  `docs/phases/phase-12.md`. See `phase-11.md`'s own "Phase 11→12
+  housekeeping" Runbook entry, which also corrects that file's earlier
+  "once those land, Phase 11 is done" line.
 - **`RUNBOOK.md` / `PRODUCTION_PLAN.md`: one stale claim fixed.** §3.1's
   parity table's "Localisation" row still read `Phase 11 (bundles)`,
   contradicting `phase-11.md`'s own 2026-09-22 decision that non-English
@@ -396,9 +445,10 @@ The outcomes:
   and consistent, nothing near expiry. One routine, unrelated open PR
   (dependabot's dev-tooling group bump, #200) sits open — not a security
   advisory, no action needed from this checkpoint.
-- **Phase 12 scoping: no drift found.** `phase-12.md`'s four slices
-  (12a–12d) read consistently with ADR-0037 and with `phase-11.md`'s own
-  account of the AI-agent-integration move; every renumbering
+- **Phase 12 scoping: no drift found.** `phase-12.md`'s four slices at this
+  point — 12a, 12b, and what a later 2026-09-22 insertion of 12c renumbered
+  to 12d and 12e — read consistently with ADR-0037 and with `phase-11.md`'s
+  own account of the AI-agent-integration move; every renumbering
   cross-reference (`docs/adr/0007-connection-profile-storage.md`,
   `phase-3.md`, `PRODUCTION_PLAN.md` §8, `docs/dev/manual-tests/`) already
   points at Phase 13, none stale.
@@ -435,9 +485,10 @@ library tables, a `CasProblem` for an oversized CAS response, surfacing
 autoExec-error text) are **not** listed here: each already carried a
 same-day "build it" decision, so — unlike the items above — nothing about
 them was actually open except *when*. Fixed by scheduling them rather than
-leaving them here: they're **Phase 12 slice 12e**
-(`docs/phases/phase-12.md`), added at the Phase 11→12 housekeeping
-checkpoint, 2026-09-22.
+leaving them here: they're **Phase 12 slice 12f** (labeled 12e at the
+housekeeping checkpoint; renumbered 12f later the same day, once 12c was
+inserted ahead of it) (`docs/phases/phase-12.md`), added at the Phase
+11→12 housekeeping checkpoint, 2026-09-22.
 
 - **F11 — Snippets for common Viya patterns, general: genuinely unscoped,
   found 2026-09-22 (PR #204 review).** Named in Phase 11's own original
@@ -512,7 +563,7 @@ housekeeping checkpoint. Per-phase detail
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
-| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. **12f, 12g and 12h added 2026-09-22** from two pieces of work outside the repository: the `PROC PYTHON` "resuming Python state" `NOTE` and whether it reaches our own transcript (12f, Findings 12.2/12.3); a spike on inline graphics via `SAS.show`/ODS HTML5, build explicitly deferred (12g); and `NOTICE` attribution for the twelve bundled MIT components that ship in `dist/webview/dataViewer.js` (12h). 12c (Python-startup-snippet spike), 12d (CSV-guard research), 12e (three small Phase 11 follow-ups), 12f, 12g and 12h all not started. | `docs/phases/phase-12.md` |
+| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. **12c (scope the Option C build) scoped 2026-09-22** — read-only v1 tool surface, `headersHelper`-shaped token design, security-review checklist; audience boundary settled by a live Extension Development Host probe (external CLI only for v1 — see `microsoft/vscode`#265912). Inserted ahead of the phase's other slices; a same-day letter collision with a concurrently-merged PR (#207) was found and reconciled (see the narrative above), landing on a uniform shift rather than either branch's original lettering. Phase 11's row above names the three follow-ups it handed over by their pre-shift letter (12e); in this phase they are **12f**, and that row is left as it stands — a closed phase's row is not edited from here. **12g, 12h and 12i added 2026-09-22** from two pieces of work outside the repository: the `PROC PYTHON` "resuming Python state" `NOTE` and whether it reaches our own transcript (12g, Findings 12.2/12.3); a spike on inline graphics via `SAS.show`/ODS HTML5, build explicitly deferred (12h); and `NOTICE` attribution for the twelve bundled MIT components that ship in `dist/webview/dataViewer.js` (12i). 12d (Python-startup-snippet spike), 12e (CSV-guard research), 12f (three small Phase 11 follow-ups), 12g, 12h and 12i all not started. | `docs/phases/phase-12.md` |
 | 13 — Second execution backend | not started — does not gate v1.0 | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section

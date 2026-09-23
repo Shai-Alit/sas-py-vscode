@@ -15,29 +15,50 @@ loop, conventions).
 Created 2026-09-22 (Sean's own call), moved out of Phase 11 the same day —
 see [`docs/phases/phase-11.md`](phase-11.md)'s "Phase 11 follow-up decisions,
 and AI-agent integration moved to Phase 12" Runbook entry for the full
-account of why. Three of this phase's eight slices trace to a 2026-09-21
-research memo
+account of why. Three of this phase's nine slices trace directly to a
+2026-09-21 research memo
 ([`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md))
 answering whether the extension can let a user plug an AI agent they already
-have — Claude Code above all — into it; the decision that memo fed is
-[ADR-0037](../adr/0037-ai-agent-integration-approach.md). The fourth (12d) is
-unrelated in topic — CSV formula-injection guard research, carried over from
-a Phase 11 (11d) follow-up — but shares the same shape: a real open question
-that needs investigation before it can be sized or built, the same reason
-12b/12c are spikes rather than builds. **The fifth (12e) was added later the
-same day**, at the Phase 11→12 between-phase housekeeping checkpoint — three
+have — Claude Code above all — into it, and to the decision that memo fed,
+[ADR-0037](../adr/0037-ai-agent-integration-approach.md): 12a (the Agent
+Skill), 12b (the Option C spike), and **12c**, added once 12b returned
+viable/go to scope the actual Option C build the spike's own Runbook entry
+recommended but did not do itself. 12d (formerly 11h, a Python-startup-
+snippet spike) and 12e (CSV formula-injection guard research, carried over
+from a Phase 11 (11d) follow-up) are unrelated in topic to the memo, but
+share the same shape — a real open question that needs investigation before
+it can be sized or built — which is why they sit alongside 12a–12c as
+spikes/scoping rather than builds. **12f was added later the same day**, at
+the Phase 11→12 between-phase housekeeping checkpoint — three
 already-decided, already-scoped Phase 11 follow-ups that had a "build it"
-call but no slice to land in; unlike 12a–12d, none of it traces to the
+call but no slice to land in; unlike 12a–12e, none of it traces to the
 research memo and none of it is a spike, since nothing about any of the
-three is actually undecided. **The sixth, seventh and eighth (12f–12h) were
-added later the same day too**, from two pieces of work that happened
-entirely outside this repository: a hand-run of SAS's own VS Code extension
-(`SAS.sas-lsp`) in a `.sasnb` notebook against a Viya 4 deployment, and a
-dependency-licence inventory produced for an internal open-source-
-contribution request. Neither traces to the research memo either. 12f and
-12h are small and bounded; 12g is a spike on exactly 12b's terms — it
-answers what is cheap to answer and explicitly does not scope the build it
-might recommend.
+three is actually undecided. **12g, 12h and 12i were added later the same
+day too**, from two pieces of work that happened entirely outside this
+repository: a hand-run of SAS's own VS Code extension (`SAS.sas-lsp`) in a
+`.sasnb` notebook against a Viya 4 deployment, and a dependency-licence
+inventory produced for an internal open-source-contribution request.
+Neither traces to the research memo either. 12g and 12i are small and
+bounded; 12h is a spike on exactly 12b's terms — it answers what is cheap
+to answer and explicitly does not scope the build it might recommend.
+
+**A letter collision, found and fixed the same day.** 12c and the trio
+12g–12i were scoped in two sessions working this phase concurrently from
+separate clones — this project's own established pattern (see
+`CLAUDE.md`'s "Don't guess about Viya — probe it" section for why
+finding numbers are phase-scoped for exactly this reason). Each session's
+insertion was correct on its own branch, but both used the next free
+letter after the same five-slice base, so 12c's own branch labelled the
+three-follow-ups slice `12f` at the same moment the other branch's `#207`
+merged a *different* slice under that same letter. Caught at merge time
+(this file's own `12c scoped`/`12c audience boundary settled` Runbook
+entries were still unmerged when `#207` landed), not after — resolved by
+a uniform shift: `12c`'s own insertion point right after `12b` stands, and
+every slice from the old `12c` onward (the pre-existing `12c`/`12d`/`12e`
+*and* `#207`'s newly-merged `12f`/`12g`/`12h`) moves one letter later,
+preserving each side's own relative ordering exactly rather than
+re-litigating which slice belongs where. See this file's own "Letter
+collision reconciled" Runbook entry for the full account.
 
 This phase repurposes a number previously assigned to a different, unstarted
 topic ("second execution backend"), renumbered the same day to
@@ -71,7 +92,27 @@ under this number before today.
    later slice or the project falls back to Option B (`languageModelTools`
    over the existing pure adapters), which ADR-0037 holds pending exactly
    this result.
-3. **12c — Spike: a Python startup snippet's submission mechanism and
+3. **12c — Scope the actual Option C build: the loopback MCP server's
+   token/lifecycle story and tool surface.** Added 2026-09-22, once 12b
+   returned viable/go. Per ADR-0037's own consequences section, the real
+   build is "a separate, not-yet-scoped slice" — a spike answering "can this
+   work" is not the same undertaking as building it production-ready — and
+   12b's own Runbook entry recommends scoping it without doing so itself.
+   This slice is that scoping: a design and punch list for a following,
+   not-yet-numbered build slice, not the build itself — no `src/` code, the
+   same footprint as the spike it follows. Settles the audience boundary
+   (external CLI only for v1, vs. also reaching VS Code's own in-editor
+   agents through `contributes.mcpServerDefinitionProviders`, which depends
+   on the three things 12b re-confirmed are still undocumented), the tool
+   surface (which read operations of `LibraryAdapter`/`CasAdapter` to
+   expose, and whether `ExecutionBackend` belongs in v1 at all, given the
+   difference in risk between reading metadata and running arbitrary
+   Python), the token design (a `headersHelper`-shaped local secret fixing
+   12b's own found gap — a static header token going silently dark on
+   rotation), the port/window-reload story, and what a pre-code security
+   review (ADR-0037's own named requirement) must cover. Outcome recorded
+   here once run — see this file's own Runbook entry.
+4. **12d — Spike: a Python startup snippet's submission mechanism and
    namespace survival.** Formerly 11h. Investigates, rather than builds, the
    idea (a Phase 11e follow-up) of a profile-level Python startup snippet —
    the Python analogue of 11e's SAS `sasOptions`/`autoExec`. Settles the
@@ -90,7 +131,7 @@ under this number before today.
    user their setup is gone, or does a reset need to re-run it automatically.
    Outcome recorded here once run; decides whether the startup-snippet idea
    gets sized into a real slice back in a future phase, or stays parked.
-4. **12d — Research: does the CSV formula-injection guard need to cover SAS
+5. **12e — Research: does the CSV formula-injection guard need to cover SAS
    library exports too, and how.** Carried over from Phase 11's 11d
    follow-ups, 2026-09-22 — flagged as needing more research than a
    punch-list item implied, rather than a settled "build it, CAS-only" call.
@@ -106,7 +147,7 @@ under this number before today.
    library-export cost/shape before anything is decided for either surface,
    rather than shipping the CAS-only version and leaving the library
    question open again.
-5. **12e — Three small, already-decided Phase 11 follow-ups.** Folded in
+6. **12f — Three small, already-decided Phase 11 follow-ups.** Folded in
    from `phase-11.md`'s own punch list at the Phase 11→12 between-phase
    housekeeping checkpoint, 2026-09-22 (see that file's own "Phase 11→12
    housekeeping" Runbook entry) — each already carried a "build it" decision
@@ -141,12 +182,15 @@ under this number before today.
      after create when the code is nonzero and write the `ERROR`/`WARNING`
      lines to the output channel.
 
-   Unlike 12a–12d, none of this traces to the AI-agent-integration research
+   Unlike 12a–12e, none of this traces to the AI-agent-integration research
    memo and none of it is a spike — each item is already scoped and decided,
-   just never given a slice until this checkpoint. Sequenced last: 12a–12d
-   were this phase's original reason for existing, and 12e is Phase 11
-   leftover work riding along rather than this phase's own topic.
-6. **12f — Does `PROC PYTHON`'s "resuming state" `NOTE` reach our users, and
+   just never given a slice until this checkpoint. Sequenced after 12a–12e:
+   those were this phase's original reason for existing (or grew directly
+   out of it, 12c's own case), and 12f is Phase 11 leftover work riding
+   along rather than this phase's own topic. (12g–12i, below, were added
+   later still, from unrelated work — see this file's own "Letter collision
+   reconciled" Runbook entry for why 12f does not sit last overall.)
+7. **12g — Does `PROC PYTHON`'s "resuming state" `NOTE` reach our users, and
    is it ever wrong when it does?** Added 2026-09-22 from Finding 12.2, in
    this file's own Probe findings section below. SAS emits
    `NOTE: Resuming Python state from previous PROC PYTHON invocation.` at the
@@ -176,7 +220,7 @@ under this number before today.
    `docs/dev/manual-tests/` (a Phase 12 file, if this is the first item to
    need one). A perfectly good result is "the filter already drops it,
    nothing to do" — the slice decides that, rather than assuming either way.
-7. **12g — Spike: inline graphics (`SAS.show`) and where our own pieces
+8. **12h — Spike: inline graphics (`SAS.show`) and where our own pieces
    already stand.** Added 2026-09-22 from Finding 12.3, below:
    `SAS.show(plt)` renders a `matplotlib` figure directly in a cell
    under SAS's own extension, and this extension surfaces no plot anywhere —
@@ -241,7 +285,7 @@ under this number before today.
      is already a defect class here, not output.
 
    No production code ships from the spike itself, same as 12b.
-8. **12h — `NOTICE`: attribute the bundled third-party components.** Added
+9. **12i — `NOTICE`: attribute the bundled third-party components.** Added
    2026-09-22. Found while producing a dependency-licence inventory for an
    internal open-source-contribution request — not by any review of this
    repository, which is why it had gone unnoticed. `package.json` declares no
@@ -291,23 +335,34 @@ under this number before today.
   with an out-of-band token and completes a real tool call; a killed/
   restarted server is transparent to the CLI only if port and token are
   both stable, and a `headersHelper` is the documented, right-shaped fix for
-  the case where the token isn't. Recommendation: viable, go — see this
-  file's own Runbook entry for the full account and what's still open before
-  a build slice can start.
-- [ ] **12c — Spike: Python startup snippet submission/namespace survival.**
+  the case where the token isn't. Recommendation: viable, go, scoped next as
+  12c — see this file's own Runbook entry for the full account and what's
+  still open before a build slice can start.
+- [x] **12c — Scope the actual Option C build.** Scoped 2026-09-22 — a v1
+  design (external-CLI-only tool surface, read-only tools, a
+  `headersHelper`-shaped local token) is ready to hand to a not-yet-numbered
+  build slice. The audience-boundary call is fully settled, not just
+  recommended: a live Extension Development Host probe the same day found
+  VS Code's own core does discover an extension-registered MCP server
+  automatically, but a VS Code core team member and a still-open
+  `microsoft/vscode` issue (#265912) confirm that registration is
+  currently invisible in every standard MCP management surface — a real,
+  current product gap, not an unproven integration. See this file's own
+  Runbook entries.
+- [ ] **12d — Spike: Python startup snippet submission/namespace survival.**
   Not started.
-- [ ] **12d — Research: CSV formula-injection guard for SAS library
+- [ ] **12e — Research: CSV formula-injection guard for SAS library
   exports.** Not started.
-- [ ] **12e — Three small, already-decided Phase 11 follow-ups.** Not
+- [ ] **12f — Three small, already-decided Phase 11 follow-ups.** Not
   started.
-- [ ] **12f — Does the "resuming Python state" `NOTE` reach our users, and
+- [ ] **12g — Does the "resuming Python state" `NOTE` reach our users, and
   is it ever wrong?** Not started. Needs no Viya probe — run the extension
   and read the transcript, on Run File and after Reset Python State.
-- [ ] **12g — Spike: inline graphics (`SAS.show`) / ODS HTML5.** Not
+- [ ] **12h — Spike: inline graphics (`SAS.show`) / ODS HTML5.** Not
   started. Spike only; the build it may recommend is a separate,
   not-yet-scoped slice. Two of the four questions are already answered from
   source — see the Plan section above.
-- [ ] **12h — `NOTICE`: attribute the twelve bundled MIT components.** Not
+- [ ] **12i — `NOTICE`: attribute the twelve bundled MIT components.** Not
   started. Append a "Bundled third-party components" section; no packaging
   change.
 
@@ -321,14 +376,16 @@ Repurposed from a stub previously numbered Phase 12 ("second execution
 backend"), which had no content beyond a three-sentence plan paragraph and
 was never started — renumbered to [Phase 13](phase-13.md) the same day, so
 this number could hold a real, already-scoped body of work instead of
-colliding with it. 12a/12b/12c are 11f/11g/11h, moved here unchanged in
+colliding with it. 12a/12b/12d are 11f/11g/11h, moved here unchanged in
 substance (see `phase-11.md`'s own "Phase 11 follow-up decisions, and
 AI-agent integration moved to Phase 12" Runbook entry for the full account
-of what carried over and why); 12d is the CSV-guard research item, similarly
-carried over from 11d's follow-ups. None of the four has started as of this
-entry.
+of what carried over and why); 12e is the CSV-guard research item, similarly
+carried over from 11d's follow-ups. **12c did not exist at this point — it
+was added later the same day, once 12b's spike returned viable/go; see this
+file's own "12c scoped" entry, below.** None of the four has started as of
+this entry.
 
-### 12e added, 2026-09-22, at the Phase 11→12 between-phase housekeeping checkpoint
+### 12f added, 2026-09-22, at the Phase 11→12 between-phase housekeeping checkpoint
 
 The housekeeping checkpoint (`phase-11.md`'s own "Phase 11→12 housekeeping"
 Runbook entry) found that Phase 11's three remaining punch-list follow-ups —
@@ -340,11 +397,13 @@ documented open items," on the model of Phase 8a's own open items; that
 comparison didn't hold, since Phase 8a's items are blocked on something
 external (a stale credential, a not-yet-existing environment) and these
 three are not blocked on anything — just unscheduled. Fixed by giving them a
-slice, **12e**, in this phase rather than Phase 11 (which is otherwise
+slice, **12f**, in this phase rather than Phase 11 (which is otherwise
 closed) or a new phase of their own — Phase 12 is the next phase starting
 regardless, and none of the three needs its own investigation, so there is
-no reason to hold them out of it. None of the three has started as of this
-entry.
+no reason to hold them out of it. (Labeled **12e** at this checkpoint;
+renumbered **12f** the same day, once 12c was inserted ahead of it — see
+this file's own "12c scoped" entry.) None of the three has started as of
+this entry.
 
 ### 12a shipped, 2026-09-22
 
@@ -567,13 +626,270 @@ recommends scoping it, but does not scope or start it, and does not touch
 loopback listener holding a Viya-scoped capability is a named security
 review item... not folded into a slice's ordinary pass," which stands
 exactly as written and applies in full to whatever slice picks this up.
+**That scoping is 12c, added the same day** — see this file's own "12c
+scoped" entry, below.
 
 No verification commands apply — nothing in `src/`, `package.json`, or any
 tracked file changed; the spike server, its `node_modules`, and every
 `claude mcp` registration it created were run from and cleaned up in the
 session scratch directory, never this repository.
 
-### 12f, 12g and 12h added, 2026-09-22 — provenance, two decisions, and what was settled without probing
+### 12c scoped, 2026-09-22 — Option C build design and one open decision
+
+Per this slice's own Plan entry, produced once 12b returned viable/go. No
+`src/` code — this is a design and punch list for a following, not-yet-
+numbered build slice, the same "no production code" footprint 12b itself
+kept. Grounded in this session's own read of `src/data/adapter.ts`
+(`LibraryAdapter`), `src/cas/adapter.ts` (`CasAdapter`), and
+`src/backend/backend.ts` (`ExecutionBackend`), not written from
+ADR-0037/the research memo alone.
+
+**Audience boundary — settled: external CLI only for v1.** 12b proved the
+external-CLI path (`claude mcp add --transport http ...` against a
+loopback server) end to end, with no dependency on any VS Code API.
+Reaching VS Code's own in-editor agents (Copilot chat, the in-VS-Code
+Claude harness) instead or additionally would go through
+`contributes.mcpServerDefinitionProviders`, which 12b left as three
+undocumented open questions. First recorded here as a recommendation held
+open for Sean's own confirmation rather than settled by this pass; Sean's
+own reply asked how to decide it at all with no documentation to read —
+the right answer, per this project's own "probe it" posture
+(`CLAUDE.md`), was to stop reasoning from absent docs and go empirical,
+the same way 12b itself did for the CLI path. See the next entry, below,
+for the live Extension Development Host probe that settled it the same
+day: not merely undocumented, but confirmed — by a VS Code core team
+member, on a still-open issue — as current, by-design behaviour that
+makes the in-editor path a real product gap today, not just an open
+question. **This is a scope decision with product-visible consequences
+(which agents actually reach the extension), and it is now settled with
+primary-source evidence, not a guess.**
+
+**Tool surface — v1 is read-only; execution is a separate, later
+decision.** `LibraryAdapter` (`getLibraries`/`getTables`/`getColumns`/
+`getRows`/`getRowsAsCsv`) and `CasAdapter` (`getServers`/`getCaslibs`/
+`getTables`/`getColumns`/`openTable`/`getTableProperties`/`getRows`) are
+already `vscode`-free, read-only seams — exactly the shape ADR-0037 called
+"almost for free." `LibraryAdapter.applySort`/`deleteView` create and
+delete a server-side view as a means to an end, never user data, and can
+reasonably ride along; `CasAdapter` has no analogous mutation at all.
+`ExecutionBackend` is a different order of risk: exposing it hands an
+agent the ability to run arbitrary Python against the user's live Viya
+session, not merely read metadata, and nothing in 12b's spike touched it
+(the spike's own tool, `list_libraries`, was chosen specifically because
+it was read-only). Recommendation: v1's tool surface is the read-only
+library/CAS browse-and-page operations only, each marked with MCP's
+`readOnlyHint`; execution is named as an explicit, separately scoped and
+separately reviewed follow-up, never folded into this build by default.
+
+**Token/lifecycle design — a `headersHelper`-shaped local secret,
+independent of the Viya token.** Per 12b's finding 2/3, a bearer token
+pinned into a static `claude mcp add --header` config cannot self-heal
+and goes silently dark to an agent mid-session with no signal — the real
+gap 12b found. Design: a local, per-workspace secret that gates loopback
+access to this project's own MCP server, unrelated to and never derived
+from the user's Viya OAuth token (the loopback listener's own
+Viya-scoped *capability* is the adapters behind it, not the local auth
+secret itself) — generated fresh per server start, held the same way
+this project already holds sensitive material (`SecretStorage`,
+`src/auth/sessionStore.ts`'s own precedent) rather than written to a
+config file in plaintext, and served to an external session via a
+`headersHelper` script the build slice generates alongside the
+`claude mcp add`/`add-json` command it hands the user to run — never a
+value the user copy-pastes into a static `--header` by hand, which is
+exactly the shape 12b found cannot recover from a rotation.
+
+**Port and window-reload story.** A stable, per-workspace port, allocated
+once and persisted for that workspace (not re-rolled every VS Code
+launch, which would break an already-registered external session the
+same way a rotated token does) and scoped so two VS Code windows open
+against two different Viya deployments do not collide on the same port —
+`TableSource`'s own cross-deployment isolation precedent (ADR-0034) is
+the closest existing analogue, though the exact mechanism (a per-workspace
+port derived from the workspace's own storage path, vs. an OS-assigned
+ephemeral port surfaced through the generated `headersHelper`/`add`
+command each time) is left to the build slice itself to decide, not fixed
+here.
+
+**Security-review checklist, per ADR-0037's own named requirement.** The
+consequences section calls this "a named security review item, not
+folded into a slice's ordinary pre-PR pass" the moment any code beyond
+the spike is written — this scoping pass is not that review, but lists
+what it must cover once the build slice exists: the server binds
+loopback-only (`127.0.0.1`, never `0.0.0.0`); the token design above,
+specifically that the local secret cannot be recovered or guessed from
+anything network-visible; the exact adapter operations exposed, with
+particular scrutiny on `applySort`/`deleteView`'s view-creation side
+effects even though they are not user-data mutations; and workspace trust
+(ADR-0002) gating server start and token issuance, not merely tool
+execution. This review runs once the build slice's diff exists, before
+that slice's own PR — not before this scoping is confirmed, and not
+folded into this scoping pass itself, per the ADR's own wording.
+
+**Outcome: scoping complete, all decisions settled.** The tool-surface,
+token, port, and audience-boundary designs above are ready to hand to a
+build slice as written — the audience boundary that started as an open
+recommendation is now settled with primary-source evidence (see the "12c
+audience boundary settled" entry, below), not merely asserted. No
+verification commands apply: no `src/`, `package.json`, or other tracked
+source file changed, only this phase file's own Plan/Runbook/punch-list.
+
+### 12c audience boundary settled, 2026-09-22 — an Extension Development Host probe
+
+Run the same day as 12c's own scoping, once Sean asked how the
+audience-boundary question could be decided at all with nothing
+documented — the right move was to probe VS Code's own behaviour
+directly, the same "stop guessing, run it" posture this project already
+applies to Viya (`CLAUDE.md`'s "Don't guess about Viya — probe it"),
+turned on VS Code's own undocumented API surface instead. No `src/` code
+— a throwaway extension and loopback server, built and run entirely in
+the session scratch directory and torn down afterward, the same footprint
+12b's own spike kept.
+
+**Method.** A minimal extension (`package.json` declaring
+`contributes.mcpServerDefinitionProviders`, one provider registered via
+`vscode.lm.registerMcpServerDefinitionProvider`) instrumented to log every
+callback VS Code invoked on it, pointed at a loopback HTTP server
+(`127.0.0.1:39217`) that logged every request it received and could answer
+a real `initialize`/`tools/list`/`tools/call` JSON-RPC handshake. Loaded
+into a real Extension Development Host (`code --extensionDevelopmentPath=…
+--new-window`, workspace trust pre-accepted via
+`--disable-workspace-trust` for this throwaway scratch folder — VS Code's
+own analogue of the interactive trust prompt 12b hit on the Claude Code
+CLI side) against the actual locally installed `anthropic.claude-code`
+extension (no Copilot Chat extension is installed in this environment, so
+that specific surface was not directly reachable this pass).
+
+**Finding 1 — VS Code's core does query an extension-registered provider,
+unprompted, confirmed empirically.** `provideMcpServerDefinitions()` fired
+the moment the extension activated — no chat opened, no command run, no
+human interaction at all. This is a real, first-hand answer to the first
+of 12b's three open questions: yes, an extension-registered definition is
+forwarded to VS Code's own management layer automatically.
+
+**Finding 2 — that registration is invisible in the standard MCP UI, and
+this is confirmed as current, deliberate VS Code behaviour, not a probe
+artefact.** Sean checked the running Extension Development Host directly:
+`MCP: List`, `Add`, and `Browse` were all present in the Command Palette;
+`MCP: Show Installed Servers` was not, and the registered server ("SAS
+EDH Probe") surfaced nowhere he looked — an observation of this build
+only, and a broader claim than anything the upstream issues below
+actually assert. Calling
+`workbench.mcp.startServer`/`workbench.mcp.listServer` from inside the
+extension itself (several guessed argument shapes) returned cleanly but
+triggered nothing observable — `resolveMcpServerDefinition()` was never
+called, and the loopback server never received a request beyond a manual
+`curl` sent before the probe ran. A live, current (checked 2026-09-22)
+search of `microsoft/vscode`'s own issue tracker explains why directly,
+from a VS Code core team member, on an issue reporting exactly this
+symptom:
+
+> "The MCP panel there only shows user-installed/uninstall MCP servers.
+> It does not show MCP servers from extensions."
+> — [connor4312 (VS Code team), microsoft/vscode#258549](https://github.com/microsoft/vscode/issues/258549#issuecomment-3136834057)
+
+That issue was closed as a duplicate of
+[microsoft/vscode#265912](https://github.com/microsoft/vscode/issues/265912)
+("MCP servers added via McpServerDefinitionProvider should display in the
+MCP Servers list") — **still open, unresolved, as of this check** — filed
+by an outside extension author, not by the VS Code team, and then taken
+up by it: assigned to a VS Code team member and placed on the Backlog
+milestone, which is what makes it a tracked gap rather than an unanswered
+report. The corroborating comment from a Microsoft engineer on another
+team (`joshfree`), noting their own Azure MCP server hits the identical
+confusion — "it appears only VSIX-installed mcp servers are 'penalized'"
+— is on #258549, alongside the quote above; #265912 itself carries no
+comments at all. (Both attributions re-checked against the GitHub API,
+2026-09-22.)
+
+**Decision, settling the question 12c's own Plan entry left open: build
+against the external-CLI path only for v1.** This is stronger than the
+original recommendation's reasoning (avoid three undocumented unknowns) —
+it is now a confirmed, current product gap, tracked by VS Code's own team
+as unresolved: an extension-registered MCP server does not appear in the
+installed-servers surface — the Extensions-sidebar MCP list and
+`MCP: Show Installed Servers` — which is exactly where VS Code sends a
+user to trust, start, stop or remove one. **That is the whole of what the
+upstream issues establish**, and it is narrower than what this probe
+observed: #265912's own reproduction steps still have the server
+reachable from `MCP: List Servers`. Building the in-editor path now would
+mean shipping a server a user cannot manage through the UI VS Code points
+them at — not merely an unproven integration, an actively bad one.
+Revisit `contributes.mcpServerDefinitionProviders` as a real option only
+once microsoft/vscode#265912 (or its eventual resolution) closes; until
+then this stays out of scope, not held open. **Not settled by this
+probe**: whether a chat participant could technically still call a tool
+from an unlisted, unmanageable server despite the UI gap (no Copilot Chat
+extension was installed to test against, and it does not change the
+decision above either way — an invisible, unmanageable server is not
+something to ship regardless of whether a tool call would technically
+succeed).
+
+No verification commands apply — nothing in `src/`, `package.json`, or
+any tracked file changed; the probe extension, its loopback server, and
+every VS Code command/window it touched were built and run entirely from
+the session scratch directory and torn down after (loopback server
+process killed; the throwaway Extension Development Host window is not
+part of this repository and needs no cleanup here).
+
+### Letter collision reconciled, 2026-09-22 — 12c inserted, 12f–12h from `#207` shifted to 12g–12i
+
+Found while finishing 12c's own scoping: `#207` ("add 12f/12g/12h —
+resuming-state NOTE, graphics spike, NOTICE attribution") merged into
+`main` at 02:11 UTC the same day, from a session working this phase
+concurrently from a separate clone — this project's own established
+pattern for working phases in parallel (`CLAUDE.md`'s "Don't guess about
+Viya — probe it" section explains why probe findings are phase-scoped
+rather than a single global counter for exactly this reason; slice
+letters had never collided this way before, but the underlying hazard is
+the same one). Both sessions independently reached for the next free
+letter after this phase's original five-slice base (12a–12e): this
+session's own branch labelled its new build-scoping slice's neighbours
+`12d`/`12e`/`12f` (shifting the pre-existing `12c`/`12d`/`12e` down one
+each to make room for the new `12c`), while `#207`'s branch — scoped
+before this session's own `12c` existed, working from that same
+five-slice base — merged three genuinely new slices as `12f`/`12g`/`12h`.
+Neither branch could have seen the other's letters before merging; this
+was caught only when this session rebased onto the post-`#207` `main` and
+found `12f` claimed by two unrelated slices (three Phase 11 follow-ups on
+one branch, the resuming-state `NOTE` investigation on the other).
+
+**Resolved by a uniform shift, not by re-litigating either side's
+ordering.** `12c`'s own insertion point — immediately after `12b`, since
+it exists only because `12b`'s spike returned viable/go — stands as
+originally placed. Every slice from the old `12c` onward, `#207`'s newly
+merged trio included, moves exactly one letter later, preserving each
+side's own relative order intact: `12c`(old)/`12d`(old)/`12e`(old) become
+`12d`/`12e`/`12f`, and `#207`'s `12f`/`12g`/`12h` become `12g`/`12h`/`12i`.
+This was chosen over resequencing by topic (for instance, moving the
+Phase-11-leftover slice — originally reasoned to sit "last" among the
+first five — past `#207`'s three newer slices too) because that would
+require this session to make a judgement call about `#207`'s own content
+that was not this session's to make; a uniform shift changes only what
+had to change to remove the collision.
+
+**What changed, concretely:** this file's Plan section (the numbered list,
+its intro paragraph, and the "sequenced last" closing note on the
+Phase-11-follow-ups item), the punch list, and every Runbook entry that
+named a shifted letter (`Phase 12 created`, the `12e`→`12f`-added entry,
+`#207`'s own `12f, 12g and 12h added` entry, now `12g, 12h and 12i
+added`) were swept in this same pass. `phase-11.md` needed no further
+change beyond what this session had already done for its own `12d`/
+`12e`/`12f` renumbering — it was never touched by `#207` and does not
+reference `12g`/`12h`/`12i` at all. `STATUS.md` was swept the same way, in
+the same pass. Probe Finding 12.2/12.3's own in-body mentions of `12f`/
+`12g` (as slice pointers, not finding numbers) were corrected to `12g`/
+`12h` to match.
+
+No source or invariant changed by this reconciliation itself — it is a
+letter renumbering across already-committed prose, the same shape as this
+project's own 2026-09-09 finding-numbering-scheme change and the Phase
+12→13 rename, both precedent for sweeping every cross-reference rather
+than leaving some stale. Verification: `npx prettier --check`,
+`node scripts/check-secrets.mjs`, and a full `npm run check:docs` re-run
+(including the self-link check, since several of the renamed headings are
+link targets) after every edit in this pass, before this branch is pushed.
+
+### 12g, 12h and 12i added, 2026-09-22 — provenance, two decisions, and what was settled without probing
 
 **Where they came from.** Two pieces of work ran outside this repository on
 2026-09-22, and each left something this phase should carry rather than lose.
@@ -592,7 +908,7 @@ next housekeeping checkpoint to rediscover.
 deferred.** The alternative considered was scoping a build directly off the
 observation, which would have meant sizing a retrieval mechanism and a
 sanitizer change before knowing whether either was needed — and, as it turns
-out, at least one of them is not. 12g therefore answers the cheap blocking
+out, at least one of them is not. 12h therefore answers the cheap blocking
 questions and stops, exactly the boundary 12b drew for Option C: it may
 recommend a build, it does not scope or start one. Because this phase gates
 v1.0, running the spike is itself a 1.0 gate; nothing it recommends building
@@ -604,7 +920,7 @@ inside some other slice. It is a real, if small, compliance obligation with a
 known fix, and an item nobody has to remember is worth more than a
 well-written note somebody has to find.
 
-**Two of 12g's four questions were settled here, by reading this
+**Two of 12h's four questions were settled here, by reading this
 repository's own source rather than by probing — and the result is better
 than expected.** The scratch note called the sanitizer "the gotcha that
 decides the whole thing," on the reasonable assumption that a `text/html`
@@ -788,7 +1104,7 @@ Whether the `NOTE` survives `src/backend/logFilter.ts`'s noise filter and
 reaches a user, whether it is emitted the same way under `infile=`, whether
 it appears after `proc python restart;` — where it would be flatly wrong —
 and whether it appears on a session's very first run are all open; that is
-12f's whole content. It is also no evidence about stability: nothing here
+12g's whole content. It is also no evidence about stability: nothing here
 says the wording or the presence of this `NOTE` is the same across Viya
 releases.
 
@@ -825,7 +1141,7 @@ written into the session (`sashtml2.htm`), not a special results channel.
 `proc python infile=`; where the body file lands relative to the directory
 [ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
 rich-output diff already watches; or whether `SAS.show(df)` takes the same
-route for a DataFrame. Those are 12g's questions. It is also not evidence
+route for a DataFrame. Those are 12h's questions. It is also not evidence
 about `PROC PYTHON` in isolation: `SAS` is the procedure's own bridge object,
 but everything ODS-side here was set up by SAS's extension, not by the
 procedure.

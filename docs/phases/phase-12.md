@@ -144,8 +144,15 @@ under this number before today.
 - [x] **12a — Agent Skill (Option A).** Shipped 2026-09-22, no production
   code, per the plan. See this file's own Runbook entry, below, for what the
   skill covers.
-- [ ] **12b — Spike: in-process MCP server reachable by an external Claude
-  Code session (Option C).** Not started.
+- [x] **12b — Spike: in-process MCP server reachable by an external Claude
+  Code session (Option C).** Run 2026-09-22. Both headline questions
+  answered — an external Claude Code session connects over loopback HTTP
+  with an out-of-band token and completes a real tool call; a killed/
+  restarted server is transparent to the CLI only if port and token are
+  both stable, and a `headersHelper` is the documented, right-shaped fix for
+  the case where the token isn't. Recommendation: viable, go — see this
+  file's own Runbook entry for the full account and what's still open before
+  a build slice can start.
 - [ ] **12c — Spike: Python startup snippet submission/namespace survival.**
   Not started.
 - [ ] **12d — Research: CSV formula-injection guard for SAS library
@@ -289,6 +296,131 @@ confirmed mechanism plainly rather than hedge. No adversarial-review
 re-run was needed — this is a probe-driven correction to prose already
 covered by the docs-only classification, not new source or a changed
 invariant.
+
+### 12b spike run, 2026-09-22 — Option C confirmed viable; go
+
+Per the memo's own framing ("What would have to be settled before any
+code"), these are VS Code/Claude Code CLI behaviours, not Viya wire
+behaviour, so this is a spike, not a `viya-api-probe` entry, and lives in
+the Runbook rather than Probe findings. No production code was written or
+touched in `src/` — the spike ran entirely as a standalone Node script
+outside the repository, per the phase's own "no production code ships from
+the spike itself" scoping.
+
+**Method.** Built a minimal loopback HTTP MCP server (`@modelcontextprotocol/sdk`
+v1.30.0's `StreamableHTTPServerTransport`, one read-only tool
+`list_libraries` stubbing `LibraryAdapter.listLibraries()`, bound to
+`127.0.0.1` only, gated by a bearer-token middleware checking
+`Authorization: Bearer TOKEN` before any MCP request is handled) — close
+enough to Option C's proposed shape (an in-process server sharing the
+extension's own live session and token) to answer the two questions the
+memo flagged as genuinely undocumented. Registered it against this
+session's own real `claude` CLI (v2.1.245, confirmed present on this
+machine) exactly the way an end user would: `claude mcp add --transport
+http sas-spike http://127.0.0.1:PORT/mcp --header "Authorization: Bearer
+TOKEN"`. Every tool call below ran as a fresh, separate `claude -p
+--allowedTools mcp__sas-spike__list_libraries "..."` process — a real
+second Claude Code session, not this one, satisfying "external" in the
+memo's question 1 literally rather than by analogy.
+
+**Q1 — can an external Claude Code session connect and complete a tool
+call? Confirmed, yes, first try.** `claude mcp list` reported
+`✔ Connected`; a fresh `claude -p` process called
+`mcp__sas-spike__list_libraries` and returned the tool's actual payload
+(`["SASHELP","WORK"]`), round-tripped correctly. The server log confirms a
+distinct MCP session was initialized per connecting process. A wrong or
+missing `Authorization` header was rejected with a clean `401` before any
+MCP handshake — the auth gate itself needs no MCP-level design.
+
+**Q2 — does it survive a restart (standing in for a VS Code window
+reload, which kills an in-process server the same way killing this spike's
+process does), and what does Claude Code do when it doesn't? Answered in
+three parts, and the answer changes the design, not just confirms a
+gap:**
+
+1. **Same port, same token:** fully transparent. Killed the process,
+   restarted it with identical `SPIKE_PORT`/`SPIKE_TOKEN`, and a brand-new
+   `claude -p` process reconnected and completed the tool call with no
+   `claude mcp` command re-run at all. If a real build pins a stable,
+   per-workspace port and keeps the bearer token stable across a reload
+   (not tied 1:1 to a rotating Viya token), a window reload is invisible to
+   an already-configured external session.
+2. **Same port, rotated token, static `--header` (the config `claude mcp
+   add --header` actually writes):** restarted the server with a
+   different token, config unchanged. `claude mcp list` surfaced a
+   specific, actionable error — `Server rejected the configured
+   Authorization header (HTTP 401)… OAuth fallback is disabled when
+   headers.Authorization is set` — but a fresh `claude -p` session run
+   without first checking `mcp list` saw no error at all: the tool was
+   silently absent from its toolset (`ToolSearch` reported "no matching
+   deferred tools found"), same as if the server had never been
+   registered. **This is the real gap**, and it's a UX one, not a
+   protocol one: a static header cannot self-heal, and an agent mid-session
+   has no signal that a tool it could use a moment ago is now gone — only a
+   human running `mcp list` sees why.
+3. **`headersHelper`, the documented fix for (2):** per Claude Code's own
+   docs (`code.claude.com/docs/en/mcp`, fetched live 2026-09-22, not
+   assumed from the memo) a `headersHelper` script re-runs on every
+   connect, is retried once automatically on a `401`/`403`, and its output
+   overrides a static `headers` entry with the same name — exactly the
+   shape a per-connect, freshly-read Viya-scoped token needs. Configuring
+   one (`.mcp.json`/`add-json`, `type: "http"`, `headersHelper:
+   "SCRIPT_PATH"`) surfaced one more real, previously-undocumented-in-this-
+   project behaviour before the live rotation test could run: Claude Code
+   requires a one-time **interactive** workspace-trust acceptance before it
+   will execute a `headersHelper` command at all — `headersHelper not run —
+   this workspace has no persisted trust; accept the trust dialog here once
+   interactively, or set projects[...].hasTrustDialogAccepted in
+   ~/.claude.json`. This is Claude Code's *own* trust boundary, layered on
+   top of and separate from VS Code's workspace trust (ADR-0002) — a real
+   user hits this once, interactively, in their own terminal, and accepts
+   it, which is unremarkable; it could not be driven further from this
+   spike because accepting it means editing this very session's own
+   `~/.claude.json`, which the harness correctly refuses as self-
+   modification. **Not fully closed the loop live** (the actual
+   retry-on-401 was not observed end-to-end, only documented), but the
+   mechanism, its trigger conditions, and its one real prerequisite are now
+   confirmed from primary sources rather than inferred.
+
+**Also re-checked, no change from the memo:** questions 3–5 (whether
+extension-provided MCP definitions are forwarded to VS Code's Agent Host,
+whether the in-VS-Code Claude harness sees them, whether
+`resolveMcpServerDefinition` re-runs on token expiry) remain undocumented.
+A fresh check today (`code.visualstudio.com/docs/agents/reference/mcp-configuration`,
+plus `microsoft/vscode-docs#10227`, filed 2026-09-02 and closed 2026-09-17 —
+adjacent but about `chat.mcp.autostart` scoping, not this question, and it
+doesn't answer it either) found the same gap the memo already recorded: the
+docs say VS Code "forwards the servers you configure" and
+"eligible server configurations from supported VS Code sources, including
+`.vscode/mcp.json`" without ever stating whether an
+extension-registered (`contributes.mcpServerDefinitionProviders`)
+definition counts as one of those sources. These three remain genuinely
+open and would need either a real Extension Development Host prototype or
+a direct question to VS Code's team — out of scope for this spike's
+few-hours budget, per the memo's own sizing.
+
+**Decision: Option C is viable — go, with one design constraint and one
+scope boundary, both carried forward rather than decided here.** The two
+questions the memo said actually gate the choice (Q1, Q2) are both
+answered, and answered favourably: an external Claude Code session
+connects and works over loopback HTTP with an out-of-band token, and the
+reload story — the part the memo called "awkward" — turns out to have a
+documented, working mechanism (`headersHelper`) rather than being an open
+problem, provided the build pins a stable port and treats the bearer token
+as something a helper re-fetches per connection rather than something
+baked into a static config at registration time. Per ADR-0037's own
+consequences section, the actual Option C build is "a separate,
+not-yet-scoped slice," not a continuation of this one — this entry
+recommends scoping it, but does not scope or start it, and does not touch
+`src/`. It also does not relitigate the ADR's own named condition: "a
+loopback listener holding a Viya-scoped capability is a named security
+review item... not folded into a slice's ordinary pass," which stands
+exactly as written and applies in full to whatever slice picks this up.
+
+No verification commands apply — nothing in `src/`, `package.json`, or any
+tracked file changed; the spike server, its `node_modules`, and every
+`claude mcp` registration it created were run from and cleaned up in the
+session scratch directory, never this repository.
 
 ---
 

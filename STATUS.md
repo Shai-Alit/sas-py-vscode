@@ -127,8 +127,30 @@ came back in the raw log in full plaintext, unmasked, when the statement
 failed to parse. `docs/data-access.md` and `docs/cas-python-connection.md`
 are corrected accordingly. `prettier --check`, `check:secrets`, and
 `check:docs` (reference check, samples, self-links, VitePress build) all
-clean. 12b–12e not started — see `docs/phases/phase-12.md`'s Runbook for
-the full account.
+clean.
+
+**12b (Option C spike) ran 2026-09-22 — viable, go.** A standalone loopback
+HTTP MCP server (never touching `src/`) confirmed both questions the
+2026-09-21 research memo flagged as genuinely undocumented: a real,
+separate Claude Code CLI session connects over loopback HTTP with an
+out-of-band bearer token and completes an actual tool call; and a killed/
+restarted server (standing in for a VS Code window reload) is transparent
+to the CLI when port and token are both stable, with `headersHelper` —
+confirmed from Claude Code's own live docs, not assumed — as the
+documented, right-shaped mechanism for the case where the token isn't (one
+real prerequisite found along the way: Claude Code requires its own
+one-time interactive per-workspace trust acceptance before running a
+`headersHelper`, layered on top of and separate from VS Code's own
+workspace trust/ADR-0002). Three secondary questions from the memo (Agent
+Host forwarding of extension-registered servers; whether the in-VS-Code
+Claude harness sees them; `resolveMcpServerDefinition` re-invocation on
+token expiry) remain undocumented after a fresh check today — unchanged
+from the memo, out of this spike's scope. Full method and results in
+`docs/phases/phase-12.md`'s Runbook. Per ADR-0037's own consequences
+section, the actual build is a separate, not-yet-scoped slice, not started
+here, and still carries the ADR's named requirement for its own security
+review before any code merges. 12c–12e not started — see
+`docs/phases/phase-12.md`'s Runbook for the full account.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -462,7 +484,7 @@ housekeeping checkpoint. Per-phase detail
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
-| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. 12b/12c (MCP-server spike, Python-startup-snippet spike, from ADR-0037), 12d (CSV-guard research), and 12e (three small Phase 11 follow-ups) not started. | `docs/phases/phase-12.md` |
+| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. 12c (Python-startup-snippet spike), 12d (CSV-guard research), and 12e (three small Phase 11 follow-ups) not started. | `docs/phases/phase-12.md` |
 | 13 — Second execution backend | not started — does not gate v1.0 | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section

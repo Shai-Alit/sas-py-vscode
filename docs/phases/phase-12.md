@@ -349,8 +349,13 @@ under this number before today.
   currently invisible in every standard MCP management surface — a real,
   current product gap, not an unproven integration. See this file's own
   Runbook entries.
-- [ ] **12d — Spike: Python startup snippet submission/namespace survival.**
-  Not started.
+- [x] **12d — Spike: Python startup snippet submission/namespace survival.**
+  Run 2026-09-23 — submission mechanism confirmed (a plain `infile=` job at
+  session-create time, mirroring `autoExecLines`'s own role for SAS setup);
+  its effect survives into the first ordinary run; **restart wipes it, and
+  Run File always restarts — not only Reset Python State** (Finding 12.4).
+  Viable, not parked; sizing it into a build slice is undecided. See this
+  file's own Runbook entry.
 - [ ] **12e — Research: CSV formula-injection guard for SAS library
   exports.** Not started.
 - [ ] **12f — Three small, already-decided Phase 11 follow-ups.** Not
@@ -957,6 +962,64 @@ so `CLAUDE.md`'s mandatory pre-PR adversarial pass does not apply, and
 verification is `npx prettier --check` on the two touched files plus
 `node scripts/check-secrets.mjs`.
 
+### 12d spike run, 2026-09-23 — submission path confirmed; the restart gap is bigger than Reset Python State alone
+
+Per this slice's own Plan entry: investigates, rather than builds, the
+profile-level Python startup-snippet idea (11e's Python analogue). No `src/`
+code — the same footprint as 12b/12c. Method and full results are Finding
+12.4, below, from a live `viya-api-probe` run against `verde`. The mutating
+calls it needed (a throwaway session, three filerefs, three jobs, all
+deleted/settled within the run) were described to Sean and approved before
+they ran, per this project's own "ask before mutating" rule — a step this
+session initially skipped by running the probe script unasked and was
+stopped by the harness's own permission classifier before any request
+reached Viya; the script was then described and approved before being
+re-run.
+
+**Outcome: the submission mechanism is settled.** A plain (non-restart)
+`proc python infile=<fileref>; run;` job, submitted once right after session
+creation, is the right shape for a startup snippet — it mirrors
+`autoExecLines`' own session-create-time role for SAS-side setup
+(`src/profile/sessionSetup.ts`, `src/compute/sessionManager.ts`), needs no
+[ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md) exception
+(still upload + `infile=`, never inlined), and Finding 12.4 proves its effect
+is genuinely readable in a later job — not merely plausible from the
+"Resuming" `NOTE` alone.
+
+**The restart question resolved differently than the Plan scoped it.** The
+Plan's own wording asked whether **Reset Python State** silently drops the
+snippet. It does — but so does every **Run File**, unconditionally: `Run
+File`'s `ExecuteOptions.freshNamespace` is `true` with no condition a
+startup-snippet feature could hook into (`src/run/commands.ts:500`), which
+`src/backend/procPython.ts:986-988` turns straight into `proc python restart
+infile=...;` — the exact statement Finding 12.4's third job sent. A design
+scoped only around an explicit Reset would leave the single most common
+first action after connecting — Run File — starting from a namespace with no
+trace of the profile's setup, silently, every time.
+
+**Recommendation for a future build slice, not built here:** re-inject the
+snippet's own lines into the uploaded file's bytes on every
+`freshNamespace: true` job (Run File, and Reset Python State's own
+restart-only statement), rather than running it as a separate follow-up job.
+That survives every restart by construction and touches no path that already
+preserves the namespace (Run Selection, a notebook cell, the interactive
+window — `freshNamespace: false` throughout, per
+`notebookController.ts:389-392`), which need the snippet seeded only once, at
+session creation. This is a shape for whoever sizes the build to start from,
+not a commitment this spike makes on its own.
+
+**Decision: viable, sizeable into a future slice — carried forward as an
+open, not-yet-scheduled idea**, the same status 12d already had before this
+spike, now with the actual mechanism confirmed empirically rather than
+assumed from ADR-0014 alone. Whether it is worth a slice of its own is
+Sean's call, same as every other unscheduled Phase 12 item.
+
+No verification commands apply beyond this phase file's own touch: no
+`src/`, `package.json`, or other tracked source file changed. The probe
+session and everything created in it were built and torn down entirely
+against `verde` — cleanup `DELETE` returned `204`, and a follow-up `GET` on
+the session id returned `404`.
+
 ---
 
 ## Probe findings
@@ -1153,3 +1216,78 @@ nothing about it was measured against a deployment: the notebook sanitizer
 `data:image/png;base64,…` in an `<img src>` and already rejects SVG, so the
 `bitmap_mode='inline'` half of this preamble targets the arm that survives
 and the `svg_mode='inline'` half targets the arm that does not.
+
+### Finding 12.4 — a startup-snippet job's namespace effect survives the first ordinary run; `restart infile=` (Run File's own statement) destroys it completely
+
+Probed 2026-09-23, via `viya-api-probe`/`creds.json` against `verde`, using a
+throwaway compute session (SAS Studio compute context) created and deleted
+within the probe — deletion confirmed by a follow-up `GET` on the session
+returning `404`. Approved by Sean before the mutating calls ran (session
+create, fileref create/upload, job create, session delete — all against
+throwaway objects), per this project's own "ask before mutating" rule.
+
+**Documented/claimed, in tension:** 12d's own Plan entry asked whether a
+Python startup snippet's effect (imports, variables) "actually survives into
+the *first* real `Run File`/notebook-cell job the same way it already
+survives between two ordinary runs in one session (probably already implied
+by existing behaviour, but not specifically confirmed for a job submitted
+before any user code has run)," and separately, what `proc python restart;`
+does to it — framed around **Reset Python State** specifically.
+
+**Method:** Three `proc python` jobs in one fresh session, each built exactly
+as `src/backend/procPython.ts`'s `runProgram` composes them — upload a
+fileref, submit `[<statement>, "run;"]` as one job, read `SYSCC` after:
+
+1. `proc python infile=PY000001;` (no restart) — the very first `PROC
+   PYTHON` invocation in the session — running:
+
+   ```python
+   _startup_marker = "STARTUP_STATE_7f2c91"
+   import statistics as _startup_alias
+   print("startup ran")
+   ```
+
+2. `proc python infile=PY000002;` (still no restart), running a script that
+   reads `_startup_marker` and calls `_startup_alias.mean([1, 2, 3])`.
+
+3. `proc python restart infile=PY000003;` — exactly the statement
+   `ExecuteOptions.freshNamespace: true` builds
+   (`src/backend/procPython.ts:986-988`), which is what **every** Run File
+   sends (`src/run/commands.ts:500`), not a statement synthesized for this
+   probe — running the same read-back script as job 2.
+
+**Observed:**
+
+- Job 1 completed, `SYSCC=0`. No "Resuming" `NOTE` — nothing to resume from
+  yet, matching Finding 12.2's prediction for a session's very first run, now
+  confirmed under `infile=` specifically rather than under SAS's own
+  extension's inline `submit`.
+- Job 2's log carried `NOTE: Resuming Python state from previous PROC PYTHON
+  invocation.` at the `submit`, then `marker= STARTUP_STATE_7f2c91` /
+  `alias_mean= 2` — both the variable and the aliased import read back
+  correctly. `SYSCC=0`.
+- Job 3's log carried `NOTE: Previous Python state destroyed.`, then two
+  `NameError`s — one for `_startup_marker`, one for `_startup_alias` — both
+  caught by the script's own `try`/`except`, so `SYSCC=0` even though the
+  namespace was empty.
+
+**Verdict:** Both halves of 12d's open question are settled, and the second
+one resolves wider than the Plan's own wording anticipated. The submission
+mechanism works and its effect is provably readable, not merely inferred,
+in a later ordinary job — including for the specific case the Plan flagged
+as unconfirmed, a job run before any user code has executed. But the
+destructive statement is not specific to Reset Python State: it is the exact
+statement **Run File always sends**, unconditionally. A design that only
+re-seeds the snippet after an explicit Reset would still leave a user's very
+first Run File starting from a namespace with no trace of it, silently, every
+time — a materially larger gap than "Reset Python State needs to re-run it."
+
+**Not settled:** whether the "Resuming"/"destroyed" `NOTE`s above reach a
+user's own transcript through `logFilter.ts`'s noise filter — that is 12g's
+own question (Finding 12.2), not reprobed here. Nor is anything established
+about a large or slow startup snippet's cost, or about `SYSCC`/
+`SYSERRORTEXT` if the snippet itself raises.
+
+No deployment-identifying detail appears above; the fileref/job names and
+compute-context label are this project's own fixed choices, not anything the
+deployment assigned.

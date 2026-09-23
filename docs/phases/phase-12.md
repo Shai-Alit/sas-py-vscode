@@ -771,7 +771,9 @@ this is confirmed as current, deliberate VS Code behaviour, not a probe
 artefact.** Sean checked the running Extension Development Host directly:
 `MCP: List`, `Add`, and `Browse` were all present in the Command Palette;
 `MCP: Show Installed Servers` was not, and the registered server ("SAS
-EDH Probe") did not appear anywhere. Calling
+EDH Probe") surfaced nowhere he looked — an observation of this build
+only, and a broader claim than anything the upstream issues below
+actually assert. Calling
 `workbench.mcp.startServer`/`workbench.mcp.listServer` from inside the
 extension itself (several guessed argument shapes) returned cleanly but
 triggered nothing observable — `resolveMcpServerDefinition()` was never
@@ -789,20 +791,29 @@ That issue was closed as a duplicate of
 [microsoft/vscode#265912](https://github.com/microsoft/vscode/issues/265912)
 ("MCP servers added via McpServerDefinitionProvider should display in the
 MCP Servers list") — **still open, unresolved, as of this check** — filed
-by the VS Code team itself as a tracked gap, with a comment from a
-Microsoft engineer on another team (`joshfree`) noting their own Azure MCP
-server hits the identical confusion: "it appears only VSIX-installed mcp
-servers are 'penalized'."
+by an outside extension author, not by the VS Code team, and then taken
+up by it: assigned to a VS Code team member and placed on the Backlog
+milestone, which is what makes it a tracked gap rather than an unanswered
+report. The corroborating comment from a Microsoft engineer on another
+team (`joshfree`), noting their own Azure MCP server hits the identical
+confusion — "it appears only VSIX-installed mcp servers are 'penalized'"
+— is on #258549, alongside the quote above; #265912 itself carries no
+comments at all. (Both attributions re-checked against the GitHub API,
+2026-09-22.)
 
 **Decision, settling the question 12c's own Plan entry left open: build
 against the external-CLI path only for v1.** This is stronger than the
 original recommendation's reasoning (avoid three undocumented unknowns) —
-it is now a confirmed, current product gap: an extension-registered MCP
-server has no user-facing way to be seen, trusted, started, stopped, or
-removed through VS Code's standard MCP management surface today, tracked
-by VS Code's own team as unresolved. Building the in-editor path now would
-mean shipping a server a user cannot see or control through any ordinary
-VS Code UI — not merely an unproven integration, an actively bad one.
+it is now a confirmed, current product gap, tracked by VS Code's own team
+as unresolved: an extension-registered MCP server does not appear in the
+installed-servers surface — the Extensions-sidebar MCP list and
+`MCP: Show Installed Servers` — which is exactly where VS Code sends a
+user to trust, start, stop or remove one. **That is the whole of what the
+upstream issues establish**, and it is narrower than what this probe
+observed: #265912's own reproduction steps still have the server
+reachable from `MCP: List Servers`. Building the in-editor path now would
+mean shipping a server a user cannot manage through the UI VS Code points
+them at — not merely an unproven integration, an actively bad one.
 Revisit `contributes.mcpServerDefinitionProviders` as a real option only
 once microsoft/vscode#265912 (or its eventual resolution) closes; until
 then this stays out of scope, not held open. **Not settled by this

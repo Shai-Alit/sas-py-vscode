@@ -60,7 +60,8 @@ slices 2026-09-16/17 once the phase was actually picked up:**
 2026-09-22.** Briefly scoped into this phase per ADR-0037, then moved out the
 same day, before any work started — see this section's own Runbook entry,
 below, and [`docs/phases/phase-12.md`](phase-12.md) for the slices themselves
-(now 12a/12b/12c).
+(now 12a/12b/12d — 12c was inserted later, 2026-09-22, to scope the actual
+Option C build once the 12b spike returned viable/go).
 
 Everything else in this file — F1, F6, F8, and the items carried in from
 Phase 6/9/10 housekeeping — stays out of this phase's scope by Sean's own
@@ -687,7 +688,7 @@ section above unless noted:
   (`PropertiesSource`, `CsvExportSource`) rather than forked; see this
   section's own Runbook entry, below.
 - [ ] **11d follow-up — large-table confirmation for SAS library tables:
-  moved to Phase 12 as 12e, 2026-09-22.**
+  moved to Phase 12 as 12f, 2026-09-22.**
   Added 2026-09-19 at Sean's request. CAS export now asks for confirmation
   above an estimated 100 MB (`CsvExportSource.confirmAboveBytes`, 11d);
   `LibraryCsvSource` sets no threshold, so a SAS library table's export never
@@ -695,12 +696,13 @@ section above unless noted:
   session table pages (Finding 7.20 measured only `SASHELP.CLASS`; nothing
   larger has been exported), set `confirmAboveBytes` on `LibraryCsvSource`,
   and add manual-test items mirroring 11.19/11.20. **Decided 2026-09-22
-  (Sean): build it** — folded into Phase 12 as slice **12e** at the Phase
+  (Sean): build it** — folded into Phase 12 as slice **12f** at the Phase
   11→12 housekeeping checkpoint the same day, once it became clear "build
-  it" had never been given a phase or slice to land in. See
-  [`docs/phases/phase-12.md`](phase-12.md).
+  it" had never been given a phase or slice to land in (labeled **12e** at
+  that checkpoint; renumbered **12f** later the same day, once 12c was
+  inserted ahead of it). See [`docs/phases/phase-12.md`](phase-12.md).
 - [ ] **11d follow-up — a `CasProblem` for an oversized response: moved to
-  Phase 12 as 12e, 2026-09-22.** Added
+  Phase 12 as 12f, 2026-09-22.** Added
   2026-09-20 from the PR #197 review. `src/cas/client.ts` has no
   `ResponseTooLargeError` case, so a CAS page over the transport's 1 MiB cap
   (a very wide table's export or grid page) surfaces as `cas-unreachable` —
@@ -712,10 +714,10 @@ section above unless noted:
   large" wording and the two comments corrected in 11d (`csvFormat.ts`,
   `csvExportModel.ts`). Consider the same for the Compute/library client.
   **Decided 2026-09-22 (Sean): build it** — folded into Phase 12 as slice
-  **12e** alongside the item above, same reason. See
+  **12f** alongside the item above, same reason. See
   [`docs/phases/phase-12.md`](phase-12.md).
 - [ ] **11d follow-up — opt-in CSV formula-injection guard (CAS): moved to
-  Phase 12 as 12d, 2026-09-22.** Briefly decided "build it" the same day,
+  Phase 12 as 12e, 2026-09-22.** Briefly decided "build it" the same day,
   then Sean's own re-read (once the CAS-vs-library-export asymmetry was
   raised) was that it needs more research than a punch-list build call gave
   it credit for. See [`docs/phases/phase-12.md`](phase-12.md).
@@ -729,21 +731,21 @@ section above unless noted:
   following the Finding 11.8 fix).
   See this section's own Runbook entry, below.
 - [ ] **11e follow-up — show the text of an autoExec error: moved to Phase
-  12 as 12e, 2026-09-22.** Added 2026-09-20.
+  12 as 12f, 2026-09-22.** Added 2026-09-20.
   A bad line leaves the session `idle` with `sessionConditionCode` 3000 and the
   `ERROR` only in the session log (Finding 11.7). Read
   `/compute/sessions/{id}/log` after create when the code is nonzero and write
   the `ERROR`/`WARNING` lines to the output channel. **Decided 2026-09-22
   (Sean): build it — never show a blind warning with nothing to help the user
-  fix it** — folded into Phase 12 as slice **12e** alongside the two items
+  fix it** — folded into Phase 12 as slice **12f** alongside the two items
   above, same reason. See [`docs/phases/phase-12.md`](phase-12.md).
 - [ ] **11e follow-up — a Python startup snippet.** Added 2026-09-20; out of
   11e by decision. Needs its own submission per session and an answer to
   ADR-0014 and to `restart`/namespace lifetime before it is sized. **Its own
-  investigation slice moved to Phase 12 as 12c, 2026-09-22** — this item
-  itself stays parked here until 12c reports back; see
+  investigation slice moved to Phase 12 as 12d, 2026-09-22** — this item
+  itself stays parked here until 12d reports back; see
   [`docs/phases/phase-12.md`](phase-12.md).
-- [ ] **AI-agent integration (11f/11g/11h): moved to Phase 12 as 12a/12b/12c,
+- [ ] **AI-agent integration (11f/11g/11h): moved to Phase 12 as 12a/12b/12d,
   2026-09-22**, before any work started. See this section's own Runbook
   entry, below, and [`docs/phases/phase-12.md`](phase-12.md).
 
@@ -1416,14 +1418,17 @@ backend" stub with no work against it — that phase was renumbered to
 [Phase 13](phase-13.md) the same day so Phase 12 could be repurposed rather
 than collide with it.
 
-**Result:** 11f/11g/11h are now 12a/12b/12c, unchanged in substance; the
-CSV-guard follow-up is 12d. All four are recorded in
-[`docs/phases/phase-12.md`](phase-12.md), none started. Sean's explicit call:
-Phase 12 gates v1.0 — amended into `PRODUCTION_PLAN.md` §8. Phase 11's own
-remaining scope, after this move, is exactly the three follow-ups decided
-above; once those land, Phase 11 is done.
+**Result:** 11f/11g/11h are now 12a/12b/12d, unchanged in substance; the
+CSV-guard follow-up is 12e. (12c did not exist at this point — it was
+inserted later the same day, once the 12b spike returned viable/go, to
+scope the actual Option C build; see `phase-12.md`'s own "12c scoped"
+entry.) All four are recorded in [`docs/phases/phase-12.md`](phase-12.md),
+none started at this point. Sean's explicit call: Phase 12 gates v1.0 —
+amended into `PRODUCTION_PLAN.md` §8. Phase 11's own remaining scope, after
+this move, is exactly the three follow-ups decided above; once those land,
+Phase 11 is done.
 
-### Phase 11→12 housekeeping, 2026-09-22 — phase closed, three follow-ups folded into Phase 12 as 12e
+### Phase 11→12 housekeeping, 2026-09-22 — phase closed, three follow-ups folded into Phase 12 as 12f
 
 Per `HOUSEKEEPING.md`, run once 11a–11e were merged and the AI-agent
 -integration/CSV-guard move to Phase 12 had landed (`61c03d0`). **Corrects
@@ -1441,8 +1446,10 @@ an environment that doesn't exist yet); these three have no such blocker —
 each was already decided ("build it," 2026-09-22) with nothing left open
 except *when*, and "carried forward, no target phase yet" quietly left that
 unanswered rather than fixing it. Caught the same session, before this entry
-was finalized: **all three are folded into Phase 12 as a new slice, 12e**,
-sequenced after 12a–12d (see [`docs/phases/phase-12.md`](phase-12.md)) —
+was finalized: **all three are folded into Phase 12 as a new slice, 12f**
+(labeled **12e** at this checkpoint; renumbered **12f** later the same day,
+once 12c was inserted ahead of it), sequenced after 12a–12e (see
+[`docs/phases/phase-12.md`](phase-12.md)) —
 small, already-decided, and Phase 12 is the next phase starting regardless,
 so there is no reason to leave them unscheduled. Each punch-list item above
 is updated in place to record the move.
@@ -1477,11 +1484,13 @@ The checkpoint's other findings:
   (95.8/95.8/95.6/95.4) is cleared with margin by the last reported run
   (96.38/95.85/96.16/96.38, 11e).
 - **Phase 12 scoping: no drift found, one gap fixed.** `phase-12.md`'s
-  original four slices (12a–12d) read consistently with ADR-0037 and with
-  this file's own account of the move. What was missing: the three Phase 11
-  follow-ups above had a "build it" decision but no phase or slice to land
-  in — fixed by giving them one, **12e**, in `phase-12.md`, rather than
-  leaving them open-ended.
+  four slices at this point — 12a, 12b, and what a later 2026-09-22
+  insertion of 12c renumbered to 12d and 12e — read consistently with
+  ADR-0037 and with this file's own account of the move. What was missing:
+  the three Phase 11 follow-ups above had a "build it" decision but no
+  phase or slice to land in — fixed by giving them one, **12f** (labeled
+  12e at this checkpoint), in `phase-12.md`, rather than leaving them
+  open-ended.
 
 ### Finding 11.1 — At least one DBMS-backed caslib exists in this environment, checked by a mechanism outside this project's own probe skill
 

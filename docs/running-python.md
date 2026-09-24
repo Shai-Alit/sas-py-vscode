@@ -27,9 +27,9 @@ under your identity.
 **Python on Viya: Run File** runs the whole document. It is on the editor's
 run button (the one shared with `ms-python.python` — you get one play button
 with a dropdown, not two), in the editor context menu, and in the Command
-Palette. Every Run File starts with a **fresh namespace**: the interpreter's
-globals are cleared first, so a file always runs against a clean slate and
-cannot silently depend on something a previous run left behind.
+Palette. Every Run File starts with a **fresh namespace**: the interpreter is
+restarted first, so imports and variables from earlier runs are gone, and a
+file cannot silently depend on something a previous run left behind.
 
 **Python on Viya: Run Selection** runs the selected text and *does not* clear
 the namespace first. A selection builds on whatever state earlier runs left in
@@ -117,8 +117,9 @@ gone; the compute session itself, its SAS libraries and its filerefs are not.
 Use it when the namespace has gotten into a state you would rather not reason
 about, instead of disconnecting and reconnecting.
 
-This is different from Run File's fresh namespace: Run File clears globals in
-the same interpreter, while Reset restarts the interpreter process.
+It is the same restart every Run File does, without running anything
+afterwards. Use it before a Run Selection or an interactive-window cell,
+which build on whatever is already in the interpreter.
 
 ## One run at a time
 

@@ -27,8 +27,9 @@
  *
  * ## What this layer decides and what it refuses to
  *
- * It maps transport outcomes onto {@link ComputeProblem}: unreachable, 401, 403,
- * anything else non-2xx, and a JSON body that will not parse. It deliberately
+ * It maps transport outcomes onto {@link ComputeProblem}: unreachable, a body
+ * over the transport's cap, 401, 403, anything else non-2xx, and a JSON body
+ * that will not parse. It deliberately
  * does **not** interpret a 404 — whether that means "this session is gone" or
  * "no context by that name" depends on what was asked for, and only the caller
  * knows. Those callers turn a `compute-rejected` 404 into the variant that says
@@ -46,6 +47,7 @@
 import { challengeProblem, parseBearerChallenge } from "../auth/challenge";
 import {
   nodeHttpTransport,
+  ResponseTooLargeError,
   type HttpTransport,
   type TransportResponse,
 } from "../auth/transport";
@@ -340,6 +342,20 @@ async function sendRequest(
     // the one caller that reads `rawBody` instead.
     rawBody = await response.bytes?.();
   } catch (error) {
+    // A body over the cap is not an unreachable host — the request got an
+    // answer, it was just too big to read. Kept apart so the user is not told
+    // to check their proxy, and `procPython.ts` does not read it as a session
+    // worth reconnecting to. Same split as `src/content/client.ts`.
+    if (error instanceof ResponseTooLargeError) {
+      return {
+        ok: false,
+        reason: `${method} ${link.href} answered with a body over ${String(error.capBytes)} bytes`,
+        problem: {
+          code: "compute-response-too-large",
+          limitBytes: error.capBytes,
+        },
+      };
+    }
     // The message only. An injected transport's rejection can carry the request
     // that produced it, and this request's headers contain an access token.
     return {

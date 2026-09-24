@@ -40,6 +40,14 @@ import { type Column, type TableDetail, type TableItem } from "./types";
 export class LibraryCsvSource implements CsvExportSource {
   readonly name: string;
   readonly logPrefix = vscode.l10n.t("SAS Libraries");
+  /** The same 100 MB `CasCsvSource` asks above, so one setting of
+   * expectations holds across both export surfaces. Finding 12.12: a
+   * 250,000-row, 20-column `WORK` table read about 300 bytes a row and 0.47 s
+   * a 500-row page, flat from the first page to the last — so 100 MB is
+   * roughly 5 minutes of paging here, the same order as the CAS side's own
+   * rationale. The estimate needs `rowCount`, which that probe found
+   * populated on a Compute table's representation. */
+  readonly confirmAboveBytes = 100 * 1024 * 1024;
 
   private detail: TableDetail | undefined;
   private columns: readonly Column[] = [];

@@ -22,6 +22,7 @@ import {
 /** One of every member of the union, so the exhaustiveness claim is exercised. */
 const every: ComputeProblem[] = [
   { code: "compute-unreachable", detail: "ECONNREFUSED" },
+  { code: "compute-response-too-large", limitBytes: 1_048_576 },
   { code: "unauthorized", problem: { code: "session-expired" } },
   {
     code: "unauthorized",

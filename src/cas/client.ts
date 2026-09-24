@@ -57,6 +57,7 @@
 
 import {
   nodeHttpTransport,
+  ResponseTooLargeError,
   type HttpTransport,
   type TransportResponse,
 } from "../auth/transport";
@@ -190,14 +191,7 @@ async function sendRequest(
     response = await transport(url, { method, headers, signal });
     text = await response.text();
   } catch (error) {
-    return {
-      ok: false,
-      reason: "could not reach the CAS management service",
-      problem: {
-        code: "cas-unreachable",
-        detail: `${method} ${link.href} — ${messageOf(error)}`,
-      },
-    };
+    return transportFailure(method, link.href, error);
   }
 
   if (method === "GET" && isRedirect(response.status)) {
@@ -221,14 +215,7 @@ async function sendRequest(
         response = await transport(redirectUrl, { method, headers, signal });
         text = await response.text();
       } catch (error) {
-        return {
-          ok: false,
-          reason: "could not reach the CAS management service",
-          problem: {
-            code: "cas-unreachable",
-            detail: `${method} ${location} — ${messageOf(error)}`,
-          },
-        };
+        return transportFailure(method, location, error);
       }
     }
   }
@@ -294,6 +281,36 @@ async function sendRequest(
       ...(contentType === undefined ? {} : { contentType }),
       text,
       body: parsed,
+    },
+  };
+}
+
+/**
+ * A transport rejection as a {@link CasFailure}. A body over the transport's
+ * cap got an answer — it was just too large to read — so it is kept apart from
+ * an unreachable host, the same split `src/content/client.ts` makes, and the
+ * user is not sent to check their proxy. Everything else is `cas-unreachable`,
+ * carrying the message only: an injected transport's rejection can carry the
+ * request that produced it, and this request's headers hold a token.
+ */
+function transportFailure(
+  method: string,
+  href: string,
+  error: unknown,
+): CasFailure {
+  if (error instanceof ResponseTooLargeError) {
+    return {
+      ok: false,
+      reason: `${method} ${href} answered with a body over ${String(error.capBytes)} bytes`,
+      problem: { code: "cas-response-too-large", limitBytes: error.capBytes },
+    };
+  }
+  return {
+    ok: false,
+    reason: "could not reach the CAS management service",
+    problem: {
+      code: "cas-unreachable",
+      detail: `${method} ${href} — ${messageOf(error)}`,
     },
   };
 }

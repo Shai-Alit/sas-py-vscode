@@ -135,8 +135,12 @@ Two things to know:
   Disconnect** and connect again.
 - **An autoExec statement that errors does not stop the session.** The
   session starts, later lines still run, and you get a message saying the
-  session reported an error while running startup code. The error itself is in
-  the session's SAS log, which this extension does not show.
+  session reported an error while running startup code, quoting the first
+  `ERROR` or `WARNING` line from the session's SAS log. Every such line (up to
+  20) is written to the **Python on Viya** log. The statement that caused it
+  is not repeated there, since it is your own autoExec text and could hold a
+  password; match the error to your lines by what it says. The error may also
+  come from your site's own startup code, which runs first.
 
 The SAS extension's profiles use the same two fields, so **Import Connection
 Profiles** carries them across.

@@ -24,6 +24,7 @@ const VIYA_ERROR = {
 
 const PROBLEMS: CasProblem[] = [
   { code: "cas-unreachable", detail: "GET /casManagement/servers — ETIMEDOUT" },
+  { code: "cas-response-too-large", limitBytes: 1_048_576 },
   { code: "unauthorized", problem: { code: "state-mismatch" } },
   { code: "forbidden", error: VIYA_ERROR },
   { code: "cas-rejected", error: { status: 500, errorCode: 0 } },
@@ -70,6 +71,16 @@ describe("CAS problem messages under the real l10n", () => {
       problem: { code: "client-id-required", deployment: "Viya 4 2022.05" },
     });
     assert.ok(message.includes("Viya 4 2022.05"), message);
+  });
+
+  it("says a too-large answer is a too-wide table, with the limit, and not the proxy advice", () => {
+    const message = localiseCasProblem({
+      code: "cas-response-too-large",
+      limitBytes: 1_048_576,
+    });
+    assert.match(message, /limit 1 MB/);
+    assert.match(message, /fewer columns/);
+    assert.doesNotMatch(message, /proxy/);
   });
 
   it("names the HTTP status on a plain rejection", () => {

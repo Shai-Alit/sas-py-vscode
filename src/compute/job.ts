@@ -473,13 +473,16 @@ export async function readLogPage(
  * rebuilding it would be easy and wrong.
  *
  * No timeout override, and that is a **precondition on the caller** rather than
- * a property of this function: it is for draining a job that has already reached
- * a terminal state, where the deployment answers immediately whatever the query
- * says (finding 50), so the client's ordinary request timeout is the right
- * bound. Followed mid-run it would still be correct — the href carries whatever
+ * a property of this function: it is for draining a log that is no longer
+ * growing, where the deployment answers immediately whatever the query says
+ * (finding 50), so the client's ordinary request timeout is the right bound.
+ * Followed mid-run it would still be correct — the href carries whatever
  * `timeout` the deployment chose to echo, and a poll held longer than
- * `DEFAULT_TIMEOUT_MS` would abort — which is why the drain is the only caller
- * and why {@link readLogPage}, not this, is what a poll loop uses.
+ * `DEFAULT_TIMEOUT_MS` would abort — which is why {@link readLogPage}, not
+ * this, is what a poll loop uses. Two callers meet the precondition: the
+ * drain of a job that has reached a terminal state, and
+ * `sessionManager.ts`'s read of a settled session's startup log after
+ * {@link readSessionLogPage} (Finding 12.11), where nothing is running.
  */
 export async function followLogPage(
   client: ComputeClient,
@@ -487,6 +490,55 @@ export async function followLogPage(
   options?: { signal?: AbortSignal | undefined },
 ): Promise<ComputeResult<LogPage>> {
   return await readPage(client, { link, signal: options?.signal });
+}
+
+/**
+ * Reads one page of a **session's** own log — everything the session has
+ * written since it started, site autoexec and profile `autoExecLines`
+ * included, not one job's.
+ *
+ * Finding 12.11: a session carries a `log` relation with the same collection
+ * shape as a job's (`application/vnd.sas.collection` of
+ * `application/vnd.sas.compute.log.line`, items `{ line, type }`, a `next`
+ * link until the last page), so this reuses {@link readPage} and the same
+ * {@link LOG_REL}. Keep following {@link LogPage.next} with
+ * {@link followLogPage}.
+ *
+ * **No `timeout` parameter, unlike {@link readLogPage}.** This is read once,
+ * after the session has settled, to find what went wrong in its startup — not
+ * polled while something runs — so there is nothing to wait for, and whether
+ * the session log honours `timeout` at all was never probed.
+ *
+ * @throws {TypeError} if `start` is not a whole number or `limit` not a
+ *   positive integer — caller defects, as in {@link readLogPage}.
+ */
+export async function readSessionLogPage(
+  client: ComputeClient,
+  session: ComputeSession,
+  options: {
+    start: number;
+    limit?: number | undefined;
+    signal?: AbortSignal | undefined;
+  },
+): Promise<ComputeResult<LogPage>> {
+  const start = wholeNumber("start", options.start);
+  const limit = positiveInteger("limit", options.limit ?? DEFAULT_LOG_LIMIT);
+
+  const link = findLink(session.links, LOG_REL);
+  if (link === undefined) {
+    return linkMissing("compute session", session.id, LOG_REL);
+  }
+
+  return await readPage(client, {
+    link: {
+      ...link,
+      href: withQuery(link.href, [
+        `start=${String(start)}`,
+        `limit=${String(limit)}`,
+      ]),
+    },
+    signal: options.signal,
+  });
 }
 
 /**
@@ -561,7 +613,7 @@ export async function cancelJob(
   return { ok: true, value: undefined };
 }
 
-/** The one request both log readers make, and the one reading of its reply. */
+/** The one request every log reader makes, and the one reading of its reply. */
 async function readPage(
   client: ComputeClient,
   request: {
@@ -684,10 +736,10 @@ function positiveInteger(name: string, value: number): number {
  * The failure for a representation that carried no such relation.
  *
  * Takes the noun as an argument because two different resources are read here —
- * `execute` is missing from a *session*, `state` and `log` from a *job* — and
- * `link-missing` carries `resource` precisely so the message says which thing was
- * being read. Deriving the noun from the relation instead would be one `rel`
- * away from telling someone their session has no log.
+ * `execute` and (since 12f) `log` from a *session*, `state` and `log` from a
+ * *job* — and `link-missing` carries `resource` precisely so the message says
+ * which thing was being read. `log` is on both, so deriving the noun from the
+ * relation instead would name the wrong one half the time.
  */
 function linkMissing(
   resource: "compute session" | "compute job",

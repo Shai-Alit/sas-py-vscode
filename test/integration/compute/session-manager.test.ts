@@ -547,6 +547,205 @@ describe("compute session manager", () => {
       assert.match(shown.infos[0] ?? "", /startup code/);
     });
 
+    it("writes the startup ERROR text to the log and names it in the message (Finding 12.11)", async () => {
+      const logHref = `${SESSION_PATH}/log`;
+      const withLog = {
+        ...(sessionBody({ conditionCode: 3000 }) as { links: unknown[] }),
+      };
+      withLog.links = [
+        ...withLog.links,
+        {
+          method: "GET",
+          rel: "log",
+          href: logHref,
+          type: "application/vnd.sas.collection",
+        },
+      ];
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        self: ok(withLog),
+        // Two pages, so the `next` link is followed rather than the first page
+        // taken as the whole log.
+        log: ok({
+          items: [
+            { line: "1    this is not valid sas;", type: "source" },
+            { line: "     ----", type: "error" },
+            { line: "     180", type: "error" },
+          ],
+          links: [
+            { rel: "next", method: "GET", href: `${logHref}?start=3&limit=3` },
+          ],
+        }),
+        next: ok({
+          items: [
+            {
+              line: "ERROR 180-322: Statement is not valid or it is used out of proper order.",
+              type: "error",
+            },
+          ],
+          links: [],
+        }),
+      });
+      const recorded = recordingLog("session manager");
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "this is not valid sas;" }],
+          }),
+        ),
+        client: scripted.client,
+        log: recorded.channel,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "an autoExec error must not fail the connect");
+      assert.ok(
+        scripted.hrefs.some((href) => href.startsWith(`${logHref}?start=0&`)),
+      );
+      assert.ok(scripted.hrefs.includes(`${logHref}?start=3&limit=3`));
+      const warnings = recorded.lines
+        .filter((line) => line.level === "warn")
+        .map((line) => line.message);
+      assert.ok(
+        warnings.some((line) => line.includes("ERROR 180-322")),
+        warnings.join("\n"),
+      );
+      // The echoed source line and SAS's underline markers stay out.
+      assert.ok(!warnings.some((line) => line.includes("not valid sas;")));
+      assert.ok(!warnings.some((line) => /:\s+-+$/.test(line)));
+      assert.equal(shown.infos.length, 1);
+      assert.match(shown.infos[0] ?? "", /ERROR 180-322/);
+      assert.match(shown.infos[0] ?? "", /startup code/);
+    });
+
+    it("keeps an ERROR already read when a later log page fails", async () => {
+      const logHref = `${SESSION_PATH}/log`;
+      const withLog = {
+        ...(sessionBody({ conditionCode: 3000 }) as { links: unknown[] }),
+      };
+      withLog.links = [
+        ...withLog.links,
+        { method: "GET", rel: "log", href: logHref },
+      ];
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        self: ok(withLog),
+        log: ok({
+          items: [{ line: "ERROR: Libref P is not assigned.", type: "error" }],
+          links: [
+            { rel: "next", method: "GET", href: `${logHref}?start=1&limit=1` },
+          ],
+        }),
+        next: gone(),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "libname p '/nowhere';" }],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "a failed log page must not fail the connect");
+      assert.equal(shown.infos.length, 1);
+      assert.match(shown.infos[0] ?? "", /Libref P is not assigned/);
+    });
+
+    it("stops reading the session log after ten pages and says how many lines it left out", async () => {
+      // A log whose `next` never ends — a runaway site autoexec. Three error
+      // lines a page, so ten pages hold 30: 20 shown, 10 counted.
+      const logHref = `${SESSION_PATH}/log`;
+      const withLog = {
+        ...(sessionBody({ conditionCode: 3000 }) as { links: unknown[] }),
+      };
+      withLog.links = [
+        ...withLog.links,
+        { method: "GET", rel: "log", href: logHref },
+      ];
+      const page = ok({
+        items: [
+          { line: "ERROR: one.", type: "error" },
+          { line: "ERROR: two.", type: "error" },
+          { line: "WARNING: three.", type: "warning" },
+        ],
+        links: [{ rel: "next", method: "GET", href: `${logHref}?start=more` }],
+      });
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        self: ok(withLog),
+        log: page,
+        next: page,
+      });
+      const recorded = recordingLog("session manager");
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "%let a=1;" }],
+          }),
+        ),
+        client: scripted.client,
+        log: recorded.channel,
+      });
+
+      await manager.connect();
+
+      const logReads = scripted.requests.filter(
+        (request) => request.link.rel === "log" || request.link.rel === "next",
+      );
+      assert.equal(logReads.length, 10);
+      const startupLines = recorded.lines
+        .filter((line) => line.level === "warn")
+        .map((line) => line.message)
+        .filter((message) => message.startsWith("Session startup log:"));
+      // 20 lines, then the count of the rest.
+      assert.equal(startupLines.length, 21);
+      assert.match(startupLines[20] ?? "", /10 more error or warning lines/);
+      assert.equal(shown.infos.length, 1);
+    });
+
+    it("still warns, without the error text, when the session log cannot be read", async () => {
+      const logHref = `${SESSION_PATH}/log`;
+      const withLog = {
+        ...(sessionBody({ conditionCode: 3000 }) as { links: unknown[] }),
+      };
+      withLog.links = [
+        ...withLog.links,
+        { method: "GET", rel: "log", href: logHref },
+      ];
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+        self: ok(withLog),
+        log: gone(),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            autoExec: [{ type: "line", line: "this is not valid sas;" }],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "a failed log read must not fail the connect");
+      assert.equal(shown.infos.length, 1);
+      assert.match(shown.infos[0] ?? "", /startup code/);
+      assert.doesNotMatch(shown.infos[0] ?? "", /ERROR/);
+    });
+
     it("trusts the re-read, not the create response: create says 3000, re-read says 0, stays quiet", async () => {
       // Pins Finding 11.8's invariant against a "fix" that prefers the create
       // response's code over the settled session's.

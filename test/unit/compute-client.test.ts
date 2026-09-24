@@ -3,10 +3,11 @@
 
 import assert from "node:assert/strict";
 
-import type {
-  HttpTransport,
-  TransportRequest,
-  TransportResponse,
+import {
+  ResponseTooLargeError,
+  type HttpTransport,
+  type TransportRequest,
+  type TransportResponse,
 } from "../../src/auth/transport";
 import { createComputeClient } from "../../src/compute/client";
 import type { Link } from "../../src/wire/links";
@@ -726,6 +727,27 @@ describe("createComputeClient", () => {
       assert.ok(!result.ok, "a rejected transport was reported as a success");
       assert.equal(result.problem.code, "compute-unreachable");
       assert.ok(!JSON.stringify(result).includes(TOKEN));
+    });
+
+    it("reports a body over the cap as compute-response-too-large, not unreachable", async () => {
+      // The request was answered — just too large to read — so neither the
+      // proxy advice nor a reconnect applies. `limitBytes` is the cap the
+      // transport enforced, whichever one was in force.
+      const transport: HttpTransport = () =>
+        Promise.reject(new ResponseTooLargeError(1_048_576));
+      const client = createComputeClient({
+        root: ROOT,
+        token: () => TOKEN,
+        transport,
+      });
+
+      const result = await client.send({ link: SELF });
+
+      assert.ok(!result.ok, "an oversized body was reported as a success");
+      assert.deepEqual(result.problem, {
+        code: "compute-response-too-large",
+        limitBytes: 1_048_576,
+      });
     });
 
     it("reports a token provider that fails as a missing credential", async () => {

@@ -86,6 +86,13 @@ describe("LibraryCsvSource", () => {
     assert.equal(csv.logPrefix, "SAS Libraries");
   });
 
+  it("names the same 100 MB large-export threshold as a CAS table (12f)", () => {
+    // Finding 12.12: ~300 bytes a row and ~0.47 s a 500-row page, so 100 MB
+    // is minutes of paging here too — and before 12f a library export never
+    // asked at all.
+    assert.equal(source([]).confirmAboveBytes, 100 * 1024 * 1024);
+  });
+
   it("open reports the table's own rowCount (table-detail-class.json: 19)", async () => {
     const opened = await source([OPEN_ROUTE]).open();
     assert.ok(opened.ok);

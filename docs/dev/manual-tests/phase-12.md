@@ -125,3 +125,46 @@ ordinary CSV export and are not repeated here.
   it in the data viewer. **Expect:** the tree lists `name` before `age` (it
   used to list them alphabetically), and in the viewer the `name` column holds
   the text values and `age` holds the numbers — not swapped.
+
+## 12f — three Phase 11 follow-ups
+
+See `docs/phases/phase-12.md`'s "12f built" Runbook entry and Findings
+12.11/12.12.
+
+- [x] **12.10** **A large SAS library table asks before exporting.** Build a
+  table above 100 MB as CSV in a `.py` file against a Viya profile — Finding
+  12.12's shape at 400,000 rows is about 120 MB:
+
+  ```python
+  SAS.submit("""
+  data work.big;
+    length c1-c10 $24;
+    array c{10} $ c1-c10; array n{10} n1-n10;
+    do i = 1 to 400000;
+      do j = 1 to 10; c{j} = cats('val_', put(i*j, z12.), '_x'); n{j} = i*j/7; end;
+      output;
+    end;
+    drop i j;
+  run;
+  """)
+  ```
+
+  Refresh SAS Libraries, then **Export to CSV** on `WORK.BIG`. **Expect:**
+  a modal naming 400,000 rows and an estimated size above 100 MB, with
+  **Export anyway**, before anything is written. Dismiss it: nothing
+  happens, no file, no error. (11.19/11.20's CAS behaviour, on the library
+  side.)
+- [x] **12.11** **A small SAS library table still exports without asking.**
+  Export `SASHELP.CLASS`. **Expect:** no modal; the CSV is written as
+  before.
+- [x] **12.12** **A bad autoExec line's error text reaches the user.** Use
+  11.26's profile setup (`"autoExec": [{"type": "line", "line": "this is not
+  valid sas;"}, {"type": "line", "line": "%let P11E=after;"}]`), disconnect,
+  connect. **Expect:** the session connects; the message quotes `ERROR
+  180-322: Statement is not valid or it is used out of proper order.`; the
+  Python on Viya log has a `Session startup log:` line with that same text
+  and **no** line containing `this is not valid sas;`, `----` or a bare
+  `180`.
+- [x] **12.13** **A clean autoExec stays quiet.** Replace the bad line with
+  `%let a=1;`, disconnect, connect. **Expect:** no startup message and no
+  `Session startup log:` lines.

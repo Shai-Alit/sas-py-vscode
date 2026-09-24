@@ -1945,6 +1945,35 @@ describe("ProcPythonBackend", () => {
       assert.equal(settled.problem.code, "backend-gone");
     });
 
+    it("reports an over-cap response while submitting as backend-failed, not backend-gone", async () => {
+      // 12f: before `compute-response-too-large` existed, a body over the
+      // transport's cap arrived as `compute-unreachable` and so read as a
+      // session worth reconnecting to — but the request was answered, and a
+      // new session would get the same answer.
+      const { client } = router({
+        syscc: "0",
+        executeReply: {
+          ok: false,
+          reason: "POST /jobs answered with a body over 1048576 bytes",
+          problem: { code: "compute-response-too-large", limitBytes: 1048576 },
+        },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const settled = await accepted.done;
+
+      assert.ok(!settled.ok);
+      assert.equal(settled.problem.code, "backend-failed");
+    });
+
     it("reports a session gone while submitting as backend-gone", async () => {
       const { client } = router({
         syscc: "0",

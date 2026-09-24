@@ -20,6 +20,7 @@ import {
   JOB_NAME,
   readJobState,
   readLogPage,
+  readSessionLogPage,
   TERMINAL_STATES,
 } from "../../src/compute/job";
 import { type Link } from "../../src/wire/links";
@@ -779,6 +780,114 @@ describe("followLogPage", () => {
     // No second timeout on a drain: a terminal job answers immediately whatever
     // the query says (finding 50), so the client's ordinary bound is the right one.
     assert.equal(request.timeoutMs, undefined);
+  });
+});
+
+describe("readSessionLogPage", () => {
+  /** A session's own `log` relation, as Finding 12.11 saw it. */
+  const sessionLog: Link = {
+    method: "GET",
+    rel: "log",
+    href: `${SESSION_PATH}/log`,
+    type: "application/vnd.sas.collection",
+  };
+
+  it("reads a page of the session's own log, through its log relation", async () => {
+    const scripted = fake([
+      logPage(
+        [
+          { line: "1    this is not valid sas;", type: "source", version: 1 },
+          {
+            line: "ERROR 180-322: Statement is not valid or it is used out of proper order.",
+            type: "error",
+            version: 1,
+          },
+        ],
+        { next: `${SESSION_PATH}/log?start=2&limit=2` },
+      ),
+    ]);
+
+    const result = await readSessionLogPage(
+      scripted.client,
+      session([...sessionLinks(), sessionLog]),
+      { start: 0, limit: 2 },
+    );
+
+    assert.ok(result.ok);
+    assert.equal(result.value.lines.length, 2);
+    assert.equal(result.value.lines[1]?.type, "error");
+    assert.equal(
+      result.value.next?.href,
+      `${SESSION_PATH}/log?start=2&limit=2`,
+    );
+    const request = only(scripted.requests);
+    assert.ok(request.link.href.startsWith(`${SESSION_PATH}/log?`));
+    assert.equal(parameter(request, "start"), "0");
+    assert.equal(parameter(request, "limit"), "2");
+    // Read once after startup, not polled: no long-poll parameter and no
+    // stretched client timeout.
+    assert.equal(parameter(request, "timeout"), undefined);
+    assert.equal(request.timeoutMs, undefined);
+  });
+
+  it("defaults the page size", async () => {
+    const scripted = fake([logPage([])]);
+
+    await readSessionLogPage(
+      scripted.client,
+      session([...sessionLinks(), sessionLog]),
+      { start: 0 },
+    );
+
+    assert.equal(
+      parameter(only(scripted.requests), "limit"),
+      String(DEFAULT_LOG_LIMIT),
+    );
+  });
+
+  it("reports a session that does not offer the log relation, naming the session", async () => {
+    const scripted = fake([]);
+
+    const result = await readSessionLogPage(scripted.client, session(), {
+      start: 0,
+    });
+
+    assert.ok(!result.ok);
+    assert.deepEqual(result.problem, {
+      code: "link-missing",
+      rel: "log",
+      resource: `compute session "${SESSION_ID}"`,
+    });
+    assert.equal(scripted.requests.length, 0);
+  });
+
+  it("reads a 404 as the session having gone, like every other log read", async () => {
+    const scripted = fake([rejected(404)]);
+
+    const result = await readSessionLogPage(
+      scripted.client,
+      session([...sessionLinks(), sessionLog]),
+      { start: 0 },
+    );
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "session-gone");
+  });
+
+  it("refuses a cursor or a page size that is not a whole number", async () => {
+    const scripted = fake([]);
+    for (const options of [{ start: -1 }, { start: 0, limit: 0 }]) {
+      await assert.rejects(
+        async () =>
+          await readSessionLogPage(
+            scripted.client,
+            session([...sessionLinks(), sessionLog]),
+            options,
+          ),
+        TypeError,
+      );
+    }
+    assert.equal(scripted.requests.length, 0);
   });
 });
 

@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { type LogLine } from "../../src/compute/job";
 import {
   MAX_STARTUP_DIAGNOSTIC_LINES,
+  redactCredentials,
   selectStartupDiagnostics,
 } from "../../src/compute/startupLog";
 
@@ -52,6 +53,40 @@ describe("selectStartupDiagnostics", () => {
     ]);
     assert.ok(!selected.lines.some((line) => line.includes("hunter2")));
     assert.deepEqual(selected.lines, ["ERROR: Invalid option name PASSWORD."]);
+  });
+
+  it("redacts a credential an ERROR line itself quotes", () => {
+    const selected = selectStartupDiagnostics([
+      {
+        line: 'ERROR: CLI error trying to establish connection: "DSN=db;UID=me;PWD=hunter2;"',
+        type: "error",
+      },
+      {
+        line: "ERROR: Login failed, password='s3cr et' authdomain=x",
+        type: "error",
+      },
+    ]);
+    assert.ok(!selected.lines.some((line) => /hunter2|s3cr/.test(line)));
+    assert.deepEqual(selected.lines, [
+      'ERROR: CLI error trying to establish connection: "DSN=db;UID=me;PWD=[redacted];"',
+      "ERROR: Login failed, password=[redacted] authdomain=x",
+    ]);
+  });
+
+  it("keeps a keyword with no value, and an option that is not a credential", () => {
+    assert.equal(
+      redactCredentials("ERROR: Invalid option name PASSWORD. user=me"),
+      "ERROR: Invalid option name PASSWORD. user=me",
+    );
+  });
+
+  it("redacts braced, spaced and every listed credential key", () => {
+    assert.equal(
+      redactCredentials(
+        "pw = {SAS002}ABC  authpw=a token=b access_token=c client_secret=d apikey=e api_key=f passwd=g secret=h",
+      ),
+      "pw = [redacted]  authpw=[redacted] token=[redacted] access_token=[redacted] client_secret=[redacted] apikey=[redacted] api_key=[redacted] passwd=[redacted] secret=[redacted]",
+    );
   });
 
   it("keeps a warning, and a wrapped error's unprefixed continuation line", () => {

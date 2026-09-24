@@ -276,8 +276,8 @@ Compute response is now its own problem (`cas-response-too-large`,
 it also no longer reads as a lost session. A bad autoExec line's `ERROR`
 text now reaches the log and the warning, read from the session's own log
 (Finding 12.11). The echoed source line is deliberately left out, since it
-could carry a password. `npm run verify` green (1,895 unit; coverage
-96.44/95.89/96.24/96.44); `npm run test:integration` 517 passing. The
+could carry a password. `npm run verify` green (1,898 unit; coverage
+96.45/95.89/96.24/96.45); `npm run test:integration` 517 passing. The
 pre-push adversarial review found six things, all folded in. Manual items
 12.10–12.13 all passed live, 2026-09-24. See `docs/phases/phase-12.md`'s "12f
 built" entry. **Next:** merge 12f.

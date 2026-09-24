@@ -1533,6 +1533,19 @@ asked first and a decline wrote nothing, `SASHELP.CLASS` exported without
 asking, a bad autoExec line's `ERROR 180-322` reached the warning and the log
 without its echoed source line or markers, and a clean autoExec stayed quiet.
 
+**PR review, 2026-09-24 (PR #212).** One blocking finding from the Claude
+reviewer, and it was real: adversarial finding 6 above had only *documented*
+that an `ERROR` line can quote a connection string, and those lines still
+went verbatim into the log and the warning. `startupLog.ts` now runs every
+kept line through `redactCredentials`. That replaces the value of any
+`password`/`passwd`/`pwd`/`pw`/`authpw`/`secret`/`client_secret`/`token`/
+`access_token`/`apikey`/`api_key` `=` option with `[redacted]`, and keeps
+the key so the line still says what failed. Its doc states the limits: it is
+a pattern, not a proof, and a value wrapped onto a continuation line away
+from its key gets through. Three unit tests, one of which caught a
+`{SAS002}…` value leaking its tail on the first run. `npm run verify` green
+(1,898 unit; coverage 96.45/95.89/96.24/96.45).
+
 ---
 
 ## Probe findings

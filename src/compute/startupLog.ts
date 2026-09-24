@@ -31,11 +31,13 @@
  * report. So this keeps the `error`/`warning` lines and drops the ones that
  * are only markers.
  *
- * **That is a narrower guarantee than "no secret reaches the log".** It keeps
- * out the echoed statement, not whatever an `ERROR` line itself quotes. Some
- * `LIBNAME` engines' connection errors (ODBC/OLEDB connection strings are
- * the usual case) can repeat user-supplied text in the message. None was
- * observed here; Finding 12.11's only error line quotes nothing.
+ * An `ERROR` line itself can also quote user-supplied text: some `LIBNAME`
+ * engines' connection errors repeat the connection string (ODBC/OLEDB's
+ * `PWD=` is the usual case). None was observed here; Finding 12.11's only
+ * error line quotes nothing. So every kept line also has the value of any
+ * credential-shaped `key=value` option replaced ({@link redactCredentials}).
+ * That is a pattern, not a proof: a value SAS wraps onto a continuation line
+ * away from its key, or a secret under a key not in the list, gets through.
  */
 
 import { type LogLine } from "./job";
@@ -68,7 +70,8 @@ export function selectStartupDiagnostics(
   const matching = lines
     .filter((line) => line.type === "error" || line.type === "warning")
     .map((line) => line.line.trimEnd())
-    .filter((text) => !isMarkerLine(text));
+    .filter((text) => !isMarkerLine(text))
+    .map(redactCredentials);
   return {
     lines: matching.slice(0, MAX_STARTUP_DIAGNOSTIC_LINES),
     omitted: Math.max(0, matching.length - MAX_STARTUP_DIAGNOSTIC_LINES),
@@ -81,4 +84,27 @@ export function selectStartupDiagnostics(
  * shown. */
 function isMarkerLine(text: string): boolean {
   return /^[\s\-_\d]*$/.test(text);
+}
+
+/** What a scrubbed value is replaced with — the same text as `auth/problems.ts`
+ * uses. */
+const REDACTED = "[redacted]";
+
+/**
+ * A `key=value` option whose key names a credential, as a `LIBNAME` statement
+ * or an ODBC/OLEDB connection string writes it. The value is a quoted string,
+ * a braced prefix and what follows it (`{SAS002}…`-encoded passwords), or a
+ * bare run up to whitespace, `;` or a quote — so `PWD=x;UID=y` inside a
+ * quoted connection string loses only `x`.
+ */
+const CREDENTIAL_OPTION =
+  /\b(password|passwd|pwd|pw|authpw|client_secret|secret|access_token|token|apikey|api_key)(\s*=\s*)("[^"]*"|'[^']*'|\{[^}]*\}[^\s;'"]*|[^\s;'"]+)/gi;
+
+/** A log line with the value of every credential-shaped option replaced by
+ * {@link REDACTED}; the key is kept, so the line still says what failed. */
+export function redactCredentials(text: string): string {
+  return text.replace(
+    CREDENTIAL_OPTION,
+    (_match, key: string, equals: string) => `${key}${equals}${REDACTED}`,
+  );
 }

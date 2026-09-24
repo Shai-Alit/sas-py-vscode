@@ -64,9 +64,10 @@ there is no upstream option that does it for you.
 
 ## Namespace lifecycle: three different things, don't conflate them
 
-- **Run File** clears the interpreter's globals first — a *fresh namespace* in
-  the *same* interpreter process — so a file never silently depends on state an
-  earlier run left behind.
+- **Run File** restarts the interpreter first (`proc python restart
+  infile=…`), so a file always starts from an empty namespace and never
+  silently depends on state an earlier run left behind. Imports go too, not
+  only variables, and every Run File prints the interpreter banner again.
 - **Run Selection** (and a cell in the interactive window or a notebook) does
   **not** clear anything first — it builds on whatever earlier runs in the same
   session left in the interpreter, the way a notebook cell builds on the cells
@@ -75,8 +76,14 @@ there is no upstream option that does it for you.
   *interpreter process itself* — imports and variables are gone — but the
   **Compute session** underneath it, and everything that belongs to the
   session rather than the interpreter (SAS librefs, filerefs, macro variables),
-  is untouched. This is a heavier operation than Run File's fresh namespace,
-  not the same thing under a different name.
+  is untouched. It is the same restart Run File does, without running
+  anything afterwards — use it to clear state before a Run Selection or a
+  notebook cell, which never clear anything themselves.
+
+`PROC PYTHON`'s own `NOTE`s about this — "Resuming Python state from
+previous PROC PYTHON invocation.", "Previous Python state destroyed.",
+"Python initialized." — never appear in the extension's transcript; they are
+filtered as SAS log notes. Don't reason from their absence either way.
 
 ## Only one thing runs at a time, and it is refused, not queued
 

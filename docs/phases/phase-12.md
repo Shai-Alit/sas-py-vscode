@@ -367,9 +367,16 @@ under this number before today.
   over-cap CAS and Compute response, and the autoExec error's own text in
   the log and the warning (Finding 12.11). Manual items 12.10–12.13 passed
   live, 2026-09-24. See this file's own Runbook entry.
-- [ ] **12g — Does the "resuming Python state" `NOTE` reach our users, and
-  is it ever wrong?** Not started. Needs no Viya probe — run the extension
-  and read the transcript, on Run File and after Reset Python State.
+- [x] **12g — Does the "resuming Python state" `NOTE` reach our users, and
+  is it ever wrong?** Run 2026-09-24. **It never reaches them; nothing to
+  build.** Every state `NOTE` arrives typed `note`, which `logFilter.ts`
+  already drops (Finding 12.13), and Reset Python State's own log is
+  discarded whole. A plain run after a Reset *does* log "Resuming" over an
+  empty namespace, which would be misleading if shown; it isn't. The slice
+  also found that Run File restarts the interpreter process, the same as
+  Reset, and corrected the skill and `docs/running-python.md`, which said
+  otherwise. Manual item 12.14 passed live, 2026-09-24. See this file's own Runbook
+  entry.
 - [ ] **12h — Spike: inline graphics (`SAS.show`) / ODS HTML5.** Not
   started. Spike only; the build it may recommend is a separate,
   not-yet-scoped slice. Two of the four questions are already answered from
@@ -1546,6 +1553,62 @@ from its key gets through. Three unit tests, one of which caught a
 `{SAS002}…` value leaking its tail on the first run. `npm run verify` green
 (1,898 unit; coverage 96.45/95.89/96.24/96.45).
 
+### 12g run, 2026-09-24 — the state `NOTE`s never reach a user, and Run File was documented wrongly
+
+**The question narrowed on reading the source.** Every run's log passes
+through `isNoiseLine` (`src/backend/logFilter.ts`), which drops any line
+typed `note`, `source` or `title`, whatever its text. Reset Python State
+forwards nothing at all: `reset()` drains its job's log unread
+(`src/backend/procPython.ts`). So the "Resuming" `NOTE` reaches a user only
+if the deployment types it as something other than `note` — and neither
+Finding 38 nor Finding 12.4 had recorded its type. The Plan said no probe
+was needed. A probe was still the cheapest exact answer to that one fact,
+so one ran, with Sean's approval of its mutating steps.
+
+**Result (Finding 12.13).** Every Python-state line — "Resuming Python
+state…", "Previous Python state destroyed.", "Python initialized." — is
+typed `note`, on all five runs: a session's first run, a second plain run
+(Run Selection), `restart infile=` (Run File), `proc python restart;`
+(Reset Python State) and a plain run after that. So the Plan's three
+questions answer as:
+
+- **Does the `NOTE` survive the filter?** No, on every path. Nothing to fix.
+- **Does "Resuming" appear on the first run after a Reset?** Yes — over an
+  empty namespace, so it would be misleading if shown. It is filtered like
+  every other `note`, so a user never sees it.
+- **Does it appear on a session's very first run?** No; "Python
+  initialized." appears there instead, matching Finding 12.4. Nothing is
+  built on that, as the Plan asked: it is still one deployment and release.
+
+**The Plan's premise about Run File was wrong, and so were two user-facing
+docs.** The Plan asked whether "Run File's globals-clear" runs before or
+after the `NOTE`. Run File does not clear globals in a running interpreter.
+It sends `proc python restart infile=…`, which logs "Previous Python state
+destroyed." and "Python initialized." and prints a new interpreter banner —
+the same restart Reset Python State does, which Finding 38 measured
+changing the interpreter's pid back in Phase 2b. The shipped
+`python-on-viya` skill said Run File keeps "the *same* interpreter process"
+and that Reset is "a heavier operation" than it. `docs/running-python.md`
+said the same in two places. All three are corrected on this branch, along
+with Finding 12.2's own paragraph. The Plan item's wording is left as it
+stands: it is a question, and this entry answers it.
+`ExecuteOptions.freshNamespace`'s contract in `src/backend/backend.ts` only
+promises empty globals, which is still true, so no source changes.
+`CHANGELOG.md`'s Phase 3 entry saying Run File "clears the interpreter's
+globals" is a released-history record and is also left as it stands.
+
+**Manual item 12.14** in
+[`docs/dev/manual-tests/phase-12.md`](../dev/manual-tests/phase-12.md)
+checks the same thing through the extension itself: no state `NOTE` in the
+**Python on Viya: Output** channel on any path. It passed live, 2026-09-24.
+
+Docs only: this entry, the punch-list box, Findings 12.2 and 12.13, the
+skill, `docs/running-python.md`, the manual-test item and `STATUS.md`. No
+source, and no invariant changes: the docs now match what the code has
+always done. So `CLAUDE.md`'s pre-PR adversarial pass does not apply.
+`docs/running-python.md` is inside the VitePress tree, so verification is
+`npm run check:docs` plus `node scripts/check-secrets.mjs`.
+
 ---
 
 ## Probe findings
@@ -1684,9 +1747,13 @@ between separate `proc python` steps within one Compute session, and SAS
 announces the reuse rather than doing it silently. That is a *confirmation*
 of the namespace-lifecycle model 12a's skill already documents (Run
 Selection, an interactive-window cell and a notebook cell all build on what
-earlier runs left behind; Run File clears globals first; Reset Python State
-restarts the interpreter), not a discovery, and nothing in that model changes
-on the strength of it.
+earlier runs left behind; Run File starts from an empty namespace; Reset
+Python State restarts the interpreter), not a discovery, and nothing in that
+model changes on the strength of it. (This paragraph first said Run File
+"clears globals first", echoing the skill's own wording at the time. That was
+wrong: Run File's `restart infile=` restarts the interpreter process exactly
+as Reset does — Finding 38, Finding 12.13 — and both places were corrected by
+12g.)
 
 **What it does not establish.** Anything at all about this extension.
 Whether the `NOTE` survives `src/backend/logFilter.ts`'s noise filter and
@@ -2231,3 +2298,41 @@ may differ), a `rowCount` of `-1`, and throughput under a loaded server.
 One run on one deployment.
 
 No deployment-identifying detail appears above.
+
+### Finding 12.13 — every `PROC PYTHON` state `NOTE` arrives typed `note` under `infile=`, including "Resuming" after a restart
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, with Sean's approval of the
+mutating steps: one throwaway session on the "SAS Studio compute context",
+four uploaded filerefs, five jobs, then the session was deleted and confirmed
+`404`. Each job was `[<statement>, "run;"]`, the shape `procPython.ts`
+submits, and its whole `log` collection was read back with each item's
+`type`.
+
+**Documented / assumed:** Finding 38 (Phase 2b) and Finding 12.4 recorded
+these `NOTE`s' text but not their `type`. 12g needed the `type`, because
+`logFilter.ts`'s `isNoiseLine` decides on it alone. **Observed:**
+
+| # | Statement (what sends it) | Python-state lines, with `type` | Program saw |
+|---|---|---|---|
+| 1 | `proc python infile=` (a session's first run) | `note` "Python initialized." | — (set `x_marker`) |
+| 2 | `proc python infile=` (Run Selection) | `note` "Resuming Python state from previous PROC PYTHON invocation." | `set-in-A` |
+| 3 | `proc python restart infile=` (Run File) | `note` "Previous Python state destroyed.", `note` "Python initialized." | `None` |
+| 4 | `proc python restart;` (Reset Python State) | `note` "Previous Python state destroyed.", `note` "Python initialized." | — |
+| 5 | `proc python infile=` after 4 | `note` "Resuming Python state from previous PROC PYTHON invocation." | `None` |
+
+On runs 1, 3 and 4 the interpreter banner (`Python 3.12.12 …` and `Type
+"help", …`) and the `>>>` prompts came back typed `normal`. The `proc python`
+statement echo was `source`. Run 1 also carried two `title` lines. Every job ended `completed`.
+
+**What it establishes.** None of the three state `NOTE`s can reach a
+transcript while `isNoiseLine` excludes `note`. Run 5 shows "Resuming"
+appearing over a namespace that a restart had just emptied. So the `NOTE`
+really means "this interpreter process already existed", not "your
+variables are still here". Run 3 shows Run File's statement restarting the
+interpreter, not clearing globals inside a running one.
+
+**Not settled:** other Viya releases and other Python versions, and the
+wording or `type` on any other deployment. One run on one deployment.
+
+No deployment-identifying detail appears above. The fileref names, marker
+values and compute-context label are this probe's own fixed choices.

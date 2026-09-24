@@ -168,3 +168,19 @@ See `docs/phases/phase-12.md`'s "12f built" Runbook entry and Findings
 - [x] **12.13** **A clean autoExec stays quiet.** Replace the bad line with
   `%let a=1;`, disconnect, connect. **Expect:** no startup message and no
   `Session startup log:` lines.
+
+## 12g — the "resuming Python state" `NOTE`
+
+See `docs/phases/phase-12.md`'s "12g run" Runbook entry and Finding 12.13.
+
+- [x] **12.14** **No Python-state `NOTE` ever reaches the transcript.** On a
+  freshly connected profile, in a `.py` file containing `x = 1` and
+  `print(globals().get("x"))`:
+  1. **Run Selection** on `x = 1`, then on the `print` line. **Expect:** `1`.
+  2. **Run File**. **Expect:** the interpreter banner, then `1`.
+  3. **Reset Python State**, then **Run Selection** on the `print` line.
+     **Expect:** `None`, with no banner.
+
+  **Expect, throughout:** **Python on Viya: Output** never shows
+  `Resuming Python state`, `Previous Python state destroyed` or
+  `Python initialized`.

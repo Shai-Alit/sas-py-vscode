@@ -37,6 +37,18 @@ export type CasProblem =
   /** The request never got an answer — DNS, TLS, proxy, timeout, abort. */
   | { code: "cas-unreachable"; detail: string }
   /**
+   * The response body was larger than the transport's 1 MiB cap
+   * (`src/auth/transport.ts`'s `MAX_BODY_BYTES`, which this client never
+   * raises): the transport stopped reading at `limitBytes` and rejected with a
+   * `ResponseTooLargeError`. In practice, one page of a very wide table's rows
+   * — an export or a data-viewer page (`./csvFormat.ts`'s
+   * `TARGET_CELLS_PER_PAGE` keeps an ordinary wide table well under it).
+   * Without this variant it landed in `cas-unreachable`, and the user was told
+   * to check their proxy for a request that had in fact been answered. Mirrors
+   * `ContentProblem`'s `content-too-large`, `limitBytes` named the same way.
+   */
+  | { code: "cas-response-too-large"; limitBytes: number }
+  /**
    * A 401, or no token to send at all. Not re-diagnosed here — the variant
    * carries the auth layer's own verdict (`AuthProblem`), the same
    * delegation `content/problems.ts` makes.
@@ -84,6 +96,8 @@ export function describeCasProblem(problem: CasProblem): string {
   switch (problem.code) {
     case "cas-unreachable":
       return `could not reach the CAS management service: ${problem.detail}`;
+    case "cas-response-too-large":
+      return `the CAS management service answered with more than the ${String(problem.limitBytes)}-byte limit this extension reads in one response`;
     case "unauthorized":
       return problem.noSession === true
         ? "no active SAS Viya session for this deployment"

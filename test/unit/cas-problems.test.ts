@@ -20,6 +20,10 @@ describe("cas/problems describeCasProblem", () => {
       /could not reach the CAS management service: GET .*ECONNRESET/,
     ],
     [
+      { code: "cas-response-too-large", limitBytes: 1_048_576 },
+      /answered with more than the 1048576-byte limit/,
+    ],
+    [
       { code: "unauthorized", problem: { code: "not-authenticated" } },
       /refused the request:/,
     ],

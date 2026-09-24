@@ -56,9 +56,10 @@ import { type TableDetail } from "./types";
  * large one. Not measured against a specific real table's row width; a table
  * wide enough to still exceed the cap at this page size fails the read
  * (`src/auth/transport.ts`'s `ResponseTooLargeError`), not a silent
- * truncation; only `src/content/client.ts` turns that into a dedicated
- * `content-too-large` problem, so here it is reported as a generic
- * request failure.
+ * truncation, reported as a `compute-response-too-large` problem
+ * (`src/compute/problems.ts`). Finding 12.12 measured a 20-column table at
+ * about 300 bytes a row — about 150 KB a page here — so it takes rows several
+ * times wider than that to reach the cap.
  */
 export const CSV_EXPORT_PAGE_SIZE = 500;
 
@@ -98,8 +99,8 @@ export interface CsvExportSource {
    * table was chosen from. */
   readonly logPrefix: string;
   /** When set, an export estimated to exceed this many bytes is confirmed
-   * with the user before it starts. Absent means never ask — a SAS library
-   * table's own export sets none yet (`docs/phases/phase-11.md`). */
+   * with the user before it starts. Absent means never ask. Both sources set
+   * it today (CAS since 11d, SAS libraries since 12f), to the same 100 MB. */
   readonly confirmAboveBytes?: number | undefined;
   /** Resolves whatever must be opened before rows can be read; called once,
    * first. `rowCount` is the backend's best knowledge of the table's size,

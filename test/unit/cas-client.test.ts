@@ -2,8 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
+import { type AddressInfo } from "node:net";
 
 import {
+  MAX_BODY_BYTES,
+  nodeHttpTransport,
   ResponseTooLargeError,
   type HttpTransport,
   type TransportRequest,
@@ -388,10 +392,10 @@ describe("cas/client", () => {
     assert.equal(result.problem.noSession, true);
   });
 
-  it("maps a ResponseTooLargeError the same as any other transport rejection (cas-unreachable)", async () => {
-    // Unlike `ContentClient`, this client never overrides the transport's
-    // default body cap — nothing it reads is large enough to need one — so
-    // this arm intentionally does not get its own CasProblem variant.
+  it("maps a ResponseTooLargeError to cas-response-too-large, not cas-unreachable", async () => {
+    // A body over the cap got an answer — it was just too big to read. It
+    // must not read as an unreachable host, or the user is told to check
+    // their proxy for a table that is simply too wide.
     const failing: HttpTransport = () =>
       Promise.reject(new ResponseTooLargeError(1024));
     const client = createCasClient({
@@ -401,7 +405,78 @@ describe("cas/client", () => {
     });
     const result = await client.send({ link: SERVERS });
     assert.ok(!result.ok);
-    assert.equal(result.problem.code, "cas-unreachable");
+    assert.deepEqual(result.problem, {
+      code: "cas-response-too-large",
+      limitBytes: 1024,
+    });
+  });
+
+  it("maps an oversized body on the followed redirect to cas-response-too-large too", async () => {
+    let calls = 0;
+    const transport: HttpTransport = () => {
+      calls += 1;
+      if (calls === 1) {
+        const res: TransportResponse = {
+          ok: false,
+          status: 302,
+          headers: { location: "/casManagement/dataSources/.../WIDE" },
+          text: () => Promise.resolve(""),
+          bytes: () => Promise.resolve(new Uint8Array()),
+        };
+        return Promise.resolve(res);
+      }
+      return Promise.reject(new ResponseTooLargeError(2048));
+    };
+    const client = createCasClient({
+      root: "https://viya.example.com",
+      token: () => "tok",
+      transport,
+    });
+    const result = await client.send({
+      link: { rel: "dataTable", href: "/dataTables/dataSources/.../WIDE" },
+    });
+    assert.equal(calls, 2);
+    assert.ok(!result.ok);
+    assert.deepEqual(result.problem, {
+      code: "cas-response-too-large",
+      limitBytes: 2048,
+    });
+  });
+
+  it("reports a real over-cap body from the real transport as cas-response-too-large", async () => {
+    // End to end through `nodeHttpTransport` on loopback, so the variant is
+    // proven against the transport's own rejection rather than one a test
+    // constructed: one byte over the default cap, which this client never
+    // raises.
+    const server = createServer((_request, response) => {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(Buffer.alloc(MAX_BODY_BYTES + 1, "x"));
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = createCasClient({
+        root: `http://127.0.0.1:${String(port)}`,
+        token: () => "tok",
+        transport: nodeHttpTransport,
+      });
+      const result = await client.send({ link: SERVERS });
+      assert.ok(!result.ok);
+      assert.deepEqual(result.problem, {
+        code: "cas-response-too-large",
+        limitBytes: MAX_BODY_BYTES,
+      });
+      assert.ok(!result.reason.includes("tok"));
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          resolve();
+        });
+      });
+    }
   });
 
   it("survives a non-Error rejection from the transport", async () => {

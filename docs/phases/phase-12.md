@@ -361,8 +361,12 @@ under this number before today.
   built an opt-in `pythonOnViya.csvExport.guardFormulaInjection` guard
   (default off) covering both CAS and SAS-library CSV export. See this
   file's own Runbook entry.
-- [ ] **12f — Three small, already-decided Phase 11 follow-ups.** Not
-  started.
+- [x] **12f — Three small, already-decided Phase 11 follow-ups.** Built
+  2026-09-24: a large-export confirmation for SAS library tables (the same
+  100 MB as CAS, Finding 12.12), dedicated too-large problems for an
+  over-cap CAS and Compute response, and the autoExec error's own text in
+  the log and the warning (Finding 12.11). Manual items 12.10–12.13 passed
+  live, 2026-09-24. See this file's own Runbook entry.
 - [ ] **12g — Does the "resuming Python state" `NOTE` reach our users, and
   is it ever wrong?** Not started. Needs no Viya probe — run the extension
   and read the transcript, on Run File and after Reset Python State.
@@ -392,7 +396,7 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   `%let syscc=0;` — cleared it in a probe. Evidence and open questions:
   [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error).
   No fix written; it touches `src/backend/procPython.ts`.
-- [ ] **B12.2 — A CAS table's columns come back alphabetical while its row
+- [x] **B12.2 — A CAS table's columns come back alphabetical while its row
   cells stay in table order, so CAS CSV export mispairs them.** Found
   2026-09-23 (manual test 12.4). Headers are swapped with the data under
   them, and the formula guard checks each cell against the wrong column's
@@ -401,8 +405,8 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   affected too (by code reading; not seen live). Evidence:
   [Finding 12.6](#finding-12-6-a-cas-table-s-columns-listing-under-sortby-name-is-alphabetical-each-item-s-index-not-its-position-is-what-row-cells-follow). Fixed on the 12e branch
   (`CasAdapter.getColumns` re-sorts by each column's `index`); manual tests
-  12.4 and 12.9 passed live against the fix, 2026-09-23. Tick when 12e
-  merges.
+  12.4 and 12.9 passed live against the fix, 2026-09-23. **Fixed — merged
+  with 12e as PR #210.**
 
 ---
 
@@ -1427,6 +1431,108 @@ prose — this entry, the two section rewrites in
 samples, self-link check, VitePress build) run in full, since
 `cas-python-connection.md` sits inside the VitePress tree.
 
+### 12f built, 2026-09-24 — three Phase 11 follow-ups, two probes
+
+All three items from the Plan section, on one branch, plus the Compute-side
+half the plan left as "consider" — Sean's call at the start of the slice:
+include it. Two probes on `verde`, both run with Sean's approval of the
+session-creating steps, settled what the code needed (Findings 12.11 and
+12.12, below).
+
+**Large-table confirmation for SAS library tables.** `LibraryCsvSource` now
+sets `confirmAboveBytes` to the same 100 MB as `CasCsvSource`. The
+pre-flight estimate already ran for both surfaces (a 200-row sample times
+`rowCount`) — only the threshold was missing. Finding 12.12 measured a
+250,000-row, 20-column `WORK` table at about 300 bytes a row and 0.47 s a
+500-row page, flat from the first page to the last, so 100 MB means roughly
+5 minutes of paging here. That is the same order of cost as the CAS
+rationale, so one value across both surfaces holds. The same probe found
+`rowCount` populated on a Compute table's representation, so the estimate
+has what it needs. Nothing in the command changed; the modal and the
+decline path are 11d's, already tested generically.
+
+**Too-large problems, CAS and Compute.** `CasProblem` gains
+`cas-response-too-large` and `ComputeProblem` gains
+`compute-response-too-large`. Both carry `limitBytes`, mirroring
+`content-too-large`. Each client maps the transport's
+`ResponseTooLargeError` to its new variant instead of `*-unreachable`. The
+CAS client does this on both of its transport calls, the redirect-follow
+included. The user message now says the answer was over the limit and the
+table is probably too wide, not "check your proxy". A side effect on the
+Compute side is also a fix: `ProcPythonBackend.translate` read
+`compute-unreachable` as a session worth reconnecting to (`backend-gone`),
+so an over-cap response used to look like a lost session. The new variant
+falls through to `backend-failed`/`transfer-failed`, and a new unit test
+pins that. The two comments 11d left pointing at this follow-up
+(`csvFormat.ts`, `csvExportModel.ts`) and `browsing-cas.md`'s
+troubleshooting entry are rewritten to match. Finding 12.12 is also the
+evidence that the Compute case is real: a 5,000-row `rowsAsCSV` page of
+that 20-column table came back at about 1.5 MB, over the 1 MiB cap. The
+library export's own 500-row page is about 150 KB, so rows several times
+wider are needed to hit the cap there.
+
+**The autoExec error's own text.** When the settled session's condition
+code is nonzero, `warnOnStartupCondition` now reads the session's own log
+(`readSessionLogPage`, new in `job.ts`, following `next` with
+`followLogPage`, at most 10 pages of 1,000 lines). It writes the error and
+warning lines to the Python on Viya log, and the warning names the first of
+them. Which lines, and why, is `src/compute/startupLog.ts`'s
+`selectStartupDiagnostics` (new, pure). It keeps `type` `error`/`warning`
+lines, drops SAS's underline-marker lines (`----`, `180`), and caps at 20
+lines with a count of the rest. It deliberately never shows the echoed
+source line: that is the profile's own autoExec text, and Finding 12.1 saw
+a failed `LIBNAME` echoed unmasked. A failed log read costs only the error
+text. The warning still fires with 11e's original wording, and the connect
+is never affected. Finding 11.8's open question (whether a failed re-read
+should be louder than a debug line) is unchanged.
+
+**Tests.** Unit: the new variants in both `describe*Problem` suites; the
+CAS client's too-large mapping on the direct and redirect paths, plus one
+driven end to end through the real `nodeHttpTransport` on loopback with a
+body one byte over `MAX_BODY_BYTES` (this replaces 11d's test pinning the
+old `cas-unreachable` mapping); the Compute client's mapping;
+`readSessionLogPage` (query, no `timeout`, `link-missing` naming the
+session, `404` → `session-gone`, argument refusal); `startupLog.ts` against
+Finding 12.11's own log shape; and `ProcPythonBackend` reading an over-cap
+response as `backend-failed`. Integration: both new messages under the real
+`l10n`; the library source's threshold; and the session manager reading a
+two-page session log, logging the `ERROR` without the source echo or the
+markers, and still warning when the log read fails.
+
+**Verification.** `npx tsc --noEmit` and `npx tsc -p tsconfig.test.json
+--noEmit` clean; `npm run verify` green (1,895 unit, 15 new; coverage
+96.44/95.89/96.24/96.44); `npm run test:integration` 515 passing (5 new, run
+from a clean `out/`).
+
+**Adversarial review, before push, 2026-09-24.** Six findings, each checked
+against the code; all six were real and all were folded in:
+
+1. `CsvExportSource.confirmAboveBytes`'s doc still said a library export
+   sets no threshold — the claim this slice made false. Rewritten.
+2. Two stale claims in `job.ts`: `followLogPage` called the job drain its
+   only caller, and `linkMissing`'s doc used "a session has no log" as a
+   hypothetical. Both now describe the session-log read.
+3. Nothing tested the 10-page cap or the "N more lines not shown" warning.
+   Added an integration test with a log whose `next` never ends.
+4. A page failing partway through the log read discarded lines already
+   read, so an `ERROR` from page 1 was lost if page 3 failed. The read now
+   stops and keeps what it has. Added an integration test.
+5. A cap under 1 MiB would render "limit 0 MB". Unreachable today; now
+   `Math.max(1, …)`.
+6. `startupLog.ts` now says its guarantee is narrower than "no secret
+   reaches the log": it keeps out the echoed statement, not text an `ERROR`
+   line itself quotes (some `LIBNAME` engines' connection errors do).
+
+Re-verified: `npm run verify` green (1,895 unit; coverage unchanged);
+`npm run test:integration` 517 passing (two new, clean `out/`).
+
+**Manual pass, 2026-09-24.** Items 12.10–12.13
+([`docs/dev/manual-tests/phase-12.md`](../dev/manual-tests/phase-12.md)) all
+passed live before the PR, as Sean asked: the 400,000-row `WORK.BIG` export
+asked first and a decline wrote nothing, `SASHELP.CLASS` exported without
+asking, a bad autoExec line's `ERROR 180-322` reached the warning and the log
+without its echoed source line or markers, and a clean autoExec stayed quiet.
+
 ---
 
 ## Probe findings
@@ -2029,5 +2135,86 @@ that this project's own client code takes it correctly. Concurrency (two
 writers racing on one stable name, which `412` is precisely built to catch)
 was not tested; nor was any context other than the one scratch session used
 here.
+
+No deployment-identifying detail appears above.
+
+### Finding 12.11 — a session's own log is a `log` collection like a job's; one bad autoExec line leaves three `error` lines among ~170
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, with Sean's approval of the
+mutating steps: two throwaway sessions on the "SAS Studio compute context",
+each deleted and confirmed `404`. The first had `autoExecLines: ["this is not
+valid sas;", "%let P12F=after;"]` and the second had none, as a control.
+
+**Documented / assumed:** 11e's follow-up assumed
+`/compute/sessions/{id}/log` holds the autoExec `ERROR` (Finding 11.7 saw it
+"only in the session log"). The shape of that log was never probed.
+**Observed:**
+
+- The session carries `log` (`type` `application/vnd.sas.collection`,
+  `itemType` `application/vnd.sas.compute.log.line`) and `logAsText`
+  (`text/plain`) on the **same href**, the same pairing as a job's (finding
+  46). Items are `{ line, type, version }`; the envelope has `count`,
+  `start`, `limit` and `self`/`next`/`last`/`up`/`collection` links.
+- At `limit=50`, 172 lines came back as four pages, joined by `next`. At
+  `limit=1000`, one page.
+- The first user autoExec line was at index **161**. Before it were the
+  deployment's own preamble and site autoexec: `title`/`note`/`normal`/
+  `source` lines, and in this run **no** `error` or `warning` lines at all.
+- The bad statement produced exactly three `type: "error"` lines: `     ----`
+  and `     180` (SAS's underline markers, pointing into the echoed source
+  line above them), then `ERROR 180-322: Statement is not valid or it is
+  used out of proper order.` A blank `note` line separated the markers from
+  the `ERROR`. The echoed source line itself was `type: "source"`.
+- `%let P12F=after;` was echoed as the next `source` line after the
+  `ERROR`, so processing carried on past it (whether it took effect was not
+  read back here; Finding 11.7 already showed later lines run). The settled
+  session read `idle` with `sessionConditionCode` 3000; the create response
+  read `pending`/0 (Finding 11.8 reconfirmed).
+- The control session settled `idle`/0, with 165 log lines and no `error`
+  or `warning` lines.
+- A job run in the session appended to the same log (172 → 174 lines,
+  including the job's own `%put`). So the session log is the session's
+  whole history, not only its startup.
+
+**Not settled:** whether the session log honours the job log's `timeout`
+long-poll parameter (not sent, and not needed: the log is read once, after
+the session settles). A site autoexec that itself writes `WARNING` lines
+would reach the user through this path too. That is intended (the
+condition code is session-wide), but it was not observed here. A multi-line
+wrapped `ERROR` was not produced, so `type` on its continuation lines is
+inferred from the job-log vocabulary (finding 52), not measured.
+
+### Finding 12.12 — a large Compute `WORK` table pages `rowsAsCSV` at a flat ~0.47 s per 500 rows; a 5,000-row page can exceed the 1 MiB cap
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, with Sean's approval of the
+mutating steps: one throwaway session on the "SAS Studio compute context",
+one `DATA` step job building `WORK.BIG12F`, then the session was deleted and
+confirmed `404`. The table had 250,000 rows and 20 columns (ten `$24`
+character, ten numeric), built in 1.8 s.
+
+**Documented / assumed:** Finding 7.20 measured `rowsAsCSV` only on
+`SASHELP.CLASS` (19 rows); nothing larger had been exported. **Observed:**
+
+| Request | Result |
+|---|---|
+| table `GET` | `200`, `rowCount` **250000**, `columnCount` 20 |
+| `rowsAsCSV`, `start=0&limit=500&includeColumnNames=true` | 149,437 bytes, 0.46 s, 501 lines |
+| `start=500` / `1000` | ~150 KB, 0.47 s / 0.48 s |
+| `start=125000` | 152,811 bytes, 0.49 s |
+| `start=249500` (last page) | 152,968 bytes, 0.46 s |
+| `start=0&limit=2000` | 600,276 bytes, 0.61 s |
+| `start=0&limit=5000` | **1,504,697 bytes**, 0.83 s |
+| `start=250000&limit=500` (past the end) | `200`, empty body (Finding 7.20 reconfirmed) |
+
+About 303 bytes a row, so the whole table is ~76 MB as CSV and ~500 pages
+at the export's own 500-row page size — about 4 minutes. Deep offsets cost
+no more than the first page. A 5,000-row page is over the transport's 1 MiB
+`MAX_BODY_BYTES`, so an over-cap Compute response is a real path, not a
+theoretical one. At 500 rows it takes rows about seven times wider than
+these (~2 KB each) to reach the cap.
+
+**Not settled:** a table in a non-`WORK` library, a view (whose `rowCount`
+may differ), a `rowCount` of `-1`, and throughput under a loaded server.
+One run on one deployment.
 
 No deployment-identifying detail appears above.

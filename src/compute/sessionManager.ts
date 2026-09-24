@@ -90,6 +90,7 @@ import {
   type ComputeFailure,
 } from "./client";
 import { listContexts, resolveContext } from "./contexts";
+import { followLogPage, type LogLine, readSessionLogPage } from "./job";
 import { localiseComputeProblem } from "./messages";
 import { describeComputeProblem } from "./problems";
 import {
@@ -99,6 +100,10 @@ import {
   waitWhilePending,
   type ComputeSession,
 } from "./session";
+import {
+  selectStartupDiagnostics,
+  type StartupDiagnostics,
+} from "./startupLog";
 
 /**
  * The three things this needs from the profile store.
@@ -231,6 +236,13 @@ export interface ComputeSessionDeps {
  * never actually in effect before this fix.
  */
 const SESSION_OPTIONS = ["PAGESIZE MAX"];
+
+/** Lines asked for per page of a session's log after a startup error. Finding
+ * 12.11's whole startup log was 172 lines, so one page nearly always does. */
+const STARTUP_LOG_PAGE_LIMIT = 1000;
+
+/** Pages of a session's log read after a startup error, at most. */
+const MAX_STARTUP_LOG_PAGES = 10;
 
 export class ComputeSessionManager implements vscode.Disposable {
   /** Keyed on profile id. Two profiles may hold sessions at the same time. */
@@ -774,7 +786,7 @@ export class ComputeSessionManager implements vscode.Disposable {
 
   /**
    * Warns when a session that ran the profile's `autoExec` lines reports a
-   * nonzero `sessionConditionCode`.
+   * nonzero `sessionConditionCode`, and writes the error's own text to the log.
    *
    * A bad autoExec line does not fail the session — it comes up `idle` with the
    * error only in the session log and code 3000 (Finding 11.7) — so without this
@@ -783,15 +795,18 @@ export class ComputeSessionManager implements vscode.Disposable {
    * of the settled session (Finding 11.8) and never from the create response.
    *
    * The code is session-wide, and the site's own autoexec runs first (Finding
-   * 11.7), so the wording does not claim the user's lines were the cause. A
-   * failed read only costs the warning, never the connect.
+   * 11.7), so the wording does not claim the user's lines were the cause. The
+   * session's own log is then read for its `ERROR`/`WARNING` lines (Finding
+   * 12.11; {@link selectStartupDiagnostics} says which lines and why), so the
+   * warning never leaves the user with nothing to fix it from. A failed read of
+   * either only costs what it would have added, never the connect.
    */
   private async warnOnStartupCondition(
     client: ComputeClient,
     sessionId: string,
     signal: AbortSignal,
   ): Promise<void> {
-    let conditionCode: number | undefined;
+    let session: ComputeSession;
     try {
       const reread = await attachSession(client, sessionId, { signal });
       if (!reread.ok) {
@@ -800,7 +815,7 @@ export class ComputeSessionManager implements vscode.Disposable {
         );
         return;
       }
-      conditionCode = reread.value.conditionCode;
+      session = reread.value;
     } catch (error) {
       // `client.send` can reject rather than resolve a `ComputeResult`.
       this.log.debug(
@@ -808,6 +823,7 @@ export class ComputeSessionManager implements vscode.Disposable {
       );
       return;
     }
+    const conditionCode = session.conditionCode;
     if (conditionCode === undefined || conditionCode === 0) return;
 
     this.log.warn(
@@ -816,11 +832,82 @@ export class ComputeSessionManager implements vscode.Disposable {
         String(conditionCode),
       ),
     );
+
+    const diagnostics = await this.readStartupDiagnostics(
+      client,
+      session,
+      signal,
+    );
+    if (diagnostics.lines.length === 0) {
+      this.inform(
+        vscode.l10n.t(
+          "The session reported an error while running startup code. It is running, but some of your profile's startup setup may not have taken effect.",
+        ),
+      );
+      return;
+    }
+
+    for (const line of diagnostics.lines) {
+      this.log.warn(vscode.l10n.t("Session startup log: {0}", line));
+    }
+    if (diagnostics.omitted > 0) {
+      this.log.warn(
+        vscode.l10n.t(
+          "Session startup log: {0} more error or warning lines not shown.",
+          String(diagnostics.omitted),
+        ),
+      );
+    }
     this.inform(
       vscode.l10n.t(
-        "The session reported an error while running startup code. It is running, but some of your profile's startup setup may not have taken effect.",
+        "The session reported an error while running startup code: {0} It is running, but some of your profile's startup setup may not have taken effect. The Python on Viya log has the full error text.",
+        diagnostics.lines[0] ?? "",
       ),
     );
+  }
+
+  /**
+   * Reads the settled session's whole log and picks out its error and warning
+   * lines. Pages are followed by their `next` link (Finding 12.11: 172 lines
+   * came back as four 50-line pages), up to {@link MAX_STARTUP_LOG_PAGES} — a
+   * runaway site autoexec should cost a bounded number of requests, not a
+   * connect that never finishes.
+   *
+   * A page that fails ends the read but keeps what the earlier pages held: the
+   * error the user needs may already be among them. If nothing was read, the
+   * result has no lines and the caller falls back to the plain warning.
+   */
+  private async readStartupDiagnostics(
+    client: ComputeClient,
+    session: ComputeSession,
+    signal: AbortSignal,
+  ): Promise<StartupDiagnostics> {
+    const lines: LogLine[] = [];
+    try {
+      let page = await readSessionLogPage(client, session, {
+        start: 0,
+        limit: STARTUP_LOG_PAGE_LIMIT,
+        signal,
+      });
+      for (let pages = 1; ; pages += 1) {
+        if (!page.ok) {
+          this.log.debug(
+            `could not read the session log for its startup errors: ${page.reason}`,
+          );
+          break;
+        }
+        lines.push(...page.value.lines);
+        const next = page.value.next;
+        if (next === undefined || pages >= MAX_STARTUP_LOG_PAGES) break;
+        page = await followLogPage(client, next, { signal });
+      }
+    } catch (error) {
+      // `client.send` can reject rather than resolve a `ComputeResult`.
+      this.log.debug(
+        `could not read the session log for its startup errors: ${String(error)}`,
+      );
+    }
+    return selectStartupDiagnostics(lines);
   }
 
   /** Reads a local file named by an `autoExec` entry, as UTF-8 text. */

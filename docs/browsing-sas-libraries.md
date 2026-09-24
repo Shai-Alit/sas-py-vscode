@@ -63,6 +63,15 @@ cancellable progress notification. Rows stream straight from Viya to the file
 you chose as they arrive — there is no size limit tied to what the grid, or
 memory, can hold, unlike opening the table itself.
 
+**Large tables ask first.** Exporting downloads every row over your
+connection, 500 rows at a time — a 250,000-row, 20-column table is roughly
+76 MB as CSV and takes a few minutes. When the estimated file size passes
+100 MB, the same threshold as a CAS table, you are shown the row count and
+estimated size and asked to confirm before anything is written. Declining
+does nothing. If a table is so wide that one page is larger than this
+extension reads at once (1 MB), the export stops with a message saying so
+rather than one about your connection.
+
 The export writes to a temporary file next to your chosen destination and only
 replaces it once every row has been written successfully. If you cancel, if
 the export fails partway, or if there is not enough free disk space to finish

@@ -34,6 +34,7 @@ const PROBLEMS: ComputeProblem[] = [
     code: "compute-unreachable",
     detail: "GET /compute/contexts — connect ETIMEDOUT",
   },
+  { code: "compute-response-too-large", limitBytes: 1_048_576 },
   { code: "unauthorized", problem: { code: "state-mismatch" } },
   { code: "forbidden", error: VIYA_ERROR },
   { code: "session-gone", error: { status: 404, errorCode: 5837 } },
@@ -69,7 +70,17 @@ describe("compute problem messages under the real l10n", () => {
   });
 
   it("gives each code its own message", () => {
-    assert.equal(new Set(PROBLEMS.map(localiseComputeProblem)).size, 9);
+    assert.equal(new Set(PROBLEMS.map(localiseComputeProblem)).size, 10);
+  });
+
+  it("says a too-large answer is over the limit, and not the proxy advice", () => {
+    const message = localiseComputeProblem({
+      code: "compute-response-too-large",
+      limitBytes: 1_048_576,
+    });
+    assert.match(message, /limit 1 MB/);
+    assert.match(message, /fewer columns/);
+    assert.doesNotMatch(message, /proxy/);
   });
 
   it("delegates a 401 to the sign-in wording rather than rewording it", () => {

@@ -58,6 +58,14 @@ export function localiseComputeProblem(problem: ComputeProblem): string {
         "Could not reach the SAS Viya compute service. Check that you can reach the deployment from this machine, and whether it needs a proxy. ({0})",
         problem.detail,
       );
+    case "compute-response-too-large":
+      // Not the proxy advice above: the request was answered, just too large
+      // to read, so the deployment and the session are both fine.
+      return vscode.l10n.t(
+        "SAS Viya's answer was larger than this extension reads at once (limit {0} MB). If you were reading a table, it is probably too wide to read a page of here — try a table or view with fewer columns.",
+        // At least 1: a cap under 1 MiB (none today) must not read "0 MB".
+        String(Math.max(1, Math.floor(problem.limitBytes / (1024 * 1024)))),
+      );
     case "unauthorized":
       // Delegated, not duplicated — the whole reason the variant carries an
       // `AuthProblem` rather than a status code. Slice 1c already words every

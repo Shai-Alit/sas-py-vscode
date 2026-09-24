@@ -34,6 +34,14 @@ export function localiseCasProblem(problem: CasProblem): string {
         "Could not reach the CAS management service. Check that you can reach the deployment from this machine, and whether it needs a proxy. ({0})",
         problem.detail,
       );
+    case "cas-response-too-large":
+      // Not the proxy advice above: the request was answered, just too large
+      // to read. The one real cause observed is a very wide table's page.
+      return vscode.l10n.t(
+        "SAS Viya's answer was larger than this extension reads at once (limit {0} MB). The table is probably too wide to read a page of here — try a table or view with fewer columns.",
+        // At least 1: a cap under 1 MiB (none today) must not read "0 MB".
+        String(Math.max(1, Math.floor(problem.limitBytes / (1024 * 1024)))),
+      );
     case "unauthorized":
       return localiseAuthProblem(problem.problem);
     case "forbidden":

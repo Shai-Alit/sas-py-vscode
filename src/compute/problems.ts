@@ -34,6 +34,20 @@ export type ComputeProblem =
   /** The request never got an answer — DNS, TLS, proxy, timeout, abort. */
   | { code: "compute-unreachable"; detail: string }
   /**
+   * The response body was larger than the cap in force for the request — the
+   * transport's 1 MiB default (`src/auth/transport.ts`'s `MAX_BODY_BYTES`), or
+   * a larger one a caller set (`src/compute/files.ts`'s `maxBytes`). The
+   * transport stopped reading at `limitBytes` and rejected with a
+   * `ResponseTooLargeError`.
+   *
+   * Distinct from `compute-unreachable` because the request *was* answered:
+   * the deployment is reachable and the session is fine, so neither the proxy
+   * advice nor a reconnect helps. A real path, not a theoretical one — Finding
+   * 12.12 measured a 5,000-row `rowsAsCSV` page of a 20-column table at about
+   * 1.5 MB. Mirrors `ContentProblem`'s `content-too-large`.
+   */
+  | { code: "compute-response-too-large"; limitBytes: number }
+  /**
    * A 401. **Not re-diagnosed here.**
    *
    * Slice 1c already reads RFC 6750's `error` and `error_description` out of the
@@ -129,6 +143,8 @@ export function describeComputeProblem(problem: ComputeProblem): string {
   switch (problem.code) {
     case "compute-unreachable":
       return `could not reach the compute service: ${problem.detail}`;
+    case "compute-response-too-large":
+      return `the compute service answered with more than the ${String(problem.limitBytes)}-byte limit this extension reads in one response`;
     case "unauthorized":
       // Delegated, not duplicated — the whole reason the variant carries an
       // `AuthProblem` instead of a status code.

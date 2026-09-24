@@ -267,6 +267,25 @@ adversarial pass over the whole branch found nothing to fix, and the branch
 went up for PR — see `docs/phases/phase-12.md`'s "12e manual test 12.4
 failed" entry. **Next:** merge 12e, then tick B12.2.
 
+**`docs/cas-python-connection.md` corrected 2026-09-23, from an unrelated
+customer support investigation.** Two customer reports came in from the same
+call: a hand-rolled `swat` REST/HTTP connection failing with `Expecting value:
+line 1 column 1 (char 0)` (the customer's Python, already inside a compute
+session, went out the deployment's own public ingress and back in, and a
+`403` HTML error page got parsed as JSON), and whether a CAS connection
+survives its access token expiring. Neither needed a code change. The
+ingress failure is now a documented gotcha rather than a wire mystery
+(Findings 12.7/12.8); the token question refuted this page's own prior
+wording — a held CAS connection outlives its token, confirmed with a control
+proving the token had genuinely expired (Finding 12.9) — and that page's
+"Reconnecting after a while" section is rewritten accordingly. A fourth,
+unrelated probe (Finding 12.10) confirmed a Compute fileref can be rewritten
+in place under a stable name, backing a new design candidate recorded
+alongside 12d (making the CAS-token snippet reusable across sessions,
+Sean's own placement call) — not scoped or built, an open idea the same way
+12d's own outcome already is. Full account in `docs/phases/phase-12.md`'s own
+Runbook entries.
+
 **Letter collision reconciled, 2026-09-22.** 12c's own insertion (above)
 and PR #207's 12f/12g/12h were scoped in two sessions working this phase
 concurrently from separate clones, this project's own established

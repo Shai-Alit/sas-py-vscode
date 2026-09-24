@@ -241,13 +241,31 @@ would silently corrupt the column), which both APIs' column-type metadata
 makes a complete, safe partition rather than a heuristic. Shipped as an
 opt-in `pythonOnViya.csvExport.guardFormulaInjection` setting (default
 `false`) covering CAS and SAS Libraries alike, so the guard never silently
-protects only some of a user's exports. `npm run coverage` green
-(96.41/95.83/96.2/96.41); `npm run test:integration` green
-(507 passing, 12 new). A real bug — `LibraryCsvSource.sample()` guarding
-unconditionally, ignoring the setting — was caught by this session's own new
-integration test before the branch was considered done; see
+protects only some of a user's exports. A real bug — `LibraryCsvSource.sample()`
+guarding unconditionally, ignoring the setting — was caught by this session's
+own new integration test before the branch was considered done; see
 `docs/phases/phase-12.md`'s "12e built" Runbook entry for the full account,
-including the fix.
+including the fix. **The pre-push adversarial review then found and fixed
+six things**, before the branch was pushed: a citation defect that was also
+a real bypass (the guard's trigger set was missing tab/CR/LF — the exact
+CVE-2021-41270 shape), an overstated user-doc claim about the leading-`'`
+mitigation, a dead branch in `csvParse.ts`, an implicit sentinel coupling now
+commented, and two test gaps (a multi-page guard-on stream, a
+column-count-overflow row) — full account and the one deferred finding (an
+options-object refactor for `formatCsvPage`'s two boolean parameters) in
+`docs/phases/phase-12.md`'s "Adversarial review, before push" entry. `npm
+run coverage` green (96.41/95.86/96.2/96.41); `npm run test:integration`
+green (509 passing, 14 new). **Manual test 12.4 (CAS) then failed, 2026-09-23:**
+CAS columns were listed alphabetically while row cells stay in table order,
+so the headers were swapped and the guard checked each cell against the
+wrong column (Finding 12.6, **B12.2** — older than 12e, and it also affects
+the CAS data viewer). Fixed on the branch by sorting columns by their
+`index`; coverage 96.42/95.87/96.21/96.42, integration 510 passing. 12.4
+and a new 12.9 (column order in the CAS tree and data viewer) then passed
+live against the fix, so all of 12.1–12.9 are ticked. A second pre-push
+adversarial pass over the whole branch found nothing to fix, and the branch
+went up for PR — see `docs/phases/phase-12.md`'s "12e manual test 12.4
+failed" entry. **Next:** merge 12e, then tick B12.2.
 
 **Letter collision reconciled, 2026-09-22.** 12c's own insertion (above)
 and PR #207's 12f/12g/12h were scoped in two sessions working this phase
@@ -534,6 +552,14 @@ inserted ahead of it) (`docs/phases/phase-12.md`), added at the Phase
   sized, scoped, or decided against; it has no owner now that Phase 11 is
   closed. Not decided here — flagged, not scoped, same treatment as F1/F6.
   See `phase-11.md`'s "New feature candidates" list.
+
+- **Open bugs** are listed in the current phase file's "Bugs found in this
+  phase" section — for Phase 12, [`docs/phases/phase-12.md`](docs/phases/phase-12.md)
+  (**B12.1**, 2026-09-23: a failed SAS step poisons the compute session and
+  Reset Python State cannot clear it — Finding 12.5; no fix written yet;
+  **B12.2**, 2026-09-23: CAS columns mispaired with their row cells —
+  Finding 12.6; fixed on the 12e branch and passed live re-test, not yet
+  merged).
 
 No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit

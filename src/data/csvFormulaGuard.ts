@@ -13,19 +13,31 @@
  *
  * **What this guards against.** A spreadsheet program (Excel, Google
  * Sheets, LibreOffice Calc) that opens a CSV treats a cell beginning with
- * `=`, `+`, `-`, or `@` as a formula, not literal text — OWASP's own
- * "CSV Injection" writeup (https://owasp.org/www-community/attacks/CSV_Injection).
+ * `=`, `+`, `-`, `@`, a tab, a carriage return, or a line feed as a formula,
+ * not literal text — OWASP's own "CSV Injection" writeup
+ * (https://owasp.org/www-community/attacks/CSV_Injection) lists all seven
+ * (plus full-width `＝ ＋ － ＠` variants for CJK locales, deliberately out of
+ * scope here — this module covers the ASCII set only). Tab and carriage
+ * return are in that set for a specific documented reason: a tab-prefix
+ * mitigation was itself the vulnerability in Symfony's CSV export
+ * (CVE-2021-41270), fixed by moving to this same leading-`'` approach and
+ * adding `\t`/`\r` to the trigger set — this module's {@link
+ * FORMULA_TRIGGER} follows that fixed set, not the earlier, incomplete one.
  * A SAS character column holding attacker- or user-entered text (a name
  * field, a free-text comment column) can carry exactly such a value, and an
  * export that relays it unmodified hands a formula to whoever opens the
  * file next — the classic CSV/formula-injection class (CWE-1236). The fix
  * OWASP recommends, and this module applies, is a leading apostrophe: every
  * mainstream spreadsheet program already treats a `'`-prefixed cell as "the
- * rest of this is literal text," so the visible value is unchanged once
- * opened, only its interpretation is pinned down. Deleting or stripping the
- * leading character instead (an alternative some guards use) was
- * deliberately not chosen: `-5` losing its sign or `@handle` losing its `@`
- * silently changes what the exported value actually says.
+ * rest of this is literal text" and does not evaluate it as a formula.
+ * OWASP itself notes this mitigation is not reliable in Excel after saving
+ * and re-opening the file — the apostrophe can remain visible there rather
+ * than being consumed as a text marker — so the guarantee this module makes
+ * is "never evaluated as a formula," not "always looks identical to the
+ * original value." Deleting or stripping the leading character instead (an
+ * alternative some guards use) was deliberately not chosen: `-5` losing its
+ * sign or `@handle` losing its `@` silently changes what the exported value
+ * actually says.
  *
  * **Applied to character columns only, never numeric ones.** A SAS variable
  * is one of exactly two base types — character or numeric — so this is a
@@ -58,10 +70,15 @@ export function isTextColumnType(type: string): boolean {
   return TEXT_COLUMN_TYPES.has(type.toLowerCase());
 }
 
-/** OWASP's own formula-triggering character set for CSV injection: a cell
- * beginning with one of these four is what a spreadsheet program treats as
- * the start of a formula rather than literal text. */
-const FORMULA_TRIGGER = /^[=+@-]/;
+/** The ASCII subset of OWASP's formula-triggering character set for CSV
+ * injection (see this module's own doc comment): a cell beginning with one
+ * of these is what a spreadsheet program treats as the start of a formula,
+ * or — for `\t`/`\r`/`\n` — as leading noise a prior mitigation stripped
+ * before the formula characters underneath it, rather than literal text. A
+ * leading `\n` cannot itself survive a round trip through this project's own
+ * CSV encoding unquoted, but costs nothing to include here. The full-width
+ * CJK variants OWASP also lists are out of scope. */
+const FORMULA_TRIGGER = /^[=+@\t\r\n-]/;
 
 /**
  * `value` unchanged, unless it begins with a formula-triggering character —

@@ -186,6 +186,15 @@ export class CasAdapter {
    * failure is returned as-is rather than a columns-specific one: whatever
    * went wrong loading is what the user needs to see, not a downstream
    * symptom of it.
+   *
+   * **Returned in the table's own column order, not the listing's.**
+   * Finding 12.6: {@link collectPages}' `sortBy=name` reorders this
+   * collection alphabetically, while every `rows` reply's positional
+   * `cells` stay in the table's own order — so the list is re-sorted here
+   * by each item's 1-based `index` field before anyone pairs a column with
+   * a cell by position (the data viewer's grid, the CSV export). An item
+   * with no numeric `index` sorts after every item that has one, keeping
+   * the listing's relative order among themselves.
    */
   async getColumns(
     table: CasTableItem,
@@ -208,7 +217,7 @@ export class CasAdapter {
     if (!items.ok) return items;
 
     const columns: CasColumnItem[] = [];
-    for (const raw of items.value) {
+    for (const raw of [...items.value].sort(byColumnIndex)) {
       const column = readCasColumnItem(raw, table);
       if (column !== undefined) columns.push(column);
     }
@@ -422,7 +431,9 @@ export class CasAdapter {
    * `sortBy=name` made three repeated identical requests come back
    * byte-for-byte the same, and every collection this method reads (servers,
    * caslibs, tables, columns) accepted it without complaint, so it is added
-   * once, here, rather than once per caller. Only the seed `href` needs it —
+   * once, here, rather than once per caller. For `columns`, alphabetical is
+   * the wrong final order — {@link getColumns} re-sorts by each item's own
+   * `index` (Finding 12.6); paging still uses `sortBy=name` for stability. Only the seed `href` needs it —
    * the server's own `next` link already carries `sortBy=name` forward to
    * every later page, confirmed live.
    */
@@ -464,6 +475,23 @@ export class CasAdapter {
  * `src/data/adapter.ts`'s `MAX_DATA_PAGES` documents, not a real ceiling
  * anyone browsing CAS is expected to reach. */
 export const MAX_CAS_PAGES = 500;
+
+/** A `columns` collection item's 1-based position in its table (Finding
+ * 12.6), or `Infinity` when it carries no numeric `index`. */
+function columnIndex(raw: unknown): number {
+  if (typeof raw !== "object" || raw === null) return Infinity;
+  const index = (raw as Record<string, unknown>).index;
+  return typeof index === "number" ? index : Infinity;
+}
+
+/** Orders raw `columns` items by {@link columnIndex}. `Array.prototype.sort`
+ * is stable, so items that tie — including every item without an `index` —
+ * keep the listing's own relative order. */
+function byColumnIndex(a: unknown, b: unknown): number {
+  const left = columnIndex(a);
+  const right = columnIndex(b);
+  return left === right ? 0 : left < right ? -1 : 1;
+}
 
 /** The `items` of a collection body, or `undefined` if there is no array
  * there. */

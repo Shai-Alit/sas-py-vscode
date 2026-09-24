@@ -70,8 +70,7 @@ export function parseCsvPage(text: string): readonly (readonly string[])[] {
   };
 
   for (let i = 0; i < text.length; i += 1) {
-    const ch = text[i];
-    if (ch === undefined) continue; // unreachable given the loop bound above
+    const ch = text.charAt(i);
 
     if (inQuotes) {
       if (ch === '"') {

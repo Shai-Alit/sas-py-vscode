@@ -12,35 +12,116 @@ CSV export surfaces (SAS Libraries and CAS). See `docs/phases/phase-12.md`'s
 12e Runbook entry for the design; §11.17–§11.21 (`phase-11.md`) already cover
 ordinary CSV export and are not repeated here.
 
-- [ ] **12.1** **The guard is off by default — a formula-shaped cell is
+- [x] **12.1** **The guard is off by default — a formula-shaped cell is
   written untouched.** With `pythonOnViya.csvExport.guardFormulaInjection`
   left at its default (unset/`false`), export a SAS library table with a
-  character column value that starts with `=`, `+`, `-`, or `@` (a quick way
-  to get one: `data work.test; input name $ 20.; datalines; =SUM(A1:A9)
-  ;run;`, then export `work.test`). **Expect:** the file opens in a text
-  editor showing the value exactly as entered, no leading `'`.
-- [ ] **12.2** **Turn the guard on and repeat for a SAS library table.**
+  character column value that starts with `=`, `+`, `-`, or `@`. A quick way
+  to build a table that serves 12.1–12.8 (run it in a `.py` file against a
+  Viya profile, then export `work.test`):
+
+  ```python
+  SAS.submit("""
+  data work.test;
+    length name $ 40;
+    age = 12;
+    name = '=SUM(A1:A9)';  output;
+    name = '+1 (555) 0100'; output;
+    name = '-drwxr-xr-x';  output;
+    name = '@handle';      output;
+    name = '=a,b';         output;
+    name = '09'x || '=1+1'; output;
+    name = 'Alfred';       age = -5; output;
+  run;
+  """)
+  ```
+
+  **Expect:** the file opens in a text editor showing each value exactly as
+  entered, no leading `'`.
+ 
+- [x] **12.2** **Turn the guard on and repeat for a SAS library table.**
   Set `pythonOnViya.csvExport.guardFormulaInjection` to `true` (workspace or
   user setting), then export the same table again. **Expect:** the
   formula-shaped cell now has a leading `'` in the file; opening it in Excel
-  or Google Sheets shows the literal text, not a formula result/error. A
-  plain text value elsewhere in the same column is unaffected.
-- [ ] **12.3** **A negative number is never touched, guard on.** In the same
+  or Google Sheets never evaluates it as a formula (no formula result/error).
+  Google Sheets is expected to also drop the `'` and show the literal text; if
+  Excel instead leaves the `'` visible after the file is saved and reopened,
+  that is the known OWASP-documented Excel caveat, not a bug in this guard —
+  see `docs/browsing-sas-libraries.md`'s Export to CSV section. A plain text
+  value elsewhere in the same column is unaffected.
+- [x] **12.3** **A negative number is never touched, guard on.** In the same
   export, confirm a numeric column's negative value (e.g. `-5`) has **no**
   leading `'` — it still opens as a number, not text, in a spreadsheet.
-- [ ] **12.4** **Repeat 12.2/12.3 for a CAS table**, guard on — right-click a
-  CAS table with a `varchar`/`char` column holding a formula-shaped value and
-  export to CSV. **Expect:** the same leading-`'` behaviour as 12.2, and the
-  same untouched-negative-number behaviour as 12.3 for a numeric CAS column.
-- [ ] **12.5** **The header row is never guarded.** Whichever export above is
+- [x] **12.4** **Repeat 12.2/12.3 for a CAS table**, guard on. `SAS.submit`
+  runs on compute, not CAS, so build the same data as 12.1 through SWAT:
+  run **Python on Viya: Insert CAS Connection** first to get the
+  authenticated `conn = swat.CAS(...)` lines, then the code below in the same
+  file. Refresh the CAS tree, then right-click `casuser.test` and export to
+  CSV. `promote=True` makes the table global so the CAS tree, which uses its
+  own CAS session, can see it:
+
+  ```python
+  import pandas as pd
+
+  df = pd.DataFrame(
+      {
+          "name": [
+              "=SUM(A1:A9)",
+              "+1 (555) 0100",
+              "-drwxr-xr-x",
+              "@handle",
+              "=a,b",
+              "\t=1+1",
+              "Alfred",
+          ],
+          "age": [12, 12, 12, 12, 12, 12, -5],
+      }
+  )
+  conn.upload_frame(
+      df, casout=dict(name="test", caslib="casuser", promote=True)
+  )
+  ```
+
+  **Expect:** the same leading-`'` behaviour as 12.2 (including the
+  tab-prefixed row from 12.8), and the same untouched-negative-number
+  behaviour as 12.3 for the numeric `age` column.
+  **(9/23/2026) fail** Multiple problems, number 1 may be the root cause of number 2. 
+  Both problems were recreated at least twice, and the same tests passed multiple times
+  for SAS libraries.
+  1 - this might have been here for a while but the name and age data are swapped, 
+  so the name column contains the ages and the age column contains the names. 
+  2 - there is no guard. all of the values are non-guarded including the "=a,b" 
+  and negative number. 
+  **Root cause found and fixed, 2026-09-23 — re-run against a build with the
+  fix.** Both problems had one cause: the extension listed a CAS table's
+  columns alphabetically (`age`, `name`) while each row's cells come in table
+  order (`name`, `age`). That swapped the headers, and the guard checked each
+  cell against the other column's type, so the text column was never guarded.
+  See B12.2 and Finding 12.6 in `docs/phases/phase-12.md`.
+  **(9/23/2026) pass** on re-run against a build with the fix: headers match
+  their data, the formula-shaped `name` values (including `=a,b` and the
+  tab-prefixed row) are guarded, and `-5` is untouched.
+- [x] **12.5** **The header row is never guarded.** Whichever export above is
   handy, confirm the first (header) line's column names have no leading `'`
   even when the guard is on — only data rows are ever guarded.
-- [ ] **12.6** **A field that already needs RFC-4180 quoting still guards
+- [x] **12.6** **A field that already needs RFC-4180 quoting still guards
   correctly.** Export a table with a character value that both starts with a
   formula-triggering character and contains a comma (e.g. `=a,b`). **Expect:**
   the file shows `"'=a,b"` — the leading `'` inside the quotes, not instead of
   them.
-- [ ] **12.7** **Setting change takes effect on the next export, no reload.**
+- [x] **12.7** **Setting change takes effect on the next export, no reload.**
   Toggle the setting and export the same table twice in the same window
   session, once each way. **Expect:** no reload needed; each export reflects
   whatever the setting reads at the moment **Export to CSV** was clicked.
+- [x] **12.8** **A value beginning with a tab is guarded too, guard on.** A
+  tab-only prefix check is the exact gap CVE-2021-41270 (Symfony) shipped
+  with — the tab hid the formula from a naive `=`/`+`/`-`/`@`-only check
+  while Excel still evaluated it. The `work.test` table from 12.1 already
+  has a row whose `name` is a literal tab (`'09'x`) followed by `=1+1`;
+  export it with the guard on. **Expect:** that row's cell starts with `'`
+  immediately before the tab, and opening the file does not evaluate `=1+1`.
+- [x] **12.9** **A CAS table's columns show in table order everywhere.** The
+  12.4 fix changes the column order shared by the CAS tree, the data viewer and
+  CSV export. Using 12.4's `casuser.test`: expand it in the CAS tree, then open
+  it in the data viewer. **Expect:** the tree lists `name` before `age` (it
+  used to list them alphabetically), and in the viewer the `name` column holds
+  the text values and `age` holds the numbers — not swapped.

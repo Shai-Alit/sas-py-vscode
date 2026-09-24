@@ -275,6 +275,73 @@ describe("LibraryCsvSource", () => {
       ]);
     });
 
+    it("stream guards a formula-shaped cell on a later page's first row, not just the header page", async () => {
+      // Every other guard-on stream test above uses a single data page plus
+      // the empty terminator, so `guard()` only ever ran with
+      // `includeHeader === true`. This exercises the second page, where
+      // `includeHeader` is false and the parsed row 0 is a data row that
+      // must still be guarded — the case `isHeaderRow = includeHeader &&
+      // rowIndex === 0` exists to get right.
+      const csv = source(
+        [
+          OPEN_ROUTE,
+          COLUMNS_ROUTE,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=${PAGE_SIZE}&includeColumnNames=true`,
+            reply: dataCsv("Name,Sex,Age,Height,Weight\nAlfred,M,14,69,112.5\n"),
+          },
+          {
+            when: `${CLASS_HREF}/rows?start=${PAGE_SIZE}&limit=${PAGE_SIZE}`,
+            reply: dataCsv("=SUM(A1:A9),F,13,56.3,84\n"),
+          },
+          {
+            when: `${CLASS_HREF}/rows?start=${String(2 * Number(PAGE_SIZE))}&limit=${PAGE_SIZE}`,
+            reply: dataCsv(""),
+          },
+        ],
+        true,
+      );
+      assert.ok((await csv.open()).ok);
+      const chunks: string[] = [];
+      const result = await csv.stream((chunk) => {
+        chunks.push(chunk);
+        return Promise.resolve();
+      });
+      assert.ok(result.ok);
+      assert.deepEqual(chunks, [
+        "Name,Sex,Age,Height,Weight\nAlfred,M,14,69,112.5\n",
+        "'=SUM(A1:A9),F,13,56.3,84\n",
+      ]);
+    });
+
+    it("guards a field beyond the known columns, falling back to treating it as text", async () => {
+      // `this.columns` (from COLUMNS_ROUTE, 5 entries) is shorter than this
+      // row's 6 fields — `isText[index] ?? true` (libraryCsvSource.ts) is
+      // what decides the sixth field, never observed by a real SASHELP.CLASS
+      // export but reachable if a table's row shape and its own column
+      // metadata ever disagree.
+      const csv = source(
+        [
+          OPEN_ROUTE,
+          COLUMNS_ROUTE,
+          {
+            when: `${CLASS_HREF}/rows?start=0&limit=3&includeColumnNames=true`,
+            reply: dataCsv(
+              "Name,Sex,Age,Height,Weight\nAlfred,M,14,69,100,@extra\n",
+            ),
+          },
+        ],
+        true,
+      );
+      assert.ok((await csv.open()).ok);
+      const sampled = await csv.sample(3);
+      assert.ok(sampled.ok);
+      assert.equal(
+        sampled.value,
+        "Name,Sex,Age,Height,Weight\nAlfred,M,14,69,100,'@extra\n",
+      );
+    });
+
     it("open surfaces a failed column read as a failure with both strings", async () => {
       const opened = await source(
         [

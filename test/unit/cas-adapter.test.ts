@@ -485,6 +485,53 @@ describe("cas/adapter CasAdapter", () => {
       assert.ok(result.ok);
       assert.deepEqual(result.value, []);
     });
+
+    it("Finding 12.6: returns columns in the table's own index order, not the sortBy=name listing's", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: COLUMNS_HREF,
+          reply: casOk({
+            count: 2,
+            items: [
+              { name: "age", type: "double", index: 2 },
+              { name: "name", type: "varchar", index: 1 },
+            ],
+            links: [],
+          }),
+        },
+      ]);
+      const result = await adapter.getColumns(loadedTable());
+      assert.ok(result.ok);
+      assert.deepEqual(
+        result.value.map((c) => c.name),
+        ["name", "age"],
+      );
+    });
+
+    it("sorts an item with no numeric index after every indexed one, keeping the listing's relative order among them", async () => {
+      const { adapter } = adapterWith([
+        {
+          when: COLUMNS_HREF,
+          reply: casOk({
+            count: 5,
+            items: [
+              { name: "z" },
+              null,
+              { name: "b", index: 2 },
+              { name: "y", index: "3" },
+              { name: "a", index: 1 },
+            ],
+            links: [],
+          }),
+        },
+      ]);
+      const result = await adapter.getColumns(loadedTable());
+      assert.ok(result.ok);
+      assert.deepEqual(
+        result.value.map((c) => c.name),
+        ["a", "b", "z", "y"],
+      );
+    });
   });
 
   describe("openTable", () => {

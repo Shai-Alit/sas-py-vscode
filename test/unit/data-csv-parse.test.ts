@@ -60,7 +60,15 @@ describe("data/csvParse", () => {
     });
 
     it("round-trips every field formatCsvPage/csvField can produce", () => {
-      const fields = ["plain", "a,b", 'say "hi"', "a\nb", "", "  padded "];
+      const fields = [
+        "plain",
+        "a,b",
+        'say "hi"',
+        "a\nb",
+        "a\rb",
+        "",
+        "  padded ",
+      ];
       const encoded = `${fields.map(csvField).join(",")}\n`;
       assert.deepEqual(parseCsvPage(encoded), [fields]);
     });

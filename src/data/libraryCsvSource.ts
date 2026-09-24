@@ -134,6 +134,14 @@ export class LibraryCsvSource implements CsvExportSource {
    * so.
    */
   private guard(csvPageText: string, includeHeader: boolean): string {
+    // The `""` check is `streamCsvPages`'s (`./csvExportModel.ts`)
+    // end-of-table sentinel, returned as-is rather than parsed — relying on
+    // Finding 7.20 (`phase-7.md`): the server's line endings are a bare
+    // `\n`, so `parseCsvPage` never drops an entire non-empty page down to
+    // zero rows on its own. If that ever changed, a page of only dropped
+    // characters (e.g. a bare `\r`) would parse to `[]` here and this guard
+    // would return `""`, which `streamCsvPages` reads as "past the end of
+    // the table" — a silently truncated export, not a crash.
     if (!this.guardFormulaInjection || csvPageText === "") return csvPageText;
     const isText = this.columns.map((column) => isTextColumnType(column.type));
 

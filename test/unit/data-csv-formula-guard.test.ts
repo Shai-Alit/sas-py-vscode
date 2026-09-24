@@ -42,6 +42,19 @@ describe("data/csvFormulaGuard", () => {
       assert.equal(escapeCsvFormula("@handle"), "'@handle");
     });
 
+    it("prefixes a value beginning with a tab, carriage return, or line feed — the CVE-2021-41270 gap", () => {
+      // A tab-prefix mitigation was itself the vulnerability in Symfony's
+      // CSV export: a leading tab hid the formula character underneath it
+      // from a naive =/+/-/@-only check while Excel still evaluated the
+      // formula on open. Guarding tab/CR/LF too closes that same gap here.
+      assert.equal(
+        escapeCsvFormula("\t=cmd|'/C calc'!A1"),
+        "'\t=cmd|'/C calc'!A1",
+      );
+      assert.equal(escapeCsvFormula("\r=SUM(A1:A9)"), "'\r=SUM(A1:A9)");
+      assert.equal(escapeCsvFormula("\n=SUM(A1:A9)"), "'\n=SUM(A1:A9)");
+    });
+
     it("leaves an ordinary value unchanged", () => {
       assert.equal(escapeCsvFormula("Alfred"), "Alfred");
       assert.equal(escapeCsvFormula(""), "");

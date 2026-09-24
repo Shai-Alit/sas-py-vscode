@@ -288,7 +288,9 @@ describe("LibraryCsvSource", () => {
           COLUMNS_ROUTE,
           {
             when: `${CLASS_HREF}/rows?start=0&limit=${PAGE_SIZE}&includeColumnNames=true`,
-            reply: dataCsv("Name,Sex,Age,Height,Weight\nAlfred,M,14,69,112.5\n"),
+            reply: dataCsv(
+              "Name,Sex,Age,Height,Weight\nAlfred,M,14,69,112.5\n",
+            ),
           },
           {
             when: `${CLASS_HREF}/rows?start=${PAGE_SIZE}&limit=${PAGE_SIZE}`,

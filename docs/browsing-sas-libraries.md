@@ -72,8 +72,9 @@ was. Nothing partial is ever left in its place.
 
 **The file is written as Viya returns it, unless you turn on the
 formula-injection guard.** By default, a character column's text value that
-begins with `=`, `+`, `-` or `@` is not altered, so a spreadsheet application
-that opens the file can treat it as a formula. Turn on
+begins with `=`, `+`, `-`, `@`, a tab, a carriage return or a line feed is not
+altered, so a spreadsheet application that opens the file can treat it as a
+formula. Turn on
 `pythonOnViya.csvExport.guardFormulaInjection` to have such a cell prefixed
 with a leading `'` instead, which every mainstream spreadsheet program reads
 as "do not evaluate the rest of this cell as a formula." That is the

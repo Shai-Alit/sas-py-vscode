@@ -1053,6 +1053,85 @@ session and everything created in it were built and torn down entirely
 against `verde` — cleanup `DELETE` returned `204`, and a follow-up `GET` on
 the session id returned `404`.
 
+### CAS-token reusability, 2026-09-23 — a design candidate, not a slice
+
+Raised from the same customer-support investigation as the correction above,
+and placed here rather than a new punch-list item because 12d — the Python
+startup-snippet spike — is this candidate's natural consumer and otherwise has
+none. Nothing here is decided or scoped; it is exactly the kind of "open,
+not-yet-scheduled idea" 12d's own outcome already carries.
+
+**The problem.** `pythonOnViya.insertCasConnectionSnippet` (8b) writes the
+CAS token into a fileref named `CT` plus six random digits and inlines that
+literal name into the snippet it inserts. Fine for occasional, one-off use — 8b
+was never scoped for anything else — but it does not survive contact with
+anyone developing reusable code: the filename (and the host/port baked in
+alongside it) changes every invocation, so nothing using it can be committed,
+imported, or shared, and getting a working connection requires a manual
+palette command every session — a per-session ritual for someone iterating,
+and structurally impossible for a module or shared notebook meant to run
+unattended.
+
+**On "point to a stored token" — the shape is right, the mechanism isn't.**
+Sean's own framing was to have an option point at a stored token. Two things
+worth separating: a stored token does not buy longevity — a token this
+extension writes and one a user mints by hand are the same kind of SASLogon
+OAuth access token, so swapping one for the other changes nothing about how
+long either lasts (only a refresh token, a longer `access_token_validity`
+client registration, or a client-credentials grant would, and each of those is
+the customer's own SASLogon configuration, not something this extension
+decides). And a token at rest is a step backwards from 8b's own design, which
+exists specifically so a credential never lands anywhere a user handles it
+(Finding 8.6, Finding 12.1). What "point to somewhere" is really asking for is
+a stable, well-known location user code can reference unconditionally — the
+fix is to keep that location fresh, not to make the user manage a token.
+
+**Options, none decided:**
+
+1. **A stable fileref name**, replacing the random `CT######` with a fixed
+   one. Cheap and not blocked by anything load-bearing —
+   `src/compute/casToken.ts`'s own doc comment already says the random suffix
+   is collision avoidance, not security, and Finding 12.10 (above) now
+   confirms a fileref can be rewritten in place under a fixed name with
+   nothing deassigned or deleted, so `src/compute/fileref.ts`'s never-deassign
+   invariant holds. Does not fix the host/port baking or the per-session
+   command.
+2. **Provision the token automatically at connect**, so the well-known name
+   from Option 1 always exists with no command run. Real cost: two extra
+   Compute calls per connect, and a token in every session's run directory
+   whether or not that session ever touches CAS — a genuine, if small,
+   widening of the exposure window versus today, where it only lands when a
+   user explicitly asks for it.
+3. **A refresh path** for a stale file — piggyback on the run path, a
+   dedicated command, or a session-side helper re-reading the file each call.
+   **Finding 12.9 (above) settles this is an optimisation, not a requirement**:
+   a held CAS connection outlives its token, so a stale file only matters to
+   code that reconnects later in the same session.
+4. **A session-side helper** (`conn = viya_cas_connect()`), delivered by 12d's
+   own startup-snippet mechanism — no filename, no host, no port, fully
+   portable source. Inherits 12d's own blocker: Finding 12.4 found every Run
+   File sends `freshNamespace: true` unconditionally
+   (`src/run/commands.ts:500`), which would wipe a seeded helper on a user's
+   very first run. Cannot ship ahead of that being solved for 12d itself.
+5. **A setting naming the fileref**, not storing a token — the useful residue
+   of Sean's original suggestion, so a team can standardise on a name their
+   shared modules reference. No credential at rest, composes with 1–3.
+
+**What was probed, and what's still open.** U1 (does an open connection
+survive token expiry) and U4 (can a fileref be rewritten under a stable name)
+are both settled — Findings 12.9 and 12.10. U2 (this extension's own client's
+token lifetime) is partial: the only lifetime measured belongs to
+`sas.launcher`, not the `vscode` client this extension borrows, so it isn't
+evidence for our own client's number. U3 (does SASLogon issue this extension's
+client a refresh token) and U5 (does `swat.CAS()` accept a token from a
+different OAuth client) are unprobed.
+
+**Not proposed:** no code, and nothing here should be read as a build
+decision. Whoever sizes this into a slice should treat Option 1 (now backed by
+Finding 12.10) as the cheap floor, Option 3 as optional rather than required
+(per Finding 12.9), and Option 4 as blocked on 12d's own `freshNamespace` gap
+rather than a separate undertaking.
+
 ### 12e built, 2026-09-23 — the research settled the cost, and the guard shipped for both surfaces
 
 Per this slice's own Plan entry, the open question was whether the
@@ -1287,6 +1366,66 @@ stays opt-in on the library side. It also noted that the library-side
 `getColumns` (`src/data/adapter.ts`) does not force `sortBy=name`, so it is
 not exposed to B12.2. That is an existing behaviour, not a defect, and needs
 no change here.
+
+### `docs/cas-python-connection.md` corrected, 2026-09-23 — a customer-reported ingress failure, a refuted token-lifetime claim, and two supporting probes
+
+Not tied to any lettered slice — a customer support investigation, the same
+shape as 12a's own review-driven correction to this file (Finding 12.1). Two
+questions came in together, from the same call: a `swat` connection failing
+with `Expecting value: line 1 column 1 (char 0)`, and whether CAS becomes
+unusable once the Viya access token that opened it expires. Both were run
+down against `verde` from Python inside a compute session, through the
+connected `sas-viya-mcp` tooling rather than a `viya-api-probe` run — each
+finding below says so and states what that limits it to. A related design
+question (making the CAS-token snippet reusable across sessions, rather than
+a one-shot file the user re-inserts every time) came out of the same
+investigation — see this file's own "CAS-token reusability" entry, below,
+placed alongside 12d at Sean's own direction.
+
+**The ingress failure was never a query or a credential problem.** The
+customer had hand-minted a bearer token and pointed `swat` at a REST/HTTP URL
+built on the deployment's public ingress, from Python already running inside
+a Viya compute session — so the request went out the front door and tried to
+come back in, and the front end answered `403` with an HTML error page before
+CAS ever saw it. `swat` parses a connection response as JSON without checking
+the status code first, so the HTML became the JSON-decode error the customer
+actually saw. Finding 12.8 measures what a bad credential looks like on
+`verde`'s own CAS HTTP route (always JSON, always `401`, never `403`, never
+HTML) — read-only, and it cannot reproduce the customer's own ingress, which
+fronts with a different stack. Finding 12.7 is incidental, from reproducing
+the customer's original pass-through query on the binary path: a fully
+successful FedSQL call returns `severity = 1`, not `0`, because of CAS's own
+multi-node warning.
+
+**The token-lifetime claim in this file was backwards.** This page previously
+said an authentication error after a session had been open "for a while" was
+"almost certainly an expired token" — uncited, and traced to the Phase
+10→11 documentation catch-up rather than to any measurement. Finding 12.9
+holds a `swat` connection open for over an hour, past its token's own expiry,
+with a control proving the token had genuinely expired (a *second*, new
+connection with the same token is refused in the same instant the held one
+keeps working): CAS authenticates once, at connect, and a held connection is
+unaffected by the token that opened it aging out. The "Reconnecting after a
+while" section is rewritten to say that, and to stop asserting a lifetime in
+minutes — the only number actually measured (`sas.launcher`'s own token, 3600
+seconds) belongs to a different OAuth client than the one this extension
+borrows, so inverting it to "hours" would be no better sourced than the wrong
+number it replaces.
+
+**Finding 12.10 is unrelated to either page edit** — it settles whether a
+Compute fileref can be rewritten in place under a fixed name rather than a
+fresh, randomly-named one every time, the mechanism the separate,
+not-yet-placed reusability design depends on. Recorded here because it is a
+Viya wire measurement like the other three, not because it changes anything
+this file says.
+
+No source changed and no documented invariant changed beyond this file's own
+prose — this entry, the two section rewrites in
+[`docs/cas-python-connection.md`](../cas-python-connection.md), and Findings
+12.7–12.10 below. Verification: `npx prettier --check` on both touched files,
+`node scripts/check-secrets.mjs`, and `npm run check:docs` (reference check,
+samples, self-link check, VitePress build) run in full, since
+`cas-python-connection.md` sits inside the VitePress tree.
 
 ---
 
@@ -1659,5 +1798,236 @@ formula guard judged each cell by the wrong column's type. The fix sorts by
 **Not settled:** whether `index` is ever missing (not seen; the fix sorts
 an item without one last, in listing order); a table with more than one
 page of columns; and deployments other than `verde`.
+
+No deployment-identifying detail appears above.
+
+### Finding 12.7 — a successful FedSQL pass-through returns `severity = 1`, not `0`
+
+Observed 2026-09-23, against a Snowflake-backed caslib on `verde`, via
+`swat`'s binary protocol from Python running inside a compute session — not
+from a `viya-api-probe` run, through the connected `sas-viya-mcp` tooling
+instead. `conn.loadactionset("fedsql")` then
+`conn.fedsql.execDirect(query="select 1 as X from connection to <caslib> (select 1)")`.
+Environment: Python 3.12.12, `swat` 1.18.1. The CAS session was opened and
+closed within the same run.
+
+The action returned:
+
+```
+NOTE: Added action set 'fedsql'.
+WARNING: Multi-node read is not allowed with the FedSQL execDirect action.
+         The load will proceed with numReadNodes=1.
+RESULT keys= ['Result Set']
+SEVERITY= 1 STATUS= None
+TYPE= swat.dataframe.SASDataFrame   MRO_has_DataFrame= True
+SHAPE= (1, 1) COLUMNS= ['X']  VALUES= [{'X': 1}]
+```
+
+**What it establishes.** Four things, three of which were previously inferred
+rather than measured — Finding 11.2 confirmed pass-through on `verde` via raw
+`PROC CAS`, never via `swat`:
+
+1. **`severity` is `1` on a fully successful call, with `status` `None`.** The
+   `WARNING` line is what raises it. Any code that treats `severity == 0` as
+   the success condition would misread a correct pass-through result as a
+   failure. Confirmed as the multi-node warning specifically, not something
+   general about `swat`'s severity reporting: a plain, unremarkable action
+   (`conn.builtins.echo`) in the same session, and again in Finding 12.9's own
+   probe, returned `severity = 0`.
+2. The result member is keyed exactly `Result Set` — the string
+   `docs/cas-python-connection.md` already documents, now observed on the
+   `swat` path rather than assumed from the `PROC CAS` one.
+3. That member's type is `swat.dataframe.SASDataFrame`, and `pandas.DataFrame`
+   is in its MRO — so "already a `pandas.DataFrame`" in that same document is
+   accurate as written.
+4. `numReadNodes=1` is forced on the `swat` path too, not only the `PROC CAS`
+   path Finding 11.2 measured, and CAS announces it as a `WARNING` rather than
+   a `NOTE`.
+
+**What it does not establish.** Nothing about the REST/HTTP transport, and
+nothing about severity on a *failing* pass-through, which was not exercised.
+"Success always means 1" is not claimed — only that success does **not**
+reliably mean 0. The session close was confirmed by the client returning
+`CLOSED ok`; it was not independently re-read afterwards to verify the
+session is gone.
+
+No deployment-identifying detail appears above: the caslib name, host, port,
+session id and token are all omitted.
+
+### Finding 12.8 — on `verde`, a bad credential on the CAS HTTP route is always a JSON `401`, never a `403` and never HTML
+
+Observed 2026-09-23, read-only, from Python running inside a compute session
+using `requests` — not from a `viya-api-probe` run. No credential was
+supplied beyond the deliberately-invalid ones described; nothing was created
+or mutated. All requests targeted the CAS HTTP base path's `cas/sessions`
+resource unless stated otherwise:
+
+| Request                                        | Status | Body type                        |
+| ------------------------------------------------ | ------ | ---------------------------------- |
+| `GET`, no `Authorization`                        | 401    | `application/vnd.sas.error+json`   |
+| `GET`, invalid bearer                            | 401    | `application/vnd.sas.error+json`   |
+| `PUT`, invalid bearer (the real session verb)    | 401    | `application/vnd.sas.error+json`   |
+| `POST`                                           | 401    | JSON                                |
+| `HEAD`                                           | 401    | —                                   |
+| `OPTIONS`                                        | 200    | —                                   |
+| `Authorization` value that is not `Bearer …`     | 400    | JSON                                |
+| `cas/sessions` with the base path omitted        | 404    | empty                                |
+| the same resource under the CAS proxy path       | 401    | SAS auth-layer v2 error shape        |
+| the CAS pod's own HTTP port, plain `http`        | —      | `ConnectionError` (disconnected)     |
+
+Every `401` carried `WWW-Authenticate: Bearer, Basic realm="controller"` and
+`Server: envoy`.
+
+**What it establishes.** No combination of missing, malformed or invalid
+credential on `verde` produces a `403`, and none produces a non-JSON body.
+When the route is reachable, it is CAS's own controller answering, and it
+answers in JSON. So the `403`-plus-HTML failure the customer reported is not
+explained by the URL shape, the HTTP verb, or the token being wrong or
+expired — those all produce a JSON `401`. It is the front end refusing the
+request before CAS sees it — the measurement behind
+[`docs/cas-python-connection.md`](../cas-python-connection.md)'s "Binary vs.
+REST/HTTP" section naming a REST connection's failure mode as an ingress
+question, not a token question.
+
+**What it does not establish.** `verde` fronts with Envoy; the customer's own
+deployment fronts with nginx, a different ingress stack with different rules
+and a different stock error page — this finding cannot reproduce that `403`
+and does not attempt to diagnose it, only rules things out on `verde`. It
+also came from inside the cluster: requests were hairpinned from a compute
+pod out to the ingress and back, so an off-cluster client could meet a policy
+(an allowlist, a WAF) that on-cluster traffic never sees. Whether the
+customer's `403` is an unrouted path, an allowlist or a WAF rule is answerable
+only from their own ingress controller logs — a platform-team question, not
+one this project can settle.
+
+**Addendum, 2026-09-24 — the client-side half of this symptom, confirmed by
+reading `swat`'s own source, not by probing.** This finding measures what
+`verde` returns; it says nothing about how `swat` handles what it gets back,
+and a PR review on this same change (#211) correctly flagged that the doc
+text asserting the client-side half needed its own citation rather than
+riding on this finding's server-side measurement. Confirmed directly in
+`python-swat`'s own source (`swat/cas/rest/connection.py`,
+`REST_CASConnection._connect` — the method every `swat.CAS(...)` REST
+connection calls): the response body is decoded and handed straight to
+`json.loads(txt, strict=False)`, with no `res.status_code` check anywhere
+before it, in both the branch that creates a new session (`PUT`) and the one
+that reconnects to an existing one (`GET`); the same pattern repeats in
+`invoke()` for every action call afterward. So an HTML error page — exactly
+what an ingress `403` returns — reaches `json.loads` unfiltered and produces
+`Expecting value: line 1 column 1 (char 0)`, matching the customer's own
+reported error text exactly. This is a claim about `python-swat`'s own source,
+versioned separately from this project, not something a Viya probe could
+establish either way — not numbered as its own probe finding for that reason,
+the same convention 12h's own source-only confirmations used.
+
+No deployment-identifying detail appears above: base paths, tenant/org ids,
+usernames and session ids are all omitted or generalised.
+
+### Finding 12.9 — an open CAS connection outlives its access token; a live control confirms it
+
+Observed 2026-09-23, on `verde`, via `swat`'s binary protocol from Python
+running inside a compute session — not from a `viya-api-probe` run, through
+the connected `sas-viya-mcp` tooling instead, and using the compute session's
+own token (issued to client `sas.launcher`, not the `vscode` client this
+extension borrows — see the caveat below). A connection was held open for
+3865 seconds, crossing the token's own expiry, with an action issued roughly
+every 160 seconds throughout:
+
+| Moment                                                        | Result |
+| ---------------------------------------------------------------| ------ |
+| 93 s elapsed, after an idle gap                                 | `echo` `severity = 0` |
+| every ~160 s from 1023 s to 3523 s                               | `echo` `severity = 0`, no gaps |
+| 2 s before expiry                                                | `echo` `severity = 0` |
+| 36 s, 96 s, 156 s past expiry                                    | `echo` `severity = 0` |
+| 317 s past expiry, `table.caslibInfo`                            | `severity = 0`, real caslibs returned |
+| 329 s past expiry, a **new** `swat.CAS()` with the same token    | **refused** — `OAuth authentication failed: Access denied.`, raised as `SWATError` |
+| the held connection, the same instant                            | `echo` `severity = 0` |
+
+**The last two rows are the finding.** The control is what makes it
+conclusive: at one moment, the same token is refused for a new connection and
+still working on the held one, so the token had genuinely expired and this
+cannot be explained by clock skew or a mis-read `exp`. `table.caslibInfo` was
+used alongside `echo` so the result is not merely a socket staying open — a
+real, authorization-touching action returns real data after expiry.
+
+**What it establishes.** CAS authenticates once, at connect; expiry does not
+bite a connection already held. It refutes
+[`docs/cas-python-connection.md`](../cas-python-connection.md)'s previous
+"Reconnecting after a while" wording, which said an authentication error
+after a session had been open for a while was "almost certainly" an expired
+token — that page is corrected in the same commit as this finding.
+
+**What it does not establish.** One connection, on `verde`, held for one hour
+past one token's expiry — nothing about a much longer hold, a CAS server
+restart, or revocation (a different mechanism from ageing out, not tested
+here). And it used `sas.launcher`'s own token (measured at 3600 s, alongside
+a 14-day `SAS_SERVICES_REFRESH_TOKEN`, same client), not the `vscode` client
+this extension's own sessions use — so this finding is evidence about what
+happens *after* expiry, not evidence for what this extension's own token
+lifetime actually is. The corrected doc wording drops the "minutes, not
+hours" number rather than inverting it, for the same reason.
+
+Incidental: `CAS_SESSION_TIMEOUT` reads `60` (seconds) on `verde`, but does
+not apply while a client holds the connection open — a session with no
+client attached times out; an idle client holding one open, tested here at 93
+seconds idle, does not.
+
+No deployment-identifying detail appears above.
+
+### Finding 12.10 — a Compute fileref can be rewritten in place, repeatedly, under a stable name
+
+Observed 2026-09-23, on `verde`, against the Compute REST API directly via
+`requests` (`SAS_COMPUTE_SERVICE_HOST`/`_PORT`, reachable in-cluster) — not
+from a `viya-api-probe` run. A scratch compute session was created, a
+fileref assigned under a fixed name, written, rewritten, read back, and the
+session deleted (`204`); nothing was deassigned or deleted except the
+scratch session itself.
+
+| Step                                                        | Result |
+| -------------------------------------------------------------| ------ |
+| `POST` the session's `assign`, `{name, path: name}`           | `201`, with an `ETag` |
+| the same `POST` again, same name                              | `400`, `errorCode` **5402**, `The fileref "…" already exists.` |
+| `GET` the fileref's `self`                                     | `200` with an `ETag` |
+| create-response `ETag` vs. that `self` `ETag`                  | identical |
+| `PUT` `upload`, `Content-Type: text/plain`                     | `415` |
+| `PUT` `upload`, `Content-Type: application/octet-stream`       | `201` |
+| `PUT` `upload` again reusing the pre-write `ETag`               | `412` |
+| `GET` `self` again                                              | `ETag` has changed |
+| `PUT` `upload` with that fresh `ETag`                          | `201` |
+| `GET` `content` (`Accept: application/octet-stream`)            | `200`, body is the second write, byte-exact |
+| `GET` `content` before any write                                | `404`, `errorCode` **5409**, `Physical file … does not exist.` |
+| `GET` `content` with `Accept: application/json`                 | `406` |
+| `PUT` `upload` with no `If-Match`, on an existing fileref        | `428` |
+| `GET` `self` after the failed re-create                        | `200`, name unchanged |
+
+**What it establishes.**
+
+1. **Resolve-and-rewrite under a stable name works, with nothing deassigned or
+   deleted.** `assign` → on `400`/5402, skip the create → `self` `GET` for a
+   fresh `ETag` → `upload` `PUT`. `src/compute/fileref.ts`'s never-deassign
+   invariant — and the `404`-means-session-gone reading that rests on it — is
+   untouched.
+2. **The "already exists" case is distinguishable, not just retriable.**
+   `errorCode` 5402 specifically, not a generic 4xx.
+3. **`fileref.ts`'s own unmeasured shortcut is now measured, and it is safe on
+   the create path but not the rewrite path.** Its doc comment notes that
+   "nothing has measured whether a fileref's create-response `ETag` and its
+   `self` `ETag` agree the same way." On a freshly-assigned fileref they do
+   agree, so the extra `GET` right after a create is redundant. But the
+   `ETag` rotates on every write, so that second `GET` is not optional for a
+   rewrite — exactly the case a stable name introduces.
+4. **Two header traps.** `text/plain` on the upload is a `415`;
+   `Accept: application/json` on the content read is a `406`. Both links
+   declare `application/octet-stream` and mean it; neither status names the
+   header that caused it.
+5. **Finding 36's `428` (no `If-Match`) holds for a rewrite, not only a first
+   write.**
+
+**What it does not establish.** This reproduced `fileref.ts`'s sequence by
+hand against the server — it confirms the server supports the pattern, not
+that this project's own client code takes it correctly. Concurrency (two
+writers racing on one stable name, which `412` is precisely built to catch)
+was not tested; nor was any context other than the one scratch session used
+here.
 
 No deployment-identifying detail appears above.

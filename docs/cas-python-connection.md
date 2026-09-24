@@ -48,21 +48,57 @@ session, and the snippet only ever reads it back from disk.
 
 ## Reconnecting after a while
 
-A Viya access token is short-lived — measured in minutes, not hours — while
-the CAS connection you open with it can stay around for as long as your
-Python process runs. If a CAS action starts failing with an authentication
-error after your session has been open for a while, that is almost certainly
-an expired token, not a code problem: run **Insert CAS Connection Snippet**
-again to get a fresh one and reconnect.
+The token matters at the moment you **connect**, and not afterwards. Once
+`conn` is open it keeps working for as long as your Python process holds it —
+a connection outlives the token that opened it, and CAS actions keep
+succeeding after that token has expired (measured, [Finding
+12.9](phases/phase-12.md)). You do not need to refresh anything while you are
+working.
+
+Opening a **new** connection is the case that needs a fresh token. If you run
+`swat.CAS(...)` again later in the same session — reconnecting, or re-running
+the connection lines — the token file the snippet wrote may have aged out, and
+that connect is refused with an authentication error. Run **Insert CAS
+Connection Snippet** again first, then run the new connection lines.
+
+So an authentication error **on connect** means a stale token. An
+authentication error part-way through a session that was already working is
+something else, and re-running the snippet will not fix it.
 
 ## Binary vs. REST/HTTP
 
-The snippet above uses `swat`'s binary protocol, which needs no further
-setup on this deployment. `swat` also supports a REST/HTTP connection to the
-same server, using the same token (`password=<token>`, no username) — see
-`swat`'s own ["Binary vs.
+The snippet above uses `swat`'s binary protocol, pointed at the CAS server's
+own host and port. It needs no further setup, and — importantly — it does not
+depend on how your deployment's web front end is configured.
+
+`swat` also supports a REST/HTTP connection to the same server, using the same
+token as the password with no username — see `swat`'s own ["Binary vs.
 REST"](https://sassoftware.github.io/python-swat/binary-vs-rest.html)
 documentation for when you would prefer that transport instead.
+
+**The REST/HTTP transport goes out through your deployment's ingress; the
+binary one does not.** That is the practical difference between them, and it
+is the one that bites. CAS's HTTP route is not published or permitted on
+every deployment, and your Python is already running *inside* Viya — a REST
+connection sends it back out the front door and in again, where an ingress
+rule, an IP allowlist or a WAF can refuse it.
+
+When that happens the failure does not look like a network failure. `swat`
+parses the response body as JSON without checking the HTTP status code first,
+so a front end that answers with an HTML error page surfaces as a JSON decode
+error instead:
+
+```
+Expecting value: line 1 column 1 (char 0)
+```
+
+That message means `swat` was handed something that was not JSON — most often
+an HTML error page from the front end (confirmed, [Finding
+12.8](phases/phase-12.md)). It does not mean there is anything wrong with your
+query, your caslib or your token. If you see it, use the binary snippet
+above. If you specifically need the REST transport, your platform team can
+confirm from the ingress logs whether the CAS HTTP route is reachable for
+your client.
 
 ## Running native SQL against an external database
 

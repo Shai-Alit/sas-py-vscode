@@ -659,6 +659,12 @@
           "default": [],
           "scope": "machine",
           "markdownDescription": "%configuration.userProvidedCertificates.description%"
+        },
+        "pythonOnViya.csvExport.guardFormulaInjection": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "markdownDescription": "%configuration.csvExport.guardFormulaInjection.description%"
         }
       }
     }

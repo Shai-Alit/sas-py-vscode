@@ -231,6 +231,42 @@ footprint as 12b/12c — a design recommendation is recorded for whoever sizes
 a future build slice, not committed to here. Full method and results in
 `docs/phases/phase-12.md`'s "12d spike run" Runbook entry and Finding 12.4.
 
+**12e (CSV formula-injection guard) built 2026-09-23 — both surfaces, not
+CAS-only.** The research the slice was scoped for found the real cost was
+correctness, not effort: a SAS library table's export relays the server's
+CSV untouched by design (Finding 7.20), so guarding it needs a real RFC-4180
+parser (`src/data/csvParse.ts`, new); and a numeric column's own leading `-`
+must never be guarded (it is not a formula-injection risk and guarding it
+would silently corrupt the column), which both APIs' column-type metadata
+makes a complete, safe partition rather than a heuristic. Shipped as an
+opt-in `pythonOnViya.csvExport.guardFormulaInjection` setting (default
+`false`) covering CAS and SAS Libraries alike, so the guard never silently
+protects only some of a user's exports. A real bug — `LibraryCsvSource.sample()`
+guarding unconditionally, ignoring the setting — was caught by this session's
+own new integration test before the branch was considered done; see
+`docs/phases/phase-12.md`'s "12e built" Runbook entry for the full account,
+including the fix. **The pre-push adversarial review then found and fixed
+six things**, before the branch was pushed: a citation defect that was also
+a real bypass (the guard's trigger set was missing tab/CR/LF — the exact
+CVE-2021-41270 shape), an overstated user-doc claim about the leading-`'`
+mitigation, a dead branch in `csvParse.ts`, an implicit sentinel coupling now
+commented, and two test gaps (a multi-page guard-on stream, a
+column-count-overflow row) — full account and the one deferred finding (an
+options-object refactor for `formatCsvPage`'s two boolean parameters) in
+`docs/phases/phase-12.md`'s "Adversarial review, before push" entry. `npm
+run coverage` green (96.41/95.86/96.2/96.41); `npm run test:integration`
+green (509 passing, 14 new). **Manual test 12.4 (CAS) then failed, 2026-09-23:**
+CAS columns were listed alphabetically while row cells stay in table order,
+so the headers were swapped and the guard checked each cell against the
+wrong column (Finding 12.6, **B12.2** — older than 12e, and it also affects
+the CAS data viewer). Fixed on the branch by sorting columns by their
+`index`; coverage 96.42/95.87/96.21/96.42, integration 510 passing. 12.4
+and a new 12.9 (column order in the CAS tree and data viewer) then passed
+live against the fix, so all of 12.1–12.9 are ticked. A second pre-push
+adversarial pass over the whole branch found nothing to fix, and the branch
+went up for PR — see `docs/phases/phase-12.md`'s "12e manual test 12.4
+failed" entry. **Next:** merge 12e, then tick B12.2.
+
 **Letter collision reconciled, 2026-09-22.** 12c's own insertion (above)
 and PR #207's 12f/12g/12h were scoped in two sessions working this phase
 concurrently from separate clones, this project's own established
@@ -517,6 +553,14 @@ inserted ahead of it) (`docs/phases/phase-12.md`), added at the Phase
   closed. Not decided here — flagged, not scoped, same treatment as F1/F6.
   See `phase-11.md`'s "New feature candidates" list.
 
+- **Open bugs** are listed in the current phase file's "Bugs found in this
+  phase" section — for Phase 12, [`docs/phases/phase-12.md`](docs/phases/phase-12.md)
+  (**B12.1**, 2026-09-23: a failed SAS step poisons the compute session and
+  Reset Python State cannot clear it — Finding 12.5; no fix written yet;
+  **B12.2**, 2026-09-23: CAS columns mispaired with their row cells —
+  Finding 12.6; fixed on the 12e branch and passed live re-test, not yet
+  merged).
+
 No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
 issue tracking once past "preview". That revisit is now a named 1.0 gate — see
@@ -580,7 +624,7 @@ housekeeping checkpoint. Per-phase detail
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
-| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. **12c (scope the Option C build) scoped 2026-09-22** — read-only v1 tool surface, `headersHelper`-shaped token design, security-review checklist; audience boundary settled by a live Extension Development Host probe (external CLI only for v1 — see `microsoft/vscode`#265912). Inserted ahead of the phase's other slices; a same-day letter collision with a concurrently-merged PR (#207) was found and reconciled (see the narrative above), landing on a uniform shift rather than either branch's original lettering. Phase 11's row above names the three follow-ups it handed over by their pre-shift letter (12e); in this phase they are **12f**, and that row is left as it stands — a closed phase's row is not edited from here. **12g, 12h and 12i added 2026-09-22** from two pieces of work outside the repository: the `PROC PYTHON` "resuming Python state" `NOTE` and whether it reaches our own transcript (12g, Findings 12.2/12.3); a spike on inline graphics via `SAS.show`/ODS HTML5, build explicitly deferred (12h); and `NOTICE` attribution for the twelve bundled MIT components that ship in `dist/webview/dataViewer.js` (12i). **12d (Python startup-snippet spike) ran 2026-09-23** — submission mechanism confirmed via a live probe against `verde`, viable and not parked; Run File itself, not only Reset Python State, wipes the snippet's state (Finding 12.4). 12e (CSV-guard research), 12f (three small Phase 11 follow-ups), 12g, 12h and 12i all not started. | `docs/phases/phase-12.md` |
+| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. **12c (scope the Option C build) scoped 2026-09-22** — read-only v1 tool surface, `headersHelper`-shaped token design, security-review checklist; audience boundary settled by a live Extension Development Host probe (external CLI only for v1 — see `microsoft/vscode`#265912). Inserted ahead of the phase's other slices; a same-day letter collision with a concurrently-merged PR (#207) was found and reconciled (see the narrative above), landing on a uniform shift rather than either branch's original lettering. Phase 11's row above names the three follow-ups it handed over by their pre-shift letter (12e); in this phase they are **12f**, and that row is left as it stands — a closed phase's row is not edited from here. **12g, 12h and 12i added 2026-09-22** from two pieces of work outside the repository: the `PROC PYTHON` "resuming Python state" `NOTE` and whether it reaches our own transcript (12g, Findings 12.2/12.3); a spike on inline graphics via `SAS.show`/ODS HTML5, build explicitly deferred (12h); and `NOTICE` attribution for the twelve bundled MIT components that ship in `dist/webview/dataViewer.js` (12i). **12d (Python startup-snippet spike) ran 2026-09-23** — submission mechanism confirmed via a live probe against `verde`, viable and not parked; Run File itself, not only Reset Python State, wipes the snippet's state (Finding 12.4). **12e (CSV formula-injection guard) built 2026-09-23** — an opt-in `pythonOnViya.csvExport.guardFormulaInjection` setting covering both CAS and SAS Libraries CSV export, not CAS-only. 12f (three small Phase 11 follow-ups), 12g, 12h and 12i all not started. | `docs/phases/phase-12.md` |
 | 13 — Second execution backend | not started — does not gate v1.0 | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section

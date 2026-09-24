@@ -356,8 +356,11 @@ under this number before today.
   Run File always restarts — not only Reset Python State** (Finding 12.4).
   Viable, not parked; sizing it into a build slice is undecided. See this
   file's own Runbook entry.
-- [ ] **12e — Research: CSV formula-injection guard for SAS library
-  exports.** Not started.
+- [x] **12e — CSV formula-injection guard, both surfaces.** Built 2026-09-23
+  — researched the library-export cost the slice was scoped to settle, then
+  built an opt-in `pythonOnViya.csvExport.guardFormulaInjection` guard
+  (default off) covering both CAS and SAS-library CSV export. See this
+  file's own Runbook entry.
 - [ ] **12f — Three small, already-decided Phase 11 follow-ups.** Not
   started.
 - [ ] **12g — Does the "resuming Python state" `NOTE` reach our users, and
@@ -370,6 +373,36 @@ under this number before today.
 - [ ] **12i — `NOTICE`: attribute the twelve bundled MIT components.** Not
   started. Append a "Bundled third-party components" section; no packaging
   change.
+
+### Bugs found in this phase
+
+Numbered `B12.n`, separate from the probe findings; each links the finding
+that establishes it. Not yet triaged for whether they are fixed in this phase
+or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
+
+- [ ] **B12.1 — A failed SAS step poisons the compute session, and Reset
+  Python State cannot clear it.** Found 2026-09-23 (manual test 12.4). One
+  SAS-side error, such as a `SAS.submit()` naming an unassigned libref, puts
+  the session in syntax-check mode: `SYSCC`/`SYSERR` stay non-zero, so every
+  later Run File and the extension's own `proc python restart;` report as
+  failed with the old `SYSERRORTEXT`, even though the steps ran. Reset
+  Python State logs `resetting the interpreter: the backend failed: <the old
+  error>`. Only reconnecting (which discards libraries and filerefs)
+  recovers it today. A clearing job — `options nosyntaxcheck obs=max;` then
+  `%let syscc=0;` — cleared it in a probe. Evidence and open questions:
+  [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error).
+  No fix written; it touches `src/backend/procPython.ts`.
+- [ ] **B12.2 — A CAS table's columns come back alphabetical while its row
+  cells stay in table order, so CAS CSV export mispairs them.** Found
+  2026-09-23 (manual test 12.4). Headers are swapped with the data under
+  them, and the formula guard checks each cell against the wrong column's
+  type — a text column read as numeric is trimmed and never guarded. The
+  CAS data viewer's grid pairs columns and cells the same way, so it is
+  affected too (by code reading; not seen live). Evidence:
+  [Finding 12.6](#finding-12-6-a-cas-table-s-columns-listing-under-sortby-name-is-alphabetical-each-item-s-index-not-its-position-is-what-row-cells-follow). Fixed on the 12e branch
+  (`CasAdapter.getColumns` re-sorts by each column's `index`); manual tests
+  12.4 and 12.9 passed live against the fix, 2026-09-23. Tick when 12e
+  merges.
 
 ---
 
@@ -1020,6 +1053,241 @@ session and everything created in it were built and torn down entirely
 against `verde` — cleanup `DELETE` returned `204`, and a follow-up `GET` on
 the session id returned `404`.
 
+### 12e built, 2026-09-23 — the research settled the cost, and the guard shipped for both surfaces
+
+Per this slice's own Plan entry, the open question was whether the
+CAS-only formula-injection guard (briefly decided "build it, CAS-only" at
+the Phase 11→12 boundary, then pulled back into research once the
+CAS-vs-library asymmetry was raised — see `phase-11.md`'s "Phase 11 follow-up
+decisions" entry) should also cover a SAS library table's CSV export, and at
+what cost. No live Viya probe was needed — this is a question about this
+project's own source and about spreadsheet-application behaviour, not wire
+behaviour, so it was settled by reading `src/data/csvExportModel.ts`/
+`src/cas/csvFormat.ts` and by checking OWASP's own CSV-injection writeup
+(https://owasp.org/www-community/attacks/CSV_Injection, fetched live) rather
+than assumed.
+
+**What the research found.** CAS's own CSV export (`src/cas/csvFormat.ts`)
+already builds every cell from JSON, one at a time, so guarding it is a
+same-shape addition to work it already does — no new cost. A SAS library
+table's export (`src/data/csvExportModel.ts`) relays the server's own
+already-quoted `text/csv` response untouched, by design (Finding 7.20) — the
+real cost the Plan asked about is that guarding it means parsing that
+response back into fields with a correct RFC-4180 grammar (a quoted field can
+itself carry a comma or a literal newline; a naive `split` would misplace
+every column after the first such field) and re-encoding it, which this
+project had no code for. **The harder finding wasn't cost, it was
+correctness**: OWASP's own recommended fix — prefix a triggering cell with a
+leading `'` rather than deleting the character — matters here specifically
+because a numeric column's own leading `-` (a negative value) is not a
+formula-injection risk at all, and guarding it anyway would silently turn a
+number into text the moment the setting is on. Both APIs report a column's
+type, so the guard is scoped to a character column only (`CHAR`/`VARCHAR` for
+a SAS library table, Finding 7.14, `phase-7.md`; `char`/`varchar` for CAS)
+— a complete partition, since a SAS variable is one of exactly two base
+types, never a heuristic with a silent third case.
+
+**Decision: build it for both surfaces**, an opt-in setting
+(`pythonOnViya.csvExport.guardFormulaInjection`, default `false`, `window`
+scope) rather than parking the library half again — leaving it CAS-only
+would repeat the exact "protects some exports, not others, silently" shape
+this slice exists to avoid (the same reasoning 11e's autoExec-error
+follow-up already established for a different setting).
+
+**What shipped:**
+
+- `src/data/csvFormulaGuard.ts` (new, `vscode`-free) — `isTextColumnType`
+  (the shared char/varchar partition, case-insensitive) and
+  `escapeCsvFormula` (OWASP's leading-`'` prefix for a cell beginning with
+  any of `=`, `+`, `-`, `@`, tab, CR, or LF — the ASCII subset of OWASP's own
+  set; see "Adversarial review, before push" below for why the trigger set
+  widened from the four originally shipped), shared by both surfaces.
+- `src/data/csvParse.ts` (new, `vscode`-free) — a full RFC-4180 field-grammar
+  parser (`parseCsvPage`) for the library side's re-guard step, and `csvField`
+  (RFC-4180 quoting), moved here from `src/cas/csvFormat.ts` and re-exported
+  from there for that module's own existing callers/tests — the single
+  canonical definition now lives in `src/data`, which `src/cas` already
+  depends on elsewhere (`casCsvSource.ts` imports `../data/csvExportModel`),
+  rather than a second copy forcing a reverse dependency.
+- `src/cas/csvFormat.ts` — `formatCsvPage` takes an added
+  `guardFormulaInjection` parameter (default `false`); cheap, since it
+  already builds every cell itself. `src/cas/casCsvSource.ts`/
+  `src/cas/casExplorer.ts` thread the setting through.
+- `src/data/libraryCsvSource.ts` — the default, untouched-relay path
+  (`exportTableToCsv`) is completely unchanged when the guard is off, byte
+  for byte; only when it is on does `open` pay one extra `getColumns` request
+  (for the column types the guard needs) and does `sample`/`stream` route
+  each page through `parseCsvPage` → guard → `csvField` instead of relaying
+  it raw. `src/data/csvExportCommand.ts`/`src/data/dataExplorer.ts` thread
+  the setting through the same way.
+- The header row is never guarded on either surface — a column name is
+  metadata, not exported row data, matching the CAS side's pre-existing
+  behaviour.
+- `package.json`/`package.nls.json` — the new setting,
+  `docs/reference/settings.md` regenerated (`npm run docs:reference`).
+  `docs/browsing-sas-libraries.md`/`docs/browsing-cas.md` — the existing
+  "the file is written as Viya returns it" warning (from 11d) now also names
+  the setting as the fix.
+
+**A real bug found and fixed during testing, before this branch was
+considered done.** `LibraryCsvSource.sample()` called its own `guard()`
+helper unconditionally, with no gate on `this.guardFormulaInjection` — unlike
+`stream()`, which only takes the parse-and-reguard path when the setting is
+on. Since `this.columns` stays empty when the guard is off (`open` only
+populates it when the setting is on), every field's column-type lookup fell
+through to the method's own defensive `?? true` fallback and guarded
+everything regardless of the setting — the exact opposite of the "byte for
+byte untouched by default" guarantee this slice is built around. Caught by
+the integration test for that exact claim (`library-csv-source.test.ts`,
+"sample is relayed untouched when the guard is off"), which failed the first
+time it ran. Fixed by moving the off-switch into `guard()` itself
+(`if (!this.guardFormulaInjection || csvPageText === "") return csvPageText;`)
+so there is one place the no-op path is guaranteed, not two call sites that
+each have to remember it.
+
+**Adversarial review, before push.** The manual pre-push pass
+(`CLAUDE.md`'s required review) found six things, two of them landing before
+the branch was ever pushed:
+
+1. **The trigger set was a citation defect and a real bypass.** The comment
+   called `FORMULA_TRIGGER`'s four characters (`=+@-`) "OWASP's own
+   formula-triggering character set," but OWASP's page
+   (https://owasp.org/www-community/attacks/CSV_Injection) lists seven —
+   those four plus tab, CR, and LF — because a tab-prefix mitigation was
+   itself the vulnerability in Symfony's CSV export (CVE-2021-41270): a
+   naive `=/+/-/@`-only check missed a formula hiding behind a leading tab
+   that Excel still evaluated on open. **Fixed**: `FORMULA_TRIGGER` widened
+   to `/^[=+@\t\r\n-]/`, the doc comment corrected to name the real set and
+   cite the CVE, and the full-width CJK variants OWASP also lists recorded as
+   explicitly out of scope rather than silently dropped. New unit test in
+   `data-csv-formula-guard.test.ts` covers all three added characters.
+2. **The user-facing apostrophe claim overstated what the mitigation
+   guarantees.** `docs/browsing-sas-libraries.md` said the value "looks the
+   same once opened, only its interpretation changes" — OWASP's own page
+   notes this technique is not reliable in Excel after a save/reopen cycle.
+   **Fixed**: reworded to state the guarantee this guard actually makes
+   (never evaluated as a formula) rather than a visual-identity claim it
+   cannot make for every spreadsheet program; the manual-test item covering
+   this (12.2) reworded to match, and a new item 12.8 added for the tab
+   case.
+3. **A dead `undefined` branch in `csvParse.ts`'s hot loop**, added only to
+   satisfy `noUncheckedIndexedAccess` and unreachable by construction, sat
+   oddly against this file's own 100/100/100/100 coverage claim for that
+   module. **Fixed**: `text[i]` replaced with `text.charAt(i)`, which is
+   never `undefined`, removing the branch (and the suppression comment)
+   entirely rather than explaining it away.
+4. **The library-side empty-page sentinel's coupling to Finding 7.20 was
+   implicit.** `LibraryCsvSource.guard()`'s `csvPageText === ""` check only
+   stays correct because Finding 7.20 established the server's line endings
+   are a bare `\n`; if that ever changed, a page consisting solely of
+   dropped characters could parse to zero rows and trip
+   `streamCsvPages`'s end-of-table sentinel early. **Fixed**: a comment at
+   that check now names the coupling explicitly. Judged low-severity (not
+   reachable against the probed deployment) but cheap, so folded in rather
+   than deferred.
+5. **Test gaps**: every guard-on stream test exercised `guard()` only with
+   `includeHeader === true`, missing the second-page path where a parsed row
+   0 is data, not a header, and the exact case the off-by-one
+   `isHeaderRow = includeHeader && rowIndex === 0` line exists to get right;
+   no test covered a row with more fields than `this.columns.length` (the
+   `?? true` fallback); the `csvParse` round-trip case list omitted `"a\rb"`,
+   the one field where parsing and encoding treat `\r` asymmetrically
+   (preserved inside quotes, dropped outside) — it round-trips correctly,
+   it just wasn't asserted. **Fixed**: all three added to
+   `library-csv-source.test.ts`/`data-csv-parse.test.ts`.
+6. **Two adjacent same-typed boolean parameters** (`formatCsvPage(columns,
+   rows, includeHeader, guardFormulaInjection)`) are transposable with no
+   type error, and one call site in `cas-csv-format.test.ts` already reads
+   that way. **Not fixed this pass** — an options-object refactor would
+   touch `formatCsvPage`'s signature and every call site
+   (`casCsvSource.ts`, `casExplorer.ts`, their tests), which is scope beyond
+   a review-finding fix; flagged for whoever next touches that signature,
+   not scheduled as its own slice. A related doc-wording issue in the same
+   finding — `browsing-sas-libraries.md` justifying the setting's
+   off-by-default with a reason (extra request cost) that doesn't hold for
+   CAS, which is also off by default with no such cost — **was** fixed,
+   folded into finding 2's edit above: the doc now leads with the real
+   reason (don't silently change what the server returned) and keeps the
+   extra-request detail as a SAS-library-specific aside.
+
+**Verification (post-review).** `npx tsc --noEmit` and `npx tsc -p
+tsconfig.test.json --noEmit` clean; `npm run lint` clean (the
+`noUncheckedIndexedAccess` finding from the first pass is gone now that
+`csvParse.ts` uses `text.charAt(i)`); `npm run test:unit` (1,878 passing, one
+more than the first pass — the new tab/CR/LF `escapeCsvFormula` cases) and
+`npm run test:integration` (509 passing, two more than the first pass — the
+multi-page-guard and overflow-column tests) both green; `npm run coverage`
+green (96.41/95.86/96.2/96.41 lines/branches/functions/statements — branch
+coverage improved slightly over the first pass; `csvFormulaGuard.ts` and
+`csvParse.ts` both still 100/100/100/100, this time genuinely, not against a
+dead branch); `npm run check:copyright` (320 files)/`check:secrets` (533
+scanned)/`check:coverage-scope`/`check:contracts`/`check:docs` (reference,
+samples, self-links, VitePress build) all clean. Manual-test items 12.1–12.8
+in `docs/dev/manual-tests/phase-12.md`, not yet run live.
+
+No Probe findings entry: nothing here depends on Viya wire behaviour, and
+Finding 7.14 (cited above, for the SAS-library column-type vocabulary) was
+already settled in `phase-7.md` before this slice started.
+
+### 12e manual test 12.4 failed, 2026-09-23 — CAS columns were mispaired with their cells; fixed
+
+Sean's manual pass ticked 12.1–12.3 and 12.5–12.8 against a SAS library
+table. 12.4, the same checks against a CAS table, failed twice in a row:
+the `name` and `age` columns' data were swapped under their headers, and no
+cell was guarded — not `=a,b`, not the formula-shaped names.
+
+**One defect caused both.** `CasAdapter.getColumns` reads the table's
+`casManagement` `columns` collection through `collectPages`, which adds
+`sortBy=name` to every collection it reads (Finding 8.9, for stable
+paging). That returns the columns alphabetically — `age`, `name` — while
+every `rows` reply's positional `cells` stay in the table's own order —
+`name`, `age`. `formatCsvPage` pairs the two by position, so the header
+read `age,name` over `name,age` data, and each cell was checked against the
+other column's type: the text column was treated as `double` (trimmed,
+never guarded) and the numeric one as `varchar` (guarded, but a number never
+triggers). The probe that settled it is
+[Finding 12.6](#finding-12-6-a-cas-table-s-columns-listing-under-sortby-name-is-alphabetical-each-item-s-index-not-its-position-is-what-row-cells-follow);
+the bug is **B12.2**.
+
+This bug predates 12e — it is 8a's `sortBy=name` meeting 8c/11d's
+positional pairing — but nothing noticed it until now. `columns.json`, the
+fixture every CAS test uses, lists `CODE` then `VALUE`, which is both
+alphabetical and table order, so no test could tell the two apart.
+
+**Fix.** `getColumns` now re-sorts the collected items by each one's
+1-based `index` before reading them; an item with no numeric `index` sorts
+after every indexed one, in listing order. Paging keeps `sortBy=name` —
+Finding 8.9 confirmed that sort stable across repeated requests; `sortBy=
+index` was accepted too, but was only probed on one page of a two-column
+table. Since the CAS data viewer's grid (8c) and the CAS tree's column
+nodes use the same `getColumns`, both now show table order too — the tree
+used to list columns alphabetically.
+
+**Tests.** `test/unit/cas-adapter.test.ts`: index order over the listing's
+order, and the no-`index` fallback (including a `null` item and a string
+`index`). `test/integration/cas/csv-export-and-properties.test.ts`: 12.4's
+own two columns in the live listing's order, exporting `name,age` with
+`"'=a,b"` guarded and `-5` untouched. Manual item **12.9** added for the
+viewer and tree.
+
+**Verification.** `npx tsc --noEmit` and `npx tsc -p tsconfig.test.json
+--noEmit` clean; `npm run lint` clean; `npm run test:unit` 1,880 passing
+(two new); `npm run test:integration` 510 passing (one new, run from a
+clean `out/`); `npm run coverage` green (96.42/95.87/96.21/96.42).
+
+**Live re-run, 2026-09-23.** Sean re-ran 12.4 and the new 12.9 against a
+build carrying the fix; both passed. Every Phase 12 manual item, 12.1–12.9,
+is now ticked.
+
+**Second adversarial pass, before push, 2026-09-23.** Because the fix added
+source after the first pass, the whole branch was reviewed again before it
+was pushed. The pass found nothing to fix. It confirmed that the `index`
+re-sort is stable and orders items with no `index` last, and that the guard
+stays opt-in on the library side. It also noted that the library-side
+`getColumns` (`src/data/adapter.ts`) does not force `sortBy=name`, so it is
+not exposed to B12.2. That is an existing behaviour, not a defect, and needs
+no change here.
+
 ---
 
 ## Probe findings
@@ -1291,3 +1559,105 @@ about a large or slow startup snippet's cost, or about `SYSCC`/
 No deployment-identifying detail appears above; the fileref/job names and
 compute-context label are this project's own fixed choices, not anything the
 deployment assigned.
+
+### Finding 12.5 — a failed SAS step leaves the session in syntax-check mode: `SYSCC`/`SYSERR` stay non-zero, every later job reads as failed, and Reset Python State reports the old error
+
+Found 2026-09-23 while running manual test 12.4: a `SAS.submit()` of
+`data casuser.test; …` failed with `Libref CASUSER is not assigned.` (the
+compute session has no `casuser` libref; SWAT/CAS needs none). Every later
+Run and a **Reset Python State** then failed with that same message, even for
+code that never touched a libref — the log showed `resetting the
+interpreter: the backend failed: Libref CASUSER is not assigned.`
+
+Probed the same day via `viya-api-probe`/`creds.json` against `verde`, three
+throwaway compute sessions (SAS Studio compute context), each deleted within
+the probe (`DELETE` → `204`, follow-up `GET` → `404`). `SYSCC`, `SYSERR` and
+`SYSERRORTEXT` were read through the session's `variables` link with a name
+filter, the same way `src/compute/variables.ts` does.
+
+**Documented/assumed:** ADR-0014 and `src/compute/variables.ts` treat `SYSCC`
+as live session state and `procPython.ts`'s `reset()`/`readSyscc()` read it
+once per job as that job's own result. Nothing in `src/` ever resets it, and
+no earlier finding says a failed step's value carries into the next job
+(Finding 70's "stale default" is a different case).
+
+**Observed:**
+
+- After a failing `data casuser.test; x=1; run;`: `SYSCC=1012`,
+  `SYSERR=1012`, `SYSERRORTEXT='Libref CASUSER is not assigned.'`, job state
+  `error`.
+- A **clean** `data _null_; run;` in the next job: job state `error`,
+  `SYSCC=3`, `SYSERR=3`, `SYSERRORTEXT` unchanged. Its log shows the step
+  ran normally — the failure is entirely in the session's status, not in the
+  step. `proc python restart; run;` after the failure: identical, so a
+  successful restart is reported as failed.
+- `%let syscc=0;` alone (own job) reads back `SYSCC=0`, but `SYSERR` stays
+  `3`, and the very next step sets `SYSCC` back to `3`. `%let syserr=0;`
+  fails with `Attempt to assign a value to a read-only symbolic variable
+  (SYSERR).` `%let syscc=0;` in the same job as the restart does not help
+  either.
+- **What did clear it:** `options nosyntaxcheck obs=max;` followed by
+  `%let syscc=0;` in its own job. Afterwards a clean step read `SYSCC=0`/
+  `SYSERR=0` with job state `completed`, and `proc python; submit; print(1)
+  endsubmit; run;` ran and read `SYSCC=0`, output `1`.
+
+**Verdict:** Confirmed. `SYSCC` is not per-job in a compute session: one
+SAS-side error (not a Python exception — those are caught and leave
+`SYSCC=0`, Finding 12.1) puts the session in syntax-check mode, and until
+that is cleared every subsequent job — including the extension's own
+`proc python restart;` — reads as failed and reports the stale
+`SYSERRORTEXT`. Reset Python State cannot recover the session, which is the
+opposite of what a user reaches for it to do. Connecting again (a new
+session) does, but discards libraries and filerefs.
+
+**Not settled:** which of `nosyntaxcheck` and `obs=max` is the necessary
+half (only the pair was tried); whether a Python cell's own outcome is
+misreported the same way after a failure (`runProgram` reads the same
+`SYSCC`, so it should be, but a real `infile=` run was not probed in the
+failed state — only an inline `proc python; submit;` after the clear); and
+whether autoexec/`sasOptions` set `obs`/`syntaxcheck` differently on other
+deployments. Probed against `verde` only. No fix is written: the likely
+shape (a clearing job before each restart and before each run's own `SYSCC`
+read, or surfacing "session needs clearing" to the user) touches
+`src/backend/procPython.ts`, so it is a decision for Sean, not part of 12e.
+
+No deployment-identifying detail appears above.
+
+### Finding 12.6 — a CAS table's `columns` listing under `sortBy=name` is alphabetical; each item's `index`, not its position, is what row `cells` follow
+
+**Probed 2026-09-23, read-only, `verde` (Viya 4),** against manual test
+12.4's own table — `casuser.test`, loaded, 7 rows, a `varchar` column
+`name` and a `double` column `age`, created in that order by
+`conn.upload_frame`.
+
+- `GET` the table's `casManagement` `columns` link, no sort: `name`
+  (`index: 1`), then `age` (`index: 2`).
+- The same `GET` with `sortBy=name` — what `CasAdapter.collectPages` sends
+  (Finding 8.9): `age` (`index: 2`), then `name` (`index: 1`).
+- The same `GET` with `sortBy=index`: `200`, `name` then `age`.
+- The table's `rows` (reached through its `dataTable` link's `302`, Finding
+  8.14), `limit=3`: `cells: ["=SUM(A1:A9)", "          12"]` — `name`
+  first, in `index` order.
+
+Every column item carried a numeric, 1-based `index` alongside `version`,
+`name`, `type`, `rawLength`, `formattedLength`, `numberFormatLength`,
+`numberFormatDecimals` and `indexed`.
+
+**Documented / previously recorded:** Finding 8.12 found `rows` cells line
+up with the Data Tables API's own `columns` collection — a different
+collection from the `casManagement` one `getColumns` reads, so it is not
+contradicted here. Finding 8.9 recorded that every collection
+`collectPages` reads, columns included, accepted `sortBy=name`; accepted,
+yes, but for columns the result is no longer the order the cells use.
+
+**Verdict:** Confirmed, and it is the root cause of manual test 12.4's
+failure (**B12.2**). Any CAS table whose column names are not already in
+alphabetical order had its CSV headers mispaired with its data, and the
+formula guard judged each cell by the wrong column's type. The fix sorts by
+`index` on the client and keeps `sortBy=name` for paging.
+
+**Not settled:** whether `index` is ever missing (not seen; the fix sorts
+an item without one last, in listing order); a table with more than one
+page of columns; and deployments other than `verde`.
+
+No deployment-identifying detail appears above.

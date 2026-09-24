@@ -205,16 +205,21 @@ export function registerDataExplorer(
         // Same fire-and-forget/catch shape as `openTable` above, and for the
         // identical reason — see this file's own "7c-iii" doc comment for why
         // `runCsvExport` reaching this `.catch` at all is not expected.
-        void runCsvExport(item, adapter, { log }).catch((error: unknown) => {
-          log.error(
-            vscode.l10n.t(
-              'SAS Libraries: could not export "{0}.{1}" to CSV ({2})',
-              item.libref,
-              item.name,
-              String(error),
-            ),
-          );
-        });
+        const guardFormulaInjection = vscode.workspace
+          .getConfiguration("pythonOnViya")
+          .get<boolean>("csvExport.guardFormulaInjection", false);
+        void runCsvExport(item, adapter, { log }, guardFormulaInjection).catch(
+          (error: unknown) => {
+            log.error(
+              vscode.l10n.t(
+                'SAS Libraries: could not export "{0}.{1}" to CSV ({2})',
+                item.libref,
+                item.name,
+                String(error),
+              ),
+            );
+          },
+        );
       },
     ),
     // A signed-in window may not have connected yet when the view first

@@ -19,7 +19,20 @@
  *
  * A character column's cells are never trimmed — leading/trailing spaces in a
  * `char`/`varchar` are data, not padding.
+ *
+ * **The opt-in CSV formula-injection guard (12e,
+ * `docs/phases/phase-12.md`)** lives in `../data/csvFormulaGuard.ts`, shared
+ * with the SAS-library CSV export path — see that module's own doc comment
+ * for what it guards against and why it only ever touches a character
+ * column. `isTextColumnType` there is the same "is this cell text?" test
+ * this module already needed for trimming, so {@link formatCsvPage} reuses
+ * it rather than keeping a second copy of the same type list.
  */
+
+import { escapeCsvFormula, isTextColumnType } from "../data/csvFormulaGuard";
+import { csvField } from "../data/csvParse";
+
+export { csvField };
 
 /** A column reduced to what formatting needs. `CasColumnItem` satisfies it
  * structurally. */
@@ -32,19 +45,6 @@ export interface CsvColumn {
  * structurally. */
 export interface CsvRow {
   readonly cells: readonly unknown[];
-}
-
-/** The column types whose cells are text rather than numbers. Every other
- * type observed or documented for CAS (`double`, `int32`, `int64`, `decimal`,
- * `date`, `time`, `datetime`, …) is displayed as a padded number/formatted
- * value. `binary`/`varbinary` are treated as non-text too — they are not
- * expected in a browsed table and their exact display form is unprobed. */
-const TEXT_TYPES: ReadonlySet<string> = new Set(["char", "varchar"]);
-
-/** RFC-4180 quoting: a field is wrapped in double quotes, with embedded
- * quotes doubled, only when it contains a comma, a quote, or a line break. */
-export function csvField(value: string): string {
-  return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 /** One cell's CSV field text. `null`/`undefined` are empty. */
@@ -67,15 +67,24 @@ function cellText(cell: unknown, isText: boolean): string {
  * server's own CSV: pages concatenate with no separator). `includeHeader`
  * prepends the column-name row; a page with no rows and no header is the
  * empty string, which is what tells the export loop it has reached the end.
+ *
+ * `guardFormulaInjection` (default `false`, `pythonOnViya.csvExport.
+ * guardFormulaInjection`) applies `../data/csvFormulaGuard.ts`'s
+ * `escapeCsvFormula` to a character column's cells only — every other type
+ * this project has observed or documented for CAS (`double`, `int32`,
+ * `int64`, `decimal`, `date`, `time`, `datetime`, …), plus `binary`/
+ * `varbinary` (not expected in a browsed table; their exact display form is
+ * unprobed), is never guarded, matching {@link isTextColumnType}'s own
+ * partition. The header row (`includeHeader`) is never guarded either way —
+ * a column name is metadata, not exported row data.
  */
 export function formatCsvPage(
   columns: readonly CsvColumn[],
   rows: readonly CsvRow[],
   includeHeader: boolean,
+  guardFormulaInjection = false,
 ): string {
-  const isText = columns.map((column) =>
-    TEXT_TYPES.has(column.type.toLowerCase()),
-  );
+  const isText = columns.map((column) => isTextColumnType(column.type));
 
   const lines: string[] = [];
   if (includeHeader) {
@@ -84,7 +93,14 @@ export function formatCsvPage(
   for (const row of rows) {
     lines.push(
       row.cells
-        .map((cell, index) => csvField(cellText(cell, isText[index] ?? true)))
+        .map((cell, index) => {
+          const text = cellText(cell, isText[index] ?? true);
+          const guarded =
+            guardFormulaInjection && (isText[index] ?? true)
+              ? escapeCsvFormula(text)
+              : text;
+          return csvField(guarded);
+        })
         .join(","),
     );
   }

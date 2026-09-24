@@ -113,6 +113,71 @@ describe("cas/csvFormat", () => {
     });
   });
 
+  describe("formatCsvPage — 12e formula-injection guard", () => {
+    const guardColumns = [
+      { name: "Note", type: "char" },
+      { name: "Age", type: "double" },
+    ];
+
+    it("is off by default — a formula-triggering cell is left untouched", () => {
+      const csv = formatCsvPage(
+        guardColumns,
+        [{ cells: ["=SUM(A1:A9)", "29"] }],
+        false,
+      );
+      assert.equal(csv, "=SUM(A1:A9),29\n");
+    });
+
+    it("prefixes a character cell beginning with =, +, -, or @ once turned on", () => {
+      const csv = formatCsvPage(
+        guardColumns,
+        [
+          { cells: ["=SUM(A1:A9)", "1"] },
+          { cells: ["+1 (555) 0100", "2"] },
+          { cells: ["-drwxr-xr-x", "3"] },
+          { cells: ["@handle", "4"] },
+          { cells: ["ordinary text", "5"] },
+        ],
+        false,
+        true,
+      );
+      assert.equal(
+        csv,
+        "'=SUM(A1:A9),1\n'+1 (555) 0100,2\n'-drwxr-xr-x,3\n'@handle,4\nordinary text,5\n",
+      );
+    });
+
+    it("never guards a numeric column — a negative number keeps its own leading '-'", () => {
+      const csv = formatCsvPage(
+        guardColumns,
+        [{ cells: ["plain", "          -5"] }],
+        false,
+        true,
+      );
+      assert.equal(csv, "plain,-5\n");
+    });
+
+    it("never guards the header row — a formula-shaped column name is left alone", () => {
+      const csv = formatCsvPage(
+        [{ name: "=EVIL()", type: "char" }],
+        [{ cells: ["=SUM(A1:A9)"] }],
+        true,
+        true,
+      );
+      assert.equal(csv, "=EVIL()\n'=SUM(A1:A9)\n");
+    });
+
+    it("quotes a guarded field that also needs RFC-4180 quoting", () => {
+      const csv = formatCsvPage(
+        guardColumns,
+        [{ cells: ["=a,b", "1"] }],
+        false,
+        true,
+      );
+      assert.equal(csv, '"\'=a,b",1\n');
+    });
+  });
+
   describe("pageRowsFor", () => {
     it("caps at 500 rows for a narrow table", () => {
       assert.equal(pageRowsFor(3), 500);

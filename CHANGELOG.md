@@ -29,6 +29,13 @@ called out under **Changed** with a migration note.
   **Import Connection Profiles** brings over the SAS extension's equivalent
   fields. If an autoExec line fails, the session still connects and a message
   says so. See [Connection profiles](docs/connection-profiles.md).
+- **An opt-in CSV formula-injection guard.** With
+  `pythonOnViya.csvExport.guardFormulaInjection` turned on, **Export to CSV**
+  for SAS library and CAS tables prefixes a leading `'` to a text cell that
+  begins with `=`, `+`, `-`, `@`, a tab, a carriage return or a line feed, so
+  a spreadsheet program does not evaluate it as a formula. Numeric columns are
+  never changed. Off by default. See
+  [Browsing SAS libraries](docs/browsing-sas-libraries.md).
 
 ### Changed
 
@@ -48,6 +55,11 @@ called out under **Changed** with a migration note.
   SAS Libraries view and **Insert CAS Connection Snippet** now let **Connect to
   Viya** re-establish it directly instead of requiring **Disconnect** first.
   Both insert-snippet commands stay in the palette and say to connect first.
+- **CAS table columns were paired with the wrong data.** A CAS table's columns
+  were listed alphabetically while its rows stay in table order, so
+  **Export to CSV** wrote headers over the wrong columns' values whenever the
+  column names were not already alphabetical. Columns now follow table order
+  in the export, the data viewer and the CAS view.
 - **SAS Libraries table icon** now matches the CAS view's loaded-table icon.
 
 ## [0.1.3] - 2026-09-16

@@ -275,6 +275,48 @@ describe("runCsvExport", () => {
     });
   });
 
+  it("12e: threads guardFormulaInjection through to a real export", async () => {
+    await withErrorMessageStub(async () => {
+      const { stream, state } = fakeStream();
+      const ops = fakeFsOps(stream);
+      const { log } = fakeLog();
+      const adapter = libraryAdapter([
+        OPEN_ROUTE,
+        DISK_SPACE_SAMPLE_ROUTE,
+        {
+          when: `${CLASS_HREF}/columns`,
+          reply: dataFixture("columns-class.json"),
+        },
+        {
+          when: `${CLASS_HREF}/rows?start=0&limit=500&includeColumnNames=true`,
+          reply: dataCsv("Name,Sex\n=SUM(A1:A9),M\n"),
+        },
+        {
+          when: `${CLASS_HREF}/rows?start=500&limit=500`,
+          reply: dataCsv(""),
+        },
+      ]);
+
+      await runCsvExport(
+        tableItem(),
+        adapter,
+        {
+          log,
+          showSaveDialog: () => Promise.resolve(SAVE_URI),
+          withProgress: (_title, run) =>
+            run(new vscode.CancellationTokenSource().token),
+          createWriteStream: ops.createWriteStream,
+          rename: ops.rename,
+          unlink: ops.unlink,
+          statfs: ampleDiskSpace(),
+        },
+        true,
+      );
+
+      assert.deepEqual(state.chunks, ["Name,Sex\n'=SUM(A1:A9),M\n"]);
+    });
+  });
+
   it("does nothing when the save dialog is dismissed", async () => {
     const { log, errors } = fakeLog();
     // No routes at all — a call the adapter would make throws, so an

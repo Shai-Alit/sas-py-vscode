@@ -1900,6 +1900,26 @@ customer's `403` is an unrouted path, an allowlist or a WAF rule is answerable
 only from their own ingress controller logs — a platform-team question, not
 one this project can settle.
 
+**Addendum, 2026-09-24 — the client-side half of this symptom, confirmed by
+reading `swat`'s own source, not by probing.** This finding measures what
+`verde` returns; it says nothing about how `swat` handles what it gets back,
+and a PR review on this same change (#211) correctly flagged that the doc
+text asserting the client-side half needed its own citation rather than
+riding on this finding's server-side measurement. Confirmed directly in
+`python-swat`'s own source (`swat/cas/rest/connection.py`,
+`REST_CASConnection._connect` — the method every `swat.CAS(...)` REST
+connection calls): the response body is decoded and handed straight to
+`json.loads(txt, strict=False)`, with no `res.status_code` check anywhere
+before it, in both the branch that creates a new session (`PUT`) and the one
+that reconnects to an existing one (`GET`); the same pattern repeats in
+`invoke()` for every action call afterward. So an HTML error page — exactly
+what an ingress `403` returns — reaches `json.loads` unfiltered and produces
+`Expecting value: line 1 column 1 (char 0)`, matching the customer's own
+reported error text exactly. This is a claim about `python-swat`'s own source,
+versioned separately from this project, not something a Viya probe could
+establish either way — not numbered as its own probe finding for that reason,
+the same convention 12h's own source-only confirmations used.
+
 No deployment-identifying detail appears above: base paths, tenant/org ids,
 usernames and session ids are all omitted or generalised.
 

@@ -2183,6 +2183,20 @@ figure sits in its own `<div>`, and the note now appears only there, so
 `htmlSanitize.ts`'s doc comment says so instead. Switching the element would
 have meant re-running 12.17.
 
+**PR #217 review, 2026-09-25.** Two AI-review threads:
+
+- **"A `</svg>` in SVG text exits the drop early."** The trace is right,
+  but nothing unsafe gets through. SVG content is not raw text in HTML, so
+  a browser also ends the element at that `</svg>`, and what follows goes
+  through the same allow-list: a `<script>`, an `onerror` and a
+  `javascript:` link after it are all removed. The doc comment's "never
+  let any through" claim was broader than that, so it now says what holds.
+  A new unit test pins the behaviour.
+- **Build the `l10n.t()` label once, not per output piece.** Declined.
+  The call is cheap next to the `appendOutput` it sits beside, and
+  hoisting it would mean a new parameter through `executeCell`'s call
+  path.
+
 ---
 
 ## Probe findings

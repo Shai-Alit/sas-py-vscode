@@ -282,6 +282,19 @@ describe("notebook/htmlSanitize", () => {
       );
     });
 
+    it("ends an <svg> at a </svg> in its text, as a browser does, and sanitizes what follows", () => {
+      // PR #217 review: an unescaped "</svg>" inside <text> is a real end tag
+      // in HTML, so the rest is ordinary markup, still allow-listed.
+      assert.equal(
+        sanitizeHtml(
+          '<svg><text>a "</svg>" b<script>x()</script>' +
+            '<img src="x" onerror="x()"><a href="javascript:x()">l</a>' +
+            "</text></svg><p>after</p>",
+        ),
+        '" bl<p>after</p>',
+      );
+    });
+
     it("drops even a safe <style> block under dropStyle (Finding 12.18)", () => {
       const html = "<style>.output{color:#000}</style><p>x</p>";
       assert.equal(sanitizeHtml(html), html);

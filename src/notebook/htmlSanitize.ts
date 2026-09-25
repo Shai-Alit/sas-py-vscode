@@ -51,9 +51,12 @@
  * unknown tag normally keeps its children as text, but an SVG figure's
  * children are metadata (`<dc:format>image/svg+xml</dc:format>`, the
  * matplotlib version), and keeping them turned a `SAS.show(plt)` figure into
- * junk text in a cell (Finding 12.14). Nothing inside is ever emitted, so a
- * malformed or unclosed `<svg>` can only lose more content, never let any
- * through. A caller that passes `svgNote` gets that text, escaped, in a `<p>`
+ * junk text in a cell (Finding 12.14). Nothing inside is ever emitted, so an
+ * unclosed `<svg>` can only lose more content. "Inside" ends at the first
+ * `</svg>`, even one in an SVG `<text>`'s content: SVG content is not raw
+ * text in HTML, so a browser's parser ends the element there too. What
+ * follows it is sanitized like any other markup, so it can show up as
+ * text but can never carry script. A caller that passes `svgNote` gets that text, escaped, in a `<p>`
  * where each outermost `<svg>` was, so the cell says what was dropped rather
  * than showing only `SAS.show`'s own `Output` title above a gap
  * (Finding 12.18). The `<p>` suits an ODS body, where each figure sits in its

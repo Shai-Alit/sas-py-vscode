@@ -41,6 +41,8 @@ inventory produced for an internal open-source-contribution request.
 Neither traces to the research memo either. 12g and 12i are small and
 bounded; 12h is a spike on exactly 12b's terms — it answers what is cheap
 to answer and explicitly does not scope the build it might recommend.
+**12j was added 2026-09-24**, once 12h had run: the build 12h recommended,
+which Sean decided should be always on and should gate v1.0.
 
 **A letter collision, found and fixed the same day.** 12c and the trio
 12g–12i were scoped in two sessions working this phase concurrently from
@@ -230,7 +232,9 @@ under this number before today.
    they recommend is a separate, not-yet-scoped slice — the same boundary
    12b and [ADR-0037](../adr/0037-ai-agent-integration-approach.md) already
    set for Option C. Because this phase gates v1.0, *running* the spike is a
-   1.0 gate; whatever it recommends building is not.
+   1.0 gate; whatever it recommends building is not. (Superseded for this
+   build, 2026-09-24: Sean added it as slice 12j, which gates v1.0. See
+   item 10.)
 
    **Two of the questions are already answered — by reading this
    repository's own source, not by probing — and they change the shape of the
@@ -323,6 +327,34 @@ under this number before today.
    `scripts/check-audit.mjs` — an allow-list of SPDX identifiers checked
    against `package-lock.json` on every PR — which is what would keep this
    from drifting again. Not scoped here.
+10. **12j — Build: inline graphics (`SAS.show`) through an always-on ODS
+    wrapper.** Added 2026-09-24, from 12h. **Sean's calls, 2026-09-24:** the
+    build wraps every run, always on, not behind a setting; and it is a
+    slice of this phase, so it gates v1.0 like every other Phase 12 slice
+    (`PRODUCTION_PLAN.md` §8). That supersedes item 8's "whatever it
+    recommends building is not" a 1.0 gate, for this build.
+
+    The goal: `SAS.show(...)` and `SAS.pyplot(...)` output, and any ODS
+    output from `SAS.submit()`, reaches the result panel and a notebook
+    cell, where today it reaches nothing. What the build has to get right
+    is settled by Findings 12.14 and 12.15 and listed in this file's "12h
+    spike run" Runbook entry: close first, then open; capture only the body
+    file named in the run's own "Body file" `NOTE`; skip a body with no
+    `id="IDX` anchor, without delaying the run's result; decide SVG; call
+    out the behaviour changes. Also in scope:
+
+    - **An ADR.** Capturing by the `NOTE`-named file changes
+      [ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
+      rule that every changed whitelisted file is a candidate. The SVG
+      choice may touch
+      [ADR-0036](../adr/0036-notebook-html-output-is-sanitized.md).
+    - **The docs 12h wrote.** The skill and `docs/running-python.md` say
+      `SAS.show` displays nothing here. The build makes that false, so both
+      change with it.
+    - **Manual-test items** for a figure, a DataFrame, an empty run and a
+      run after a cancel, in the result panel and in a notebook cell.
+
+    Not yet sized. The build scopes itself at its start, the way 12e did.
 
 ### Punch list
 
@@ -386,11 +418,14 @@ under this number before today.
   passes `filetype="png"`, and the notebook sanitizer turns SVG into junk
   text. **Sean's decision: the build wraps every run, always on.** A second
   probe round found no reason against it and costs no measurable job time
-  (Finding 12.15). The build is not scoped. See this file's own Runbook
+  (Finding 12.15). The build is slice 12j. See this file's own Runbook
   entry for what it has to do.
 - [ ] **12i — `NOTICE`: attribute the twelve bundled MIT components.** Not
   started. Append a "Bundled third-party components" section; no packaging
   change.
+- [ ] **12j — Build: inline graphics through an always-on ODS wrapper.**
+  Added 2026-09-24. Not started. Gates v1.0. See the Plan section's item 10
+  and the "12h spike run" Runbook entry for what it has to do.
 
 ### Bugs found in this phase
 
@@ -1655,8 +1690,8 @@ Not behind a setting. The alternative was opt-in, default off, until the
 empty-body skip and user-ODS interaction were proven. Sean chose always on
 and asked for any remaining proof to be gathered now, so a second round of
 probing ran the same day (Finding 12.15). It found nothing that argues
-against the decision, and two things the build must do. The build itself
-is still a separate, not-yet-scoped slice.
+against the decision, and two things the build must do. The build was
+then added as its own slice, 12j, the same day; it gates v1.0.
 
 **What the build has to do (not scoped here).** It is mostly plumbing. Wrap
 each run's job and let the existing diff find the body. Five things it has

@@ -1,6 +1,8 @@
 # ADR-0038 — Every run is wrapped in a named ODS HTML5 destination, and its body file is captured by name
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-09-25 by
+  [ADR-0039](0039-every-job-switches-syntax-check-mode-off.md): the job now
+  starts with two syntax-check recovery lines, ahead of point 1's wrapper
 - **Date:** 2026-09-24
 - **Decides:** how `SAS.show()`, `SAS.pyplot()` and ODS output from
   `SAS.submit()` reach the result panel and a notebook cell; how the ODS
@@ -58,6 +60,9 @@ proc python infile=PY000001;   /* or: proc python restart infile=… */
 run;
 ods html5(id=vscode) close;
 ```
+
+Since ADR-0039, two syntax-check recovery lines come before the first of
+these.
 
 - `ods listing gpath=…` sends the LISTING destination's graph images to
   WORK. LISTING is open by default, and with `ods graphics on` it writes a

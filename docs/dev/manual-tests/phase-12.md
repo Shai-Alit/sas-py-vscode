@@ -269,3 +269,61 @@ SAS.show(plt, filetype="png")
   table styling, not SAS's white-and-blue style, and stay readable. SAS's
   stylesheet leaked into every output in the notebook and turned other
   cells' text black (Finding 12.18).
+
+## 12k — a failed SAS step no longer poisons the session
+
+See `docs/phases/phase-12.md`'s "12k built" Runbook entry, Finding 12.19 and
+[ADR-0039](../../adr/0039-every-job-switches-syntax-check-mode-off.md).
+Before 12k, one failed step like the one below made every later run and
+Reset Python State fail with the same `Libref CASUSER is not assigned.`
+until you reconnected (B12.1). Start each item on a fresh connection.
+
+12.23 checks prevention. On this build the failing step alone never puts
+the session in syntax-check mode, because the prefix has already switched
+it off. 12.24–12.26 check recovery instead. They start from a session that
+is already poisoned, the state an older build or a reattached session
+leaves behind. To poison one, Run File on this **poison file**, which
+switches the option back on before the failing step:
+
+```python
+SAS.submit("options syntaxcheck; data casuser.test; x=1; run;")
+```
+
+**Expect:** that run fails with `Libref CASUSER is not assigned.`
+
+- [x] **12.23** **Manual test 12.4's repro, then a later run.** Run File on:
+
+  ```python
+  SAS.submit("data casuser.test; x=1; run;")
+  print("after the failed step")
+  ```
+
+  **Expect:** the run fails with `Libref CASUSER is not assigned.`, and
+  `after the failed step` still prints. Then Run File on
+  `print("next run")`. **Expect:** it succeeds and prints `next run`, with
+  no error. Repeat both in two notebook cells. **Expect:** the same, and
+  the second cell shows no error.
+- [x] **12.24** **A poisoned session runs the next file.** Run File on the
+  poison file, then on `print("next run")`. **Expect:** `next run` prints
+  and the run succeeds, with no `Libref CASUSER` error. Before 12k it
+  printed nothing and failed with the old error.
+- [x] **12.25** **Reset Python State on a poisoned session.** Run File on the
+  poison file, then **Python on Viya: Reset Python State**. **Expect:** the
+  reset succeeds. The log has no `resetting the interpreter: the backend
+  failed` line. Then Run Selection on `print("after reset")`. **Expect:**
+  `after reset`.
+- [x] **12.26** **The `OBS` restore: a DATA step reads rows again, and a
+  user's own `obs=5` survives.** Save this as the **rows file**:
+
+  ```python
+  SAS.submit("data work.t; set sashelp.class; run;")
+  print(SAS.sd2df("work.t").shape)
+  ```
+
+  Run File on the poison file, then on the rows file. **Expect:** `(19, 5)`.
+  Without the restore the copy would have no rows, since SAS left `OBS=0`
+  (Finding 12.19 counted 0). Then Run File on `SAS.submit("options obs=0;")`, then the rows
+  file. **Expect:** `(19, 5)` again, because a deliberate `OBS=0` is reset
+  too (ADR-0039). Then Run File on `SAS.submit("options obs=5;")`, then the
+  rows file. **Expect:** `(5, 5)`. Finish with Run File on
+  `SAS.submit("options obs=max;")`.

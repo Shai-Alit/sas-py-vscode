@@ -41,6 +41,13 @@ If you're asked to debug "the run said it finished but nothing happened" or
 "it says success but the output is wrong," this is the first thing to suspect,
 not a race condition or a caching problem.
 
+**A failed SAS step does not carry into the next run.** `SYSCC` describes
+the current job only. Every job the extension submits starts with
+`options nosyntaxcheck;`, and resets `OBS` to `MAX` if it is `0`, so a
+failing `SAS.submit()` step cannot leave the session in SAS's syntax-check
+mode (Finding 12.19). If every run after one failure reports the same old
+error, the extension is older than this fix. Reconnecting clears it.
+
 **Don't confuse this with `sessionConditionCode`.** A bad profile-level
 `autoExec` line surfaces as a *different*, session-level field
 (`sessionConditionCode`, checked once when the session is created), not as

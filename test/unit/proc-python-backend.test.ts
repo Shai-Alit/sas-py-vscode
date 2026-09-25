@@ -249,7 +249,7 @@ interface RouterOptions {
   filesBefore?: readonly { name: string; size: number }[];
   /** The directory's contents the post-job listing sees (ADR-0019 point 3).
    * Defaults to `filesBefore` unchanged, i.e. no candidates. */
-  filesAfter?: readonly { name: string; size: number }[];
+  filesAfter?: readonly { name: string; size?: number }[];
   /** A `getFile` fetch answers with these bytes, keyed by file name. Absent
    * names answer with an empty body. */
   fileContent?: Record<string, Uint8Array>;
@@ -2906,6 +2906,51 @@ describe("ProcPythonBackend", () => {
       const rels = requests.map((request) => request.link.rel);
       assert.equal(rels.filter((rel) => rel === "getFile").length, 1);
       assert.ok(!rels.includes("deleteFile"));
+    });
+
+    it("keeps the learned empty size across a listing with no size (PR #217 review)", async () => {
+      const empty = encode(emptyBody);
+      const opts: RouterOptions = {
+        syscc: "0",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: 32425 }],
+        fileContent: { [ODS_BODY_FILE_NAME]: empty },
+      };
+      const { client, requests } = router(opts);
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      // Sized, then unsized, then sized again: the router reads `filesAfter`
+      // on each listing, so each run sees the value set before it.
+      const texts: string[][] = [];
+      for (const size of [32425, undefined, 32425]) {
+        opts.filesAfter = [
+          size === undefined
+            ? { name: ODS_BODY_FILE_NAME }
+            : { name: ODS_BODY_FILE_NAME, size },
+        ];
+        const accepted = accept(
+          await backend.execute(fakeProgram(), { freshNamespace: false }),
+        );
+        const outputs = await collect(accepted.outputs);
+        texts.push(
+          outputs.flatMap((output) =>
+            output.mime === "text/plain" ? [output.data] : [],
+          ),
+        );
+        assert.ok((await accepted.done).ok);
+      }
+
+      // The first run fetches the empty body and learns its size. The
+      // unsized second run is noted, not fetched (ADR-0019 point 7), so the
+      // learned size survives and the third run skips the body silently.
+      const rels = requests.map((request) => request.link.rel);
+      assert.equal(rels.filter((rel) => rel === "getFile").length, 1);
+      assert.ok(texts[1]?.some((text) => text.includes(ODS_BODY_FILE_NAME)));
+      assert.ok(!texts[2]?.some((text) => text.includes(ODS_BODY_FILE_NAME)));
     });
 
     it("still shows a body that did not change during the run, when it is not the empty size (review of 12j)", async () => {

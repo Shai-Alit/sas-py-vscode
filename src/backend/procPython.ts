@@ -1204,7 +1204,10 @@ export class ProcPythonBackend implements ExecutionBackend {
     // earlier run left undeleted (a cancel, a failed fetch or delete) cannot
     // hide a same-size figure. An empty body is neither shown nor deleted;
     // the next run overwrites it. A listing with no size never matches, so
-    // that body is always attempted and reported, never silently skipped.
+    // that body is always attempted and reported, never silently skipped:
+    // `fetchCapture` notes it as too large to confirm (ADR-0019 point 7)
+    // without fetching it, so the learned size below is never overwritten
+    // with `undefined`.
     // A skip reuses `skippedCaptureOutput`, naming the body file (which
     // `docs/running-python.md` documents as the extension's own) rather than
     // adding a sixth unlocalised string to `backend.ts`'s `RichOutput` list.

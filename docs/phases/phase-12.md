@@ -2196,6 +2196,12 @@ have meant re-running 12.17.
   The call is cheap next to the `appendOutput` it sits beside, and
   hoisting it would mean a new parameter through `executeCell`'s call
   path.
+- **"A listing with no size overwrites the learned empty-body size."**
+  Not reachable. `fetchCapture` treats a missing size as over the capture
+  cap (ADR-0019 point 7): it notes the body and returns before the size is
+  stored, so `emptyOdsBodySize` is never set to `undefined`. The comment in
+  `procPython.ts` now says so, and a unit test (sized, unsized, sized
+  again) pins that the learned size survives.
 
 ---
 

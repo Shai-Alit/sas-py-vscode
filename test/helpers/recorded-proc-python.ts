@@ -323,11 +323,14 @@ export function buildClient(
           // `autoFinishReset` is left at its default, this stands in for it
           // so `reset()` does not hang forever waiting on a run nobody can
           // complete. `recorded-connection.ts` turns this off on purpose —
-          // see this function's own doc comment.
+          // see this function's own doc comment. Matched as a whole
+          // element anywhere in the array, not at `[0]`: the job starts with
+          // the syntax-check recovery prefix (ADR-0039).
           if (
             autoFinishReset &&
-            (request.body as { code?: string[] }).code?.[0] ===
-              RESTART_STATEMENT
+            (request.body as { code?: string[] }).code?.includes(
+              RESTART_STATEMENT,
+            ) === true
           ) {
             job.finish(true, undefined);
           }

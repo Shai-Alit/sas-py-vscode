@@ -146,6 +146,13 @@ It is the same restart every Run File does, without running anything
 afterwards. Use it before a Run Selection or an interactive-window cell,
 which build on whatever is already in the interpreter.
 
+You don't need it after a failed SAS step. If a step fails, for example a
+`SAS.submit()` writing to a libref that is not assigned, that run reports
+the error, and the next run starts clean. Every job the extension submits
+first turns off SAS's syntax-check mode, which would otherwise stop every
+later step from running. It also resets `OBS` to `MAX` if it is `0`, so an
+`options obs=0;` of your own does not carry from one run to the next.
+
 ## One run at a time
 
 The session runs one thing at a time. Start a run and then start another — or a

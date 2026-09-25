@@ -546,8 +546,11 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   items 12.15–12.22 passed 2026-09-25, after two fixes (Finding 12.18).
   Merged 2026-09-25 (PR #217); its `CHANGELOG.md` entry followed in a
   docs-only PR. See the "12j built" and "12j manual pass" Runbook entries.
-- [ ] **12k — Fix B12.1 (a failed SAS step poisons the session).** Added
-  2026-09-24. Not started. Pin down the trigger by probe first.
+- [x] **12k — Fix B12.1 (a failed SAS step poisons the session).** Added
+  2026-09-24. Built 2026-09-25: every job starts by switching syntax-check
+  mode off ([ADR-0039](../adr/0039-every-job-switches-syntax-check-mode-off.md),
+  Finding 12.19). Manual items 12.23–12.26 passed 2026-09-25. See the
+  "12k built" Runbook entry.
 - [ ] **12l — Notebook execution-surface staleness.** Added 2026-09-24. Not
   started. Three Phase 9 carry-overs.
 - [ ] **12m — Build the Python startup snippet.** Added 2026-09-24. Not
@@ -567,20 +570,26 @@ Numbered `B12.n`, separate from the probe findings; each links the finding
 that establishes it. Not yet triaged for whether they are fixed in this phase
 or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
 
-- [ ] **B12.1 — A failed SAS step poisons the compute session, and Reset
+- [x] **B12.1 — A failed SAS step poisons the compute session, and Reset
   Python State cannot clear it.** Found 2026-09-23 (manual test 12.4). One
   SAS-side error, such as a `SAS.submit()` naming an unassigned libref, puts
   the session in syntax-check mode: `SYSCC`/`SYSERR` stay non-zero, so every
   later Run File and the extension's own `proc python restart;` report as
-  failed with the old `SYSERRORTEXT`, even though the steps ran. Reset
+  failed with the old `SYSERRORTEXT`. The Python in those later runs never
+  runs at all (Finding 12.19 corrects the "even though the steps ran" this
+  entry first said). Reset
   Python State logs `resetting the interpreter: the backend failed: <the old
   error>`. Only reconnecting (which discards libraries and filerefs)
   recovers it today. A clearing job — `options nosyntaxcheck obs=max;` then
   `%let syscc=0;` — cleared it in a probe. Evidence and open questions:
   [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error).
-  No fix written; it touches `src/backend/procPython.ts`. **Scheduled as
+  The fix touches `src/backend/procPython.ts`. **Scheduled as
   slice 12k, 2026-09-24.** Finding 12.15 could not reproduce it through
-  `SAS.submit()`, so 12k pins down the trigger first.
+  `SAS.submit()`, so 12k pins down the trigger first. **Fixed on the 12k
+  branch, 2026-09-25:** the trigger is the session's `SYNTAXCHECK` option,
+  and some step errors set `OBS=0` while others do not. Every job now begins
+  with `options nosyntaxcheck;` and a conditional `OBS` restore (Finding
+  12.19, ADR-0039).
 - [x] **B12.2 — A CAS table's columns come back alphabetical while its row
   cells stay in table order, so CAS CSV export mispairs them.** Found
   2026-09-23 (manual test 12.4). Headers are swapped with the data under
@@ -2204,6 +2213,51 @@ have meant re-running 12.17.
   `procPython.ts` now says so, and a unit test (sized, unsized, sized
   again) pins that the learned size survives.
 
+### 12k built, 2026-09-25 — the trigger is `SYNTAXCHECK`, and every job now switches it off
+
+**Probe first, as the plan asked.** With Sean's approval, seven throwaway
+sessions on `verde` (Finding 12.19). The trigger is the session's
+`SYNTAXCHECK` option, not the path the error came through. A DATA step
+writing to an unassigned libref enters syntax-check mode whether it is
+submitted as its own job or through `SAS.submit()`. A `set` from an
+unassigned libref does not, which is why Finding 12.15 missed it. In that
+state the Python in a later run never runs. `options nosyntaxcheck;` is the
+half that recovers the session, and it also stops the next error from
+poisoning it. An `OBS=0` that SAS has already set needs undoing separately.
+
+**Sean's decision: prefix every job.** Of the four options put to him
+(prefix every job; prefix plus a session-create option; a clearing job
+after each failure; Reset Python State only), he chose the first.
+[ADR-0039](../adr/0039-every-job-switches-syntax-check-mode-off.md) records
+it and amends ADR-0038's job layout.
+
+**The build.** `procPython.ts` exports `SYNTAX_CHECK_RECOVERY`, which is
+`options nosyntaxcheck;` plus
+`%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;`.
+`execute()`, `reset()` and `probeRuntime()` each put it at the front of
+their job's code array. The unit tests pin the literal lines in the run and
+reset layouts. `recorded-proc-python.ts` now finds a reset job by
+`RESTART_STATEMENT` anywhere in the array, not at `[0]`.
+
+**Docs.** `docs/running-python.md`'s Reset section and the
+`python-on-viya` skill's `SYSCC` section say that a failed SAS step no
+longer affects later runs. `CHANGELOG.md` has a Fixed entry. Manual items
+12.23–12.26 cover the manual test 12.4 repro, a later Run File and cell,
+Reset Python State, and a `SAS.submit()` DATA step after the failure.
+
+**Adversarial review, 2026-09-25, before the push.** It found no code
+defect. It did find that the manual items as first written never exercised
+recovery: each started on a fresh connection, where the prefix switches
+`SYNTAXCHECK` off before the failing step, so `OBS=0` was never set and the
+`%if` restore never ran. Recovery is the reattach case ADR-0039 rests on.
+Items 12.24–12.26 now start from a session poisoned by
+`SAS.submit("options syntaxcheck; data casuser.test; …")`, and 12.26 also
+covers a deliberate `options obs=0;`. B12.1's stale "No fix written" is
+reworded.
+
+**Manual pass, 2026-09-25.** Sean ran 12.23–12.26 on the branch. All four
+passed.
+
 ---
 
 ## Probe findings
@@ -2536,7 +2590,9 @@ misreported the same way after a failure (`runProgram` reads the same
 `SYSCC`, so it should be, but a real `infile=` run was not probed in the
 failed state — only an inline `proc python; submit;` after the clear); and
 whether autoexec/`sasOptions` set `obs`/`syntaxcheck` differently on other
-deployments. Probed against `verde` only. No fix is written: the likely
+deployments. Probed against `verde` only. (The first two are settled by
+Finding 12.19: `nosyntaxcheck` is the necessary half, and a Python run in
+the failed state does not execute at all.) No fix is written: the likely
 shape (a clearing job before each restart and before each run's own `SYSCC`
 read, or surfacing "session needs clearing" to the user) touches
 `src/backend/procPython.ts`, so it is a decision for Sean, not part of 12e.
@@ -3083,7 +3139,9 @@ shown as the next run's output. (Superseded in part by Finding 12.16: a
 body name chosen by the wrapper meets the same need without reading the
 `NOTE`.)
 
-**Not settled:** why Finding 12.5's stuck `SYSCC` did not appear; a real
+**Not settled:** why Finding 12.5's stuck `SYSCC` did not appear (settled
+by Finding 12.19: a `set` from an unassigned libref does not enter
+syntax-check mode, and a DATA step writing to one does); a real
 cancel through the extension rather than an omitted `close`; the result
 panel's rendering; other releases. One deployment, one day, small samples.
 
@@ -3243,6 +3301,84 @@ cells, so a cell drops it.
 
 **Not settled:** whether `title=''` suppresses the banner; `count=` and the
 non-figure `ODS TEXT` arms of `show`; other Viya releases.
+
+No deployment-identifying detail appears above. Session ids and server paths
+are left out on purpose.
+
+### Finding 12.19 — the poisoning is the session's `SYNTAXCHECK` option; some step errors set `OBS=0` and others do not; `options nosyntaxcheck;` recovers it within the same job
+
+Probed 2026-09-25, `verde`, via `viya-api-probe`, with Sean's approval:
+seven throwaway sessions on the SAS Studio compute context, each deleted and
+confirmed `404`. Python ran through filerefs as `proc python infile=`,
+inside the exact `ODS_WRAPPER_BEFORE`/`ODS_WRAPPER_AFTER` lines
+`procPython.ts` sent at 12j. `SYSCC`, `SYSERR` and `SYSERRORTEXT` were read
+through the session's `variables` link, as `variables.ts` does. The mode
+was read by a macro-only job that stored `getoption(obs)` and
+`getoption(syntaxcheck)` in macro variables. Once `nosyntaxcheck` is set it
+stays set for the session, so each variant was re-armed with
+`options syntaxcheck obs=max;` and poisoned again before it ran.
+
+**Documented/assumed:** Finding 12.5 recorded the stuck state but not its
+cause, and could not say which half of its clearing job mattered. Finding
+12.15 did not reproduce it through `SAS.submit()`.
+
+**Observed:**
+
+- **A fresh session starts with `SYNTAXCHECK`** and `OBS` at its maximum.
+- **The trigger is the kind of error, not where it is submitted.**
+  `data casuser.test; x=1; run;` logged `NOTE: Due to ERROR(s) above, SAS
+  set option OBS=0, enabling syntax check mode.` as its own job, and the
+  same step through `SAS.submit()` inside a wrapped run did too. The run
+  itself read `SYSCC=1012`, and its Python went on to print the line after
+  the `SAS.submit()`. `data _null_; set nolib.tbl; run;` through
+  `SAS.submit()` on a fresh session failed the same way (`SYSCC=1012`)
+  without that `NOTE`. The session stayed at `SYNTAXCHECK` with `OBS` at
+  maximum, and the next run completed. That is the Finding 12.15 case.
+- **In syntax-check mode no Python runs.** A wrapped run of `print()`, and
+  one of `SAS.show()` on a DataFrame, printed nothing, and the body had no
+  output anchor. Both read `SYSCC=3` with the first error's `SYSERRORTEXT`.
+  The pre-12j shape (no wrapper) and `proc python restart; run;` behaved
+  the same.
+- **What recovers it, as a prefix in the same job:**
+  - `options nosyntaxcheck;` alone: the run completed and printed. But
+    `OBS` stayed `0`, so a `SAS.submit()` copying `sashelp.class` counted
+    **0** rows.
+  - `options obs=max;` alone: still `SYSCC=3`, and nothing printed.
+  - `%let syscc=0;` alone: still `SYSCC=3`.
+  - `options nosyntaxcheck obs=max;` with no `%let`: completed.
+  - `options nosyntaxcheck;` then
+    `%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;`:
+    completed, and the copy counted 19 rows. After a user's
+    `options obs=5;` the same prefix left `OBS=5`, and the copy counted 5.
+  - The same prefix recovered `proc python restart; run;` (the unprefixed
+    restart read `SYSCC=3` on the same poisoned session) and an inline
+    `proc python; submit; … endsubmit; run;`.
+- **Once `NOSYNTAXCHECK` is set, errors stop poisoning.** A later failing
+  DATA step read `SYSCC=1012` in its own job, logged no `OBS=0` `NOTE`, and
+  the next run completed with `SYSCC=0`. This held when `NOSYNTAXCHECK` was
+  set by a prefix and when it was passed in the session-create request's
+  `environment.options` (`["NOSYNTAXCHECK"]`).
+- **A Python exception is still reported.** `1/0` behind the prefix read
+  `SYSCC=1012`, `Unhandled Python exception.`, and the next run read `0`.
+- **Log and cost.** Both prefix lines arrive typed `source`. The prefix
+  adds no line of any other type. Prefixed runs took 4.2–4.6 s from job
+  `POST` to terminal state, in the same range as unprefixed ones.
+- **Stale values, for the record.** `SYSERRORTEXT` keeps the last error's
+  text after a clean job, whether or not the prefix ran. A macro-only job
+  reads `SYSCC=0` even while the session is poisoned, and that is what
+  Finding 12.5's "`%let syscc=0;` reads back `0`" saw.
+
+**What it establishes.** B12.1's cause is `SYNTAXCHECK`. A prefix of
+`options nosyntaxcheck;` and the conditional `OBS` restore, at the front of
+every job, recovers a poisoned session in the same job, stops a later error
+from poisoning it, and keeps a user's own `OBS`. It costs no request and no
+measurable job time, and it leaves Python exceptions reported as before.
+Built as ADR-0039.
+
+**Not settled:** a deliberate `OBS=0` is indistinguishable from the one SAS
+sets, so the prefix resets it; which other step errors set `OBS=0`; other
+compute contexts, whose `SYNTAXCHECK` default may differ; other Viya
+releases. One deployment, one day.
 
 No deployment-identifying detail appears above. Session ids and server paths
 are left out on purpose.

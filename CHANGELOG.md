@@ -68,6 +68,13 @@ called out under **Changed** with a migration note.
   column names were not already alphabetical. Columns now follow table order
   in the export, the data viewer and the CAS view.
 - **SAS Libraries table icon** now matches the CAS view's loaded-table icon.
+- **One failed SAS step broke the session.** A step error such as a
+  `SAS.submit()` writing to an unassigned libref put the compute session in
+  SAS's syntax-check mode. After that no Python ran, and every later run and
+  **Reset Python State** failed with the same old error until you
+  reconnected. Every job now turns syntax-check mode off first, so only the
+  run that failed reports the error. A side effect is that `OBS=0` is reset
+  to `MAX` at the start of each run.
 
 ## [0.1.3] - 2026-09-16
 

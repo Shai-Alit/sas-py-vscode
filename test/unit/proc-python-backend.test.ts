@@ -16,6 +16,7 @@ import {
   ODS_WRAPPER_BEFORE,
   ProcPythonBackend,
   type SubmissionGuard,
+  SYNTAX_CHECK_RECOVERY,
 } from "../../src/backend/procPython";
 import { ODS_BODY_FILE_NAME } from "../../src/backend/richOutput";
 import { type BackendResult } from "../../src/backend/problems";
@@ -667,10 +668,13 @@ describe("ProcPythonBackend", () => {
       const code = (submitted?.body as { code: string[] }).code;
       // ADR-0014 amendment, finding 70: a trailing `run;` closes the step —
       // without it, the step's own log/SYSCC/file-writes never flush.
-      // ADR-0038: the ODS wrapper surrounds both, close-first.
-      const wrapped = ODS_WRAPPER_BEFORE.length;
+      // ADR-0038: the ODS wrapper surrounds both, close-first. ADR-0039: the
+      // syntax-check recovery prefix comes before everything.
+      const prefix = SYNTAX_CHECK_RECOVERY.length;
+      const wrapped = prefix + ODS_WRAPPER_BEFORE.length;
       assert.equal(code.length, wrapped + 2 + ODS_WRAPPER_AFTER.length);
-      assert.deepEqual(code.slice(0, wrapped), [...ODS_WRAPPER_BEFORE]);
+      assert.deepEqual(code.slice(0, prefix), [...SYNTAX_CHECK_RECOVERY]);
+      assert.deepEqual(code.slice(prefix, wrapped), [...ODS_WRAPPER_BEFORE]);
       assert.ok(code[wrapped]?.startsWith("proc python infile="));
       assert.ok(!code[wrapped]?.includes("restart"));
       assert.equal(code[wrapped + 1], "run;");
@@ -700,9 +704,9 @@ describe("ProcPythonBackend", () => {
       assert.ok(submitted !== undefined, "no job was ever submitted");
       const code = (submitted.body as { code: string[] }).code;
       assert.ok(
-        code[ODS_WRAPPER_BEFORE.length]?.startsWith(
-          "proc python restart infile=",
-        ),
+        code[
+          SYNTAX_CHECK_RECOVERY.length + ODS_WRAPPER_BEFORE.length
+        ]?.startsWith("proc python restart infile="),
       );
     });
 
@@ -2273,8 +2277,15 @@ describe("ProcPythonBackend", () => {
       );
       const code = (submitted?.body as { code: string[] }).code;
       // ADR-0014 amendment, finding 70: `reset()`'s own step needs the same
-      // trailing `run;` `runProgram`'s does, for the same reason.
-      assert.deepEqual(code, ["proc python restart;", "run;"]);
+      // trailing `run;` `runProgram`'s does, for the same reason. ADR-0039,
+      // Finding 12.19: the recovery prefix is what lets a restart succeed on
+      // a session a failed SAS step left in syntax-check mode.
+      assert.deepEqual(code, [
+        "options nosyntaxcheck;",
+        "%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;",
+        "proc python restart;",
+        "run;",
+      ]);
     });
 
     it("refuses while an execute() run is in flight, naming it", async () => {
@@ -2868,15 +2879,17 @@ describe("ProcPythonBackend", () => {
         (request) => request.link.rel === "execute",
       );
       const code = (submitted?.body as { code: string[] }).code;
-      assert.deepEqual(code.slice(0, 5), [
+      assert.deepEqual(code.slice(0, 7), [
+        "options nosyntaxcheck;",
+        "%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;",
         "ods listing gpath=%sysfunc(quote(%sysfunc(pathname(work))));",
         "ods html5(id=vscode) close;",
         "title;footnote;",
         "ods graphics on / outputfmt=png;",
         "ods html5(id=vscode) body='pyviya_ods.htm' options(bitmap_mode='inline' svg_mode='inline');",
       ]);
-      assert.match(code[5] ?? "", /^proc python infile=PY\d{6};$/);
-      assert.deepEqual(code.slice(6), ["run;", "ods html5(id=vscode) close;"]);
+      assert.match(code[7] ?? "", /^proc python infile=PY\d{6};$/);
+      assert.deepEqual(code.slice(8), ["run;", "ods html5(id=vscode) close;"]);
     });
 
     it("stops fetching a body once it has seen an empty one of the same size (Finding 12.16)", async () => {
@@ -3098,7 +3111,11 @@ describe("ProcPythonBackend", () => {
         (request) => request.link.rel === "execute",
       );
       const code = (submitted?.body as { code: string[] }).code;
-      assert.deepEqual(code, [...environmentProbeStatements(), "run;"]);
+      assert.deepEqual(code, [
+        ...SYNTAX_CHECK_RECOVERY,
+        ...environmentProbeStatements(),
+        "run;",
+      ]);
     });
 
     it("parses a successful probe, updates capabilities(), and deletes its own file", async () => {

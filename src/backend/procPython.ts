@@ -95,6 +95,19 @@
  * apart from the ADR-0019 candidates. Only `execute()` is wrapped: `reset()`
  * and `probeRuntime()` run no user code and write nothing to show.
  *
+ * ## Every job starts by switching syntax-check mode off (ADR-0039, 12k)
+ *
+ * A compute session starts with `SYNTAXCHECK`, so one SAS step error (a
+ * `SAS.submit()` writing to an unassigned libref, say) sets `OBS=0` and puts
+ * the session in syntax-check mode. Every later step then reports
+ * `SYSCC=3` and no Python runs at all, and that includes `reset()`'s own
+ * restart (B12.1, Findings 12.5 and 12.19). So every job this backend
+ * submits, `execute()`, `reset()` and `probeRuntime()` alike, begins with
+ * {@link SYNTAX_CHECK_RECOVERY}. On a healthy session it stops the next error
+ * from poisoning anything; on a poisoned one it recovers within the same job.
+ * Like the ODS wrapper, these are extra statements in the job's code array,
+ * and `Program.bytes` is untouched (ADR-0014).
+ *
  * ## Traceback wrapper frames are dropped here; editor-position mapping is not
  *
  * 3a shipped `parseTraceback` reading every frame exactly as the runtime
@@ -216,6 +229,25 @@ const SYSERRORTEXT_NAME = "SYSERRORTEXT";
  * `reset()`-submitted job without restating the literal — see
  * `test/helpers/recorded-proc-python.ts`. */
 export const RESTART_STATEMENT = "proc python restart;";
+
+/**
+ * The statements at the front of every job this backend submits (ADR-0039),
+ * as Finding 12.19 probed them.
+ *
+ * - `nosyntaxcheck` is the half that matters. Once it is set, a step error
+ *   still fails its own job (`SYSCC=1012`) but no longer sets `OBS=0`, and on
+ *   a session already in syntax-check mode it lets the step run. `obs=max`
+ *   alone does neither, and `%let syscc=0;` is not needed.
+ * - `nosyntaxcheck` does not undo an `OBS=0` that SAS has already set, and a
+ *   `SAS.submit()` DATA step would then read no rows. The `%if` puts `OBS`
+ *   back only when it is `0`, so a user's own `options obs=5;` survives.
+ *
+ * Both lines arrive in the log typed `source`, which `logFilter.ts` drops.
+ */
+export const SYNTAX_CHECK_RECOVERY: readonly string[] = [
+  "options nosyntaxcheck;",
+  "%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;",
+];
 
 /** The ODS destination's `id`, the one SAS's own extension uses (Finding
  * 12.3), so a `close` naming it reaches the destination this backend opened. */
@@ -769,11 +801,12 @@ export class ProcPythonBackend implements ExecutionBackend {
       // ADR-0014 amendment, finding 70: same reasoning as `runProgram`'s own
       // trailing `run;` — without it, this step never closes either, and
       // `readSyscc` below would be reading a session that has not actually
-      // finished restarting.
+      // finished restarting. The recovery prefix is what lets a reset work
+      // on a session in syntax-check mode at all (Finding 12.19).
       const job = await createJob(
         this.client,
         this.session,
-        [RESTART_STATEMENT, "run;"],
+        [...SYNTAX_CHECK_RECOVERY, RESTART_STATEMENT, "run;"],
         { signal: controller.signal },
       );
       if (!job.ok) {
@@ -867,8 +900,9 @@ export class ProcPythonBackend implements ExecutionBackend {
         this.session,
         // The trailing `run;` closes the step for the same reason
         // `runProgram`'s own does (ADR-0014 amendment, finding 70) — without
-        // it, the file this probe writes is never flushed.
-        [...environmentProbeStatements(), "run;"],
+        // it, the file this probe writes is never flushed. The recovery
+        // prefix runs first for the same reason `reset()`'s does.
+        [...SYNTAX_CHECK_RECOVERY, ...environmentProbeStatements(), "run;"],
         { signal: controller.signal },
       );
       if (!job.ok) {
@@ -1061,11 +1095,20 @@ export class ProcPythonBackend implements ExecutionBackend {
       // is (`logFilter.ts`'s `isNoiseLine` excludes every `source`-typed
       // line), so nothing downstream of this changes to accommodate it. The
       // ODS wrapper's lines are `source` or `note` too (Finding 12.14), and
-      // leave `SYSCC` and the traceback as they were (Finding 12.15).
+      // leave `SYSCC` and the traceback as they were (Finding 12.15). The
+      // recovery prefix goes first, so a session a failed SAS step left in
+      // syntax-check mode runs this program instead of skipping it (Finding
+      // 12.19).
       const job = await createJob(
         this.client,
         this.session,
-        [...ODS_WRAPPER_BEFORE, statement, "run;", ...ODS_WRAPPER_AFTER],
+        [
+          ...SYNTAX_CHECK_RECOVERY,
+          ...ODS_WRAPPER_BEFORE,
+          statement,
+          "run;",
+          ...ODS_WRAPPER_AFTER,
+        ],
         { signal: run.controller.signal },
       );
       if (!job.ok) return this.translate(job, "running the program", false);

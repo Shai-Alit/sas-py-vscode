@@ -2953,11 +2953,12 @@ describe("ProcPythonBackend", () => {
 
       assert.ok(settled.ok);
       assert.ok(!outputs.some((output) => output.mime === "text/html"));
-      // The body is the extension's own file, so the note says what it held
-      // rather than naming a file the user never wrote.
-      const note = texts(outputs).find((text) => text.includes("SAS output"));
-      assert.ok(note !== undefined, "no skip note for the SAS output");
-      assert.ok(!note.includes(ODS_BODY_FILE_NAME));
+      // The shared ADR-0019 skip note, naming the body file: no new
+      // unlocalised string (PR #217 review).
+      assert.ok(
+        texts(outputs).some((text) => text.includes(ODS_BODY_FILE_NAME)),
+        "no skip note named the body file",
+      );
       assert.equal(deletedNames.length, 0);
     });
 
@@ -2971,9 +2972,9 @@ describe("ProcPythonBackend", () => {
       assert.ok(!rels.includes("getFile"));
       assert.ok(
         texts(outputs).some(
-          (text) => text.includes("SAS output") && text.includes("limit"),
+          (text) => text.includes(ODS_BODY_FILE_NAME) && text.includes("limit"),
         ),
-        "no over-cap note for the SAS output",
+        "no over-cap note named the body file",
       );
       assert.equal(deletedNames.length, 0);
     });

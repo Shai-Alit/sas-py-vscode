@@ -2032,7 +2032,7 @@ handling, before anything was built:
 - `src/backend/richOutput.ts`: `ODS_BODY_FILE_NAME`, excluded from
   `selectRichOutputCandidates`; `selectOdsBody` (the body, unless it is the
   size of the last empty one); `hasOdsOutput` (an `id="IDX` anchor preceded
-  by whitespace); `skippedOdsOutput`. A unit test caught that a `\b`
+  by whitespace). A unit test caught that a `\b`
   boundary let `data-id="IDX` match.
 - `src/notebook/htmlSanitize.ts`: `<svg>` and everything inside it are
   dropped, nested `<svg>`s counted, and a `<style>` inside one skipped as
@@ -2083,9 +2083,9 @@ were real and all five are folded in:
    would have shown it as a separate output. `gpath=` on our own destination
    did not help. `ods listing gpath=<WORK>` did, and Sean chose it over
    `ods listing close;`. Both are in Finding 12.17.
-3. **The skip note named an internal file.** A failed body fetch now reads
-   "could not retrieve this run's SAS output", and the over-cap arm has a
-   test.
+3. **The skip note named an internal file.** A failed body fetch was
+   reworded to "could not retrieve this run's SAS output", and the over-cap
+   arm got a test. (The rewording was reverted on the PR; see below.)
 4. **An unreachable branch** (`output?.mime !== "text/html"`) is gone: the
    body is decoded as HTML directly.
 5. **The wrapper test mirrored the constants.** A new test pins the literal
@@ -2095,6 +2095,17 @@ The sixth, that a listing item with no `size` now affects every run's SAS
 output, was a note rather than a finding. Under fix 1 such a body is always
 fetched, so it now yields a visible skip note instead of silently skipped
 output.
+
+**PR #217 review, one finding, fixed.** The automated reviewer flagged the
+reworded skip note as a new user-facing string outside `l10n.t()`. It was
+right that the string was new: `backend.ts`'s `RichOutput` doc already
+lists five unlocalised strings at this seam and says a sixth should reopen
+ADR-0015's localisation boundary rather than extend the list. Its suggested
+fix, importing `l10n` into `richOutput.ts`, is not available: that module
+must never import `vscode` (ADR-0009). Sean's call: drop the new string and
+reuse the existing `skippedCaptureOutput`, which names `pyviya_ods.htm`.
+`docs/running-python.md` already names that file as the extension's own,
+and the list stays at five.
 
 ---
 

@@ -172,7 +172,6 @@ import {
   selectOdsBody,
   selectRichOutputCandidates,
   skippedCaptureOutput,
-  skippedOdsOutput,
 } from "./richOutput";
 
 import {
@@ -1206,13 +1205,13 @@ export class ProcPythonBackend implements ExecutionBackend {
     // hide a same-size figure. An empty body is neither shown nor deleted;
     // the next run overwrites it. A listing with no size never matches, so
     // that body is always attempted and reported, never silently skipped.
+    // A skip reuses `skippedCaptureOutput`, naming the body file (which
+    // `docs/running-python.md` documents as the extension's own) rather than
+    // adding a sixth unlocalised string to `backend.ts`'s `RichOutput` list.
     const odsBody = selectOdsBody(filesAfter.value, this.emptyOdsBodySize);
     if (odsBody === undefined) return;
-    const bytes = await this.fetchCapture(
-      run,
-      relay,
-      odsBody,
-      skippedOdsOutput,
+    const bytes = await this.fetchCapture(run, relay, odsBody, (reason) =>
+      skippedCaptureOutput(odsBody.name, reason),
     );
     if (bytes === undefined) return;
     const html = decodeHtml(bytes);

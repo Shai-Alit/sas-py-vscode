@@ -269,18 +269,6 @@ export function skippedCaptureOutput(name: string, reason: string): RichOutput {
   };
 }
 
-/**
- * The skip note for the ODS body. The body file is this extension's own, not
- * one the user wrote, so the note names what it holds rather than its file
- * name. Same l10n gap as {@link skippedCaptureOutput}.
- */
-export function skippedOdsOutput(reason: string): RichOutput {
-  return {
-    mime: "text/plain",
-    data: `[could not retrieve this run's SAS output: ${reason}]\n`,
-  };
-}
-
 /** Deterministic ascending order, independent of locale or ICU version. */
 function ordinalCompare(a: string, b: string): number {
   if (a < b) return -1;

@@ -100,8 +100,11 @@ ordinary candidates:
 - It is **deleted only once shown.** An empty body stays for the next run
   to overwrite.
 - It comes **after** the files the script wrote itself, as one `text/html`
-  output. If it cannot be fetched, the skip note names "this run's SAS
-  output", not the file, which the user never wrote.
+  output. If it cannot be fetched, the ordinary ADR-0019 skip note names
+  `pyviya_ods.htm`, which the user docs describe as the extension's own
+  file. A note of its own would have been a sixth unlocalised string at
+  the `RichOutput` seam, which `backend.ts` says should reopen ADR-0015's
+  localisation boundary instead (PR #217 review).
 
 Everything else ADR-0019 decided still applies to it: the 10 MiB cap, the
 skip note on a failed fetch, capture on a failed run, no capture on a

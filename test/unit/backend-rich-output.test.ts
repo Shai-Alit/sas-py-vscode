@@ -14,7 +14,6 @@ import {
   selectOdsBody,
   selectRichOutputCandidates,
   skippedCaptureOutput,
-  skippedOdsOutput,
 } from "../../src/backend/richOutput";
 
 import { type SessionFile } from "../../src/compute/files";
@@ -197,18 +196,6 @@ describe("decodeHtml", () => {
       mime: "text/html",
       data: "<p>café</p>",
     });
-  });
-});
-
-describe("skippedOdsOutput", () => {
-  it("names the SAS output and the reason, not the extension's file", () => {
-    const output = skippedOdsOutput("it exceeded the cap");
-
-    assert.equal(output.mime, "text/plain");
-    assert.match(output.data, /SAS output/);
-    assert.match(output.data, /it exceeded the cap/);
-    assert.ok(!output.data.includes(ODS_BODY_FILE_NAME));
-    assert.ok(output.data.endsWith("\n"));
   });
 });
 

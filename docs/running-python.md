@@ -106,6 +106,10 @@ your script has to actually **write a file** — `fig.savefig("plot.png")`,
 file larger than 10 MiB is skipped with a note naming it and the limit; the run
 and the session carry on. A cancelled run captures nothing.
 
+`PROC PYTHON`'s own display helpers, `SAS.show()` and `SAS.pyplot()`, run
+without error but show nothing here. They send their output to a SAS ODS
+destination, and this extension does not open one. Write a file instead.
+
 Reloading the window clears the panel, the same way it clears the output
 channel's scrollback. There is no serializer for it yet.
 

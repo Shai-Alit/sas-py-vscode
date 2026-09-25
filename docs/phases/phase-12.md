@@ -377,10 +377,17 @@ under this number before today.
   Reset, and corrected the skill and `docs/running-python.md`, which said
   otherwise. Manual item 12.14 passed live, 2026-09-24. See this file's own Runbook
   entry.
-- [ ] **12h — Spike: inline graphics (`SAS.show`) / ODS HTML5.** Not
-  started. Spike only; the build it may recommend is a separate,
-  not-yet-scoped slice. Two of the four questions are already answered from
-  source — see the Plan section above.
+- [x] **12h — Spike: inline graphics (`SAS.show`) / ODS HTML5.** Run
+  2026-09-24. **Viable, and mostly plumbing.** With a named ODS HTML5
+  destination open around a run, `SAS.show`'s output lands as a file the
+  ADR-0019 diff already captures (Finding 12.14). Without one, `SAS.show`
+  and `SAS.pyplot` are silent no-ops today; the skill and
+  `docs/running-python.md` now say so. A figure is SVG unless the caller
+  passes `filetype="png"`, and the notebook sanitizer turns SVG into junk
+  text. **Sean's decision: the build wraps every run, always on.** A second
+  probe round found no reason against it and costs no measurable job time
+  (Finding 12.15). The build is not scoped. See this file's own Runbook
+  entry for what it has to do.
 - [ ] **12i — `NOTICE`: attribute the twelve bundled MIT components.** Not
   started. Append a "Bundled third-party components" section; no packaging
   change.
@@ -1609,6 +1616,90 @@ always done. So `CLAUDE.md`'s pre-PR adversarial pass does not apply.
 `docs/running-python.md` is inside the VitePress tree, so verification is
 `npm run check:docs` plus `node scripts/check-secrets.mjs`.
 
+### 12h spike run, 2026-09-24 — `SAS.show` works with a named ODS destination, and the existing diff already captures it
+
+**What ran.** Two probe sessions against `verde`, both approved by Sean
+before their mutating steps ran, eight jobs in all. Two more followed the
+same day to test the always-on decision below (Finding 12.15). They submitted the same
+`proc python infile=` shape `procPython.ts` does, with and without Finding
+12.3's ODS preamble. The captured body files were then run through this
+repository's own built `sanitizeHtml`. Full results are Finding 12.14.
+
+**The Plan's four open questions, answered:**
+
+- **Does `SAS.show(plt)` run under `infile=` with no ODS destination?** Yes,
+  with no error and `SYSCC=0`, and it shows nothing. A `SAS.show(df)` goes to
+  the listing, which this extension never reads. So today both `SAS.show`
+  and `SAS.pyplot` are silent no-ops for our users.
+- **Where does the body file land, and does the existing diff capture it?**
+  In the session's working directory, as a new `sashtml*.htm`. That is
+  exactly where ADR-0019's diff looks, and `.htm` is already whitelisted, so
+  the capture would need no change. The job's `results` collection
+  (upstream's route) holds the same file. `ods graphics / outputfmt=png`
+  does **not** force PNG: `SAS.show(plt)` emits SVG either way. Only
+  `SAS.show(plt, filetype="png")` or `SAS.pyplot(plt, filetype="png")`
+  produces the `data:image/png` form the notebook sanitizer keeps. An SVG
+  figure does not just vanish from a cell: the sanitizer drops the `<svg>`
+  tag but keeps its text, so SVG metadata shows up as junk.
+- **Does `SAS.show(df)` render as an ODS table the same way?** Yes, one
+  `<table>` in the same body file, with ODS's `<style>` blocks, and it
+  survives the sanitizer. Whether we want that next to the Phase 7 data
+  viewer is left to the build. It arrives in the same body file, so leaving
+  it out would take extra code, not less.
+- **The ODS preamble as noise.** Not a problem on this deployment. Every
+  line the preamble and `SAS.show`'s own generated steps write is typed
+  `source`, `note` or `title`, and `isNoiseLine` already drops all three.
+
+**Decision (Sean, 2026-09-24): the build wraps every run, always on.**
+Not behind a setting. The alternative was opt-in, default off, until the
+empty-body skip and user-ODS interaction were proven. Sean chose always on
+and asked for any remaining proof to be gathered now, so a second round of
+probing ran the same day (Finding 12.15). It found nothing that argues
+against the decision, and two things the build must do. The build itself
+is still a separate, not-yet-scoped slice.
+
+**What the build has to do (not scoped here).** It is mostly plumbing. Wrap
+each run's job and let the existing diff find the body. Five things it has
+to get right:
+
+1. **Close first.** Start the wrapper with `ods html5(id=vscode) close;`,
+   then `title;footnote;`, `ods graphics on;` and the open, and end it with
+   `ods html5(id=vscode) close;`. A cancelled run never reaches its
+   trailing `close`, so its file stays open and locked (`403`), and without
+   the leading `close` the next run silently appends to it (Finding 12.15).
+2. **Capture only this run's body file.** Take its name from the run's own
+   "Writing HTML5(VSCODE) Body file:" `NOTE`, as upstream does. That line
+   is typed `note`, so it has to be read before the noise filter drops it.
+   A cancelled run's leftover also shows up as changed in the next run's
+   diff, and must be deleted, not shown.
+3. **Skip empty bodies.** Every run writes one, 32,425 bytes of styling even
+   when nothing was shown. A body with no `id="IDX` anchor is empty; that
+   test held on every run in Findings 12.14 and 12.15. The fetch and delete
+   still cost a few requests per run (Finding 12.15 has the numbers), so
+   they should not delay the run's own result.
+4. **SVG.** Either document `filetype="png"`, or decide what a notebook cell
+   does with an inline `<svg>`. At minimum the sanitizer should drop an
+   `<svg>` element's whole subtree rather than leave its text behind. That
+   is an [ADR-0036](../adr/0036-notebook-html-output-is-sanitized.md)
+   decision, not a quick patch. The result panel would probably render the
+   SVG, so the two surfaces would disagree.
+5. **Behaviour changes to call out.** `SAS.submit()` output such as a
+   `proc print` starts appearing, where today it goes to the unread listing.
+   A user's own `ods _all_ close;` closes our destination too; they get a
+   visible `WARNING` and lose that run's figure, which is acceptable.
+
+The wrapper costs no measurable job time: bare and wrapped one-line runs
+both took 4.4–4.9 s (Finding 12.15).
+
+**What shipped in this slice.** Docs only, as the Plan said: Findings
+12.14 and 12.15, this entry, the punch-list box and `STATUS.md`. Plus one user-facing
+correction the probe made necessary. Nothing told a user that `SAS.show`
+and `SAS.pyplot` display nothing here, so the `python-on-viya` skill and
+`docs/running-python.md` now say so and point at `savefig`. No source and
+no changed invariant, so `CLAUDE.md`'s pre-PR adversarial pass does not
+apply. `docs/running-python.md` is inside the VitePress tree, so
+verification is `npm run check:docs` plus `node scripts/check-secrets.mjs`.
+
 ---
 
 ## Probe findings
@@ -2336,3 +2427,159 @@ wording or `type` on any other deployment. One run on one deployment.
 
 No deployment-identifying detail appears above. The fileref names, marker
 values and compute-context label are this probe's own fixed choices.
+
+### Finding 12.14 — `SAS.show` runs silently under `infile=`; with a named ODS HTML5 destination open, its output lands as a session file the ADR-0019 diff already sees, but a figure is SVG unless the caller asks for PNG
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, with Sean's approval of
+the mutating steps: two throwaway sessions on the "SAS Studio compute
+context", four uploaded filerefs and four jobs in each. Both sessions were
+deleted and confirmed `404`. `SYSVLONG` read `V.04.00M0P030926`; Python
+3.12.12; matplotlib 3.11.1. Every job ended `completed` with `SYSCC=0`.
+Around each job the probe listed the session's working directory (the same
+`getFiles` → `getDirectoryMembers` walk `src/compute/files.ts` makes) and
+read the job's `results` collection, which is how upstream
+`vscode-sas-extension` fetches ODS output. The "preamble" below is Finding
+12.3's pair of statements, `ods graphics on;` then
+`ods html5(id=vscode) options(bitmap_mode='inline' svg_mode='inline');`,
+with `ods html5(id=vscode) close;` after `run;`.
+
+**Documented.** SAS's "Using PROC PYTHON Callback Methods" page:
+`SAS.pyplot(plot, filename='matplot.svg', filetype='svg', …)` writes the
+figure to WORK and renders it. `SAS.show(object, title, count, kwargs)`
+(2025.03) sends a DataFrame, native value or matplotlib plot to the results
+rather than the log, and passes `kwargs` to `pyplot`. The page does not say
+what happens with no ODS destination open.
+
+**Observed:**
+
+| Job | Preamble | Python | Body file (working dir = job `results`) |
+|---|---|---|---|
+| A | none | `SAS.show(plt)`, `SAS.show(df)` | None; `results` empty. The `df` went to the listing (`listingAsText` held the `proc print` table). The figure went nowhere. |
+| B | `ods graphics / outputfmt=png` | same | `sashtml.htm`, 53,157 B: one inline `<svg>`, one `<table>`, no `data:image/png` |
+| C | `ods graphics on` (default format) | same | `sashtml1.htm`, 53,157 B, the same shape as B |
+| D | `ods graphics / outputfmt=png` | `SAS.pyplot(plt, filetype="png")` | 69,934 B: one `<img src="data:image/png;base64,…">`, no `<svg>` |
+| E | `ods graphics on` | `SAS.show(plt, filetype="png")` | 70,505 B: one `data:image/png` `<img>`, no `<svg>` |
+| F | `ods graphics on` | `print()` only | 32,425 B: styles and boilerplate, no `id="IDX…"` output anchor |
+| G | none | `SAS.show(plt, filetype="png")` | None; `results` and listing both empty |
+
+Every `SAS.show`/`SAS.pyplot` call returned `None` and raised nothing. In
+every preamble job the body file appeared as a **new file in the session's
+working directory** and as the job's single `results` item
+(`type: "ODS"`, one `self` link of type `text/html`), the same size both
+ways. The name increments per session (`sashtml.htm`, `sashtml1.htm`, …).
+`SAS.show` and `SAS.pyplot` generate their own SAS steps (`title2`, a
+`data _null_` with `declare odsout`, a `proc print`, `proc printto`, a
+delete of the WORK image). Every line of that, and every preamble line, came
+back typed `source`, `note` or `title`.
+
+**What it establishes.**
+
+- Under `infile=`, `SAS.show` and `SAS.pyplot` run without error and with
+  `SYSCC=0`. With no ODS destination they show the user nothing. A figure
+  has nowhere to go, and a DataFrame reaches only the listing, which this
+  extension never reads. Today, calling either is a silent no-op.
+- The body file lands exactly where ADR-0019's diff already looks, so the
+  existing capture would pick it up as `text/html`, unchanged. No new
+  retrieval route is needed. The job `results` collection is a second route
+  to the same bytes.
+- `ods graphics / outputfmt=png` does **not** make `SAS.show(plt)` produce a
+  PNG. Matplotlib writes the SVG itself before ODS sees it, and ODS embeds
+  the file it is handed (B and C are identical). Only `filetype="png"` on the
+  Python call changes it (D, E).
+- With the destination open, ODS writes a body file on every run, even when
+  nothing was shown (F, about 32 KB of styling). Upstream skips a body with
+  no `id="IDX` anchor (`client/src/connection/rest/index.ts`); F shows why.
+- The preamble adds no visible log noise here: `logFilter.ts`'s
+  `isNoiseLine` already drops every line type it produces.
+
+**Local check against this repository's sanitizer.** Running the built
+`sanitizeHtml` (`src/notebook/htmlSanitize.ts`) over the captured bodies:
+D's PNG `<img>` survives, and B's `<table>` and both `<style>` blocks
+survive. B's `<svg>` is dropped as an unknown tag, but its text children are
+kept, so the cell would show escaped SVG metadata
+(`…</dc:date> image/svg+xml</dc:format> Matplotlib v3.11.1, …`) where the
+figure was. This is the sanitizer doing what it was built to do (an unknown
+tag is dropped and its children kept). It is recorded because an SVG figure
+turns into visible junk, not into a blank.
+
+**Not settled:** other Viya releases (`SAS.show` needs 2025.03 or later);
+how the result panel renders an inline `<svg>` (its CSP allows inline
+styles and `data:` images, so it should render, but nothing here displayed
+it); a user's own `ods` statements or `ods _all_ close;` inside
+`SAS.submit()` interacting with a named destination; `SAS.show` on a
+Series, an index or a native value; `count=`/`title=`.
+
+No deployment-identifying detail appears above. Session ids and server
+paths from the log are left out on purpose.
+
+### Finding 12.15 — wrapping every run in the named ODS destination leaves the error signal intact and costs no measurable job time; a cancelled run's open file is locked until the next run's leading `close`
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, two more throwaway
+sessions (SAS Studio compute context, 13 jobs each), both deleted and
+confirmed `404`. Run after Sean chose "always on" for the build (see this
+file's "12h spike run" entry), to test the paths an always-on wrapper would
+hit that Finding 12.14 did not. The wrapper was `title;footnote;`,
+`ods graphics on;` and Finding 12.3's `ods html5(id=vscode) …;` before the
+`proc python infile=` statement, and `ods html5(id=vscode) close;` after
+`run;`. In the second session it also began with
+`ods html5(id=vscode) close;` (the "close-first" form).
+
+**Observed:**
+
+- **Error signal.** A Python `ZeroDivisionError` inside the wrapper gave
+  job state `error`, `SYSCC=1012`, `SYSERRORTEXT='Unhandled Python
+  exception.'` and the same traceback, frame for frame, as the same file
+  run bare. The trailing `close` ran and changed none of it.
+- **Empty-body detection.** Every run that showed nothing (`print()` only,
+  the Python exception, a failed `SAS.submit()`, a run whose destination
+  the user had closed) wrote a 32,425-byte body with no `id="IDX` anchor.
+  Every run that showed something (`SAS.show(df)`, a
+  `SAS.submit("proc print …")`, `SAS.show(plt, filetype="png")`) had at
+  least one.
+- **`SAS.submit()` output.** A `proc print` submitted from Python landed in
+  the body as a `<table>`. Without the wrapper it goes to the listing.
+- **The user's own `ods _all_ close;`** (via `SAS.submit`) closed the named
+  destination too. The following `SAS.show` logged `WARNING: No output
+  destinations active.` (typed `warning`), the body stayed empty, and
+  `SYSCC` stayed `0`. The trailing `close` on the already-closed
+  destination logged nothing.
+- **A run with no trailing `close`** (standing in for a cancelled run) left
+  its body file open. Fetching it returned `403` with `errorCode` `5452`
+  ("…is in use and has a lock on it."), a JSON error rather than HTML.
+  - With the plain wrapper, the next run's `ods html5(id=vscode) …`
+    logged **no** "Body file" `NOTE` and kept writing into the same file.
+  - With the close-first form, the leading `close` was silent on a fresh
+    session. After a leftover, it closed the old file (now `200` and
+    complete) and the open logged a new `NOTE` naming a new file. That
+    run's diff then showed **both** files as changed.
+- **A failed `SAS.submit()` step.** `data _null_; set nolib.tbl; run;` gave
+  `SYSCC=1012` and `SYSERRORTEXT='Libref NOLIB is not assigned.'`. The next
+  wrapped run completed with `SYSCC=0` and its figure. So Finding 12.5's
+  stuck-`SYSCC` state did not appear here. Finding 12.5 recorded a failing
+  step submitted directly, not from inside `PROC PYTHON`; which difference
+  matters is not settled.
+- **Cost.** Wall time from job `POST` to terminal state, polled every
+  0.2 s, for a one-line `print()`, bare against wrapped in the same session:
+  bare 4,425 / 4,494 / 4,872 / 5,470 ms (plus 5,936 ms for the session's
+  first run, which starts the interpreter); wrapped 4,445 / 4,525 / 4,574 /
+  4,647 / 4,892 ms. No difference shows through a run-to-run spread of
+  about ±0.5 s. The cost that does exist is capturing the empty body
+  afterwards: fetching its 32,425 bytes took 0.38 s (`curl`'s
+  `time_total`); fetch, `ETag` read and `DELETE` together took 2.95 s of
+  wall time from a Windows shell that started a new `curl` process for
+  each, which overstates what one client with a kept-alive connection
+  would pay.
+
+**What it establishes.** An always-on wrapper does not disturb how this
+extension decides a run failed, and does not slow the job. It does add a
+file to capture on every run. A build needs the close-first form, and it
+must capture only the body file named in that run's own "Body file"
+`NOTE`, not every changed `.htm`. Otherwise a cancelled run's leftover is
+shown as the next run's output.
+
+**Not settled:** why Finding 12.5's stuck `SYSCC` did not appear; a real
+cancel through the extension rather than an omitted `close`; the result
+panel's rendering; other releases. One deployment, one day, small samples.
+
+No deployment-identifying detail appears above. Session ids and server
+paths from the log and the `403` body are left out on purpose.

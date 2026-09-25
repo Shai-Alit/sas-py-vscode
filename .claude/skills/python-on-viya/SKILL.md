@@ -162,6 +162,17 @@ CAS, as a `pandas.DataFrame` (a `SASDataFrame`). Note this always runs
 single-threaded on the CAS side (`numReadNodes=1`) regardless of cluster
 size — that's normal, not something to tune around.
 
+## Figures and tables reach the user only as files
+
+A plot or an HTML table reaches the user only if the script **writes a
+file** into the session's working directory: `fig.savefig("plot.png")` or
+`df.to_html("table.html")`. The extension diffs that directory after each
+run and shows new `.png` and `.html` files. There is no implicit
+`plt.show()` or `_repr_html_` capture. Don't use `SAS.show()` or
+`SAS.pyplot()` for this: they run without error and return `None`, but they
+write to a SAS ODS destination this extension does not open, so the user
+sees nothing.
+
 ## What the environment actually contains
 
 Don't assume Python packages available on Viya match the user's local

@@ -543,7 +543,8 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   ([ADR-0038](../adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md),
   Findings 12.16 and 12.17). A notebook cell drops an SVG figure whole. The
   pre-push adversarial review's five real findings are folded in. Manual
-  items 12.15–12.21 are not yet run. See the "12j built" Runbook entry.
+  items 12.15–12.22 passed 2026-09-25, after two fixes (Finding 12.18). See
+  the "12j built" and "12j manual pass" Runbook entries.
 - [ ] **12k — Fix B12.1 (a failed SAS step poisons the session).** Added
   2026-09-24. Not started. Pin down the trigger by probe first.
 - [ ] **12l — Notebook execution-surface staleness.** Added 2026-09-24. Not
@@ -2059,10 +2060,14 @@ path is covered by a unit test built to Finding 12.14's description and by
 manual item 12.17. The ODS `<style>` block was read for selectors that
 could restyle the page around it. The heavy rules are all scoped to
 `.body`. A few bare element rules (`table`, `td, th`, `p`, link colours)
-do leak. ADR-0038 records that as accepted.
+do leak. ADR-0038 records that as accepted. **Corrected 2026-09-25:** dozens
+of class rules are unscoped too, and in a notebook they restyled other
+cells. See the "12j manual pass" entry and Finding 12.18.
 
 **Open.** The manual items. A real cancel through the extension rather than
-a missing `close` (item 12.20). Other Viya releases.
+a missing `close` (item 12.20). Other Viya releases. **2026-09-25:** the
+manual items, 12.20 included, passed; see the "12j manual pass" entry.
+Other Viya releases stay open.
 
 **Adversarial review, 2026-09-24, before the push.** Six findings; five
 were real and all five are folded in:
@@ -2106,6 +2111,77 @@ must never import `vscode` (ADR-0009). Sean's call: drop the new string and
 reuse the existing `skippedCaptureOutput`, which names `pyviya_ods.htm`.
 `docs/running-python.md` already names that file as the extension's own,
 and the list stays at five.
+
+### 12j manual pass, 2026-09-25 — two fixes and one test-code typo
+
+Sean ran 12.15–12.19 on the branch. 12.15, 12.16 and 12.18 passed. A probe
+(Finding 12.18, approved by Sean) settled the other two:
+
+- **12.17, SVG in a cell: fixed.** The cell showed an `Output` banner and
+  nothing under it. The banner is `SAS.show`'s own `title2 'Output'`, in
+  the ODS title block above the `<svg>`. The sanitizer dropped the figure as
+  designed and left the title above a gap. Sean chose a placeholder over
+  documenting the gap: `sanitizeHtml` takes an optional `svgNote` and puts
+  it, escaped, in a `<p>` where each outermost `<svg>` was.
+  `toNotebookOutputPieces` takes a `NotebookOutputLabels` argument, and
+  `appendRichOutput` fills it with an `l10n.t()` string, because
+  `notebookRender.ts` cannot import `vscode`. The Result panel is
+  unchanged. ADR-0038 point 4, `docs/notebooks.md`,
+  `docs/running-python.md` and the `python-on-viya` skill now say so.
+- **12.19's error was the test code's typo.** It passed `filteype="png"`.
+  `SAS.show` forwards unknown keywords to `savefig`, which raised. The
+  error was correct. Sean re-ran it with the spelling fixed, and it passed.
+- **Dark-mode black text in a cell: fixed.** At first it did not
+  reproduce. Then Sean found the pattern: another cell's text turned black
+  whenever a cell with ODS output drew it, and turned light again while
+  that cell was cleared for a re-run. Every notebook output shares one
+  webview document, so an ODS body's `<style>` restyles every cell, and
+  its stylesheet has dozens of unscoped class rules (`.output`, `.cell`,
+  `.container`, `.note`, …) with a dark `color` (Finding 12.18). That
+  refutes this file's "12j built" claim that the heavy rules are scoped to
+  `.body`. Sean chose, over probing for an ODS option or rewriting the
+  selectors, to drop the `<style>` of any HTML with an ODS output anchor
+  (`hasOdsOutput`) in a cell. `sanitizeHtml` now takes a `SanitizeOptions`
+  object (`svgNote`, `dropStyle`). A pandas `Styler` table keeps its
+  `<style>`. The Result panel keeps the styles: its own classes are all
+  prefixed `python-on-viya-`, so no ODS rule matches them. ADR-0038's
+  "ODS styles" consequence, ADR-0036's status line and
+  `docs/notebooks.md` say so.
+- **12.15's `[an HTML table was produced — see the Result panel]`** is the
+  output channel's existing `text/html` placeholder, not a wrapper line.
+  Pass stands.
+
+Sean then re-ran 12.17 against the fix, and it passed.
+
+**Rest of the pass, 2026-09-25.** Sean ran 12.20, 12.21 and the new
+12.22, which checks the `<style>` fix. All three passed. Every item,
+12.15–12.22, now passes.
+
+**Adversarial review of the manual-pass diff, 2026-09-25, before the
+push.** It found no correctness or security defect. Of its minor findings,
+these are folded in:
+
+- **The SVG note showed in any HTML, not only SAS output.** An HTML file a
+  user's code writes (ADR-0019), such as a plotly export with SVG icons,
+  would have got a note in each icon's place, with the wrong
+  `filetype="png"` advice. `toNotebookOutputPieces` now passes `svgNote`
+  only when `hasOdsOutput` holds, the same check as `dropStyle`. A new
+  unit test pins that such an SVG drops with no note. ADR-0038 and
+  `docs/notebooks.md` now say "in SAS output". Finding 12.18's
+  `SAS.show(plt)` body carries an `IDX` anchor, so 12.17's note is
+  unaffected.
+- **The ODS `<style>` test used one block.** It now uses two, as in
+  Finding 12.18's captured body.
+- **Nits.** The duplicated "See this module's own doc comment" sentence in
+  `sanitizeHtml`'s JSDoc is merged, and the skill and
+  `docs/running-python.md` are re-wrapped.
+
+One finding is recorded rather than changed. The note is a `<p>`, so an
+`<svg>` inside an open `<p>` or a table row would have the browser move or
+split it. That is cosmetic, and safety is unaffected. In an ODS body each
+figure sits in its own `<div>`, and the note now appears only there, so
+`htmlSanitize.ts`'s doc comment says so instead. Switching the element would
+have meant re-running 12.17.
 
 ---
 
@@ -3090,3 +3166,62 @@ releases.
 
 No deployment-identifying detail appears above. Session ids, the WORK path
 and server paths are left out on purpose.
+
+### Finding 12.18 — `SAS.show` writes its `title=` (default `Output`) as a `title2` above the figure and forwards unknown keywords to `savefig`; the body's stylesheet has unscoped class rules
+
+Probed 2026-09-25, `verde`, via `viya-api-probe`, with Sean's approval: one
+throwaway session on the SAS Studio compute context, deleted and confirmed
+`404`. Each Python program was written into WORK by a `data _null_` step,
+then run as `proc python infile=` inside the exact
+`ODS_WRAPPER_BEFORE`/`ODS_WRAPPER_AFTER` lines `procPython.ts` sends. The
+probe read each job's `results` collection and log.
+
+**Documented.** SAS's "Using PROC PYTHON Callback Methods" page gives
+`SAS.show(object, title, count, kwargs)` and says `kwargs` go to `pyplot`
+(Finding 12.14). It does not give `title`'s default.
+
+**Observed:**
+
+| Program | Job state | Body |
+|---|---|---|
+| `SAS.show(plt)` | `completed` | 52,179 B, with an `id="IDX"` anchor |
+| `plt.savefig('a.png')`, then `SAS.show(plt, filteype='png')` | `error` | 32,425 B, no `IDX` anchor |
+| `1/0` | `error` | 32,425 B, no `IDX` anchor |
+| `inspect.getsource` of `SAS.show` and `SAS.pyplot` | `completed` | 32,425 B, no `IDX` anchor |
+
+- In the `SAS.show(plt)` body, the `IDX` anchor is on a
+  `systitleandfootercontainer` `<div>` holding
+  `<span class="c systemtitle2">Output</span>`. The `<svg>` follows in a
+  separate `<div>`, after an `<?xml …?>` declaration and an `<!DOCTYPE svg>`.
+  With the `<svg>` dropped, only the title remains.
+- The source confirms both halves. `show` is
+  `def show(self, obj, title='Output', count=None, **kwargs)` and starts with
+  `self.submit("title2 '"+title+"';")`. For an object with `savefig` it
+  calls `self.pyplot(obj, **kwargs)`. `pyplot` takes `filetype='svg'` by
+  default, and calls `plot.savefig(fullname, format=filetype, **kwargs)`.
+  It prints `Plot object passed in failed trying to use the savefig()
+  method.` and re-raises on any exception. A misspelled keyword therefore
+  reaches matplotlib, which raises `TypeError` and fails the run.
+- A raised run's body holds no output, so no ODS HTML reaches a notebook
+  cell from it.
+- The body holds two `<style>` blocks, about 32 KB of CSS. Read locally
+  from the capture, the rules not under `.body` include dozens of bare
+  class selectors (`.output`, `.cell, .container`, `.note`, `.index`,
+  `.list`, `.document`, `.paragraph`, …), most setting a `background-color`
+  near white and a `color` of `#000000` or `#112277`. The 12j build had
+  recorded the heavy rules as scoped to `.body`, which this refutes. In a
+  notebook, whose outputs share one webview document, those rules restyled
+  other cells' text; Sean saw it turn black in a dark theme.
+
+**What it establishes.** The `Output` banner in manual item 12.17 is
+`SAS.show`'s own title, not wrapper or sanitizer residue, so the notebook
+cell needs a note where the figure was (the 12j manual-pass fix). Manual
+item 12.19's error was the test code's typo, not a defect. An ODS body's
+`<style>` cannot be shown in a notebook cell without restyling other
+cells, so a cell drops it.
+
+**Not settled:** whether `title=''` suppresses the banner; `count=` and the
+non-figure `ODS TEXT` arms of `show`; other Viya releases.
+
+No deployment-identifying detail appears above. Session ids and server paths
+are left out on purpose.

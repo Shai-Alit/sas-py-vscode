@@ -578,7 +578,12 @@ export async function appendRichOutput(
   output: RichOutput,
   imageIndex = 1,
 ): Promise<void> {
-  for (const piece of toNotebookOutputPieces(output)) {
+  const labels = {
+    svgDropped: vscode.l10n.t(
+      '[an SVG figure is not shown in a notebook cell — pass filetype="png" to SAS.show]',
+    ),
+  };
+  for (const piece of toNotebookOutputPieces(output, labels)) {
     if (piece.kind === "stdout") {
       await execution.appendOutput(
         new vscode.NotebookCellOutput([

@@ -52,7 +52,14 @@ nothing, which is a difference from how a Jupyter kernel normally behaves.
 
 Pass `filetype="png"` when you show a figure. `SAS.show(plt)` on its own
 produces an SVG figure, and a notebook cell drops SVG entirely (it can carry
-script), so the cell shows nothing where the figure would be.
+script). In SAS output the cell shows `SAS.show`'s `Output` title and,
+where the figure would be, a one-line note saying to pass `filetype="png"`.
+An SVG in an HTML file your code writes is dropped with no note.
+
+SAS output (a `SAS.show` table or a `SAS.submit()` procedure) renders in the
+notebook's own table styling rather than the SAS style the Result panel
+uses. Every output in a notebook shares one page, and the SAS stylesheet
+would restyle the other cells.
 
 `text/html` output is sanitized before it renders — a `<script>` tag is
 dropped, along with anything that could smuggle one past the scan, so an

@@ -53,7 +53,18 @@
  * matplotlib version), and keeping them turned a `SAS.show(plt)` figure into
  * junk text in a cell (Finding 12.14). Nothing inside is ever emitted, so a
  * malformed or unclosed `<svg>` can only lose more content, never let any
- * through.
+ * through. A caller that passes `svgNote` gets that text, escaped, in a `<p>`
+ * where each outermost `<svg>` was, so the cell says what was dropped rather
+ * than showing only `SAS.show`'s own `Output` title above a gap
+ * (Finding 12.18). The `<p>` suits an ODS body, where each figure sits in its
+ * own `<div>`; an `<svg>` inside an open `<p>` or a table row would have the
+ * browser move or split it, which is cosmetic only.
+ *
+ * `dropStyle` drops every `<style>` block, safe or not. Every output in a
+ * notebook shares one webview document, so a `<style>` in one cell restyles
+ * every other cell. An ODS body's stylesheet has dozens of unscoped class
+ * rules (`.output`, `.cell`, `.container`, `.note`, …) with a dark `color`,
+ * and in a dark theme they turned other cells' text black (Finding 12.18).
  *
  * No tag carries a URL-bearing attribute except `<img src>`, and that is
  * restricted to an inline `data:image/…;base64,…` value — the same
@@ -319,12 +330,26 @@ function findRawTextEnd(
   };
 }
 
+/** Optional behaviour for {@link sanitizeHtml}; see this module's own doc
+ * comment. */
+export interface SanitizeOptions {
+  /** Text put, escaped, in a `<p>` where each outermost `<svg>` was. */
+  readonly svgNote?: string | undefined;
+  /** Drop every `<style>` block, not only a dangerous one. */
+  readonly dropStyle?: boolean | undefined;
+}
+
 /**
  * Turns arbitrary `text/html` into a safe subset that cannot execute script
  * or fetch anything remote, for VS Code's own built-in notebook renderer to
- * show as real `text/html`. See this module's own doc comment for the design.
+ * show as real `text/html`. See this module's own doc comment for the design
+ * and for {@link SanitizeOptions}.
  */
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(
+  html: string,
+  options: SanitizeOptions = {},
+): string {
+  const { svgNote, dropStyle = false } = options;
   let out = "";
   let i = 0;
   const stack: string[] = [];
@@ -402,6 +427,9 @@ export function sanitizeHtml(html: string): string {
       continue;
     }
     if (name === "svg") {
+      if (svgDepth === 0 && svgNote !== undefined) {
+        out += `<p>${escapeText(svgNote)}</p>`;
+      }
       if (!selfClosed) svgDepth += 1;
       continue;
     }
@@ -414,7 +442,7 @@ export function sanitizeHtml(html: string): string {
     if (name === "style") {
       const { contentEnd, afterClose } = findRawTextEnd(html, i, name);
       const css = html.slice(i, contentEnd);
-      if (!isDangerousCss(css)) out += `<style>${css}</style>`;
+      if (!dropStyle && !isDangerousCss(css)) out += `<style>${css}</style>`;
       i = afterClose;
       continue;
     }

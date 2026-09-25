@@ -120,7 +120,13 @@ figure before ODS sees it, so no ODS option changes it (Finding 12.14).
   text, so the figure showed as junk (`image/svg+xml`, the matplotlib
   version). SVG is not allowed through: it is a second markup language with
   its own script and link vectors, and ADR-0036's allow-list would need a
-  parallel one for it. The user docs say to pass `filetype="png"`.
+  parallel one for it. The user docs say to pass `filetype="png"`. A
+  localised one-line note, passed in by the notebook controller, takes each
+  dropped outermost `<svg>`'s place in SAS output (a body with an ODS output
+  anchor). An SVG in other HTML is dropped with no note, since the note's
+  `filetype="png"` advice would be wrong there. Without it the cell showed only
+  `SAS.show`'s `title2 'Output'` banner above a gap (Finding 12.18).
+  The body's `<style>` is dropped in a cell too; see "ODS styles" below.
 - **Result panel:** it renders the SVG. ADR-0021's CSP already makes any
   `<script>` in it inert.
 
@@ -184,14 +190,20 @@ leaves the LISTING destination open for code that relies on it.
   LISTING if a user's code had closed it. A procedure graph's LISTING copy
   now lands in WORK. Those files pile up there until the session ends,
   since nothing reads or deletes them.
-- **ODS styles reach the page.** The body carries one `<style>` block. Its
-  heavy rules (background, font, colour) are scoped to the `.body` class on
-  ODS's own `<body>` element, which an inserted fragment loses. A few are
-  bare element selectors (`table { border-collapse: collapse }`,
-  `td, th { padding: 3px 6px }`, `p { margin-top: 0 }`, link colours), and
-  they apply to the rest of the result panel, or to the notebook's shared
-  output webview, while that output is shown. This is cosmetic, and it is
-  accepted rather than scoped for now.
+- **ODS styles.** The body carries two `<style>` blocks. Besides a few bare
+  element selectors (`td, th { padding: 3px 6px }`, link colours), they hold
+  dozens of unscoped class rules (`.output`, `.cell`, `.container`,
+  `.note`, `.index`, …), most with a dark `color` (Finding 12.18).
+  - **Notebook cell:** every output shares one webview document, and those
+    class names collide with the notebook's own. In a dark theme another
+    cell's text turned black while an ODS output was shown. A body with an
+    ODS output anchor is therefore sanitized with **no** `<style>` at all,
+    and its tables and titles take the notebook's own styling. Other HTML,
+    such as a pandas `Styler` table, keeps its `<style>`.
+  - **Result panel:** its own elements use `python-on-viya-` class names,
+    which no ODS rule matches, so the styles are kept there. The bare
+    element rules still reach the rest of the panel while that output is
+    shown. This is cosmetic and accepted.
 - **A DataFrame now has two routes**: `SAS.show(df)` renders an ODS table,
   and the data viewer (Phase 7) browses a table. The first arrives with the
   wrapper at no extra cost, and leaving it out would take code. It is kept.

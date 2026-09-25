@@ -202,19 +202,36 @@ plt.title("12j figure")
 SAS.show(plt, filetype="png")
 ```
 
-- [ ] **12.15** **A `SAS.show` figure reaches the Result panel.** Run File.
+- [x] **12.15** **A `SAS.show` figure reaches the Result panel.** Run File.
   **Expect:** the Result panel opens with the figure. **Python on Viya:
   Output** shows no `ods` statement, no `Writing HTML5(VSCODE) Body file`
   line, and nothing else new.
-- [ ] **12.16** **The same figure reaches a notebook cell.** Put the same
+  **(9/25/2026) note** the output does show a message saying
+  "[an HTML table was produced — see the Result panel]"
+  **Expected, 2026-09-25.** That line is the output channel's existing
+  placeholder for any `text/html` output (`src/run/outputChannel.ts`), and
+  the ODS body is `text/html`. It is not new with 12j; the "nothing else new"
+  above meant nothing from the wrapper itself. Pass stands.
+- [x] **12.16** **The same figure reaches a notebook cell.** Put the same
   code in an `.ipynb` cell on the same profile and run it. **Expect:** the
   figure renders in the cell's output.
-- [ ] **12.17** **An SVG figure: shown in the panel, dropped whole in a
+- [x] **12.17** **An SVG figure: shown in the panel, dropped whole in a
   cell.** Change the last line to `SAS.show(plt)`, with no `filetype`. Run
   File, then run the cell. **Expect:** the Result panel shows the figure. The
   cell shows no figure and no stray text: nothing like `image/svg+xml` or
   `Matplotlib v`.
-- [ ] **12.18** **A DataFrame and a `SAS.submit()` procedure show as
+  **(9/25/2026) partial** a regular .py file show the svg. no plot is shown in the notebook - 
+  just an "output" banner with nothin under it. 
+  no errors reported in the log, output, or problem panel.
+  **Cause found, 2026-09-25.** The banner is `SAS.show`'s own
+  `title2 'Output'` (its default `title=`), in the ODS body's title block
+  above the SVG. The sanitizer dropped the SVG as designed and left the
+  banner above a gap. Fixed: a notebook cell now shows a one-line note
+  where each SVG figure was. See Finding 12.18. **Re-run expectation:** the
+  cell shows the `Output` banner, then `[an SVG figure is not shown in a
+  notebook cell — pass filetype="png" to SAS.show]`, and still no
+  `image/svg+xml` or `Matplotlib v` text. The Result panel is unchanged.
+- [x] **12.18** **A DataFrame and a `SAS.submit()` procedure show as
   tables.** Run:
 
   ```python
@@ -227,19 +244,28 @@ SAS.show(plt, filetype="png")
   **Expect:** in both the panel and a cell, a two-row table with columns `a`
   and `b`, a three-row `SASHELP.CLASS` listing, then the scatter plot, once.
   No separate `SGPlot.png` output appears.
-- [ ] **12.19** **A run that shows nothing stays quiet, and a saved file comes
+- [x] **12.19** **A run that shows nothing stays quiet, and a saved file comes
   first.** Close the Result panel, then Run File on `print("only text")`.
   **Expect:** the panel does not open and the cell has only the text. Then
   run a file that calls `plt.savefig("a.png")` and then
   `SAS.show(plt, filetype="png")`. **Expect:** the saved `a.png` first, then
   the `SAS.show` figure.
-- [ ] **12.20** **A cancelled run's figure never appears later.** Run File on
+- [x] **12.20** **A cancelled run's figure never appears later.** Run File on
   the figure code with `import time; time.sleep(30)` added after the
   `SAS.show` line, and cancel it while it sleeps. Then Run File on
   `print("after cancel")`. **Expect:** only `after cancel`; no figure. Then
   run the original figure code. **Expect:** its figure, once.
-- [ ] **12.21** **A user's own `ods _all_ close;` costs that run's figure
+- [x] **12.21** **A user's own `ods _all_ close;` costs that run's figure
   only.** Add `SAS.submit("ods _all_ close;")` before the `SAS.show` line and
   Run File. **Expect:** the run succeeds, the output shows `WARNING: No output
   destinations active.`, and no figure appears. Remove the line and run
   again. **Expect:** the figure.
+- [x] **12.22** **SAS output in one cell never restyles another cell.** Use a
+  dark theme. In one notebook, run a cell that raises (`1/0`), then a second
+  cell with the figure code above (`filetype="png"`). Run the second cell
+  twice more. **Expect:** the first cell's error text stays light every
+  time, including while the second cell runs and after it finishes. Then
+  run 12.18's code in a cell. **Expect:** its tables use the notebook's own
+  table styling, not SAS's white-and-blue style, and stay readable. SAS's
+  stylesheet leaked into every output in the notebook and turned other
+  cells' text black (Finding 12.18).

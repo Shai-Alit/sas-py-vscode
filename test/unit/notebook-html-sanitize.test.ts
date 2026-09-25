@@ -267,6 +267,27 @@ describe("notebook/htmlSanitize", () => {
       );
     });
 
+    it("puts svgNote, escaped, where each outermost <svg> was (Finding 12.18)", () => {
+      // Two top-level figures, the first with a nested <svg>: one note each,
+      // none for the nested one, and the note's own markup is escaped.
+      assert.equal(
+        sanitizeHtml(
+          "<div>Output</div><svg><svg><g>a</g></svg></svg><svg/><p>end</p>",
+          { svgNote: "<b>no SVG</b> & more" },
+        ),
+        "<div>Output</div>" +
+          "<p>&lt;b&gt;no SVG&lt;/b&gt; &amp; more</p>" +
+          "<p>&lt;b&gt;no SVG&lt;/b&gt; &amp; more</p>" +
+          "<p>end</p>",
+      );
+    });
+
+    it("drops even a safe <style> block under dropStyle (Finding 12.18)", () => {
+      const html = "<style>.output{color:#000}</style><p>x</p>";
+      assert.equal(sanitizeHtml(html), html);
+      assert.equal(sanitizeHtml(html, { dropStyle: true }), "<p>x</p>");
+    });
+
     it("still closes a <style> block whose bogus end-tag attributes are themselves unterminated", () => {
       // </style/ with no real > after it at all — findRawTextEnd's own
       // "nothing after this can be trusted" fallback for that inner scan.

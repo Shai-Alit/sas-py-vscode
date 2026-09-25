@@ -171,8 +171,9 @@ table reaches the user in one of two ways:
   `SAS.pyplot(plt, filetype="png")`. The extension opens an ODS HTML5
   destination around every run, so these render in the Result panel and in
   a notebook cell. Pass `filetype="png"` for a figure: the default is SVG,
-  which the Result panel shows but a notebook cell drops. Output from a
-  `SAS.submit()` procedure, such as a `proc print`, appears the same way.
+  which the Result panel shows but a notebook cell replaces with a one-line
+  note. Output from a `SAS.submit()` procedure, such as a `proc print`,
+  appears the same way.
   Needs Viya 2025.03 or later.
 - **Write a file** into the session's working directory:
   `fig.savefig("plot.png")` or `df.to_html("table.html")`. The extension

@@ -114,10 +114,10 @@ SAS.show(df)                    # a DataFrame, as a table
 ```
 
 Pass `filetype="png"` for a figure. Without it the figure is SVG, which the
-Result panel shows but a notebook cell does not. Output from a procedure you
-run through `SAS.submit()` is shown the same way: a `proc print` as a table,
-and a `proc sgplot` graph as a PNG image, with no `filetype` needed. The
-helpers need Viya 2025.03 or later. If your code runs `ods _all_ close;`, that
+Result panel shows but a notebook cell replaces with a one-line note. Output
+from a procedure you run through `SAS.submit()` is shown the same way: a
+`proc print` as a table, and a `proc sgplot` graph as a PNG image, with no
+`filetype` needed. The helpers need Viya 2025.03 or later. If your code runs `ods _all_ close;`, that
 also closes the extension's destination, and that run's `SAS.show` output is
 lost; the next run opens it again.
 

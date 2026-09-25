@@ -543,8 +543,9 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   ([ADR-0038](../adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md),
   Findings 12.16 and 12.17). A notebook cell drops an SVG figure whole. The
   pre-push adversarial review's five real findings are folded in. Manual
-  items 12.15–12.22 passed 2026-09-25, after two fixes (Finding 12.18). See
-  the "12j built" and "12j manual pass" Runbook entries.
+  items 12.15–12.22 passed 2026-09-25, after two fixes (Finding 12.18).
+  Merged 2026-09-25 (PR #217); its `CHANGELOG.md` entry followed in a
+  docs-only PR. See the "12j built" and "12j manual pass" Runbook entries.
 - [ ] **12k — Fix B12.1 (a failed SAS step poisons the session).** Added
   2026-09-24. Not started. Pin down the trigger by probe first.
 - [ ] **12l — Notebook execution-surface staleness.** Added 2026-09-24. Not

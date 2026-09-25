@@ -102,6 +102,30 @@ three, it never got its own closure or carry-forward decision anywhere in
 this file. Recorded properly as **F11**, in the "New feature candidates"
 list below, rather than left as a loose paragraph here.
 
+**Every open item below now has a slice (backlog sweep, 2026-09-24).**
+The write-ups stay here; the slices link back to them. See
+[`phase-12.md`](phase-12.md)'s "Backlog sweep" Runbook entry for the
+reasoning.
+
+| Item in this file | Slice |
+|---|---|
+| F1, SQL-passthrough bridge | [13h/13i](phase-13.md) |
+| F6, common-commands panel | [13c](phase-13.md) |
+| F8, DataFrame grid | [13g](phase-13.md) |
+| F9, other connectors and large results (untested) | [13k](phase-13.md) |
+| F10, auto-display | [13e/13f](phase-13.md) |
+| F11, snippet library | [13d](phase-13.md) |
+| Upload/download to local disk | [13a](phase-13.md) |
+| Drag onto My Favorites | [12q](phase-12.md) |
+| Copy/Paste for SAS Content | [13b](phase-13.md) |
+| Interrupted-cell "waiting" message | [12l](phase-12.md) |
+| Rejected `appendOutput` skips `execution.end` | [12l](phase-12.md) |
+| Stale notebook Problems entry after sign-out | [12l](phase-12.md) |
+| Pylance-stub opt-out setting | [13k](phase-13.md) |
+| 11d's CSV export progress and CAS table size | [13k](phase-13.md) |
+| 11e's Python startup snippet | [12m](phase-12.md) |
+| Manual test 11.10 | [12q](phase-12.md) |
+
 **New feature candidates (added 2026-09-16, from Sean's own post-Phase-10 usage
 — not sized, not sequenced beyond the priority order above, and not yet
 triaged against §3.1's parity table).**
@@ -744,7 +768,8 @@ section above unless noted:
   ADR-0014 and to `restart`/namespace lifetime before it is sized. **Its own
   investigation slice moved to Phase 12 as 12d, 2026-09-22** — this item
   itself stays parked here until 12d reports back; see
-  [`docs/phases/phase-12.md`](phase-12.md).
+  [`docs/phases/phase-12.md`](phase-12.md). **12d reported viable; the
+  build is Phase 12 slice 12m, added 2026-09-24.**
 - [ ] **AI-agent integration (11f/11g/11h): moved to Phase 12 as 12a/12b/12d,
   2026-09-22**, before any work started. See this section's own Runbook
   entry, below, and [`docs/phases/phase-12.md`](phase-12.md).

@@ -1853,7 +1853,9 @@ phase index), Phase 11 (remaining parity gaps) is sized when reached, and
 Phase 13 (a second execution backend, renumbered from Phase 12 on 2026-09-22
 when that number was repurposed for AI-agent integration — see
 `docs/phases/phase-13.md`) has no punch list by design — it is
-conditional on real usage showing that `PROC PYTHON` hurts. This stub's guessed
+conditional on real usage showing that `PROC PYTHON` hurts. (Since
+2026-09-24 that work is one ungated section of Phase 13, retitled "Feature
+completion", whose slices 13a–13k do have a punch list and do gate 1.0.) This stub's guessed
 branch names (`phase-10a-package-listing` etc.) predated that scoping and never
 matched — removed here the same way the Phase 4 and Phase 5 stubs above were,
 during the Phase 5→6 housekeeping (2026-09-09). Two cross-cutting reminders it

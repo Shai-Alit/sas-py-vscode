@@ -1,7 +1,7 @@
 <!-- Copyright © 2026, Sean Ford and the Python on Viya contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Manual test pass — Phase 13 (Second execution backend)
+# Manual test pass — Phase 13 (Feature completion)
 
 See [`setup.md`](setup.md) for pre-flight/activation and the tagging legend.
 

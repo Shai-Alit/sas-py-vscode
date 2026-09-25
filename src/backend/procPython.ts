@@ -82,6 +82,19 @@
  * "own module, fixture-tested independent of a real Compute client" reason
  * `logFilter.ts` is split out from this one.
  *
+ * ## Every run is wrapped in a named ODS HTML5 destination (ADR-0038, 12j)
+ *
+ * `SAS.show()`, `SAS.pyplot()` and a `SAS.submit()` procedure write to ODS,
+ * and with no destination open they show nothing (Finding 12.14). So each
+ * run's job opens one around the `proc python` statement:
+ * {@link ODS_WRAPPER_BEFORE} and {@link ODS_WRAPPER_AFTER}. These are extra
+ * statements in the job's code array, the same kind as the trailing `run;`.
+ * `Program.bytes` still reaches the interpreter unmodified through the
+ * fileref (ADR-0014). The body file has a fixed name,
+ * `richOutput.ts`'s `ODS_BODY_FILE_NAME`, and `captureRichOutput` handles it
+ * apart from the ADR-0019 candidates. Only `execute()` is wrapped: `reset()`
+ * and `probeRuntime()` run no user code and write nothing to show.
+ *
  * ## Traceback wrapper frames are dropped here; editor-position mapping is not
  *
  * 3a shipped `parseTraceback` reading every frame exactly as the runtime
@@ -150,9 +163,13 @@ import {
   withModuleNotFoundGuidance,
 } from "./tracebackDiagnostics";
 import {
+  decodeHtml,
   decodeRichOutput,
   exceedsCaptureCap,
+  hasOdsOutput,
   MAX_CAPTURE_BYTES,
+  ODS_BODY_FILE_NAME,
+  selectOdsBody,
   selectRichOutputCandidates,
   skippedCaptureOutput,
 } from "./richOutput";
@@ -199,6 +216,42 @@ const SYSERRORTEXT_NAME = "SYSERRORTEXT";
  * `reset()`-submitted job without restating the literal — see
  * `test/helpers/recorded-proc-python.ts`. */
 export const RESTART_STATEMENT = "proc python restart;";
+
+/** The ODS destination's `id`, the one SAS's own extension uses (Finding
+ * 12.3), so a `close` naming it reaches the destination this backend opened. */
+const ODS_CLOSE = "ods html5(id=vscode) close;";
+
+/**
+ * The statements before each run's `proc python` statement (ADR-0038), in
+ * the order Finding 12.17 probed them.
+ *
+ * - `ods listing gpath=…` sends the LISTING destination's graph images to
+ *   WORK. LISTING is open by default, and with `ods graphics on` it writes
+ *   each SAS procedure's graph as a `.png` into the working directory, where
+ *   the ADR-0019 diff would show it a second time (Finding 12.17).
+ * - The `close` releases a destination a cancelled run left open. Without
+ *   it, the next open would keep writing into the old, still-locked file
+ *   (Finding 12.15). On a fresh session it logs nothing.
+ * - `title;footnote;` clears any title a user's earlier `SAS.submit()` left
+ *   behind, as upstream's own wrapper does.
+ * - `outputfmt=png` makes a SAS procedure's graph a PNG; the HTML5 default is
+ *   an inline SVG, which a notebook cell drops (Finding 12.17). It does not
+ *   reach `SAS.show(plt)`, whose format matplotlib picks (Finding 12.14).
+ * - `bitmap_mode='inline'` embeds a PNG as a `data:` URI, the one image form
+ *   the notebook sanitizer keeps (Finding 12.14).
+ */
+export const ODS_WRAPPER_BEFORE: readonly string[] = [
+  "ods listing gpath=%sysfunc(quote(%sysfunc(pathname(work))));",
+  ODS_CLOSE,
+  "title;footnote;",
+  "ods graphics on / outputfmt=png;",
+  `ods html5(id=vscode) body='${ODS_BODY_FILE_NAME}' options(bitmap_mode='inline' svg_mode='inline');`,
+];
+
+/** The statement after each run's trailing `run;`, which closes the body
+ * file so the capture step can read it. A cancelled run never reaches it;
+ * the next run's `close` before its open covers that (Finding 12.16). */
+export const ODS_WRAPPER_AFTER: readonly string[] = [ODS_CLOSE];
 
 const TRACEBACK_HEADER = "Traceback (most recent call last):";
 
@@ -529,6 +582,11 @@ export class ProcPythonBackend implements ExecutionBackend {
    * listing leaves this `false` so the next run retries — see
    * {@link seedFilerefCounter}. */
   private filerefCounterSeeded = false;
+  /** The size of the last ODS body this backend fetched and found empty, so
+   * a later body of exactly that size can be skipped without a fetch
+   * (ADR-0038, Finding 12.16). `undefined` until one has been seen, which
+   * means the next body is always fetched. */
+  private emptyOdsBodySize: number | undefined;
 
   constructor(
     private readonly client: ComputeClient,
@@ -1001,11 +1059,13 @@ export class ProcPythonBackend implements ExecutionBackend {
       // later, unrelated request happens to close it. `run;` is filtered as
       // noise the same way the wrapping statement's own source echo already
       // is (`logFilter.ts`'s `isNoiseLine` excludes every `source`-typed
-      // line), so nothing downstream of this changes to accommodate it.
+      // line), so nothing downstream of this changes to accommodate it. The
+      // ODS wrapper's lines are `source` or `note` too (Finding 12.14), and
+      // leave `SYSCC` and the traceback as they were (Finding 12.15).
       const job = await createJob(
         this.client,
         this.session,
-        [statement, "run;"],
+        [...ODS_WRAPPER_BEFORE, statement, "run;", ...ODS_WRAPPER_AFTER],
         { signal: run.controller.signal },
       );
       if (!job.ok) return this.translate(job, "running the program", false);
@@ -1127,47 +1187,94 @@ export class ProcPythonBackend implements ExecutionBackend {
     );
 
     for (const candidate of candidates) {
-      if (exceedsCaptureCap(candidate.file)) {
-        relay.push(
-          skippedCaptureOutput(
-            candidate.file.name,
-            `it is larger than the ${String(MAX_CAPTURE_BYTES)}-byte capture limit`,
-          ),
-        );
-        continue;
-      }
+      const bytes = await this.fetchCapture(
+        run,
+        relay,
+        candidate.file,
+        (reason) => skippedCaptureOutput(candidate.file.name, reason),
+      );
+      if (bytes === undefined) continue;
+      relay.push(decodeRichOutput(candidate.mime, bytes));
+      await this.deleteCapture(run, candidate.file);
+    }
 
-      const content = await readFileContent(this.client, candidate.file, {
-        signal: run.controller.signal,
-        maxBytes: MAX_CAPTURE_BYTES,
-      });
-      if (!content.ok) {
-        relay.push(
-          skippedCaptureOutput(
-            candidate.file.name,
-            describeComputeProblem(content.problem),
-          ),
-        );
-        continue;
-      }
+    // ADR-0038: the ODS body comes after the files the script wrote itself,
+    // and is fetched whenever its size differs from the last empty body this
+    // backend saw — whether or not it changed during this run, so a body an
+    // earlier run left undeleted (a cancel, a failed fetch or delete) cannot
+    // hide a same-size figure. An empty body is neither shown nor deleted;
+    // the next run overwrites it. A listing with no size never matches, so
+    // that body is always attempted and reported, never silently skipped:
+    // `fetchCapture` notes it as too large to confirm (ADR-0019 point 7)
+    // without fetching it, so the learned size below is never overwritten
+    // with `undefined`.
+    // A skip reuses `skippedCaptureOutput`, naming the body file (which
+    // `docs/running-python.md` documents as the extension's own) rather than
+    // adding a sixth unlocalised string to `backend.ts`'s `RichOutput` list.
+    const odsBody = selectOdsBody(filesAfter.value, this.emptyOdsBodySize);
+    if (odsBody === undefined) return;
+    const bytes = await this.fetchCapture(run, relay, odsBody, (reason) =>
+      skippedCaptureOutput(odsBody.name, reason),
+    );
+    if (bytes === undefined) return;
+    const html = decodeHtml(bytes);
+    if (!hasOdsOutput(html)) {
+      this.emptyOdsBodySize = odsBody.size;
+      return;
+    }
+    relay.push({ mime: "text/html", data: html });
+    await this.deleteCapture(run, odsBody);
+  }
 
-      relay.push(decodeRichOutput(candidate.mime, content.value));
+  /**
+   * One capture's size check and fetch (ADR-0019 points 7 and 8): the bytes,
+   * or `undefined` once `skipNote`'s output has been pushed in their place.
+   */
+  private async fetchCapture(
+    run: ActiveRun,
+    relay: OutputRelay,
+    file: SessionFile,
+    skipNote: (reason: string) => RichOutput,
+  ): Promise<Uint8Array | undefined> {
+    if (exceedsCaptureCap(file)) {
+      relay.push(
+        skipNote(
+          `it is larger than the ${String(MAX_CAPTURE_BYTES)}-byte capture limit`,
+        ),
+      );
+      return undefined;
+    }
 
-      // ADR-0019 point 9: a failed deletion is logged, not surfaced or
-      // retried, the same shape `close()`'s `onBackgroundFailure` already
-      // gives a cancellation that could not be acted on — a leaked file is a
-      // much smaller problem than failing an otherwise-successful run over
-      // its own cleanup step. Point 10: a *skipped* file (the two arms above)
-      // is never deleted at all — only a capture this backend actually read
-      // is assumed safe to discard.
-      const deleted = await deleteSessionFile(this.client, candidate.file, {
-        signal: run.controller.signal,
-      });
-      if (!deleted.ok) {
-        this.onBackgroundFailure?.(
-          `could not delete captured rich-output file "${candidate.file.name}": ${deleted.reason}`,
-        );
-      }
+    const content = await readFileContent(this.client, file, {
+      signal: run.controller.signal,
+      maxBytes: MAX_CAPTURE_BYTES,
+    });
+    if (!content.ok) {
+      relay.push(skipNote(describeComputeProblem(content.problem)));
+      return undefined;
+    }
+    return content.value;
+  }
+
+  /**
+   * ADR-0019 point 9: a failed deletion is logged, not surfaced or retried,
+   * the same shape `close()`'s `onBackgroundFailure` already gives a
+   * cancellation that could not be acted on — a leaked file is a much smaller
+   * problem than failing an otherwise-successful run over its own cleanup
+   * step. Point 10: a *skipped* file is never deleted at all — only a capture
+   * this backend actually read and pushed is assumed safe to discard.
+   */
+  private async deleteCapture(
+    run: ActiveRun,
+    file: SessionFile,
+  ): Promise<void> {
+    const deleted = await deleteSessionFile(this.client, file, {
+      signal: run.controller.signal,
+    });
+    if (!deleted.ok) {
+      this.onBackgroundFailure?.(
+        `could not delete captured rich-output file "${file.name}": ${deleted.reason}`,
+      );
     }
   }
 

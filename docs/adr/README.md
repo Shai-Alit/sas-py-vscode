@@ -58,7 +58,7 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0016](0016-api-contracts-are-checked-yaml.md) | API contracts are hand-written YAML, not shipped, and checked against the code in both directions | Accepted |
 | [0017](0017-the-log-stream-is-a-self-driving-pump.md) | The log stream is a self-driving pump, driven by the log's own long poll | Accepted |
 | [0018](0018-the-node-baseline.md) | The Node baseline is derived from `engines.vscode`, not chosen | Accepted |
-| [0019](0019-rich-output-is-captured-by-diffing-the-working-directory.md) | Rich output is captured by diffing the session's working directory | Accepted |
+| [0019](0019-rich-output-is-captured-by-diffing-the-working-directory.md) | Rich output is captured by diffing the session's working directory | Accepted — amended 2026-09-24 by ADR-0038: the ODS body file is captured by name, apart from the diff |
 | [0020](0020-run-target-defaults-to-local.md) | The run target defaults to Local, not Viya | Accepted |
 | [0021](0021-result-panel-webview.md) | The result panel: a singleton CSP-locked `WebviewPanel`, a buffered message protocol, and a ported DOM layer | Accepted |
 | [0022](0022-drop-viya-35-support.md) | Viya 3.5 support is dropped | Accepted |
@@ -75,5 +75,6 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0033](0033-cas-adapter-shape.md) | `CasAdapter` is one concrete class built the way `ContentAdapter` is (endpoint plus token, no session), not the way `LibraryAdapter` is | Accepted |
 | [0034](0034-table-source-abstraction.md) | The data viewer panel is generalized behind a `TableSource` interface, not forked or forced through `LibraryAdapter`'s view machinery | Accepted |
 | [0035](0035-notebook-gets-its-own-compute-session.md) | A notebook cell runs against its own compute session, not Run File's — `PROC PYTHON` has one interpreter namespace per session, so the two surfaces cannot safely share one | Accepted |
-| [0036](0036-notebook-html-output-is-sanitized.md) | A notebook cell's `text/html` output is sanitized before render, not CSP-locked — this surface has no webview of its own to set a policy on | Accepted |
+| [0036](0036-notebook-html-output-is-sanitized.md) | A notebook cell's `text/html` output is sanitized before render, not CSP-locked — this surface has no webview of its own to set a policy on | Accepted — amended 2026-09-24 by ADR-0038: `<svg>` is dropped with its subtree |
 | [0037](0037-ai-agent-integration-approach.md) | Ship an Agent Skill now (Option A); spike an in-process MCP server reachable by Claude Code before committing to it (Option C); hold, defer, or decline the rest | Accepted |
+| [0038](0038-every-run-is-wrapped-in-a-named-ods-destination.md) | Every run is wrapped in a named ODS HTML5 destination so `SAS.show()` output is shown; its body file has a fixed name and is captured apart from ADR-0019's diff | Accepted |

@@ -12,9 +12,12 @@ import {
   environmentProbeStatements,
 } from "../../src/backend/environment";
 import {
+  ODS_WRAPPER_AFTER,
+  ODS_WRAPPER_BEFORE,
   ProcPythonBackend,
   type SubmissionGuard,
 } from "../../src/backend/procPython";
+import { ODS_BODY_FILE_NAME } from "../../src/backend/richOutput";
 import { type BackendResult } from "../../src/backend/problems";
 import {
   type ComputeClient,
@@ -246,7 +249,7 @@ interface RouterOptions {
   filesBefore?: readonly { name: string; size: number }[];
   /** The directory's contents the post-job listing sees (ADR-0019 point 3).
    * Defaults to `filesBefore` unchanged, i.e. no candidates. */
-  filesAfter?: readonly { name: string; size: number }[];
+  filesAfter?: readonly { name: string; size?: number }[];
   /** A `getFile` fetch answers with these bytes, keyed by file name. Absent
    * names answer with an empty body. */
   fileContent?: Record<string, Uint8Array>;
@@ -664,10 +667,14 @@ describe("ProcPythonBackend", () => {
       const code = (submitted?.body as { code: string[] }).code;
       // ADR-0014 amendment, finding 70: a trailing `run;` closes the step —
       // without it, the step's own log/SYSCC/file-writes never flush.
-      assert.equal(code.length, 2);
-      assert.ok(code[0]?.startsWith("proc python infile="));
-      assert.ok(!code[0]?.includes("restart"));
-      assert.equal(code[1], "run;");
+      // ADR-0038: the ODS wrapper surrounds both, close-first.
+      const wrapped = ODS_WRAPPER_BEFORE.length;
+      assert.equal(code.length, wrapped + 2 + ODS_WRAPPER_AFTER.length);
+      assert.deepEqual(code.slice(0, wrapped), [...ODS_WRAPPER_BEFORE]);
+      assert.ok(code[wrapped]?.startsWith("proc python infile="));
+      assert.ok(!code[wrapped]?.includes("restart"));
+      assert.equal(code[wrapped + 1], "run;");
+      assert.deepEqual(code.slice(wrapped + 2), [...ODS_WRAPPER_AFTER]);
     });
 
     it("composes `restart` into the same statement for a fresh namespace", async () => {
@@ -692,7 +699,11 @@ describe("ProcPythonBackend", () => {
       );
       assert.ok(submitted !== undefined, "no job was ever submitted");
       const code = (submitted.body as { code: string[] }).code;
-      assert.ok(code[0]?.startsWith("proc python restart infile="));
+      assert.ok(
+        code[ODS_WRAPPER_BEFORE.length]?.startsWith(
+          "proc python restart infile=",
+        ),
+      );
     });
 
     it("drops note and source lines but keeps everything else", async () => {
@@ -2756,6 +2767,260 @@ describe("ProcPythonBackend", () => {
       assert.ok(reasons[0]?.includes("plot.png"));
       // The router's own rejection means `deleteFile` was answered, not
       // skipped — `deletedNames` only records a *successful* delete.
+      assert.equal(deletedNames.length, 0);
+    });
+  });
+
+  describe("the ODS body file (ADR-0038)", () => {
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text);
+    const shownBody =
+      '<body class="c body"><div id="IDX" class="systitleandfootercontainer"><table></table></div></body>';
+    const emptyBody =
+      '<html><head><style>.body { margin: 1em }</style></head><body class="c body"></body></html>';
+
+    async function runOnce(opts: RouterOptions): Promise<{
+      outputs: RichOutput[];
+      settled: BackendResult<unknown>;
+      rels: string[];
+      deletedNames: readonly string[];
+    }> {
+      const { client, requests, deletedNames } = router(opts);
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      const settled = await accepted.done;
+      return {
+        outputs,
+        settled,
+        rels: requests.map((request) => request.link.rel),
+        deletedNames,
+      };
+    }
+
+    it("shows a body with output after the script's own files, then deletes it", async () => {
+      const table = encode("<table></table>");
+      const body = encode(shownBody);
+      const { outputs, settled, deletedNames } = await runOnce({
+        syscc: "0",
+        filesAfter: [
+          { name: ODS_BODY_FILE_NAME, size: body.length },
+          { name: "z_table.html", size: table.length },
+        ],
+        fileContent: { [ODS_BODY_FILE_NAME]: body, "z_table.html": table },
+      });
+
+      assert.ok(settled.ok);
+      const html = outputs.filter(
+        (output): output is Extract<RichOutput, { mime: "text/html" }> =>
+          output.mime === "text/html",
+      );
+      // The script's own `z_table.html` first, even though it sorts after
+      // the body's name: the body always comes last.
+      assert.deepEqual(
+        html.map((output) => output.data),
+        ["<table></table>", shownBody],
+      );
+      assert.deepEqual([...deletedNames].sort(), [
+        ODS_BODY_FILE_NAME,
+        "z_table.html",
+      ]);
+    });
+
+    it("neither shows nor deletes a body holding only styling", async () => {
+      const body = encode(emptyBody);
+      const { outputs, settled, rels, deletedNames } = await runOnce({
+        syscc: "0",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: body.length }],
+        fileContent: { [ODS_BODY_FILE_NAME]: body },
+      });
+
+      assert.ok(settled.ok);
+      assert.ok(!outputs.some((output) => output.mime === "text/html"));
+      assert.equal(rels.filter((rel) => rel === "getFile").length, 1);
+      assert.equal(deletedNames.length, 0);
+    });
+
+    it("submits the wrapper's SAS text exactly as Findings 12.16 and 12.17 probed it", async () => {
+      // Pinned as literals, not read back from the exported constants, so a
+      // typo in the SAS text itself fails here instead of being mirrored.
+      const { client, requests } = router({ syscc: "0" });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      await accepted.done;
+
+      const submitted = requests.find(
+        (request) => request.link.rel === "execute",
+      );
+      const code = (submitted?.body as { code: string[] }).code;
+      assert.deepEqual(code.slice(0, 5), [
+        "ods listing gpath=%sysfunc(quote(%sysfunc(pathname(work))));",
+        "ods html5(id=vscode) close;",
+        "title;footnote;",
+        "ods graphics on / outputfmt=png;",
+        "ods html5(id=vscode) body='pyviya_ods.htm' options(bitmap_mode='inline' svg_mode='inline');",
+      ]);
+      assert.match(code[5] ?? "", /^proc python infile=PY\d{6};$/);
+      assert.deepEqual(code.slice(6), ["run;", "ods html5(id=vscode) close;"]);
+    });
+
+    it("stops fetching a body once it has seen an empty one of the same size (Finding 12.16)", async () => {
+      const empty = encode(emptyBody);
+      const { client, requests } = router({
+        syscc: "0",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: 32425 }],
+        fileContent: { [ODS_BODY_FILE_NAME]: empty },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      for (let run = 0; run < 2; run += 1) {
+        const accepted = accept(
+          await backend.execute(fakeProgram(), { freshNamespace: false }),
+        );
+        await collect(accepted.outputs);
+        assert.ok((await accepted.done).ok);
+      }
+
+      // The first run fetches the empty body and learns its size; the second
+      // finds the body at that size and does not fetch it.
+      const rels = requests.map((request) => request.link.rel);
+      assert.equal(rels.filter((rel) => rel === "getFile").length, 1);
+      assert.ok(!rels.includes("deleteFile"));
+    });
+
+    it("keeps the learned empty size across a listing with no size (PR #217 review)", async () => {
+      const empty = encode(emptyBody);
+      const opts: RouterOptions = {
+        syscc: "0",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: 32425 }],
+        fileContent: { [ODS_BODY_FILE_NAME]: empty },
+      };
+      const { client, requests } = router(opts);
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      // Sized, then unsized, then sized again: the router reads `filesAfter`
+      // on each listing, so each run sees the value set before it.
+      const texts: string[][] = [];
+      for (const size of [32425, undefined, 32425]) {
+        opts.filesAfter = [
+          size === undefined
+            ? { name: ODS_BODY_FILE_NAME }
+            : { name: ODS_BODY_FILE_NAME, size },
+        ];
+        const accepted = accept(
+          await backend.execute(fakeProgram(), { freshNamespace: false }),
+        );
+        const outputs = await collect(accepted.outputs);
+        texts.push(
+          outputs.flatMap((output) =>
+            output.mime === "text/plain" ? [output.data] : [],
+          ),
+        );
+        assert.ok((await accepted.done).ok);
+      }
+
+      // The first run fetches the empty body and learns its size. The
+      // unsized second run is noted, not fetched (ADR-0019 point 7), so the
+      // learned size survives and the third run skips the body silently.
+      const rels = requests.map((request) => request.link.rel);
+      assert.equal(rels.filter((rel) => rel === "getFile").length, 1);
+      assert.ok(texts[1]?.some((text) => text.includes(ODS_BODY_FILE_NAME)));
+      assert.ok(!texts[2]?.some((text) => text.includes(ODS_BODY_FILE_NAME)));
+    });
+
+    it("still shows a body that did not change during the run, when it is not the empty size (review of 12j)", async () => {
+      // A non-empty body an earlier run left undeleted (a cancel, a failed
+      // fetch or delete) and a new figure of the same size: the ADR-0019
+      // name-and-size diff would read this as unchanged and drop the figure.
+      const body = encode(shownBody);
+      const { outputs, settled, deletedNames } = await runOnce({
+        syscc: "0",
+        filesBefore: [{ name: ODS_BODY_FILE_NAME, size: 70447 }],
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: 70447 }],
+        fileContent: { [ODS_BODY_FILE_NAME]: body },
+      });
+
+      assert.ok(settled.ok);
+      assert.ok(outputs.some((output) => output.mime === "text/html"));
+      assert.deepEqual([...deletedNames], [ODS_BODY_FILE_NAME]);
+    });
+
+    it("shows a body's output on a run that raised, as ADR-0019 does for any capture", async () => {
+      const body = encode(shownBody);
+      const { outputs, settled } = await runOnce({
+        syscc: "1012",
+        syserrortext: "Unhandled Python exception.",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: body.length }],
+        fileContent: { [ODS_BODY_FILE_NAME]: body },
+      });
+
+      assert.ok(settled.ok);
+      assert.ok(outputs.some((output) => output.mime === "text/html"));
+    });
+
+    it("notes a body that fails to fetch, and does not delete it", async () => {
+      const { outputs, settled, deletedNames } = await runOnce({
+        syscc: "0",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: 70447 }],
+        fileContentReply: {
+          [ODS_BODY_FILE_NAME]: rejected(
+            "compute-rejected",
+            "403 Forbidden",
+            403,
+          ),
+        },
+      });
+
+      assert.ok(settled.ok);
+      assert.ok(!outputs.some((output) => output.mime === "text/html"));
+      // The shared ADR-0019 skip note, naming the body file: no new
+      // unlocalised string (PR #217 review).
+      assert.ok(
+        texts(outputs).some((text) => text.includes(ODS_BODY_FILE_NAME)),
+        "no skip note named the body file",
+      );
+      assert.equal(deletedNames.length, 0);
+    });
+
+    it("notes a body over the capture cap without fetching or deleting it", async () => {
+      const { outputs, settled, rels, deletedNames } = await runOnce({
+        syscc: "0",
+        filesAfter: [{ name: ODS_BODY_FILE_NAME, size: 10 * 1024 * 1024 + 1 }],
+      });
+
+      assert.ok(settled.ok);
+      assert.ok(!rels.includes("getFile"));
+      assert.ok(
+        texts(outputs).some(
+          (text) => text.includes(ODS_BODY_FILE_NAME) && text.includes("limit"),
+        ),
+        "no over-cap note named the body file",
+      );
       assert.equal(deletedNames.length, 0);
     });
   });

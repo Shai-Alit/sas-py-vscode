@@ -42,13 +42,24 @@ does not guess which one it is.
 Plain text streams into the cell as it prints, the same way the output channel
 does for a run.
 
-An image or an HTML table needs an explicit file, exactly as it does in [the
-Result panel](running-python.md#the-result-panel) — rich output is captured by
-noticing a file your code **wrote** to the session's working directory, not by
-an implicit `plt.show()` or `_repr_html_` capture. `fig.savefig("plot.png")` or
-`df.to_html("table.html")` are what produce a rendered output; a bare
-`DataFrame` or figure as a cell's last expression produces nothing, which is a
-difference from how a Jupyter kernel normally behaves.
+An image or an HTML table needs an explicit call, exactly as it does in [the
+Result panel](running-python.md#the-result-panel): `SAS.show(plt,
+filetype="png")` or `SAS.show(df)`, or a file your code **writes** to the
+session's working directory, such as `fig.savefig("plot.png")` or
+`df.to_html("table.html")`. There is no implicit `plt.show()` or `_repr_html_`
+capture. A bare `DataFrame` or figure as a cell's last expression produces
+nothing, which is a difference from how a Jupyter kernel normally behaves.
+
+Pass `filetype="png"` when you show a figure. `SAS.show(plt)` on its own
+produces an SVG figure, and a notebook cell drops SVG entirely (it can carry
+script). In SAS output the cell shows `SAS.show`'s `Output` title and,
+where the figure would be, a one-line note saying to pass `filetype="png"`.
+An SVG in an HTML file your code writes is dropped with no note.
+
+SAS output (a `SAS.show` table or a `SAS.submit()` procedure) renders in the
+notebook's own table styling rather than the SAS style the Result panel
+uses. Every output in a notebook shares one page, and the SAS stylesheet
+would restyle the other cells.
 
 `text/html` output is sanitized before it renders — a `<script>` tag is
 dropped, along with anything that could smuggle one past the scan, so an
@@ -88,8 +99,10 @@ File's session, not the notebook's.
 ## When it does not work
 
 **A figure or table never appears in the output.** The same rule as the
-Result panel: call `fig.savefig(...)` or `df.to_html(...)` explicitly — there
-is no implicit capture of a bare expression or `plt.show()`.
+Result panel: call `SAS.show(...)`, or `fig.savefig(...)` / `df.to_html(...)`,
+explicitly — there is no implicit capture of a bare expression or
+`plt.show()`. For a figure shown with `SAS.show`, check that you passed
+`filetype="png"`.
 
 **An embedded chart or widget in an HTML output doesn't do anything.** If it
 depends on a `<script>` tag to render or become interactive, that script never

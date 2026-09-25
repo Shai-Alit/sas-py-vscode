@@ -1,6 +1,6 @@
 # ADR-0019 — Rich output is captured by diffing the session's working directory
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [ADR-0038](0038-every-run-is-wrapped-in-a-named-ods-destination.md), 2026-09-24
 - **Date:** 2026-08-25
 - **Decides:** how `RichOutput`'s `image/png` and `text/html` arms get filled
   for a `PROC PYTHON` run — what counts as "output worth capturing", when it
@@ -20,6 +20,15 @@
 > extended them. See the amendment at the end of this record and finding 69.
 > This does not change the mechanism decided below — only what had to be true
 > of the transport underneath it for that mechanism to work at all.
+
+> **Amended 2026-09-24 by [ADR-0038](0038-every-run-is-wrapped-in-a-named-ods-destination.md)
+> (slice 12j).** Every run is now wrapped in a named ODS HTML5 destination.
+> Its body file, `pyviya_ods.htm`, is excluded from point 4's candidates and
+> captured by name after them: fetched only when changed, shown only when it
+> holds output, deleted only once shown. The "Constrained by" line's
+> "nothing may wrap or inject code around a user's own script" overstated
+> ADR-0014, which protects the script's bytes, not the job's other
+> statements. ADR-0038 says why the wrapper leaves those bytes untouched.
 
 ## Context
 

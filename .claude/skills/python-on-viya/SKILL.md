@@ -162,16 +162,26 @@ CAS, as a `pandas.DataFrame` (a `SASDataFrame`). Note this always runs
 single-threaded on the CAS side (`numReadNodes=1`) regardless of cluster
 size — that's normal, not something to tune around.
 
-## Figures and tables reach the user only as files
+## Figures and tables: `SAS.show()` or a written file
 
-A plot or an HTML table reaches the user only if the script **writes a
-file** into the session's working directory: `fig.savefig("plot.png")` or
-`df.to_html("table.html")`. The extension diffs that directory after each
-run and shows new `.png` and `.html` files. There is no implicit
-`plt.show()` or `_repr_html_` capture. Don't use `SAS.show()` or
-`SAS.pyplot()` for this: they run without error and return `None`, but they
-write to a SAS ODS destination this extension does not open, so the user
-sees nothing.
+There is no implicit `plt.show()` or `_repr_html_` capture. A figure or a
+table reaches the user in one of two ways:
+
+- **`SAS.show(plt, filetype="png")`**, `SAS.show(df)`, or
+  `SAS.pyplot(plt, filetype="png")`. The extension opens an ODS HTML5
+  destination around every run, so these render in the Result panel and in
+  a notebook cell. Pass `filetype="png"` for a figure: the default is SVG,
+  which the Result panel shows but a notebook cell replaces with a one-line
+  note. Output from a `SAS.submit()` procedure, such as a `proc print`,
+  appears the same way.
+  Needs Viya 2025.03 or later.
+- **Write a file** into the session's working directory:
+  `fig.savefig("plot.png")` or `df.to_html("table.html")`. The extension
+  diffs that directory after each run and shows new `.png` and `.html`
+  files.
+
+Don't call `ods _all_ close;` through `SAS.submit()`: it closes the
+extension's destination too, and that run's `SAS.show` output is lost.
 
 ## What the environment actually contains
 

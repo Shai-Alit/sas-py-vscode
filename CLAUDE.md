@@ -270,10 +270,16 @@ reviewers, which is this project's single largest time sink.
 3. Wait for the developer's review summary.
 4. Verify each finding independently (see "How to apply the findings"), fold
    the real ones into the **local** branch, re-run the checks.
-5. Only now: `git push`, then `gh pr create`.
+5. If the slice added manual-test items (`docs/dev/manual-tests/phase-N.md`),
+   name them when handing over the review, then hand them to the developer
+   and wait until they pass. Fold any failure into the local branch and
+   re-run the checks. Never list them as "run after merge": a failure found
+   once the PR is open costs a full CI cycle and both AI reviewers. Missed
+   on 12j (PR #217, 2026-09-24).
+6. Only now: `git push`, then `gh pr create`.
 
 If you catch yourself about to push or open a PR for an in-scope change and
-step 3 has not happened, stop and hand over the review instead.
+step 3 or step 5 has not happened, stop and hand over what is missing instead.
 
 **How to hand it over:** once the diff is finished — not a draft — stop and
 give the developer exactly two things: the `git diff` command scoped to the changed

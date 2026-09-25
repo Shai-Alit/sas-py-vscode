@@ -4,10 +4,14 @@
 import assert from "node:assert/strict";
 
 import {
+  decodeHtml,
   decodeRichOutput,
   exceedsCaptureCap,
+  hasOdsOutput,
   MAX_CAPTURE_BYTES,
+  ODS_BODY_FILE_NAME,
   richOutputMimeForName,
+  selectOdsBody,
   selectRichOutputCandidates,
   skippedCaptureOutput,
 } from "../../src/backend/richOutput";
@@ -138,6 +142,82 @@ describe("selectRichOutputCandidates", () => {
         ["fresh.png", "image/png"],
       ],
     );
+  });
+});
+
+describe("the ODS body file (ADR-0038)", () => {
+  it("is never an ordinary candidate, even though .htm is whitelisted", () => {
+    const candidates = selectRichOutputCandidates(
+      [],
+      [sessionFile(ODS_BODY_FILE_NAME, 70447), sessionFile("table.htm", 10)],
+    );
+
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.file.name),
+      ["table.htm"],
+    );
+  });
+
+  it("is selected while no empty size is known yet", () => {
+    const body = sessionFile(ODS_BODY_FILE_NAME, 32425);
+    assert.equal(selectOdsBody([body], undefined), body);
+  });
+
+  it("is selected at any size other than the known empty one", () => {
+    const body = sessionFile(ODS_BODY_FILE_NAME, 70447);
+    assert.equal(selectOdsBody([body], 32425), body);
+  });
+
+  it("is not selected at the known empty size (Finding 12.16)", () => {
+    assert.equal(
+      selectOdsBody([sessionFile(ODS_BODY_FILE_NAME, 32425)], 32425),
+      undefined,
+    );
+  });
+
+  it("is selected when the listing carried no size, rather than silently skipped", () => {
+    const body = sessionFile(ODS_BODY_FILE_NAME, undefined);
+    assert.equal(selectOdsBody([body], 32425), body);
+  });
+
+  it("is not selected when absent after the run", () => {
+    assert.equal(
+      selectOdsBody([sessionFile("sashtml.htm", 70447)], 32425),
+      undefined,
+    );
+  });
+});
+
+describe("decodeHtml", () => {
+  it("decodes UTF-8, the same text decodeRichOutput gives for text/html", () => {
+    const bytes = new TextEncoder().encode("<p>café</p>");
+    assert.equal(decodeHtml(bytes), "<p>café</p>");
+    assert.deepEqual(decodeRichOutput("text/html", bytes), {
+      mime: "text/html",
+      data: "<p>café</p>",
+    });
+  });
+});
+
+describe("hasOdsOutput", () => {
+  it("is true for a body with an ODS output anchor", () => {
+    assert.ok(
+      hasOdsOutput(
+        '<body class="c body"><div id="IDX" class="systitleandfootercontainer"></div></body>',
+      ),
+    );
+  });
+
+  it("is false for a body holding only styling", () => {
+    assert.ok(
+      !hasOdsOutput(
+        '<html><head><style>.body { margin: 1em }</style></head><body class="c body"></body></html>',
+      ),
+    );
+  });
+
+  it("does not match IDX inside a longer attribute name", () => {
+    assert.ok(!hasOdsOutput('<div data-id="IDX1"></div>'));
   });
 });
 

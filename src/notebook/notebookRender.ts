@@ -52,6 +52,7 @@
  */
 
 import type { RichOutput } from "../backend/backend";
+import { hasOdsOutput } from "../backend/richOutput";
 import { sanitizeHtml } from "./htmlSanitize";
 
 /** One piece of cell output, reduced from {@link RichOutput} to exactly what
@@ -73,18 +74,40 @@ export type NotebookOutputPiece =
    * `NotebookCellOutputItem`'s constructor wants. */
   | { readonly kind: "image"; readonly base64: string };
 
+/** The localised text {@link toNotebookOutputPieces} inserts, passed in by
+ * `../notebookController.ts` because this module cannot call `l10n.t()`. */
+export interface NotebookOutputLabels {
+  /** Stands in for an SVG figure the sanitizer drops (Finding 12.18). */
+  readonly svgDropped: string;
+}
+
 /** What, if anything, one streamed {@link RichOutput} contributes to a
  * notebook cell. Total over `RichOutput`'s mime union, unlike `render.ts`'s
  * `renderRichOutput` — see this module's own doc comment for why a notebook
  * cell has nothing left to defer. */
 export function toNotebookOutputPieces(
   output: RichOutput,
+  labels: NotebookOutputLabels,
 ): readonly NotebookOutputPiece[] {
   switch (output.mime) {
     case "text/plain":
       return [{ kind: "stdout", text: output.data }];
-    case "text/html":
-      return [{ kind: "html", markup: sanitizeHtml(output.data) }];
+    case "text/html": {
+      // Both options apply to SAS output only. An ODS body's stylesheet
+      // leaks into every other cell (`./htmlSanitize.ts`'s doc comment,
+      // Finding 12.18), and the note's `filetype="png"` advice is wrong for
+      // an SVG icon in a user's own HTML file.
+      const isOds = hasOdsOutput(output.data);
+      return [
+        {
+          kind: "html",
+          markup: sanitizeHtml(output.data, {
+            svgNote: isOds ? labels.svgDropped : undefined,
+            dropStyle: isOds,
+          }),
+        },
+      ];
+    }
     case "image/png":
       return [{ kind: "image", base64: output.data }];
     case "application/vnd.python.traceback":

@@ -47,6 +47,28 @@
  * either kind of encoding at all is treated as dangerous rather than decoded
  * and re-checked). `style="…"` attribute values get the same check.
  *
+ * `<svg>` is dropped with its whole subtree, text included (ADR-0038). An
+ * unknown tag normally keeps its children as text, but an SVG figure's
+ * children are metadata (`<dc:format>image/svg+xml</dc:format>`, the
+ * matplotlib version), and keeping them turned a `SAS.show(plt)` figure into
+ * junk text in a cell (Finding 12.14). Nothing inside is ever emitted, so an
+ * unclosed `<svg>` can only lose more content. "Inside" ends at the first
+ * `</svg>`, even one in an SVG `<text>`'s content: SVG content is not raw
+ * text in HTML, so a browser's parser ends the element there too. What
+ * follows it is sanitized like any other markup, so it can show up as
+ * text but can never carry script. A caller that passes `svgNote` gets that text, escaped, in a `<p>`
+ * where each outermost `<svg>` was, so the cell says what was dropped rather
+ * than showing only `SAS.show`'s own `Output` title above a gap
+ * (Finding 12.18). The `<p>` suits an ODS body, where each figure sits in its
+ * own `<div>`; an `<svg>` inside an open `<p>` or a table row would have the
+ * browser move or split it, which is cosmetic only.
+ *
+ * `dropStyle` drops every `<style>` block, safe or not. Every output in a
+ * notebook shares one webview document, so a `<style>` in one cell restyles
+ * every other cell. An ODS body's stylesheet has dozens of unscoped class
+ * rules (`.output`, `.cell`, `.container`, `.note`, …) with a dark `color`,
+ * and in a dark theme they turned other cells' text black (Finding 12.18).
+ *
  * No tag carries a URL-bearing attribute except `<img src>`, and that is
  * restricted to an inline `data:image/…;base64,…` value — the same
  * `img-src … data:` restriction ADR-0021 already applies to the result
@@ -311,24 +333,44 @@ function findRawTextEnd(
   };
 }
 
+/** Optional behaviour for {@link sanitizeHtml}; see this module's own doc
+ * comment. */
+export interface SanitizeOptions {
+  /** Text put, escaped, in a `<p>` where each outermost `<svg>` was. */
+  readonly svgNote?: string | undefined;
+  /** Drop every `<style>` block, not only a dangerous one. */
+  readonly dropStyle?: boolean | undefined;
+}
+
 /**
  * Turns arbitrary `text/html` into a safe subset that cannot execute script
  * or fetch anything remote, for VS Code's own built-in notebook renderer to
- * show as real `text/html`. See this module's own doc comment for the design.
+ * show as real `text/html`. See this module's own doc comment for the design
+ * and for {@link SanitizeOptions}.
  */
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(
+  html: string,
+  options: SanitizeOptions = {},
+): string {
+  const { svgNote, dropStyle = false } = options;
   let out = "";
   let i = 0;
   const stack: string[] = [];
   const n = html.length;
+  /** How many `<svg>` elements the scan is inside. While above zero nothing
+   * is emitted — see this module's own doc comment. */
+  let svgDepth = 0;
+  const emit = (text: string): void => {
+    if (svgDepth === 0) out += text;
+  };
 
   while (i < n) {
     const lt = html.indexOf("<", i);
     if (lt === -1) {
-      out += escapeText(html.slice(i));
+      emit(escapeText(html.slice(i)));
       break;
     }
-    if (lt > i) out += escapeText(html.slice(i, lt));
+    if (lt > i) emit(escapeText(html.slice(i, lt)));
 
     if (html.startsWith("<!--", lt)) {
       const end = html.indexOf("-->", lt + 4);
@@ -343,12 +385,16 @@ export function sanitizeHtml(html: string): string {
     if (html.startsWith("</", lt)) {
       const closeMatch = /^<\/([a-zA-Z][a-zA-Z0-9]*)\s*>/.exec(html.slice(lt));
       if (closeMatch === null) {
-        out += "&lt;";
+        emit("&lt;");
         i = lt + 1;
         continue;
       }
       const name = closeMatch[1]?.toLowerCase();
       i = lt + closeMatch[0].length;
+      if (svgDepth > 0) {
+        if (name === "svg") svgDepth -= 1;
+        continue;
+      }
       if (name !== undefined && stack[stack.length - 1] === name) {
         stack.pop();
         out += `</${name}>`;
@@ -361,7 +407,7 @@ export function sanitizeHtml(html: string): string {
 
     const openMatch = /^<([a-zA-Z][a-zA-Z0-9]*)/.exec(html.slice(lt));
     if (openMatch === null) {
-      out += "&lt;";
+      emit("&lt;");
       i = lt + 1;
       continue;
     }
@@ -383,10 +429,23 @@ export function sanitizeHtml(html: string): string {
       i = findRawTextEnd(html, i, name).afterClose;
       continue;
     }
+    if (name === "svg") {
+      if (svgDepth === 0 && svgNote !== undefined) {
+        out += `<p>${escapeText(svgNote)}</p>`;
+      }
+      if (!selfClosed) svgDepth += 1;
+      continue;
+    }
+    if (svgDepth > 0) {
+      // A `<style>` inside an SVG is skipped as raw text, like the drop set
+      // above, so its CSS is never scanned for tags.
+      if (name === "style") i = findRawTextEnd(html, i, name).afterClose;
+      continue;
+    }
     if (name === "style") {
       const { contentEnd, afterClose } = findRawTextEnd(html, i, name);
       const css = html.slice(i, contentEnd);
-      if (!isDangerousCss(css)) out += `<style>${css}</style>`;
+      if (!dropStyle && !isDangerousCss(css)) out += `<style>${css}</style>`;
       i = afterClose;
       continue;
     }

@@ -231,6 +231,76 @@ describe("notebook/htmlSanitize", () => {
       assert.equal(sanitizeHtml("before<script>alert(1)"), "before");
     });
 
+    it("drops an <svg> with its whole subtree, text included (ADR-0038, Finding 12.14)", () => {
+      const result = sanitizeHtml(
+        "<div>before</div>" +
+          '<svg xmlns="http://www.w3.org/2000/svg"><metadata><rdf:RDF><cc:Work>' +
+          "<dc:format>image/svg+xml</dc:format><dc:date>2026-09-24</dc:date>" +
+          "</cc:Work></rdf:RDF></metadata><g><text>Matplotlib v3.11.1</text></g></svg>" +
+          "<div>after</div>",
+      );
+      assert.equal(result, "<div>before</div><div>after</div>");
+    });
+
+    it("counts nested <svg> elements, resuming output only after the outermost closes", () => {
+      assert.equal(
+        sanitizeHtml("<svg><svg><g>a</g></svg>b</svg><p>c</p>"),
+        "<p>c</p>",
+      );
+    });
+
+    it("drops a <script> and a <style> inside an <svg> without emitting either", () => {
+      const result = sanitizeHtml(
+        "<svg><script>alert(1)</script><style>a{}</style><g>x</g></svg><p>ok</p>",
+      );
+      assert.equal(result, "<p>ok</p>");
+    });
+
+    it("treats a self-closed <svg/> as empty and keeps what follows", () => {
+      assert.equal(sanitizeHtml("<svg/><p>after</p>"), "<p>after</p>");
+    });
+
+    it("drops everything after an <svg> that never closes", () => {
+      assert.equal(
+        sanitizeHtml("<p>before</p><svg><g>text</g><p>lost</p>"),
+        "<p>before</p>",
+      );
+    });
+
+    it("puts svgNote, escaped, where each outermost <svg> was (Finding 12.18)", () => {
+      // Two top-level figures, the first with a nested <svg>: one note each,
+      // none for the nested one, and the note's own markup is escaped.
+      assert.equal(
+        sanitizeHtml(
+          "<div>Output</div><svg><svg><g>a</g></svg></svg><svg/><p>end</p>",
+          { svgNote: "<b>no SVG</b> & more" },
+        ),
+        "<div>Output</div>" +
+          "<p>&lt;b&gt;no SVG&lt;/b&gt; &amp; more</p>" +
+          "<p>&lt;b&gt;no SVG&lt;/b&gt; &amp; more</p>" +
+          "<p>end</p>",
+      );
+    });
+
+    it("ends an <svg> at a </svg> in its text, as a browser does, and sanitizes what follows", () => {
+      // PR #217 review: an unescaped "</svg>" inside <text> is a real end tag
+      // in HTML, so the rest is ordinary markup, still allow-listed.
+      assert.equal(
+        sanitizeHtml(
+          '<svg><text>a "</svg>" b<script>x()</script>' +
+            '<img src="x" onerror="x()"><a href="javascript:x()">l</a>' +
+            "</text></svg><p>after</p>",
+        ),
+        '" bl<p>after</p>',
+      );
+    });
+
+    it("drops even a safe <style> block under dropStyle (Finding 12.18)", () => {
+      const html = "<style>.output{color:#000}</style><p>x</p>";
+      assert.equal(sanitizeHtml(html), html);
+      assert.equal(sanitizeHtml(html, { dropStyle: true }), "<p>x</p>");
+    });
+
     it("still closes a <style> block whose bogus end-tag attributes are themselves unterminated", () => {
       // </style/ with no real > after it at all — findRawTextEnd's own
       // "nothing after this can be trusted" fallback for that inner scan.

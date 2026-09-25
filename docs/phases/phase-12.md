@@ -300,13 +300,17 @@ this phase. See `PRODUCTION_PLAN.md` §8's 2026-09-24 amendment.
    `dependencies` at all, so `npm ls --omit=dev` and every `--production`
    licence tool return an empty set and read as "this redistributes nothing"
    (`scripts/check-audit.mjs`'s own doc comment records the same emptiness
-   independently, for the vulnerability gate's purposes). Twelve packages are
+   independently, for the vulnerability gate's purposes). Seven packages are
    redistributed anyway: `esbuild.mjs` statically inlines `react`,
-   `react-dom`, `react-is`, `scheduler`, `prop-types`, `object-assign`,
-   `loose-envify`, `js-tokens`, `ag-grid-community`, `ag-grid-react`,
-   `ag-stack` and `ag-charts-types` into `dist/webview/dataViewer.js`, which
-   ships in the `.vsix`. All twelve are MIT; AG Grid is the MIT Community
-   edition and no Enterprise package appears anywhere in the tree.
+   `react-dom`, `scheduler`, `ag-grid-community`, `ag-grid-react` and
+   `ag-stack` into `dist/webview/dataViewer.js`, and
+   `@vscode/python-extension` into `dist/extension.js`; both files ship in
+   the `.vsix`. All seven are MIT; AG Grid is the MIT Community edition and
+   no Enterprise package appears anywhere in the tree. (Corrected
+   2026-09-24, when 12i measured the build output: the inventory's original
+   count of twelve came from walking `package-lock.json`'s dependency graph,
+   which over-counted six packages esbuild never emits and missed the
+   extension-host import entirely — see the "12i done" Runbook entry.)
 
    MIT asks for one thing — that the copyright notice and permission text
    travel with the copies — and today that happens only partly. esbuild's
@@ -320,7 +324,7 @@ this phase. See `PRODUCTION_PLAN.md` §8's 2026-09-24 amendment.
    nothing about any bundled npm component.
 
    The work: append a "Bundled third-party components" section to `NOTICE`
-   listing the twelve packages with their copyright lines and one copy of the
+   listing the seven packages with their copyright lines and one copy of the
    MIT permission text. `NOTICE` already ships (it is not in
    `.vscodeignore`), so packaging does not change and no build step is added.
    Confirm the `legalComments` block against a `--production` build of
@@ -525,9 +529,11 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   probe round found no reason against it and costs no measurable job time
   (Finding 12.15). The build is slice 12j. See this file's own Runbook
   entry for what it has to do.
-- [ ] **12i — `NOTICE`: attribute the twelve bundled MIT components.** Not
-  started. Append a "Bundled third-party components" section; no packaging
-  change.
+- [x] **12i — `NOTICE`: attribute the bundled MIT components.** Done
+  2026-09-24. Seven packages, not the twelve first counted: six in
+  `dataViewer.js`, plus `@vscode/python-extension` in `extension.js`. A
+  "Bundled third-party components" section was appended to `NOTICE`, with no
+  packaging change. See the "12i done" Runbook entry.
 - [ ] **12j — Build: inline graphics through an always-on ODS wrapper.**
   Added 2026-09-24. Not started. Gates v1.0. See the Plan section's item 10
   and the "12h spike run" Runbook entry for what it has to do.
@@ -1926,6 +1932,69 @@ apply. Every file under `docs/` is inside the VitePress tree
 `PRODUCTION_PLAN.md` and `STATUS.md` are outside it. So verification is
 `npx prettier --check`, `node scripts/check-secrets.mjs` and
 `npm run check:docs`.
+
+### 12i done, 2026-09-24 — seven bundled packages attributed, not twelve
+
+**The count was wrong in both directions.** The Plan entry's list of twelve
+came from the 2026-09-22 licence inventory, which walked
+`package-lock.json`'s dependency graph out from `react`, `react-dom`,
+`ag-grid-community` and `ag-grid-react`. That method replaced the manifest's
+empty `dependencies` block (the trap the Plan entry describes), but it
+measures what packages *declare*, not what esbuild *emits*. This slice
+measured the emitted code directly instead: each of `esbuild.mjs`'s three
+contexts was rebuilt with the same options plus `metafile: true`, in both
+`minify` modes, and every `node_modules` file's `bytesInOutput` was summed
+per package.
+
+| Bundle | Packages with code in the output |
+| --- | --- |
+| `dist/extension.js` | `@vscode/python-extension` (458 bytes production, 929 development) |
+| `dist/webview/resultPanel.js` | none |
+| `dist/webview/dataViewer.js` | `react`, `react-dom`, `scheduler`, `ag-grid-community`, `ag-grid-react`, `ag-stack` |
+
+The production and development builds contain the same packages.
+
+- **Missed: `@vscode/python-extension`.** `src/run/localPythonEnvironment.ts`
+  imports the `PythonExtension` value and calls `PythonExtension.api()`, so
+  its loader is inlined into the extension-host bundle. The inventory's
+  claim that `extension.js` carries no third-party code was wrong: the walk
+  never started from that entry point. MIT, "Copyright (c) Microsoft
+  Corporation."
+- **Over-counted: six packages esbuild never loads.** `ag-grid-react`
+  declares `prop-types` as a dependency, but its distributed code does not
+  import it, so esbuild never reads it. `object-assign` and `react-is` are
+  only reachable through `prop-types`. `loose-envify` is a browserify
+  transform (`prop-types`' own `browserify.transform`), so it is build
+  tooling, not library code, and `js-tokens` is its dependency.
+  `ag-charts-types` is type declarations and emits nothing.
+
+**What shipped.** `NOTICE` gains a "Bundled third-party components" section:
+the seven packages by bundle, each with the copyright line from its own
+`LICENSE` file (read from `node_modules`, not assumed), one copy of the MIT
+permission text, and the AG Grid Community-edition statement. `NOTICE`
+already ships, so neither `.vscodeignore` nor the build changed.
+
+**The Plan's `legalComments` question is closed.** The production
+`dataViewer.js` ends with the same `/*! Bundled license information:`
+block as the development build: five React-family notices and nothing for
+AG Grid. `NOTICE`, not that block, is now what carries the attribution.
+
+**For whoever builds 12q's licence gate.** That gate checks licence
+*compatibility* across the whole lockfile. That check is unaffected by this
+correction, because every package above is in the lockfile regardless.
+Keeping `NOTICE`'s list current is a different job. The list is
+hand-maintained, and the only reliable source for it is the bundle's own
+metafile, as above. A new value import from any package in `src/` changes
+the set without touching `package.json`'s `dependencies`.
+
+The inventory document itself lives outside this repository, so it is not
+corrected here.
+
+Docs only: `NOTICE`, this file and `STATUS.md`. No source changed and no
+documented invariant moved, so `CLAUDE.md`'s pre-PR adversarial pass does
+not apply. Verification is `npx prettier --check` on the two Markdown files,
+`node scripts/check-secrets.mjs`, and `npm run check:docs`, because this file
+is inside the VitePress tree.
 
 ---
 

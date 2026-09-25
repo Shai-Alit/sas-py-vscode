@@ -349,8 +349,15 @@ this phase. See `PRODUCTION_PLAN.md` §8's 2026-09-24 amendment.
 
     - **An ADR.** Capturing by the `NOTE`-named file changes
       [ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
-      rule that every changed whitelisted file is a candidate. The SVG
-      choice may touch
+      rule that every changed whitelisted file is a candidate. The ADR
+      must also say, explicitly, why the wrapper does not break
+      [ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md):
+      ADR-0019's own "Constrained by" line reads "nothing may wrap or
+      inject code around a user's own script". The ODS statements are
+      extra lines in the job's code array around the `proc python infile=`
+      statement, the same kind as the trailing `run;` ADR-0014's 3c-i
+      amendment added, and the uploaded file's bytes stay unmodified. The
+      SVG choice may touch
       [ADR-0036](../adr/0036-notebook-html-output-is-sanitized.md).
     - **The docs 12h wrote.** The skill and `docs/running-python.md` say
       `SAS.show` displays nothing here. The build makes that false, so both
@@ -1914,8 +1921,11 @@ Docs only: this file, `phase-13.md`, `phase-11.md`,
 `PRODUCTION_PLAN.md` §8, `STATUS.md` and
 `docs/dev/manual-tests/phase-13.md`. The gate change is a plan amendment,
 not a code invariant, so `CLAUDE.md`'s pre-PR adversarial pass does not
-apply. Nothing is inside the VitePress tree, so verification is
-`npx prettier --check` and `node scripts/check-secrets.mjs`.
+apply. Every file under `docs/` is inside the VitePress tree
+(`docs/.vitepress/config.mjs` has no `srcExclude`); only
+`PRODUCTION_PLAN.md` and `STATUS.md` are outside it. So verification is
+`npx prettier --check`, `node scripts/check-secrets.mjs` and
+`npm run check:docs`.
 
 ---
 

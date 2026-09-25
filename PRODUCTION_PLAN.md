@@ -1036,13 +1036,16 @@ carries the 1.0.0 version bump.
 > waiting on SAS's approval to merge this work into the official SAS code
 > base, so there is no reason to release 1.0 sooner; a preview release
 > follows Phase 12. The second execution backend keeps its own section in
-> Phase 13 and still does **not** gate 1.0, so the paragraph below now
-> applies to that section only. See `docs/phases/phase-12.md`'s "Backlog
-> sweep" Runbook entry and `docs/phases/phase-13.md`.
+> Phase 13 and still does **not** gate 1.0; the paragraph below is
+> updated to say so. See `docs/phases/phase-12.md`'s "Backlog sweep"
+> Runbook entry and `docs/phases/phase-13.md`.
 
-> **What 1.0 does not require.** Phase 13 (second execution backend,
-> renumbered from Phase 12 on 2026-09-22 — see the amendment above) does not
-> gate it: §3.1 already holds that parity is the destination rather than the
+> **What 1.0 does not require.** The second execution backend does not
+> gate it. That work was all of Phase 13 when this paragraph was written
+> (renumbered from Phase 12 on 2026-09-22 — see the amendment above); since
+> 2026-09-24 it is one ungated section of Phase 13, and the rest of Phase 13
+> (13a–13k) **does** gate 1.0, per the 2026-09-24 amendment above. §3.1
+> already holds that parity is the destination rather than the
 > release bar and that the post-v0.1.0 phase order is demand-driven, so a
 > capability nobody has asked for cannot be a precondition for supporting what
 > has already shipped. Neither does a hosted documentation site — the VitePress

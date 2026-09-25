@@ -36,6 +36,13 @@ called out under **Changed** with a migration note.
   a spreadsheet program does not evaluate it as a formula. Numeric columns are
   never changed. Off by default. See
   [Browsing SAS libraries](docs/browsing-sas-libraries.md).
+- **Inline graphics and SAS output.** `SAS.show()`, `SAS.pyplot()` and ODS
+  output from a `SAS.submit()` procedure, such as a `proc print` table or a
+  `proc sgplot` graph, now appear in the Result panel and in notebook cells.
+  Before, they silently produced nothing. Pass `filetype="png"` to show a
+  figure in a notebook cell: a cell shows a one-line note in place of the
+  default SVG figure. Needs Viya 2025.03 or later. See
+  [Running Python](docs/running-python.md).
 
 ### Changed
 

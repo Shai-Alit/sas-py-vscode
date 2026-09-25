@@ -1028,6 +1028,18 @@ carries the 1.0.0 version bump.
 > `docs/phases/phase-12.md` for what Phase 12 actually is and why it gates
 > 1.0 when Phase 13 (below) explicitly does not.
 
+> **Amended 2026-09-24 (Sean's own call): v1.0 now waits for Phase 13
+> too.** A sweep of Phases 11 and 12 found researched and deferred work with
+> no slice; all of it is now planned in Phase 12 (slices 12k–12q) or Phase
+> 13 (slices 13a–13k), and every slice of both phases must be completed
+> before 1.0. Phase 13 was retitled "Feature completion" to hold it. Sean is
+> waiting on SAS's approval to merge this work into the official SAS code
+> base, so there is no reason to release 1.0 sooner; a preview release
+> follows Phase 12. The second execution backend keeps its own section in
+> Phase 13 and still does **not** gate 1.0, so the paragraph below now
+> applies to that section only. See `docs/phases/phase-12.md`'s "Backlog
+> sweep" Runbook entry and `docs/phases/phase-13.md`.
+
 > **What 1.0 does not require.** Phase 13 (second execution backend,
 > renumbered from Phase 12 on 2026-09-22 — see the amendment above) does not
 > gate it: §3.1 already holds that parity is the destination rather than the

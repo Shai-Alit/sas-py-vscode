@@ -42,7 +42,9 @@ Neither traces to the research memo either. 12g and 12i are small and
 bounded; 12h is a spike on exactly 12b's terms — it answers what is cheap
 to answer and explicitly does not scope the build it might recommend.
 **12j was added 2026-09-24**, once 12h had run: the build 12h recommended,
-which Sean decided should be always on and should gate v1.0.
+which Sean decided should be always on and should gate v1.0. **12k–12q
+were added later the same day**, by a sweep of Phases 11 and 12 for
+researched or deferred work that had no slice. See item 11 below.
 
 **A letter collision, found and fixed the same day.** 12c and the trio
 12g–12i were scoped in two sessions working this phase concurrently from
@@ -70,7 +72,9 @@ topic ("second execution backend"), renumbered the same day to
 amendment to `PRODUCTION_PLAN.md` §8's "Definition of done — 1.0" — see that
 section for the exact wording. This is new, not a reversal of anything
 previously said about this phase specifically — the phase did not exist
-under this number before today.
+under this number before today. **Amended 2026-09-24 (Sean):** v1.0
+now also waits for [Phase 13](phase-13.md), and a preview release follows
+this phase. See `PRODUCTION_PLAN.md` §8's 2026-09-24 amendment.
 
 1. **12a — Ship an Agent Skill (Option A).** Formerly 11f. A
    `.claude/skills/python-on-viya/SKILL.md` teaching an agent (Claude Code or
@@ -356,6 +360,100 @@ under this number before today.
 
     Not yet sized. The build scopes itself at its start, the way 12e did.
 
+**Slices 12k–12q were added 2026-09-24 by a backlog sweep** (see this
+file's "Backlog sweep" Runbook entry). Each one is work a Phase 11 or Phase
+12 entry researched, decided or deferred without ever giving it a slice.
+Items that still need a design pass, a probe or an architecture decision
+went to [Phase 13](phase-13.md) instead. **Sean's calls, 2026-09-24:** a
+preview release follows this phase, and v1.0 now waits for Phase 13 as
+well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
+
+11. **12k — Fix B12.1: a failed SAS step poisons the session.** Start by
+    pinning down the trigger. [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error)
+    reproduced it with a failing step submitted as its own job. Finding 12.15
+    could not reproduce it with the same kind of error raised through
+    `SAS.submit()` inside `PROC PYTHON`. Probe both paths, and the 12j
+    wrapper's `ods` statements under syntax-check mode, before designing
+    anything. Then fix it in `src/backend/procPython.ts`: Finding 12.5's
+    clearing job (`options nosyntaxcheck obs=max;` then `%let syscc=0;`) is
+    the known-good starting point, and where it runs (before every run, on
+    Reset Python State, or only after a failure) is the slice's first
+    decision. Manual-test items for the manual test 12.4 repro, a later
+    Run File, and Reset Python State.
+12. **12l — Notebook execution-surface staleness.** Three items Phase 9
+    deferred and Phase 11 carried, all the same shape (a surface's
+    terminal state going stale when the surface goes away), per
+    `phase-11.md`'s Plan section:
+    - A notebook closed mid-run makes `execution.appendOutput(...)` reject,
+      and nothing calls `execution.end(...)` afterwards
+      (`notebookController.ts`; `phase-9.md`'s 9c review, finding 10).
+    - A notebook cell's Problems-panel entry outlives a sign-out. The
+      closed-notebook half was fixed in 9c; the sign-out half was left open.
+    - A cell waiting behind an interrupted statement gets a
+      cause-agnostic notice (Finding 76). Build the lightweight version
+      Phase 11 suggested: a session-scoped "last interrupted, not yet
+      confirmed free" flag, cleared by the next successful submission, so
+      the message can say what is actually happening.
+13. **12m — Build the Python startup snippet.** From 11e's follow-up and
+    12d's spike (Finding 12.4, "12d spike run" entry). A profile-level
+    setting holding Python lines, inline or from a file, mirroring 11e's
+    `autoExec`. Seeded once at session creation by a plain `infile=` job.
+    **Run File and Reset Python State both restart the interpreter**
+    (Findings 12.4, 12.13), so the snippet has to survive a restart. 12d
+    recommended adding the snippet's lines to the uploaded file on every
+    `freshNamespace: true` job. That changes what reaches the interpreter,
+    which [ADR-0014](../adr/0014-python-is-submitted-as-an-uploaded-file.md)
+    currently forbids. The alternative is a separate seeding job after each
+    restart. **The slice's first step is that choice, reviewed by Sean,
+    with an ADR** (an ADR-0014 amendment if the first option wins). Also:
+    the snippet's own errors surfaced the way 12f surfaced autoExec errors;
+    traceback line numbers unaffected; docs, skill and manual tests.
+14. **12n — A reusable CAS connection.** From the "CAS-token reusability"
+    Runbook entry, which scoped five options and left them undecided.
+    Build the floor it named: a setting naming the token fileref, so
+    shared code can reference a stable name (option 5), rewritten in place
+    on each insert (option 1, backed by Finding 12.10). Probe the two open
+    questions first (U3: does SASLogon give this extension's client a
+    refresh token; U5: does `swat.CAS()` accept a token from another OAuth
+    client). Option 4 (a helper seeded into the namespace) needs 12m, so
+    this slice follows it and decides option 4 once 12m's restart story is
+    settled. Update `docs/cas-python-connection.md` and the snippet
+    commands.
+15. **12o — Option C, part 1: the loopback MCP server and its lifecycle.**
+    Builds the design 12c settled ("12c scoped" and "12c audience boundary
+    settled" Runbook entries), external Claude Code CLI only for v1: a
+    loopback-only (`127.0.0.1`) HTTP MCP server in the extension host; a
+    per-start local secret held in `SecretStorage`, never derived from the
+    Viya token; a generated `headersHelper` script and a command that
+    hands the user the `claude mcp add` line; a stable per-workspace port
+    that does not collide across windows; server start and token issuance
+    gated on workspace trust (ADR-0002); behaviour across a window reload.
+    Needs its own ADR. **ADR-0037's named security review runs on this
+    slice's diff before its PR**, covering 12c's checklist, in addition to
+    the ordinary pre-PR pass.
+16. **12p — Option C, part 2: the read-only tool surface.** The
+    `LibraryAdapter` and `CasAdapter` browse-and-page operations 12c
+    listed, each marked `readOnlyHint`, with `applySort`/`deleteView`'s
+    view side effects reviewed explicitly. User docs, the skill updated to
+    describe the tools, and manual tests driving a real external Claude
+    Code session. Same security review before the PR. Running Python
+    through MCP is not in this slice; it is Phase 13's 13j. In-editor
+    agents (`contributes.mcpServerDefinitionProviders`) stay out until
+    `microsoft/vscode`#265912 closes (12c).
+17. **12q — Housekeeping.** Four small items with nothing left to decide:
+    - **A licence gate**, the follow-on 12i named: a script shaped like
+      `scripts/check-audit.mjs` checking every package in
+      `package-lock.json` against an SPDX allow-list, run on every PR.
+      After 12i.
+    - **`formatCsvPage`'s two adjacent booleans become an options object**
+      (12e's pre-push review, item 6).
+    - **Dropping an item on My Favorites adds it to favourites** instead of
+      doing nothing (`phase-11.md`, carried from Phase 6; the mutation
+      already exists).
+    - **Manual test 11.10** (B1 on the SAS Libraries tree, for a failure
+      other than a lost session), unrun since Phase 11: run it, or record
+      why it cannot be provoked.
+
 ### Punch list
 
 - [x] **12a — Agent Skill (Option A).** Shipped 2026-09-22, no production
@@ -426,6 +524,20 @@ under this number before today.
 - [ ] **12j — Build: inline graphics through an always-on ODS wrapper.**
   Added 2026-09-24. Not started. Gates v1.0. See the Plan section's item 10
   and the "12h spike run" Runbook entry for what it has to do.
+- [ ] **12k — Fix B12.1 (a failed SAS step poisons the session).** Added
+  2026-09-24. Not started. Pin down the trigger by probe first.
+- [ ] **12l — Notebook execution-surface staleness.** Added 2026-09-24. Not
+  started. Three Phase 9 carry-overs.
+- [ ] **12m — Build the Python startup snippet.** Added 2026-09-24. Not
+  started. First step: the ADR-0014 choice, reviewed by Sean.
+- [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
+  After 12m.
+- [ ] **12o — Option C, part 1: loopback MCP server and lifecycle.** Added
+  2026-09-24. Not started. Security review before its PR.
+- [ ] **12p — Option C, part 2: read-only tool surface.** Added 2026-09-24.
+  Not started. After 12o; security review before its PR.
+- [ ] **12q — Housekeeping** (licence gate, `formatCsvPage` options object,
+  drop on My Favorites, manual test 11.10). Added 2026-09-24. Not started.
 
 ### Bugs found in this phase
 
@@ -444,7 +556,9 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   recovers it today. A clearing job — `options nosyntaxcheck obs=max;` then
   `%let syscc=0;` — cleared it in a probe. Evidence and open questions:
   [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error).
-  No fix written; it touches `src/backend/procPython.ts`.
+  No fix written; it touches `src/backend/procPython.ts`. **Scheduled as
+  slice 12k, 2026-09-24.** Finding 12.15 could not reproduce it through
+  `SAS.submit()`, so 12k pins down the trigger first.
 - [x] **B12.2 — A CAS table's columns come back alphabetical while its row
   cells stay in table order, so CAS CSV export mispairs them.** Found
   2026-09-23 (manual test 12.4). Headers are swapped with the data under
@@ -1734,6 +1848,74 @@ and `SAS.pyplot` display nothing here, so the `python-on-viya` skill and
 no changed invariant, so `CLAUDE.md`'s pre-PR adversarial pass does not
 apply. `docs/running-python.md` is inside the VitePress tree, so
 verification is `npm run check:docs` plus `node scripts/check-secrets.mjs`.
+
+### Backlog sweep, 2026-09-24 — everything researched, deferred or flagged in Phases 11 and 12 now has a slice
+
+**Why.** Sean noticed that 12h's build had no slice, and that the same was
+true of other research: 12b and 12c designed Option C and 12d confirmed the
+startup snippet, but neither build was ever planned. He asked for a sweep of
+`phase-11.md` and this file for anything not implemented (spiked research,
+bugs, features, follow-ups) and for all of it to be planned, in Phase 12 or
+Phase 13.
+
+**Decisions (Sean, 2026-09-24).**
+
+- Everything found gets a slice in Phase 12 or Phase 13. Nothing stays an
+  unowned candidate.
+- The v1.0 gate moves to after Phase 13. He is waiting on SAS's approval to
+  merge this work into the official SAS code base, so there is no reason to
+  release 1.0 sooner. Recorded as a 2026-09-24 amendment to
+  `PRODUCTION_PLAN.md` §8.
+- Another preview release follows Phase 12.
+- Which phase each item goes to was left to this session's judgement. The
+  rule used: **Phase 12** takes what is already researched or designed and
+  can be built straight away, plus bug and debt fixes. **Phase 13** takes
+  what still needs a design pass, a probe or an architecture decision.
+
+**Where each item went.**
+
+| Item | Source | Now |
+|---|---|---|
+| Inline graphics build | 12h | 12j (added earlier the same day) |
+| B12.1, a failed SAS step poisons the session | This file's Bugs section, Finding 12.5 | 12k |
+| Closed notebook mid-run skips `execution.end` | Phase 9c, carried in `phase-11.md` | 12l |
+| Stale notebook Problems entry after sign-out | Phase 9c, carried in `phase-11.md` | 12l |
+| Precise "waiting" message for an interrupted cell | Phase 9b, carried in `phase-11.md` | 12l |
+| Python startup snippet | 11e follow-up, 12d, Finding 12.4 | 12m |
+| Reusable CAS connection | "CAS-token reusability" entry | 12n |
+| Option C MCP server build | 12b, 12c | 12o, 12p |
+| Licence gate | 12i's named follow-on | 12q |
+| `formatCsvPage` options object | 12e pre-push review, item 6 | 12q |
+| Drop on My Favorites | Phase 6, carried in `phase-11.md` | 12q |
+| Manual test 11.10 | `phase-11.md` | 12q |
+| SAS Content upload/download to local disk | Phase 6, carried in `phase-11.md` | 13a |
+| SAS Content Copy/Paste | Phase 6, carried in `phase-11.md` | 13b |
+| F6, a panel of common commands | `phase-11.md` | 13c |
+| F11, a general snippet library | `phase-11.md` | 13d |
+| F10, Jupyter-style auto-display | `phase-11.md` | 13e (decision), 13f (build) |
+| F8, sortable DataFrame grid | `phase-11.md` | 13g |
+| F1, SQL-passthrough bridge for SAS libnames | `phase-11.md` | 13h (spike), 13i (build or decline) |
+| An MCP tool that runs Python | 12c | 13j |
+| CSV export progress; CAS table size on Properties; Pylance-stub opt-out; F9 on other connectors and large results | `phase-11.md` (11d, 10b, F9) | 13k |
+
+**Not carried, because each was a deliberate, recorded call rather than a
+gap:** 11a's interactive window having no unit-testable seam, and its
+focused-cell behaviour (both "not changed, recorded as a deliberate call"
+in `phase-11.md`'s 11a entry); localisation beyond English, result-panel
+styling and the Accounts-menu label (closed by Sean, 2026-09-22); the 5d-i
+user-provided-CA test and the hosted docs site (`STATUS.md`'s "Open items
+carried forward").
+
+`phase-11.md` gets a pointer table to these slices, so a reader arriving
+from its backlog finds where each item went. Its own write-ups stay where
+they are; each new slice links back to them rather than copying them.
+
+Docs only: this file, `phase-13.md`, `phase-11.md`,
+`PRODUCTION_PLAN.md` §8, `STATUS.md` and
+`docs/dev/manual-tests/phase-13.md`. The gate change is a plan amendment,
+not a code invariant, so `CLAUDE.md`'s pre-PR adversarial pass does not
+apply. Nothing is inside the VitePress tree, so verification is
+`npx prettier --check` and `node scripts/check-secrets.mjs`.
 
 ---
 

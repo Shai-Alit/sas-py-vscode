@@ -184,3 +184,62 @@ See `docs/phases/phase-12.md`'s "12g run" Runbook entry and Finding 12.13.
   **Expect, throughout:** **Python on Viya: Output** never shows
   `Resuming Python state`, `Previous Python state destroyed` or
   `Python initialized`.
+
+## 12j — inline graphics through the ODS wrapper
+
+See `docs/phases/phase-12.md`'s "12j built" Runbook entry, Finding 12.16 and
+[ADR-0038](../../adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md).
+All items need a Viya 2025.03 or later deployment, since `SAS.show` is new in
+that release. Start with this in a `.py` file against a Viya profile:
+
+```python
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+plt.figure()
+plt.plot([1, 2, 3], [3, 1, 2])
+plt.title("12j figure")
+SAS.show(plt, filetype="png")
+```
+
+- [ ] **12.15** **A `SAS.show` figure reaches the Result panel.** Run File.
+  **Expect:** the Result panel opens with the figure. **Python on Viya:
+  Output** shows no `ods` statement, no `Writing HTML5(VSCODE) Body file`
+  line, and nothing else new.
+- [ ] **12.16** **The same figure reaches a notebook cell.** Put the same
+  code in an `.ipynb` cell on the same profile and run it. **Expect:** the
+  figure renders in the cell's output.
+- [ ] **12.17** **An SVG figure: shown in the panel, dropped whole in a
+  cell.** Change the last line to `SAS.show(plt)`, with no `filetype`. Run
+  File, then run the cell. **Expect:** the Result panel shows the figure. The
+  cell shows no figure and no stray text: nothing like `image/svg+xml` or
+  `Matplotlib v`.
+- [ ] **12.18** **A DataFrame and a `SAS.submit()` procedure show as
+  tables.** Run:
+
+  ```python
+  import pandas as pd
+  SAS.show(pd.DataFrame({"a": [1, 2], "b": ["x", "y"]}))
+  SAS.submit("proc print data=sashelp.class(obs=3); run;")
+  SAS.submit("proc sgplot data=sashelp.class; scatter x=height y=weight; run;")
+  ```
+
+  **Expect:** in both the panel and a cell, a two-row table with columns `a`
+  and `b`, a three-row `SASHELP.CLASS` listing, then the scatter plot, once.
+  No separate `SGPlot.png` output appears.
+- [ ] **12.19** **A run that shows nothing stays quiet, and a saved file comes
+  first.** Close the Result panel, then Run File on `print("only text")`.
+  **Expect:** the panel does not open and the cell has only the text. Then
+  run a file that calls `plt.savefig("a.png")` and then
+  `SAS.show(plt, filetype="png")`. **Expect:** the saved `a.png` first, then
+  the `SAS.show` figure.
+- [ ] **12.20** **A cancelled run's figure never appears later.** Run File on
+  the figure code with `import time; time.sleep(30)` added after the
+  `SAS.show` line, and cancel it while it sleeps. Then Run File on
+  `print("after cancel")`. **Expect:** only `after cancel`; no figure. Then
+  run the original figure code. **Expect:** its figure, once.
+- [ ] **12.21** **A user's own `ods _all_ close;` costs that run's figure
+  only.** Add `SAS.submit("ods _all_ close;")` before the `SAS.show` line and
+  Run File. **Expect:** the run succeeds, the output shows `WARNING: No output
+  destinations active.`, and no figure appears. Remove the line and run
+  again. **Expect:** the figure.

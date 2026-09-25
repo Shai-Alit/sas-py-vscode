@@ -98,17 +98,38 @@ in full — an image, an HTML table, or a traceback. A run that only `print()`s
 never pops it. If you already have it open from an earlier run, it still comes
 back to the front for the next run's first figure.
 
-Rich output is captured by comparing the session's working directory before and
-after the run
-([ADR-0019](adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)):
-your script has to actually **write a file** — `fig.savefig("plot.png")`,
-`df.to_html("table.html")` — because there is no implicit `savefig`. A written
-file larger than 10 MiB is skipped with a note naming it and the limit; the run
-and the session carry on. A cancelled run captures nothing.
+There is no implicit `plt.show()`. A figure or table reaches the panel in one
+of two ways.
 
-`PROC PYTHON`'s own display helpers, `SAS.show()` and `SAS.pyplot()`, run
-without error but show nothing here. They send their output to a SAS ODS
-destination, and this extension does not open one. Write a file instead.
+**`SAS.show()` and `SAS.pyplot()`**, `PROC PYTHON`'s own display helpers. Every
+run is wrapped in an ODS HTML5 destination
+([ADR-0038](adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md)), so
+their output is shown after the run:
+
+```python
+import matplotlib.pyplot as plt
+plt.plot([1, 2, 3], [3, 1, 2])
+SAS.show(plt, filetype="png")   # a figure
+SAS.show(df)                    # a DataFrame, as a table
+```
+
+Pass `filetype="png"` for a figure. Without it the figure is SVG, which the
+Result panel shows but a notebook cell does not. Output from a procedure you
+run through `SAS.submit()` is shown the same way: a `proc print` as a table,
+and a `proc sgplot` graph as a PNG image, with no `filetype` needed. The
+helpers need Viya 2025.03 or later. If your code runs `ods _all_ close;`, that
+also closes the extension's destination, and that run's `SAS.show` output is
+lost; the next run opens it again.
+
+**A file your script writes** — `fig.savefig("plot.png")`,
+`df.to_html("table.html")`. Rich output is captured by comparing the session's
+working directory before and after the run
+([ADR-0019](adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)),
+and new `.png` and `.html` files are shown, in filename order, before any
+`SAS.show` output. A written file larger than 10 MiB is skipped with a note
+naming it and the limit; the run and the session carry on. A cancelled run
+captures nothing. The extension uses `pyviya_ods.htm` in the working directory
+for itself, so don't write a file with that name.
 
 Reloading the window clears the panel, the same way it clears the output
 channel's scrollback. There is no serializer for it yet.

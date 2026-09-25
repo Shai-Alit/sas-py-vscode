@@ -1,6 +1,6 @@
 # ADR-0036 — A notebook cell's `text/html` output is sanitized before render, not CSP-locked
 
-- **Status:** Accepted
+- **Status:** Accepted — amended by [ADR-0038](0038-every-run-is-wrapped-in-a-named-ods-destination.md), 2026-09-24: an `<svg>` element is dropped with its whole subtree, text included
 - **Date:** 2026-09-14
 - **Decides:** how a notebook cell's `text/html` output (the same
   `RichOutput` arm the result panel renders) is kept from executing a

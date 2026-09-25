@@ -42,6 +42,20 @@
  * 5. **Decode** ({@link decodeRichOutput}): base64 for `image/png` (per
  *    {@link RichOutput}'s own contract), UTF-8 text for `text/html`.
  *
+ * ## The ODS body file is not a candidate like the others (ADR-0038)
+ *
+ * Every run is wrapped in a named ODS HTML5 destination whose body file
+ * {@link ODS_BODY_FILE_NAME} this extension names itself, so `SAS.show()`
+ * and `SAS.submit()` output has somewhere to land (slice 12j). That file is
+ * rewritten by every run, and holds only styling when the run showed nothing
+ * (Findings 12.14, 12.15), so it is kept out of
+ * {@link selectRichOutputCandidates} and decided by {@link selectOdsBody} and
+ * {@link hasOdsOutput} instead: fetched unless its size matches the last
+ * empty body the backend saw, shown only when it carries output, and deleted
+ * only once shown. An empty body is left in place for the next run to
+ * overwrite. Every empty body measured the same size (Finding 12.16), so a
+ * run that shows nothing costs no fetch once one has been seen.
+ *
  * ## What this module does not decide
  *
  * Whether a run's outcome was `cancelled` (ADR-0019: no capture at all on a
@@ -121,9 +135,8 @@ export function selectRichOutputCandidates(
 
   const candidates: RichOutputCandidate[] = [];
   for (const file of after) {
-    const prior = beforeByName.get(file.name);
-    const changed = prior === undefined || prior.size !== file.size;
-    if (!changed) continue;
+    if (file.name === ODS_BODY_FILE_NAME) continue;
+    if (!changedSince(beforeByName, file)) continue;
 
     const mime = richOutputMimeForName(file.name);
     if (mime === undefined) continue;
@@ -134,6 +147,66 @@ export function selectRichOutputCandidates(
   return candidates
     .slice()
     .sort((a, b) => ordinalCompare(a.file.name, b.file.name));
+}
+
+/**
+ * The ODS body file every run writes, named by the run's own wrapper
+ * (`procPython.ts`) rather than left to ODS's `sashtml<n>.htm` sequence, so
+ * the file to capture is known before the run starts and a cancelled run's
+ * leftover is overwritten rather than shown (Finding 12.16, ADR-0038).
+ *
+ * `.htm` on purpose: {@link richOutputMimeForName} would whitelist it, which
+ * is why {@link selectRichOutputCandidates} names it and skips it.
+ */
+export const ODS_BODY_FILE_NAME = "pyviya_ods.htm";
+
+/**
+ * The ODS body file after a run, unless it is the size of the last body
+ * found empty (`emptySize`), in which case it holds nothing to show and is
+ * not worth a fetch (Finding 12.16).
+ *
+ * Deliberately not the ADR-0019 "changed since before the run" test. Two
+ * different figures measured the same size (Finding 12.16), so a non-empty
+ * body an earlier run left behind — a cancelled run, a failed fetch or
+ * delete — would hide the next same-size figure as "unchanged". Comparing
+ * against the known empty size instead fails towards an extra fetch, never
+ * towards lost output. An `undefined` size never matches, for the same
+ * reason.
+ */
+export function selectOdsBody(
+  after: readonly SessionFile[],
+  emptySize: number | undefined,
+): SessionFile | undefined {
+  const body = after.find((file) => file.name === ODS_BODY_FILE_NAME);
+  if (body === undefined) return undefined;
+  if (emptySize !== undefined && body.size === emptySize) return undefined;
+  return body;
+}
+
+/**
+ * Whether an ODS body holds any output, or only the styling ODS writes on
+ * every run.
+ *
+ * ODS gives each piece of output an anchor whose `id` starts `IDX`; a body
+ * with none showed nothing. The test held on every run in Findings 12.14 and
+ * 12.15, and upstream `vscode-sas-extension` makes the same check before
+ * showing a body.
+ */
+export function hasOdsOutput(html: string): boolean {
+  return ODS_OUTPUT_ANCHOR.test(html);
+}
+
+/** An `id` attribute starting `IDX` — preceded by whitespace, so `data-id`
+ * and similar never match. */
+const ODS_OUTPUT_ANCHOR = /\sid="IDX/;
+
+/** ADR-0019 point 4: new, or present before with a different size. */
+function changedSince(
+  beforeByName: ReadonlyMap<string, SessionFile>,
+  file: SessionFile,
+): boolean {
+  const prior = beforeByName.get(file.name);
+  return prior === undefined || prior.size !== file.size;
 }
 
 /**
@@ -169,7 +242,13 @@ export function decodeRichOutput(
   if (mime === "image/png") {
     return { mime: "image/png", data: Buffer.from(bytes).toString("base64") };
   }
-  return { mime: "text/html", data: Buffer.from(bytes).toString("utf8") };
+  return { mime: "text/html", data: decodeHtml(bytes) };
+}
+
+/** The `text/html` arm of {@link decodeRichOutput}, on its own for the ODS
+ * body, which has to be read before it is known to be worth showing. */
+export function decodeHtml(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("utf8");
 }
 
 /**
@@ -187,6 +266,18 @@ export function skippedCaptureOutput(name: string, reason: string): RichOutput {
   return {
     mime: "text/plain",
     data: `[could not retrieve rich output file "${name}": ${reason}]\n`,
+  };
+}
+
+/**
+ * The skip note for the ODS body. The body file is this extension's own, not
+ * one the user wrote, so the note names what it holds rather than its file
+ * name. Same l10n gap as {@link skippedCaptureOutput}.
+ */
+export function skippedOdsOutput(reason: string): RichOutput {
+  return {
+    mime: "text/plain",
+    data: `[could not retrieve this run's SAS output: ${reason}]\n`,
   };
 }
 

@@ -349,7 +349,9 @@ this phase. See `PRODUCTION_PLAN.md` §8's 2026-09-24 amendment.
     spike run" Runbook entry: close first, then open; capture only the body
     file named in the run's own "Body file" `NOTE`; skip a body with no
     `id="IDX` anchor, without delaying the run's result; decide SVG; call
-    out the behaviour changes. Also in scope:
+    out the behaviour changes. (Built 2026-09-24. The body file ended up
+    named by the wrapper, not read from the `NOTE`: see the "12j built"
+    Runbook entry and Finding 12.16.) Also in scope:
 
     - **An ADR.** Capturing by the `NOTE`-named file changes
       [ADR-0019](../adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
@@ -534,9 +536,14 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   `dataViewer.js`, plus `@vscode/python-extension` in `extension.js`. A
   "Bundled third-party components" section was appended to `NOTICE`, with no
   packaging change. See the "12i done" Runbook entry.
-- [ ] **12j — Build: inline graphics through an always-on ODS wrapper.**
-  Added 2026-09-24. Not started. Gates v1.0. See the Plan section's item 10
-  and the "12h spike run" Runbook entry for what it has to do.
+- [x] **12j — Build: inline graphics through an always-on ODS wrapper.**
+  Built 2026-09-24. Every run is wrapped in a named ODS HTML5 destination
+  whose body file, `pyviya_ods.htm`, is named by the wrapper and captured
+  apart from the ADR-0019 diff
+  ([ADR-0038](../adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md),
+  Findings 12.16 and 12.17). A notebook cell drops an SVG figure whole. The
+  pre-push adversarial review's five real findings are folded in. Manual
+  items 12.15–12.21 are not yet run. See the "12j built" Runbook entry.
 - [ ] **12k — Fix B12.1 (a failed SAS step poisons the session).** Added
   2026-09-24. Not started. Pin down the trigger by probe first.
 - [ ] **12l — Notebook execution-surface staleness.** Added 2026-09-24. Not
@@ -1830,8 +1837,11 @@ to get right:
    trailing `close`, so its file stays open and locked (`403`), and without
    the leading `close` the next run silently appends to it (Finding 12.15).
 2. **Capture only this run's body file.** Take its name from the run's own
-   "Writing HTML5(VSCODE) Body file:" `NOTE`, as upstream does. That line
-   is typed `note`, so it has to be read before the noise filter drops it.
+   "Writing HTML5(VSCODE) Body file:" `NOTE`. That line is typed `note`, so
+   it has to be read before the noise filter drops it. (Corrected
+   2026-09-24: this said "as upstream does", which is wrong. Upstream's
+   REST path reads the job's `results` collection and can name the body
+   itself with `body=`. 12j named the body itself; see Finding 12.16.)
    A cancelled run's leftover also shows up as changed in the next run's
    diff, and must be deleted, not shown.
 3. **Skip empty bodies.** Every run writes one, 32,425 bytes of styling even
@@ -1995,6 +2005,96 @@ documented invariant moved, so `CLAUDE.md`'s pre-PR adversarial pass does
 not apply. Verification is `npx prettier --check` on the two Markdown files,
 `node scripts/check-secrets.mjs`, and `npm run check:docs`, because this file
 is inside the VitePress tree.
+
+### 12j built, 2026-09-24 — every run opens a named ODS destination, and its body file is captured by name
+
+**Scoped at the start, as the plan asked.** Reading upstream to check the
+12h entry's "take the name from the `NOTE`, as upstream does" found that
+upstream does not do that. Its REST path reads the job's `results`
+collection, and its code wrapper can name the body with `body=`. That
+suggested a simpler design, and Sean chose it, along with the SVG
+handling, before anything was built:
+
+- **The body file gets a fixed name**, `body='pyviya_ods.htm'`, instead of
+  being read from the `NOTE`. A scoping probe, approved by Sean, confirmed
+  the name works, each run overwrites it, and a cancelled run's lock is
+  released by the next run's leading `close` (Finding 12.16).
+- **SVG:** the docs tell users to pass `filetype="png"`, and the notebook
+  sanitizer drops an `<svg>` with its whole subtree. The Result panel still
+  renders an SVG figure.
+
+**What shipped.**
+
+- `src/backend/procPython.ts`: `ODS_WRAPPER_BEFORE`/`ODS_WRAPPER_AFTER`
+  around every `execute()` job (not `reset()` or `probeRuntime()`), and a
+  body-file step after the ADR-0019 candidates. The fetch and delete are
+  factored into `fetchCapture`/`deleteCapture`, shared by both.
+- `src/backend/richOutput.ts`: `ODS_BODY_FILE_NAME`, excluded from
+  `selectRichOutputCandidates`; `selectOdsBody` (the body, unless it is the
+  size of the last empty one); `hasOdsOutput` (an `id="IDX` anchor preceded
+  by whitespace); `skippedOdsOutput`. A unit test caught that a `\b`
+  boundary let `data-id="IDX` match.
+- `src/notebook/htmlSanitize.ts`: `<svg>` and everything inside it are
+  dropped, nested `<svg>`s counted, and a `<style>` inside one skipped as
+  raw text.
+- [ADR-0038](../adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md),
+  with amendment pointers in ADR-0019 and ADR-0036. It says why the wrapper
+  does not break ADR-0014.
+- User docs: `docs/running-python.md` and `docs/notebooks.md` now describe
+  `SAS.show`, `filetype="png"`, `ods _all_ close;` and the reserved file
+  name. So does the `python-on-viya` skill. Its 12h text said `SAS.show`
+  shows nothing, which the build makes false.
+- Manual items 12.15–12.21 in `docs/dev/manual-tests/phase-12.md`.
+
+**Cost, against the 12h worry that the empty body would delay every
+result.** Once the backend has fetched one empty body in a session, a
+print-only run makes no extra request at all, because every later empty
+body is the same size. A shown body costs one fetch and one delete, like
+any other captured file.
+
+**Checked locally, not by probe.** The built `sanitizeHtml` over the real
+PNG bodies from this probe and 12h keeps the `data:image/png` `<img>` and
+leaves no SVG text. No real SVG body was left on disk from 12h, so the SVG
+path is covered by a unit test built to Finding 12.14's description and by
+manual item 12.17. The ODS `<style>` block was read for selectors that
+could restyle the page around it. The heavy rules are all scoped to
+`.body`. A few bare element rules (`table`, `td, th`, `p`, link colours)
+do leak. ADR-0038 records that as accepted.
+
+**Open.** The manual items. A real cancel through the extension rather than
+a missing `close` (item 12.20). Other Viya releases.
+
+**Adversarial review, 2026-09-24, before the push.** Six findings; five
+were real and all five are folded in:
+
+1. **A same-size figure could vanish silently.** The body was fetched only
+   if ADR-0019's diff saw it change. A cancelled run, a failed fetch, a
+   failed delete or a failed listing leaves a non-empty body in place, and
+   the next figure of the same size then read as unchanged. There was no
+   output, no note and no log line. Fixed: the backend remembers the size
+   of the last empty body it fetched, and fetches any body of another size
+   whether or not it changed (`selectOdsBody`, ADR-0038 point 3).
+2. **A SAS procedure's graph was an inline SVG.** Confirmed by probe:
+   `proc sgplot` through `SAS.submit()` wrote an inline `<svg>` and a
+   `<script>`, which a notebook cell drops, and `filetype="png"` does not
+   exist for a procedure. `outputfmt=png` in the wrapper fixes it. The
+   probe also found each procedure graph written a second time, as a PNG
+   file in the working directory, by the LISTING destination. The diff
+   would have shown it as a separate output. `gpath=` on our own destination
+   did not help. `ods listing gpath=<WORK>` did, and Sean chose it over
+   `ods listing close;`. Both are in Finding 12.17.
+3. **The skip note named an internal file.** A failed body fetch now reads
+   "could not retrieve this run's SAS output", and the over-cap arm has a
+   test.
+4. **An unreachable branch** (`output?.mime !== "text/html"`) is gone: the
+   body is decoded as HTML directly.
+5. **The wrapper test mirrored the constants.** A new test pins the literal
+   SAS text of the whole code array.
+
+The sixth, that a listing item with no `size` now affects every run's SAS
+output, was a note rather than a finding. Under fix 1 such a body is always
+fetched, so it now yields a visible skip note instead of silently skipped
+output.
 
 ---
 
@@ -2871,7 +2971,9 @@ extension decides a run failed, and does not slow the job. It does add a
 file to capture on every run. A build needs the close-first form, and it
 must capture only the body file named in that run's own "Body file"
 `NOTE`, not every changed `.htm`. Otherwise a cancelled run's leftover is
-shown as the next run's output.
+shown as the next run's output. (Superseded in part by Finding 12.16: a
+body name chosen by the wrapper meets the same need without reading the
+`NOTE`.)
 
 **Not settled:** why Finding 12.5's stuck `SYSCC` did not appear; a real
 cancel through the extension rather than an omitted `close`; the result
@@ -2879,3 +2981,101 @@ panel's rendering; other releases. One deployment, one day, small samples.
 
 No deployment-identifying detail appears above. Session ids and server
 paths from the log and the `403` body are left out on purpose.
+
+### Finding 12.16 — a wrapper-chosen `body=` name lands in the working directory, is overwritten by every run, and survives a cancelled run's lock
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, with Sean's approval. One
+throwaway session on the SAS Studio compute context, two uploaded filerefs
+and six jobs. The session was deleted and confirmed `404`. Each job used
+Finding 12.15's close-first wrapper with `body='pyviya_ods.htm'` added to
+the open. Every job ended `completed` with `SYSCC=0`.
+
+**Documented.** `ODS HTML5`'s `BODY=` names the body file, and a relative
+name resolves against the SAS process's working directory. Upstream
+`vscode-sas-extension` passes `body="<uuid>.htm"` when it has an id to use
+(`client/src/components/utils/SASCodeDocument.ts`).
+
+**Observed:**
+
+| Job | Python | Trailing `close` | `pyviya_ods.htm` afterwards |
+|---|---|---|---|
+| A (fresh session) | `SAS.show(plt, filetype="png")` | yes | new, 70,447 B, one `data:image/png` `<img>`, one `id="IDX` anchor |
+| B | `print()` | yes | 32,425 B, no anchor: overwritten |
+| C | `SAS.show(plt, filetype="png")` | **no** (stands in for a cancel) | listed at 70,416 B; fetch `403`, `errorCode` `5452` (locked) |
+| D | `print()` | yes | 32,425 B, no anchor: the leading `close` released C's file and the open overwrote it |
+| E | `SAS.show(plt, filetype="png")` | yes | 70,447 B, one anchor; then `DELETE` → `204`, gone from the listing |
+| F | `print()` | yes | new, 32,425 B: recreated after the delete |
+
+Every job logged `NOTE: Writing HTML5(VSCODE) Body file: pyviya_ods.htm`,
+typed `note`. It was the only body file in the directory throughout, with no
+`sashtml*.htm` files. The wrapper's own lines came back typed `source`.
+
+**What it establishes.**
+
+- A wrapper can name the body file and know it before the run. Nothing
+  needs to read the `NOTE`.
+- The same name is safely reused. Each run's open overwrites it, including
+  after a run that left it open and locked, as long as the wrapper closes
+  first. A cancelled run's partial figure is overwritten, never shown.
+- Every empty body was 32,425 bytes (B, D, F, and all of Finding 12.15's),
+  so an empty run after an empty run leaves the file unchanged by the
+  ADR-0019 name-and-size test. Two different figure runs (A, E) were also
+  the same size, 70,447 bytes. So a shown body has to be deleted, or the
+  next same-size figure would read as unchanged.
+
+**Not settled:** other releases; a real cancel through the extension
+(manual item 12.20); whether ODS ever writes a partial file under this name
+that a later run cannot open. That never happened here.
+
+No deployment-identifying detail appears above. Session ids and server
+paths from the log and the `403` body are left out on purpose.
+
+### Finding 12.17 — a SAS procedure's ODS graph is an inline SVG under HTML5 unless `outputfmt=png`, and the LISTING destination also writes it into the working directory
+
+Probed 2026-09-24, `verde`, via `viya-api-probe`, with Sean's approval of
+each round. It was prompted by the 12j pre-push review. Three throwaway
+sessions on the SAS Studio compute context, 4, 3 and 4 jobs, each deleted
+and confirmed `404`. Every job ended `completed` with `SYSCC=0`. The
+Python in each figure job was
+`SAS.submit("proc sgplot data=sashelp.class; scatter x=height y=weight; run;")`.
+The wrapper was Finding 12.16's close-first form with
+`body='pyviya_ods.htm'`, varied as below.
+
+**Documented.** The HTML5 destination's default ODS graphics format is SVG.
+`ODS GRAPHICS / OUTPUTFMT=` sets the image format for SAS procedures. The
+LISTING destination is open by default, and `GPATH=` names where a
+destination writes its image files.
+
+**Observed:**
+
+| Wrapper | Body | New files in the working directory |
+|---|---|---|
+| `ods graphics on;` | 55,915 B: one inline `<svg>`, one `<script>`, three `<style>` blocks, no PNG | `SGPlot.png`, 7,833 B |
+| `ods graphics on / outputfmt=png;` | 44,334 B: one `data:image/png` `<img>`, no SVG, no script | `SGPlot1.png`, 7,833 B |
+| the same, `SAS.show(plt, filetype="png")` | 70,447 B, one `data:image/png` `<img>`: unchanged from Finding 12.16 | none |
+| the same, `print()` only | 32,425 B, no anchor: the empty size is unchanged | none |
+| `outputfmt=png`, plus `gpath=` WORK on the HTML5 open | 44,334 B, the same as above | `SGPlot.png`, 7,833 B: **still there** |
+| `ods listing close;` first, then `outputfmt=png` | 44,334 B | **none** |
+| `ods listing gpath=` WORK first, then `outputfmt=png` | 44,334 B | **none**; a WORK listing then showed `SGPlot.png` there |
+
+The last row also ran a `print()`-only job: 32,425 B, still no anchor.
+
+**What it establishes.**
+
+- Without `outputfmt=png`, a SAS procedure's graph in the body is an inline
+  SVG with a `<script>`. A notebook cell drops it whole, so the user sees
+  nothing. The result panel's CSP makes the script inert. With
+  `outputfmt=png`, the graph is a `data:image/png` the sanitizer keeps.
+  `SAS.show(plt)` is unaffected by that option either way (Finding 12.14).
+- The extra `.png` in the working directory comes from the LISTING
+  destination, not the HTML5 one. `gpath=` on the HTML5 destination does
+  not move it, and closing or redirecting LISTING does. Left alone,
+  ADR-0019's diff would show the graph a second time as a separate PNG.
+- The wrapper change does not move the empty-body size.
+
+**Not settled:** other procedures and graph types (only `sgplot` ran);
+whether the WORK images are ever cleaned up before the session ends; other
+releases.
+
+No deployment-identifying detail appears above. Session ids, the WORK path
+and server paths are left out on purpose.

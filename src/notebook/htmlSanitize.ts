@@ -47,6 +47,14 @@
  * either kind of encoding at all is treated as dangerous rather than decoded
  * and re-checked). `style="…"` attribute values get the same check.
  *
+ * `<svg>` is dropped with its whole subtree, text included (ADR-0038). An
+ * unknown tag normally keeps its children as text, but an SVG figure's
+ * children are metadata (`<dc:format>image/svg+xml</dc:format>`, the
+ * matplotlib version), and keeping them turned a `SAS.show(plt)` figure into
+ * junk text in a cell (Finding 12.14). Nothing inside is ever emitted, so a
+ * malformed or unclosed `<svg>` can only lose more content, never let any
+ * through.
+ *
  * No tag carries a URL-bearing attribute except `<img src>`, and that is
  * restricted to an inline `data:image/…;base64,…` value — the same
  * `img-src … data:` restriction ADR-0021 already applies to the result
@@ -321,14 +329,20 @@ export function sanitizeHtml(html: string): string {
   let i = 0;
   const stack: string[] = [];
   const n = html.length;
+  /** How many `<svg>` elements the scan is inside. While above zero nothing
+   * is emitted — see this module's own doc comment. */
+  let svgDepth = 0;
+  const emit = (text: string): void => {
+    if (svgDepth === 0) out += text;
+  };
 
   while (i < n) {
     const lt = html.indexOf("<", i);
     if (lt === -1) {
-      out += escapeText(html.slice(i));
+      emit(escapeText(html.slice(i)));
       break;
     }
-    if (lt > i) out += escapeText(html.slice(i, lt));
+    if (lt > i) emit(escapeText(html.slice(i, lt)));
 
     if (html.startsWith("<!--", lt)) {
       const end = html.indexOf("-->", lt + 4);
@@ -343,12 +357,16 @@ export function sanitizeHtml(html: string): string {
     if (html.startsWith("</", lt)) {
       const closeMatch = /^<\/([a-zA-Z][a-zA-Z0-9]*)\s*>/.exec(html.slice(lt));
       if (closeMatch === null) {
-        out += "&lt;";
+        emit("&lt;");
         i = lt + 1;
         continue;
       }
       const name = closeMatch[1]?.toLowerCase();
       i = lt + closeMatch[0].length;
+      if (svgDepth > 0) {
+        if (name === "svg") svgDepth -= 1;
+        continue;
+      }
       if (name !== undefined && stack[stack.length - 1] === name) {
         stack.pop();
         out += `</${name}>`;
@@ -361,7 +379,7 @@ export function sanitizeHtml(html: string): string {
 
     const openMatch = /^<([a-zA-Z][a-zA-Z0-9]*)/.exec(html.slice(lt));
     if (openMatch === null) {
-      out += "&lt;";
+      emit("&lt;");
       i = lt + 1;
       continue;
     }
@@ -381,6 +399,16 @@ export function sanitizeHtml(html: string): string {
 
     if (RAW_TEXT_DROP_TAGS.has(name)) {
       i = findRawTextEnd(html, i, name).afterClose;
+      continue;
+    }
+    if (name === "svg") {
+      if (!selfClosed) svgDepth += 1;
+      continue;
+    }
+    if (svgDepth > 0) {
+      // A `<style>` inside an SVG is skipped as raw text, like the drop set
+      // above, so its CSS is never scanned for tags.
+      if (name === "style") i = findRawTextEnd(html, i, name).afterClose;
       continue;
     }
     if (name === "style") {

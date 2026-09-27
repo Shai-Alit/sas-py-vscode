@@ -205,10 +205,6 @@ the statement that was already running when you cancelled — the same
 limitation [Cancel](running-python.md#cancelling-a-run) has outside notebooks.
 A notice appears after a few seconds saying as much.
 
-**A Problems-panel entry from a notebook cell is still there after you sign
-out.** A known gap — closing the notebook clears its entries; signing out does
-not yet. See [Notebooks](notebooks.md#diagnostics).
-
 ## Reset, reconnect, or reload?
 
 - **Reset Python State** — the interpreter's namespace is wedged but the

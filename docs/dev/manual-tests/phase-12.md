@@ -327,3 +327,51 @@ SAS.submit("options syntaxcheck; data casuser.test; x=1; run;")
   too (ADR-0039). Then Run File on `SAS.submit("options obs=5;")`, then the
   rows file. **Expect:** `(5, 5)`. Finish with Run File on
   `SAS.submit("options obs=max;")`.
+
+## 12l — notebook execution-surface staleness
+
+See `docs/phases/phase-12.md`'s "12l built" Runbook entry and Finding
+12.20. Use a saved `.ipynb` file with **Python on Viya** selected as its
+kernel.
+
+- [ ] **12.27** **Dropped 2026-09-27, with the sign-out change it tested.**
+  Kept as the record of why. **Sign-out clears a notebook cell's Problems
+  entry.** Run a
+  cell containing:
+
+  ```python
+  x = 1
+  y = 1 / 0
+  ```
+
+  **Expect:** a Problems entry on the cell's second line. Run **Python on
+  Viya: Sign Out**. **Expect:** the entry is gone. Before 12l it stayed
+  until the notebook was closed.
+  **(9/27/2026) fail** entry stayed after sign out. this seems like perfectly
+  acceptable behavior. This seems like normal operation. not a defect and not
+  sure why this was decided to become an issue. We should not pursue this any
+  further.
+- [x] **12.28** **The waiting notice names a cancelled cell, then stops.**
+  Run a cell that prints nothing for 30 seconds:
+
+  ```python
+  import time
+  time.sleep(30)
+  ```
+
+  Interrupt it after about 3 seconds, then at once run a cell containing
+  `print("after")`. **Expect:** after about 3 seconds that cell shows
+  `[still no output — SAS Viya may still be finishing the statement a
+  cancelled cell was running; this cell starts once it ends]`, and `after`
+  prints once the sleep's 30 seconds are up. Then run a cell containing
+  `import time; time.sleep(10)`. **Expect:** after about 3 seconds it shows
+  `[still no output — this cell is still running]`, with no mention of a
+  cancelled cell.
+- [x] **12.29** **Closing a notebook mid-run.** Make a two-cell notebook:
+  `import time; time.sleep(20); print("done")`, then `print("second")`.
+  Save it, then **Run All**, and close the notebook's tab while the first
+  cell runs. Wait 25 seconds, then reopen the notebook and run the first
+  cell. **Expect:** it runs and prints `done` after 20 seconds, with no
+  "already running" refusal. **Output** panel, **Extension Host** channel:
+  **Expect:** no `NO notebook document` or `duplicate execution` error from
+  this extension.

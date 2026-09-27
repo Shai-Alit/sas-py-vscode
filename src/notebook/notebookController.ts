@@ -139,25 +139,35 @@
  * do not apply to a notebook, which has no run-target concept at all (this
  * module's own "kernel picker alone" decision, above) and stays open across a
  * sign-out the same way any other open editor does. **Deliberately not
- * ported**, and flagged here rather than silently assumed: a stale Problems
- * entry for a notebook cell that outlives a sign-out. Phase 4c's own
- * "disproportionate" call on a comparably narrow gap (`../run/commands.ts`'s
- * own doc comment: precise waiting-cell tracking) is the model for treating
- * this as a known, accepted gap rather than a reason to thread
- * `onDidSignOut` through `extension.ts` a second time for a notebook that a
- * person will, in the ordinary case, just re-run. Carried to `phase-11.md`
- * as a candidate, not decided against permanently.
+ * ported:** clearing a notebook cell's Problems entry on sign-out. The entry
+ * stays until the cell runs again or the notebook closes. 9c carried this as
+ * a candidate; 12l dropped it on 2026-09-27, as ordinary behaviour and not a
+ * defect.
  *
- * **The closed-notebook half of that gap is fixed, not carried** —
- * adversarial review, 2026-09-14 (Finding 2). `registerNotebookController`
- * subscribes to `vscode.workspace.onDidCloseNotebookDocument` itself and
- * clears every one of that notebook's cells — needing no `extension.ts`
- * wiring, unlike sign-out — because the gap here was worse than "stale": a
+ * **A closed notebook is cleared**, adversarial review, 2026-09-14 (Finding
+ * 2). `registerNotebookController` subscribes to
+ * `vscode.workspace.onDidCloseNotebookDocument` itself and clears every one
+ * of that notebook's cells, because the gap was worse than "stale": a
  * `vscode-notebook-cell:` URI is `CellUri.generate(notebook, handle)`, a pure
  * function of the notebook's own URI and the cell's handle, and a fresh
  * model's handle pool restarts at `0` on reopen, so a closed notebook's old
  * entry could resurface **against whichever cell now holds that same
  * handle**, not just outlive its own.
+ *
+ * ## When the surface goes away mid-run (12l)
+ *
+ * 9c's review recorded that closing a notebook mid-run makes
+ * `execution.appendOutput(...)` reject and skips `execution.end(...)`.
+ * VS Code's own source at the installed 1.109.5 says otherwise (Finding
+ * 12.20): the running cell's output calls and `end()` check only the
+ * execution's own state, and the main thread drops an update for a
+ * notebook that is gone without failing the call. What does fail is
+ * `createNotebookCellExecution` for the cells still queued behind it, with
+ * `NO notebook document`. So `executeHandler` stops at a closed notebook
+ * instead of letting its next cell throw. And once a cell has started,
+ * `executeCell` ends it in a `finally`: VS Code keys an unended execution
+ * by the cell's URI and refuses a second one for the same URI, and a
+ * reopened notebook reuses those URIs.
  *
  * ## Why one module-scoped `currentRun` slot is safe
  *
@@ -205,9 +215,9 @@ export const NOTEBOOK_CONTROLLER_ID = "pythonOnViya.viyaNotebookKernel";
 /** Owned by VS Code's own bundled `vscode.ipynb` extension, not this one. */
 export const NOTEBOOK_TYPE = "jupyter-notebook";
 
-/** How long a cell waits with no output before the honest "still no output"
- * notice appears — see `executeCell`'s own comment on why this is a plain
- * timer and not real tracking of what it might be waiting on. */
+/** How long a cell waits with no output before the "still no output" notice
+ * appears — see `executeCell`'s own comment on what the notice can and
+ * cannot tell apart. */
 const WAITING_NOTICE_DELAY_MS = 3000;
 
 /**
@@ -246,9 +256,7 @@ export function registerNotebookController(
   // reopen (`CellUri.generate` is a pure function of the notebook URI and
   // the cell handle, and the handle pool restarts at 0 per model), so a
   // stale entry misattributes to whatever cell now holds that handle rather
-  // than merely outliving its own cell. Unlike sign-out (the doc comment's
-  // still-accepted gap, below), this needs no second wiring through
-  // `extension.ts` — the module already has `context` to subscribe with.
+  // than merely outliving its own cell.
   context.subscriptions.push(
     vscode.workspace.onDidCloseNotebookDocument((notebook) => {
       if (notebook.notebookType === NOTEBOOK_TYPE) {
@@ -346,16 +354,21 @@ export function createNotebookExecutionHandlers(
   // ported as a plain incrementing counter, the same shape
   // `NotebookCellExecution.executionOrder` exists for.
   let executionOrder = 0;
+  // 12l: the sessions whose last run here was cancelled, and that no later
+  // run has reached yet. Finding 76: a cancel stops the local run at once,
+  // but SAS keeps running the statement already in flight, so the next job
+  // on that session waits behind it. There is one `ProcPythonBackend` per
+  // compute session (`../run/backendCache`), so the backend stands for the
+  // session here; a reconnect builds a new one, which starts unflagged.
+  const interruptedSessions = new WeakSet<ProcPythonBackend>();
 
-  const executeCell = async (
+  /** Everything a cell run does between `start()` and `end()`, returning the
+   * success flag `executeCell` ends the cell with. */
+  const runCell = async (
     cell: vscode.NotebookCell,
     notebook: vscode.NotebookDocument,
-    controller: vscode.NotebookController,
-  ): Promise<void> => {
-    const execution = controller.createNotebookCellExecution(cell);
-    executionOrder += 1;
-    execution.executionOrder = executionOrder;
-    execution.start(Date.now());
+    execution: vscode.NotebookCellExecution,
+  ): Promise<boolean> => {
     await execution.clearOutput();
 
     const built = await backendCache.backendFor();
@@ -364,8 +377,7 @@ export function createNotebookExecutionHandlers(
       // untrusted folder, no profile — the same "nothing further to say
       // here" contract `commands.ts`'s own `runNow` relies on for the
       // identical case.
-      execution.end(false, Date.now());
-      return;
+      return false;
     }
     const { backend } = built;
 
@@ -377,8 +389,7 @@ export function createNotebookExecutionHandlers(
           running: "a run in this window",
         }),
       );
-      execution.end(false, Date.now());
-      return;
+      return false;
     }
 
     const program: Program = {
@@ -393,8 +404,7 @@ export function createNotebookExecutionHandlers(
     if (!executed.ok) {
       log.warn(executed.reason);
       await appendError(execution, localiseBackendProblem(executed.problem));
-      execution.end(false, Date.now());
-      return;
+      return false;
     }
 
     // 9c: reset the Problems-panel entry alongside the other output surfaces,
@@ -414,49 +424,47 @@ export function createNotebookExecutionHandlers(
       // the cell would, the same `imageIndex` convention
       // `resultPanelModel.ts`'s `labels.imageAlt` uses for the result panel.
       let imageIndex = 0;
-      // This phase's manual pass, §9.8: after an interrupted cell,
+      // Phase 9's manual pass, §9.8: after an interrupted cell,
       // `backend.busy` clears as soon as the *local* abort settles
       // (`procPython.ts`'s own `cancel`/`busy`) — well before the SAS-side
       // statement it interrupted actually finishes, per Finding 76. A cell
       // run right after that can sit with no output for the old statement's
-      // remaining duration, and with nothing else on screen that reads as a
-      // silent hang rather than a program that is (from the user's side)
-      // doing nothing yet. Phase 4c looked at giving Run File a precise
-      // message for this same gap and passed on it as disproportionate —
-      // building real tracking of an abandoned, already-cancelled statement
-      // just to word a status line precisely. This is deliberately the
-      // cheaper, honest alternative: a plain elapsed-time trigger, with
-      // wording that does not claim to know the cause, because it cannot —
-      // the same silence is equally what an ordinary long-running cell with
-      // no output looks like (this phase's own `time.sleep(30)` test case
-      // included), and a message that guessed "a previous cell" would be
-      // wrong exactly there. `phase-11.md`'s "Also carried here" list has the
-      // real-tracking option, flagged for a harder look later, not decided
-      // against permanently.
+      // remaining duration, which reads as a silent hang. 9b answered with a
+      // notice that named no cause, because nothing tracked the abandoned
+      // statement. 12l tracks the one fact the client does know: this
+      // session's last run was cancelled and no later run has reached it
+      // yet (`interruptedSessions`). The notice names that cause only when
+      // it holds. Otherwise the silence is this cell's own, such as a long
+      // `time.sleep`, and the notice says only that the cell is running.
       const waitingNotice = setTimeout(() => {
         if (sawOutput) return;
+        const notice = interruptedSessions.has(backend)
+          ? vscode.l10n.t(
+              "[still no output — SAS Viya may still be finishing the statement a cancelled cell was running; this cell starts once it ends]\n",
+            )
+          : vscode.l10n.t("[still no output — this cell is still running]\n");
         // Fired, not awaited — this timer's own callback cannot be `async`
-        // in a way anything here would await. `appendOutput` can still
-        // reject if the cell or notebook has gone away between the timer
-        // firing and now (closed mid-run); the same "nothing left to do"
-        // swallow `resultPanel.ts`'s own `revealFrame` uses for an editor
-        // that vanished out from under it, not a real error to surface.
+        // in a way anything here would await. A rejection has nothing left
+        // to act on — the same "nothing left to do" swallow
+        // `resultPanel.ts`'s own `revealFrame` uses for an editor that
+        // vanished out from under it, not a real error to surface.
         void execution
           .appendOutput(
             new vscode.NotebookCellOutput([
-              vscode.NotebookCellOutputItem.stdout(
-                vscode.l10n.t(
-                  "[still no output — this cell may simply be running long, or a previous statement on this session may still be finishing]\n",
-                ),
-              ),
+              vscode.NotebookCellOutputItem.stdout(notice),
             ]),
           )
           .then(undefined, () => undefined);
       }, waitingNoticeDelayMs);
       try {
         for await (const output of handle.outputs) {
-          sawOutput = true;
-          clearTimeout(waitingNotice);
+          if (!sawOutput) {
+            sawOutput = true;
+            clearTimeout(waitingNotice);
+            // 12l: the session is serial, so this run's own output means
+            // whatever a cancelled run left running has ended.
+            interruptedSessions.delete(backend);
+          }
           if (output.mime === "application/vnd.python.traceback") {
             traceback = output.data;
           }
@@ -468,11 +476,22 @@ export function createNotebookExecutionHandlers(
       }
       const settled = await handle.done;
       if (!settled.ok) {
+        // 12l: ADR-0015 settles a cancelled run with a `cancelled` failure.
+        // That is the only outcome that can leave a statement running
+        // server-side, but it does not always do so. A cancel during upload,
+        // during the rich-output capture, or after the job already finished
+        // settles the same way with nothing left running. So the flag is a
+        // conservative hint, and the notice only says SAS "may" be finishing.
+        if (settled.problem.code === "cancelled") {
+          interruptedSessions.add(backend);
+        }
         log.warn(settled.reason);
         await appendError(execution, localiseBackendProblem(settled.problem));
-        execution.end(false, Date.now());
-        return;
+        return false;
       }
+      // 12l: a run that settled with an outcome reached the session, so
+      // nothing a cancelled run left behind is still ahead of the next one.
+      interruptedSessions.delete(backend);
       // 9c: a run that raised, with a structured traceback to position it
       // by, gets one Problems-panel entry at the innermost user frame — a
       // no-op when no frame maps (a SAS-side error, or an all-library
@@ -484,9 +503,29 @@ export function createNotebookExecutionHandlers(
           settled.value.diagnostics[0]?.message ?? traceback.message,
         );
       }
-      execution.end(settled.value.succeeded, Date.now());
+      return settled.value.succeeded;
     } finally {
       currentRun = undefined;
+    }
+  };
+
+  const executeCell = async (
+    cell: vscode.NotebookCell,
+    notebook: vscode.NotebookDocument,
+    controller: vscode.NotebookController,
+  ): Promise<void> => {
+    const execution = controller.createNotebookCellExecution(cell);
+    executionOrder += 1;
+    execution.executionOrder = executionOrder;
+    execution.start(Date.now());
+    // 12l: a started cell is ended exactly once on every path, a rejected
+    // output call included — see this module's own doc comment ("When the
+    // surface goes away mid-run"). The rejection itself still propagates.
+    let succeeded = false;
+    try {
+      succeeded = await runCell(cell, notebook, execution);
+    } finally {
+      execution.end(succeeded, Date.now());
     }
   };
 
@@ -500,6 +539,10 @@ export function createNotebookExecutionHandlers(
     // serial contract underneath it) makes this the natural shape rather
     // than a design choice this slice had to make.
     for (const cell of cells) {
+      // 12l: a notebook closed mid-run has nothing left to run its queued
+      // cells in; `createNotebookCellExecution` would throw for the next
+      // one (Finding 12.20).
+      if (notebook.isClosed) return;
       await executeCell(cell, notebook, controller);
     }
   };

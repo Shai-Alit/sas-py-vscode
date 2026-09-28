@@ -575,7 +575,8 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   every restarting job and in a new session's first job
   ([ADR-0041](../adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md), Findings 12.22,
   12.23 and 12.24). The adversarial review's six real findings are folded
-  in. Manual items 12.33–12.40 passed 2026-09-28. See the "12m
+  in. Manual items 12.33–12.40 passed 2026-09-28. Merged 2026-09-28 (PR
+  #222). See the "12m
   design" and "12m built" Runbook entries.
 - [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
   After 12m.
@@ -2581,7 +2582,7 @@ skill on a second review round), and a unit test pins a file written
 during a seeding job being captured and deleted. ADR-0041's Reset Python
 State consequence is also brought in line with the reworded reset error. `npm run verify` is
 green from a clean `out/` (1,972 unit; coverage 96.55/95.95/96.35/96.55),
-as is `npm run check:docs`.
+as is `npm run check:docs`. Merged 2026-09-28 (PR #222).
 
 ---
 

@@ -16,8 +16,8 @@
  * every endpoint seen rather than a single held adapter, and why it is only
  * ever added to until {@link CasSession.clear} (sign-out) drops it all at
  * once — the identical reasoning applies here even though nothing in this
- * slice yet holds a CAS-deployment document open the way the `sasContent:`
- * filesystem provider holds a file.
+ * slice yet holds a CAS-deployment document open the way the
+ * `pythonOnViyaContent:` filesystem provider holds a file.
  */
 
 import { accountForEndpoint } from "../auth/identity";

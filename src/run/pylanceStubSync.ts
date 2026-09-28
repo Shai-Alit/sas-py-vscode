@@ -53,8 +53,8 @@
  *
  * `syncPylanceStubs` checks the (first) workspace folder's own URI scheme
  * before doing anything else. A virtual workspace (this extension's own
- * `sasContent:` `FileSystemProvider`, `vscode-vfs:`, or similar) has no
- * local disk for a generated stub tree to land on, and Pylance cannot read
+ * `pythonOnViyaContent:` `FileSystemProvider`, `vscode-vfs:`, or similar) has
+ * no local disk for a generated stub tree to land on, and Pylance cannot read
  * one from there regardless — writing potentially hundreds of small files
  * over such a provider would cost real time and accomplish nothing.
  */
@@ -116,8 +116,8 @@ export type PylanceStubSyncResult =
    * in. */
   | { readonly kind: "no-workspace" }
   /** The (first) workspace folder is not on the local filesystem — a
-   * `sasContent:`/`vscode-vfs:`-shaped virtual folder, say. Nothing this
-   * module writes there would be readable by Pylance either way, and
+   * `pythonOnViyaContent:`/`vscode-vfs:`-shaped virtual folder, say. Nothing
+   * this module writes there would be readable by Pylance either way, and
    * writing hundreds of small files over a network-backed
    * `FileSystemProvider` is not a cost worth paying to find that out. */
   | { readonly kind: "unsupported-workspace"; readonly scheme: string }

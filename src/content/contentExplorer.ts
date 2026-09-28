@@ -3,8 +3,8 @@
 
 /**
  * Wires the "SAS Content" surface into the window: the tree data provider, the
- * activity-bar view, the `sasContent:` filesystem provider (6b), the refresh
- * command, and the auth events the tree refreshes on.
+ * activity-bar view, the `pythonOnViyaContent:` filesystem provider (6b), the
+ * refresh command, and the auth events the tree refreshes on.
  *
  * This file is a registrar with no branch in it — the adapter lifecycle (build,
  * endpoint-cache, sign-out clear) and the silent token flow live in
@@ -187,8 +187,9 @@ export function registerContentExplorer(
   context.subscriptions.push(
     provider,
     fileSystem,
-    // `sasContent:` files are editable (`isReadonly: false`). Case-sensitive
-    // because the id in the query, not the path, identifies the file.
+    // `pythonOnViyaContent:` files are editable (`isReadonly: false`).
+    // Case-sensitive because the id in the query, not the path, identifies
+    // the file.
     vscode.workspace.registerFileSystemProvider(CONTENT_SCHEME, fileSystem, {
       isCaseSensitive: true,
       isReadonly: false,

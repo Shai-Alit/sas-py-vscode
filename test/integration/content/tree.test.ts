@@ -96,7 +96,7 @@ describe("SasContentTreeProvider", () => {
     provider.dispose();
   });
 
-  it("gives a folder an identity resourceUri under sasContentFolder:, with no open command (ADR-0031)", () => {
+  it("gives a folder an identity resourceUri under pythonOnViyaContentFolder:, with no open command (ADR-0031)", () => {
     const { provider } = makeProvider(() => adapterReturning(okResult([])));
     const node = provider.getTreeItem(
       item({
@@ -108,7 +108,7 @@ describe("SasContentTreeProvider", () => {
     );
     assert.equal(node.command, undefined);
     assert.ok(node.resourceUri instanceof vscode.Uri);
-    assert.equal(node.resourceUri.scheme, "sasContentFolder");
+    assert.equal(node.resourceUri.scheme, "pythonOnViyaContentFolder");
     assert.equal(node.resourceUri.path, "/reports");
     assert.deepEqual(parseContentUri(node.resourceUri.query), {
       resourceHref: "/folders/folders/eeeeeeee-0000-4000-8000-000000000009",
@@ -141,7 +141,7 @@ describe("SasContentTreeProvider", () => {
     disconnected.dispose();
   });
 
-  it("maps a file member to a leaf that opens via sasContent:, carrying the deployment", () => {
+  it("maps a file member to a leaf that opens via pythonOnViyaContent:, carrying the deployment", () => {
     const { provider } = makeProvider(() => adapterReturning(okResult([])));
     const node = provider.getTreeItem(
       item({
@@ -158,7 +158,7 @@ describe("SasContentTreeProvider", () => {
     assert.equal(node.command.command, "vscode.open");
     const openArg: unknown = (node.command.arguments ?? [])[0];
     assert.ok(openArg instanceof vscode.Uri);
-    assert.equal(openArg.scheme, "sasContent");
+    assert.equal(openArg.scheme, "pythonOnViyaContent");
     assert.equal(openArg.path, "/a.py");
     // vscode-uri percent-decodes `query` on parse, so this is exactly what the
     // FileSystemProvider reads back: the file href and the deployment root.
@@ -171,7 +171,7 @@ describe("SasContentTreeProvider", () => {
     provider.dispose();
   });
 
-  it("opens a recycled file leaf under the read-only sasContentReadOnly scheme (6d-ii)", () => {
+  it("opens a recycled file leaf under the read-only pythonOnViyaContentReadOnly scheme (6d-ii)", () => {
     const { provider } = makeProvider(() => adapterReturning(okResult([])));
     const node = provider.getTreeItem(
       item({
@@ -187,7 +187,7 @@ describe("SasContentTreeProvider", () => {
     assert.equal(node.command.command, "vscode.open");
     const openArg: unknown = (node.command.arguments ?? [])[0];
     assert.ok(openArg instanceof vscode.Uri);
-    assert.equal(openArg.scheme, "sasContentReadOnly");
+    assert.equal(openArg.scheme, "pythonOnViyaContentReadOnly");
     // the query still round-trips the same way the editable scheme does
     assert.deepEqual(parseContentUri(openArg.query), {
       resourceHref: "/files/files/eeeeeeee-0000-4000-8000-000000000002",

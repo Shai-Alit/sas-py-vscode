@@ -375,3 +375,36 @@ kernel.
   "already running" refusal. **Output** panel, **Extension Host** channel:
   **Expect:** no `NO notebook document` or `duplicate execution` error from
   this extension.
+
+## 12r — coexisting with the SAS extension
+
+See `docs/phases/phase-12.md`'s "12r built" Runbook entry and Finding 12.21.
+The integration suite runs with other extensions disabled, so these items are
+the only check with both installed. Install the SAS extension (`sas.sas-lsp`)
+and a `.vsix` built from this branch in the same VS Code, each with a
+connection profile. Before 12r, one of the two failed to start with
+`a provider for the scheme 'sasContent' is already registered` in the
+**Output** panel's **Extension Host** channel.
+
+- [x] **12.30** **Python on Viya starts first.** Close the SAS sidebar and
+  any `.sas` or `.sasnb` file, then run **Developer: Reload Window**. Wait 30
+  seconds, then open the SAS sidebar. **Expect:** the SAS extension's sign-in
+  view with its **Sign In** link, not "Your connection does not support SAS
+  content navigation". Sign in to SAS and open a file from its SAS Content
+  tree. Then connect Python on Viya and run a cell in a `.ipynb` with
+  **Python on Viya** as its kernel. **Expect:** both work, and the
+  **Extension Host** channel shows no `already registered` error and no
+  `Activating extension … failed`.
+- [x] **12.31** **The SAS extension starts first.** Leave the SAS sidebar
+  open and reload the window. **Expect:** a `.ipynb`'s kernel picker offers
+  **Python on Viya**. After connecting, Python on Viya's SAS Content, SAS
+  Libraries and CAS views all fill in. The **Extension Host** channel shows
+  neither error.
+- [x] **12.32** **Files from both trees.** With both signed in, in a trusted
+  workspace, and with the run target set to a Viya profile, open a `.py`
+  file from Python on Viya's SAS Content view, edit it and save. **Expect:**
+  it saves, and the editor title shows Python on Viya's run button but not
+  the SAS extension's. Open a recycled `.py` file from Python on Viya's
+  Recycle Bin. **Expect:** it opens read-only. Then open a file from the SAS
+  extension's SAS Content tree, and a recycled file from its Recycle Bin.
+  **Expect:** both open, the second as a read-only preview.

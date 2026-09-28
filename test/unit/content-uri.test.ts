@@ -14,7 +14,7 @@ import {
 } from "../../src/content/uri";
 
 /**
- * The `sasContent:` URI string and the two things it carries — the file
+ * The `pythonOnViyaContent:` URI string and the two things it carries — the file
  * resource href and the deployment root. `vscode`-free, so a plain unit; the
  * shell just runs these through `vscode.Uri.parse` / reads `uri.query`.
  */
@@ -23,6 +23,26 @@ const HREF = "/files/files/dddddddd-0000-4000-8000-000000000001";
 const ROOT = "https://viya.example.com";
 
 describe("content/uri", () => {
+  it("names every scheme in this extension's own namespace, clear of the SAS extension's (ADR-0040)", () => {
+    // Pinned as literals. A scheme belongs to the extension host, not to one
+    // extension, so a name the SAS extension also registers makes one of the
+    // two fail to activate (B12.3, Finding 12.21), and the SAS extension's Run
+    // keybindings apply to any editor whose scheme starts `sasContent` or
+    // `sasServer`. A later rename would also strand tabs restored under the
+    // old name.
+    const schemes = [
+      CONTENT_SCHEME,
+      CONTENT_READONLY_SCHEME,
+      CONTENT_FOLDER_SCHEME,
+    ];
+    assert.deepEqual(schemes, [
+      "pythonOnViyaContent",
+      "pythonOnViyaContentReadOnly",
+      "pythonOnViyaContentFolder",
+    ]);
+    for (const scheme of schemes) assert.doesNotMatch(scheme, /^sas/i);
+  });
+
   it("builds scheme:/name?id=<href>&r=<encoded root>", () => {
     assert.equal(
       contentUriString("analysis.py", HREF, ROOT),
@@ -63,7 +83,7 @@ describe("content/uri", () => {
     assert.equal(parseContentUri(query)?.deploymentRoot, root);
   });
 
-  it("builds the read-only variant under the sasContentReadOnly scheme (6d-ii)", () => {
+  it("builds the read-only variant under the read-only scheme (6d-ii)", () => {
     assert.equal(
       contentReadOnlyUriString("scratch.py", HREF, ROOT),
       `${CONTENT_READONLY_SCHEME}:/scratch.py?id=${HREF}&r=${encodeURIComponent(ROOT)}`,
@@ -85,13 +105,13 @@ describe("content/uri", () => {
     );
   });
 
-  it("builds the folder identity variant under the sasContentFolder scheme (ADR-0031)", () => {
+  it("builds the folder identity variant under the folder scheme (ADR-0031)", () => {
     assert.equal(
       contentFolderUriString("reports", HREF, ROOT),
       `${CONTENT_FOLDER_SCHEME}:/reports?id=${HREF}&r=${encodeURIComponent(ROOT)}`,
     );
     // same query shape, so parseContentUri round-trips it too, even though
-    // nothing currently reads a sasContentFolder: URI back this way
+    // nothing currently reads a folder identity URI back this way
     const query = contentFolderUriString("x", HREF, ROOT)
       .split("?")
       .slice(1)

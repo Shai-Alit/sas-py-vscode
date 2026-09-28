@@ -46,8 +46,8 @@
  *
  * 6b does wire one thing here: an openable file leaf
  * ({@link NodePresentation.openable}) gets a `resourceUri` and a `vscode.open`
- * command pointed at its `sasContent:` URI, so a single click opens the remote
- * file through `src/content/contentFileSystem.ts`.
+ * command pointed at its `pythonOnViyaContent:` URI, so a single click opens
+ * the remote file through `src/content/contentFileSystem.ts`.
  *
  * ## Every item gets a `resourceUri`, not only openable leaves (ADR-0031)
  *
@@ -60,10 +60,10 @@
  * The mechanism is correlational, not verified against VS Code's own
  * source — see ADR-0031's Context for the full reasoning. A folder's
  * `resourceUri` points at the inert
- * `sasContentFolder:` scheme (`src/content/uri.ts`) — no `FileSystemProvider`
- * is ever registered for it, and no `command` is attached, so it carries no
- * behaviour; it exists purely so the row has an identity VS Code's drag
- * machinery can hang onto.
+ * `pythonOnViyaContentFolder:` scheme (`src/content/uri.ts`) — no
+ * `FileSystemProvider` is ever registered for it, and no `command` is
+ * attached, so it carries no behaviour; it exists purely so the row has an
+ * identity VS Code's drag machinery can hang onto.
  *
  * ## 11c: a failed listing renders, it does not just log (B1)
  *
@@ -136,8 +136,8 @@ export class SasContentTreeProvider
    * @param currentAdapter Returns the adapter for the active profile, or
    *   `undefined` when the view has nothing to show (no profile / signed out).
    * @param currentEndpoint The active profile's deployment root, stamped into
-   *   the `sasContent:` URI of each openable leaf so the file keeps talking to
-   *   this deployment even after a later profile switch.
+   *   the `pythonOnViyaContent:` URI of each openable leaf so the file keeps
+   *   talking to this deployment even after a later profile switch.
    * @param log The extension's shared channel — a failed listing is logged
    *   here, not shown as a notification.
    */
@@ -186,11 +186,12 @@ export class SasContentTreeProvider
     const href = resourceHrefOf(item);
     if (href !== undefined && endpoint !== undefined) {
       if (shape.openable) {
-        // A click opens it through the `sasContent:` FileSystemProvider. A
-        // file shown inside the Recycle Bin opens under the read-only
-        // `sasContentReadOnly:` scheme instead (6d-ii) — the same provider
-        // serves it, registered `isReadonly`, so a recycled file can be
-        // looked at but not edited before it is restored.
+        // A click opens it through the `pythonOnViyaContent:`
+        // FileSystemProvider. A file shown inside the Recycle Bin opens under
+        // the read-only `pythonOnViyaContentReadOnly:` scheme instead (6d-ii)
+        // — the same provider serves it, registered `isReadonly`, so a
+        // recycled file can be looked at but not edited before it is
+        // restored.
         const readOnly = item.inRecycleBin === true;
         const uri = vscode.Uri.parse(
           readOnly
@@ -208,7 +209,7 @@ export class SasContentTreeProvider
       } else {
         // A folder (or delegate) is never opened — no `command` — but it
         // still gets an identity `resourceUri`, under the inert
-        // `sasContentFolder:` scheme (never registered with a
+        // `pythonOnViyaContentFolder:` scheme (never registered with a
         // `FileSystemProvider`, never touched by `workspace.fs.*`). This is
         // the one concrete, confirmed structural fix for the drag-and-drop
         // defect ADR-0031 documents — see `uri.ts`'s `CONTENT_FOLDER_SCHEME`

@@ -60,7 +60,7 @@
   },
   "activationEvents": [
     "onStartupFinished",
-    "onFileSystem:sasContent"
+    "onFileSystem:pythonOnViyaContent"
   ],
   "contributes": {
     "authentication": [

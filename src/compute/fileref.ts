@@ -30,6 +30,13 @@
  * it does not bear on the session-gone reading below: it neither `deassign`s
  * nor `delete`s anything.
  *
+ * {@link findFileref} walks the same collection for a second caller: the
+ * Python startup snippet's fixed-name fileref (ADR-0041), which a reattached
+ * session already holds, so `assign` answers `400` with `errorCode` 5402
+ * (Finding 12.10). A collection item carries only `self`, `alternate` and
+ * `deassign`, not `upload`, so the item's `self` is followed for the full
+ * representation (Finding 12.23). Also a read.
+ *
  * ## Why this exists before 3a
  *
  * `RUNBOOK.md`'s "Before 3a" item is the submission-fidelity corpus, and the
@@ -245,12 +252,7 @@ export async function listFilerefNames(
     }
 
     const body: unknown = result.value.body;
-    const items =
-      typeof body === "object" &&
-      body !== null &&
-      Array.isArray((body as { items?: unknown }).items)
-        ? (body as { items: readonly unknown[] }).items
-        : undefined;
+    const items = collectionItems(body);
     if (items === undefined) break;
 
     for (const item of items) {
@@ -263,6 +265,109 @@ export async function listFilerefNames(
   }
 
   return { ok: true, value: names };
+}
+
+/**
+ * The `errorCode` an `assign` answers with when the session already holds a
+ * fileref of that name (Finding 12.10: `400`, "The fileref … already
+ * exists.").
+ */
+export const FILEREF_ALREADY_EXISTS_ERROR_CODE = 5402;
+
+/** Whether a failed {@link createFileref} failed because the name is taken. */
+export function isFilerefAlreadyAssigned(failure: ComputeFailure): boolean {
+  const { problem } = failure;
+  return (
+    problem.code === "compute-rejected" &&
+    problem.error.status === 400 &&
+    problem.error.errorCode === FILEREF_ALREADY_EXISTS_ERROR_CODE
+  );
+}
+
+/**
+ * Finds a fileref the session already holds, by name, and reads its full
+ * representation.
+ *
+ * Walks the `files` collection page by page, as {@link listFilerefNames}
+ * does, for the item whose `id` matches `name` ignoring case: the service
+ * reports `PYVSTART` as `pyvstart` (Finding 12.23). A collection item carries
+ * only `self`, `alternate` and `deassign`, so the item's `self` is then
+ * followed; that representation carries `upload`, and
+ * {@link writeFilerefContent} can rewrite it in place (Findings 12.10 and
+ * 12.23).
+ *
+ * Resolves `undefined` when no page holds the name. Unlike
+ * {@link listFilerefNames}, every failure is returned, on any page: its
+ * caller needs the fileref, not a best guess.
+ */
+export async function findFileref(
+  client: ComputeClient,
+  session: ComputeSession,
+  name: string,
+  options?: { signal?: AbortSignal | undefined },
+): Promise<ComputeResult<Fileref | undefined>> {
+  let link = findLink(session.links, FILEREF_LIST_REL);
+  if (link === undefined) {
+    return linkMissing("compute session", session.id, FILEREF_LIST_REL);
+  }
+
+  const wanted = name.toLowerCase();
+  for (
+    let page = 0;
+    link !== undefined && page < MAX_FILEREF_PAGES;
+    page += 1
+  ) {
+    const result = await client.send({ link, signal: options?.signal });
+    if (!result.ok) return asSessionGone(result);
+
+    const body: unknown = result.value.body;
+    const items = collectionItems(body);
+    if (items === undefined) {
+      return malformed(
+        result.value,
+        "a fileref collection",
+        "and it carried no items array",
+      );
+    }
+
+    for (const item of items) {
+      if (typeof item !== "object" || item === null) continue;
+      const { id } = item as { id?: unknown };
+      if (typeof id !== "string" || id.toLowerCase() !== wanted) continue;
+
+      const selfLink = findLink(readLinks(item), FILEREF_SELF_REL);
+      if (selfLink === undefined) {
+        return linkMissing("fileref", id, FILEREF_SELF_REL);
+      }
+      const full = await client.send({
+        link: selfLink,
+        signal: options?.signal,
+      });
+      if (!full.ok) return asSessionGone(full);
+      const fileref = readFileref(full.value);
+      if (fileref === undefined) {
+        return malformed(
+          full.value,
+          "a fileref representation",
+          "and it was not a fileref representation with an id",
+        );
+      }
+      return { ok: true, value: fileref };
+    }
+
+    link = findLink(readLinks(body), "next");
+  }
+
+  return { ok: true, value: undefined };
+}
+
+/** A collection body's `items`, or `undefined` if it has none. */
+function collectionItems(body: unknown): readonly unknown[] | undefined {
+  return typeof body === "object" &&
+    body !== null &&
+    Array.isArray((body as { items?: unknown }).items)
+    ? (body as { items: readonly unknown[] }).items
+    : undefined;
 }
 
 /**

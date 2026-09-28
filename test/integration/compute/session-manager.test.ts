@@ -66,6 +66,9 @@ function profile(init?: Partial<ViyaProfile>): ViyaProfile {
     ...(init?.context === undefined ? {} : { context: init.context }),
     ...(init?.sasOptions === undefined ? {} : { sasOptions: init.sasOptions }),
     ...(init?.autoExec === undefined ? {} : { autoExec: init.autoExec }),
+    ...(init?.pythonStartup === undefined
+      ? {}
+      : { pythonStartup: init.pythonStartup }),
   };
 }
 
@@ -516,6 +519,97 @@ describe("compute session manager", () => {
       ]);
       assert.equal(shown.infos.length, 1);
       assert.match(shown.infos[0] ?? "", /pyviya-no-such-file\.sas/);
+    });
+
+    it("carries the profile's pythonStartup on a created session, and keeps it out of the session request (ADR-0041)", async () => {
+      const file = path.join(
+        fs.mkdtempSync(path.join(os.tmpdir(), "pyviya-startup-")),
+        "startup.py",
+      );
+      fs.writeFileSync(file, "x = 1\r\n");
+      try {
+        const scripted = deployment({
+          contexts: ok(contextsBody()),
+          createSession: ok(sessionBody(), 201),
+        });
+        const { manager, shown } = harness({
+          profiles: profileSource(
+            profile({
+              context: CONTEXT,
+              pythonStartup: [
+                { type: "line", line: "import os" },
+                { type: "file", filePath: file },
+              ],
+            }),
+          ),
+          client: scripted.client,
+        });
+
+        const connection = await manager.connect();
+
+        assert.ok(connection);
+        assert.equal(connection.sessionCreated, true);
+        assert.equal(
+          new TextDecoder().decode(connection.pythonStartup),
+          "import os\nx = 1\n",
+        );
+        assert.deepEqual(createBody(scripted).environment.autoExecLines, []);
+        assert.deepEqual(shown.infos, []);
+      } finally {
+        fs.rmSync(path.dirname(file), { recursive: true, force: true });
+      }
+    });
+
+    it("resolves pythonStartup on a reattach too, marked as not created", async () => {
+      const scripted = deployment({ self: ok(sessionBody()) });
+      const { manager, bindings } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            pythonStartup: [{ type: "line", line: "import os" }],
+          }),
+        ),
+        client: scripted.client,
+        state: memoryMemento(),
+      });
+      await bindings.write(PROFILE_ID, { id: SESSION_ID, context: CONTEXT });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "the stored session was not reattached to");
+      assert.equal(connection.sessionCreated, false);
+      assert.equal(
+        new TextDecoder().decode(connection.pythonStartup),
+        "import os\n",
+      );
+    });
+
+    it("skips an unreadable pythonStartup file, says so, and connects with nothing to seed", async () => {
+      const scripted = deployment({
+        contexts: ok(contextsBody()),
+        createSession: ok(sessionBody(), 201),
+      });
+      const { manager, shown } = harness({
+        profiles: profileSource(
+          profile({
+            context: CONTEXT,
+            pythonStartup: [
+              {
+                type: "file",
+                filePath: path.join(os.tmpdir(), "pyviya-no-such-file.py"),
+              },
+            ],
+          }),
+        ),
+        client: scripted.client,
+      });
+
+      const connection = await manager.connect();
+
+      assert.ok(connection, "a missing startup file must not fail the connect");
+      assert.equal(connection.pythonStartup, undefined);
+      assert.equal(shown.infos.length, 1);
+      assert.match(shown.infos[0] ?? "", /pyviya-no-such-file\.py/);
     });
 
     it("tells the user when their autoExec lines ran with an error (condition code 3000)", async () => {

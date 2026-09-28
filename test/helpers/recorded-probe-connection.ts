@@ -214,5 +214,7 @@ export function createRecordedProbeConnection(
     client,
     generation,
     session: session(),
+    sessionCreated: true,
+    pythonStartup: undefined,
   };
 }

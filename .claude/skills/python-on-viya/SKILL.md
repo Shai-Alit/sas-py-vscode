@@ -86,6 +86,11 @@ there is no upstream option that does it for you.
   is untouched. It is the same restart Run File does, without running
   anything afterwards — use it to clear state before a Run Selection or a
   notebook cell, which never clear anything themselves.
+- **A profile's `pythonStartup` snippet survives both restarts.** It runs as
+  its own `PROC PYTHON` step in the same job, before the file (ADR-0041), and
+  in a new session's first job. Names it defines are there in every run. Its
+  own output is not shown, and if it raises, the file still runs and the
+  output ends with one line saying the snippet failed.
 
 `PROC PYTHON`'s own `NOTE`s about this — "Resuming Python state from
 previous PROC PYTHON invocation.", "Previous Python state destroyed.",

@@ -82,9 +82,18 @@ export interface ViyaProfile {
    * Same creation-time rule as {@link sasOptions}.
    */
   autoExec?: AutoExecEntry[];
+  /**
+   * Python run before the user's own code: when a session is created, and
+   * again after every restart (Run File, Reset Python State), so its imports
+   * and names are always there (ADR-0041). The same entry shape as
+   * {@link autoExec}, with Python in place of SAS. Read at every connect,
+   * reattach included.
+   */
+  pythonStartup?: AutoExecEntry[];
 }
 
-/** One `autoExec` entry: a line of SAS, or a local file of them. */
+/** One `autoExec` or `pythonStartup` entry: a line of code, or a local file
+ * of it. */
 export type AutoExecEntry =
   { type: "line"; line: string } | { type: "file"; filePath: string };
 
@@ -402,7 +411,8 @@ function readProfile(name: string, raw: unknown): Result<ViyaProfile> {
 }
 
 /**
- * Reads `sasOptions` and `autoExec` from a raw profile object.
+ * Reads `sasOptions`, `autoExec` and `pythonStartup` from a raw profile
+ * object.
  *
  * Strict: a malformed value rejects the profile, unlike an unknown key, which is
  * dropped. These two fields change what runs on the server, so a value that
@@ -411,8 +421,9 @@ function readProfile(name: string, raw: unknown): Result<ViyaProfile> {
  */
 export function readSessionSetup(
   raw: Record<string, unknown>,
-): Result<Pick<ViyaProfile, "sasOptions" | "autoExec">> {
-  const setup: Pick<ViyaProfile, "sasOptions" | "autoExec"> = {};
+): Result<Pick<ViyaProfile, "sasOptions" | "autoExec" | "pythonStartup">> {
+  const setup: Pick<ViyaProfile, "sasOptions" | "autoExec" | "pythonStartup"> =
+    {};
 
   if (raw.sasOptions !== undefined) {
     if (
@@ -427,35 +438,50 @@ export function readSessionSetup(
     if (options.length > 0) setup.sasOptions = options;
   }
 
-  if (raw.autoExec !== undefined) {
-    if (!Array.isArray(raw.autoExec)) {
-      return fail("autoExec must be an array");
-    }
-    const entries: AutoExecEntry[] = [];
-    for (const item of raw.autoExec as unknown[]) {
-      if (
-        isRecord(item) &&
-        item.type === "line" &&
-        typeof item.line === "string"
-      ) {
-        entries.push({ type: "line", line: item.line });
-      } else if (
-        isRecord(item) &&
-        item.type === "file" &&
-        typeof item.filePath === "string" &&
-        item.filePath.trim() !== ""
-      ) {
-        entries.push({ type: "file", filePath: item.filePath.trim() });
-      } else {
-        return fail(
-          'each autoExec entry must be {"type": "line", "line": "..."} or {"type": "file", "filePath": "..."}',
-        );
-      }
-    }
-    if (entries.length > 0) setup.autoExec = entries;
+  const autoExec = readEntries(raw.autoExec, "autoExec");
+  if (!autoExec.ok) return autoExec;
+  if (autoExec.value !== undefined) setup.autoExec = autoExec.value;
+
+  const pythonStartup = readEntries(raw.pythonStartup, "pythonStartup");
+  if (!pythonStartup.ok) return pythonStartup;
+  if (pythonStartup.value !== undefined) {
+    setup.pythonStartup = pythonStartup.value;
   }
 
   return ok(setup);
+}
+
+/** Reads an `autoExec`-shaped array. `undefined` for an absent or empty one. */
+function readEntries(
+  raw: unknown,
+  field: "autoExec" | "pythonStartup",
+): Result<AutoExecEntry[] | undefined> {
+  if (raw === undefined) return ok(undefined);
+  if (!Array.isArray(raw)) {
+    return fail(`${field} must be an array`);
+  }
+  const entries: AutoExecEntry[] = [];
+  for (const item of raw as unknown[]) {
+    if (
+      isRecord(item) &&
+      item.type === "line" &&
+      typeof item.line === "string"
+    ) {
+      entries.push({ type: "line", line: item.line });
+    } else if (
+      isRecord(item) &&
+      item.type === "file" &&
+      typeof item.filePath === "string" &&
+      item.filePath.trim() !== ""
+    ) {
+      entries.push({ type: "file", filePath: item.filePath.trim() });
+    } else {
+      return fail(
+        `each ${field} entry must be {"type": "line", "line": "..."} or {"type": "file", "filePath": "..."}`,
+      );
+    }
+  }
+  return ok(entries.length > 0 ? entries : undefined);
 }
 
 /**

@@ -43,12 +43,18 @@ called out under **Changed** with a migration note.
   figure in a notebook cell: a cell shows a one-line note in place of the
   default SVG figure. Needs Viya 2025.03 or later. See
   [Running Python](docs/running-python.md).
+- **A Python startup snippet on a connection profile.** `pythonStartup` holds
+  Python lines, inline or from a local file, run before your code: when a
+  session starts, and again after every **Run File** and **Reset Python
+  State**, so its imports and names are always there. If it raises, your code
+  still runs and the output says so. See
+  [Connection profiles](docs/connection-profiles.md).
 
 ### Changed
 
-- **Edit Connection Profile keeps `sasOptions` and `autoExec`.** They are
-  edited in `settings.json`, and the command previously rebuilt the profile
-  without them.
+- **Edit Connection Profile keeps `sasOptions`, `autoExec` and
+  `pythonStartup`.** They are edited in `settings.json`, and the command
+  previously rebuilt the profile without them.
 
 ### Fixed
 

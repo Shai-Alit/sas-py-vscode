@@ -395,6 +395,51 @@ describe("readProfiles: sasOptions and autoExec", () => {
   });
 });
 
+describe("readProfiles: pythonStartup (ADR-0041)", () => {
+  const read = (extra: Record<string, unknown>) =>
+    readProfiles({ P: { endpoint: "https://v.example.com", ...extra } });
+
+  it("reads both entry kinds, the same shape as autoExec", () => {
+    const { profiles, rejected } = read({
+      pythonStartup: [
+        { type: "line", line: "import pandas as pd" },
+        { type: "file", filePath: " /x/startup.py " },
+      ],
+    });
+    assert.deepEqual(rejected, []);
+    assert.deepEqual(Object.values(profiles).at(0)?.pythonStartup, [
+      { type: "line", line: "import pandas as pd" },
+      { type: "file", filePath: "/x/startup.py" },
+    ]);
+  });
+
+  it("treats an empty array as absent", () => {
+    const { profiles } = read({ pythonStartup: [] });
+    assert.equal(
+      "pythonStartup" in (Object.values(profiles).at(0) ?? {}),
+      false,
+    );
+  });
+
+  it("rejects the profile, naming the field, when it is malformed", () => {
+    for (const bad of [
+      { pythonStartup: "import os" },
+      { pythonStartup: ["import os"] },
+      { pythonStartup: [{ type: "line" }] },
+      { pythonStartup: [{ type: "file", filePath: "  " }] },
+    ]) {
+      const { profiles, rejected } = read(bad);
+      assert.deepEqual(Object.keys(profiles), [], JSON.stringify(bad));
+      assert.equal(rejected.length, 1, JSON.stringify(bad));
+      assert.match(
+        rejected[0]?.reason ?? "",
+        /pythonStartup/,
+        JSON.stringify(bad),
+      );
+    }
+  });
+});
+
 describe("createProfile and secretKey", () => {
   it("stamps the current version and omits empty optional fields", () => {
     assert.deepEqual(

@@ -4,6 +4,8 @@
 /**
  * Turns a profile's `sasOptions` and `autoExec` into what the Compute service's
  * session request wants: `environment.options` and `environment.autoExecLines`.
+ * Also turns its `pythonStartup` into the snippet `procPython.ts` uploads
+ * (ADR-0041), which is not part of the session request at all.
  *
  * **This module must never import `vscode`** — see `model.ts` for why. Reading
  * an autoExec *file* needs the editor's file system, so the read is injected.
@@ -112,4 +114,30 @@ export async function resolveAutoExecLines(
   }
 
   return { lines, problems };
+}
+
+export interface PythonStartup {
+  /** The snippet as the bytes to upload, or `undefined` when there is
+   * nothing to run. Lines are joined with `\n` and end with one. */
+  readonly bytes: Uint8Array | undefined;
+  /** Files that were skipped. The lines from every other entry are still present. */
+  readonly problems: AutoExecFileProblem[];
+}
+
+/**
+ * Flattens a profile's `pythonStartup` entries into the snippet ADR-0041
+ * uploads, the same way {@link resolveAutoExecLines} flattens `autoExec`:
+ * in order, and with an unreadable file skipped and reported rather than
+ * failing the connect.
+ */
+export async function resolvePythonStartup(
+  entries: readonly AutoExecEntry[] | undefined,
+  readTextFile: (filePath: string) => Promise<string>,
+): Promise<PythonStartup> {
+  const { lines, problems } = await resolveAutoExecLines(entries, readTextFile);
+  const bytes =
+    lines.length === 0
+      ? undefined
+      : new TextEncoder().encode(`${lines.join("\n")}\n`);
+  return { bytes, problems };
 }

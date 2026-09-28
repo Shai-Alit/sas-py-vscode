@@ -74,6 +74,15 @@
 > narrower reasons — upstream parity, and the folder tooltip it now
 > produces. Drag-and-drop is fixed; `phase-11.md`'s tracked follow-up is
 > closed. See `phase-6.md`'s dated Runbook entry for the full account.
+>
+> **Amended 2026-09-27 by [ADR-0040](0040-every-uri-scheme-is-the-extensions-own.md).** The schemes named below
+> are renamed: `sasContent:` is now `pythonOnViyaContent:`,
+> `sasContentReadOnly:` is now `pythonOnViyaContentReadOnly:`, and this
+> ADR's own `sasContentFolder:` is now `pythonOnViyaContentFolder:`. The SAS
+> extension registers `sasContent` too, and the shared scheme stopped one of
+> the two extensions activating (B12.3, Finding 12.21 in
+> [`phase-12.md`](../phases/phase-12.md)). The text below keeps the old names
+> as the record of what was decided then.
 
 ## Context
 

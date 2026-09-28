@@ -994,8 +994,9 @@ export class ContentAdapter {
    * {@link ContentAdapter} per *endpoint* and reuses it across profile switches
    * on the same deployment. A cached href would let one account's `addMember`
    * land in another account's My Favorites after a profile switch with no
-   * sign-out (the same class of bug 6b's per-deployment `sasContent:` ETag-guard
-   * fix closed). {@link ContentAdapter.favoriteRecordHrefs} re-fetches for the
+   * sign-out (the same class of bug 6b's per-deployment
+   * `pythonOnViyaContent:` ETag-guard fix closed).
+   * {@link ContentAdapter.favoriteRecordHrefs} re-fetches for the
    * same reason — this matches its policy. The only endpoint-global cache in this
    * adapter is `typeDefCache`, which really is the same for every user of a
    * deployment.

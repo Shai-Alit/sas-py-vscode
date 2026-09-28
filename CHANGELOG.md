@@ -79,6 +79,15 @@ called out under **Changed** with a migration note.
   a few seconds now says why, when the cause is known. After an interrupted
   cell, the notice says SAS Viya may still be finishing the cancelled
   statement. Otherwise it says the cell is still running.
+- **Python on Viya and the SAS extension could not both work.** Since 0.1.2,
+  with SAS's own VS Code extension installed, whichever of the two started
+  second failed to start. The SAS extension then showed "Your connection does
+  not support SAS content navigation" and could not sign in, or Python on Viya
+  offered no notebook kernel and left its SAS Libraries and CAS views empty.
+  Both claimed the same `sasContent:` file scheme. Python on Viya's SAS
+  Content files now open under its own `pythonOnViyaContent:` scheme. A SAS
+  Content editor tab left open from an earlier version does not reopen: close
+  it and open the file again from the SAS Content view.
 
 ## [0.1.3] - 2026-09-16
 

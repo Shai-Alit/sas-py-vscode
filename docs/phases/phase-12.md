@@ -466,6 +466,17 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
     - **Manual test 11.10** (B1 on the SAS Libraries tree, for a failure
       other than a lost session), unrun since Phase 11: run it, or record
       why it cannot be provoked.
+18. **12r — Fix B12.3: this extension and the SAS extension could not both
+    activate.** Added 2026-09-27, from a customer report and the developer's
+    own machine. Both extensions registered a `FileSystemProvider` for
+    `sasContent`, so whichever activated second failed (Finding 12.21).
+    Rename all three SAS Content schemes into this extension's own
+    namespace, change the `onFileSystem` activation event with them, and
+    guard the names with tests
+    ([ADR-0040](../adr/0040-every-uri-scheme-is-the-extensions-own.md)). Sean's calls, 2026-09-27: it ships in the
+    Phase 12 release rather than as a separate patch; tabs left open under
+    the old names are not migrated; isolating each registrar in `activate()`
+    is left out.
 
 ### Punch list
 
@@ -557,7 +568,8 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   cancelled cell when one is the cause. Clearing notebook Problems entries
   on sign-out was built and then dropped on 2026-09-27, as ordinary
   behaviour and not a defect. Manual items 12.28–12.29 passed 2026-09-27;
-  12.27 was dropped with it. See the "12l built" Runbook entry.
+  12.27 was dropped with it. Merged 2026-09-27 (PR #220). See the "12l
+  built" Runbook entry.
 - [ ] **12m — Build the Python startup snippet.** Added 2026-09-24. Not
   started. First step: the ADR-0014 choice, reviewed by Sean.
 - [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
@@ -568,6 +580,12 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   Not started. After 12o; security review before its PR.
 - [ ] **12q — Housekeeping** (licence gate, `formatCsvPage` options object,
   drop on My Favorites, manual test 11.10). Added 2026-09-24. Not started.
+- [x] **12r — Fix B12.3 (this extension and the SAS extension could not both
+  activate).** Added and built 2026-09-27. The three SAS Content schemes are
+  now `pythonOnViyaContent`, `pythonOnViyaContentReadOnly` and
+  `pythonOnViyaContentFolder` ([ADR-0040](../adr/0040-every-uri-scheme-is-the-extensions-own.md), Finding 12.21).
+  Manual items 12.30–12.32 passed 2026-09-28. See the "12r built" Runbook
+  entry.
 
 ### Bugs found in this phase
 
@@ -606,6 +624,18 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   (`CasAdapter.getColumns` re-sorts by each column's `index`); manual tests
   12.4 and 12.9 passed live against the fix, 2026-09-23. **Fixed — merged
   with 12e as PR #210.**
+- [x] **B12.3 — With the SAS extension installed, one of the two extensions
+  fails to activate.** Found 2026-09-27, from a customer report ("if one is
+  connected the other can't connect") and on the development machine. Since
+  v0.1.2 both registered a `FileSystemProvider` for `sasContent`, and
+  whichever activated second threw out of `activate()`. The SAS extension
+  then shows "Your connection does not support SAS content navigation" and
+  cannot sign in. This extension loses its notebook kernel, its CAS and SAS
+  Libraries views, and the interactive window. VS Code reports neither
+  failure to the user. Evidence:
+  [Finding 12.21](#finding-12-21-two-extensions-cannot-register-a-filesystemprovider-for-one-scheme-this-extension-and-the-sas-extension-both-registered-sascontent).
+  **Fixed on the 12r branch, 2026-09-27**
+  ([ADR-0040](../adr/0040-every-uri-scheme-is-the-extensions-own.md)).
 
 ---
 
@@ -2337,6 +2367,77 @@ same gap (Phase 4c). 12l was scoped to notebooks. A running cell whose
 notebook closes still runs to its end on the server; the plan did not ask
 for it to be cancelled.
 
+### 12r built, 2026-09-27 — the SAS extension and this one both claimed `sasContent`; ours is renamed
+
+**How it was found.** A customer reported that with both extensions
+installed, "if one is connected the other can't connect". Sean had seen the
+same on his own machine, against a different deployment. An earlier look
+had concluded the two could not interfere. The developer's own
+extension-host logs settled it: five activation failures between 2026-09-21
+and 2026-09-27, each `a provider for the scheme 'sasContent' is already
+registered`, four in the SAS extension and one in ours (Finding 12.21). The
+customer's two screenshots match one direction each: the SAS extension's
+"Your connection does not support SAS content navigation" view, and a
+`.ipynb` whose kernel picker offered no Python on Viya.
+
+**The rest of the sweep.** A multi-agent audit then compared every global
+name the two extensions claim. It covered manifest contributions (commands,
+views, configuration, keybindings, languages, notebooks, authentication,
+activation events), runtime registrations (providers, context keys, tree
+drag MIME types, webview types, output channels, process-wide TLS state) and
+the Viya side (OAuth client, sign-out, compute sessions). `sasContent` is the
+only exact clash. The audit found two more that the fix had to cover: our
+`sasContentReadOnly` provider would shadow the SAS extension's Recycle Bin
+previews once both could activate, and the SAS extension's Run keybindings
+match any `sas(Content|Server)…` scheme. The Viya side is clean on `verde`
+(Finding 12.21's probe). One screenshot also showed "The SAS Viya session
+ended". That is this extension's own `backend-gone`, which `translate()` in
+`procPython.ts` produces only for `session-gone` (a `404`) or
+`compute-unreachable`. Nothing the SAS extension does causes either. Sean
+stopped the audit's remaining verification passes once the cause was
+proven.
+
+**The fix ([ADR-0040](../adr/0040-every-uri-scheme-is-the-extensions-own.md)).** `src/content/uri.ts` names the
+schemes `pythonOnViyaContent`, `pythonOnViyaContentReadOnly` and
+`pythonOnViyaContentFolder`, and `package.json` declares
+`onFileSystem:pythonOnViyaContent`. Comments naming the old schemes are
+swept. Tree `contextValue` strings (`sasContent:folder` and the rest) stay:
+every `when` clause that matches them also requires our own view. ADR-0031,
+which chose `sasContentFolder`, carries an amendment. `docs/faq.md` already
+said that installing both "changes nothing about how either behaves"; that
+was wrong for 0.1.2 and 0.1.3 and is true again, so it is unchanged.
+
+**Sean's calls, 2026-09-27.** It ships in the Phase 12 release, not as a
+separate patch. Editor tabs left open under the old names are not migrated,
+and `CHANGELOG.md` says to close and reopen them. Isolating each registrar so
+that a failed registration costs one feature, not the rest of `activate()`,
+was offered and left out.
+
+**Tests.** A unit test pins the three names and rejects any `sas` prefix.
+Two integration cases are new: the manifest declares
+`onFileSystem:pythonOnViyaContent` and no `onFileSystem` event for a scheme
+outside this extension's namespace, and after activation a `sasContent:`
+URI reaches no provider at all. The existing tree and filesystem tests use
+the new names. The suite runs with `--disable-extensions`, so it cannot
+install the SAS extension beside ours; manual items 12.30–12.32 do.
+`npm run verify` is green from a clean `out/` (1,930 unit; coverage
+96.49/95.93/96.29/96.49), as are `npm run test:integration` (522
+passing), `npm run check:docs` and the secret scan. The developer's
+adversarial pass found nothing blocking. Its small points are folded in: a
+setup step for 12.32, the `uri.ts` comment matched to Finding 12.21, and the
+restored-tab note below. Manual items 12.30–12.32 passed 2026-09-28, with
+both extensions installed.
+
+**Not changed.** The SAS extension's `installCAs()` sets
+`https.globalAgent.options.ca` when `SAS.userProvidedCertificates` names a
+file, and our default transport uses the global agent. That only adds trust
+and does not bear on B12.3, so it is noted here, not pursued. Activation on
+`onStartupFinished` also stays. No `onFileSystem` event names
+`pythonOnViyaContentReadOnly`, just as none named `sasContentReadOnly`, so a
+Recycle Bin tab restored at startup cannot activate this extension and waits
+for `onStartupFinished`. That gap predates 12r and is left as it was. What
+such a tab shows in the meantime was not tried.
+
 ---
 
 ## Probe findings
@@ -3501,3 +3602,77 @@ edited into them.
 **Not settled:** other VS Code versions; whether a real window shows any
 symptom beyond the extension-host log. Manual item 12.29 checks the second
 point.
+
+### Finding 12.21 — two extensions cannot register a `FileSystemProvider` for one scheme; this extension and the SAS extension both registered `sasContent`
+
+**Mostly not from a probe.** The VS Code behaviour below is read from
+`microsoft/vscode` at `main` on 2026-09-27, and the failures from the
+developer's own extension-host logs. The SAS extension is read at
+`sassoftware/vscode-sas-extension` `009bc9a3` and in its installed 1.21.0
+bundle. Only the last point is a Viya probe.
+
+- **One scheme, one provider, per extension host.**
+  `ExtHostFileSystem.registerFileSystemProvider`
+  (`src/vs/workbench/api/common/extHostFileSystem.ts`) throws
+  `a provider for the scheme '<scheme>' is already registered` when its
+  `_registeredSchemes` set already holds the scheme. The set is created once
+  per extension host (`extHost.api.impl.ts`), so every extension in the host
+  shares it.
+- **Both extensions registered `sasContent`.** This one did from v0.1.2
+  (commit `1c13854`, PR #141, 2026-09-10) in `registerContentExplorer`. The
+  SAS extension's `ContentNavigator` constructor registers `sasContent` and
+  `sasServer`, and a `TextDocumentContentProvider` for each `…ReadOnly`
+  variant. v0.1.0 and v0.1.1 registered no provider.
+- **The loser's `activate()` stops where it threw, and what it already
+  registered stays.** The SAS extension throws before it registers any
+  command or its `SAS` authentication provider, and before
+  `updateViewSettings()` sets `SAS.canSignIn`. Its sidebar therefore shows
+  the `sas-content-invalid-connection` view, "Your connection does not
+  support SAS content navigation". This extension throws inside
+  `registerContentExplorer`, before the CAS and SAS Libraries views, the data
+  viewer, the notebook controller and the interactive window, so a `.ipynb`
+  offers no Python on Viya kernel.
+- **Which one loses is a race.** This extension activated on
+  `onStartupFinished` in every window. The SAS extension activates on its
+  sidebar's `onView:*`, on `onLanguage:sas` or on `onNotebook:sas-notebook`.
+  The developer's logs from 2026-09-21 to 2026-09-27 hold five failures: four
+  `Activating extension SAS.sas-lsp failed`, on 1.20.0 and 1.21.0, and one
+  `Activating extension shai-alit.python-on-viya failed`. One window shows
+  both orders, four minutes apart across a reload.
+- **Nothing tells the user.** In a built VS Code,
+  `mainThreadExtensionService.ts` shows an activation error as a
+  notification only in development. Otherwise it goes to the renderer
+  console and the extension-host log.
+- **A second clash was hidden behind the first.** This extension also
+  registered a `FileSystemProvider` for `sasContentReadOnly`, where the SAS
+  extension registers a `TextDocumentContentProvider`. Neither registration
+  throws, and VS Code resolves a text model through a `FileSystemProvider`
+  before any content provider (`textModelResolverService.ts`). With both
+  extensions active, ours would have served the SAS extension's Recycle Bin
+  previews and failed them, since our `parseContentUri` needs an `r=` its
+  URIs lack. It could not happen yet only because each extension registers
+  `sasContent` first, and one of them always threw there.
+- **The SAS extension's Run keybindings key on the scheme's prefix.** Its
+  `F8`/`F3` keybindings and Run menus apply when
+  `editorLangId =~ /^(python|r|sql)$/ && resourceScheme =~ /^sas(Content|Server).*/`.
+- **Probe, read-only, `verde`, 2026-09-27: SASLogon cannot evict one
+  extension's tokens for the other's.** Both extensions sign in with the
+  built-in `vscode` client. `GET /SASLogon/identity-zones/uaa` returned `200`
+  with `tokenPolicy` `refreshTokenUnique: false`, `refreshTokenRotate: false`
+  and `jwtRevocable: false`. `GET /SASLogon/oauth/clients/vscode` returned
+  `200` with grants `authorization_code` and `refresh_token` and no
+  per-client refresh-token override. Neither extension calls a logout or
+  revocation endpoint, and neither deletes a compute session it did not
+  create.
+
+**What it establishes.** B12.3 is a VS Code activation clash, not a Viya
+one, and renaming to schemes this extension owns fixes it (ADR-0040). On
+`verde`, the shared `vscode` OAuth client is not a second channel of
+interference.
+
+**Not settled:** a deployment whose administrator has turned on
+`refreshTokenUnique` for the zone or the `vscode` client; the second
+deployment in the credentials file was unreachable that day. Whether a
+restored SAS-extension `sasContent:` tab ever tipped the race through this
+extension's old `onFileSystem:sasContent` event is plausible from VS Code's
+source but never seen in the logs; the rename makes it moot.

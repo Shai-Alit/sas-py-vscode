@@ -85,9 +85,10 @@ export interface NodePresentation {
   /** `true` → the tree shows an expand chevron (collapsed). */
   readonly expandable: boolean;
   /**
-   * `true` → a file leaf the `sasContent:` `FileSystemProvider` can open, so
-   * `contentTree.ts` gives the node a `vscode.open` command. Only an ordinary
-   * `file` member qualifies; a folder, the root, and a `dataFlow` leaf do not.
+   * `true` → a file leaf the `pythonOnViyaContent:` `FileSystemProvider` can
+   * open, so `contentTree.ts` gives the node a `vscode.open` command. Only an
+   * ordinary `file` member qualifies; a folder, the root, and a `dataFlow` leaf
+   * do not.
    */
   readonly openable: boolean;
   /**

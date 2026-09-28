@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The `FileSystemProvider` behind the `sasContent:` scheme — this repository's
- * first — so a remote `.py` file opens in an editor and saves back in place.
+ * The `FileSystemProvider` behind the `pythonOnViyaContent:` scheme — this
+ * repository's first — so a remote `.py` file opens in an editor and saves
+ * back in place.
  *
  * Structure follows: the `stat`/`readFile`/`writeFile` half of
  * `ContentDataProvider` in sassoftware/vscode-sas-extension (Apache-2.0) — read
@@ -14,9 +15,9 @@
  *
  * Deliberately thin, like `src/content/contentTree.ts`. What a read or a write
  * *is* on the wire lives in `src/content/adapter.ts` (`vscode`-free,
- * unit-tested); the `sasContent:` URI shape lives in `src/content/uri.ts`
- * (likewise). This class is the shell: it turns a URI into a resource href,
- * calls the adapter, and maps a {@link ContentProblem} onto the
+ * unit-tested); the `pythonOnViyaContent:` URI shape lives in
+ * `src/content/uri.ts` (likewise). This class is the shell: it turns a URI into
+ * a resource href, calls the adapter, and maps a {@link ContentProblem} onto the
  * `vscode.FileSystemError` the editor expects — logging the technical sentence
  * and showing the localised one.
  *
@@ -56,13 +57,15 @@
  * ## The read-only recycle-bin view (6d-ii)
  *
  * `src/content/contentExplorer.ts` registers this same provider a second time
- * under the `sasContentReadOnly:` scheme with `isReadonly: true`, and
+ * under the `pythonOnViyaContentReadOnly:` scheme with `isReadonly: true`, and
  * `contentTree.ts` points a recycled file leaf's `vscode.open` at that scheme.
  * The editor then blocks edits, so `writeFile` is never reached; `stat` and
  * `readFile` work unchanged because {@link resolve} keys off the URI query, not
- * the scheme. Mirrors upstream's `sasContentReadOnly` `TextDocumentContentProvider`
- * without a second class — a read-only `FileSystemProvider` registration gives a
- * real `stat` (size, mtime) and byte-faithful `readFile` for free.
+ * the scheme. Upstream serves its own `sasContentReadOnly` scheme with a
+ * `TextDocumentContentProvider`; this project uses no second class, because a
+ * read-only `FileSystemProvider` registration gives a real `stat` (size, mtime)
+ * and byte-faithful `readFile` for free. The scheme names differ on purpose
+ * (ADR-0040).
  */
 
 import * as vscode from "vscode";
@@ -159,8 +162,9 @@ export class SasContentFileSystemProvider
     const precondition = this.opened.get(key);
     if (precondition === undefined) {
       // No read ever populated the guard. VS Code reads before it lets a file
-      // be edited, so this is the pathological "save into a `sasContent:` URI
-      // that was never opened" case — refuse rather than overwrite blindly.
+      // be edited, so this is the pathological "save into a
+      // `pythonOnViyaContent:` URI that was never opened" case — refuse rather
+      // than overwrite blindly.
       throw new vscode.FileSystemError(
         vscode.l10n.t(
           "Open this file from the SAS Content view before saving it.",
@@ -224,10 +228,10 @@ export class SasContentFileSystemProvider
     );
   }
 
-  /** The adapter for the deployment a `sasContent:` URI names, the file-resource
-   * href it carries, and the {@link opened} key for that (root, href) pair — or
-   * a thrown `FileSystemError` when the URI is not one this extension wrote or
-   * there is no session for its deployment. */
+  /** The adapter for the deployment a `pythonOnViyaContent:` URI names, the
+   * file-resource href it carries, and the {@link opened} key for that
+   * (root, href) pair — or a thrown `FileSystemError` when the URI is not one
+   * this extension wrote or there is no session for its deployment. */
   private resolve(uri: vscode.Uri): {
     adapter: ContentAdapter;
     href: string;

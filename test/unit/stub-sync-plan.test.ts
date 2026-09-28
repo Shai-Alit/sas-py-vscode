@@ -180,10 +180,10 @@ describe("stubSyncPlan.ts — 10b's stub-sync decisions", () => {
     it("logs the scheme for an unsupported (virtual) workspace", () => {
       const report = describeStubSyncOutcome({
         kind: "unsupported-workspace",
-        scheme: "sasContent",
+        scheme: "pythonOnViyaContent",
       });
       assert.equal(report.reloadAdvisable, false);
-      assert.ok(report.logWarning?.includes("sasContent"));
+      assert.ok(report.logWarning?.includes("pythonOnViyaContent"));
       assert.equal(report.conflictValue, undefined);
     });
 

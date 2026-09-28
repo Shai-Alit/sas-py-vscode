@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * The `sasContent:` URI a tree file node opens, and the two things carried
- * inside it: the file-resource href and the deployment it lives on.
+ * The `pythonOnViyaContent:` URI a tree file node opens, and the two things
+ * carried inside it: the file-resource href and the deployment it lives on.
  *
  * **This module must never import `vscode`.** The shell
  * (`src/content/contentTree.ts`, `src/content/contentFileSystem.ts`) wraps
@@ -30,17 +30,28 @@
  * the file its `.py` extension.
  */
 
-/** The `FileSystemProvider` scheme for editable SAS Content files. */
-export const CONTENT_SCHEME = "sasContent";
+/**
+ * The `FileSystemProvider` scheme for editable SAS Content files.
+ *
+ * All three schemes here start with `pythonOnViya` and never with `sas`
+ * (ADR-0040, Finding 12.21). A scheme belongs to one extension host, not to
+ * one extension. The SAS extension registers a `FileSystemProvider` for
+ * `sasContent` and `sasServer`, and whichever of the two extensions registers
+ * a `FileSystemProvider` for a shared scheme second fails to activate. For
+ * the `ReadOnly` variants it registers `TextDocumentContentProvider`s
+ * instead. Those do not throw, but a `FileSystemProvider` on the same scheme
+ * silently outranks them. The SAS extension's Run keybindings and menus also
+ * apply to any editor whose scheme matches `/^sas(Content|Server)/`.
+ */
+export const CONTENT_SCHEME = "pythonOnViyaContent";
 
 /**
  * The scheme for a **read-only** view of a SAS Content file — a recycled file,
  * opened from the Recycle Bin (6d-ii). The same {@link SasContentFileSystemProvider}
  * serves it, registered a second time with `isReadonly: true`, so the query
- * shape and {@link parseContentUri} are shared; only the scheme differs. Mirrors
- * upstream's `sasContentReadOnly` scheme.
+ * shape and {@link parseContentUri} are shared; only the scheme differs.
  */
-export const CONTENT_READONLY_SCHEME = "sasContentReadOnly";
+export const CONTENT_READONLY_SCHEME = "pythonOnViyaContentReadOnly";
 
 /**
  * The scheme for a folder's `TreeItem.resourceUri` — identity only, never
@@ -59,10 +70,10 @@ export const CONTENT_READONLY_SCHEME = "sasContentReadOnly";
  * and nothing should ever register a provider for it. If that ever changes,
  * it stops being safe to reuse this scheme as-is.
  */
-export const CONTENT_FOLDER_SCHEME = "sasContentFolder";
+export const CONTENT_FOLDER_SCHEME = "pythonOnViyaContentFolder";
 
 /** The file href and the deployment it belongs to, read out of a
- * `sasContent:` URI's query. */
+ * `pythonOnViyaContent:` URI's query. */
 export interface ContentUriParts {
   /** The Files service resource href — `/files/files/{guid}` (finding 99). */
   readonly resourceHref: string;
@@ -72,7 +83,8 @@ export interface ContentUriParts {
 }
 
 /**
- * The `sasContent:` URI string for a file member on a given deployment.
+ * The `pythonOnViyaContent:` URI string for a file member on a given
+ * deployment.
  *
  * `resourceHref` is the member's own `uri` (what {@link resourceHrefOf}
  * returns); `deploymentRoot` is the active profile's endpoint. `%`, `#` and `?`
@@ -91,10 +103,10 @@ export function contentUriString(
 }
 
 /**
- * The `sasContentReadOnly:` URI string for a recycled file (6d-ii) — the same
- * shape as {@link contentUriString}, under the read-only scheme, so opening it
- * lands in {@link SasContentFileSystemProvider}'s read path but the editor never
- * offers to save it.
+ * The `pythonOnViyaContentReadOnly:` URI string for a recycled file (6d-ii) —
+ * the same shape as {@link contentUriString}, under the read-only scheme, so
+ * opening it lands in {@link SasContentFileSystemProvider}'s read path but the
+ * editor never offers to save it.
  */
 export function contentReadOnlyUriString(
   name: string,
@@ -110,7 +122,7 @@ export function contentReadOnlyUriString(
 }
 
 /**
- * The `sasContentFolder:` identity URI for a folder-shaped item — see
+ * The `pythonOnViyaContentFolder:` identity URI for a folder-shaped item — see
  * {@link CONTENT_FOLDER_SCHEME}. Same shape as {@link contentUriString} so
  * `parseContentUri` still reads it, on the off chance anything ever needs to,
  * but nothing currently does.
@@ -145,9 +157,9 @@ function buildContentUri(
 }
 
 /**
- * The file href and deployment root a `sasContent:` URI carries, or `undefined`
- * when the query is not one this extension wrote (both `id` and `r` present and
- * non-empty).
+ * The file href and deployment root a `pythonOnViyaContent:` URI carries, or
+ * `undefined` when the query is not one this extension wrote (both `id` and `r`
+ * present and non-empty).
  */
 export function parseContentUri(query: string): ContentUriParts | undefined {
   const params = new URLSearchParams(query);

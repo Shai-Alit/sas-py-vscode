@@ -17,12 +17,13 @@ import type { ContentProblem } from "../../../src/content/problems";
 import { extensionId } from "../../helpers/manifest";
 
 /**
- * The `sasContent:` filesystem provider. Two tiers here:
+ * The `pythonOnViyaContent:` filesystem provider. Two tiers here:
  *
  * - **Registration**, proven through full extension activation — the scheme is
- *   registered and the `onFileSystem:sasContent` activation event is declared,
- *   so a `sasContent:` URI reaches *our* provider rather than an unknown-scheme
- *   error.
+ *   registered and the `onFileSystem:pythonOnViyaContent` activation event is
+ *   declared, so a `pythonOnViyaContent:` URI reaches *our* provider rather than
+ *   an unknown-scheme error, and the SAS extension's `sasContent:` scheme is
+ *   left unclaimed (B12.3).
  * - **The shell's own mapping**, proven by constructing
  *   `SasContentFileSystemProvider` directly with a fake `ContentAdapter` — the
  *   same pattern `content/tree.test.ts` uses for the tree provider. This is
@@ -38,7 +39,7 @@ import { extensionId } from "../../helpers/manifest";
 const HREF = "/files/files/dddddddd-0000-4000-8000-000000000001";
 const ENDPOINT = "https://viya.example.com";
 const A_CONTENT_URI = vscode.Uri.parse(
-  `sasContent:/analysis.py?id=${HREF}&r=${encodeURIComponent(ENDPOINT)}`,
+  `pythonOnViyaContent:/analysis.py?id=${HREF}&r=${encodeURIComponent(ENDPOINT)}`,
 );
 
 function fakeLog(): { channel: vscode.LogOutputChannel; errors: string[] } {
@@ -104,23 +105,44 @@ describe("SAS Content filesystem provider — registration", () => {
     await extension.activate();
   });
 
-  it("declares the onFileSystem:sasContent activation event", () => {
+  it("declares onFileSystem:pythonOnViyaContent, and no onFileSystem event for a scheme it does not own", () => {
     const extension = vscode.extensions.getExtension(extensionId());
     assert.ok(extension);
     const manifest = extension.packageJSON as { activationEvents?: string[] };
+    const events = manifest.activationEvents ?? [];
     assert.ok(
-      (manifest.activationEvents ?? []).includes("onFileSystem:sasContent"),
-      "onFileSystem:sasContent is not an activation event",
+      events.includes("onFileSystem:pythonOnViyaContent"),
+      "onFileSystem:pythonOnViyaContent is not an activation event",
     );
+    // An event for another extension's scheme activates us whenever that
+    // extension touches its own files (B12.3, ADR-0040).
+    for (const event of events.filter((e) => e.startsWith("onFileSystem:"))) {
+      assert.ok(event.startsWith("onFileSystem:pythonOnViya"), event);
+    }
   });
 
-  it("routes a sasContent: URI to our provider (not an unknown-scheme error)", async () => {
+  it("routes a pythonOnViyaContent: URI to our provider (not an unknown-scheme error)", async () => {
     // No profile is active in the test host, so resolve() throws our own
     // sign-in message — which only happens if the provider is registered.
     const error = await rejectionOf(
       Promise.resolve(vscode.workspace.fs.stat(A_CONTENT_URI)),
     );
     assert.match(error.message, /Sign in to SAS Viya/);
+  });
+
+  it("leaves the SAS extension's sasContent: scheme unclaimed (B12.3)", async () => {
+    // The SAS extension registers `sasContent`. Had we registered it too,
+    // whichever of the two activated second would fail (Finding 12.21). The
+    // SAS extension is not installed in this test host, so nothing serves it.
+    const error = await rejectionOf(
+      Promise.resolve(
+        vscode.workspace.fs.stat(
+          vscode.Uri.parse(`sasContent:/analysis.py?id=${HREF}`),
+        ),
+      ),
+    );
+    assert.doesNotMatch(error.message, /Sign in to SAS Viya/);
+    assert.match(error.message, /ENOPRO|No file system provider/);
   });
 });
 
@@ -443,14 +465,14 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     }
   });
 
-  it("rejects a sasContent: URI missing either the id or the deployment root", async () => {
+  it("rejects a content URI missing either the id or the deployment root", async () => {
     const { provider } = providerWith({
       statFile: () => Promise.reject(new Error("must not be called")),
     });
     for (const bad of [
-      "sasContent:/x.py?name=x",
-      `sasContent:/x.py?id=${HREF}`, // no r=
-      `sasContent:/x.py?r=${encodeURIComponent(ENDPOINT)}`, // no id=
+      "pythonOnViyaContent:/x.py?name=x",
+      `pythonOnViyaContent:/x.py?id=${HREF}`, // no r=
+      `pythonOnViyaContent:/x.py?r=${encodeURIComponent(ENDPOINT)}`, // no id=
     ]) {
       const error = await rejectionOf(provider.stat(vscode.Uri.parse(bad)));
       assert.equal(error.code, "FileNotFound", bad);
@@ -461,10 +483,10 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     const rootA = "https://a.example.com";
     const rootB = "https://b.example.com";
     const uriA = vscode.Uri.parse(
-      `sasContent:/x.py?id=${HREF}&r=${encodeURIComponent(rootA)}`,
+      `pythonOnViyaContent:/x.py?id=${HREF}&r=${encodeURIComponent(rootA)}`,
     );
     const uriB = vscode.Uri.parse(
-      `sasContent:/x.py?id=${HREF}&r=${encodeURIComponent(rootB)}`,
+      `pythonOnViyaContent:/x.py?id=${HREF}&r=${encodeURIComponent(rootB)}`,
     );
     const sentFrom: Record<string, string> = {};
     const adapterFor = (endpoint: string): AdapterStub => ({
@@ -496,7 +518,7 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     const seenEndpoints: string[] = [];
     const other = "https://other.example.com";
     const otherUri = vscode.Uri.parse(
-      `sasContent:/a.py?id=${HREF}&r=${encodeURIComponent(other)}`,
+      `pythonOnViyaContent:/a.py?id=${HREF}&r=${encodeURIComponent(other)}`,
     );
     const { provider } = providerWith(undefined, (endpoint) => {
       seenEndpoints.push(endpoint);

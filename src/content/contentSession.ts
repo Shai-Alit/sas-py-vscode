@@ -26,7 +26,7 @@
  * ## One adapter per endpoint, all kept
  *
  * The cache is a `Map` keyed on endpoint, not a single held adapter: the
- * `sasContent:` filesystem provider can be asked to save a file whose
+ * `pythonOnViyaContent:` filesystem provider can be asked to save a file whose
  * deployment is *not* the active profile's (the user switched profiles with
  * the editor still open — see `src/content/uri.ts`), and it must get the
  * adapter for that file's deployment, not the current one. Entries are only

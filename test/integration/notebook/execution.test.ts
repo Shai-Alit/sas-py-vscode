@@ -103,11 +103,19 @@ interface FakeExecution {
   readonly execution: vscode.NotebookCellExecution;
   outputs(): readonly vscode.NotebookCellOutput[];
   ended(): { readonly success: boolean | undefined } | undefined;
+  /** How many times `end()` was called — 12l's "exactly once" check. */
+  endCount(): number;
 }
 
-function fakeExecution(cell: vscode.NotebookCell): FakeExecution {
+/** `rejectAppends` (12l) makes `appendOutput` reject while it returns
+ * `true`, standing in for any output call that fails mid-run. */
+function fakeExecution(
+  cell: vscode.NotebookCell,
+  rejectAppends: () => boolean = () => false,
+): FakeExecution {
   let outputs: vscode.NotebookCellOutput[] = [];
   let ended: { success: boolean | undefined } | undefined;
+  let endCount = 0;
   // Not `Array.isArray`: its type predicate is `arg is any[]` regardless of
   // the union's actual element type, which is exactly what
   // `@typescript-eslint/no-unsafe-*` flags. `items` is `NotebookCellOutput`'s
@@ -123,6 +131,7 @@ function fakeExecution(cell: vscode.NotebookCell): FakeExecution {
     },
     end: (success) => {
       ended = { success };
+      endCount += 1;
     },
     clearOutput: () => {
       outputs = [];
@@ -133,6 +142,9 @@ function fakeExecution(cell: vscode.NotebookCell): FakeExecution {
       return Promise.resolve();
     },
     appendOutput: (out) => {
+      if (rejectAppends()) {
+        return Promise.reject(new Error("appendOutput rejected"));
+      }
       outputs.push(...toArray(out));
       return Promise.resolve();
     },
@@ -145,6 +157,28 @@ function fakeExecution(cell: vscode.NotebookCell): FakeExecution {
     execution: execution as vscode.NotebookCellExecution,
     outputs: () => outputs,
     ended: () => ended,
+    endCount: () => endCount,
+  };
+}
+
+/** A view of `notebook` whose `isClosed` the test controls — 12l. An
+ * untitled notebook opened with no editor has no API to close it, and
+ * `isClosed` is the only member the code under test reads for this. The real
+ * document stays the prototype, so every other member still answers from
+ * it. */
+function closableNotebook(notebook: vscode.NotebookDocument): {
+  readonly notebook: vscode.NotebookDocument;
+  close(): void;
+} {
+  let closed = false;
+  const view = Object.create(notebook, {
+    isClosed: { get: () => closed },
+  }) as vscode.NotebookDocument;
+  return {
+    notebook: view,
+    close: () => {
+      closed = true;
+    },
   };
 }
 
@@ -154,10 +188,11 @@ function fakeExecution(cell: vscode.NotebookCell): FakeExecution {
  * for why a real controller is the wrong tool here. */
 function fakeController(
   executions: Map<vscode.NotebookCell, FakeExecution>,
+  rejectAppends?: () => boolean,
 ): vscode.NotebookController {
   const controller: Partial<vscode.NotebookController> = {
     createNotebookCellExecution: (cell) => {
-      const created = fakeExecution(cell);
+      const created = fakeExecution(cell, rejectAppends);
       executions.set(cell, created);
       return created.execution;
     },
@@ -329,10 +364,19 @@ describe("notebook execution (9b)", () => {
     assert.ok(
       result
         .outputs()
-        .some((output) => textOf(output).includes("still no output")),
-      `expected the waiting notice once the delay elapsed; got: ${JSON.stringify(
+        .some((output) =>
+          textOf(output).includes(
+            "still no output — this cell is still running",
+          ),
+        ),
+      `expected the plain waiting notice once the delay elapsed; got: ${JSON.stringify(
         result.outputs().map(textOf),
       )}`,
+    );
+    // 12l: nothing was cancelled on this session, so the notice must not
+    // blame a cancelled cell.
+    assert.ok(
+      !result.outputs().some((output) => textOf(output).includes("cancelled")),
     );
   });
 
@@ -481,6 +525,268 @@ describe("notebook execution (9b)", () => {
       `expected A's own streamed output to have arrived uninterrupted; got: ${JSON.stringify(
         result.outputs().map(textOf),
       )}`,
+    );
+  });
+
+  it("names a cancelled cell in the waiting notice until a later run settles (12l)", async () => {
+    // Finding 76: the statement a cancel abandons keeps running in SAS, so
+    // the next cell's job waits behind it. 12l's session flag lets the
+    // notice say so, and only until a later run settles.
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log, 10);
+    disposables.push(handlers.diagnostics);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    const controller = fakeController(executions);
+    const interrupted = await openCell("while True: pass");
+
+    const firstRun = handlers.executeHandler(
+      [interrupted.cell],
+      interrupted.notebook,
+      controller,
+    );
+    await flush();
+    const firstJob = recorded.currentJob();
+    assert.ok(firstJob !== undefined);
+    // Output from the run being cancelled must not count as the session
+    // having reached a later run.
+    firstJob.push("working\n");
+    await flush();
+    await handlers.interruptHandler(interrupted.notebook);
+    await firstRun;
+
+    // The next cell: no output past the delay, then it settles.
+    const waiting = await openCell("print('after the cancel')");
+    const secondRun = handlers.executeHandler(
+      [waiting.cell],
+      waiting.notebook,
+      controller,
+    );
+    await flush();
+    const secondJob = recorded.currentJob();
+    assert.ok(secondJob !== undefined);
+    assert.notEqual(secondJob, firstJob);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    secondJob.finish(true, undefined);
+    await secondRun;
+    const waitingOutputs = executions.get(waiting.cell)?.outputs() ?? [];
+    assert.ok(
+      waitingOutputs.some((output) =>
+        textOf(output).includes("statement a cancelled cell was running"),
+      ),
+      `expected the notice to name the cancelled cell; got: ${JSON.stringify(
+        waitingOutputs.map(textOf),
+      )}`,
+    );
+
+    // A third cell: the second run settled, so the flag is gone.
+    const later = await openCell("import time; time.sleep(1)");
+    const thirdRun = handlers.executeHandler(
+      [later.cell],
+      later.notebook,
+      controller,
+    );
+    await flush();
+    const thirdJob = recorded.currentJob();
+    assert.ok(thirdJob !== undefined);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    thirdJob.finish(true, undefined);
+    await thirdRun;
+    const laterOutputs = executions.get(later.cell)?.outputs() ?? [];
+    assert.ok(
+      laterOutputs.some((output) =>
+        textOf(output).includes("this cell is still running"),
+      ),
+      `expected the plain notice once a later run had settled; got: ${JSON.stringify(
+        laterOutputs.map(textOf),
+      )}`,
+    );
+    assert.ok(
+      !laterOutputs.some((output) => textOf(output).includes("cancelled")),
+    );
+  });
+
+  it("clears the cancelled-cell flag on a later run's first output alone (12l)", async () => {
+    // The flag clears two ways: a later run settling, or its first output.
+    // Here the later run's output call rejects before the run can settle,
+    // so only the first-output path can have cleared it.
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log, 10);
+    disposables.push(handlers.diagnostics);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    let rejecting = false;
+    const controller = fakeController(executions, () => rejecting);
+    const interrupted = await openCell("while True: pass");
+
+    const firstRun = handlers.executeHandler(
+      [interrupted.cell],
+      interrupted.notebook,
+      controller,
+    );
+    await flush();
+    const firstJob = recorded.currentJob();
+    assert.ok(firstJob !== undefined);
+    await handlers.interruptHandler(interrupted.notebook);
+    await firstRun;
+
+    // The next cell's first output reaches the session, then its output
+    // call rejects, so the run never reads its own outcome.
+    const producing = await openCell("print('after the cancel')");
+    const secondRun = handlers.executeHandler(
+      [producing.cell],
+      producing.notebook,
+      controller,
+    );
+    await flush();
+    const secondJob = recorded.currentJob();
+    assert.ok(secondJob !== undefined);
+    assert.notEqual(secondJob, firstJob);
+    rejecting = true;
+    secondJob.push("after the cancel\n");
+    await assert.rejects(secondRun, /appendOutput rejected/);
+    secondJob.finish(true, undefined);
+    await flush();
+    rejecting = false;
+
+    // A third cell sits silent past the delay: the plain notice only.
+    const later = await openCell("import time; time.sleep(1)");
+    const thirdRun = handlers.executeHandler(
+      [later.cell],
+      later.notebook,
+      controller,
+    );
+    await flush();
+    const thirdJob = recorded.currentJob();
+    assert.ok(thirdJob !== undefined);
+    assert.notEqual(thirdJob, secondJob);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    thirdJob.finish(true, undefined);
+    await thirdRun;
+    const laterOutputs = executions.get(later.cell)?.outputs() ?? [];
+    assert.ok(
+      laterOutputs.some((output) =>
+        textOf(output).includes("this cell is still running"),
+      ),
+      `expected the plain notice once a later run had produced output; got: ${JSON.stringify(
+        laterOutputs.map(textOf),
+      )}`,
+    );
+    assert.ok(
+      !laterOutputs.some((output) => textOf(output).includes("cancelled")),
+    );
+  });
+
+  it("ends a started cell exactly once when an output call rejects mid-run (12l)", async () => {
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log);
+    disposables.push(handlers.diagnostics);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    let rejecting = false;
+    const controller = fakeController(executions, () => rejecting);
+    const { notebook, cell } = await openCell("print('lost')");
+
+    const executing = handlers.executeHandler([cell], notebook, controller);
+    await flush();
+    const job = recorded.currentJob();
+    assert.ok(job !== undefined);
+    rejecting = true;
+    job.push("lost\n");
+    await assert.rejects(executing, /appendOutput rejected/);
+
+    const result = executions.get(cell);
+    assert.ok(result);
+    assert.equal(result.endCount(), 1);
+    assert.equal(result.ended()?.success, false);
+
+    // The abandoned run still settles, and the session is usable after it.
+    job.finish(true, undefined);
+    await flush();
+    rejecting = false;
+    const next = await openCell("print('next')");
+    const nextRun = handlers.executeHandler(
+      [next.cell],
+      next.notebook,
+      controller,
+    );
+    await flush();
+    const nextJob = recorded.currentJob();
+    assert.ok(nextJob !== undefined);
+    assert.notEqual(nextJob, job);
+    nextJob.push("next\n");
+    nextJob.finish(true, undefined);
+    await nextRun;
+    assert.equal(executions.get(next.cell)?.ended()?.success, true);
+  });
+
+  it("stops at a closed notebook instead of running its queued cells (12l)", async () => {
+    // Finding 12.20: VS Code throws from `createNotebookCellExecution` for a
+    // cell whose notebook is gone, so the queued cell must never reach it.
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const sessions = recordedSessions(recorded);
+    const backendCache = createBackendCache(sessions, log);
+    disposables.push(backendCache);
+    const handlers = createNotebookExecutionHandlers(backendCache, log);
+    disposables.push(handlers.diagnostics);
+    const executions = new Map<vscode.NotebookCell, FakeExecution>();
+    const controller = fakeController(executions);
+    const opened = await vscode.workspace.openNotebookDocument(
+      NOTEBOOK_TYPE,
+      new vscode.NotebookData([
+        new vscode.NotebookCellData(
+          vscode.NotebookCellKind.Code,
+          "print('first')",
+          "python",
+        ),
+        new vscode.NotebookCellData(
+          vscode.NotebookCellKind.Code,
+          "print('queued')",
+          "python",
+        ),
+      ]),
+    );
+    const closable = closableNotebook(opened);
+    const first = opened.cellAt(0);
+    const queued = opened.cellAt(1);
+
+    const executing = handlers.executeHandler(
+      [first, queued],
+      closable.notebook,
+      controller,
+    );
+    await flush();
+    const job = recorded.currentJob();
+    assert.ok(job !== undefined);
+    closable.close();
+    job.push("first\n");
+    job.finish(true, undefined);
+    await executing;
+
+    assert.equal(executions.get(first)?.ended()?.success, true);
+    assert.equal(executions.get(first)?.endCount(), 1);
+    assert.equal(
+      executions.has(queued),
+      false,
+      "the queued cell of a closed notebook must never get an execution",
     );
   });
 

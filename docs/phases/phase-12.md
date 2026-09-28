@@ -551,8 +551,13 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   mode off ([ADR-0039](../adr/0039-every-job-switches-syntax-check-mode-off.md),
   Finding 12.19). Manual items 12.23–12.26 passed 2026-09-25. See the
   "12k built" Runbook entry.
-- [ ] **12l — Notebook execution-surface staleness.** Added 2026-09-24. Not
-  started. Three Phase 9 carry-overs.
+- [x] **12l — Notebook execution-surface staleness.** Added 2026-09-24.
+  Built 2026-09-25: a started cell always ends, a closed notebook's queued
+  cells are skipped (Finding 12.20), and the waiting notice names a
+  cancelled cell when one is the cause. Clearing notebook Problems entries
+  on sign-out was built and then dropped on 2026-09-27, as ordinary
+  behaviour and not a defect. Manual items 12.28–12.29 passed 2026-09-27;
+  12.27 was dropped with it. See the "12l built" Runbook entry.
 - [ ] **12m — Build the Python startup snippet.** Added 2026-09-24. Not
   started. First step: the ADR-0014 choice, reviewed by Sean.
 - [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
@@ -2258,6 +2263,80 @@ reworded.
 **Manual pass, 2026-09-25.** Sean ran 12.23–12.26 on the branch. All four
 passed.
 
+### 12l built, 2026-09-25 — a closed notebook fails differently than recorded, and the waiting notice can now name its cause
+
+**The closed-notebook item was checked against VS Code's own source first**
+(Finding 12.20). 9c's review said a notebook closed mid-run makes
+`appendOutput` reject and skips `end()`. At the installed 1.109.5, neither
+happens for the running cell. What fails is `createNotebookCellExecution`
+for each cell still queued behind it. Two changes follow.
+`executeHandler` checks `notebook.isClosed` before each cell. `executeCell`
+now wraps the run in a `finally` that calls `end()` exactly once, so any
+rejected output call still ends the cell. That matters because VS Code
+refuses a second execution for a cell URI whose first was never ended, and
+a reopened notebook reuses its cell URIs. The rejection still propagates,
+since nothing here can act on it. The run body moved into a `runCell`
+helper that returns the success flag.
+
+**Sign-out: built, then dropped.** As built, `registerNotebookController`
+took an optional `onDidSignOut` from `extension.ts`, and a `handleSignOut`
+seam cleared the notebook's `RunDiagnostics` collection. Manual item 12.27
+failed on 2026-09-27: the entry stayed after sign-out. Sean decided that is
+ordinary behaviour, not a defect, and the item should never have been
+pursued. The parameter, the seam, its integration case, the `extension.ts`
+wiring and the doc and `CHANGELOG.md` wording were all removed rather than
+debugged. The controller's doc comment records sign-out as deliberately not
+ported. Why the wired version failed was not investigated.
+
+**The waiting notice.** Built the lightweight version Phase 11 suggested. A
+`WeakSet<ProcPythonBackend>` holds each session whose last run settled with
+ADR-0015's `cancelled` failure. That is the only outcome that can leave a
+statement running server-side (Finding 76), but it is necessary rather than
+sufficient. A cancel during upload, during the rich-output capture, or after
+the job already finished settles the same way with nothing left running.
+The flag is therefore a conservative hint, which is why the notice says
+"may". The session is cleared by a
+later run's first output, since the session is serial, or by a later run
+settling with an outcome. A reconnect builds a new backend, which starts
+unflagged. That includes a reattach to the same server session, where the
+notice falls back to the plain wording even if the abandoned statement is
+still running. That errs toward saying less. The notice reads the flag when
+it fires. With the flag set it
+says SAS Viya may still be finishing a cancelled cell's statement and this
+cell starts once that ends. Without it, it says only that the cell is still
+running. No probe was needed: the flag rests on Finding 76 and ADR-0015's
+settled contract, and asserts nothing new about the wire.
+
+**Tests.** Five integration cases in `test/integration/notebook/
+execution.test.ts`: the cancelled-cell notice until a later run settles,
+then the plain notice; the flag cleared by a later run's first output alone,
+through a run whose output call rejects before it can settle (added on
+adversarial review); exactly one `end()` when `appendOutput` rejects,
+with the session usable afterwards; a closed notebook's queued cell never
+getting an execution; and the existing waiting-notice case tightened to the
+plain wording. The fakes gained `endCount()`, an `appendOutput` rejection
+switch and a `closableNotebook` view. After the sign-out removal,
+`npm run test:integration` passed locally with 521 tests.
+`npm run verify` is green (1,929 unit; coverage 96.49/95.93/96.29/96.49),
+as are `npm run check:docs` and the secret scan.
+
+**Docs.** `docs/notebooks.md` describes the new notice and says sign-out
+leaves a notebook's Problems entries in place. It and
+`docs/troubleshooting.md` drop the "known gap" framing. `CHANGELOG.md` has
+one Fixed entry, for the notice. Manual items 12.28–12.29 cover the
+cancelled-cell notice and closing a notebook mid-run.
+
+**Review and manual pass.** The pre-push adversarial review ran on the
+branch as built, with sign-out; what it added is marked above. Sean ran the
+manual items on
+2026-09-27. 12.28 and 12.29 passed. 12.27 failed and was dropped with the
+sign-out change.
+
+**Not changed:** Run File keeps its own cause-agnostic handling of the
+same gap (Phase 4c). 12l was scoped to notebooks. A running cell whose
+notebook closes still runs to its end on the server; the plan did not ask
+for it to be cancelled.
+
 ---
 
 ## Probe findings
@@ -3382,3 +3461,43 @@ releases. One deployment, one day.
 
 No deployment-identifying detail appears above. Session ids and server paths
 are left out on purpose.
+
+### Finding 12.20 — closing a notebook mid-run leaves the running cell's output calls and `end()` working; only a queued cell's `createNotebookCellExecution` throws
+
+**Not from a probe.** This is VS Code client behaviour, read from
+`microsoft/vscode` at tag `1.109.5`, the version installed on the
+development machine. It was checked against `main` on 2026-09-25 and
+matches it. It says nothing about Viya.
+
+- **The running cell.** `NotebookCellExecutionTask` in
+  `src/vs/workbench/api/common/extHostNotebookKernels.ts` checks only its
+  own state before `appendOutput`, `clearOutput` and `end`: "Must call start
+  before modifying cell output", "Cannot modify cell output after calling
+  resolve", "Cannot call resolve twice". Output reaches the main thread
+  through `$updateExecution`, and `mainThreadNotebookKernels.ts` wraps that
+  and `$completeExecution` in a `try`/`catch` that passes errors to
+  `onUnexpectedError` rather than failing the call. A closed notebook
+  therefore does not make `appendOutput` reject.
+- **A queued cell.** When a notebook closes, `extHostNotebook.ts` disposes
+  its document and removes it from `_documents`.
+  `_createNotebookCellExecution` then calls `getNotebookDocument(uri)`,
+  which throws `NO notebook document for '<uri>'`.
+- **An unended execution blocks its cell URI.** The extension host keeps a
+  started execution in `_activeExecutions`, keyed by the cell's URI, until
+  `end()` resolves it. A second `createNotebookCellExecution` for the same
+  URI throws `duplicate execution for <uri>`. A reopened notebook reuses its
+  cell URIs (the 9c review's Finding 2).
+
+**What it establishes.** `phase-9.md`'s 9c review (finding 10), carried in
+`phase-11.md`, recorded that closing a notebook mid-run makes
+`appendOutput` reject so `end()` is skipped. At 1.109.5 that is not what
+happens. The real failure on close is the next queued cell throwing from
+`createNotebookCellExecution`. 12l stops `executeHandler` at a closed
+notebook for that reason. It also ends a started cell in a `finally`, so a
+rejection from any source cannot leave the cell's URI blocked. Those two
+phase files are closed, so the correction is recorded here rather than
+edited into them.
+
+**Not settled:** other VS Code versions; whether a real window shows any
+symptom beyond the extension-host log. Manual item 12.29 checks the second
+point.

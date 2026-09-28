@@ -32,10 +32,12 @@ Cells run one at a time. Interrupting a cell (the stop button VS Code shows
 while it runs) behaves like [Cancel](running-python.md#cancelling-a-run) does
 for an ordinary run: it stops locally at once, but it cannot reach into SAS and
 interrupt a Python statement that is already executing. If the cell you run
-next then sits with no output for a few seconds, a notice appears saying it may
-simply be a long-running cell, or a previous, already-cancelled statement on
-this session still finishing — the two look identical from here, so the notice
-does not guess which one it is.
+next then sits with no output for a few seconds, a notice says that SAS Viya
+may still be finishing the statement the cancelled cell was running, and that
+this cell starts once it ends. The notice keeps saying so until a later cell
+on the session has started producing output or has finished. A cell that
+sits silent when nothing was cancelled gets a plainer notice: it is still
+running.
 
 ## Output
 
@@ -77,9 +79,8 @@ line of your own code, cleared when you run that cell again. It is a separate
 Problems collection from Run File's, keyed per cell rather than per file,
 so a notebook's entries and a `.py` file's entries never collide.
 
-Closing the notebook clears every entry it produced. **Signing out does not** —
-a known, documented gap carried forward for a future release, unlike Run File
-where signing out clears everything.
+Closing the notebook clears every entry it produced. Signing out leaves them
+in place; an entry stays until you run its cell again or close the notebook.
 
 ## What is not here yet
 
@@ -113,10 +114,6 @@ Expected: the interrupt stopped locally, but SAS may still be finishing the
 statement that was already running. See [Running
 Python](running-python.md#cancelling-a-run) for the same behaviour outside
 notebooks.
-
-**A Problems-panel entry from a notebook cell is still there after you sign
-out.** A known gap — Run File's entries clear on sign-out; a notebook's do
-not yet. Closing the notebook does clear them.
 
 ## Where the details are
 

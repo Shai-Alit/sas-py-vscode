@@ -2575,8 +2575,9 @@ shows or a `.png`/`.html` it writes appears as the run's output and the
 file is deleted. `docs/connection-profiles.md`'s "Its own output is not
 shown" overstated what is held back. Sean chose to document the limit and
 pin it with a test rather than move the step out of the wrapper or into a
-job of its own. `docs/connection-profiles.md`, the setting's description
-and ADR-0041's consequences now say so, and a unit test pins a file written
+job of its own. `docs/connection-profiles.md`, the setting's description,
+the `python-on-viya` skill and ADR-0041's consequences now say so (the
+skill on a second review round), and a unit test pins a file written
 during a seeding job being captured and deleted. ADR-0041's Reset Python
 State consequence is also brought in line with the reworded reset error. `npm run verify` is
 green from a clean `out/` (1,972 unit; coverage 96.55/95.95/96.35/96.55),

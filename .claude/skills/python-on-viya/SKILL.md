@@ -89,7 +89,9 @@ there is no upstream option that does it for you.
 - **A profile's `pythonStartup` snippet survives both restarts.** It runs as
   its own `PROC PYTHON` step in the same job, before the file (ADR-0041), and
   in a new session's first job. Names it defines are there in every run. Its
-  own output is not shown, and if it raises, the file still runs and the
+  printed output is not shown, but a figure or a `.png`/`.html` file it
+  writes appears with your run's output (and is then deleted), the same as
+  if your own code had made it. If it raises, the file still runs and the
   output ends with one line saying the snippet failed.
 
 `PROC PYTHON`'s own `NOTE`s about this — "Resuming Python state from

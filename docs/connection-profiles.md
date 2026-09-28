@@ -166,8 +166,13 @@ restart anything, so it builds on the snippet like any other earlier run.
 
 Three things to know:
 
-- **Its own output is not shown.** It runs on every Run File, so its `print`
-  output would repeat above every run.
+- **Its printed output is not shown.** It runs on every Run File, so its
+  `print` output would repeat above every run. Figures and files are not
+  held back the same way: a figure it shows with `SAS.show()` or
+  `SAS.pyplot()`, or a `.png` or `.html` file it writes to the session's
+  working directory, appears with the output of every run that runs the
+  snippet, as if your code had made it, and the file is deleted afterwards.
+  Keep the snippet to imports and definitions.
 - **If it raises, your code still runs.** The run's output ends with one line
   saying the startup snippet failed, with its exception. The full traceback is
   in the **Python on Viya** log. **Reset Python State** reports the failure as

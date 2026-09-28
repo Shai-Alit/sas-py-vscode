@@ -2568,6 +2568,20 @@ and `reset()` rewriting a held `PYVSTART`. `npm run verify` is green from
 a clean `out/` (1,971 unit; coverage 96.55/95.95/96.35/96.55).
 `npm run test:integration` was not re-run: nothing it covers changed.
 
+**PR #222 review, 2026-09-28.** Codex found nothing. The Claude reviewer
+raised one blocking point, and it is real: the snippet's step shares the
+ODS wrapper and the rich-output file diff with the user's, so a figure it
+shows or a `.png`/`.html` it writes appears as the run's output and the
+file is deleted. `docs/connection-profiles.md`'s "Its own output is not
+shown" overstated what is held back. Sean chose to document the limit and
+pin it with a test rather than move the step out of the wrapper or into a
+job of its own. `docs/connection-profiles.md`, the setting's description
+and ADR-0041's consequences now say so, and a unit test pins a file written
+during a seeding job being captured and deleted. ADR-0041's Reset Python
+State consequence is also brought in line with the reworded reset error. `npm run verify` is
+green from a clean `out/` (1,972 unit; coverage 96.55/95.95/96.35/96.55),
+as is `npm run check:docs`.
+
 ---
 
 ## Probe findings

@@ -3767,6 +3767,32 @@ describe("ProcPythonBackend: the Python startup snippet (ADR-0041)", () => {
     assert.equal(jobCodes(requests).length, 0);
   });
 
+  it("shows a file written during the snippet's step as the run's, since both steps share one capture", async () => {
+    // ADR-0041's consequences: the log is split, the working-directory diff
+    // is not, so a figure the snippet saves is captured and deleted like
+    // one the user's code saved.
+    const png = readFixtureBytes("rich-output", "tiny.png");
+    const { client, deletedNames } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      logLines: [BOUNDARY],
+      filesAfter: [{ name: "seed_plot.png", size: png.length }],
+      fileContent: { "seed_plot.png": png },
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(
+      outputs.map((output) => output.mime),
+      ["image/png"],
+    );
+    assert.deepEqual(deletedNames, ["seed_plot.png"]);
+  });
+
   it("tries the upload again on the next run after one failed", async () => {
     const { client, requests } = router({
       syscc: "0",

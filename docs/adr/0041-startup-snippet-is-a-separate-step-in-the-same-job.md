@@ -146,8 +146,8 @@ edit takes effect at the next connect, as `autoExec` does.
 - **A broken snippet is reported on every restart until it is fixed.**
   Each Run File carries the one-line note, which is the intent: a silent
   partial namespace is worse.
-- **Reset Python State can fail because of the snippet.** Its interpreter
-  has restarted, but the snippet's failure is what it reports.
+- **Reset Python State can fail because of the snippet.** Its restart and
+  the snippet share one step, so its error names both.
 - **`SYSERRORTEXT` is not cleared by the `%let`.** It keeps the last error
   SAS set, which was already true across jobs. It is read only when
   `SYSCC` is non-zero, so it is read only after the user's step has set its
@@ -155,6 +155,14 @@ edit takes effect at the next connect, as `autoExec` does.
 - **The snippet's `print` output is not shown.** It runs on every restart,
   and repeating it above every run would be noise. It is in the extension's
   log when the snippet fails.
+- **The snippet's figures and files are shown as the run's.** Its step sits
+  inside ADR-0038's ODS wrapper and ADR-0019's working-directory diff, so a
+  `SAS.show()` figure, ODS output from its `SAS.submit()`, or a `.png` or
+  `.html` file it writes is captured with the user's output, and the file is
+  deleted. The log can be split; these cannot. Moving the step ahead of the
+  wrapper would still capture its files, and a job of its own would cost a
+  second job on every Run File. A snippet is for imports and definitions,
+  so the limit is documented instead (PR #222's review, 2026-09-28).
 - **`PYVSTART` is reserved.** A user's own `filename PYVSTART …;` would
   replace the snippet for that session. It is outside the `PYnnnnnn` range
   `procPython.ts` counts, so the fileref counter is unaffected.

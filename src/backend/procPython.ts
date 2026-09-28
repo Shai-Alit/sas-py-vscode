@@ -108,6 +108,25 @@
  * Like the ODS wrapper, these are extra statements in the job's code array,
  * and `Program.bytes` is untouched (ADR-0014).
  *
+ * ## The profile's Python startup snippet is a step of its own (ADR-0041, 12m)
+ *
+ * Every Run File and Reset Python State restarts the interpreter, which
+ * destroys whatever a startup snippet defined (Finding 12.4). So a job that
+ * restarts, and the first job in a session this connect created, run the
+ * snippet as its own step: `proc python [restart] infile=PYVSTART; run;`,
+ * then {@link STARTUP_RESULT_CAPTURE}, then the user's step, which does not
+ * restart. The capture saves the snippet step's `SYSCC` and resets it, so
+ * `SYSCC` after the job describes the user's code alone (Finding 12.22). The
+ * snippet's log ends before the `source` echo of the user's statement
+ * (Finding 12.22), and the capture's first `%let` is echoed in between
+ * (Finding 12.24). The log lines before that `%let` echo are
+ * the snippet's: they are neither relayed nor parsed as the run's
+ * traceback. When the echo is not seen, every line is shown and the
+ * snippet's result is not read. A failing snippet adds one
+ * line to the run's output and does not stop it. The snippet reaches the
+ * interpreter through its own fileref, uploaded once per connection, so
+ * `Program.bytes` is still untouched (ADR-0014).
+ *
  * ## Traceback wrapper frames are dropped here; editor-position mapping is not
  *
  * 3a shipped `parseTraceback` reading every frame exactly as the runtime
@@ -195,6 +214,8 @@ import {
 import {
   createFileref,
   type Fileref,
+  findFileref,
+  isFilerefAlreadyAssigned,
   listFilerefNames,
   writeFilerefContent,
 } from "../compute/fileref";
@@ -204,7 +225,7 @@ import {
   readFileContent,
   type SessionFile,
 } from "../compute/files";
-import { createJob } from "../compute/job";
+import { createJob, type LogLine } from "../compute/job";
 import { streamJobLog, type LogStream } from "../compute/logStream";
 import { describeComputeProblem } from "../compute/problems";
 import { type ComputeSession } from "../compute/session";
@@ -248,6 +269,35 @@ export const SYNTAX_CHECK_RECOVERY: readonly string[] = [
   "options nosyntaxcheck;",
   "%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;",
 ];
+
+/** The fileref the profile's Python startup snippet is uploaded to
+ * (ADR-0041). Outside the `PYnnnnnn` range {@link FILEREF_NAME_PATTERN}
+ * counts, so the per-run counter never reaches it. */
+export const STARTUP_FILEREF_NAME = "PYVSTART";
+
+/** The macro variable the snippet step's `SYSCC` is saved in. */
+const STARTUP_SYSCC_NAME = "PYVIYA_STARTCC";
+
+/**
+ * The statements between the snippet's step and the user's (ADR-0041).
+ * `SYSCC` does not drop back when a later step succeeds, so without the reset
+ * a failing snippet would make every run read as failed (Finding 12.22). The
+ * first line's `source` echo is also where the snippet's log ends.
+ */
+export const STARTUP_RESULT_CAPTURE: readonly string[] = [
+  `%let ${STARTUP_SYSCC_NAME}=&syscc;`,
+  "%let syscc=0;",
+];
+
+/** A profile's Python startup snippet, as this backend receives it. */
+export interface StartupSnippet {
+  /** The snippet's bytes, uploaded unmodified. */
+  readonly bytes: Uint8Array;
+  /** Whether the connect created the session. Its interpreter has then never
+   * run the snippet, so the first job seeds it even without a restart; a
+   * reattached session keeps the namespace it had (ADR-0041 point 5). */
+  readonly seedFirstJob: boolean;
+}
 
 /** The ODS destination's `id`, the one SAS's own extension uses (Finding
  * 12.3), so a `close` naming it reaches the destination this backend opened. */
@@ -447,6 +497,28 @@ class OutputRelay {
   }
 }
 
+/** Whether a log line is the `source` echo of {@link STARTUP_RESULT_CAPTURE}'s
+ * first statement. It comes after a startup snippet's last line and before
+ * the user statement's echo, where Finding 12.22 saw the snippet's log end
+ * (Finding 12.24). The echo carries SAS's line number in front, so the end of
+ * the line is matched. */
+function isStartupBoundary(logLine: LogLine): boolean {
+  return (
+    logLine.type === "source" &&
+    logLine.line.trimEnd().endsWith(STARTUP_RESULT_CAPTURE[0] ?? "")
+  );
+}
+
+/** The one line a run's output gains when the startup snippet failed
+ * (ADR-0041). English, like {@link droppedLinesOutput}: this module cannot
+ * reach `l10n`. */
+function startupFailedOutput(failure: string): RichOutput {
+  return {
+    mime: "text/plain",
+    data: `[The profile's Python startup snippet failed: ${failure}. This run went ahead without all of it; the Python on Viya log has the details.]\n`,
+  };
+}
+
 /** Reads an `AsyncIterable` to its end without keeping anything it yielded. */
 async function drainEvents(events: AsyncIterable<unknown>): Promise<void> {
   const iterator = events[Symbol.asyncIterator]();
@@ -619,6 +691,14 @@ export class ProcPythonBackend implements ExecutionBackend {
    * (ADR-0038, Finding 12.16). `undefined` until one has been seen, which
    * means the next body is always fetched. */
   private emptyOdsBodySize: number | undefined;
+  /** Set once the startup snippet is in {@link STARTUP_FILEREF_NAME} for
+   * this connection. A failed upload leaves it `false`, so the next job
+   * tries again. */
+  private startupUploaded = false;
+  /** Whether the next job must seed the snippet even without a restart: a
+   * session this connect created, whose interpreter has not run it yet.
+   * Cleared once a job that ran the snippet has settled. */
+  private startupPending: boolean;
 
   constructor(
     private readonly client: ComputeClient,
@@ -652,7 +732,12 @@ export class ProcPythonBackend implements ExecutionBackend {
       readonly maxBufferedLines?: number;
       readonly maxBufferedCharacters?: number;
     },
-  ) {}
+    /** The profile's Python startup snippet (ADR-0041), or `undefined` when
+     * it has none, in which case every job is what it was before 12m. */
+    private readonly startup?: StartupSnippet,
+  ) {
+    this.startupPending = startup?.seedFirstJob === true;
+  }
 
   /** Cached; performs no I/O. `runtime` reads `this.runtime`, which only
    * {@link probeRuntime} ever updates, and only on success. */
@@ -796,17 +881,35 @@ export class ProcPythonBackend implements ExecutionBackend {
 
     const controller = new AbortController();
     this.resetController = controller;
+    const { startup } = this;
 
     try {
+      if (startup !== undefined) {
+        const uploaded = await this.uploadStartup(
+          startup,
+          controller.signal,
+          "resetting the interpreter",
+        );
+        if (!uploaded.ok) return uploaded;
+      }
+
       // ADR-0014 amendment, finding 70: same reasoning as `runProgram`'s own
       // trailing `run;` — without it, this step never closes either, and
       // `readSyscc` below would be reading a session that has not actually
       // finished restarting. The recovery prefix is what lets a reset work
-      // on a session in syntax-check mode at all (Finding 12.19).
+      // on a session in syntax-check mode at all (Finding 12.19). With a
+      // startup snippet, the restart runs it (ADR-0041).
       const job = await createJob(
         this.client,
         this.session,
-        [...SYNTAX_CHECK_RECOVERY, RESTART_STATEMENT, "run;"],
+        startup === undefined
+          ? [...SYNTAX_CHECK_RECOVERY, RESTART_STATEMENT, "run;"]
+          : [
+              ...SYNTAX_CHECK_RECOVERY,
+              `proc python restart infile=${STARTUP_FILEREF_NAME};`,
+              "run;",
+              ...STARTUP_RESULT_CAPTURE,
+            ],
         { signal: controller.signal },
       );
       if (!job.ok) {
@@ -817,8 +920,14 @@ export class ProcPythonBackend implements ExecutionBackend {
         signal: controller.signal,
       });
       // `proc python restart;` alone runs no Python; its log is not worth
-      // surfacing here, so it is drained rather than forwarded anywhere.
-      await drainEvents(stream.events);
+      // surfacing here, so it is drained rather than forwarded anywhere. A
+      // startup snippet's lines are kept, but only to describe its failure.
+      const startupLines: string[] = [];
+      for await (const event of stream.events) {
+        if (startup === undefined || event.kind !== "line") continue;
+        if (isNoiseLine(event.line.type)) continue;
+        startupLines.push(event.line.line);
+      }
 
       const ended = await stream.done;
       if (!ended.ok)
@@ -840,7 +949,22 @@ export class ProcPythonBackend implements ExecutionBackend {
       );
       if (!sysccResult.ok) return sysccResult;
       if (sysccResult.value.succeeded) {
-        return { ok: true, value: undefined };
+        if (startup === undefined) return { ok: true, value: undefined };
+        this.startupPending = false;
+        const snippet = await this.readStartupResult(
+          controller.signal,
+          startupLines,
+        );
+        if (snippet === undefined) return { ok: true, value: undefined };
+        // The restart and the snippet are one step, and the capture resets
+        // `SYSCC` after it, so a failed restart also arrives here.
+        return fail(
+          {
+            code: "backend-failed",
+            detail: `the restart or the profile's Python startup snippet failed: ${snippet}`,
+          },
+          "resetting the interpreter",
+        );
       }
       return fail(
         {
@@ -1062,6 +1186,20 @@ export class ProcPythonBackend implements ExecutionBackend {
     opts: ExecuteOptions,
   ): Promise<BackendResult<ExecutionOutcome>> {
     try {
+      // ADR-0041: a restart destroys the snippet's names, and a session this
+      // connect created has never had them, so either job runs it first.
+      const { startup } = this;
+      const seeding =
+        startup !== undefined && (opts.freshNamespace || this.startupPending);
+      if (seeding) {
+        const uploaded = await this.uploadStartup(
+          startup,
+          run.controller.signal,
+          "running the program",
+        );
+        if (!uploaded.ok) return uploaded;
+      }
+
       const created = await this.createRunFileref(run);
       if (!created.ok) return created;
       const { fileref, name: filerefName } = created.value;
@@ -1075,9 +1213,19 @@ export class ProcPythonBackend implements ExecutionBackend {
       if (!written.ok)
         return this.translate(written, "running the program", true);
 
-      const statement = opts.freshNamespace
-        ? `proc python restart infile=${filerefName};`
-        : `proc python infile=${filerefName};`;
+      // When seeding, the snippet's step does the restart, and the user's
+      // step reuses the interpreter it started (Finding 12.22).
+      const statement =
+        opts.freshNamespace && !seeding
+          ? `proc python restart infile=${filerefName};`
+          : `proc python infile=${filerefName};`;
+      const startupStep = seeding
+        ? [
+            `proc python ${opts.freshNamespace ? "restart " : ""}infile=${STARTUP_FILEREF_NAME};`,
+            "run;",
+            ...STARTUP_RESULT_CAPTURE,
+          ]
+        : [];
 
       // ADR-0019 point 1: listed now, immediately before the job that might
       // change it — not earlier, alongside the fileref upload above, which
@@ -1098,13 +1246,15 @@ export class ProcPythonBackend implements ExecutionBackend {
       // leave `SYSCC` and the traceback as they were (Finding 12.15). The
       // recovery prefix goes first, so a session a failed SAS step left in
       // syntax-check mode runs this program instead of skipping it (Finding
-      // 12.19).
+      // 12.19). The startup snippet's step, if any, goes inside the wrapper
+      // and ahead of the user's (ADR-0041).
       const job = await createJob(
         this.client,
         this.session,
         [
           ...SYNTAX_CHECK_RECOVERY,
           ...ODS_WRAPPER_BEFORE,
+          ...startupStep,
           statement,
           "run;",
           ...ODS_WRAPPER_AFTER,
@@ -1120,15 +1270,42 @@ export class ProcPythonBackend implements ExecutionBackend {
       });
       run.stream = stream;
 
+      // Until the capture's `source` echo, every line is the snippet's
+      // (Finding 12.22): kept apart, so it is neither shown as the run's
+      // output nor parsed as its traceback. Without that echo, which lines
+      // were the user's cannot be told, and showing them all beats hiding
+      // the user's output. That covers an echo that never arrives and one
+      // that may have been among dropped lines.
+      let inStartup = seeding;
+      let boundarySeen = false;
+      const startupLines: LogLine[] = [];
+      const showStartupLines = (): void => {
+        inStartup = false;
+        for (const startupLine of startupLines) {
+          run.lines.push(startupLine.line);
+          relay.push(logLineOutput(startupLine));
+        }
+      };
       for await (const event of stream.events) {
         if (event.kind === "dropped") {
+          if (inStartup) showStartupLines();
           relay.push(droppedLinesOutput(event.lines));
           continue;
         }
+        if (seeding && !boundarySeen && isStartupBoundary(event.line)) {
+          boundarySeen = true;
+          inStartup = false;
+          continue;
+        }
         if (isNoiseLine(event.line.type)) continue;
+        if (inStartup) {
+          startupLines.push(event.line);
+          continue;
+        }
         run.lines.push(event.line.line);
         relay.push(logLineOutput(event.line));
       }
+      if (inStartup) showStartupLines();
 
       const ended = await stream.done;
       if (!ended.ok) return this.translate(ended, "running the program", false);
@@ -1141,6 +1318,23 @@ export class ProcPythonBackend implements ExecutionBackend {
         "running the program",
       );
       if (!sysccResult.ok) return sysccResult;
+
+      if (seeding) {
+        this.startupPending = false;
+        // Without the capture's echo there is no sign the capture ran, and
+        // `PYVIYA_STARTCC` may still hold an earlier job's value.
+        if (boundarySeen) {
+          const snippet = await this.readStartupResult(
+            run.controller.signal,
+            startupLines.map((startupLine) => startupLine.line),
+          );
+          if (snippet !== undefined) relay.push(startupFailedOutput(snippet));
+        } else {
+          this.onBackgroundFailure?.(
+            "could not tell whether the profile's Python startup snippet succeeded: the job's log never showed where its step ended, so its result was not read",
+          );
+        }
+      }
 
       let outcome: ExecutionOutcome;
       if (sysccResult.value.succeeded) {
@@ -1319,6 +1513,107 @@ export class ProcPythonBackend implements ExecutionBackend {
         `could not delete captured rich-output file "${file.name}": ${deleted.reason}`,
       );
     }
+  }
+
+  /**
+   * Puts the startup snippet in {@link STARTUP_FILEREF_NAME}, once per
+   * connection (ADR-0041).
+   *
+   * A reattached session already holds the name from an earlier connection,
+   * and `assign` answers "already exists" (Finding 12.10). That fileref is
+   * found and rewritten in place instead (Finding 12.23). Nothing is ever
+   * deassigned, so `fileref.ts`'s session-gone reading still holds.
+   */
+  private async uploadStartup(
+    startup: StartupSnippet,
+    signal: AbortSignal,
+    context: string,
+  ): Promise<BackendResult<void>> {
+    if (this.startupUploaded) return { ok: true, value: undefined };
+
+    let fileref: Fileref;
+    const created = await createFileref(
+      this.client,
+      this.session,
+      STARTUP_FILEREF_NAME,
+      { signal },
+    );
+    if (created.ok) {
+      fileref = created.value;
+    } else if (isFilerefAlreadyAssigned(created)) {
+      const found = await findFileref(
+        this.client,
+        this.session,
+        STARTUP_FILEREF_NAME,
+        { signal },
+      );
+      if (!found.ok) return this.translate(found, context, true);
+      if (found.value === undefined) {
+        return fail(
+          {
+            code: "transfer-failed",
+            detail: `the session reported the fileref "${STARTUP_FILEREF_NAME}" as already assigned, but its fileref list does not hold it`,
+          },
+          context,
+        );
+      }
+      fileref = found.value;
+    } else {
+      return this.translate(created, context, true);
+    }
+
+    const written = await writeFilerefContent(
+      this.client,
+      fileref,
+      startup.bytes,
+      { signal },
+    );
+    if (!written.ok) return this.translate(written, context, true);
+
+    this.startupUploaded = true;
+    return { ok: true, value: undefined };
+  }
+
+  /**
+   * Reads the `SYSCC` {@link STARTUP_RESULT_CAPTURE} saved for the snippet's
+   * step. Resolves a short description of the failure, or `undefined` when
+   * the snippet succeeded.
+   *
+   * A failure goes to {@link onBackgroundFailure} in full, with the
+   * snippet's log lines, which the caller keeps out of the run's output. A
+   * failed read is reported the same way and treated as success: the user's
+   * own result is already known, and it is not the snippet's to change.
+   */
+  private async readStartupResult(
+    signal: AbortSignal,
+    lines: readonly string[],
+  ): Promise<string | undefined> {
+    const result = await readVariable(
+      this.client,
+      this.session,
+      STARTUP_SYSCC_NAME,
+      { signal },
+    );
+    if (!result.ok) {
+      this.onBackgroundFailure?.(
+        `could not read whether the profile's Python startup snippet succeeded: ${result.reason}`,
+      );
+      return undefined;
+    }
+    if (result.value === undefined || result.value === SUCCESS_SYSCC) {
+      return undefined;
+    }
+
+    const traceback = parseTraceback(lines);
+    const failure =
+      traceback === undefined ? `SYSCC=${result.value}` : traceback.message;
+    this.onBackgroundFailure?.(
+      [
+        `the profile's Python startup snippet failed (SYSCC=${result.value}):`,
+        ...lines,
+      ].join("\n"),
+    );
+    return failure;
   }
 
   /**

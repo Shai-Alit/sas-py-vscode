@@ -29,7 +29,9 @@ run button (the one shared with `ms-python.python` — you get one play button
 with a dropdown, not two), in the editor context menu, and in the Command
 Palette. Every Run File starts with a **fresh namespace**: the interpreter is
 restarted first, so imports and variables from earlier runs are gone, and a
-file cannot silently depend on something a previous run left behind.
+file cannot silently depend on something a previous run left behind. A
+profile's [`pythonStartup`](connection-profiles.md#python-that-runs-before-your-code)
+snippet runs again after the restart, so its imports are there.
 
 **Python on Viya: Run Selection** runs the selected text and *does not* clear
 the namespace first. A selection builds on whatever state earlier runs left in
@@ -143,7 +145,7 @@ Use it when the namespace has gotten into a state you would rather not reason
 about, instead of disconnecting and reconnecting.
 
 It is the same restart every Run File does, without running anything
-afterwards. Use it before a Run Selection or an interactive-window cell,
+afterwards except the profile's `pythonStartup` snippet, if it has one. Use it before a Run Selection or an interactive-window cell,
 which build on whatever is already in the interpreter.
 
 You don't need it after a failed SAS step. If a step fails, for example a

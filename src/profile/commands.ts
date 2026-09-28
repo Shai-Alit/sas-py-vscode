@@ -298,6 +298,9 @@ async function editProfile(
       ? {}
       : { sasOptions: existing.sasOptions }),
     ...(existing.autoExec === undefined ? {} : { autoExec: existing.autoExec }),
+    ...(existing.pythonStartup === undefined
+      ? {}
+      : { pythonStartup: existing.pythonStartup }),
   };
 
   if (updated.clientId === undefined) {

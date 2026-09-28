@@ -145,6 +145,43 @@ Two things to know:
 The SAS extension's profiles use the same two fields, so **Import Connection
 Profiles** carries them across.
 
+## Python that runs before your code
+
+**`pythonStartup`** is Python run before your own code, so the imports and
+names it defines are always there. It has the same entry shape as `autoExec`:
+a `line` of Python, or a `file` on this machine.
+
+```json
+"pythonStartup": [
+  { "type": "line", "line": "import pandas as pd" },
+  { "type": "file", "filePath": "C:/Users/me/viya/startup.py" }
+]
+```
+
+It runs when a session starts, and again after every restart. **Run File**
+and **Reset Python State** both restart the interpreter, so a snippet run
+only once would be gone by your first Run File; this one comes back each
+time. A Run Selection, a notebook cell or an interactive-window cell does not
+restart anything, so it builds on the snippet like any other earlier run.
+
+Three things to know:
+
+- **Its printed output is not shown.** It runs on every Run File, so its
+  `print` output would repeat above every run. Figures and files are not
+  held back the same way: a figure it shows with `SAS.show()` or
+  `SAS.pyplot()`, or a `.png` or `.html` file it writes to the session's
+  working directory, appears with the output of every run that runs the
+  snippet, as if your code had made it, and the file is deleted afterwards.
+  Keep the snippet to imports and definitions.
+- **If it raises, your code still runs.** The run's output ends with one line
+  saying the startup snippet failed, with its exception. The full traceback is
+  in the **Python on Viya** log. **Reset Python State** reports the failure as
+  its own error.
+- **It is read each time the profile connects**, including when the
+  extension reattaches to a session it already has. After editing it, a
+  **Developer: Reload Window**, or disconnecting and connecting again, picks
+  up the change for the next restart.
+
 ## Choosing which profile is active
 
 There are two levels, and the difference matters if you work in more than one

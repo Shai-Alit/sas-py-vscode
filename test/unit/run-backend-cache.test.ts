@@ -26,6 +26,7 @@ import assert from "node:assert/strict";
 import type { LogOutputChannel, Uri } from "vscode";
 
 import type { Program } from "../../src/backend/backend";
+import type { ComputeConnection } from "../../src/compute/sessionManager";
 import {
   createBackendCache,
   type BackendCache,
@@ -121,6 +122,44 @@ describe("run/backendCache", () => {
       second.backend,
       "the same ComputeConnection object should reuse one backend instance, not build a second",
     );
+  });
+
+  it("hands the connection's pythonStartup to the backend it builds (ADR-0041)", async () => {
+    const recorded = createRecordedConnection({
+      profileId: PROFILE_ID,
+      profileName: PROFILE_NAME,
+    });
+    const assigned: string[] = [];
+    const connection: ComputeConnection = {
+      ...recorded.connection,
+      sessionCreated: true,
+      pythonStartup: new TextEncoder().encode("import os\n"),
+      client: {
+        send: (request) => {
+          if (request.link.rel === "assign") {
+            assigned.push((request.body as { name: string }).name);
+          }
+          return recorded.connection.client.send(request);
+        },
+      },
+    };
+    const backendCache = cache({
+      ...recordedSessions(recorded),
+      connect: () => Promise.resolve(connection),
+    });
+
+    const built = await backendCache.backendFor();
+    assert.ok(built);
+    // A created session seeds its first job even without a restart.
+    const accepted = await built.backend.execute(program(), {
+      freshNamespace: false,
+    });
+    assert.ok(accepted.ok);
+    while (recorded.currentJob() === undefined) await flush();
+    recorded.currentJob()?.finish(true, undefined);
+    await accepted.value.done;
+
+    assert.equal(assigned[0], "PYVSTART");
   });
 
   it("returns undefined when sessions.connect() finds no active profile", async () => {

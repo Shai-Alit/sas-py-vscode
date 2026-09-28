@@ -78,6 +78,7 @@ import type { ViyaProfile } from "../profile/model";
 import {
   buildSessionOptions,
   resolveAutoExecLines,
+  resolvePythonStartup,
 } from "../profile/sessionSetup";
 import type { ProfileStore } from "../profile/store";
 import { bindingMatches, type SessionBinding } from "./binding";
@@ -154,6 +155,18 @@ export interface ComputeConnection {
   readonly generation: DialectResolution;
   /** As last read. A state is a fact about a moment; re-read before acting on it. */
   readonly session: ComputeSession;
+  /**
+   * Whether this connect created {@link session} rather than reattaching to
+   * it. A created session's interpreter has never run the profile's Python
+   * startup snippet; a reattached one keeps the namespace it had (ADR-0041).
+   */
+  readonly sessionCreated: boolean;
+  /**
+   * The profile's `pythonStartup`, resolved when this connection was made,
+   * or `undefined` when there is none (ADR-0041). Resolved on reattach too,
+   * so an edit takes effect at the next connect.
+   */
+  readonly pythonStartup: Uint8Array | undefined;
 }
 
 /**
@@ -659,7 +672,14 @@ export class ComputeSessionManager implements vscode.Disposable {
         this.log.info(
           vscode.l10n.t("Reconnected to the SAS Viya session for this folder."),
         );
-        return await this.hold(active, context, client, attached.value, signal);
+        return await this.hold(
+          active,
+          context,
+          client,
+          attached.value,
+          false,
+          signal,
+        );
       }
       if (attached.problem.code !== "session-gone") {
         this.reportFailure(attached, token.isCancellationRequested);
@@ -781,7 +801,14 @@ export class ComputeSessionManager implements vscode.Disposable {
         context,
       ),
     );
-    return await this.hold(active, context, client, settled.value, signal);
+    return await this.hold(
+      active,
+      context,
+      client,
+      settled.value,
+      true,
+      signal,
+    );
   }
 
   /**
@@ -910,7 +937,38 @@ export class ComputeSessionManager implements vscode.Disposable {
     return selectStartupDiagnostics(lines);
   }
 
-  /** Reads a local file named by an `autoExec` entry, as UTF-8 text. */
+  /**
+   * The profile's `pythonStartup` as the bytes to upload (ADR-0041). A file
+   * that cannot be read is skipped and reported the way an `autoExec` file
+   * is; the connect goes ahead with the rest.
+   */
+  private async resolvePythonStartup(
+    profile: ViyaProfile,
+  ): Promise<Uint8Array | undefined> {
+    const startup = await resolvePythonStartup(
+      profile.pythonStartup,
+      (filePath) => this.readAutoExecFile(filePath),
+    );
+    for (const problem of startup.problems) {
+      this.log.warn(
+        vscode.l10n.t(
+          'Python startup file "{0}" was skipped: {1}',
+          problem.filePath,
+          problem.reason,
+        ),
+      );
+      this.inform(
+        vscode.l10n.t(
+          'The Python startup file "{0}" could not be read, so it was skipped. The rest of this profile\'s Python startup snippet still runs.',
+          problem.filePath,
+        ),
+      );
+    }
+    return startup.bytes;
+  }
+
+  /** Reads a local file named by an `autoExec` or `pythonStartup` entry, as
+   * UTF-8 text. */
   private async readAutoExecFile(filePath: string): Promise<string> {
     const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
     return new TextDecoder("utf-8").decode(bytes);
@@ -932,6 +990,7 @@ export class ComputeSessionManager implements vscode.Disposable {
     context: string,
     client: ComputeClient,
     session: ComputeSession,
+    sessionCreated: boolean,
     signal: AbortSignal,
   ): Promise<ComputeConnection> {
     const connection: ComputeConnection = {
@@ -941,6 +1000,8 @@ export class ComputeSessionManager implements vscode.Disposable {
       client,
       generation: await this.generationFor(active.profile, client, signal),
       session,
+      sessionCreated,
+      pythonStartup: await this.resolvePythonStartup(active.profile),
     };
     this.live.set(active.profile.id, connection);
     return connection;

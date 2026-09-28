@@ -16,6 +16,9 @@ import {
   FILEREF_SELF_REL,
   FILEREF_UPLOAD_REL,
   type Fileref,
+  FILEREF_ALREADY_EXISTS_ERROR_CODE,
+  findFileref,
+  isFilerefAlreadyAssigned,
   listFilerefNames,
   MAX_FILEREF_PAGES,
   writeFilerefContent,
@@ -508,5 +511,208 @@ describe("listFilerefNames", () => {
     assert.ok(result.ok);
     assert.equal(scripted.requests.length, MAX_FILEREF_PAGES);
     assert.equal(result.value.length, MAX_FILEREF_PAGES);
+  });
+});
+
+describe("isFilerefAlreadyAssigned", () => {
+  it("is true only for a 400 carrying errorCode 5402 (Finding 12.10)", () => {
+    const taken = {
+      ok: false as const,
+      reason: "The fileref already exists.",
+      problem: {
+        code: "compute-rejected" as const,
+        error: {
+          status: 400,
+          message: "",
+          errorCode: FILEREF_ALREADY_EXISTS_ERROR_CODE,
+        },
+      },
+    };
+    assert.equal(isFilerefAlreadyAssigned(taken), true);
+
+    const other400 = {
+      ...taken,
+      problem: {
+        code: "compute-rejected" as const,
+        error: { status: 400, message: "", errorCode: 1 },
+      },
+    };
+    assert.equal(isFilerefAlreadyAssigned(other400), false);
+
+    const rejected500 = rejected(500);
+    assert.ok(!rejected500.ok);
+    assert.equal(isFilerefAlreadyAssigned(rejected500), false);
+
+    assert.equal(
+      isFilerefAlreadyAssigned({
+        ok: false,
+        reason: "gone",
+        problem: {
+          code: "session-gone",
+          error: {
+            status: 400,
+            message: "",
+            errorCode: FILEREF_ALREADY_EXISTS_ERROR_CODE,
+          },
+        },
+      }),
+      false,
+    );
+  });
+});
+
+describe("findFileref", () => {
+  /** A collection item as Finding 12.23 measured one: `self`, `alternate`
+   * and `deassign` only, never `upload`. */
+  function summary(id: string): unknown {
+    const path = `${SESSION_PATH}/filerefs/${id}`;
+    return {
+      id,
+      name: id,
+      links: [
+        { method: "GET", rel: "self", href: path },
+        { method: "GET", rel: "alternate", href: path },
+        { method: "DELETE", rel: "deassign", href: path },
+      ],
+    };
+  }
+
+  it("matches the name ignoring case and follows the item's self for the full representation (Finding 12.23)", async () => {
+    const scripted = fake([
+      ok({ items: [summary("py000001"), summary(FILEREF_ID)] }),
+      ok({ id: FILEREF_ID, links: filerefLinks() }, { etag: '"v1"' }),
+    ]);
+
+    const result = await findFileref(
+      scripted.client,
+      session(),
+      FILEREF_ID.toUpperCase(),
+    );
+
+    assert.ok(result.ok);
+    assert.equal(result.value?.id, FILEREF_ID);
+    assert.ok(
+      result.value.links.some((link) => link.rel === FILEREF_UPLOAD_REL),
+      "the full representation carries upload",
+    );
+    assert.equal(scripted.requests[0]?.link.rel, FILEREF_LIST_REL);
+    assert.equal(scripted.requests[1]?.link.rel, FILEREF_SELF_REL);
+    assert.equal(scripted.requests[1].link.href, FILEREF_PATH);
+  });
+
+  it("follows next to a later page", async () => {
+    const scripted = fake([
+      ok({
+        items: [summary("py000001")],
+        links: [
+          { rel: "next", href: `${SESSION_PATH}/filerefs?p=2`, method: "GET" },
+        ],
+      }),
+      ok({ items: [summary(FILEREF_ID)] }),
+      ok({ id: FILEREF_ID, links: filerefLinks() }),
+    ]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(result.ok);
+    assert.equal(result.value?.id, FILEREF_ID);
+    assert.equal(scripted.requests.length, 3);
+  });
+
+  it("resolves undefined when no page holds the name", async () => {
+    const scripted = fake([ok({ items: [summary("py000001")] })]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(result.ok);
+    assert.equal(result.value, undefined);
+  });
+
+  it("reports a session that carries no files relation", async () => {
+    const scripted = fake([]);
+
+    const result = await findFileref(scripted.client, session([]), FILEREF_ID);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "link-missing");
+    assert.equal(scripted.requests.length, 0);
+  });
+
+  it("returns a failure on a later page rather than a partial answer", async () => {
+    const scripted = fake([
+      ok({
+        items: [],
+        links: [
+          { rel: "next", href: `${SESSION_PATH}/filerefs?p=2`, method: "GET" },
+        ],
+      }),
+      rejected(500),
+    ]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "compute-rejected");
+  });
+
+  it("reports a page with no items array as malformed", async () => {
+    const scripted = fake([ok({ count: 0 })]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "response-malformed");
+  });
+
+  it("reports a matching item that carries no self link", async () => {
+    const scripted = fake([ok({ items: [{ id: FILEREF_ID, links: [] }] })]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "link-missing");
+  });
+
+  it("maps a 404 on the item's self to the session being gone", async () => {
+    const scripted = fake([
+      ok({ items: [summary(FILEREF_ID)] }),
+      rejected(404),
+    ]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "session-gone");
+  });
+
+  it("reports a self read that is not a fileref representation", async () => {
+    const scripted = fake([ok({ items: [summary(FILEREF_ID)] }), ok({})]);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "response-malformed");
+  });
+
+  it("stops at the page guard", async () => {
+    const everMore = Array.from({ length: MAX_FILEREF_PAGES + 5 }, (_, i) =>
+      ok({
+        items: [],
+        links: [
+          {
+            rel: "next",
+            href: `${SESSION_PATH}/filerefs?p=${String(i + 1)}`,
+            method: "GET",
+          },
+        ],
+      }),
+    );
+    const scripted = fake(everMore);
+
+    const result = await findFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(result.ok);
+    assert.equal(result.value, undefined);
+    assert.equal(scripted.requests.length, MAX_FILEREF_PAGES);
   });
 });

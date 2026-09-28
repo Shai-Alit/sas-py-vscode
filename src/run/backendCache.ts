@@ -136,6 +136,13 @@ export function createBackendCache(
       (reason) => {
         log.warn(reason);
       },
+      undefined,
+      connection.pythonStartup === undefined
+        ? undefined
+        : {
+            bytes: connection.pythonStartup,
+            seedFirstJob: connection.sessionCreated,
+          },
     );
     // Never performs I/O (ExecutionBackend's own contract) — this only marks
     // the backend ready to accept `execute()`/`reset()` calls.

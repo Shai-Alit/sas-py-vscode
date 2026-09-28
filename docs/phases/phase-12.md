@@ -570,8 +570,13 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   behaviour and not a defect. Manual items 12.28–12.29 passed 2026-09-27;
   12.27 was dropped with it. Merged 2026-09-27 (PR #220). See the "12l
   built" Runbook entry.
-- [ ] **12m — Build the Python startup snippet.** Added 2026-09-24. Not
-  started. First step: the ADR-0014 choice, reviewed by Sean.
+- [x] **12m — Build the Python startup snippet.** Added 2026-09-24.
+  Built 2026-09-28: a profile's `pythonStartup` runs as its own step in
+  every restarting job and in a new session's first job
+  ([ADR-0041](../adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md), Findings 12.22,
+  12.23 and 12.24). The adversarial review's six real findings are folded
+  in. Manual items 12.33–12.40 passed 2026-09-28. See the "12m
+  design" and "12m built" Runbook entries.
 - [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
   After 12m.
 - [ ] **12o — Option C, part 1: loopback MCP server and lifecycle.** Added
@@ -584,8 +589,8 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   activate).** Added and built 2026-09-27. The three SAS Content schemes are
   now `pythonOnViyaContent`, `pythonOnViyaContentReadOnly` and
   `pythonOnViyaContentFolder` ([ADR-0040](../adr/0040-every-uri-scheme-is-the-extensions-own.md), Finding 12.21).
-  Manual items 12.30–12.32 passed 2026-09-28. See the "12r built" Runbook
-  entry.
+  Manual items 12.30–12.32 passed 2026-09-28. Merged 2026-09-28 (PR #221).
+  See the "12r built" Runbook entry.
 
 ### Bugs found in this phase
 
@@ -2426,7 +2431,7 @@ passing), `npm run check:docs` and the secret scan. The developer's
 adversarial pass found nothing blocking. Its small points are folded in: a
 setup step for 12.32, the `uri.ts` comment matched to Finding 12.21, and the
 restored-tab note below. Manual items 12.30–12.32 passed 2026-09-28, with
-both extensions installed.
+both extensions installed. Merged 2026-09-28 (PR #221).
 
 **Not changed.** The SAS extension's `installCAs()` sets
 `https.globalAgent.options.ca` when `SAS.userProvidedCertificates` names a
@@ -2437,6 +2442,146 @@ and does not bear on B12.3, so it is noted here, not pursued. Activation on
 Recycle Bin tab restored at startup cannot activate this extension and waits
 for `onStartupFinished`. That gap predates 12r and is left as it was. What
 such a tab shows in the meantime was not tried.
+
+### 12m design, 2026-09-28 — the snippet gets its own step in the restarting job; ADR-0014 stands
+
+The plan made the slice's first step a choice, for Sean to review with an
+ADR: add the snippet's lines to the uploaded file on every restart (12d's
+recommendation, needing an ADR-0014 amendment), or run a separate seeding
+job after each restart. Reading the code turned up a third shape, and two
+costs of the first that 12d had not named: a snippet in front of the user's
+file breaks a `from __future__` import, which Python accepts only at the top
+of a module, and it shifts every traceback line number that ADR-0014's
+finding 39 relies on.
+
+**The third shape:** upload the snippet once per connection to a fixed
+fileref and make it a step of its own in the same job:
+`proc python restart infile=<snippet>; run;` and then
+`proc python infile=<user>; run;`. Sean approved a probe of it. Finding
+12.22 settles the three questions it depended on: the user's step sees the
+snippet's names, `SYSCC` can be kept to the user's step with two `%let`s,
+and the snippet's log is separable at the user statement's source echo. It
+costs no measurable time.
+
+**Drafted as [ADR-0041](../adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md), status Proposed.** It amends ADR-0038 and
+ADR-0039's job layout and leaves ADR-0014 as it is. One point departs from
+the plan's wording: the plan said the snippet is "seeded once at session
+creation by a plain `infile=` job", and the ADR instead seeds on the new
+session's first job, so a connect does not pay the interpreter's start-up
+time. That and the rest of the ADR wait on Sean's review; no `src/` code is
+written until then.
+
+No verification beyond `npm run check:docs` and the secret scan applies:
+only docs changed. The probe's session was deleted (`204`) and read back as
+`404`.
+
+### 12m built, 2026-09-28 — the snippet is its own step in every restarting job
+
+Sean accepted ADR-0041 on 2026-09-28. Building it raised one question the
+ADR had not answered: a reattached session already holds `PYVSTART`, and
+nothing recorded how to rewrite a fileref this code did not just create.
+Two options went to Sean: a fresh `PYnnnnnn` name per connection, or keep
+the fixed name and probe the lookup first. He chose the probe. Finding
+12.23 settles it: `assign` answers `400`/5402, the `files` collection lists
+the fileref as `pyvstart` with `self`, `alternate` and `deassign` only, and
+the item's `self` is the full representation, whose `upload` rewrites it.
+ADR-0041's point 7 records it. The ADR's macro variable is
+`PYVIYA_STARTCC`, without the leading underscore the draft had, so the name
+matches the shape Finding 12.22 read back.
+
+**What changed.**
+
+- `ViyaProfile.pythonStartup` has the `autoExec` entry shape, with its own
+  manifest schema and description. `readSessionSetup` reads it through a
+  helper now shared with `autoExec`, and Edit Connection Profile keeps it.
+- `resolvePythonStartup` (`sessionSetup.ts`) turns it into the bytes to
+  upload. `ComputeSessionManager.hold()` resolves it on both the create and
+  the reattach path, reporting an unreadable file as `autoExec` does.
+  `ComputeConnection` gains `sessionCreated` and `pythonStartup`.
+- `backendCache.ts` hands both to `ProcPythonBackend` as a `StartupSnippet`.
+- `ProcPythonBackend` uploads the snippet once per connection
+  (`uploadStartup`), finding and rewriting a held `PYVSTART` through
+  `fileref.ts`'s new `findFileref`. `runProgram` adds the snippet step to a
+  restarting job and to a created session's first job, keeps the log lines
+  before the capture's echo out of the output and the traceback parser, and
+  ends the output with one line when `PYVIYA_STARTCC` is not `0`. If the
+  echo never arrives, every line is shown rather than hidden. `reset()`
+  restarts into the snippet and reports its failure as the reset's own.
+- Docs: `docs/connection-profiles.md` gains a "Python that runs before your
+  code" section; `docs/running-python.md`, the skill and `CHANGELOG.md`
+  follow.
+
+**Tests.** Unit: `findFileref` and `isFilerefAlreadyAssigned`; the model and
+`resolvePythonStartup`; eighteen backend cases in a new `ProcPythonBackend:
+the Python startup snippet (ADR-0041)` block, covering the job layout, the
+per-connection upload, first-job seeding, the log split and its fallback,
+snippet failure with and without a traceback, the user's traceback never
+being the snippet's, the reattach rewrite and its missing-fileref failure,
+upload failure and retry, and `reset()`; one backend-cache case.
+Integration: three session-manager cases (created, reattached, unreadable
+file). Manual items 12.33–12.40 are new.
+
+**Verification.** `npm run verify` is green from a clean `out/` (1,967
+unit; coverage 96.55/95.94/96.19/96.55), as are `npm run test:integration`
+(525 passing), `npm run check:docs` and the secret scan.
+
+**Manual pass.** Sean ran manual items 12.33–12.40 on 2026-09-28, and all
+eight passed.
+
+**Adversarial review, 2026-09-28.** The developer's pre-push pass raised
+eight points. Each was checked against the code, and six were real:
+
+- The code split the snippet's log at the echo of the capture's first
+  `%let`, while ADR-0041 point 3 and the comments cited Finding 12.22's
+  split at the user statement's echo. The code stands, and ADR-0041 and
+  the comments now say where it splits and cite Finding 12.24, which saw
+  the `%let` echo in a job log.
+- A dropped-lines event could swallow that echo. The run then held every
+  line back until the end. Now a drop before the echo shows the held
+  lines and streams from there, as when the echo never arrives, and an
+  echo that still arrives after a drop is recognised.
+- Without the echo, `PYVIYA_STARTCC` was still read, although it could
+  hold an earlier job's value. It is now read only when the echo was
+  seen; otherwise the extension log says the snippet's result was not
+  read.
+- In that fallback, `splice(0)` emptied the snippet's lines before
+  `readStartupResult` got them. The same change fixes it.
+- `reset()` said "the interpreter restarted" even when the restart itself
+  failed: the restart and the snippet are one step, and the capture resets
+  `SYSCC` after it. The message now names both, and ADR-0041 point 4 says
+  why.
+- `readSyscc`'s doc comment had been left above `uploadStartup`. It is
+  back on `readSyscc`.
+
+Two were not defects. A snippet whose `SAS.submit()` fails was thought to
+leave `OBS=0` for the user's step. Sean approved a probe, and Finding 12.24
+shows it does not: every job's `nosyntaxcheck` prefix is already set. No
+code changed; ADR-0041 point 4 now cites it. The other was that
+`pythonStartup` is read with no cancel check and reported on every
+reattach. That is intended: a reattach uploads the snippet again, so it
+reads the file again, and manual item 12.38 depends on that.
+
+Five unit tests are new: the echo never arriving, with no stale read;
+dropped lines swallowing the echo; the echo arriving after a drop; a
+cancel during the snippet step leaving a created session's seed pending;
+and `reset()` rewriting a held `PYVSTART`. `npm run verify` is green from
+a clean `out/` (1,971 unit; coverage 96.55/95.95/96.35/96.55).
+`npm run test:integration` was not re-run: nothing it covers changed.
+
+**PR #222 review, 2026-09-28.** Codex found nothing. The Claude reviewer
+raised one blocking point, and it is real: the snippet's step shares the
+ODS wrapper and the rich-output file diff with the user's, so a figure it
+shows or a `.png`/`.html` it writes appears as the run's output and the
+file is deleted. `docs/connection-profiles.md`'s "Its own output is not
+shown" overstated what is held back. Sean chose to document the limit and
+pin it with a test rather than move the step out of the wrapper or into a
+job of its own. `docs/connection-profiles.md`, the setting's description,
+the `python-on-viya` skill and ADR-0041's consequences now say so (the
+skill on a second review round), and a unit test pins a file written
+during a seeding job being captured and deleted. ADR-0041's Reset Python
+State consequence is also brought in line with the reworded reset error. `npm run verify` is
+green from a clean `out/` (1,972 unit; coverage 96.55/95.95/96.35/96.55),
+as is `npm run check:docs`.
 
 ---
 
@@ -3676,3 +3821,151 @@ deployment in the credentials file was unreachable that day. Whether a
 restored SAS-extension `sasContent:` tab ever tipped the race through this
 extension's old `onFileSystem:sasContent` event is plausible from VS Code's
 source but never seen in the logs; the rename makes it moot.
+
+### Finding 12.22 — a snippet run as its own `PROC PYTHON` step in the restarting job survives into the user's step; `SYSCC` needs resetting between them, and costs no measurable time
+
+Probed 2026-09-28, via `viya-api-probe`/`creds.json` against `verde`, in a
+throwaway compute session (SAS Studio compute context), deleted at the end
+(`204`, then `404` on a `GET`). Approved by Sean before the mutating calls
+ran. Four filerefs: a snippet that defines `_seed_marker` and imports
+`statistics as _seed_stats`; a snippet that prints and raises `ValueError`;
+a user file that reads both names back; and a user file whose first line is
+`from __future__ import annotations`, with an unresolvable annotation on
+line 3 and `1/0` on line 5. Every job carried ADR-0039's prefix and, apart
+from the reset shape, ADR-0038's wrapper, as `procPython.ts` builds them.
+
+**Claimed:** Finding 12.4 showed a restart destroys what a startup job
+defined. Nothing had tested a snippet step and a user step in one job.
+
+**Observed:**
+
+- **Today's Run File shape loses the snippet.** After a startup job,
+  `proc python restart infile=<user>;` read both names back as missing.
+- **The two-step shape keeps it.** `proc python restart infile=<snippet>;
+  run; proc python infile=<user>; run;` read `_seed_marker` and
+  `_seed_stats.mean([1, 2, 3])` = `2` in the user step, `SYSCC=0`. The reset
+  shape (the snippet step alone) followed by a plain run did the same.
+- **`__future__` and line numbers are untouched.** The `__future__` file ran
+  in the user step (its annotation was not evaluated) and its traceback's
+  last frame was `File "<string>", line 5`, the file's own line. The two
+  `<stdin>` wrapper frames are unchanged.
+- **A failing snippet does not stop the user's step, but `SYSCC` stays
+  `1012`.** With the snippet raising and the user's code succeeding,
+  `SYSCC=1012`, `SYSERR=0` and the job state was `error`. The user's step
+  ran.
+- **Two `%let`s separate the results.** With
+  `%let pv_seedcc=&syscc; %let syscc=0;` between the steps: snippet raising,
+  user succeeding gave `SYSCC=0` and `pv_seedcc=1012`; snippet succeeding,
+  user raising gave `SYSCC=1012` and `pv_seedcc=0`.
+- **`SYSERRORTEXT` is not reset.** It kept `Unhandled Python exception.`
+  from the failed snippet through later successful jobs with `SYSCC=0`.
+- **The log splits cleanly.** The snippet's output and traceback all arrive
+  before the `source`-typed echo of the user's `proc python infile=…;`
+  line, and the user's all after.
+- **No measurable cost.** Alternating today's shape and the two-step shape
+  (with the `%let`s) three times each: 4,883, 4,391 and 4,547 ms against
+  4,576, 4,656 and 4,677 ms. The spread within each shape is larger than
+  the difference between them.
+
+**Verdict:** the two-step shape is viable. It needs the `%let` reset to keep
+`SYSCC` describing the user's code, and a split at the user statement's
+echo to keep the snippet's traceback away from the traceback parser.
+
+**Not settled:** a long-running snippet; a cancel landing during the snippet
+step; a snippet that calls `SAS.submit()` and fails on the SAS side; a
+second deployment.
+
+No deployment-identifying detail appears above; the fileref names, job
+contents and macro variable are this probe's own.
+
+### Finding 12.23 — a fileref a session already holds is listed as a summary without `upload`; its `self` is the full representation, which rewrites it in place
+
+Probed 2026-09-28, via `viya-api-probe`/`creds.json` against `verde`, in two
+throwaway compute sessions (SAS Studio compute context), each deleted at the
+end (`204`, then `404` on a `GET`). Sean approved the mutating calls before
+they ran.
+
+**Claimed:** Finding 12.10 showed a second `assign` of a taken name answers
+`400`/5402 and that `self`, then `upload`, rewrites a fileref in place. It
+used the links from the create response. What a later connection, which
+never saw that response, can reach was not recorded.
+
+**Observed:**
+
+- `assign` of `PYVSTART` answered `201` with id and name `pyvstart`,
+  lowercased, and seven links: `self`, `alternate`, `deassign`, `content`,
+  `upload`, `append` and `delete`.
+- A second `assign` answered `400`, `errorCode` 5402,
+  `The fileref "pyvstart" already exists.`
+- The session's `files` link advertises `application/vnd.sas.collection`
+  with item type `application/vnd.sas.compute.fileref.summary`. Its item for
+  the fileref carried only `self`, `alternate` and `deassign`, under either
+  `Accept`. Following an absent `upload` href went nowhere.
+- The item's `self` href was identical to the create response's. A `GET` of
+  it with `Accept: application/vnd.sas.compute.fileref+json` answered `200`
+  with an `ETag` and all seven links, `upload` identical to the create
+  response's.
+- Writing through those links, first `print("v1-12m")` and then
+  `print("v2-12m")`, answered `201` each time, and
+  `proc python restart infile=PYVSTART;` printed `v2-12m`. So did
+  `infile=pyvstart`: the name is case-insensitive in SAS.
+- A fileref assigned but never written fails `infile=` with
+  `ERROR: Failed to open the file on the INFILE= statement`, `SYSCC=1012`.
+
+**Verdict:** a later connection can find a held fileref by its id, ignoring
+case, in the `files` collection and read the item's `self` for the links
+the write needs. No href has to be composed, and nothing is deassigned.
+
+**Not settled:** two windows rewriting one session's `PYVSTART` at once,
+which the `If-Match` on the write would turn into a `412`.
+
+No deployment-identifying detail appears above.
+
+### Finding 12.24 — a snippet whose `SAS.submit()` step fails does not leave `OBS=0` behind the `nosyntaxcheck` prefix; the capture's `%let` is echoed between the two steps
+
+Probed 2026-09-28, via `viya-api-probe`/`creds.json` against `verde`, in
+one throwaway compute session (SAS Studio compute context), deleted at the
+end (`204`, then `404` on a `GET`). Sean approved the mutating calls before
+they ran. Two filerefs: `PYVSTART`, a snippet whose `SAS.submit()` runs
+`data casuser.pv12m_bad; x=1; run;`, the step Finding 12.19 saw set
+`OBS=0`; and a user file whose `SAS.submit()` copies `sashelp.class` and
+counts the copy's rows into a macro variable. `OBS` was also read between
+the two steps.
+
+**Claimed:** Finding 12.19 showed that once `NOSYNTAXCHECK` is set, a
+failing step no longer sets `OBS=0`, but it tested that as a job of its
+own. Finding 12.22 left "a snippet that calls `SAS.submit()` and fails on
+the SAS side" open, and the 12m adversarial review asked whether the
+user's step would then read no rows.
+
+**Observed:**
+
+- **Behind the prefix, `OBS` is untouched.** The job as `procPython.ts`
+  builds it logged `ERROR: Libref CASUSER is not assigned.` with no
+  `OBS=0` `NOTE`. `OBS` read its maximum between the steps and after the
+  job. The user's copy counted **19** rows. `SYSCC=0` and
+  `PYVIYA_STARTCC=1012`. The snippet's Python printed on past its
+  `SAS.submit()`.
+- **The control poisons.** With `options syntaxcheck obs=max;` in place
+  of the prefix, the same snippet logged `NOTE: Due to ERROR(s) above, SAS
+  set option OBS=0, enabling syntax check mode.` `OBS` read `0` between
+  the steps, the user's step printed nothing, and the job read `SYSCC=3`.
+  So the snippet's error is the `OBS=0` kind.
+- **The log order.** The `SAS.submit()` step's `ERROR` and `NOTE` came
+  before the snippet's first printed line, and all of it came before the
+  capture. `%let PYVIYA_STARTCC=&syscc;` and `%let syscc=0;` were echoed
+  as `source` lines with SAS line numbers in front, then the user
+  statement's echo, then the user's lines.
+- `SYSERRORTEXT` kept the snippet's error text through the job and after,
+  with `SYSCC=0`, as Finding 12.22 recorded.
+
+**Verdict:** a failing SAS step in the snippet cannot leave the user's
+step reading no rows, because the prefix has already set `NOSYNTAXCHECK`.
+No `OBS` recovery is needed between the steps. Splitting the log at the
+capture's first `%let` echo keeps the snippet's SAS errors on its side.
+
+**Not settled:** a snippet that sets `options obs=0;` itself, which is the
+user's own choice and is left alone like any other `options` statement.
+
+No deployment-identifying detail appears above; the fileref names, job
+contents and macro variables are this probe's own.

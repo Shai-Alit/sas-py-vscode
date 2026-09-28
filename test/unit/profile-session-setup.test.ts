@@ -7,6 +7,7 @@ import {
   buildSessionOptions,
   formatSasOption,
   resolveAutoExecLines,
+  resolvePythonStartup,
 } from "../../src/profile/sessionSetup";
 
 /**
@@ -133,5 +134,52 @@ describe("resolveAutoExecLines", () => {
       () => Promise.reject("denied"),
     );
     assert.equal(result.problems[0]?.reason, "denied");
+  });
+});
+
+describe("resolvePythonStartup", () => {
+  const decode = (bytes: Uint8Array | undefined): string | undefined =>
+    bytes === undefined ? undefined : new TextDecoder().decode(bytes);
+
+  it("is nothing to upload for a profile with no pythonStartup", async () => {
+    const result = await resolvePythonStartup(undefined, () =>
+      Promise.reject(new Error("no file should be read")),
+    );
+    assert.equal(result.bytes, undefined);
+    assert.deepEqual(result.problems, []);
+  });
+
+  it("joins lines and files in order, each line ending in a newline", async () => {
+    const result = await resolvePythonStartup(
+      [
+        { type: "line", line: "import os" },
+        { type: "file", filePath: "/x/startup.py" },
+      ],
+      () => Promise.resolve("x = 1\r\ny = 2\n"),
+    );
+    assert.equal(decode(result.bytes), "import os\nx = 1\ny = 2\n");
+    assert.deepEqual(result.problems, []);
+  });
+
+  it("is nothing to upload when the only file is empty", async () => {
+    const result = await resolvePythonStartup(
+      [{ type: "file", filePath: "/empty.py" }],
+      () => Promise.resolve(""),
+    );
+    assert.equal(result.bytes, undefined);
+  });
+
+  it("skips an unreadable file and keeps the rest", async () => {
+    const result = await resolvePythonStartup(
+      [
+        { type: "file", filePath: "/missing.py" },
+        { type: "line", line: "import os" },
+      ],
+      () => Promise.reject(new Error("file not found")),
+    );
+    assert.equal(decode(result.bytes), "import os\n");
+    assert.deepEqual(result.problems, [
+      { filePath: "/missing.py", reason: "file not found" },
+    ]);
   });
 });

@@ -408,3 +408,65 @@ connection profile. Before 12r, one of the two failed to start with
   Recycle Bin. **Expect:** it opens read-only. Then open a file from the SAS
   extension's SAS Content tree, and a recycled file from its Recycle Bin.
   **Expect:** both open, the second as a read-only preview.
+
+## 12m — the Python startup snippet
+
+See `docs/phases/phase-12.md`'s "12m built" Runbook entry, ADR-0041 and
+Findings 12.22 and 12.23. Build a `.vsix` from this branch. In
+`settings.json`, give the profile you test with:
+
+```json
+"pythonStartup": [
+  { "type": "line", "line": "import math as m" },
+  { "type": "line", "line": "STARTUP_OK = 1" },
+  { "type": "line", "line": "print('startup printed')" }
+]
+```
+
+Then run **Python on Viya: Disconnect** and connect again, so the session is
+a new one.
+
+- [x] **12.33** **A new session is seeded.** Before any Run File, run
+  **Run Selection** on `print(m.pi, STARTUP_OK)`. **Expect:** `3.14159…  1`,
+  and no `startup printed` line anywhere in the output.
+- [x] **12.34** **Run File keeps it.** Run File on a file holding
+  `print(m.sqrt(16), STARTUP_OK)`. **Expect:** `4.0 1`. Before 12m, this
+  was a `NameError`.
+- [x] **12.35** **Reset Python State keeps it, and clears the rest.** Run
+  Selection on `X = 5`, then **Reset Python State**, then Run Selection on
+  `print(STARTUP_OK)` and then on `print(X)`. **Expect:** the reset succeeds
+  with no error, `1` prints, and `X` is a `NameError`.
+- [x] **12.36** **A `__future__` import and line numbers.** Run File on:
+
+  ```python
+  from __future__ import annotations
+  x: SomethingUndefined = 1
+  print(STARTUP_OK)
+  1 / 0
+  ```
+
+  **Expect:** `1`, then a `ZeroDivisionError` whose Problems entry points at
+  line 4.
+- [x] **12.37** **A failing snippet.** Add
+  `{ "type": "line", "line": "raise ValueError('startup broke')" }` as the
+  last entry, then Disconnect and connect. Run File on
+  `print("user ran", STARTUP_OK)`. **Expect:** `user ran 1`, then one line
+  saying the profile's Python startup snippet failed with
+  `ValueError: startup broke`. The run reports success, and the
+  **Python on Viya** log (**Show Log**) holds the snippet's traceback. Then
+  run **Reset Python State**. **Expect:** an error naming the startup
+  snippet's failure. Remove the entry before going on.
+- [x] **12.38** **A reloaded window.** Change `STARTUP_OK = 1` to
+  `STARTUP_OK = 2` and run **Developer: Reload Window**. The extension
+  reattaches to the same session. Run File on `print(STARTUP_OK)`.
+  **Expect:** `2`, with no error; the session's existing snippet fileref was
+  rewritten in place.
+- [x] **12.39** **A notebook.** Open a new `.ipynb`, pick **Python on
+  Viya** as its kernel, and run a first cell holding `print(STARTUP_OK)`.
+  **Expect:** `2`. A notebook has its own session (ADR-0035), and it is
+  seeded too.
+- [x] **12.40** **An unreadable file entry.** Add
+  `{ "type": "file", "filePath": "C:/no/such/startup.py" }`, then Disconnect
+  and connect. **Expect:** a message that the Python startup file could not
+  be read and was skipped, and a connect that goes ahead; Run File on
+  `print(STARTUP_OK)` still prints `2`.

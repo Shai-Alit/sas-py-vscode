@@ -15,6 +15,8 @@ import {
   ODS_WRAPPER_AFTER,
   ODS_WRAPPER_BEFORE,
   ProcPythonBackend,
+  STARTUP_FILEREF_NAME,
+  STARTUP_RESULT_CAPTURE,
   type SubmissionGuard,
   SYNTAX_CHECK_RECOVERY,
 } from "../../src/backend/procPython";
@@ -273,7 +275,23 @@ interface RouterOptions {
    * after `SYSCC` has already confirmed the run's outcome, but before a
    * candidate's content fetch (and everything after it) has resolved. */
   fileContentGate?: Promise<Reply>;
+  /** The value of the macro variable `STARTUP_RESULT_CAPTURE` saves the
+   * snippet step's `SYSCC` in (ADR-0041). Absent means the filter matches
+   * nothing. */
+  startupSyscc?: string;
+  /** Overrides that variable's read outright. */
+  startupSysccReply?: Reply;
+  /** The session already holds the snippet's fileref, as a reattached one
+   * does: `assign` answers `400`/5402 for it (Finding 12.10), and the
+   * `files` collection lists it as a summary with a `self` link (Finding
+   * 12.23) unless {@link startupListed} is `false`. */
+  startupAssigned?: boolean;
+  startupListed?: boolean;
 }
+
+/** Where the router keeps a reattached session's snippet fileref, lowercased
+ * as the service reports it (Finding 12.23). */
+const STARTUP_FILEREF_PATH = `${SESSION_PATH}/filerefs/${STARTUP_FILEREF_NAME.toLowerCase()}`;
 
 /** The file name a `getFileProperties`/`getFile`/`deleteFile` href names —
  * the last path segment, `/content` stripped, percent-decoded. Mirrors how
@@ -341,19 +359,46 @@ function router(opts: RouterOptions): {
           ) {
             return rejected("compute-rejected", "500 Internal Server Error");
           }
+          const listed: unknown[] = (opts.filerefList ?? []).map((id) => ({
+            id,
+          }));
+          if (opts.startupAssigned === true && opts.startupListed !== false) {
+            listed.push({
+              id: STARTUP_FILEREF_NAME.toLowerCase(),
+              links: [
+                { rel: "self", method: "GET", href: STARTUP_FILEREF_PATH },
+                { rel: "alternate", method: "GET", href: STARTUP_FILEREF_PATH },
+                {
+                  rel: "deassign",
+                  method: "DELETE",
+                  href: STARTUP_FILEREF_PATH,
+                },
+              ],
+            });
+          }
           return ok(
-            {
-              count: opts.filerefList?.length ?? 0,
-              items: (opts.filerefList ?? []).map((id) => ({ id })),
-            },
+            { count: listed.length, items: listed },
             { contentType: "application/vnd.sas.collection+json" },
           );
         }
         case "assign": {
           if (opts.assignGate !== undefined) return await opts.assignGate;
           if (opts.assignReply !== undefined) return opts.assignReply;
-          assignCalls += 1;
           const body = request.body as { name: string };
+          if (
+            opts.startupAssigned === true &&
+            body.name === STARTUP_FILEREF_NAME
+          ) {
+            return {
+              ok: false,
+              reason: `The fileref "${body.name.toLowerCase()}" already exists.`,
+              problem: {
+                code: "compute-rejected",
+                error: { status: 400, message: "", errorCode: 5402 },
+              },
+            };
+          }
+          assignCalls += 1;
           if (
             opts.assignConflicts !== undefined &&
             assignCalls <= opts.assignConflicts
@@ -387,6 +432,23 @@ function router(opts: RouterOptions): {
         }
         case "self":
           if (opts.selfReply !== undefined) return opts.selfReply;
+          if (request.link.href === STARTUP_FILEREF_PATH) {
+            return ok(
+              {
+                id: STARTUP_FILEREF_NAME.toLowerCase(),
+                links: [
+                  { rel: "self", method: "GET", href: STARTUP_FILEREF_PATH },
+                  {
+                    rel: "upload",
+                    method: "PUT",
+                    href: `${STARTUP_FILEREF_PATH}/content`,
+                    type: "application/octet-stream",
+                  },
+                ],
+              },
+              { etag: '"v2"' },
+            );
+          }
           return ok({ id: filerefName }, { etag: '"v1"' });
         case "upload":
           if (opts.uploadReply !== undefined) return opts.uploadReply;
@@ -476,6 +538,14 @@ function router(opts: RouterOptions): {
             return opts.syserrortext === undefined
               ? ok({ count: 0, items: [] })
               : ok({ count: 1, items: [{ name, value: opts.syserrortext }] });
+          }
+          if (name === "PYVIYA_STARTCC") {
+            if (opts.startupSysccReply !== undefined) {
+              return opts.startupSysccReply;
+            }
+            return opts.startupSyscc === undefined
+              ? ok({ count: 0, items: [] })
+              : ok({ count: 1, items: [{ name, value: opts.startupSyscc }] });
           }
           return ok({ count: 0, items: [] });
         }
@@ -3261,6 +3331,572 @@ describe("ProcPythonBackend", () => {
       const result = await probing;
       assert.ok(!result.ok);
       assert.equal(result.problem.code, "cancelled");
+    });
+  });
+});
+
+/**
+ * ADR-0041: the profile's Python startup snippet runs as its own step, in
+ * the same job as the restart it has to survive (Finding 12.22).
+ */
+describe("ProcPythonBackend: the Python startup snippet (ADR-0041)", () => {
+  const SNIPPET = new TextEncoder().encode("import os\n");
+  /** The `source` echo of the capture's first line, where the snippet's log
+   * ends — SAS's line number in front, as Finding 12.24 recorded it. */
+  const BOUNDARY = line(`70   ${STARTUP_RESULT_CAPTURE[0] ?? ""}`, "source");
+  const SNIPPET_TRACEBACK = [
+    line("Traceback (most recent call last):"),
+    line('  File "<stdin>", line 5, in <module>'),
+    line('  File "<string>", line 2, in <module>'),
+    line("ValueError: seed boom"),
+  ];
+
+  function backendWith(
+    client: ComputeClient,
+    options?: {
+      readonly seedFirstJob?: boolean;
+      readonly sessionValue?: ComputeSession;
+      readonly background?: string[];
+      readonly maxBufferedLines?: number;
+    },
+  ): ProcPythonBackend {
+    return new ProcPythonBackend(
+      client,
+      options?.sessionValue ?? session(),
+      dialect(),
+      guard(),
+      (reason) => options?.background?.push(reason),
+      options?.maxBufferedLines === undefined
+        ? undefined
+        : { maxBufferedLines: options.maxBufferedLines },
+      { bytes: SNIPPET, seedFirstJob: options?.seedFirstJob ?? false },
+    );
+  }
+
+  function jobCodes(requests: readonly ComputeRequest[]): string[][] {
+    return requests
+      .filter((request) => request.link.rel === "execute")
+      .map((request) => (request.body as { code: string[] }).code);
+  }
+
+  function startupResultReads(requests: readonly ComputeRequest[]): number {
+    return requests.filter(
+      (request) =>
+        request.link.rel === "variables" &&
+        variableName(request.link.href) === "PYVIYA_STARTCC",
+    ).length;
+  }
+
+  function startupAssigns(requests: readonly ComputeRequest[]): number {
+    return requests.filter(
+      (request) =>
+        request.link.rel === "assign" &&
+        (request.body as { name: string }).name === STARTUP_FILEREF_NAME,
+    ).length;
+  }
+
+  async function run(
+    backend: ProcPythonBackend,
+    freshNamespace: boolean,
+  ): Promise<{
+    readonly outputs: RichOutput[];
+    readonly settled: Awaited<ExecutionHandle["done"]>;
+  }> {
+    const accepted = accept(
+      await backend.execute(fakeProgram(), { freshNamespace }),
+    );
+    const outputs = await collect(accepted.outputs);
+    return { outputs, settled: await accepted.done };
+  }
+
+  it("runs the snippet as a restarting step ahead of the user's, which does not restart", async () => {
+    const { client, requests } = router({ syscc: "0", startupSyscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    const [code] = jobCodes(requests);
+    const wrapped = SYNTAX_CHECK_RECOVERY.length + ODS_WRAPPER_BEFORE.length;
+    assert.deepEqual(code?.slice(0, wrapped), [
+      ...SYNTAX_CHECK_RECOVERY,
+      ...ODS_WRAPPER_BEFORE,
+    ]);
+    assert.deepEqual(code.slice(wrapped, wrapped + 4), [
+      `proc python restart infile=${STARTUP_FILEREF_NAME};`,
+      "run;",
+      ...STARTUP_RESULT_CAPTURE,
+    ]);
+    assert.match(code[wrapped + 4] ?? "", /^proc python infile=PY\d{6};$/);
+    assert.equal(code[wrapped + 5], "run;");
+    assert.deepEqual(code.slice(wrapped + 6), [...ODS_WRAPPER_AFTER]);
+
+    // The snippet is uploaded before the user's program.
+    const assigned = requests
+      .filter((request) => request.link.rel === "assign")
+      .map((request) => (request.body as { name: string }).name);
+    assert.equal(assigned[0], STARTUP_FILEREF_NAME);
+    assert.match(assigned[1] ?? "", /^PY\d{6}$/);
+  });
+
+  it("uploads the snippet once per connection", async () => {
+    const { client, requests } = router({ syscc: "0", startupSyscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, true);
+    await run(backend, true);
+
+    assert.equal(startupAssigns(requests), 1);
+    const codes = jobCodes(requests);
+    assert.equal(codes.length, 2);
+    for (const code of codes) {
+      assert.ok(
+        code.includes(`proc python restart infile=${STARTUP_FILEREF_NAME};`),
+      );
+    }
+  });
+
+  it("seeds a created session's first job without restarting, and only that job", async () => {
+    const { client, requests } = router({ syscc: "0", startupSyscc: "0" });
+    const backend = backendWith(client, { seedFirstJob: true });
+    await backend.connect();
+
+    await run(backend, false);
+    await run(backend, false);
+
+    const [first, second] = jobCodes(requests);
+    assert.ok(first?.includes(`proc python infile=${STARTUP_FILEREF_NAME};`));
+    assert.ok(!first?.some((statement) => statement.includes("restart")));
+    assert.ok(
+      !second?.some((statement) => statement.includes(STARTUP_FILEREF_NAME)),
+    );
+  });
+
+  it("leaves a reattached session's namespace-keeping runs alone", async () => {
+    const { client, requests } = router({ syscc: "0" });
+    const backend = backendWith(client, { seedFirstJob: false });
+    await backend.connect();
+
+    await run(backend, false);
+
+    assert.equal(startupAssigns(requests), 0);
+    const [code] = jobCodes(requests);
+    assert.ok(
+      !code?.some((statement) => statement.includes(STARTUP_FILEREF_NAME)),
+    );
+  });
+
+  it("keeps the snippet's log out of the run's output (Finding 12.22)", async () => {
+    const { client } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      logLines: [line("seed printed"), BOUNDARY, line("user printed")],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["user printed\n"]);
+  });
+
+  it("shows every line when the boundary never arrives, and does not read a possibly stale result", async () => {
+    const background: string[] = [];
+    const { client, requests } = router({
+      syscc: "0",
+      // An earlier job's value: without the boundary, nothing shows the
+      // capture ran, so it must not be read as this job's.
+      startupSyscc: "1012",
+      logLines: [line("first"), line("second")],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["first\n", "second\n"]);
+    assert.equal(startupResultReads(requests), 0);
+    assert.equal(background.length, 1);
+    assert.match(background[0] ?? "", /could not tell whether/);
+  });
+
+  it("shows every line once dropped lines may have held the boundary", async () => {
+    const background: string[] = [];
+    const { client, requests } = router({
+      syscc: "0",
+      startupSyscc: "1012",
+      // A cap of 3 drops the oldest 2: the snippet's line and the boundary.
+      logLines: [
+        line("seed printed"),
+        BOUNDARY,
+        line("u1"),
+        line("u2"),
+        line("u3"),
+      ],
+    });
+    const backend = backendWith(client, { background, maxBufferedLines: 3 });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    const shown = texts(outputs);
+    const dropped = shown.find((text) => text.includes("log line(s) dropped"));
+    assert.equal(dropped, "[2 log line(s) dropped]\n");
+    assert.deepEqual(
+      shown.filter((text) => text !== dropped),
+      ["u1\n", "u2\n", "u3\n"],
+    );
+    assert.equal(startupResultReads(requests), 0);
+    assert.match(background[0] ?? "", /could not tell whether/);
+  });
+
+  it("still reads the snippet's result when the boundary arrives after a drop", async () => {
+    const background: string[] = [];
+    const { client } = router({
+      syscc: "0",
+      startupSyscc: "1012",
+      // A cap of 3 drops "s1" and "s2"; "s3" can no longer be told from the
+      // user's lines, so it is shown.
+      logLines: [line("s1"), line("s2"), line("s3"), BOUNDARY, line("u1")],
+    });
+    const backend = backendWith(client, { background, maxBufferedLines: 3 });
+    await backend.connect();
+
+    const { outputs } = await run(backend, true);
+
+    const shown = texts(outputs);
+    assert.ok(shown.includes("s3\n"));
+    assert.ok(shown.includes("u1\n"));
+    assert.match(shown.at(-1) ?? "", /startup snippet failed: SYSCC=1012\./);
+    assert.equal(background.length, 1);
+    assert.match(background[0] ?? "", /SYSCC=1012/);
+  });
+
+  it("leaves a created session's seed pending when the run is cancelled", async () => {
+    const gate = deferred<Reply>();
+    const { client, requests } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      logGate: gate.promise,
+    });
+    const backend = backendWith(client, { seedFirstJob: true });
+    await backend.connect();
+    const accepted = accept(
+      await backend.execute(fakeProgram(), { freshNamespace: false }),
+    );
+    await flush();
+
+    assert.ok((await backend.cancel(accepted)).ok);
+    gate.resolve(ok({ count: 0, items: [] }));
+    const settled = await accepted.done;
+    assert.ok(!settled.ok);
+    assert.equal(settled.problem.code, "cancelled");
+    assert.equal(startupResultReads(requests), 0);
+
+    await run(backend, false);
+    const codes = jobCodes(requests);
+    assert.ok(
+      codes[1]?.includes(`proc python infile=${STARTUP_FILEREF_NAME};`),
+    );
+  });
+
+  it("reports a failing snippet in one line and still reports the user's success", async () => {
+    const background: string[] = [];
+    const { client } = router({
+      syscc: "0",
+      startupSyscc: "1012",
+      logLines: [...SNIPPET_TRACEBACK, BOUNDARY, line("user printed")],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    const shown = texts(outputs);
+    assert.equal(shown[0], "user printed\n");
+    assert.equal(shown.length, 2);
+    assert.match(
+      shown[1] ?? "",
+      /startup snippet failed: ValueError: seed boom\./,
+    );
+    assert.equal(background.length, 1);
+    assert.match(background[0] ?? "", /SYSCC=1012/);
+    assert.match(background[0] ?? "", /ValueError: seed boom/);
+  });
+
+  it("names the snippet's SYSCC when its log held no traceback", async () => {
+    const { client } = router({
+      syscc: "0",
+      startupSyscc: "3000",
+      logLines: [BOUNDARY],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs } = await run(backend, true);
+
+    assert.match(
+      texts(outputs)[0] ?? "",
+      /startup snippet failed: SYSCC=3000\./,
+    );
+  });
+
+  it("parses the user's traceback, never the snippet's", async () => {
+    const { client } = router({
+      syscc: "1012",
+      syserrortext: "Unhandled Python exception.",
+      startupSyscc: "1012",
+      logLines: [
+        ...SNIPPET_TRACEBACK,
+        BOUNDARY,
+        line("Traceback (most recent call last):"),
+        line('  File "<stdin>", line 5, in <module>'),
+        line('  File "<string>", line 7, in <module>'),
+        line("ZeroDivisionError: division by zero"),
+      ],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(!settled.value.succeeded);
+    assert.match(
+      settled.value.diagnostics[0]?.message ?? "",
+      /ZeroDivisionError/,
+    );
+  });
+
+  it("logs a failed read of the snippet's result and leaves the run alone", async () => {
+    const background: string[] = [];
+    const { client } = router({
+      syscc: "0",
+      startupSysccReply: rejected(
+        "compute-rejected",
+        "500 Internal Server Error",
+      ),
+      logLines: [BOUNDARY, line("user printed")],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["user printed\n"]);
+    assert.match(background[0] ?? "", /could not read whether/);
+  });
+
+  it("rewrites a reattached session's snippet fileref in place (Findings 12.10, 12.23)", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      startupAssigned: true,
+    });
+    const backend = backendWith(client, {
+      sessionValue: sessionWithFilerefList(),
+    });
+    await backend.connect();
+
+    const { settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(
+      requests.some(
+        (request) =>
+          request.link.rel === "self" &&
+          request.link.href === STARTUP_FILEREF_PATH,
+      ),
+    );
+    const upload = requests.find(
+      (request) =>
+        request.link.rel === "upload" &&
+        request.link.href === `${STARTUP_FILEREF_PATH}/content`,
+    );
+    assert.ok(upload !== undefined, "the existing fileref was rewritten");
+    assert.deepEqual(upload.rawBody, SNIPPET);
+    assert.ok(
+      jobCodes(requests)[0]?.includes(
+        `proc python restart infile=${STARTUP_FILEREF_NAME};`,
+      ),
+    );
+  });
+
+  it("fails the run, submitting nothing, when the held fileref cannot be found", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      startupAssigned: true,
+      startupListed: false,
+    });
+    const backend = backendWith(client, {
+      sessionValue: sessionWithFilerefList(),
+    });
+    await backend.connect();
+
+    const { settled } = await run(backend, true);
+
+    assert.ok(!settled.ok);
+    assert.equal(settled.problem.code, "transfer-failed");
+    assert.match(settled.reason, /PYVSTART/);
+    assert.equal(jobCodes(requests).length, 0);
+  });
+
+  it("fails the run, submitting nothing, when the snippet cannot be uploaded", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      assignReply: rejected("compute-rejected", "500 Internal Server Error"),
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { settled } = await run(backend, true);
+
+    assert.ok(!settled.ok);
+    assert.equal(jobCodes(requests).length, 0);
+  });
+
+  it("shows a file written during the snippet's step as the run's, since both steps share one capture", async () => {
+    // ADR-0041's consequences: the log is split, the working-directory diff
+    // is not, so a figure the snippet saves is captured and deleted like
+    // one the user's code saved.
+    const png = readFixtureBytes("rich-output", "tiny.png");
+    const { client, deletedNames } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      logLines: [BOUNDARY],
+      filesAfter: [{ name: "seed_plot.png", size: png.length }],
+      fileContent: { "seed_plot.png": png },
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, true);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(
+      outputs.map((output) => output.mime),
+      ["image/png"],
+    );
+    assert.deepEqual(deletedNames, ["seed_plot.png"]);
+  });
+
+  it("tries the upload again on the next run after one failed", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      uploadReply: rejected("compute-rejected", "500 Internal Server Error"),
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, true);
+    await run(backend, true);
+
+    assert.equal(startupAssigns(requests), 2);
+  });
+
+  describe("reset", () => {
+    it("restarts into the snippet", async () => {
+      const { client, requests } = router({ syscc: "0", startupSyscc: "0" });
+      const backend = backendWith(client);
+      await backend.connect();
+
+      const result = await backend.reset();
+
+      assert.ok(result.ok);
+      assert.equal(startupAssigns(requests), 1);
+      assert.deepEqual(jobCodes(requests)[0], [
+        ...SYNTAX_CHECK_RECOVERY,
+        `proc python restart infile=${STARTUP_FILEREF_NAME};`,
+        "run;",
+        ...STARTUP_RESULT_CAPTURE,
+      ]);
+    });
+
+    it("reports a failing snippet as the reset's failure", async () => {
+      const { client } = router({
+        syscc: "0",
+        startupSyscc: "1012",
+        logLines: [line("seed printed"), ...SNIPPET_TRACEBACK, BOUNDARY],
+      });
+      const backend = backendWith(client);
+      await backend.connect();
+
+      const result = await backend.reset();
+
+      assert.ok(!result.ok);
+      assert.equal(result.problem.code, "backend-failed");
+      assert.match(
+        result.reason,
+        /the restart or the profile's Python startup snippet failed: ValueError: seed boom/,
+      );
+    });
+
+    it("clears a created session's pending seed, so the next plain run does not seed again", async () => {
+      const { client, requests } = router({ syscc: "0", startupSyscc: "0" });
+      const backend = backendWith(client, { seedFirstJob: true });
+      await backend.connect();
+
+      assert.ok((await backend.reset()).ok);
+      await run(backend, false);
+
+      const codes = jobCodes(requests);
+      assert.ok(
+        !codes[1]?.some((statement) =>
+          statement.includes(STARTUP_FILEREF_NAME),
+        ),
+      );
+    });
+
+    it("fails without submitting when the snippet cannot be uploaded", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        assignReply: rejected("compute-rejected", "500 Internal Server Error"),
+      });
+      const backend = backendWith(client);
+      await backend.connect();
+
+      const result = await backend.reset();
+
+      assert.ok(!result.ok);
+      assert.equal(jobCodes(requests).length, 0);
+    });
+
+    it("rewrites a reattached session's snippet fileref in place (Finding 12.23)", async () => {
+      const { client, requests } = router({
+        syscc: "0",
+        startupSyscc: "0",
+        startupAssigned: true,
+      });
+      const backend = backendWith(client, {
+        sessionValue: sessionWithFilerefList(),
+      });
+      await backend.connect();
+
+      const result = await backend.reset();
+
+      assert.ok(result.ok);
+      const upload = requests.find(
+        (request) =>
+          request.link.rel === "upload" &&
+          request.link.href === `${STARTUP_FILEREF_PATH}/content`,
+      );
+      assert.ok(upload !== undefined, "the existing fileref was rewritten");
+      assert.deepEqual(upload.rawBody, SNIPPET);
+      assert.equal(jobCodes(requests).length, 1);
     });
   });
 });

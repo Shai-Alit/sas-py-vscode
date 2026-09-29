@@ -55,6 +55,7 @@ under their category.
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openCasTable` | CAS |
 | Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showCasTableProperties` | CAS |
 | Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportCasTableToCsv` | CAS |
+| Set Up Claude Code Access | `Python on Viya: Set Up Claude Code Access` | `pythonOnViya.setUpClaudeCode` | — |
 
 A command shown against a view is offered on that view's rows or title bar;
 two commands can share a title and differ only by the view they belong to.

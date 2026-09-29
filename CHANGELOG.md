@@ -49,6 +49,13 @@ called out under **Changed** with a migration note.
   State**, so its imports and names are always there. If it raises, your code
   still runs and the output says so. See
   [Connection profiles](docs/connection-profiles.md).
+- **An MCP server for Claude Code, off by default.** **Set Up Claude Code
+  Access** turns on `pythonOnViya.agentServer.enabled` and copies the command
+  that registers the server with the Claude Code command-line tool. The
+  server listens on `127.0.0.1` only, runs only in a trusted workspace with a
+  folder open, and answers only a client holding a secret it makes at each
+  start. It has no tools yet; read-only library and CAS tools follow in a
+  later release. See [Claude Code access](docs/claude-code.md).
 
 ### Changed
 

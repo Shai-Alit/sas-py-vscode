@@ -51,10 +51,11 @@
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
-      "description": "Editing, syntax, and connection-profile management work in untrusted folders. Connecting to SAS Viya, reading stored credentials, and executing code require a trusted workspace, because they run code on a remote server under your identity.",
+      "description": "Editing, syntax, and connection-profile management work in untrusted folders. Connecting to SAS Viya, reading stored credentials, and executing code require a trusted workspace, because they run code on a remote server under your identity. The local MCP server for Claude Code starts only in a trusted workspace.",
       "restrictedConfigurations": [
         "pythonOnViya.connectionProfiles",
-        "pythonOnViya.defaultProfile"
+        "pythonOnViya.defaultProfile",
+        "pythonOnViya.agentServer.enabled"
       ]
     }
   },
@@ -292,6 +293,11 @@
       {
         "command": "pythonOnViya.exportCasTableToCsv",
         "title": "%command.exportTableToCsv.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.setUpClaudeCode",
+        "title": "%command.setUpClaudeCode.title%",
         "category": "%extension.category%"
       }
     ],
@@ -705,6 +711,12 @@
           "default": false,
           "scope": "window",
           "markdownDescription": "%configuration.csvExport.guardFormulaInjection.description%"
+        },
+        "pythonOnViya.agentServer.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "markdownDescription": "%configuration.agentServer.enabled.description%"
         }
       }
     }

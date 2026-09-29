@@ -180,3 +180,24 @@ rather than needing to reimplement either. `csvExportModel.ts`, the
 paginated relay this command wraps, stays free of any Node built-in — the
 allow-list widens by exactly the one file that actually touches the
 filesystem, not the feature's whole implementation.
+
+## Amendment — 2026-09-28 (slice 12o): the MCP server for Claude Code
+
+12o adds a local MCP server that Claude Code connects to
+([ADR-0042](0042-a-local-mcp-server-for-claude-code.md)). Two of its files
+are the sixth and seventh entries on `eslint.config.mjs`'s allow-list:
+
+- **`src/agent/server.ts`** (`node:http`, `node:crypto`). It listens on
+  `127.0.0.1`, which only a socket can do, and makes and compares the
+  per-start secret. The secret comparison needs `timingSafeEqual`.
+- **`src/agent/headersFile.ts`** (`node:fs`, `node:path`). It writes the file
+  Claude Code's `headersHelper` reads. `vscode.workspace.fs` cannot set a
+  file mode, and `dispose()` needs a synchronous removal.
+
+This is the shape of `caAgent.ts`'s amendment above, not `csvExportCommand.ts`'s:
+the web extension host cannot listen on a socket at all, so there was no
+web-compatible alternative to weigh. A future web build leaves the MCP server
+out rather than reimplementing it. The rest of the feature stays free of Node
+built-ins: `guard.ts`, `protocol.ts` and `registration.ts` are plain
+TypeScript, and `agentServer.ts` uses only the `vscode` API and these two
+files. The allow-list is now seven files, still with no globs.

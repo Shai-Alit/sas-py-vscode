@@ -470,3 +470,93 @@ a new one.
   and connect. **Expect:** a message that the Python startup file could not
   be read and was skipped, and a connect that goes ahead; Run File on
   `print(STARTUP_OK)` still prints `2`.
+
+## 12o — the MCP server for Claude Code
+
+See `docs/phases/phase-12.md`'s "12o built" Runbook entry and
+[ADR-0042](../../adr/0042-a-local-mcp-server-for-claude-code.md). Install a
+`.vsix` built from this branch and the Claude Code command-line tool
+(`claude --version` works in a terminal). Leave
+`pythonOnViya.agentServer.enabled` unset in user, workspace and folder
+settings before 12.41. The server needs no Viya connection. The **Python on
+Viya** output channel logs each start (`… is listening on
+http://127.0.0.1:<port>/mcp.`) and each stop, and at the **Debug** log
+level each refused request.
+
+- [x] **12.41** **Off by default.** Open a trusted folder. **Expect:** the
+  output channel has no `listening` line. Run **Python on Viya: Set Up
+  Claude Code Access**. **Expect:** a modal asks "Turn on the MCP server for
+  Claude Code?". Choose **Cancel**. **Expect:** nothing else happens, and the
+  setting is still unset.
+- [x] **12.42** **No folder, and Restricted Mode.** In a window with no
+  folder open, run the command. **Expect:** a warning that says to open a
+  folder first. Open a folder you have not trusted and choose Restricted
+  Mode, then run the command. **Expect:** a warning that the server needs a
+  trusted workspace, and no `listening` line.
+- [x] **12.43** **Set up and connect.** In a trusted folder, run the command
+  and choose **Turn On**. **Expect:** a `listening` line, and a notice that
+  the registration command was copied for your default terminal shell.
+  Choose **Paste into a New Terminal**. **Expect:** a terminal named
+  **Claude Code setup** opens in the folder with the line typed but not run.
+  Press Enter. **Expect:** `Added http MCP server python-on-viya to local
+  config`. Run `claude` in that terminal and accept its folder-trust prompt
+  if it asks, then run `/mcp`. **Expect:** **python-on-viya** is connected
+  and lists no tools. **Expect:** the output channel shows no refused
+  request, and neither it nor the terminal shows the secret. In Git Bash, run
+  `netstat -ano | findstr LISTENING | findstr :45123` with the port in place
+  of `45123` (`lsof -nP -iTCP:45123 -sTCP:LISTEN` off Windows).
+  **Expect:** only `127.0.0.1:45123`, never `0.0.0.0` or `[::]`.
+  **(9/29/2026)** running this appears to have kicked me out of my claude subscription. had to reauth to claude code in vs code.
+- [x] **12.44** **A reload needs no new registration.** Leave `claude`
+  running from 12.43. Run **Developer: Reload Window**. **Expect:** a new
+  `listening` line on the same port. In Claude Code, run `/mcp` and choose
+  **Reconnect** for python-on-viya. **Expect:** it reconnects without
+  registering again. In a second terminal in the folder, run
+  `claude mcp list`. **Expect:** python-on-viya as connected.
+- [ ] **12.45** **Each Windows shell's line runs.** Windows only. For each
+  of Command Prompt, PowerShell and Git Bash: pick it with **Terminal:
+  Select Default Profile**, run the command again, choose **Paste into a New
+  Terminal**, and press Enter. **Expect:** each time, the earlier
+  registration is removed without an error on screen and
+  `Added http MCP server python-on-viya to local config` follows. Then
+  `claude mcp list` shows it connected.
+- [ ] **12.46** **Turning it off.** Note the headers file path in the
+  output channel's last `Claude Code registration command:` line. Set
+  `pythonOnViya.agentServer.enabled` to `false`. **Expect:** `The MCP server
+  for Claude Code stopped.`, and that file no longer exists. `claude mcp list`
+  shows python-on-viya failing to connect. Now hold the port with a listener
+  that prints what reaches it, with the port in place of `45123`:
+  `node -e "require('http').createServer((q,s)=>{console.log(q.method,q.url,'authorization' in q.headers);s.writeHead(404);s.end()}).listen(45123,'127.0.0.1')"`.
+  In another terminal in the folder, run `claude mcp list`. **Record** in
+  the Runbook whether the listener printed anything: Claude Code reaching a
+  program that is not this server, in a folder it trusts. Stop the `node`
+  process. Set the setting back to `true`. **Expect:** a new `listening`
+  line on the same port, and `claude mcp list` connected again. Run
+  **Workspaces: Manage Workspace Trust** and choose **Don't Trust**.
+  **Expect:** after the window reloads, no `listening` line, and no
+  `mcp-headers-*.json` file beside the one you noted. Trust the folder
+  again. **Expect:** a `listening` line on the same port.
+- [ ] **12.47** **The port is taken.** Note the port from the last
+  `listening` line, then set the setting to `false`. In a terminal, hold that
+  port with the port number in place of `45123`:
+  `node -e "require('net').createServer().listen(45123, '127.0.0.1')"`.
+  Leave it running and set the setting to `true`. **Expect:** a warning that
+  the server moved to a new port, with **Register Again**, and a `listening`
+  line on a different port. Choose **Register Again**, then paste and run
+  the line. **Expect:** `claude mcp list` shows python-on-viya connected on
+  the new port. Stop the `node` process.
+- [ ] **12.48** **Refusals.** With the server on, set the **Python on Viya**
+  output channel's log level to **Debug** (the gear icon in the Output view).
+  Then run each of these in Git Bash with the current port in place of
+  `45123`, and a body of `{}`:
+  - `curl -si -X POST http://127.0.0.1:45123/mcp -H "Content-Type: application/json" -d "{}"`.
+    **Expect:** `401`, `WWW-Authenticate: Bearer realm="python-on-viya"`,
+    and the body `Unauthorized`.
+  - The same with `-H "Origin: https://example.com"` added. **Expect:** `403`
+    and `Origin not allowed`.
+  - The same with `-H "Host: example.com:45123"` added. **Expect:** `403`
+    and `Host not allowed`.
+
+  **Expect:** the output channel shows one `refused a request` debug line
+  for each, with the status and message only. Set the log level back to
+  **Info**: the lines no longer appear.

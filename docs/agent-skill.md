@@ -51,11 +51,11 @@ is currently in the repository.
 
 The skill only makes an agent better informed — it does not give an agent any
 way to *run* Python on Viya for you, or connect it to your session directly.
-That is a separate, larger question, one this project is only spiking rather
-than committing to (see [ADR-0037](adr/0037-ai-agent-integration-approach.md)
-and its follow-up slices in
-[`docs/phases/phase-12.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-12.md)),
-not something this file does.
+Connecting Claude Code to this extension is a separate feature, the
+[Claude Code access](claude-code.md) MCP server. It has no tools yet; the
+read-only ones come in a later release (see
+[ADR-0037](adr/0037-ai-agent-integration-approach.md) and
+[ADR-0042](adr/0042-a-local-mcp-server-for-claude-code.md)).
 
 ## Where the details are
 

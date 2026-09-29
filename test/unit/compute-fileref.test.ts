@@ -191,6 +191,54 @@ describe("createFileref", () => {
     });
   });
 
+  it("keeps accessMethod, fileName and filePath when they are strings (Finding 12.25)", async () => {
+    const scripted = fake([
+      ok(
+        {
+          id: "castoken",
+          name: "castoken",
+          accessMethod: "DISK",
+          fileName: "CASTOKEN",
+          filePath: "/run/session/CASTOKEN",
+          fileSize: 0,
+          links: [],
+        },
+        { status: 201 },
+      ),
+    ]);
+
+    const result = await createFileref(scripted.client, session(), "CASTOKEN");
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, {
+      id: "castoken",
+      links: [],
+      accessMethod: "DISK",
+      fileName: "CASTOKEN",
+      filePath: "/run/session/CASTOKEN",
+    });
+  });
+
+  it("leaves those fields out when they are not strings", async () => {
+    const scripted = fake([
+      ok(
+        {
+          id: FILEREF_ID,
+          accessMethod: 1,
+          fileName: null,
+          filePath: {},
+          links: [],
+        },
+        { status: 201 },
+      ),
+    ]);
+
+    const result = await createFileref(scripted.client, session(), FILEREF_ID);
+
+    assert.ok(result.ok);
+    assert.deepEqual(result.value, { id: FILEREF_ID, links: [] });
+  });
+
   it("refuses an empty name without making a request", async () => {
     const scripted = fake([]);
 

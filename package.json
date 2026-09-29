@@ -203,6 +203,11 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.refreshCasToken",
+        "title": "%command.refreshCasToken.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "pythonOnViya.insertCasSqlPassthroughSnippet",
         "title": "%command.insertCasSqlPassthroughSnippet.title%",
         "category": "%extension.category%"
@@ -705,6 +710,14 @@
           "default": false,
           "scope": "window",
           "markdownDescription": "%configuration.csvExport.guardFormulaInjection.description%"
+        },
+        "pythonOnViya.cas.tokenFileref": {
+          "type": "string",
+          "default": "CASTOKEN",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,7}$",
+          "patternErrorMessage": "%configuration.cas.tokenFileref.patternError%",
+          "scope": "window",
+          "markdownDescription": "%configuration.cas.tokenFileref.description%"
         }
       }
     }

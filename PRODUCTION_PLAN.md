@@ -1040,11 +1040,20 @@ carries the 1.0.0 version bump.
 > updated to say so. See `docs/phases/phase-12.md`'s "Backlog sweep"
 > Runbook entry and `docs/phases/phase-13.md`.
 
+> **Amended 2026-09-29 (Sean's own call): the MCP server moves from Phase
+> 12 to Phase 13.** Slices 12o (the MCP server for Claude Code) and 12p
+> (its read-only tools) are now 13l and 13m. 12o was built but not merged,
+> and its code is parked on the branch `feat/12o-mcp-server`. Both still
+> gate 1.0, since every Phase 13 slice does. The preview release that
+> follows Phase 12 ships without the MCP server. See
+> `docs/phases/phase-13.md`'s "12o and 12p moved here" Runbook entry.
+
 > **What 1.0 does not require.** The second execution backend does not
 > gate it. That work was all of Phase 13 when this paragraph was written
 > (renumbered from Phase 12 on 2026-09-22 — see the amendment above); since
 > 2026-09-24 it is one ungated section of Phase 13, and the rest of Phase 13
-> (13a–13k) **does** gate 1.0, per the 2026-09-24 amendment above. §3.1
+> (13a–13k, and 13l–13m since 2026-09-29) **does** gate 1.0, per the
+> amendments above. §3.1
 > already holds that parity is the destination rather than the
 > release bar and that the post-v0.1.0 phase order is demand-driven, so a
 > capability nobody has asked for cannot be a precondition for supporting what

@@ -443,7 +443,10 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
     gated on workspace trust (ADR-0002); behaviour across a window reload.
     Needs its own ADR. **ADR-0037's named security review runs on this
     slice's diff before its PR**, covering 12c's checklist, in addition to
-    the ordinary pre-PR pass.
+    the ordinary pre-PR pass. **Moved to Phase 13 as 13l, 2026-09-29
+    (Sean's call), after it was built but before it merged.** The code is on
+    the unmerged branch `feat/12o-mcp-server`. See `phase-13.md`'s "12o and
+    12p moved here" Runbook entry.
 16. **12p — Option C, part 2: the read-only tool surface.** The
     `LibraryAdapter` and `CasAdapter` browse-and-page operations 12c
     listed, each marked `readOnlyHint`, with `applySort`/`deleteView`'s
@@ -452,7 +455,8 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
     Code session. Same security review before the PR. Running Python
     through MCP is not in this slice; it is Phase 13's 13j. In-editor
     agents (`contributes.mcpServerDefinitionProviders`) stay out until
-    `microsoft/vscode`#265912 closes (12c).
+    `microsoft/vscode`#265912 closes (12c). **Moved to Phase 13 as 13m,
+    2026-09-29, with 12o.** Not started.
 17. **12q — Housekeeping.** Four small items with nothing left to decide:
     - **A licence gate**, the follow-on 12i named: a script shaped like
       `scripts/check-audit.mjs` checking every package in
@@ -581,9 +585,10 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
 - [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
   After 12m.
 - [ ] **12o — Option C, part 1: loopback MCP server and lifecycle.** Added
-  2026-09-24. Not started. Security review before its PR.
+  2026-09-24. **Moved to Phase 13 as 13l, 2026-09-29.** Built and parked,
+  unmerged, on `feat/12o-mcp-server`.
 - [ ] **12p — Option C, part 2: read-only tool surface.** Added 2026-09-24.
-  Not started. After 12o; security review before its PR.
+  **Moved to Phase 13 as 13m, 2026-09-29.** Not started.
 - [ ] **12q — Housekeeping** (licence gate, `formatCsvPage` options object,
   drop on My Favorites, manual test 11.10). Added 2026-09-24. Not started.
 - [x] **12r — Fix B12.3 (this extension and the SAS extension could not both

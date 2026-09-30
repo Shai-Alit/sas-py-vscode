@@ -516,3 +516,25 @@ again, so the session is a new one.
   then Run File on the 12.41 file. **Expect:** a `FileNotFoundError` for
   `CASTOKEN`, since the new session has no token file. Run **Refresh CAS
   Token**, then Run File again. **Expect:** `0`.
+
+## 12q — dropping onto My Favorites
+
+See `docs/phases/phase-12.md`'s "12q built" Runbook entry. Build a `.vsix`
+from this branch and connect. Drag-and-drop is only verifiable live: in
+Phase 6 a controller that passed every test did nothing in a real drag
+(finding 6.16).
+
+- [x] **12.49** **One item.** In the SAS Content view, pick a file in My
+  Folder that is not a favourite and drag it onto **My Favorites**.
+  **Expect:** a brief "Adding … to My Favorites" progress on the view, the
+  file still in My Folder (not moved) with its star, and a shortcut to it under
+  **My Favorites** when expanded.
+- [x] **12.50** **Several, one already a favourite.** Select a folder that is
+  not a favourite, the file from 12.49 (now a favourite) and one more file
+  that is not, and drag all three onto **My Favorites**. **Expect:** the
+  folder and the new file are added. The 12.49 file is skipped, so it still
+  has exactly one shortcut, and no error appears. Remove all three favourites
+  afterwards with **Remove from My Favorites**.
+- [x] **12.51** **A move still moves.** Drag a file from My Folder onto a
+  subfolder of My Folder. **Expect:** it moves there, exactly as before 12q,
+  and is selected in its new folder. Move it back.

@@ -22,6 +22,11 @@
   Dependabot alerts (`GHSA-5C6J-R48X-RMVQ` high, `GHSA-QJ8W-GFJ5-8C6V` moderate)
   clear, and the allow-list is down to the one `low` `diff` advisory. See the
   amended entries under Context and Consequences.
+- **Amended 2026-09-29 (slice 12q):** a third question joins the first two:
+  **what licence each package in the lockfile carries**.
+  `scripts/check-licenses.mjs` checks every package against
+  `scripts/license-allowlist.json` in the same `supply-chain` job. See
+  "Licences" under Decision and the Consequences amendment.
 
 ## Context
 
@@ -215,6 +220,42 @@ that a network problem is never filed as a security finding. The two audits also
 carry a two-minute timeout: a hung registry has to fail the job, not hold it
 open.
 
+### Licences: an allow-list fit for shipping, named exceptions for the rest
+
+_Added 2026-09-29 (slice 12q), the follow-on `docs/phases/phase-12.md`'s "12i
+done" entry named._
+
+Every package in `package-lock.json` must carry an SPDX expression that
+`license-allowlist.json`'s `allowed` list satisfies, or be named in its
+`exceptions` with a `why`. `A OR B` passes when either side does, `A AND B`
+only when both do. A `WITH` clause, and anything that is not SPDX at all
+(`SEE LICENSE IN LICENSE.txt`), never passes on the list alone.
+
+The list is narrower than "anything a build tool may use", deliberately.
+`package.json` declares no `dependencies`, so the packages esbuild inlines
+into the bundles (React, AG Grid and the rest `NOTICE` lists) are
+`devDependencies` like every build tool, and npm cannot tell them apart. So
+`allowed` holds only licences acceptable in a package that **ships**: MIT,
+ISC, the two BSDs, Apache-2.0, 0BSD, BlueOak-1.0.0, CC0-1.0, Zlib and
+Python-2.0. Anything else needs a named exception arguing that the package
+never reaches a bundle. The 2026-09-29 list holds 18 of them, all tooling:
+`@vscode/vsce-sign` and its nine platform binaries (Microsoft's own terms),
+`ovsx` (EPL-2.0), and seven packages under `@vscode/vsce`'s secretlint
+(five Artistic-2.0, one WTFPL, one CC-BY-3.0). A new bundled dependency under a copyleft
+licence therefore fails the pull request that adds it, instead of passing
+because the same licence was once accepted for a build tool.
+
+An exception is keyed on the package **and** its licence string. A package
+that changes licence falls out of its exception and fails as unreviewed, and
+the orphaned entry fails as stale, the same as an advisory allow-list line
+that matches nothing. There is no expiry date: an advisory gets fixed on
+someone else's timetable, but a licence only changes when the lockfile does,
+and the lockfile is what triggers the job.
+
+The gate reads only the lockfile, so it needs no install and no network. It
+runs in `supply-chain` because a licence can change only when the lockfile
+does, which is exactly what that job's `deps` filter selects.
+
 ### It is enforced in one CI job, not everywhere
 
 `allowScripts` is understood only by **npm 12.0.0 and later** — bisected; no 11.x
@@ -347,6 +388,13 @@ to re-read seven advisories, which is the deliberate trade but is not free.
 > The maintenance mechanism worked the same way it did in August: the Dependabot
 > alerts were re-read between phases, not on the expiry date, and the re-read is
 > what found the fix.
+
+> **Amended 2026-09-29.** The licence gate adds one more maintenance duty:
+> whoever adds a package under a licence outside `allowed` writes its
+> exception, and whoever removes one deletes it (the stale check makes sure).
+> It does not keep `NOTICE`'s list of bundled components current. That list is
+> hand-maintained from esbuild's metafile, and a new value import in `src/` can
+> change it without touching this gate's verdict.
 
 **Revisit trigger.** Move the whole policy into the normal jobs on the day
 `engines.node` moves to 22.22.2 or later, and delete the pinned npm install from

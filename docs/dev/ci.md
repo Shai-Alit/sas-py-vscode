@@ -39,7 +39,8 @@ them. A pull request that touches only documentation or a static asset under
   resolve to "code".
 - **`deps`** — can change the dependency tree or the supply-chain gate itself:
   `package.json`, `package-lock.json`, `.npmrc`, `scripts/check-audit.mjs`,
-  `scripts/advisory-allowlist.json`, or anything under `.github/workflows/`.
+  `scripts/advisory-allowlist.json`, `scripts/check-licenses.mjs`,
+  `scripts/license-allowlist.json`, or anything under `.github/workflows/`.
   Gates `supply-chain` **only**. It is narrower than `code` on purpose — what
   `supply-chain` checks is entirely a function of the lockfile, so running it
   on a source or test change that leaves the lockfile alone is a ~9-minute
@@ -385,19 +386,20 @@ that can hang.
 
 ## supply-chain
 
-Two questions about the dependency tree, and nothing else: **what is allowed to
-run code at install time**, and **which advisories has somebody actually read**.
-The reasoning behind both answers is [ADR-0005](../adr/0005-supply-chain-policy.md);
-this section is about the job.
+Three questions about the dependency tree, and nothing else: **what licence
+each package carries**, **what is allowed to run code at install time**, and
+**which advisories has somebody actually read**. The reasoning behind all three
+answers is [ADR-0005](../adr/0005-supply-chain-policy.md); this section is about
+the job.
 
 ```
-npm install -g npm@^12.0.0  →  npm ci  →  npm run check:audit
+npm run check:licenses  →  npm install -g npm@^12.0.0  →  npm ci  →  npm run check:audit
 ```
 
 It runs on the `changes` job's **`deps`** output, not `code` — so a pull
 request that does not touch `package.json`, the lockfile, `.npmrc`, the audit
-script/allow-list or a workflow file skips it. Both things it checks are
-functions of the lockfile, and a ~9-minute `npm@12` install + `npm ci` +
+or licence script, either allow-list or a workflow file skips it. All three
+things it checks are functions of the lockfile, and a ~9-minute `npm@12` install + `npm ci` +
 `npm audit` on an unchanged tree only re-proves what already passed on `main`.
 The `allowScripts` half is still covered on every `code` change by the unit
 tier (see [The deny-list is checked, not trusted](#the-deny-list-is-checked-not-trusted));
@@ -538,6 +540,36 @@ is the last resort. An earlier attempt to fix intermittent `supply-chain`
 failures by raising this number alone (to four minutes) did not work, because
 the failure was one hung request, not a slow tree — hence the per-request
 `--fetch-timeout`.
+
+### check:licenses
+
+`npm run check:licenses` (`scripts/check-licenses.mjs`) checks every package in
+`package-lock.json` against `scripts/license-allowlist.json`. It reads only the
+lockfile, so it needs no install and no network, and it runs first in the job.
+A trade-off of running first: when it fails, the later steps do not run, so a
+pull request that adds a package with both an unreviewed licence and an
+advisory shows only the licence failure until that is fixed.
+
+- A package passes when its SPDX expression is satisfied by `allowed`: `A OR B`
+  when either side is, `A AND B` when both are. A `WITH` clause, or anything
+  that is not SPDX (`SEE LICENSE IN LICENSE.txt`), never passes on the list.
+- Anything else must be in `exceptions`, keyed on the package name **and** its
+  licence string, with a `why`. An exception matching no package, or only a
+  package `allowed` already accepts, fails as stale.
+
+`allowed` is deliberately a list fit for a package that **ships**. The bundled
+React and AG Grid packages are `devDependencies` like every build tool, so npm
+cannot tell the two apart, and a licence accepted for tooling must not quietly
+pass a bundled dependency. So every exception's `why` is the argument that the
+package never reaches a bundle. On 2026-09-29 all 18 were tooling: `ovsx`,
+`@vscode/vsce-sign` with its platform binaries, and packages under
+`@vscode/vsce`'s secretlint.
+
+If it fails on a new package: when the package cannot reach a bundle, add an
+exception saying why. When it can, choose a different package, or change the
+policy on purpose. This gate does not keep `NOTICE`'s list of bundled
+components current; that comes from esbuild's metafile (`phase-12.md`, "12i
+done").
 
 ### The deny-list is checked, not trusted
 

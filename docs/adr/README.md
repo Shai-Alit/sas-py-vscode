@@ -44,7 +44,7 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0002](0002-workspace-trust-posture.md) | Workspace trust posture: limited | Accepted |
 | [0003](0003-extension-host-target.md) | Extension host target: Node-only for now | Accepted |
 | [0004](0004-documentation-toolchain.md) | Documentation toolchain: VitePress, external links swept not gated | Accepted |
-| [0005](0005-supply-chain-policy.md) | Supply chain: no install scripts, advisories reviewed by identifier with an expiry | Accepted |
+| [0005](0005-supply-chain-policy.md) | Supply chain: no install scripts, advisories reviewed by identifier with an expiry | Accepted — amended 2026-09-29: every lockfile package's licence is checked against an allow-list fit for shipping, with named exceptions |
 | [0006](0006-scanning-posture.md) | Scanning: CodeQL as a committed workflow, and a repo-local scanner for credential shapes | Accepted |
 | [0007](0007-connection-profile-storage.md) | Connection profiles: separate storage, a versioned schema, and no secret in settings | Accepted |
 | [0008](0008-auth-core-transport-and-security-deltas.md) | Auth core: a `fetch`-shaped transport port, and the security deltas from upstream `auth.ts` | Accepted — its "Viya 3.5 client-id path" section is superseded by [ADR-0022](0022-drop-viya-35-support.md) |

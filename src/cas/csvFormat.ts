@@ -62,17 +62,31 @@ function cellText(cell: unknown, isText: boolean): string {
 }
 
 /**
+ * How {@link formatCsvPage} renders one page. An options object rather than
+ * two adjacent boolean parameters, which a caller could swap without a type
+ * error (12e's pre-push review, item 6; built in 12q).
+ */
+export interface CsvPageOptions {
+  /** Prepend the column-name row. */
+  readonly includeHeader: boolean;
+  /**
+   * Apply `../data/csvFormulaGuard.ts`'s `escapeCsvFormula` to a character
+   * column's cells (`pythonOnViya.csvExport.guardFormulaInjection`). Default
+   * `false`.
+   */
+  readonly guardFormulaInjection?: boolean;
+}
+
+/**
  * One page of CSV text — every line, including the last, ends in `\n` (the
  * same page-boundary contract `src/data/csvExportModel.ts` documents for the
  * server's own CSV: pages concatenate with no separator). `includeHeader`
  * prepends the column-name row; a page with no rows and no header is the
  * empty string, which is what tells the export loop it has reached the end.
  *
- * `guardFormulaInjection` (default `false`, `pythonOnViya.csvExport.
- * guardFormulaInjection`) applies `../data/csvFormulaGuard.ts`'s
- * `escapeCsvFormula` to a character column's cells only — every other type
- * this project has observed or documented for CAS (`double`, `int32`,
- * `int64`, `decimal`, `date`, `time`, `datetime`, …), plus `binary`/
+ * `guardFormulaInjection` guards a character column's cells only — every
+ * other type this project has observed or documented for CAS (`double`,
+ * `int32`, `int64`, `decimal`, `date`, `time`, `datetime`, …), plus `binary`/
  * `varbinary` (not expected in a browsed table; their exact display form is
  * unprobed), is never guarded, matching {@link isTextColumnType}'s own
  * partition. The header row (`includeHeader`) is never guarded either way —
@@ -81,8 +95,7 @@ function cellText(cell: unknown, isText: boolean): string {
 export function formatCsvPage(
   columns: readonly CsvColumn[],
   rows: readonly CsvRow[],
-  includeHeader: boolean,
-  guardFormulaInjection = false,
+  { includeHeader, guardFormulaInjection = false }: CsvPageOptions,
 ): string {
   const isText = columns.map((column) => isTextColumnType(column.type));
 

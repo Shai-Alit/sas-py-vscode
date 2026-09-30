@@ -76,6 +76,9 @@ keeps a shortcut to it under **My Favorites**. A favourite is a reference, not a
 copy: removing it leaves the original untouched, and the star shows on the item
 wherever it appears in the tree.
 
+Dragging folders or files onto **My Favorites** adds them too. It does not move
+them. An item that is already a favourite is skipped.
+
 ## The Recycle Bin
 
 Deleting an ordinary item moves it here. Expand **Recycle Bin** to see what is

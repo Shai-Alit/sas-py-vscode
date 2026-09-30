@@ -13,6 +13,10 @@
  * pick up (`NodePresentation.draggable`), and runs the moves behind a
  * cancellable progress spinner.
  *
+ * A drop on the My Favorites delegate is not a move: it adds each dragged item
+ * to favourites through the same adapter mutation as **Add to My Favorites**
+ * (12q, upstream parity). A drop on the Recycle Bin still does nothing.
+ *
  * ## One private MIME, within this tree only
  *
  * `dragMimeTypes` / `dropMimeTypes` are a single custom type, so a drag only
@@ -61,12 +65,13 @@
 import * as vscode from "vscode";
 
 import { type ContentAdapter } from "./adapter";
+import { type ContentResult } from "./client";
 import { moveObjection } from "./contentMove";
 import { localiseContentProblem } from "./messages";
 import { nodePresentationOf } from "./presentation";
 import { describeContentProblem } from "./problems";
 import { type ContentTreeNode } from "./contentTree";
-import { resourceHrefOf, type ContentItem } from "./types";
+import { isFavoritesDelegate, resourceHrefOf, type ContentItem } from "./types";
 import { isConnectionProblemNode } from "../connectionProblemNode";
 
 /**
@@ -177,6 +182,14 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
     }
     const dragged = payload as ContentItem[];
 
+    // A drop on My Favorites adds rather than moves (12q), as upstream's
+    // `handleContentItemDrop` does. `moveObjection` still rejects this target
+    // as `target-not-a-folder`, so this branch comes first.
+    if (isFavoritesDelegate(target)) {
+      await this.addToFavorites(adapter, dragged, target, token);
+      return;
+    }
+
     const destination = resourceHrefOf(target);
     if (destination === undefined) {
       this.deps.log.debug(
@@ -212,13 +225,93 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
       return;
     }
 
-    const { problems, firstMoved } = await vscode.window.withProgress(
+    const { problems, firstDone: firstMoved } = await this.runEach(
+      movable,
+      movable.length === 1
+        ? vscode.l10n.t('Moving "{0}"…', firstItem.name)
+        : vscode.l10n.t("Moving {0} items…", movable.length),
+      token,
+      (item, signal) => adapter.moveItem(item, destination, signal),
+    );
+
+    // A multi-item move that failed partway has still changed the server, so
+    // reload whatever the outcome.
+    this.deps.refresh();
+    if (firstMoved !== undefined) await this.deps.reveal(firstMoved);
+    if (problems.length > 0) {
+      void vscode.window.showErrorMessage(problems[0] ?? "");
+    }
+  }
+
+  /**
+   * Add every dragged item that **Add to My Favorites** would be offered for
+   * (`NodePresentation.favoriteAction === "add"`, 6d-i) — so an item already
+   * in My Favorites is skipped, not added twice. Nothing is revealed after:
+   * the dragged item has not moved, and its favourite is a different tree
+   * node (a `reference` member of the delegate).
+   */
+  private async addToFavorites(
+    adapter: ContentAdapter,
+    dragged: readonly ContentItem[],
+    target: ContentItem,
+    token: vscode.CancellationToken,
+  ): Promise<void> {
+    const addable = dragged.filter(
+      (item) => nodePresentationOf(item).favoriteAction === "add",
+    );
+    const [firstItem] = addable;
+    if (firstItem === undefined) {
+      const reasons = dragged
+        .map(
+          (item) => `${item.name}: ${nodePresentationOf(item).favoriteAction}`,
+        )
+        .join("; ");
+      this.deps.log.debug(
+        vscode.l10n.t(
+          'SAS Content: handleDrop — nothing to add to "{0}" ({1})',
+          target.name,
+          reasons,
+        ),
+      );
+      return;
+    }
+
+    const { problems } = await this.runEach(
+      addable,
+      addable.length === 1
+        ? vscode.l10n.t('Adding "{0}" to My Favorites…', firstItem.name)
+        : vscode.l10n.t("Adding {0} items to My Favorites…", addable.length),
+      token,
+      (item, signal) => adapter.addToFavorites(item, signal),
+    );
+
+    // Reload whatever the outcome, as a move does: a batch that failed partway
+    // has still added the items before the failure.
+    this.deps.refresh();
+    if (problems.length > 0) {
+      void vscode.window.showErrorMessage(problems[0] ?? "");
+    }
+  }
+
+  /**
+   * Run `operation` on each item in turn behind one cancellable progress
+   * spinner on the view, collecting the localised message of every failure
+   * (each is also logged) and the first success's value. A cancel stops the
+   * batch, and a failure caused by that cancel is not reported.
+   */
+  private runEach<T>(
+    items: readonly ContentItem[],
+    title: string,
+    token: vscode.CancellationToken,
+    operation: (
+      item: ContentItem,
+      signal: AbortSignal,
+    ) => Promise<ContentResult<T>>,
+  ): Thenable<{ problems: string[]; firstDone: T | undefined }> {
+    return vscode.window.withProgress(
       {
         location: { viewId: this.deps.viewId },
-        title:
-          movable.length === 1
-            ? vscode.l10n.t('Moving "{0}"…', firstItem.name)
-            : vscode.l10n.t("Moving {0} items…", movable.length),
+        title,
         cancellable: true,
       },
       async (_progress, progressToken) => {
@@ -264,17 +357,13 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
           );
         }
         const problems: string[] = [];
-        let firstMoved: ContentItem | undefined;
+        let firstDone: T | undefined;
         try {
-          for (const item of movable) {
+          for (const item of items) {
             if (cancelled()) break;
-            const result = await adapter.moveItem(
-              item,
-              destination,
-              controller.signal,
-            );
+            const result = await operation(item, controller.signal);
             if (result.ok) {
-              firstMoved ??= result.value;
+              firstDone ??= result.value;
               continue;
             }
             // A failure whose cause is that cancel stays silent — the user
@@ -291,16 +380,8 @@ export class SasContentDragAndDropController implements vscode.TreeDragAndDropCo
         } finally {
           for (const sub of subs) sub.dispose();
         }
-        return { problems, firstMoved };
+        return { problems, firstDone };
       },
     );
-
-    // A multi-item move that failed partway has still changed the server, so
-    // reload whatever the outcome.
-    this.deps.refresh();
-    if (firstMoved !== undefined) await this.deps.reveal(firstMoved);
-    if (problems.length > 0) {
-      void vscode.window.showErrorMessage(problems[0] ?? "");
-    }
   }
 }

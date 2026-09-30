@@ -42,7 +42,7 @@ describe("cas/csvFormat", () => {
           { cells: ["Dead", "          29", "           .", ""] },
           { cells: ["Alive", "          57", "         250", "high"] },
         ],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, "Dead,29,,\nAlive,57,250,high\n");
     });
@@ -51,7 +51,7 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         columns,
         [{ cells: ["  padded ", "1", "2", " ."] }],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, "  padded ,1,2, .\n");
     });
@@ -60,7 +60,7 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         columns,
         [{ cells: ["A, B", "1", "2", 'say "x"'] }],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, '"A, B",1,2,"say ""x"""\n');
     });
@@ -72,24 +72,24 @@ describe("cas/csvFormat", () => {
           { name: "a,b", type: "double" },
         ],
         [{ cells: ["x", "1"] }],
-        true,
+        { includeHeader: true },
       );
       assert.equal(withHeader, 'Status,"a,b"\nx,1\n');
     });
 
     it("gives a header-only page for an empty first page, and an empty string for any other empty page", () => {
       assert.equal(
-        formatCsvPage(columns, [], true),
+        formatCsvPage(columns, [], { includeHeader: true }),
         "Status,AgeAtStart,Cholesterol,Note\n",
       );
-      assert.equal(formatCsvPage(columns, [], false), "");
+      assert.equal(formatCsvPage(columns, [], { includeHeader: false }), "");
     });
 
     it("renders null, undefined, numbers, and booleans without throwing", () => {
       const csv = formatCsvPage(
         columns,
         [{ cells: [null, 5, undefined, true] }],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, ",5,,true\n");
     });
@@ -98,7 +98,7 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         [{ name: "a", type: "double" }],
         [{ cells: ["  1", "  extra"] }],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, "1,  extra\n");
     });
@@ -107,7 +107,7 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         [{ name: "a", type: "CHAR" }],
         [{ cells: [" x "] }],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, " x \n");
     });
@@ -123,7 +123,7 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         guardColumns,
         [{ cells: ["=SUM(A1:A9)", "29"] }],
-        false,
+        { includeHeader: false },
       );
       assert.equal(csv, "=SUM(A1:A9),29\n");
     });
@@ -138,8 +138,7 @@ describe("cas/csvFormat", () => {
           { cells: ["@handle", "4"] },
           { cells: ["ordinary text", "5"] },
         ],
-        false,
-        true,
+        { includeHeader: false, guardFormulaInjection: true },
       );
       assert.equal(
         csv,
@@ -151,8 +150,7 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         guardColumns,
         [{ cells: ["plain", "          -5"] }],
-        false,
-        true,
+        { includeHeader: false, guardFormulaInjection: true },
       );
       assert.equal(csv, "plain,-5\n");
     });
@@ -161,19 +159,16 @@ describe("cas/csvFormat", () => {
       const csv = formatCsvPage(
         [{ name: "=EVIL()", type: "char" }],
         [{ cells: ["=SUM(A1:A9)"] }],
-        true,
-        true,
+        { includeHeader: true, guardFormulaInjection: true },
       );
       assert.equal(csv, "=EVIL()\n'=SUM(A1:A9)\n");
     });
 
     it("quotes a guarded field that also needs RFC-4180 quoting", () => {
-      const csv = formatCsvPage(
-        guardColumns,
-        [{ cells: ["=a,b", "1"] }],
-        false,
-        true,
-      );
+      const csv = formatCsvPage(guardColumns, [{ cells: ["=a,b", "1"] }], {
+        includeHeader: false,
+        guardFormulaInjection: true,
+      });
       assert.equal(csv, '"\'=a,b",1\n');
     });
   });

@@ -52,6 +52,9 @@ called out under **Changed** with a migration note.
   State**, so its imports and names are always there. If it raises, your code
   still runs and the output says so. See
   [Connection profiles](docs/connection-profiles.md).
+- **Drag onto My Favorites.** Dropping SAS Content folders or files on **My
+  Favorites** now adds them to favourites instead of doing nothing. See
+  [Browsing SAS Content](docs/browsing-sas-content.md).
 
 ### Changed
 

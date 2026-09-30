@@ -1,0 +1,124 @@
+{
+  "$comment": [
+    "Licence policy for every package in package-lock.json. Read by",
+    "scripts/check-licenses.mjs; the supply-chain CI job runs it. See that",
+    "script's header and ADR-0005's 2026-09-29 amendment.",
+    "",
+    "`allowed` holds only licences that are fine for a package that SHIPS:",
+    "esbuild inlines some devDependencies into the bundles (NOTICE lists",
+    "them), and npm's dev flag cannot tell those from build tools. A package",
+    "under any other licence needs an entry in `exceptions`, and its `why` is",
+    "the argument that it never reaches a bundle.",
+    "",
+    "An exception is keyed on the package name and its lockfile licence string",
+    "together. If the licence changes, or the package leaves the tree, the gate",
+    "fails until the entry is re-reasoned or deleted.",
+    "",
+    "Written 2026-09-29 (12q) against 902 lockfile packages: 745 MIT, and every",
+    "`OR` expression in the tree has an allowed branch."
+  ],
+  "allowed": [
+    "MIT",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Apache-2.0",
+    "0BSD",
+    "BlueOak-1.0.0",
+    "CC0-1.0",
+    "Zlib",
+    "Python-2.0"
+  ],
+  "exceptions": [
+    {
+      "package": "@vscode/vsce-sign",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Microsoft's own licence terms for its VSIX signing tool, pulled in by @vscode/vsce and used only at packaging time. Never bundled."
+    },
+    {
+      "package": "@vscode/vsce-sign-alpine-arm64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-alpine-x64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-darwin-arm64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-darwin-x64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-linux-arm",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-linux-arm64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-linux-x64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-win32-arm64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "@vscode/vsce-sign-win32-x64",
+      "license": "SEE LICENSE IN LICENSE.txt",
+      "why": "Platform binary of @vscode/vsce-sign (optional; npm installs only the host's). Same terms and reasoning as that entry."
+    },
+    {
+      "package": "ovsx",
+      "license": "EPL-2.0",
+      "why": "The Open VSX publishing CLI, a pinned devDependency that release.yml runs with npx against an already-built .vsix. Weak copyleft governs redistributing ovsx itself, which this project never does; nothing imports it."
+    },
+    {
+      "package": "istextorbinary",
+      "license": "Artistic-2.0",
+      "why": "Reached only through @vscode/vsce's secretlint (@secretlint/source-creator), which scans files at packaging time. Never bundled."
+    },
+    {
+      "package": "binaryextensions",
+      "license": "Artistic-2.0",
+      "why": "A dependency of istextorbinary, under @vscode/vsce's secretlint only. Never bundled."
+    },
+    {
+      "package": "textextensions",
+      "license": "Artistic-2.0",
+      "why": "A dependency of istextorbinary, under @vscode/vsce's secretlint only. Never bundled."
+    },
+    {
+      "package": "editions",
+      "license": "Artistic-2.0",
+      "why": "A dependency of istextorbinary and its two extension lists, under @vscode/vsce's secretlint only. Never bundled."
+    },
+    {
+      "package": "version-range",
+      "license": "Artistic-2.0",
+      "why": "A dependency of editions, under @vscode/vsce's secretlint only. Never bundled."
+    },
+    {
+      "package": "@azu/style-format",
+      "license": "WTFPL",
+      "why": "Reached only through @vscode/vsce's secretlint output formatter (@textlint/linter-formatter). Never bundled."
+    },
+    {
+      "package": "spdx-exceptions",
+      "license": "CC-BY-3.0",
+      "why": "A data file of SPDX exception ids, reached only through @vscode/vsce's secretlint (read-pkg -> normalize-package-data -> validate-npm-package-license -> spdx-expression-parse). Never bundled."
+    }
+  ]
+}

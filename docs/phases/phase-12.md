@@ -2791,6 +2791,21 @@ raised one blocking finding, a `progressToken.dispose()` call at
 Line 337 is a comment, and the only `dispose()` is on the subscriptions
 `onCancellationRequested` returns. Nothing changed after the push.
 
+### Phase 12→13 housekeeping, 2026-09-29
+
+Ran once 12q merged, and closed the same day. The outcomes are in
+`STATUS.md`'s "Phase 12→13 housekeeping" section. In short:
+
+- The ADRs, punch list and plan needed nothing.
+- Phase 12's `STATUS.md` narrative moved to `docs/status-archive.md`.
+- No scratch files existed.
+- Manual tests were complete.
+- 0 Dependabot alerts were open after PR #224.
+- 12f's and 12l's missing `CHANGELOG.md` entries are left to the v0.1.4
+  release PR.
+
+The phase is done. Next is the v0.1.4 preview release, then Phase 13.
+
 ---
 
 ## Probe findings

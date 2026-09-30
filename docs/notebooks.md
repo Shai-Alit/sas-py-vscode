@@ -41,8 +41,10 @@ running.
 
 ## Output
 
-Plain text streams into the cell as it prints, the same way the output channel
-does for a run.
+Plain text appears in the cell all at once when the cell's code finishes, the
+same way it does in the output channel for a run: SAS Viya holds printed
+output until the step ends ([Watching the
+output](running-python.md#watching-the-output)).
 
 An image or an HTML table needs an explicit call, exactly as it does in [the
 Result panel](running-python.md#the-result-panel): `SAS.show(plt,

@@ -83,7 +83,7 @@ print("Hello from Viya")
 
 Then run **Python on Viya: Run File** — the play button in the editor's top
 right, the editor's right-click menu, or the Command Palette all do the same
-thing. A channel called **Python on Viya: Output** opens and streams the
+thing. A channel called **Python on Viya: Output** opens and shows the
 result. That is your `print()` output, produced by a Python interpreter
 running inside Viya, not on your machine.
 

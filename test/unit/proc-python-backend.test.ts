@@ -15,6 +15,8 @@ import {
   ODS_WRAPPER_AFTER,
   ODS_WRAPPER_BEFORE,
   ProcPythonBackend,
+  QUIET_NOTES_AFTER,
+  QUIET_NOTES_BEFORE,
   STARTUP_FILEREF_NAME,
   STARTUP_RESULT_CAPTURE,
   type SubmissionGuard,
@@ -739,16 +741,25 @@ describe("ProcPythonBackend", () => {
       // ADR-0014 amendment, finding 70: a trailing `run;` closes the step —
       // without it, the step's own log/SYSCC/file-writes never flush.
       // ADR-0038: the ODS wrapper surrounds both, close-first. ADR-0039: the
-      // syntax-check recovery prefix comes before everything.
+      // syntax-check recovery prefix comes before everything. ADR-0043:
+      // notes are off from just after that prefix to the very end.
       const prefix = SYNTAX_CHECK_RECOVERY.length;
-      const wrapped = prefix + ODS_WRAPPER_BEFORE.length;
-      assert.equal(code.length, wrapped + 2 + ODS_WRAPPER_AFTER.length);
+      const quiet = prefix + QUIET_NOTES_BEFORE.length;
+      const wrapped = quiet + ODS_WRAPPER_BEFORE.length;
+      assert.equal(
+        code.length,
+        wrapped + 2 + ODS_WRAPPER_AFTER.length + QUIET_NOTES_AFTER.length,
+      );
       assert.deepEqual(code.slice(0, prefix), [...SYNTAX_CHECK_RECOVERY]);
-      assert.deepEqual(code.slice(prefix, wrapped), [...ODS_WRAPPER_BEFORE]);
+      assert.deepEqual(code.slice(prefix, quiet), [...QUIET_NOTES_BEFORE]);
+      assert.deepEqual(code.slice(quiet, wrapped), [...ODS_WRAPPER_BEFORE]);
       assert.ok(code[wrapped]?.startsWith("proc python infile="));
       assert.ok(!code[wrapped]?.includes("restart"));
       assert.equal(code[wrapped + 1], "run;");
-      assert.deepEqual(code.slice(wrapped + 2), [...ODS_WRAPPER_AFTER]);
+      assert.deepEqual(code.slice(wrapped + 2), [
+        ...ODS_WRAPPER_AFTER,
+        ...QUIET_NOTES_AFTER,
+      ]);
     });
 
     it("composes `restart` into the same statement for a fresh namespace", async () => {
@@ -775,7 +786,9 @@ describe("ProcPythonBackend", () => {
       const code = (submitted.body as { code: string[] }).code;
       assert.ok(
         code[
-          SYNTAX_CHECK_RECOVERY.length + ODS_WRAPPER_BEFORE.length
+          SYNTAX_CHECK_RECOVERY.length +
+            QUIET_NOTES_BEFORE.length +
+            ODS_WRAPPER_BEFORE.length
         ]?.startsWith("proc python restart infile="),
       );
     });
@@ -2929,7 +2942,7 @@ describe("ProcPythonBackend", () => {
       assert.equal(deletedNames.length, 0);
     });
 
-    it("submits the wrapper's SAS text exactly as Findings 12.16 and 12.17 probed it", async () => {
+    it("submits the wrapper's SAS text exactly as Findings 12.16, 12.17 and 13.2 probed it", async () => {
       // Pinned as literals, not read back from the exported constants, so a
       // typo in the SAS text itself fails here instead of being mirrored.
       const { client, requests } = router({ syscc: "0" });
@@ -2949,17 +2962,23 @@ describe("ProcPythonBackend", () => {
         (request) => request.link.rel === "execute",
       );
       const code = (submitted?.body as { code: string[] }).code;
-      assert.deepEqual(code.slice(0, 7), [
+      assert.deepEqual(code.slice(0, 9), [
         "options nosyntaxcheck;",
         "%if %sysfunc(getoption(obs))=0 %then %do; options obs=max; %end;",
+        "%let PYVIYA_NOTES=%sysfunc(getoption(notes));",
+        "options nonotes;",
         "ods listing gpath=%sysfunc(quote(%sysfunc(pathname(work))));",
         "ods html5(id=vscode) close;",
         "title;footnote;",
         "ods graphics on / outputfmt=png;",
         "ods html5(id=vscode) body='pyviya_ods.htm' options(bitmap_mode='inline' svg_mode='inline');",
       ]);
-      assert.match(code[7] ?? "", /^proc python infile=PY\d{6};$/);
-      assert.deepEqual(code.slice(8), ["run;", "ods html5(id=vscode) close;"]);
+      assert.match(code[9] ?? "", /^proc python infile=PY\d{6};$/);
+      assert.deepEqual(code.slice(10), [
+        "run;",
+        "ods html5(id=vscode) close;",
+        "options &PYVIYA_NOTES;",
+      ]);
     });
 
     it("stops fetching a body once it has seen an empty one of the same size (Finding 12.16)", async () => {
@@ -3418,9 +3437,13 @@ describe("ProcPythonBackend: the Python startup snippet (ADR-0041)", () => {
 
     assert.ok(settled.ok);
     const [code] = jobCodes(requests);
-    const wrapped = SYNTAX_CHECK_RECOVERY.length + ODS_WRAPPER_BEFORE.length;
+    const wrapped =
+      SYNTAX_CHECK_RECOVERY.length +
+      QUIET_NOTES_BEFORE.length +
+      ODS_WRAPPER_BEFORE.length;
     assert.deepEqual(code?.slice(0, wrapped), [
       ...SYNTAX_CHECK_RECOVERY,
+      ...QUIET_NOTES_BEFORE,
       ...ODS_WRAPPER_BEFORE,
     ]);
     assert.deepEqual(code.slice(wrapped, wrapped + 4), [
@@ -3430,7 +3453,10 @@ describe("ProcPythonBackend: the Python startup snippet (ADR-0041)", () => {
     ]);
     assert.match(code[wrapped + 4] ?? "", /^proc python infile=PY\d{6};$/);
     assert.equal(code[wrapped + 5], "run;");
-    assert.deepEqual(code.slice(wrapped + 6), [...ODS_WRAPPER_AFTER]);
+    assert.deepEqual(code.slice(wrapped + 6), [
+      ...ODS_WRAPPER_AFTER,
+      ...QUIET_NOTES_AFTER,
+    ]);
 
     // The snippet is uploaded before the user's program.
     const assigned = requests

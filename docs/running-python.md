@@ -76,10 +76,16 @@ Text output goes to a channel called **Python on Viya: Output**. It is
 deliberately not the same channel as the extension's log
 (**Python on Viya: Show Log**): the log is a timestamped record of what the
 *extension* did, and this is a transcript of what your *program* printed. The
-first line names the profile and what is running; then your `stdout` streams in
-as it arrives, line by line, rather than all at once when the run ends; then a
-final `Finished.` or `Finished with an error.`. The channel reveals itself
-without taking focus off your code.
+first line names the profile and what is running; then what your program
+printed; then a final `Finished.` or `Finished with an error.`. The channel
+reveals itself without taking focus off your code.
+
+Your `stdout` arrives all at once when your program finishes, not line by line
+as it prints. SAS Viya holds a `PROC PYTHON` step's output until the step ends,
+and `print(..., flush=True)` does not change that, so a long run shows nothing
+from your program until it is done. This was measured against a live
+deployment — see Finding 13.3 in
+[`docs/phases/phase-13.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-13.md).
 
 Anything that is not plain text — a matplotlib figure, a DataFrame rendered as
 HTML, a structured traceback — goes to the **Result** panel instead.
@@ -232,6 +238,16 @@ but they are noise. This is inherent to `PROC PYTHON` — it runs your code
 through an interactive interpreter and has no option to suppress the banner or
 the prompts — and the extension deliberately does not strip them, since a
 program that legitimately prints `>>>` must not have it removed.
+
+**SAS notes are off while your code runs.** Each run turns the `NOTES` system
+option off and puts your session's setting back afterwards. Without that, a
+`SAS.submit()` whose last step is `PROC SGPLOT` or `PROC SGPANEL` makes SAS
+mark the whole run's printed output as notes, and the extension hides notes
+([ADR-0043](adr/0043-every-run-turns-sas-notes-off.md)). Two things follow.
+`SAS.logMessage()` at its default `NOTE` level shows nothing, as before;
+`SAS.logMessage("…", "warning")` is shown. And if your code
+runs `SAS.submit("options notes;")`, a graph later in that run can hide its
+output again.
 
 ## What is not here yet
 

@@ -169,6 +169,10 @@ where `PROC PYTHON` actually hurts.
   passed. See "12o and 12p moved here" below for the pickup steps.
 - [ ] **13m — The MCP server's read-only tools (was 12p).** Moved here
   2026-09-29. Not started. After 13l.
+- [x] **13n — Output lost after a `SAS.submit()` graph.** Added 2026-09-30
+  from v0.1.4's release smoke test. Every run turns SAS notes off
+  ([ADR-0043](../adr/0043-every-run-turns-sas-notes-off.md)). See "13n
+  built" below.
 
 ### Scope extended, 2026-09-24
 
@@ -246,8 +250,203 @@ Windows shell's line, turning it off, a taken port, refusals) did not run.
    in `CLAUDE.md`. Both reviews are done, so the adversarial pass covers
    what the rebase and the steps above changed. Then the PR.
 
+### 13n built, 2026-09-30
+
+**What was wrong.** Sean ran a new release smoke test (`test/smoke/`)
+against the installed v0.1.4. Run File printed nothing but the banner, and
+a failing run showed only "Finished with an error." with no traceback and
+no Problems entry. The probe found the cause (Finding 13.1). When the last
+step a `SAS.submit()` runs is `PROC SGPLOT` or `PROC SGPANEL`, SAS types
+the `PROC PYTHON` step's whole stdout and traceback `note`, and
+`logFilter.ts` drops `note` lines. The smoke test's `PROC SGPLOT` check hid
+every other check's output.
+
+**The fix.** `runProgram`'s job saves the session's `NOTES` setting and
+turns notes off after the syntax-check prefix, and restores the setting as
+its last statement (`QUIET_NOTES_BEFORE` and `QUIET_NOTES_AFTER` in
+`src/backend/procPython.ts`, ADR-0043). Under `NONOTES` the same lines
+arrive `normal` (Finding 13.2). The filter is unchanged: keeping `note`
+lines between the `>>>` markers would be the text scan Findings 52, 74 and
+93 rule out. `reset()` and `probeRuntime()` are not wrapped.
+
+**Tests.** The three job-layout tests in
+`test/unit/proc-python-backend.test.ts` (no restart, restart, and the
+startup-snippet job) now assert the new lines' positions. The existing
+exact-array tests for `reset()` and `probeRuntime()` pass unchanged, which
+shows neither is wrapped.
+
+**Smoke test.** `test/smoke/` is new in this slice: `release_smoke.py`,
+`release_smoke.ipynb`, `release_smoke_traceback.py`,
+`release_smoke_cancel.py`, `release_smoke_sgplot.py` and a `README.md`.
+Nothing in `npm test` reads it. `release_smoke_sgplot.py` is the
+reproduction for this slice.
+
+**Streaming check.** The 13n probes also saw a step's printed output arrive
+only when the step ended, which contradicted `docs/running-python.md` and
+the smoke test's own section 3. A dedicated probe settled it (Finding 13.3):
+`PROC PYTHON` holds stdout until the step ends. The docs and the smoke test
+that claimed line-by-line streaming were corrected in this slice. No source
+change: `logStream.ts` streams whatever the log holds.
+
+**Verify.** `npm run verify`'s steps green on 2026-09-30 (2,018 unit;
+coverage 96.25/96.07/95.96/96.25). `format:check` was run with
+`.claude/worktrees/` left out: an agent worktree there, excluded from git,
+holds two fixtures Prettier flags.
+
+**Review.** The pre-push adversarial pass (the developer's independent
+reviewer, reading the source and test diffs, without running the suite)
+found nothing blocking and left three notes:
+
+- A cancel loses the session's `NOTES` setting for the rest of the session.
+  Already in ADR-0043's consequences; that bullet now also says when it
+  would matter and what would fix it. No code change (Sean's scope).
+- No unit test covers the restore after an exception or a cancel. The job's
+  code array is static, so a unit test cannot show either. Finding 13.2
+  records both from the probe.
+- `PYVIYA_NOTES` stays in the session's global scope. ADR-0043 now says so.
+
+Reading the doc diffs afterwards found one wrong phrase: ADR-0038's and
+ADR-0041's amendment notes, and ADR-0041's index row, said notes are turned
+"back on". The job restores the session's setting, which may be `NONOTES`.
+All three are corrected.
+
+**Manual items** 13.1–13.5 in `docs/dev/manual-tests/phase-13.md`. Sean ran
+all five against a `.vsix` built from this branch on 2026-09-30, before the
+push, and all passed.
+
+**Not reproduced.** Two things Sean saw on v0.1.4 did not recur on the
+probe. A traceback stayed lost until a disconnect and reconnect: the probe
+never saw the `note` typing outlast its job. A notebook cell's `SAS.show()`
+output did not render: the server's ODS body and the sanitizer were both
+fine. Each was during runs that the `note` typing had already hidden, so
+both may be the same bug. Manual items 13.3 and 13.5 cover them.
+
 ---
 
 ## Probe findings
 
-_No live-Viya probes recorded for this phase yet._
+Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
+13.1; nothing here continues another phase's sequence.
+
+### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
+
+**Documented:** nothing found. SAS's `PROC PYTHON` documentation does not
+say how the log types a program's output; Findings 39 and 52 measured
+stdout and the traceback as `normal`.
+
+**Observed (Viya 4, the test deployment, 2026-09-30).** Throwaway sessions
+with v0.1.4's job shape (recovery prefix, ODS wrapper, `PAGESIZE MAX`),
+each deleted afterwards and read back as `404`:
+
+- When the last step a `SAS.submit()` runs is `PROC SGPLOT` or
+  `PROC SGPANEL`, **every** stdout line of that `PROC PYTHON` step arrives
+  typed `note`, including lines printed before the submit. So does the
+  traceback. The `ERROR: Unhandled Python exception.` line stays `error`,
+  and `SYSCC` is still `1012`.
+- A later SAS step inside the same `PROC PYTHON` step (`data _null_; run;`,
+  `PROC MEANS`) puts the typing back to `normal`. A `%put` does not.
+- The next job is not affected.
+- Not triggered by `SAS.sd2df`, `SAS.df2sd`, `SAS.show`, `SAS.symput`,
+  `SAS.symget`, `SAS.sasfnc`, `PROC PRINT`, `PROC MEANS`, a
+  `PROC UNIVARIATE` histogram or `PROC REG` plots.
+- The ODS wrapper, `LINESIZE`, `PAGESIZE MAX` and `ods listing close` make
+  no difference.
+
+**Not settled:** other `SG` procedures (`SGSCATTER`, `SGRENDER`), other
+releases and deployments, and why these two procedures do it. Under
+ADR-0043 none of these matters, since notes are off for every procedure.
+
+### Finding 13.2 — With `options nonotes` around the step, the same lines arrive `normal` (2026-09-30)
+
+**Documented:** the `NOTES` system option controls whether notes are
+written to the log. Nothing found about its effect on `PROC PYTHON` output.
+
+**Observed (same deployment and day, same throwaway-session method),**
+with ADR-0043's lines around the step
+(`%let PYVIYA_NOTES=%sysfunc(getoption(notes)); options nonotes;` after
+the recovery prefix, `options &PYVIYA_NOTES;` last):
+
+- `release_smoke.py`, as it stood that day, gives all 30 of its
+  `[PASS]`/`[SKIP]`/`[LOOK]`/`===` lines typed `normal`, with no `FAIL`. A traceback after `PROC SGPLOT` arrives `normal`, with `SYSCC`
+  `1012`. The same holds without a restart, and after `PROC SGPANEL`.
+- The restore runs after a Python exception, and a session already set to
+  `NONOTES` is still `NONOTES` afterwards.
+- With a startup snippet step inside the wrapper (ADR-0041), the source echo
+  of `%let PYVIYA_STARTCC=&syscc;` still arrives typed `source`. A snippet
+  traceback after `PROC SGPLOT` arrives `normal`, `PYVIYA_STARTCC` is
+  `1012`, `SYSCC` is `0`, and the user step's lines arrive `normal`.
+- `SAS.hideLOG()` / `SAS.printLOG()` behave the same as with notes on.
+- `SAS.logMessage()` at its default `NOTE` level writes nothing.
+  `WARNING` and `ERROR` messages are still written.
+- A `SAS.submit()` DATA step that fails on a missing input logs one extra
+  line: `WARNING: Data set WORK._X was not replaced because this step was
+  stopped.`, typed `warning`.
+- `SAS.submit("options notes;")` followed by `PROC SGPLOT` brings the
+  `note` typing back for that run.
+- A job cancelled while `PROC PYTHON` runs (`PUT …/state?value=canceled`
+  answered `200`, state `canceled`) never reaches the restore: the session
+  reads `NONOTES` afterwards, and after the next completed run too.
+- Nothing in `src/` reads a `note` line except `logFilter.ts`, which drops
+  it (checked in the source, not probed).
+
+**Not settled:** a cancel during the snippet step, and other deployments.
+
+### Finding 13.3 — A `PROC PYTHON` step's stdout reaches the job log only when the step ends (2026-09-30)
+
+**Documented:** nothing in SAS's `PROC PYTHON` documentation says when printed
+output reaches the log. A WUSS 2025 paper on `PROC PYTHON` says print output
+"will come out in one area at the bottom of the log", without timing it. This
+project's own docs said the opposite: `docs/running-python.md` had stdout
+streaming in "as it arrives, line by line", and `release_smoke.py`'s section 3
+asked a tester to see its lines appear one at a time. No earlier finding
+measured it. Finding 48 (`phase-2b.md`) timed the log's long poll against "a
+job printing one line per second" but did not record the program. Its
+one-line-per-poll arrivals match the DATA step control below, not
+`PROC PYTHON`. The probes behind Findings 13.1 and 13.2 saw the same holding
+back in passing and did not record it.
+
+**Observed (Viya 4, the test deployment, Python 3.12.12, 2026-09-30).** Two
+throwaway sessions on the SAS Studio compute context, each deleted afterwards
+and read back as `404`. Each job's log was long-polled the way `logStream.ts`
+polls it (`?start=<cursor>&limit=200&timeout=10`), and every line was
+timestamped on arrival. Each Python program prints a line, sleeps 3 s, and
+repeats five times, then prints `done`, with its own elapsed time in every line:
+
+| Job | Printed at | Arrived at |
+|---|---|---|
+| A: inline `submit`/`endsubmit`, `flush=True` | +0, 3, 6, 9, 12, 15 s | all at +18.7 s, with the step's closing `NOTE` |
+| B: v0.1.4's job shape (recovery prefix, ODS wrapper, `proc python restart infile=…; run;`), `flush=True` | the same | all at +17.2 s |
+| E: as B without `restart` (a notebook cell's shape), plain `print` | the same | all at +15.4 s |
+| D: as A, with a `SAS.submit()` DATA step after each print | the same | all at +15.3 s |
+| C: control, `data _null_` with `put` and `sleep(3, 1)` | one line every 3 s | one line per poll, 3 s apart |
+
+- During a `PROC PYTHON` step each poll either blocked its full 10 s and came
+  back empty or was released only when the step ended. In C the same poll
+  released on every new line. So the holding happens in `PROC PYTHON`, not in
+  the log endpoint and not in the poll.
+- `flush=True` (A, B, D) and a plain `print` (E) behave the same.
+- In D, each `SAS.submit()` step's own log (its `source` echo, its `put`
+  output typed `normal`, its `NOTE`s) arrived mid-step, 3 s apart. The Python
+  `print` lines around it still arrived only at the end.
+- Volume does not force an early flush. Three bursts of 300 lines, 5 s apart
+  (about 85 KB), and 5,000 lines followed by an 8 s sleep (about 500 KB) both
+  arrived entirely after the step ended.
+
+These jobs ran without ADR-0043's `options nonotes` lines; the 13n probes saw
+the same holding back with them.
+
+**What this establishes.** A Run File's, or a notebook cell's, printed output
+arrives in one piece when the program finishes, not line by line, and a long
+run shows nothing from the program before then. `logStream.ts` does stream the
+log; the lines are not in it until the step ends. Corrected in the same
+change: `docs/running-python.md`, `docs/notebooks.md`, `docs/diagnostics.md`,
+`docs/getting-started.md`, and in `test/smoke/` the section 3 check of
+`release_smoke.py` and of the notebook, the notebook's interrupt instructions,
+`release_smoke_cancel.py`'s header, and the README's table.
+
+**Not settled:** whether the hold is per step or per `submit` block. A step
+with two `submit` blocks could not show it, because the second block raised a
+`NameError` for a name the first block defined; not pursued, since this
+extension submits one `infile=` step. Also unsettled: output beyond about
+500 KB, `stderr`, other releases and deployments, and why.
+

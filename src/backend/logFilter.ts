@@ -77,6 +77,14 @@
  * channel rather than `note`'s, so nothing here can mistake one for the
  * other.
  *
+ * That holds only while notes are on. When the last step a `SAS.submit()`
+ * runs is `PROC SGPLOT` or `PROC SGPANEL`, SAS types the whole `PROC PYTHON`
+ * step's stdout and traceback `note`, and this filter dropped all of it
+ * (Finding 13.1). The fix is not here: telling those lines apart from real
+ * notes would take the text scan this module rules out. `procPython.ts` runs
+ * each program with `NONOTES` instead, and the same lines then arrive
+ * `normal` (ADR-0043, Finding 13.2).
+ *
  * `error` is *not* excluded. Finding 39 measured a Python exception as an
  * `ERROR: Unhandled Python exception.` line of type `error`, immediately
  * followed by the raw traceback text as `normal` lines — both are shown, and

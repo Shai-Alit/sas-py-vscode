@@ -1,6 +1,9 @@
 # ADR-0041 — The Python startup snippet runs as its own `PROC PYTHON` step, in the same job as the restart it survives
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-09-30 by
+  [ADR-0043](0043-every-run-turns-sas-notes-off.md): a run's job turns SAS
+  notes off before the wrapper and restores the session's setting after
+  it; Reset Python State's job is unchanged
 - **Date:** 2026-09-28
 - **Decides:** how a profile's Python startup snippet reaches the
   interpreter, and how it survives the restart that every Run File and

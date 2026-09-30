@@ -108,6 +108,20 @@
  * Like the ODS wrapper, these are extra statements in the job's code array,
  * and `Program.bytes` is untouched (ADR-0014).
  *
+ * ## Every run turns SAS notes off while it runs (ADR-0043, 13n)
+ *
+ * When the last step a `SAS.submit()` runs is `PROC SGPLOT` or
+ * `PROC SGPANEL`, SAS types that `PROC PYTHON` step's whole stdout and its
+ * traceback `note`, and `logFilter.ts` drops every `note` line, so the run
+ * showed nothing but "Finished with an error." (Finding 13.1). With
+ * `NONOTES` in effect the same lines arrive `normal` (Finding 13.2). So
+ * `execute()`'s job saves the session's `NOTES` setting and turns notes off
+ * after {@link SYNTAX_CHECK_RECOVERY}, and puts the saved setting back as its
+ * last statement: {@link QUIET_NOTES_BEFORE} and {@link QUIET_NOTES_AFTER}.
+ * The filter still trusts the type; nothing here reads the text. Like the
+ * ODS wrapper, only `execute()` is wrapped, and `Program.bytes` is untouched
+ * (ADR-0014).
+ *
  * ## The profile's Python startup snippet is a step of its own (ADR-0041, 12m)
  *
  * Every Run File and Reset Python State restarts the interpreter, which
@@ -334,6 +348,28 @@ export const ODS_WRAPPER_BEFORE: readonly string[] = [
  * file so the capture step can read it. A cancelled run never reaches it;
  * the next run's `close` before its open covers that (Finding 12.16). */
 export const ODS_WRAPPER_AFTER: readonly string[] = [ODS_CLOSE];
+
+/** The macro variable the session's own `NOTES` setting is saved in. */
+const NOTES_SETTING_NAME = "PYVIYA_NOTES";
+
+/**
+ * The statements that turn SAS notes off for a run (ADR-0043), right after
+ * {@link SYNTAX_CHECK_RECOVERY}. `getoption(notes)` returns `NOTES` or
+ * `NONOTES`, so a session a profile's `sasOptions` set to `NONOTES` keeps
+ * that setting (Finding 13.2).
+ */
+export const QUIET_NOTES_BEFORE: readonly string[] = [
+  `%let ${NOTES_SETTING_NAME}=%sysfunc(getoption(notes));`,
+  "options nonotes;",
+];
+
+/** The run's last statement, which puts the saved `NOTES` setting back. It
+ * runs after a Python exception too. A cancelled run never reaches it, and
+ * the session then stays `NONOTES`, which only changes a log this extension
+ * already drops (Finding 13.2). */
+export const QUIET_NOTES_AFTER: readonly string[] = [
+  `options &${NOTES_SETTING_NAME};`,
+];
 
 const TRACEBACK_HEADER = "Traceback (most recent call last):";
 
@@ -1247,17 +1283,23 @@ export class ProcPythonBackend implements ExecutionBackend {
       // recovery prefix goes first, so a session a failed SAS step left in
       // syntax-check mode runs this program instead of skipping it (Finding
       // 12.19). The startup snippet's step, if any, goes inside the wrapper
-      // and ahead of the user's (ADR-0041).
+      // and ahead of the user's (ADR-0041). Notes are off from just after
+      // the recovery prefix to the end, so a `SAS.submit()` graph cannot
+      // turn the step's stdout and traceback into `note` lines (ADR-0043,
+      // Finding 13.1). The snippet boundary's `source` echo is unaffected
+      // (Finding 13.2).
       const job = await createJob(
         this.client,
         this.session,
         [
           ...SYNTAX_CHECK_RECOVERY,
+          ...QUIET_NOTES_BEFORE,
           ...ODS_WRAPPER_BEFORE,
           ...startupStep,
           statement,
           "run;",
           ...ODS_WRAPPER_AFTER,
+          ...QUIET_NOTES_AFTER,
         ],
         { signal: run.controller.signal },
       );

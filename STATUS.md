@@ -140,8 +140,18 @@ full slice-by-slice narrative that used to live here has moved to
 [`docs/status-archive.md`](docs/status-archive.md), per this file's own
 archival rule.
 
-**Next: the v0.1.4 preview release** (`docs/release-checklist.md`, D1–D8),
-then Phase 13 ([`docs/phases/phase-13.md`](docs/phases/phase-13.md)).
+**`v0.1.4` shipped 2026-09-30, the preview release that follows Phase 12.**
+It is on the VS Marketplace, Open VSX and
+[GitHub Releases](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.4),
+from release PR [#228](https://github.com/Shai-Alit/sas-py-vscode/pull/228)
+(squash `207569e`). That PR also raised the `fast-uri` override to `^3.1.8`
+for GHSA-HRR3-GC8F-F4QJ, published the same day. The MCP server is not in it.
+A first `v0.1.4` tag, pushed before #228 merged, was stopped by
+`release.yml`'s version check before `publish`, then deleted and re-created
+on the merge commit. `docs/release-checklist.md`'s D5 now checks for this
+before tagging. The post-publish manual pass (D7) is Sean's to run.
+
+**Next: Phase 13** ([`docs/phases/phase-13.md`](docs/phases/phase-13.md)).
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -531,7 +541,7 @@ to Phase 13, and its phase-index row — was appended 2026-09-29 at the Phase
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
 | 12 — AI-agent integration | ✅ **done — every slice merged, decided or moved, 2026-09-22–29.** Agent Skill, CSV formula guard, inline graphics ([ADR-0038](docs/adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md)), session-poisoning fix ([ADR-0039](docs/adr/0039-every-job-switches-syntax-check-mode-off.md)), scheme rename for coexistence with the SAS extension ([ADR-0040](docs/adr/0040-every-uri-scheme-is-the-extensions-own.md)), Python startup snippet ([ADR-0041](docs/adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md)), reusable CAS connection, licence gate. 12o/12p (MCP server) moved to Phase 13 as 13l/13m. Final PR [#226](https://github.com/Shai-Alit/sas-py-vscode/pull/226), squash `7063b9c`. `npm run verify` green (2,018 unit; coverage 96.24/96.07/95.96/96.24); `npm run test:integration` green (544 passing). Phase 12→13 housekeeping ran and closed 2026-09-29 (see above). | `docs/phases/phase-12.md` |
-| 13 — Feature completion | **next, after the v0.1.4 preview release** — not started; **gates v1.0 from 2026-09-24** (`PRODUCTION_PLAN.md` §8). Retitled from "Second execution backend" when the backlog sweep added 13a–13k (SAS Content upload/download and copy, F6, F11, F10, F8, F1, an MCP execution tool, polish); 13l/13m (the MCP server, built and parked on `feat/12o-mcp-server`, and its read-only tools) moved in from Phase 12 on 2026-09-29. The second-execution-backend section stays, ungated. | `docs/phases/phase-13.md` |
+| 13 — Feature completion | **next** (v0.1.4 shipped 2026-09-30) — not started; **gates v1.0 from 2026-09-24** (`PRODUCTION_PLAN.md` §8). Retitled from "Second execution backend" when the backlog sweep added 13a–13k (SAS Content upload/download and copy, F6, F11, F10, F8, F1, an MCP execution tool, polish); 13l/13m (the MCP server, built and parked on `feat/12o-mcp-server`, and its read-only tools) moved in from Phase 12 on 2026-09-29. The second-execution-backend section stays, ungated. | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section
 (architecture, scope), the runbook punch list (commands, order, barriers), and

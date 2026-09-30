@@ -138,12 +138,20 @@ step with it.
 ☐ **D4.** Open the release PR with D1–D3, get it green, merge it (squash, per
 `RUNBOOK.md`).
 
-☐ **D5.** Tag from the merge commit on `main`:
+☐ **D5.** Tag from the merge commit on `main`, **only after D4's release PR
+has merged**. The two checks refuse to tag a tree whose `package.json` and
+`CHANGELOG.md` do not already say `X.Y.Z`:
 
 ```bash
-git checkout main && git pull --ff-only && git tag vX.Y.Z
-git push origin vX.Y.Z
+git checkout main && git pull --ff-only \
+  && [ "$(node -p "require('./package.json').version")" = "X.Y.Z" ] \
+  && grep -q '^## \[X.Y.Z\] - ' CHANGELOG.md \
+  && git tag vX.Y.Z && git push origin vX.Y.Z
 ```
+
+On 2026-09-29, `v0.1.4` was first pushed before its release PR had merged.
+`release.yml`'s own tag-and-version check stopped `build`, and `publish`
+never ran. The checks above catch the same mistake before any tag exists.
 
 ☐ **D6.** Watch the `Release` workflow. When `publish` is queued, approve the
 `release` environment. Then confirm:
@@ -166,7 +174,14 @@ adding a fresh empty `[Unreleased]` section to `CHANGELOG.md`.
 
 > A published marketplace version cannot be reused. If something is wrong, ship a
 > patch version — never try to republish the same number. The same is true of
-> Open VSX and of a Git tag that has already triggered a run.
+> Open VSX and of a Git tag whose run reached `publish`.
+>
+> The one exception is a tag whose `Release` run failed in `build`, so that
+> `publish` was skipped and no GitHub Release exists. Nothing was published, so
+> the tag can be deleted (`git push origin :refs/tags/vX.Y.Z`) and re-created
+> on the right commit. Check the run's `publish` job and
+> `gh release view vX.Y.Z` first. `v0.1.4` was recovered this way on
+> 2026-09-30.
 
 ---
 

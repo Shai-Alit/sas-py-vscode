@@ -201,3 +201,7 @@ out rather than reimplementing it. The rest of the feature stays free of Node
 built-ins: `guard.ts`, `protocol.ts` and `registration.ts` are plain
 TypeScript, and `agentServer.ts` uses only the `vscode` API and these two
 files. The allow-list is now seven files, still with no globs.
+
+**Retired 2026-09-30.** The MCP server was removed before any release
+([ADR-0044](0044-the-mcp-server-for-claude-code-is-removed.md)), and both
+files with it. The allow-list is five files again.

@@ -3,7 +3,6 @@
   "all": true,
   "exclude": [
     "out/test/**",
-    "src/agent/agentServer.ts",
     "src/auth/authProvider.ts",
     "src/auth/browserFlow.ts",
     "src/auth/commands.ts",

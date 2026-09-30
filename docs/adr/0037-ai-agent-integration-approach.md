@@ -1,6 +1,8 @@
 # ADR-0037 — AI-agent integration: ship an Agent Skill now, spike an in-process MCP server before committing further
 
-- **Status:** Accepted — amended 2026-09-22 (see below, same day)
+- **Status:** Accepted — amended 2026-09-22 (see below, same day); amended
+  2026-09-30 by [ADR-0044](0044-the-mcp-server-for-claude-code-is-removed.md):
+  the Option C line of work ends, and no MCP work is planned
 - **Date:** 2026-09-22
 - **Decides:** which of the AI-agent-integration options surveyed in
   [`docs/research/ai-integration-2026-09-21.md`](../research/ai-integration-2026-09-21.md)

@@ -1048,11 +1048,19 @@ carries the 1.0.0 version bump.
 > follows Phase 12 ships without the MCP server. See
 > `docs/phases/phase-13.md`'s "12o and 12p moved here" Runbook entry.
 
+> **Amended 2026-09-30 (Sean's own call): the MCP server is removed, and
+> 13j, 13l and 13m are dropped.** 13l had merged but was in no release. It
+> reached only the Claude Code command line, and SAS already ships an
+> official Viya MCP server. The agent skill stays. See
+> [ADR-0044](docs/adr/0044-the-mcp-server-for-claude-code-is-removed.md)
+> and `docs/phases/phase-13.md`'s "MCP server removed" Runbook entry.
+
 > **What 1.0 does not require.** The second execution backend does not
 > gate it. That work was all of Phase 13 when this paragraph was written
 > (renumbered from Phase 12 on 2026-09-22 — see the amendment above); since
 > 2026-09-24 it is one ungated section of Phase 13, and the rest of Phase 13
-> (13a–13k, and 13l–13m since 2026-09-29) **does** gate 1.0, per the
+> (13a–13k, and 13l–13m since 2026-09-29 — less 13j, 13l and 13m, dropped
+2026-09-30) **does** gate 1.0, per the
 > amendments above. §3.1
 > already holds that parity is the destination rather than the
 > release bar and that the post-v0.1.0 phase order is demand-driven, so a

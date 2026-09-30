@@ -1,6 +1,8 @@
 # ADR-0042 — The MCP server for Claude Code is hand-written, off by default, loopback-only, and reads its per-start secret from a file
 
-- **Status:** Accepted
+- **Status:** Superseded by
+  [ADR-0044](0044-the-mcp-server-for-claude-code-is-removed.md): the server
+  was removed on 2026-09-30, before any release included it
 - **Date:** 2026-09-28
 - **Decides:** how slice 13l (built as Phase 12's 12o) builds the Option C
   server that 12c scoped: the protocol it speaks, when it runs, the secret,

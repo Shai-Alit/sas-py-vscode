@@ -37,6 +37,12 @@ loop, conventions).
 > 13l from that branch, not from scratch. The Runbook's "12o and 12p moved
 > here" entry has what is on it and the pickup steps.
 
+> **The MCP server is removed, and 13j, 13l and 13m are dropped,
+> 2026-09-30 (Sean's own call).** Plan items 10, 12 and 13 below stand as
+> written, as the record of what was planned; none of them will be built.
+> See [ADR-0044](../adr/0044-the-mcp-server-for-claude-code-is-removed.md)
+> and the Runbook's "MCP server removed" entry.
+
 ---
 
 ## Plan
@@ -160,8 +166,8 @@ where `PROC PYTHON` actually hurts.
 - [ ] **13g — F8, DataFrame grid.** Added 2026-09-24. Not started.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
-- [ ] **13j — MCP tool that runs Python.** Added 2026-09-24. Not started.
-  After 13m.
+- [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
+  2026-09-30**, never started. See "MCP server removed" below.
 - [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
   checks). Added 2026-09-24. Not started.
 - [x] **13l — The MCP server for Claude Code (was 12o).** Moved here
@@ -169,9 +175,11 @@ where `PROC PYTHON` actually hurts.
   2026-09-30 on `feat/13l-mcp-server`; reviewed, and manual items
   13.6–13.13 passed. Merged 2026-09-30 as
   [PR #233](https://github.com/Shai-Alit/sas-py-vscode/pull/233), squash
-  `5acb03a`. See "13l picked up" below.
-- [ ] **13m — The MCP server's read-only tools (was 12p).** Moved here
-  2026-09-29. Not started. 13l has merged, so it can start.
+  `5acb03a`. See "13l picked up" below. **Removed 2026-09-30**, before any
+  release. See "MCP server removed" below.
+- [x] **13m — The MCP server's read-only tools (was 12p).** Moved here
+  2026-09-29. Built and reviewed 2026-09-30, never merged. **Dropped
+  2026-09-30.** See "MCP server removed" below.
 - [x] **13n — Output lost after a `SAS.submit()` graph.** Added 2026-09-30
   from v0.1.4's release smoke test. Every run turns SAS notes off
   ([ADR-0043](../adr/0043-every-run-turns-sas-notes-off.md)). See "13n
@@ -641,12 +649,42 @@ output did not render: the server's ODS body and the sanitizer were both
 fine. Each was during runs that the `note` typing had already hidden, so
 both may be the same bug. Manual items 13.3 and 13.5 cover them.
 
+### MCP server removed, 2026-09-30
+
+Sean's call, during 13m's manual pass. The feature reached only the Claude
+Code command line: a user registered it by hand with a `claude mcp` line and
+ran `claude` in the folder. SAS already ships an official Viya MCP server.
+Recorded in [ADR-0044](../adr/0044-the-mcp-server-for-claude-code-is-removed.md),
+which supersedes ADR-0042.
+
+- **Removed from `main`:** `src/agent/`, the
+  `pythonOnViya.agentServer.enabled` setting, the **Set Up Claude Code
+  Access** command, their unit and integration tests,
+  `docs/claude-code.md` and its sidebar entry, the two reference-table rows,
+  the ESLint and c8 entries, and the CHANGELOG's Unreleased lines. No
+  release had any of it, so there is no migration.
+- **13m** was built on `feat/13m-mcp-read-tools` and had its adversarial
+  pass, but was never committed or pushed. Its work, including Findings
+  13.4 and 13.5 (what a CAS `where=` evaluates), is kept only in a local
+  `git stash` on Sean's machine. The branch is deleted.
+- **13j** is dropped unstarted.
+- **Kept:** the agent skill; ADR-0042 and the 13l entries above, as the
+  record; the 13l manual items, marked retired.
+
+**Verify, 2026-09-30,** from a clean `out/`: `npm run verify`'s steps green
+(2,018 unit; coverage 96.25/96.07/95.96/96.25), `format:check` leaving out
+`.claude/worktrees/`; `npm run check:docs` green; `npm run
+test:integration` green (544 passing).
+
 ---
 
 ## Probe findings
 
 Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
-13.1; nothing here continues another phase's sequence.
+13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
+reserved:** they were written for 13m, which never merged (see the "MCP
+server removed" Runbook entry), and are cited by that name. The next new
+finding is 13.6.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 

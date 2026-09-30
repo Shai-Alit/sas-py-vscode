@@ -446,7 +446,14 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
     the ordinary pre-PR pass. **Moved to Phase 13 as 13l, 2026-09-29
     (Sean's call), after it was built but before it merged.** The code is on
     the unmerged branch `feat/12o-mcp-server`. See `phase-13.md`'s "12o and
-    12p moved here" Runbook entry.
+    12p moved here" Runbook entry. **Amended by
+    [ADR-0042](../adr/0042-a-local-mcp-server-for-claude-code.md), written
+    in 12o and merged with 13l:** the secret is held in memory and in a file
+    in the workspace's extension storage, not in `SecretStorage`, which the
+    helper cannot read; the `headersHelper` is a `type`/`cat` command
+    reading that file, not a generated script; and the port is OS-assigned
+    and kept in `workspaceState`. The server is also off by default. See
+    `phase-13.md`'s "13l built" Runbook entry.
 16. **12p — Option C, part 2: the read-only tool surface.** The
     `LibraryAdapter` and `CasAdapter` browse-and-page operations 12c
     listed, each marked `readOnlyHint`, with `applySort`/`deleteView`'s
@@ -990,6 +997,12 @@ config file in plaintext, and served to an external session via a
 `claude mcp add`/`add-json` command it hands the user to run — never a
 value the user copy-pastes into a static `--header` by hand, which is
 exactly the shape 12b found cannot recover from a rotation.
+**Superseded by
+[ADR-0042](../adr/0042-a-local-mcp-server-for-claude-code.md) (12o, merged
+with 13l):** a `headersHelper` is a separate process and cannot read
+`SecretStorage`, so the server keeps the secret in memory and in a file
+under the workspace's extension storage, and the helper is a `type`/`cat`
+command reading it.
 
 **Port and window-reload story.** A stable, per-workspace port, allocated
 once and persisted for that workspace (not re-rolled every VS Code
@@ -1001,7 +1014,9 @@ the closest existing analogue, though the exact mechanism (a per-workspace
 port derived from the workspace's own storage path, vs. an OS-assigned
 ephemeral port surfaced through the generated `headersHelper`/`add`
 command each time) is left to the build slice itself to decide, not fixed
-here.
+here. **Decided in 12o (ADR-0042, merged with 13l):** an OS-assigned port,
+kept in `workspaceState`, with a notice to register again if it has to
+move.
 
 **Security-review checklist, per ADR-0037's own named requirement.** The
 consequences section calls this "a named security review item, not

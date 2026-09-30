@@ -165,8 +165,9 @@ where `PROC PYTHON` actually hurts.
 - [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
   checks). Added 2026-09-24. Not started.
 - [ ] **13l — The MCP server for Claude Code (was 12o).** Moved here
-  2026-09-29. Built and parked on `feat/12o-mcp-server`; manual items 4 of 8
-  passed. See "12o and 12p moved here" below for the pickup steps.
+  2026-09-29. Built and parked on `feat/12o-mcp-server`. Picked up
+  2026-09-30 on `feat/13l-mcp-server`; reviewed, and manual items
+  13.6–13.13 passed. PR next. See "13l picked up" below.
 - [ ] **13m — The MCP server's read-only tools (was 12p).** Moved here
   2026-09-29. Not started. After 13l.
 - [x] **13n — Output lost after a `SAS.submit()` graph.** Added 2026-09-30
@@ -249,6 +250,313 @@ Windows shell's line, turning it off, a taken port, refusals) did not run.
 8. `npm run verify` and `npm run test:integration`, then the pre-PR steps
    in `CLAUDE.md`. Both reviews are done, so the adversarial pass covers
    what the rebase and the steps above changed. Then the PR.
+
+### 13l built, 2026-09-28 — a local MCP server for Claude Code, off by default
+
+> Built as Phase 12's 12o on `feat/12o-mcp-server` and moved here
+> 2026-09-30 from that branch's `phase-12.md`, with the slice names
+> changed to 13l/13m and the manual items renumbered 12.41–12.48 →
+> 13.6–13.13. Otherwise as written then.
+
+**What it is.** An MCP server in the extension host that the Claude Code
+command-line tool connects to over `127.0.0.1`
+([ADR-0042](../adr/0042-a-local-mcp-server-for-claude-code.md)). It has no
+tools; 13m adds the read-only ones. It is off by default. The setting
+`pythonOnViya.agentServer.enabled` turns it on, and the command **Python on
+Viya: Set Up Claude Code Access** offers to do so. It runs only in a trusted
+workspace with a folder open. The code is in `src/agent/`: `protocol.ts`
+(JSON-RPC), `guard.ts` (what a request must carry), `registration.ts` (the
+command line), `headersFile.ts`, `server.ts` (`node:http`) and
+`agentServer.ts` (the VS Code side).
+
+**Sean's calls, 2026-09-28.** Four questions went to Sean before any code,
+and he took the recommended option each time:
+
+- A hand-written server for the legacy protocol era, not the MCP SDK.
+- Off by default, behind a setting and the setup command.
+- The secret in a file per server start, not in `SecretStorage`.
+- An OS-assigned port, kept per workspace.
+
+**Probes.** These are Claude Code and Windows behaviour, not Viya, so they
+are recorded here and not as findings. Each ran on the developer's machine
+against a throwaway local listener or registration, removed afterwards.
+
+- **(a) What Claude Code sends.** Claude Code 2.1.245 was registered against
+  a listener that logged each request and answered `400`. It sent one `POST`
+  with a legacy `initialize` for `protocolVersion` `2025-11-25`, client
+  capabilities `roots` and `elicitation`, and headers `Accept:
+  application/json, text/event-stream`, `Content-Type: application/json`,
+  `Host: 127.0.0.1:<port>` and `Authorization`. It sent no
+  `MCP-Protocol-Version` and no `Origin`, and made no attempt at the
+  2026-07-28 stateless revision. So the server speaks the legacy era only,
+  and `guard.ts` refuses any `Origin`.
+- **(b) How the helper runs.** A `headersHelper` that printed its parent
+  process ran as `C:\Windows\system32\cmd.exe /d /s /c "<command>"`, though
+  the user's `SHELL` was Git Bash. For a user-scope registration its working
+  directory was the user's `.claude` folder. So the Windows helper is
+  `type "<file>"`, quoted for `cmd.exe`. `type` on a quoted path with a space printed the JSON and
+  exited `0`; on a missing file it printed nothing and exited `1`.
+- **`add-json` and `remove`.** `claude mcp add-json` on a name already
+  registered exits `1` with "already exists". `claude mcp remove` of a name
+  not registered writes to stderr and exits `1`. So the line runs `remove`
+  first, discards its stderr, and does not stop on its failure.
+- **Quoting.** Each registration form was run through an npm-style
+  `claude.cmd` shim, with a space in the helper's path. The Command Prompt,
+  Windows PowerShell 5.1 (`cmd /c '…'`) and Git Bash forms each arrived as
+  the one JSON argument they started as. Command Prompt carried on past the
+  shim when chained with `&`. PowerShell 7 is not installed there. Its
+  documentation says it passes arguments to `cmd.exe` and `.cmd` files the
+  legacy way on Windows, which the `cmd /c` wrapper handles either way.
+- **The storage ACL.** `workspaceStorage` inherits an ACL that admits the
+  user, SYSTEM and Administrators only. A headers file written there on
+  Windows gets the same.
+- **(c) A folder Claude Code has not trusted.** Found during the security
+  review. A `--scope local` registration was added in a folder whose Claude
+  Code trust prompt had not been accepted, with a dummy listener on its
+  port. `claude mcp list` (2.1.245) reported "headersHelper not run — this
+  workspace has no persisted trust", then connected anyway. It sent
+  `initialize`, `notifications/initialized`, `tools/list` and `GET /mcp`,
+  none with `Authorization`. So Claude Code does not check which server
+  holds a registered port. Manual item 13.11 records the trusted case, where
+  the helper runs and fails because the file is gone. The registration was
+  removed afterwards.
+
+Claude Code's MCP documentation (fetched for 12b on 2026-09-22, and again
+for 12o) says a `headersHelper` runs on every connection with a 10-second limit,
+and runs again with one retry after a `401` or `403`. A `--scope local`
+server's helper runs only once Claude Code's own trust prompt is accepted
+for the folder. Manual items 13.8 and 13.9 check both with a real Claude
+Code.
+
+**Every reply waits for the request body.** The first `413` test failed
+with `ECONNRESET` on Windows. A reply sent while the client is still sending
+makes Node close the connection, and the client loses the status to the
+reset. Draining the body with `Connection: close` still reset. So every
+reply, refusals included, is now sent on the request's `end` event. A
+refused or oversized body is read and discarded, bounded by the 30-second
+request timeout. This matters most for `401`, which is what starts Claude
+Code's retry after a reload.
+
+**Plan text amended.** Plan item 15 and 12c's token design (`phase-12.md`) said the secret
+is held in `SecretStorage` and served by a generated `headersHelper` script.
+Nothing outside VS Code can read `SecretStorage`, so ADR-0042 amends both.
+The secret is in memory and in a file, and the helper is a `type` or `cat`
+command. 12c's port question is settled as an OS-assigned port kept in
+`workspaceState`. ADR-0003 has an amendment for the two new Node-only files,
+`server.ts` and `headersFile.ts`.
+
+**Tests.** Unit: `agent-protocol`, `agent-guard`, `agent-registration`
+(including a round trip through the C runtime's argument-splitting rules),
+`agent-headers-file` and `agent-server`, which runs on a real loopback port.
+`agentServer.ts` is excluded from coverage, like the other VS Code-facing
+shells, and the integration tier covers it. The integration tests cover:
+
+- start and stop as the setting, trust and folder change;
+- a reused port with a new secret;
+- a taken port, with its notice;
+- a failed headers-file write;
+- stale files cleared, and disposal during a start;
+- a port that cannot be stored, and a start that throws, neither of which
+  stops later starts and stops;
+- a file a crash left behind, cleared while the server stays off;
+- each branch of the setup command;
+- the manifest entries.
+
+`npx tsc`, ESLint and Prettier on the changed files, and the
+`scripts/check-*.mjs` gates, are clean. The agent unit files pass (122, and
+one POSIX-only case pending on Windows), with 100% coverage of the modules
+under test. `npm run verify` is green (2,054 unit, one pending; coverage
+96.6/96.1/96.52/96.6), as is `npm run test:integration` (546 passing).
+
+**Adversarial review, 2026-09-28.** It found nothing blocking. Six of its
+findings were real and are fixed on the branch:
+
+- One failure could jam the start/stop queue. `refresh` now catches and
+  logs, and a port that cannot be stored is a warning, not a failure.
+- The listening server had no `'error'` listener. It now reports through
+  `onError`. No loopback test can make a listening server emit one, so that
+  listener is the one `c8 ignore` path.
+- Node checks its time limits every 30 seconds by default, so the 10- and
+  30-second limits could run to about 40 and 60. It now checks every
+  second.
+- Anything on the machine could flood the log with warnings, and every
+  reload causes one refused request. Refusals are now logged at debug
+  level, and manual item 13.13 sets that level first.
+- The queue-failure path had no test. It has two now. The wiring in
+  `registerAgentServer` stays with manual items 13.8, 13.11 and 13.12,
+  because a fake `ExtensionContext` would register the command twice.
+- The indent of probe (b) above.
+
+**Sean's call:** **Turn On** stays global, so once it is on, every trusted
+folder gets its own loopback socket and secret. A per-workspace switch could
+not be turned off from Settings. The review's `vscode.window` cast matches
+four other integration tests and was left. Its reload race, where the new
+host might find the old port still bound, is a watch item for manual item
+13.9.
+
+**ADR-0037's security review, 2026-09-28,** against 12c's checklist. All
+four items pass: loopback-only binding, a secret nothing network-visible
+reveals, no operations exposed, and trust gating the start. Folded in:
+
+- PowerShell also reads the curly single quotes U+2018 to U+201B as quotes
+  (`about_Quoting_Rules`), and `powerShellQuote` doubled only `'`. A
+  storage path holding one would have ended the string early. It now
+  doubles all four. A new test pins that a path's `&`, `^` and `(` add
+  nothing outside `cmd.exe`'s quoted regions.
+- A file a crash left behind was cleared only by the next start. A refresh
+  that leaves the server off now clears it too.
+- The Windows ACL wording. The headers file has the same access as the rest
+  of the user's VS Code data. The user, SYSTEM and Administrators is what
+  the default location gives, not a guarantee.
+- A remote window runs the server on the remote host, where VS Code may
+  forward its port. ADR-0042 and the user page say so, and name
+  `remote.portsAttributes`. `registerPortAttributesProvider`, which could
+  stop the forwarding, is not in the stable API at VS Code 1.104.
+- Probe (c) above. ADR-0042 records it as 13m's to weigh, since from 13m a
+  program on the port could offer Claude Code its own tools.
+- Settings Sync carries **Turn On** to the user's other machines. The user
+  page says so.
+- Manual item 13.8 now checks the bound address with `netstat`. 13.11
+  records the trusted-folder case of probe (c), and checks that revoking
+  trust stops the server.
+
+Accepted: a fish user's line would mangle a path holding a backslash. That
+is not injection, and no default storage path has one.
+
+**Brought up to date with 12m, 2026-09-28.** 12m (PR #222) merged while
+this branch was open and took ADR-0041 and manual items 12.33–12.40. This
+slice's ADR became ADR-0042 and its manual items 12.41–12.48 (13.6–13.13
+here). The two
+slices share no source file; `package.json` and `package.nls.json` merged
+without overlap. `npm run verify` is green on the merged tree (2,096 unit, one
+pending; coverage 96.66/96.11/96.57/96.66), as is `npm run test:integration`
+(549 passing).
+
+### 13l parked, 2026-09-29
+
+Sean's call, partway through the manual pass: the MCP work is too much for
+Phase 12, so 12o and 12p move to Phase 13 as 13l and 13m. This branch was
+committed as it stood and pushed, with no PR, so no CI or AI review ran on
+it. The decision and the pickup steps are recorded on `main`, in the "12o
+and 12p moved here" entry above.
+
+State when parked:
+
+- Built; `npm run verify` and `npm run test:integration` green on the tree
+  merged with 12m (above). The adversarial review and ADR-0037's security
+  review are done and folded in.
+- Manual items 13.6–13.9 passed 2026-09-29. 13.10–13.13 were not run.
+- During 13.8, Sean had to sign in to Claude Code in VS Code again after
+  running `claude` and `/mcp` in the terminal. Not investigated; it may be
+  unrelated to this server.
+- 12n took manual items 12.41–12.48 on its own branch, so this slice's items
+  needed new numbers when picked up (13.6–13.13, "13l picked up").
+
+### 13l picked up, 2026-09-30
+
+The pickup steps from "12o and 12p moved here", in order.
+
+1. **Rebased.** `feat/13l-mcp-server` is a new branch from `main` at
+   `6789cb0`, with the parked commit `0506824` cherry-picked onto it. The
+   pushed `feat/12o-mcp-server` was not rebased, so it stays as the parked
+   record and needs no force-push. The expected files conflicted, plus
+   `docs/adr/README.md` and the generated `docs/reference/settings.md`,
+   each because 12n or 13n had added a row in the same place.
+   `src/extension.ts` merged cleanly.
+2. **Records moved.** The branch's "12o built" and "Parked" entries are
+   above as "13l built" and "13l parked". `main`'s `phase-12.md` keeps its
+   "moved" notes. It also gets the branch's three notes that ADR-0042
+   supersedes 12c's token design, its port question and plan item 15's
+   `SecretStorage` wording, because a superseded claim is swept out in the
+   change that supersedes it. `STATUS.md`'s Phase 13 paragraph and row, and
+   the punch list above, carry 13l now.
+3. **Manual items renumbered** 12.41–12.48 → 13.6–13.13, in
+   `docs/dev/manual-tests/phase-13.md`, all unticked. All eight run against
+   a build of this branch. 13.8 now notes the refused request from probe
+   (a′) below.
+4. **ADR-0042 kept its number.** It is still free on `main`: 13n took
+   ADR-0043. Its wording, ADR-0003's amendment heading, and the source and
+   test comments that named "12o built" or 12p now name 13l and 13m.
+5. **`CHANGELOG.md`.** The entry is under `[Unreleased]` › Added, not under
+   any released version.
+6. **Probe (a′): Claude Code has changed.** The installed Claude Code is
+   2.1.284, not 2.1.245. As in probe (a), it was registered with
+   `--scope local` in a throwaway folder, with a static dummy
+   `Authorization` header, and `claude mcp list` was run. The registration
+   was removed afterwards. Two runs:
+   - **Against a listener that logs and answers `400`.** The first request
+     is now a modern `POST` of `server/discover`, with headers
+     `MCP-Protocol-Version: 2026-07-28` and `Mcp-Method: server/discover`
+     and client metadata in `params._meta`. On the `400` it sent the same
+     legacy `initialize` for `2025-11-25` as 2.1.245, then `GET /mcp`.
+     Still no `Origin`.
+   - **Against this branch's own `startAgentServer`,** compiled and behind
+     a logging proxy. `server/discover` drew `checkRequest`'s `400`
+     "Unsupported MCP-Protocol-Version" (`text/plain`), `initialize` got
+     `200` agreeing `2025-11-25`, `notifications/initialized` `202`,
+     `GET /mcp` `405` and `tools/list` `200` with `[]`. `claude mcp list`
+     showed it **connected**.
+
+   **Documented:** the 2026-07-28 revision's versioning page ("Backward
+   Compatibility with Initialization-Based Versions") has a dual-era
+   client, over Streamable HTTP, fall back to `initialize` when a modern
+   request draws a `4xx` without a recognized modern error body. That is
+   what the probe saw.
+
+   **Decision (Sean's, 2026-09-30): the server stays legacy-only.** It works
+   through the documented fallback. Speaking the 2026-07-28 revision is left
+   for later. ADR-0042's context, its rejected alternative and its
+   consequences now say this. One new consequence: every connection from a
+   current Claude Code starts with one refused request, logged at debug
+   level. `protocol.ts`'s header comment says the same.
+7. **The sign-in observation from 12.43 (now 13.8)** was not investigated
+   this session. Nothing in `src/agent/` reads or writes Claude Code's
+   sign-in. The only Claude Code state it touches is the MCP registration
+   that the user's own pasted line changes. Re-running 13.8 will show
+   whether the sign-in prompt comes back.
+8. **Verify, 2026-09-30,** from a clean `out/`: `npm run verify`'s steps
+   green (2,142 unit, one pending; coverage 96.36/96.22/96.2/96.36), with
+   `format:check` run leaving out `.claude/worktrees/` as 13n did.
+   `npm run test:integration` green (568 passing) and `npm run check:docs`
+   green. **Not yet done:** the adversarial pass over what this pickup
+   changed, and manual items 13.6–13.13. Then the PR.
+9. **Review, 2026-09-30.** The pre-push adversarial pass (the developer's
+   independent reviewer, reading `git diff --cached origin/main` without
+   running the suite) found nothing blocking and left six notes. All six
+   are addressed on the branch:
+   - `removeHeadersFile`'s warning branch had no test. An integration case
+     now points the storage directory at a regular file with the server
+     off, so the listing fails and the warning is logged.
+   - `isRebindable`'s `EACCES` case had no test: it cannot be caused
+     portably on a real socket. `isRebindable` is now exported and
+     unit-tested directly.
+   - `wsl.exe` as a local Windows window's default shell gets a line that
+     cannot work (the helper is Windows' `type "C:\…"`). Documented as
+     unsupported in `docs/claude-code.md` and in `shellKindFor`'s comment,
+     rather than refused in code.
+   - A dispose during `start`'s port write could still show "Register
+     Again". `start` now returns after that write when disposed; an
+     integration case disposes from inside the write.
+   - A failed write of `pythonOnViya.agentServer.enabled` (for example an
+     unparseable user `settings.json`) escaped the setup command as VS
+     Code's generic failure. It is now caught, logged, and shown as its
+     own error, with a new `setting-not-saved` result and a test.
+   - `extension.ts`'s comment said activation "reads one setting"; it now
+     also names the listing of the storage directory.
+
+   The reviewer also noted that the PowerShell `cmd /c '…'` wrapper rests
+   on the 2026-09-28 manual runs, not on unit tests, so manual items for
+   Windows PowerShell 5.1 and 7.x must pass before the PR is opened.
+
+   **Verify after the fixes,** from a clean `out/`: `npm run verify`'s
+   steps green (2,144 unit, one pending; coverage 96.36/96.23/96.2/96.36),
+   `format:check` again leaving out `.claude/worktrees/`;
+   `npm run test:integration` green (571 passing); `npm run check:docs`
+   green.
+10. **Manual items** 13.6–13.13 in `docs/dev/manual-tests/phase-13.md`.
+    Sean ran all eight against a `.vsix` built from this branch with the
+    review fixes on 2026-09-30, before the push, and all passed —
+    including 13.10's Windows PowerShell 5.1 and 7.x lines.
 
 ### 13n built, 2026-09-30
 

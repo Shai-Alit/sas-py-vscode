@@ -174,8 +174,12 @@ Claude Code 2.1.284 now tries MCP's 2026-07-28 revision first and falls back
 to the legacy one the server speaks; the server stays legacy-only (Sean's
 call). Merged 2026-09-30 as
 [PR #233](https://github.com/Shai-Alit/sas-py-vscode/pull/233), squash
-`5acb03a`. See `phase-13.md`'s "13l picked up" entry. **13m** (the server's
-read-only tools) is next. 13a–13k are not started.
+`5acb03a`. See `phase-13.md`'s "13l picked up" entry. **The MCP server was
+then removed, 2026-09-30, before any release** (Sean's call,
+[ADR-0044](docs/adr/0044-the-mcp-server-for-claude-code-is-removed.md)): it
+reached only the Claude Code command line, and SAS ships its own Viya MCP
+server. 13j, 13l and 13m are dropped; the agent skill stays. See
+`phase-13.md`'s "MCP server removed" entry. 13a–13i and 13k are not started.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

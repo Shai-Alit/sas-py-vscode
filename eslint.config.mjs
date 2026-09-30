@@ -182,22 +182,17 @@ export default tseslint.config(
   // `randomUUID`. A checkpoint nobody can run is exactly the aspiration the ADR
   // disclaimed, so it is a rule now.
   //
-  // The allow-list is seven files and no globs. Widening it is a visible diff
+  // The allow-list is five files and no globs. Widening it is a visible diff
   // here, which is the whole mechanism: the cost of a web build is Node APIs
   // arriving one reasonable-looking import at a time. `src/auth/caAgent.ts`
   // (`node:fs`, `node:https`, `node:tls`) is the certificate module ADR-0003's
   // hedge always named; see its 2026-09-02 amendment. `src/data/
   // csvExportCommand.ts` (`node:fs`, `node:path`, `node:crypto`) is 7c-iii's CSV-export
   // streaming write and free-space check — see ADR-0003's 2026-09-11
-  // amendment. `src/agent/server.ts` (`node:http`, `node:crypto`) and
-  // `src/agent/headersFile.ts` (`node:fs`, `node:path`) are 13l's loopback
-  // MCP server and its per-start secret file — see ADR-0003's 2026-09-28
-  // amendment and ADR-0042.
+  // amendment.
   {
     files: ["src/**/*.ts"],
     ignores: [
-      "src/agent/headersFile.ts",
-      "src/agent/server.ts",
       "src/auth/caAgent.ts",
       "src/auth/pkce.ts",
       "src/auth/transport.ts",

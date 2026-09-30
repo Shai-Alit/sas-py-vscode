@@ -42,6 +42,10 @@ from this branch, install it, and connect a Viya profile. The files are in
 
 ## 13l — the MCP server for Claude Code
 
+> **Retired 2026-09-30.** The server was removed before any release
+> ([ADR-0044](../../adr/0044-the-mcp-server-for-claude-code-is-removed.md)).
+> These items stay as the record of 13l's pass. Do not run them.
+
 See `docs/phases/phase-13.md`'s "13l built" and "13l picked up" Runbook
 entries and
 [ADR-0042](../../adr/0042-a-local-mcp-server-for-claude-code.md). Install a

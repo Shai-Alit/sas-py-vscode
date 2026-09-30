@@ -3,7 +3,6 @@
 
 import * as vscode from "vscode";
 
-import { registerAgentServer } from "./agent/agentServer";
 import {
   registerAuthProvider,
   ViyaAuthenticationProvider,
@@ -405,14 +404,6 @@ export function activate(context: vscode.ExtensionContext): void {
   // this controller — see `interactiveWindow.ts`'s own doc comment for why
   // this is a bespoke surface rather than VS Code's real Interactive Window.
   registerInteractiveWindowCommands(context, notebookController);
-
-  // Phase 13l: the local MCP server Claude Code connects to (ADR-0042). Off
-  // unless `pythonOnViya.agentServer.enabled` is on, the workspace is trusted
-  // and a folder is open; with the setting off, as it is by default, this
-  // reads one setting, lists the folder's extension storage for a headers
-  // file a crash left behind, and starts nothing. It exposes no tools yet —
-  // 13m adds them — so it is registered last and depends on nothing above.
-  registerAgentServer(context, output);
 }
 
 export function deactivate(): void {

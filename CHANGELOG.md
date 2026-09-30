@@ -10,6 +10,16 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Printed output and tracebacks no longer vanish after a SAS graph.** When
+  the last step a `SAS.submit()` ran was `PROC SGPLOT` or `PROC SGPANEL`,
+  SAS marked the whole run's printed output and its traceback as notes,
+  which the extension hides. The run then showed nothing, or only
+  "Finished with an error.". Each run now turns SAS notes off while it runs
+  and restores the session's setting afterwards. See
+  [ADR-0043](docs/adr/0043-every-run-turns-sas-notes-off.md).
+
 ## [0.1.4] - 2026-09-29
 
 ### Added

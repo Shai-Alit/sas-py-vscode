@@ -148,6 +148,13 @@ interactive interpreter): it has no option to turn the banner or the prompts
 off, and the extension deliberately does not strip them, because a program may
 legitimately print `>>>` itself. Expect them; they are not an error.
 
+**A run prints nothing, or fails with no traceback, after a `SAS.submit()`
+graph.** On v0.1.4 and earlier, a `SAS.submit()` whose last step was
+`PROC SGPLOT` or `PROC SGPANEL` hid the run's whole printed output and its
+traceback. Update the extension. If it still happens, check whether your code
+turns SAS notes back on with `options notes;`. See
+[Known rough edges](running-python.md#known-rough-edges).
+
 **A figure or table never appears in the Result panel.** Rich output is
 captured by noticing files your script *writes* to the session's working
 directory — there is no implicit `savefig`. Call `fig.savefig("plot.png")` or

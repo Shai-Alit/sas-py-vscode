@@ -13,8 +13,8 @@ on the next line. The distinction is deliberate: your own `ZeroDivisionError`
 is not an extension malfunction, and the two are never conflated. See
 [ADR-0015](adr/0015-the-execution-backend-seam.md).
 
-The raw traceback also streams into the output channel as plain text while the
-run executes, exactly as `PROC PYTHON` emits it.
+The raw traceback also appears in the output channel as plain text, exactly as
+`PROC PYTHON` emits it, ahead of the **Finished with an error.** line.
 
 ## The traceback in the Result panel
 

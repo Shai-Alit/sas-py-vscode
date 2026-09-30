@@ -2,7 +2,11 @@
 
 - **Status:** Accepted — amended 2026-09-25 by
   [ADR-0039](0039-every-job-switches-syntax-check-mode-off.md): the job now
-  starts with two syntax-check recovery lines, ahead of point 1's wrapper
+  starts with two syntax-check recovery lines, ahead of point 1's wrapper;
+  amended 2026-09-30 by
+  [ADR-0043](0043-every-run-turns-sas-notes-off.md): SAS notes are turned
+  off between those lines and the wrapper, and the session's setting is
+  restored after it
 - **Date:** 2026-09-24
 - **Decides:** how `SAS.show()`, `SAS.pyplot()` and ODS output from
   `SAS.submit()` reach the result panel and a notebook cell; how the ODS

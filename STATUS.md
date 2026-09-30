@@ -464,11 +464,12 @@ that ships, and 18 tooling packages are named exceptions
 now adds them. The review before the PR found no code defect, and its seven
 points are folded in. `npm run verify` is green (2,018 unit), and
 `test:integration` passes (544). Manual items 12.49–12.51 passed; 11.10
-was tried and closed as not provokable. See `docs/phases/phase-12.md`'s "12q built" entry. The same day,
-two Dependabot alerts on `brace-expansion`, both dev-tree only, were cleared
-by a lockfile refresh (PR #224).
-**Next:** 12q's PR, then the Phase 12→13 checkpoint
-(`HOUSEKEEPING.md`) and the v0.1.4 preview release. 12o and 12p moved to
+was tried and closed as not provokable. See `docs/phases/phase-12.md`'s
+"12q built" entry. The same day, two Dependabot alerts on `brace-expansion`,
+both dev-tree only, were cleared by a lockfile refresh (PR #224). Merged
+2026-09-29 (PR #226). **Every Phase 12 slice is now merged or moved.**
+**Next:** the Phase 12→13 checkpoint (`HOUSEKEEPING.md`), then the v0.1.4
+preview release. 12o and 12p moved to
 Phase 13 as 13l and 13m (see "The MCP server work moved to Phase 13",
 below).
 

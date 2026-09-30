@@ -600,7 +600,8 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   2026-09-29: `check:licenses` in the `supply-chain` job (ADR-0005 amended),
   `CsvPageOptions`, and a drop on My Favorites adds instead of doing nothing.
   Manual items 12.49–12.51 passed 2026-09-29. 11.10 was closed as not
-  provokable. See the "12q built" Runbook entry.
+  provokable. Merged 2026-09-29 (PR #226). See the "12q built" Runbook
+  entry.
 - [x] **12r — Fix B12.3 (this extension and the SAS extension could not both
   activate).** Added and built 2026-09-27. The three SAS Content schemes are
   now `pythonOnViyaContent`, `pythonOnViyaContentReadOnly` and
@@ -2783,6 +2784,12 @@ leave one the tree could not list. SAS refused the `LIBNAME` itself ("User
 does not have appropriate authorization level"), so no library reached the
 tree. The branch stays covered by its integration test
 (`docs/dev/manual-tests/phase-11.md`, 11.10).
+
+**Merged 2026-09-29 (PR #226).** CI and both AI reviewers passed. Codex
+raised one blocking finding, a `progressToken.dispose()` call at
+`contentDragAndDrop.ts:337`, which was a false positive: no such call exists.
+Line 337 is a comment, and the only `dispose()` is on the subscriptions
+`onCancellationRequested` returns. Nothing changed after the push.
 
 ---
 

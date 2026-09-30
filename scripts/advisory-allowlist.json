@@ -66,7 +66,14 @@
     "through @vscode/vsce's minimatch@10, fixed in 5.0.12. Both fixed versions",
     "are inside the ranges their parents already declare (^2.0.2 and ^5.0.8),",
     "so `npm update brace-expansion` cleared both with a lockfile refresh alone:",
-    "no override and no entry here."
+    "no override and no entry here.",
+    "",
+    "Later on 2026-09-29, GHSA-HRR3-GC8F-F4QJ (moderate, inconsistent host case",
+    "normalization via percent-encoded octets) was published against fast-uri",
+    "3.1.7, fixed in 3.1.8, and failed the v0.1.4 release PR's supply-chain job.",
+    "It is reached through @vscode/vsce's secretlint (@secretlint/config-loader",
+    "-> ajv). ajv wants fast-uri ^3.0.1, so `overrides.fast-uri`'s floor rises",
+    "from ^3.1.6 to ^3.1.8: the same child-override route, no entry here."
   ],
   "allowed": []
 }

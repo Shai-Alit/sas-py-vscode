@@ -496,7 +496,8 @@ empty.
 
 That `overrides` block carries six pins. Four only lift a child to a patched
 release inside the range its parent already declares, so they overrule nothing:
-`qs ^6.16.0` and `fast-uri ^3.1.6` (2026-09-02) under `@vscode/vsce`, and
+`qs ^6.16.0` and `fast-uri ^3.1.8` (2026-09-02, the `fast-uri` floor raised
+from `^3.1.6` on 2026-09-29) under `@vscode/vsce`, and
 `undici ^7.29.1` and `markdown-it ^14.3.1` (2026-09-29) under `@vscode/vsce` and
 `@vscode/l10n-dev`. `scripts/advisory-allowlist.json`'s comment names the
 advisories each one cleared. The other two,

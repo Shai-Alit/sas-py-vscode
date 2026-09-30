@@ -18,20 +18,49 @@ CAS](browsing-cas.md).
 3. If the deployment has more than one CAS server, pick one. Most deployments
    have exactly one and skip this step.
 
-This delivers a fresh token into the session as a plain file, then inserts:
+This writes a fresh token into the session as a plain file named
+`CASTOKEN`, then inserts:
 
 ```python
-with open("CT123456") as _cas_token_file:
+with open("CASTOKEN") as _cas_token_file:
     _cas_token = _cas_token_file.read().strip()
 import swat
 conn = swat.CAS("<internal-host>", <port>, password=_cas_token)
 ```
 
 `<internal-host>` and `<port>` are this deployment's own values, read from
-the CAS server you picked — not something you supply. The generated file name
-changes every time you run the command, so **run it again** any time you need
-a fresh connection or the token has expired (see below), rather than reusing
-an old snippet.
+the CAS server you picked — not something you supply.
+
+The file name stays the same. Running the command again in the same session
+replaces the token in the same file, so code that opens `CASTOKEN` keeps
+working with the new token. To refresh the token without inserting
+anything, run **Refresh CAS Token** instead. The file lives in the session's
+working directory, so a new session (after **Disconnect**, or once an idle
+session has timed out) has none until you run one of the two commands in it.
+
+## Reusing the connection in your own code
+
+Because the name does not change, the connection lines above can live in a
+module you commit and share, instead of being inserted into each file.
+Anyone who runs **Refresh CAS Token** once in their session can then run
+that module unchanged.
+
+To use a different name, for example one your team has agreed on, set
+**`pythonOnViya.cas.tokenFileref`** (see [Settings](reference/settings.md)).
+It must be 1 to 8 letters, digits or underscores and not start with a digit,
+and it is upper-cased: `teamtok` becomes a file named `TEAMTOK`.
+
+If your own SAS code has already assigned a fileref with that name in the
+session, for example with a `filename` statement, neither command writes
+the token into your file. They tell you so and write nothing; choose another
+name, or release yours with `filename <name> clear;`.
+
+To have the connection ready in every run, you can also put these lines in
+your profile's Python startup snippet (see [Python that runs before your
+code](connection-profiles.md#python-that-runs-before-your-code)). The snippet
+runs again before each Run File. Until you have run **Refresh CAS Token** in
+a session, there is no token file, so the snippet reports a `FileNotFoundError`; your
+own code still runs.
 
 ## Why there is no `password="..."` literal to see
 
@@ -57,13 +86,25 @@ working.
 
 Opening a **new** connection is the case that needs a fresh token. If you run
 `swat.CAS(...)` again later in the same session — reconnecting, or re-running
-the connection lines — the token file the snippet wrote may have aged out, and
-that connect is refused with an authentication error. Run **Insert CAS
-Connection Snippet** again first, then run the new connection lines.
+the connection lines — the token in the file may have aged out, and that
+connect is refused with an authentication error. Run **Refresh CAS Token**
+first, which puts a fresh token in the same file, then run the connection
+lines again. How long a token lasts is set by your deployment's
+administrator.
 
 So an authentication error **on connect** means a stale token. An
 authentication error part-way through a session that was already working is
 something else, and re-running the snippet will not fix it.
+
+## Why not `SAS_SERVICES_TOKEN`?
+
+Python running in a Compute session can also see a token of the session's
+own, in the `SAS_SERVICES_TOKEN` environment variable, and some published
+examples connect to CAS with it. It works at first, but that variable is set
+once, when the session starts, and is never updated. Once it expires, every
+new connection made with it is refused, even after **Run File** starts a new
+interpreter ([Finding 12.25](phases/phase-12.md#finding-1225--the-sessions-own-sas_services_token-is-never-refreshed-a-fileref-the-users-sas-code-assigns-is-listed-like-ours-and-homedirectory-tells-them-apart)). The file this extension
+writes gets a current token each time you run **Refresh CAS Token**.
 
 ## Binary vs. REST/HTTP
 

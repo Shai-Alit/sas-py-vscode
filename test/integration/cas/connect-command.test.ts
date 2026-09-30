@@ -6,7 +6,7 @@
  * constructed directly with stubbed dependencies, the same pattern
  * `test/integration/data/drag-and-drop.test.ts` uses for its own controller,
  * since this file imports `vscode` and the coverage gate does not see it.
- * `writeCasToken`'s own retry/escaping contract is
+ * `writeCasToken`'s own create/rewrite/refuse contract is
  * `test/unit/compute-cas-token.test.ts`'s job; `buildCasConnectSnippet`'s own
  * escaping is `test/unit/cas-connect-snippet.test.ts`'s. This file's job is
  * the `vscode` plumbing around them: which editor gets the snippet, when the
@@ -20,6 +20,7 @@ import * as vscode from "vscode";
 
 import {
   createInsertCasConnectionSnippet,
+  createRefreshCasToken,
   type CasConnectCommandAdapter,
   type CasConnectCommandCas,
   type CasConnectCommandConnection,
@@ -40,6 +41,8 @@ const ENDPOINT = "https://viya.example.com";
 const PROFILE = { version: 1, id: "p1", endpoint: ENDPOINT };
 const SESSION_ID = "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000";
 const SESSION_PATH = `/compute/sessions/${SESSION_ID}`;
+const HOME =
+  "/opt/sas/viya/config/var/run/compsrv/default/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34";
 
 function server(name: string): CasServerItem {
   return { kind: "server", name, links: [] };
@@ -76,17 +79,17 @@ function computeClient(): ComputeClient {
         contentType: "application/vnd.sas.compute.fileref+json",
         text: "",
         body: {
-          id: "CT000001",
+          id: "castoken",
           links: [
             {
               method: "GET",
               rel: "self",
-              href: `${SESSION_PATH}/filerefs/CT000001`,
+              href: `${SESSION_PATH}/filerefs/castoken`,
             },
             {
               method: "PUT",
               rel: "upload",
-              href: `${SESSION_PATH}/filerefs/CT000001/content`,
+              href: `${SESSION_PATH}/filerefs/castoken/content`,
               type: "application/octet-stream",
             },
           ],
@@ -102,12 +105,12 @@ function computeClient(): ComputeClient {
         contentType: "application/vnd.sas.compute.fileref+json",
         text: "",
         body: {
-          id: "CT000001",
+          id: "castoken",
           links: [
             {
               method: "PUT",
               rel: "upload",
-              href: `${SESSION_PATH}/filerefs/CT000001/content`,
+              href: `${SESSION_PATH}/filerefs/castoken/content`,
               type: "application/octet-stream",
             },
           ],
@@ -160,18 +163,85 @@ function failingComputeClient(): ComputeClient {
   };
 }
 
+/** A `ComputeClient` for a session whose SAS code already assigned the
+ * token's name to a file of its own: `assign` answers `400`/5402, and the
+ * held fileref is a `TEMP` one (Finding 12.25), so `writeCasToken` stops
+ * after reading it. */
+function heldElsewhereComputeClient(): ComputeClient {
+  const path = `${SESSION_PATH}/filerefs/castoken`;
+  const replies: ComputeResult<ComputeResponse>[] = [
+    {
+      ok: false,
+      reason: "The fileref already exists.",
+      problem: {
+        code: "compute-rejected",
+        error: { status: 400, message: "", errorCode: 5402 },
+      },
+    },
+    {
+      ok: true,
+      value: {
+        status: 200,
+        notModified: false,
+        contentType: "application/vnd.sas.collection+json",
+        text: "",
+        body: {
+          items: [
+            {
+              id: "castoken",
+              links: [{ method: "GET", rel: "self", href: path }],
+            },
+          ],
+        },
+      },
+    },
+    {
+      ok: true,
+      value: {
+        status: 200,
+        notModified: false,
+        contentType: "application/vnd.sas.compute.fileref+json",
+        text: "",
+        body: {
+          id: "castoken",
+          accessMethod: "TEMP",
+          fileName: "#LN00006",
+          filePath: "/saswork/#LN00006",
+          links: [{ method: "GET", rel: "self", href: path }],
+        },
+      },
+    },
+  ];
+  let index = 0;
+  return {
+    send: () => {
+      const reply = replies[index];
+      index += 1;
+      assert.ok(reply !== undefined, "writeCasToken went on past the refusal");
+      return Promise.resolve(reply);
+    },
+  };
+}
+
 function connection(): CasConnectCommandConnection {
   return {
     client: computeClient(),
     session: {
       id: SESSION_ID,
       state: "idle",
+      homeDirectory: HOME,
       links: [
         {
           method: "POST",
           rel: "assign",
           href: `${SESSION_PATH}/filerefs`,
           type: "application/vnd.sas.compute.fileref.request",
+        },
+        {
+          method: "GET",
+          rel: "files",
+          href: `${SESSION_PATH}/filerefs`,
+          type: "application/vnd.sas.collection",
         },
       ],
     },
@@ -193,6 +263,7 @@ interface Harness {
     ) => Thenable<T | undefined>;
     getSession?: () => Thenable<vscode.AuthenticationSession | undefined>;
     withProgress?: CasConnectCommandWithProgress;
+    tokenFilerefSetting?: () => unknown;
   }): () => Promise<void>;
 }
 
@@ -248,6 +319,7 @@ function harness(): Harness {
           ...(overrides.withProgress === undefined
             ? {}
             : { withProgress: overrides.withProgress }),
+          tokenFilerefSetting: overrides.tokenFilerefSetting ?? (() => ""),
         },
       ),
   };
@@ -265,11 +337,75 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
       editor.document.getText(),
       /swat\.CAS\("sas-cas-server-default-client", 5570, password=_cas_token\)/,
     );
-    // The fileref name is random per call (`src/compute/casToken.ts`), not
-    // the fixed "CT000001" `computeClient()`'s own scripted replies use —
-    // the command reads it back off `writeCasToken`'s real result rather
-    // than assuming a name, so only the shape is asserted here.
-    assert.match(editor.document.getText(), /open\("CT\d{6}"\)/);
+    // An empty setting means the default name (12n).
+    assert.match(editor.document.getText(), /open\("CASTOKEN"\)/);
+  });
+
+  it("opens the name the setting gives, upper-cased (12n)", async () => {
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({ tokenFilerefSetting: () => "teamtok" })();
+
+    assert.deepEqual(h.reports, []);
+    assert.match(editor.document.getText(), /open\("TEAMTOK"\)/);
+  });
+
+  it("reports a setting that is not a usable name, before any request", async () => {
+    const editor = await pythonDocument();
+    const h = harness();
+    let adapterAsked = false;
+
+    await h.build({
+      tokenFilerefSetting: () => "PYVSTART",
+      cas: {
+        adapterFor: () => {
+          adapterAsked = true;
+          return undefined;
+        },
+      },
+    })();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /pythonOnViya\.cas\.tokenFileref/);
+    assert.match(h.reports[0] ?? "", /PYVSTART/);
+    assert.equal(adapterAsked, false);
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("reports a setting that is not a string, rather than throwing", async () => {
+    // settings.json can hold any JSON value; the schema's `pattern` only
+    // marks it in the settings editor.
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({ tokenFilerefSetting: () => 12345678 })();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /pythonOnViya\.cas\.tokenFileref/);
+    assert.match(h.reports[0] ?? "", /is "12345678"/);
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("reports a name the session's own SAS code holds, and inserts nothing (Finding 12.25)", async () => {
+    const editor = await pythonDocument();
+    const h = harness();
+
+    await h.build({
+      sessions: {
+        current: () => ({
+          client: heldElsewhereComputeClient(),
+          session: connection().session,
+        }),
+        forgetProfile: (profileId) => h.forgotten.push(profileId),
+      },
+    })();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /already has a fileref named CASTOKEN/);
+    assert.match(h.reports[0] ?? "", /filename CASTOKEN clear;/);
+    assert.equal(editor.document.getText(), "");
+    assert.deepEqual(h.forgotten, []);
   });
 
   it("inserts a host containing snippet-syntax characters literally", async () => {
@@ -430,7 +566,7 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     assert.match(h.reports[0] ?? "", /session is no longer available/);
     assert.equal(editor.document.getText(), "");
     // The 404 `failingComputeClient` answers with translates to
-    // `session-gone` (`writeCasToken`'s own retry/translate contract,
+    // `session-gone` (`writeCasToken`'s own translate contract,
     // `compute-cas-token.test.ts`) — this command must tell `src/compute`
     // its own cached connection is stale, the same way a run discovering
     // `backend-gone` already does, so **Connect** reappears in the palette
@@ -613,6 +749,197 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     assert.equal(signals.length, 5); // getServers, getConnection, + writeCasToken's 3 Compute calls
     for (const signal of signals) {
       assert.ok(signal instanceof AbortSignal, "expected an AbortSignal");
+    }
+  });
+});
+
+describe("pythonOnViya.refreshCasToken (12n)", () => {
+  interface RefreshHarness {
+    readonly reports: string[];
+    readonly informs: string[];
+    readonly forgotten: string[];
+    readonly requests: ComputeRequest[];
+    run(overrides?: {
+      client?: ComputeClient;
+      profiles?: CasConnectCommandProfiles;
+      connected?: boolean;
+      getSession?: () => Thenable<vscode.AuthenticationSession | undefined>;
+      withProgress?: CasConnectCommandWithProgress;
+      tokenFilerefSetting?: () => unknown;
+    }): Promise<void>;
+  }
+
+  function refreshHarness(): RefreshHarness {
+    const reports: string[] = [];
+    const informs: string[] = [];
+    const forgotten: string[] = [];
+    const requests: ComputeRequest[] = [];
+    return {
+      reports,
+      informs,
+      forgotten,
+      requests,
+      run: async (overrides = {}) => {
+        const inner = overrides.client ?? computeClient();
+        const client: ComputeClient = {
+          send: (request) => {
+            requests.push(request);
+            return inner.send(request);
+          },
+        };
+        const refresh = createRefreshCasToken(
+          {
+            current: () =>
+              overrides.connected === false
+                ? undefined
+                : { client, session: connection().session },
+            forgetProfile: (profileId) => forgotten.push(profileId),
+          },
+          overrides.profiles ?? {
+            active: () => ({ name: "default", profile: PROFILE }),
+          },
+          {
+            report: (message) => reports.push(message),
+            inform: (message) => informs.push(message),
+            listAccounts: () => Promise.resolve([]),
+            getSession:
+              overrides.getSession ??
+              (() =>
+                Promise.resolve({
+                  id: "s1",
+                  // credential-scan: allow a fake auth session for a fake provider, never sent anywhere real
+                  accessToken: "borrowed-token",
+                  account: { id: "a1", label: "a" },
+                  scopes: [],
+                })),
+            tokenFilerefSetting: overrides.tokenFilerefSetting ?? (() => ""),
+            ...(overrides.withProgress === undefined
+              ? {}
+              : { withProgress: overrides.withProgress }),
+          },
+        );
+        await refresh();
+      },
+    };
+  }
+
+  it("writes the token into the named file and says so, inserting nothing", async () => {
+    const editor = await pythonDocument();
+    const h = refreshHarness();
+
+    await h.run();
+
+    assert.deepEqual(h.reports, []);
+    assert.equal(h.informs.length, 1);
+    assert.match(h.informs[0] ?? "", /CASTOKEN/);
+    assert.equal(h.requests.length, 3);
+    assert.deepEqual(
+      h.requests[2]?.rawBody,
+      new TextEncoder().encode("borrowed-token"),
+    );
+    assert.equal(editor.document.getText(), "");
+  });
+
+  it("needs no editor and no CAS lookup", async () => {
+    // `createRefreshCasToken` takes no `cas` handle at all; this pins that it
+    // also works with no Python file open.
+    await markdownDocument();
+    const h = refreshHarness();
+
+    await h.run({ tokenFilerefSetting: () => "teamtok" });
+
+    assert.deepEqual(h.reports, []);
+    assert.match(h.informs[0] ?? "", /TEAMTOK/);
+  });
+
+  it("reports and writes nothing when no profile is connected", async () => {
+    const h = refreshHarness();
+
+    await h.run({ connected: false });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /Connect to SAS Viya/);
+    assert.equal(h.requests.length, 0);
+  });
+
+  it("reports a setting that is not a usable name, before any request", async () => {
+    const h = refreshHarness();
+
+    await h.run({ tokenFilerefSetting: () => "9lives" });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /pythonOnViya\.cas\.tokenFileref/);
+    assert.equal(h.requests.length, 0);
+    assert.deepEqual(h.informs, []);
+  });
+
+  it("reports a setting that is not a string, before any request", async () => {
+    const h = refreshHarness();
+
+    await h.run({ tokenFilerefSetting: () => null });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /is "null"/);
+    assert.equal(h.requests.length, 0);
+    assert.deepEqual(h.informs, []);
+  });
+
+  it("reports a name the session's own SAS code holds (Finding 12.25)", async () => {
+    const h = refreshHarness();
+
+    await h.run({ client: heldElsewhereComputeClient() });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /already has a fileref named CASTOKEN/);
+    assert.deepEqual(h.informs, []);
+    assert.ok(h.requests.every((request) => request.rawBody === undefined));
+  });
+
+  it("reports a gone session and re-syncs pythonOnViya.connected (11c, B2)", async () => {
+    const h = refreshHarness();
+
+    await h.run({ client: failingComputeClient() });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /session is no longer available/);
+    assert.deepEqual(h.forgotten, [PROFILE.id]);
+    assert.deepEqual(h.informs, []);
+  });
+
+  it("reports when the silent auth session has ended", async () => {
+    const h = refreshHarness();
+
+    await h.run({ getSession: () => Promise.resolve(undefined) });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /sign-in/);
+    assert.equal(h.requests.length, 0);
+  });
+
+  it("reports nothing when the user cancels", async () => {
+    const source = new vscode.CancellationTokenSource();
+    const h = refreshHarness();
+
+    await h.run({
+      client: failingComputeClient(),
+      withProgress: (_title, run) => {
+        source.cancel();
+        return run(source.token);
+      },
+    });
+
+    assert.deepEqual(h.reports, []);
+    assert.deepEqual(h.informs, []);
+  });
+
+  it("threads an AbortSignal into every Compute call", async () => {
+    const h = refreshHarness();
+
+    await h.run();
+
+    assert.equal(h.requests.length, 3);
+    for (const request of h.requests) {
+      assert.ok(request.signal instanceof AbortSignal);
     }
   });
 });

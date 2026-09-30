@@ -148,7 +148,7 @@ log file attached to a bug report.
 If a deployment refuses the summary type, the extension retries with the full one
 and discards the personal fields as it parses. That path exists as a defensive
 fallback for a deployment that answers this endpoint slightly differently — see
-[`docs/phases/phase-1.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406),
+[`docs/phases/phase-1.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6--the-obvious-media-type-is-wrong-and-wrong-is-a-406),
 findings 6 to 9, for what was and was not established.
 
 The identity is read once per window and held. This resource asks not to be

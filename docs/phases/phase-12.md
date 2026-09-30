@@ -382,7 +382,7 @@ preview release follows this phase, and v1.0 now waits for Phase 13 as
 well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
 
 11. **12k — Fix B12.1: a failed SAS step poisons the session.** Start by
-    pinning down the trigger. [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error)
+    pinning down the trigger. [Finding 12.5](#finding-125--a-failed-sas-step-leaves-the-session-in-syntax-check-mode-sysccsyserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error)
     reproduced it with a failing step submitted as its own job. Finding 12.15
     could not reproduce it with the same kind of error raised through
     `SAS.submit()` inside `PROC PYTHON`. Probe both paths, and the 12j
@@ -578,8 +578,14 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   in. Manual items 12.33–12.40 passed 2026-09-28. Merged 2026-09-28 (PR
   #222). See the "12m
   design" and "12m built" Runbook entries.
-- [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Not started.
-  After 12m.
+- [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Built
+  2026-09-28: the token file has a stable name, `pythonOnViya.cas.tokenFileref`
+  (`CASTOKEN` by default), rewritten in place and never written into a
+  fileref the user's SAS code holds; **Refresh CAS Token** writes it without
+  inserting anything. The session's own `SAS_SERVICES_TOKEN` was ruled out:
+  it is never refreshed (Finding 12.25). Manual items 12.41–12.48 all passed
+  2026-09-28 (12.43 after a rewording, see the Runbook entry). See the "12n
+  built" Runbook entry.
 - [ ] **12o — Option C, part 1: loopback MCP server and lifecycle.** Added
   2026-09-24. Not started. Security review before its PR.
 - [ ] **12p — Option C, part 2: read-only tool surface.** Added 2026-09-24.
@@ -611,7 +617,7 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   error>`. Only reconnecting (which discards libraries and filerefs)
   recovers it today. A clearing job — `options nosyntaxcheck obs=max;` then
   `%let syscc=0;` — cleared it in a probe. Evidence and open questions:
-  [Finding 12.5](#finding-12-5-a-failed-sas-step-leaves-the-session-in-syntax-check-mode-syscc-syserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error).
+  [Finding 12.5](#finding-125--a-failed-sas-step-leaves-the-session-in-syntax-check-mode-sysccsyserr-stay-non-zero-every-later-job-reads-as-failed-and-reset-python-state-reports-the-old-error).
   The fix touches `src/backend/procPython.ts`. **Scheduled as
   slice 12k, 2026-09-24.** Finding 12.15 could not reproduce it through
   `SAS.submit()`, so 12k pins down the trigger first. **Fixed on the 12k
@@ -626,7 +632,7 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   type — a text column read as numeric is trimmed and never guarded. The
   CAS data viewer's grid pairs columns and cells the same way, so it is
   affected too (by code reading; not seen live). Evidence:
-  [Finding 12.6](#finding-12-6-a-cas-table-s-columns-listing-under-sortby-name-is-alphabetical-each-item-s-index-not-its-position-is-what-row-cells-follow). Fixed on the 12e branch
+  [Finding 12.6](#finding-126--a-cas-tables-columns-listing-under-sortbyname-is-alphabetical-each-items-index-not-its-position-is-what-row-cells-follow). Fixed on the 12e branch
   (`CasAdapter.getColumns` re-sorts by each column's `index`); manual tests
   12.4 and 12.9 passed live against the fix, 2026-09-23. **Fixed — merged
   with 12e as PR #210.**
@@ -639,7 +645,7 @@ or scheduled elsewhere — that is Sean's call. Tick one when its fix merges.
   cannot sign in. This extension loses its notebook kernel, its CAS and SAS
   Libraries views, and the interactive window. VS Code reports neither
   failure to the user. Evidence:
-  [Finding 12.21](#finding-12-21-two-extensions-cannot-register-a-filesystemprovider-for-one-scheme-this-extension-and-the-sas-extension-both-registered-sascontent).
+  [Finding 12.21](#finding-1221--two-extensions-cannot-register-a-filesystemprovider-for-one-scheme-this-extension-and-the-sas-extension-both-registered-sascontent).
   **Fixed on the 12r branch, 2026-09-27**
   ([ADR-0040](../adr/0040-every-uri-scheme-is-the-extensions-own.md)).
 
@@ -1564,7 +1570,7 @@ read `age,name` over `name,age` data, and each cell was checked against the
 other column's type: the text column was treated as `double` (trimmed,
 never guarded) and the numeric one as `varchar` (guarded, but a number never
 triggers). The probe that settled it is
-[Finding 12.6](#finding-12-6-a-cas-table-s-columns-listing-under-sortby-name-is-alphabetical-each-item-s-index-not-its-position-is-what-row-cells-follow);
+[Finding 12.6](#finding-126--a-cas-tables-columns-listing-under-sortbyname-is-alphabetical-each-items-index-not-its-position-is-what-row-cells-follow);
 the bug is **B12.2**.
 
 This bug predates 12e — it is 8a's `sortBy=name` meeting 8c/11d's
@@ -2583,6 +2589,119 @@ during a seeding job being captured and deleted. ADR-0041's Reset Python
 State consequence is also brought in line with the reworded reset error. `npm run verify` is
 green from a clean `out/` (1,972 unit; coverage 96.55/95.95/96.35/96.55),
 as is `npm run check:docs`. Merged 2026-09-28 (PR #222).
+
+### 12n built, 2026-09-28 — a stable token file, a guard, and Refresh CAS Token
+
+**The plan's two open questions were already answered.** U3 (does SASLogon
+give this extension's client a refresh token): yes. The read-only probe
+recorded under Finding 12.21 read the `vscode` client's registration with
+grants `authorization_code` and `refresh_token`, and Phase 2a's manual pass
+restored a session from a stored refresh token. U5 (does `swat.CAS()`
+accept a token from another OAuth client): yes for both clients tried, the
+`vscode` client's token in manual item 8.15 and `sas.launcher`'s in Finding
+12.9. U2 is now measured for `verde` (Finding 12.25): the zone gives access
+tokens 36,000 s and the `vscode` client does not override it.
+
+**Option 4 was looked at further, at Sean's request, and ruled out as the
+mechanism.** Every `PROC PYTHON` interpreter can read the session's own
+`sas.launcher` token in `SAS_SERVICES_TOKEN`, and `swat` connects with it, so
+a startup-snippet helper could have needed no file from this extension. A
+70-minute probe (Finding 12.25) shows the variable is set once, when the
+session starts, and never refreshed: past its 3600 s lifetime a restarted
+interpreter, the SAS process's own `%sysget` value and a plain job all hold
+the expired token, and CAS refuses every new connect with it. SAS itself
+still authenticates (`proc http oauth_bearer=sas_services` answers `200`),
+but nothing documented hands that token to Python. The extension ships no
+helper; `docs/cas-python-connection.md` shows how to put the connection
+lines in a profile's `pythonStartup`, reading the stable file.
+
+**Sean's calls, 2026-09-28.**
+
+- The name is a VS Code setting, `pythonOnViya.cas.tokenFileref`, default
+  `CASTOKEN`, not a profile field. The random `CTnnnnnn` name is dropped.
+- A held fileref is rewritten only when it is the one this code's own
+  `assign` makes: `accessMethod` `DISK`, `fileName` equal to the name, and
+  `filePath` equal to the session's `homeDirectory` plus the name. The first
+  probe showed a fileref the user's SAS code assigned is listed with the same
+  `upload` link, so without this the token could be written into the user's
+  own file.
+- A **Refresh CAS Token** command, added to this slice after the build
+  showed that refreshing otherwise meant inserting a snippet somewhere.
+
+No ADR: 8b's random name was a Phase 8 Runbook decision, and this replaces
+it the same way.
+
+**What changed.**
+
+- `casToken.ts`: `writeCasToken` takes the name, creates the fileref on first
+  use, and otherwise finds the held one with `findFileref` (Finding 12.23)
+  and rewrites it, unless `isOwnTokenFileref` says it is not ours, when it
+  returns `held-elsewhere` and writes nothing.
+  `normaliseCasTokenFilerefName` upper-cases the setting and refuses
+  anything that is not a SAS name of up to 8 characters, and `PYVSTART` and
+  `PYnnnnnn`. The retry loop and random names are gone.
+- `fileref.ts`'s `Fileref` keeps `accessMethod`, `fileName` and `filePath`;
+  `session.ts`'s `ComputeSession` keeps `attributes.homeDirectory`.
+- `casConnectCommand.ts`: both commands share the setting check, the token
+  write and its messages. `pythonOnViya.refreshCasToken` needs a connected
+  profile only, no editor and no CAS lookup, and says which file it wrote.
+- The setting and the command in `package.json`, and the generated
+  references. `docs/cas-python-connection.md` gains "Reusing the connection
+  in your own code" and "Why not `SAS_SERVICES_TOKEN`?". The skill's CAS
+  section drops its "short-lived (minutes)" claim, which Finding 12.9 had
+  already refuted, and warns off `SAS_SERVICES_TOKEN`. `CHANGELOG.md`
+  follows.
+
+**Tests.** Unit: `compute-cas-token.test.ts` is rewritten for the name
+check, the guard and the create, rewrite, refuse and failure paths; the new
+fileref and session fields each have a case. Integration: the insert
+command's default and configured names, a refused setting and a held name;
+nine cases for Refresh CAS Token (each command gains one more from the
+adversarial review, below). Manual items 12.41–12.48 are new.
+
+**Verification.** `npm run verify` is green from a clean `out/` (1,985
+unit; coverage 96.56/96.02/96.36/96.56), as is `npm run test:integration`
+(537 passing).
+
+**Adversarial review, 2026-09-28.** One real finding and four nits, all
+folded in before the push. A `pythonOnViya.cas.tokenFileref` value in
+`settings.json` that is not a string (`12345678`, `null`) passed
+`.get<string>` unchanged and threw in `.trim()`, so both commands failed with
+VS Code's generic error; the setting is now read as `unknown` and any
+non-string is reported like a bad name, with an integration case for each
+command. `procPython.ts` now exports `FILEREF_NAME_PATTERN`, so the unit test
+pins `casToken.ts`'s `PYnnnnnn` literal against it as its comment says. The
+setting's description now says the file exists in a session once one of the
+commands has run in it. The docs link to Finding 12.25 now carries its
+anchor, and every `#finding-` anchor under `docs/` now uses the id GitHub
+renders (`finding-1225--…`, dot and em dash dropped): the seven existing ones,
+in this file, `signing-in.md` and `dev/testing.md`, dropped only the em dash
+and so matched no heading on GitHub or in the VitePress build. A check-then-write race with the user's own SAS code is recorded
+under Finding 12.25's "Not settled" and accepted. Re-verified after the
+fixes: `npm run verify` green from a clean `out/` (1,985 unit; coverage
+96.56/96.02/96.36/96.56), `npm run test:integration` 539 passing.
+
+**Manual pass, 2026-09-28.** 12.41, 12.42 and 12.44–12.48 passed. 12.46
+first read as failed, which was a mistake in how the test was run, not a
+defect; it passed on a re-run. A probe made while chasing it is recorded as
+Finding 12.26, and it agrees with the guard. 12.43 could not be run as
+written: nothing it asked for showed whether the reload reattached to the
+same session or created a fresh one. It now leaves a marker file in the
+session's run directory before the reload and checks it afterwards, so the
+rewrite path is known to be the one taken. It then passed, so all of
+12.41–12.48 passed 2026-09-28.
+
+**PR #223, 2026-09-29.** The Claude reviewer raised one nit: `STATUS.md`
+cited the pre-review integration count (537), not 539; fixed. Codex raised
+nothing. The `supply-chain` job failed on eleven dev-tree advisories
+published after `main` last passed, none from this slice's change: ten
+against `undici` 7.29.0, reached only through `@vscode/vsce`'s `cheerio`, and
+one against `markdown-it` 14.3.0, through `@vscode/vsce` and
+`@vscode/l10n-dev`. Both fixed releases (7.29.1, 14.3.1) are in their
+parents' declared ranges, so two `overrides` pins clear them, the same route
+as `qs` and `fast-uri` in the 5d-ii PR. `scripts/advisory-allowlist.json`
+records it, and `docs/dev/ci.md`'s count of `overrides` pins, stale at two
+since 5d-ii, now reads six.
 
 ---
 
@@ -3970,3 +4089,116 @@ user's own choice and is left alone like any other `options` statement.
 
 No deployment-identifying detail appears above; the fileref names, job
 contents and macro variables are this probe's own.
+
+### Finding 12.25 — the session's own `SAS_SERVICES_TOKEN` is never refreshed; a fileref the user's SAS code assigns is listed like ours, and `homeDirectory` tells them apart
+
+Probed 2026-09-28, via `viya-api-probe`/`creds.json` against `verde`, in
+three throwaway compute sessions (SAS Studio compute context), each deleted
+at the end (`204`, then `404` on a `GET`). Sean approved each probe before
+it ran. No token value was printed: only variable names, lengths, a
+token's `client_id`, `iat` and remaining lifetime, and a short hash of its
+user name.
+
+**Claimed:** a SAS Communities article connects `swat` to CAS from
+`PROC PYTHON` with `os.environ["SAS_SERVICES_TOKEN"]`. Nothing documented
+says whether that variable is refreshed. Finding 12.10 showed a held
+fileref can be rewritten under a stable name, but not whether a fileref
+assigned by SAS code can be told apart from one this extension assigned.
+
+**Observed, token lifetimes (read-only).** `GET
+/SASLogon/identity-zones/uaa` reported `accessTokenValidity` 36000 and
+`refreshTokenValidity` 7776000. `GET /SASLogon/oauth/clients/vscode`
+carried no `access_token_validity` or `refresh_token_validity` of its own.
+
+**Observed, the session's environment.** Every interpreter had
+`SAS_SERVICES_TOKEN` and `SAS_CLIENT_TOKEN` (one token between them, issued
+to `sas.launcher` for 3600 s), `SAS_SERVICES_REFRESH_TOKEN` (`sas.launcher`,
+1,209,600 s) and
+`SAS_SERVICES_URL`. All three tokens were issued when the session started,
+to the user who created it. A 70-minute session, a job every ten minutes:
+
+| Job, seconds since the session started | Token's remaining lifetime | `swat.CAS` with it |
+| --- | --- | --- |
+| first job, new interpreter | 3582 | connects, `severity` 0 |
+| `restart` at 631, 1244, 1856, 2468, 3081 | 2965 down to 516, same `iat` | connects |
+| `restart` at 3694 | −96 | refused, `OAuth authentication failed: Access denied.` |
+| `restart` at 4313, and a plain job at 4321 | −714, −719 | refused |
+| `proc http oauth_bearer=sas_services` at 4326 | — | `200` |
+
+Each restart had a new process id and the same token. The SAS process's
+own value, read with `%sysget(SAS_SERVICES_TOKEN)` into a macro variable in
+the same job, matched the interpreter's every time, expired included.
+
+**Observed, filerefs.**
+
+- A SAS `filename x temp;` fileref and a `filename x '/tmp/…';` one were
+  both listed in the session's `files` collection, and their `self`
+  representations carried all seven relations, `upload` included.
+  `accessMethod` was `TEMP` with a `#LNnnnnn` file in the SAS WORK
+  directory, and `DISK` with the `/tmp/…` path, respectively.
+- An `assign` of `{name, path}` both `CASTOKEN` answered `201` with
+  `accessMethod` `DISK`, `fileName` `CASTOKEN` (the case sent) and
+  `filePath` exactly the session's `attributes.homeDirectory` plus
+  `/CASTOKEN`, on the create response and on a `GET` of `self`. The
+  session's create response and a later `GET` of it both carried the same
+  `homeDirectory`, whose last segment is the session id without its
+  `-ses0000` suffix.
+- An `assign` sent with the link's `type` as the `Content-Type`, without the
+  `+json` suffix `client.ts` adds, answered `415`, `errorCode` 5016.
+
+**Verdict:** `SAS_SERVICES_TOKEN` works for a session's first hour on
+`verde` and then refuses every new connect, however the interpreter is
+started, so it cannot be the reusable mechanism. A fileref this extension
+assigned is the only one whose `filePath` is the session's `homeDirectory`
+plus its name, with `accessMethod` `DISK` and `fileName` the name, which is
+the check `casToken.ts` makes before rewriting one.
+
+**Not settled:** a way for Python to reach the token SAS refreshes
+internally (none is documented, and none was tried); a refresh-token grant
+with `SAS_SERVICES_REFRESH_TOKEN` (not tried: it would need the
+`sas.launcher` client's credentials and would put a refresh token in user
+code); a user's SAS code assigning a `DISK` fileref of the same name to the
+very same file in the session directory, which the check would accept and
+which is the same file this extension writes anyway; the user's SAS code,
+in a job running at that moment, clearing the name and reassigning it to a
+file of its own between `findFileref`'s check and the `upload` `PUT`, which
+would put the token in that file (accepted, not guarded: it needs exactly
+that reassignment within milliseconds, and was raised by 12n's adversarial
+review, not seen); other deployments' token lifetimes.
+
+No deployment-identifying detail appears above; the fileref names, job
+contents and macro variables are this probe's own.
+
+### Finding 12.26 — `assign` of a name SAS code holds is refused with `400`/5402 and changes nothing; the held fileref's representation is not ours
+
+Probed 2026-09-28, via `viya-api-probe`/`creds.json` against `verde`, in two
+throwaway compute sessions (SAS Studio compute context), each deleted at the
+end (`204`, then `404` on a `GET`). Sean approved the probe before it ran. No
+token was written to either session and none was printed.
+
+**Claimed:** Finding 12.25 recorded that a fileref the user's SAS code
+assigns is listed like ours and told apart by `homeDirectory`. It did not
+record what `assign` does when SAS code already holds the name, which is the
+call `writeCasToken` makes first.
+
+**Observed.** The first session ran `filename sastok temp;` as a plain job;
+the second ran `SAS.submit("filename sastok temp;")` inside `proc python`.
+Both gave the same result:
+
+- `sastok` was listed in the `files` collection, and its `self`
+  representation (Accept `application/vnd.sas.compute.fileref+json`) had
+  `accessMethod` `TEMP`, `fileName` `#LN00006` and a `filePath` inside the
+  SAS WORK directory, not the session's `homeDirectory`.
+- `assign` of `{name, path}` `SASTOK`, and of `sastok`, each answered `400`
+  with `errorCode` 5402, `The fileref "sastok" already exists.` A second read
+  of the fileref was unchanged, so `assign` did not reassign it.
+- A `GET` of the `self` link with the bare type `application/vnd.sas.compute.fileref`,
+  without `+json`, returned an empty body rather than an error.
+
+**Verdict:** matches `casToken.ts`'s design. A name SAS code holds is
+refused by `assign`, found by `findFileref`, and read as not ours by
+`isOwnTokenFileref`, so `writeCasToken` returns `held-elsewhere` and writes
+nothing.
+
+**Not settled:** a SAS-assigned `DISK` fileref (Finding 12.25 covered its
+representation, not `assign` against it), and other deployments.

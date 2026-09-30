@@ -153,7 +153,12 @@ A CAS connection is opened with `swat.CAS(...)`, authenticated by a Viya
 access token this extension already holds — never a separate CAS credential.
 The token has to reach the interpreter as a **file**, not a literal — the
 extension's own **Insert CAS Connection Snippet** command does this correctly
-(writes a fresh token to a session file, then reads it back). This isn't
+(writes a fresh token to a session file, then reads it back). The file's name
+is stable, `CASTOKEN` unless the `pythonOnViya.cas.tokenFileref` setting says
+otherwise, so code that does `open("CASTOKEN")` can be committed and reused.
+**Refresh CAS Token** rewrites the same file with a fresh token and inserts
+nothing; either command does. The file exists only in a session where one of
+them has been run. This isn't
 optional caution: an inline `submit`/`endsubmit` block echoes its source
 verbatim into the session log, so a token assigned as a literal that way was
 confirmed to leak into the log in plaintext (Finding 8.6, `phase-8.md`), and
@@ -163,10 +168,14 @@ hand for a user, follow the file-based shape — read the token from a file,
 never assign `password="..."` to a string literal in a cell, whether that
 literal reaches SAS via an inline block or via `SAS.submit()`.
 
-The token is short-lived (minutes), while a `swat.CAS()` connection can
-outlive it; an auth failure after a session's been open a while usually
-means the token expired, not a code bug — reconnect with a fresh one rather
-than debugging the connection logic.
+A `swat.CAS()` connection outlives the token that opened it: CAS checks the
+token once, at connect (Finding 12.9). So an auth error **on a new connect**
+later in a session means the file's token has expired — run **Refresh CAS Token**
+and reconnect, rather than debugging the connection logic. Don't reach for the
+session's own `SAS_SERVICES_TOKEN` environment variable instead: it is set
+once when the session starts and never refreshed, so after it expires every
+new connect with it is refused, even in a freshly restarted interpreter
+(Finding 12.25).
 
 For a caslib backed by an external database, **Insert CAS SQL Passthrough
 Snippet** gives the `conn.fedsql.execDirect(query='''select * from connection
@@ -231,8 +240,8 @@ The ones relevant to writing and running code:
 - **Reset Python State** — see namespace lifecycle above.
 - **Show Environment** / **Search Environment** / **Refresh Environment
   Info** — see environment section above.
-- **Insert CAS Connection Snippet** / **Insert CAS SQL Passthrough Snippet** —
-  see CAS section above.
+- **Insert CAS Connection Snippet** / **Refresh CAS Token** / **Insert CAS
+  SQL Passthrough Snippet** — see CAS section above.
 - **Open Table** / **Table Properties** / **Export to CSV** (on a SAS Libraries
   or CAS tree item) — browsing, not something Python code calls; only
   meaningful with a specific table already selected in one of those trees, so

@@ -340,9 +340,10 @@ export function activate(context: vscode.ExtensionContext): void {
     { transport },
   );
 
-  // Phase 8b: unlike 8a's browsing tree, this command needs a live Compute
-  // session — the token it delivers has to land inside one
-  // (`src/compute/casToken.ts`) — so it is wired against `sessions` here
+  // Phase 8b: unlike 8a's browsing tree, this command (and 12n's Refresh CAS
+  // Token beside it) needs a live Compute session — the token it delivers
+  // has to land inside one (`src/compute/casToken.ts`) — so it is wired
+  // against `sessions` here
   // rather than alongside 8a above. Reuses 8a's own endpoint-keyed adapter
   // cache (`casExplorer.session`) rather than building a second one.
   // 11c (B2): `forgetProfile` is the same handle `runSessions` above already

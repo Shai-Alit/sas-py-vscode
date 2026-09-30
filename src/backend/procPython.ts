@@ -388,7 +388,7 @@ const WRAPPER_FRAME_FILE = "<stdin>";
 /** `PY` and exactly six digits — what {@link ProcPythonBackend.nextFilerefName}
  * produces. Matched the other way here to read an existing fileref's number
  * back when seeding the counter from a reattached session (Finding 72). */
-const FILEREF_NAME_PATTERN = /^PY(\d{6})$/i;
+export const FILEREF_NAME_PATTERN = /^PY(\d{6})$/i;
 
 /** How many fileref names one run will try before giving up.
  *

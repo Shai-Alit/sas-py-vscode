@@ -48,7 +48,17 @@
     "diff@^9, out of the vulnerable range, so the advisory cleared on its own (as",
     "that entry's own `why` predicted) and check-audit.mjs then flagged the entry",
     "as stale. `allowed` is now empty: the dev tree carries no accepted",
-    "advisories. See docs/status-archive.md (2026-09-08 Section D entry) and ADR-0005."
+    "advisories. See docs/status-archive.md (2026-09-08 Section D entry) and ADR-0005.",
+    "",
+    "On 2026-09-29 eleven more dev-tree advisories appeared, found by the 12n PR",
+    "(#223) supply-chain job: ten against undici 7.29.0 (two high, among them",
+    "GHSA-RFGV-XXQX-MFG5 and GHSA-W293-VG96-WGC3), all fixed in 7.29.1, reached",
+    "only through @vscode/vsce's cheerio; and GHSA-253C-MCHW-3W2R (moderate,",
+    "markdown-it linkify) against markdown-it 14.3.0, fixed in 14.3.1, reached",
+    "through @vscode/vsce and @vscode/l10n-dev. Both fixed lines are in range for",
+    "their parents (cheerio wants undici ^7.19.0; vsce and l10n-dev want",
+    "markdown-it ^14), so `overrides.undici` ^7.29.1 and `overrides.markdown-it`",
+    "^14.3.1 clear all eleven via the child-override route with no entry here."
   ],
   "allowed": []
 }

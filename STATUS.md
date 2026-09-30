@@ -454,7 +454,21 @@ nothing (Finding 12.26). 12.43 could not show whether a reload reattached, so
 it was reworded to leave a marker file before the reload and check it after,
 and then passed, so all of 12.41–12.48 passed 2026-09-28.
 Merged 2026-09-29 (PR #223).
-**Next:** 12q (housekeeping), Phase 12's last slice. 12o and 12p moved to
+
+**12q (housekeeping) built 2026-09-29, Phase 12's last slice.** A licence
+gate, `check:licenses`, now checks every lockfile package in the
+`supply-chain` job. Its allow-list holds only licences fine for a package
+that ships, and 18 tooling packages are named exceptions
+([ADR-0005](docs/adr/0005-supply-chain-policy.md) amended).
+`formatCsvPage` takes an options object. Dropping items on **My Favorites**
+now adds them. The review before the PR found no code defect, and its seven
+points are folded in. `npm run verify` is green (2,018 unit), and
+`test:integration` passes (544). Manual items 12.49–12.51 passed; 11.10
+was tried and closed as not provokable. See `docs/phases/phase-12.md`'s "12q built" entry. The same day,
+two Dependabot alerts on `brace-expansion`, both dev-tree only, were cleared
+by a lockfile refresh (PR #224).
+**Next:** 12q's PR, then the Phase 12→13 checkpoint
+(`HOUSEKEEPING.md`) and the v0.1.4 preview release. 12o and 12p moved to
 Phase 13 as 13l and 13m (see "The MCP server work moved to Phase 13",
 below).
 

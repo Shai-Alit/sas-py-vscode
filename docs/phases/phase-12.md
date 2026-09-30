@@ -595,8 +595,12 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   unmerged, on `feat/12o-mcp-server`.
 - [ ] **12p — Option C, part 2: read-only tool surface.** Added 2026-09-24.
   **Moved to Phase 13 as 13m, 2026-09-29.** Not started.
-- [ ] **12q — Housekeeping** (licence gate, `formatCsvPage` options object,
-  drop on My Favorites, manual test 11.10). Added 2026-09-24. Not started.
+- [x] **12q — Housekeeping** (licence gate, `formatCsvPage` options object,
+  drop on My Favorites, manual test 11.10). Added 2026-09-24. Built
+  2026-09-29: `check:licenses` in the `supply-chain` job (ADR-0005 amended),
+  `CsvPageOptions`, and a drop on My Favorites adds instead of doing nothing.
+  Manual items 12.49–12.51 passed 2026-09-29. 11.10 was closed as not
+  provokable. See the "12q built" Runbook entry.
 - [x] **12r — Fix B12.3 (this extension and the SAS extension could not both
   activate).** Added and built 2026-09-27. The three SAS Content schemes are
   now `pythonOnViyaContent`, `pythonOnViyaContentReadOnly` and
@@ -2707,6 +2711,78 @@ parents' declared ranges, so two `overrides` pins clear them, the same route
 as `qs` and `fast-uri` in the 5d-ii PR. `scripts/advisory-allowlist.json`
 records it, and `docs/dev/ci.md`'s count of `overrides` pins, stale at two
 since 5d-ii, now reads six. Merged 2026-09-29 (PR #223).
+
+### 12q built, 2026-09-29 — a licence gate, an options object, and drop onto My Favorites
+
+**Licence gate.** `scripts/check-licenses.mjs` checks every package in
+`package-lock.json` against `scripts/license-allowlist.json`, as the "12i
+done" entry asked. It is shaped like `check-audit.mjs`: pure exported
+functions, a self-check on every run, exit 1 for a policy failure and 2 for a
+broken checker. Sean's calls, 2026-09-29:
+
+- **The policy.** `allowed` holds only licences fine for a package that
+  ships (MIT, ISC, the two BSDs, Apache-2.0, 0BSD, BlueOak-1.0.0, CC0-1.0,
+  Zlib, Python-2.0). The bundled React and AG Grid packages are
+  `devDependencies`, so npm cannot tell them from build tools, and a licence
+  accepted for tooling must not quietly pass a bundled package. Everything
+  else is a named exception keyed on package and licence, with a `why`. There
+  are 18, all tooling: `@vscode/vsce-sign` and nine platform binaries,
+  `ovsx`, and seven packages under `@vscode/vsce`'s secretlint. SPDX `OR`
+  passes on either side and `AND` needs both. `WITH` and non-SPDX text never
+  pass on the list. An exception that matches nothing, or that the list
+  already makes unnecessary, fails as stale.
+- **Where it runs.** In the `supply-chain` job, first, and not in `npm run
+  verify`. **This departs from the Plan's "run on every PR" on purpose:** a
+  licence can change only when the lockfile does, which is what that job's
+  `deps` filter selects, and both new files are added to the filter. Running
+  first has a trade-off, recorded in `docs/dev/ci.md`: a licence failure
+  stops the job before `check:audit` runs.
+
+At the time of writing, the lockfile held 902 packages, or 711 distinct
+package-and-licence pairs. [ADR-0005](../adr/0005-supply-chain-policy.md) is
+amended with a "Licences" section.
+
+**`formatCsvPage` options object** (12e's pre-push review, item 6). The two
+adjacent booleans are now `{ includeHeader, guardFormulaInjection? }`
+(`CsvPageOptions`). There is one production caller, `casCsvSource.ts`.
+
+**Drop onto My Favorites.** `handleDrop` on the My Favorites delegate now
+adds each dragged item whose presentation offers "add", the same rule the
+context menu uses, so an item that is already a favourite is skipped. Nothing
+is revealed afterwards: the item has not moved, and its favourite is a
+different tree node. The cancellable progress loop moved into one private
+`runEach` helper that moves and favourites share, so finding 6.16's
+broken-token handling exists once. Two things were left as they are. A drop
+on the Recycle Bin still does nothing; upstream recycles there, but that is
+not in this slice. Each added item fetches `@myFavorites` once, the same as
+**Add to My Favorites**.
+
+**Review before the PR.** It found no code defect. Seven points were verified
+and folded in:
+
+- the ADR miscounted the secretlint packages (six, not seven);
+- one exception's dependency chain skipped `validate-npm-package-license`;
+- a lockfile path with no `node_modules/` segment gave a garbled name (fails
+  closed, and there are no workspaces here; now guarded and tested);
+- two comments wrapped oddly;
+- `ci.md` now notes the fail-first trade-off;
+- the "every PR" deviation is recorded here.
+
+It also pointed out that this entry and the tick were missing. They were held
+until PR #225 merged, because it edited the same lines. The per-item
+`@myFavorites` fetch and the test casts were accepted as they are.
+
+**Checks.** `npm run verify` green on a clean `out/` (2,018 unit; coverage
+96.24/96.07/95.96/96.24); `test:integration` 544 passing (5 new);
+`check:licenses`, `check:docs` clean.
+
+**Manual items.** 12.49–12.51 (drop onto My Favorites, and a check that a
+move still moves) passed 2026-09-29. 11.10 was tried and closed as not
+provokable. Assigning a library to an unreadable path (`/root`) was meant to
+leave one the tree could not list. SAS refused the `LIBNAME` itself ("User
+does not have appropriate authorization level"), so no library reached the
+tree. The branch stays covered by its integration test
+(`docs/dev/manual-tests/phase-11.md`, 11.10).
 
 ---
 

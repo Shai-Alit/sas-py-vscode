@@ -116,12 +116,10 @@ export class CasCsvSource implements CsvExportSource {
     if (!page.ok) return fail(page.problem);
     return {
       ok: true,
-      value: formatCsvPage(
-        this.columns,
-        page.value.rows,
+      value: formatCsvPage(this.columns, page.value.rows, {
         includeHeader,
-        this.guardFormulaInjection,
-      ),
+        guardFormulaInjection: this.guardFormulaInjection,
+      }),
     };
   }
 }

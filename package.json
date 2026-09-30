@@ -739,6 +739,7 @@
     "check:copyright": "node scripts/check-copyright.mjs",
     "check:package": "node scripts/check-package.mjs",
     "check:audit": "node scripts/check-audit.mjs",
+    "check:licenses": "node scripts/check-licenses.mjs",
     "check:secrets": "node scripts/check-secrets.mjs",
     "check:coverage-scope": "node scripts/check-coverage-scope.mjs",
     "check:contracts": "node scripts/check-contracts.mjs",

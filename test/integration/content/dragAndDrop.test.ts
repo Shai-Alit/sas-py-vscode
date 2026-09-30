@@ -60,6 +60,7 @@ const targetFolder: ContentItem = {
 };
 
 type MoveItem = ContentAdapter["moveItem"];
+type AddToFavorites = ContentAdapter["addToFavorites"];
 
 interface Harness {
   controller: SasContentDragAndDropController;
@@ -67,11 +68,18 @@ interface Harness {
   errors: string[];
 }
 
-function controllerWith(moveItem: MoveItem): Harness {
+const favoritesNotCalled: AddToFavorites = () => {
+  throw new Error("addToFavorites should not be called");
+};
+
+function controllerWith(
+  moveItem: MoveItem,
+  addToFavorites: AddToFavorites = favoritesNotCalled,
+): Harness {
   const { channel, errors } = fakeLog();
   const state = { refreshed: 0, revealed: [] as ContentItem[] };
   const controller = new SasContentDragAndDropController({
-    adapter: () => ({ moveItem }) as unknown as ContentAdapter,
+    adapter: () => ({ moveItem, addToFavorites }) as unknown as ContentAdapter,
     refresh: () => {
       state.refreshed += 1;
     },
@@ -411,6 +419,125 @@ describe("SAS Content drag-and-drop move", () => {
       tokenSource.token,
     );
     assert.equal(holder.state.refreshed, 0);
+    tokenSource.dispose();
+  });
+});
+
+/**
+ * A drop on the My Favorites delegate adds to favourites instead of moving
+ * (12q, upstream parity). Which items qualify is `NodePresentation.
+ * favoriteAction`, unit-tested in `test/unit/content-presentation.test.ts`;
+ * the `POST` wire shape is `test/unit/content-adapter.test.ts`.
+ */
+describe("SAS Content drop on My Favorites", () => {
+  const myFavorites: ContentItem = {
+    id: "fav",
+    name: "My Favorites",
+    type: "favoritesFolder",
+    uri: "/folders/folders/fav",
+    links: [{ rel: "self", href: "/folders/folders/fav", method: "GET" }],
+  };
+
+  const added = { ok: true, value: undefined } as ContentResult<void>;
+
+  it("adds the dragged member to favourites, never moves it, and refreshes", async () => {
+    const adds: string[] = [];
+    const holder = controllerWith(notCalled, (item) => {
+      adds.push(item.id);
+      return Promise.resolve(added);
+    });
+
+    await droppedInto(myFavorites, holder);
+
+    assert.deepEqual(adds, ["m1"]);
+    assert.equal(holder.state.refreshed, 1);
+    assert.equal(holder.errors.length, 0);
+    // The member did not move, so there is nothing to reveal.
+    assert.equal(holder.state.revealed.length, 0);
+  });
+
+  it("skips an item that is already a favourite and never calls the adapter", async () => {
+    const holder = controllerWith(notCalled);
+    await dropItems(myFavorites, holder, [
+      { ...fileMember, isInMyFavorites: true },
+    ]);
+    assert.equal(holder.state.refreshed, 0);
+  });
+
+  it("adds only the items not already favourites from a mixed drop", async () => {
+    const adds: string[] = [];
+    const holder = controllerWith(notCalled, (item) => {
+      adds.push(item.id);
+      return Promise.resolve(added);
+    });
+
+    await dropItems(myFavorites, holder, [
+      memberNamed("new1"),
+      { ...memberNamed("already"), isInMyFavorites: true },
+      memberNamed("new2"),
+    ]);
+
+    assert.deepEqual(adds, ["new1", "new2"]);
+    assert.equal(holder.state.refreshed, 1);
+  });
+
+  it("adds the good ones past a failing one, logs every failure, shows the first, refreshes once", async () => {
+    const adds: string[] = [];
+    const holder = controllerWith(notCalled, (item) => {
+      if (item.id === "bad") {
+        return Promise.resolve(rejected as unknown as ContentResult<void>);
+      }
+      adds.push(item.id);
+      return Promise.resolve(added);
+    });
+
+    await withErrorMessageStub(async (shown) => {
+      await dropItems(myFavorites, holder, [
+        memberNamed("bad"),
+        memberNamed("good"),
+      ]);
+      assert.deepEqual(adds, ["good"]);
+      assert.equal(holder.errors.length, 1);
+      assert.equal(shown.length, 1);
+    });
+    assert.equal(holder.state.refreshed, 1);
+  });
+
+  it("stops the batch when the tree view's token is cancelled, and reports nothing for it", async () => {
+    const tokenSource = new vscode.CancellationTokenSource();
+    const adds: string[] = [];
+    const holder = controllerWith(notCalled, (item, signal) => {
+      adds.push(item.id);
+      // A real `cancel()` fires its subscribers synchronously, so the abort
+      // signal handed to this call is already aborted when it returns.
+      tokenSource.cancel();
+      return Promise.resolve(
+        signal?.aborted === true
+          ? (rejected as unknown as ContentResult<void>)
+          : added,
+      );
+    });
+    const transfer = new vscode.DataTransfer();
+    transfer.set(
+      MIME,
+      new vscode.DataTransferItem([
+        memberNamed("first"),
+        memberNamed("second"),
+      ]),
+    );
+
+    await withErrorMessageStub(async (shown) => {
+      await holder.controller.handleDrop(
+        myFavorites,
+        transfer,
+        tokenSource.token,
+      );
+      assert.equal(shown.length, 0);
+    });
+
+    assert.deepEqual(adds, ["first"]);
+    assert.equal(holder.errors.length, 0);
+    assert.equal(holder.state.refreshed, 1);
     tokenSource.dispose();
   });
 });

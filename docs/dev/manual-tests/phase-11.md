@@ -114,12 +114,24 @@ against a deployment that suite cannot exercise.
   real tree back.
 - [x] **11.9** **B1, SAS Content tree** — same steps as 11.8, against the SAS
   Content tree and **Refresh SAS Content**.
-- [ ] **11.10** **B1, SAS Libraries tree, a failure that is not the session
+- [x] **11.10** **B1, SAS Libraries tree, a failure that is not the session
   being gone** — hardest to provoke on demand; if one comes up naturally
   (a permission error, a malformed response), confirm the same
   warning-row-with-retry behaviour as 11.8/11.9 rather than a blank tree.
   Not blocking if none is reproducible this pass — the unit-adjacent
   integration test already covers this branch directly.
+  **Closed as not provokable, 2026-09-29 (12q).** Tried: Run Selection on
+  `SAS.submit("libname noread '/root';")` against `verde`, meant to leave a
+  library the tree could not list. SAS refused the assignment itself:
+
+  ```
+  ERROR: User does not have appropriate authorization level for library NOREAD.
+  ERROR: Error in the LIBNAME statement.
+  ```
+
+  So no library reached the tree, and there was nothing to expand. The
+  warning row was not seen live for this failure. The branch stays covered
+  by the integration test named above.
 - [x] **11.11** **B2, SAS Libraries tree, a session that goes stale while
   only browsing** — connect, expand the SAS Libraries tree once
   successfully, then let the compute session go stale (idle past 900

@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until `1.0.0`, minor versions may contain breaking changes; they will always be
 called out under **Changed** with a migration note.
 
-## [Unreleased]
+## [0.1.4] - 2026-09-29
 
 ### Added
 
@@ -68,6 +68,14 @@ called out under **Changed** with a migration note.
   committed and shared. If your own SAS code already holds a fileref of that
   name, the command says so and leaves your file alone. See [Connecting to
   CAS from Python](docs/cas-python-connection.md).
+- **Export to CSV asks before a large SAS library table.** Above an estimated
+  100 MB it asks for confirmation, as it already did for CAS tables. At the
+  measured paging rate, 100 MB is roughly five minutes of exporting.
+- **A failed autoExec line now says what failed.** The session's own `ERROR`
+  and `WARNING` lines go to the Python on Viya log, and the warning names the
+  first of them. The failing source line itself is never shown, and the value
+  of a credential option such as `password=` in an error line is replaced
+  with `[redacted]`.
 
 ### Fixed
 
@@ -98,6 +106,14 @@ called out under **Changed** with a migration note.
   a few seconds now says why, when the cause is known. After an interrupted
   cell, the notice says SAS Viya may still be finishing the cancelled
   statement. Otherwise it says the cell is still running.
+- **Closing a notebook mid-run.** Cells still queued behind the running one
+  are now skipped, instead of each failing. A started cell always finishes,
+  even if its output could not be written, so it can be run again once the
+  notebook is reopened.
+- **An oversized CAS or Compute response read as a connection problem.** A
+  page too large to receive, usually from a very wide table, now says the
+  response was over the size limit, instead of suggesting a proxy problem.
+  On the Compute side it also no longer looks like a lost session.
 - **Python on Viya and the SAS extension could not both work.** Since 0.1.2,
   with SAS's own VS Code extension installed, whichever of the two started
   second failed to start. The SAS extension then showed "Your connection does

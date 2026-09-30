@@ -156,8 +156,9 @@ before tagging. The post-publish manual pass (D7) is Sean's to run.
 the [GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.5),
 from release PR [#231](https://github.com/Shai-Alit/sas-py-vscode/pull/231)
 (squash `ee2fa9e`). `npm run test:integration` (544 passing) and the release
-smoke test (`test/smoke/`) were green on the fix before the release. The
-post-publish pass (D7) against the published build is Sean's to run.
+smoke test (`test/smoke/`) were green on the fix before the release. Sean
+ran the smoke test again against the published build the same day (D7),
+and it passed.
 
 **Phase 13 (Feature completion) is in progress**
 ([`docs/phases/phase-13.md`](docs/phases/phase-13.md)). **13n** fixes a bug

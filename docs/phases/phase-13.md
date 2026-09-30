@@ -316,7 +316,10 @@ push, and all passed.
 
 **Merged** 2026-09-30 as
 [PR #230](https://github.com/Shai-Alit/sas-py-vscode/pull/230), squash
-`4622508`. Not yet in a release.
+`4622508`. Released the same day in `v0.1.5` (release PR
+[#231](https://github.com/Shai-Alit/sas-py-vscode/pull/231), squash
+`ee2fa9e`), cut ahead of the rest of the phase because v0.1.4 users had no
+workaround (Sean's call).
 
 **Not reproduced.** Two things Sean saw on v0.1.4 did not recur on the
 probe. A traceback stayed lost until a disconnect and reconnect: the probe

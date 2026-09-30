@@ -58,7 +58,15 @@
     "through @vscode/vsce and @vscode/l10n-dev. Both fixed lines are in range for",
     "their parents (cheerio wants undici ^7.19.0; vsce and l10n-dev want",
     "markdown-it ^14), so `overrides.undici` ^7.29.1 and `overrides.markdown-it`",
-    "^14.3.1 clear all eleven via the child-override route with no entry here."
+    "^14.3.1 clear all eleven via the child-override route with no entry here.",
+    "",
+    "On 2026-09-29 Dependabot raised two brace-expansion alerts (moderate, CPU",
+    "denial of service in the `{a},b}` rewrite): 2.1.4, reached through",
+    "@vscode/l10n-dev's glob -> minimatch@9, fixed in 2.1.7; and 5.0.9, reached",
+    "through @vscode/vsce's minimatch@10, fixed in 5.0.12. Both fixed versions",
+    "are inside the ranges their parents already declare (^2.0.2 and ^5.0.8),",
+    "so `npm update brace-expansion` cleared both with a lockfile refresh alone:",
+    "no override and no entry here."
   ],
   "allowed": []
 }

@@ -454,8 +454,9 @@ nothing (Finding 12.26). 12.43 could not show whether a reload reattached, so
 it was reworded to leave a marker file before the reload and check it after,
 and then passed, so all of 12.41–12.48 passed 2026-09-28.
 Merged 2026-09-29 (PR #223).
-**Next:** 12q (housekeeping). 12o and 12p move to Phase 13 as 13l and 13m
-on `docs/12-move-mcp-to-phase-13`, not yet merged.
+**Next:** 12q (housekeeping), Phase 12's last slice. 12o and 12p moved to
+Phase 13 as 13l and 13m (see "The MCP server work moved to Phase 13",
+below).
 
 **`docs/cas-python-connection.md` corrected 2026-09-23, from an unrelated
 customer support investigation.** Two customer reports came in from the same
@@ -475,6 +476,19 @@ alongside 12d (making the CAS-token snippet reusable across sessions,
 Sean's own placement call) — not scoped or built, an open idea the same way
 12d's own outcome already is. Full account in `docs/phases/phase-12.md`'s own
 Runbook entries.
+
+**The MCP server work moved to Phase 13, 2026-09-29 (Sean's call).** 12o
+(the MCP server for Claude Code) was built in a second clone and was
+part-way through its manual pass (12.41–12.44 passed) when Sean decided the
+MCP work is too much for Phase 12. 12o and 12p (its read-only tools) are now
+Phase 13's **13l** and **13m**. **12o's code is parked, unmerged, on the
+branch `feat/12o-mcp-server`** (commit `0506824`), pushed with no PR. It is
+ready to pick up, not to rebuild. The preview release that follows Phase 12
+ships without it (`PRODUCTION_PLAN.md` §8's 2026-09-29 amendment). What is
+on the branch and the pickup steps are in
+[`docs/phases/phase-13.md`](docs/phases/phase-13.md)'s "12o and 12p moved
+here" Runbook entry. With 12n merged the same day, 12q is the only Phase 12
+slice left.
 
 **Letter collision reconciled, 2026-09-22.** 12c's own insertion (above)
 and PR #207's 12f/12g/12h were scoped in two sessions working this phase

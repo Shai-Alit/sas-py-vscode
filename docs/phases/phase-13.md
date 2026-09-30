@@ -29,6 +29,14 @@ loop, conventions).
 > title changed from "Second execution backend" to match; that section's
 > text is unchanged.
 
+> **The MCP server work moved here from Phase 12, 2026-09-29 (Sean's own
+> call).** Phase 12's 12o (the MCP server for Claude Code) and 12p (its
+> read-only tools) are now **13l** and **13m**. 12o was already built and
+> part-way through its manual pass, and **its code is on the unmerged branch
+> `feat/12o-mcp-server`**, pushed with no PR and ready to pick up. Start
+> 13l from that branch, not from scratch. The Runbook's "12o and 12p moved
+> here" entry has what is on it and the pickup steps.
+
 ---
 
 ## Plan
@@ -95,9 +103,9 @@ deliberate event".
 10. **13j — An MCP tool that runs Python.** From 12c: running Python
     through `ExecutionBackend` is a different order of risk from reading
     metadata, so 12c kept it out of v1's tool surface as "a separate,
-    separately reviewed follow-up". After 12p. Needs its own ADR-0037
-    security review, and a decision on confirmation and on which
-    workspaces may use it.
+    separately reviewed follow-up". After 13m (12p until 2026-09-29).
+    Needs its own ADR-0037 security review, and a decision on confirmation
+    and on which workspaces may use it.
 11. **13k — Polish.** Small items from `phase-11.md`, each needing a probe
     or a small design choice:
     - Progress during CSV export (11d, "Not built / carried": the row count
@@ -109,9 +117,26 @@ deliberate event".
     - F9 passthrough on a non-Snowflake connector and with a large result
       set, both untested (Finding 11.2). Probe if such a caslib exists;
       correct `docs/cas-python-connection.md` if the behaviour differs.
+12. **13l — The MCP server for Claude Code (was 12o).** Moved from Phase
+    12, 2026-09-29. **Already built, on the unmerged branch
+    `feat/12o-mcp-server`**: a loopback-only MCP server in the extension
+    host, off by default, trusted workspaces with a folder only, answering
+    only a client holding a per-start secret read from a file. It has no
+    tools. The design is `phase-12.md`'s Plan item 15 (12o), as amended by
+    that branch's ADR-0042. What is left is finishing the pickup steps in
+    this file's "12o and 12p moved here" Runbook entry, then its PR.
+13. **13m — The MCP server's read-only tools (was 12p).** Moved from Phase
+    12, 2026-09-29. Not started. The scope is unchanged from `phase-12.md`'s
+    Plan item 16 (12p): the `LibraryAdapter` and `CasAdapter` browse-and-page
+    operations 12c listed, each `readOnlyHint`, with ADR-0037's security
+    review before its PR. Also weigh what the branch's ADR-0042 leaves to
+    this slice: Claude Code connects to whatever program holds a registered
+    port, without sending `Authorization` when its helper cannot run, so
+    once tools exist a program on that port could offer Claude Code its own
+    (probe (c) in the branch's "12o built" Runbook entry). After 13l.
 
 **Order.** 13a–13d are independent. 13f needs 13e; 13g needs 13e/13f;
-13i needs 13h; 13j needs Phase 12's 12p. 13k is independent.
+13i needs 13h; 13m needs 13l; 13j needs 13m. 13k is independent.
 
 ### Second execution backend (does not gate v1.0)
 
@@ -136,9 +161,14 @@ where `PROC PYTHON` actually hurts.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
 - [ ] **13j — MCP tool that runs Python.** Added 2026-09-24. Not started.
-  After 12p.
+  After 13m.
 - [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
   checks). Added 2026-09-24. Not started.
+- [ ] **13l — The MCP server for Claude Code (was 12o).** Moved here
+  2026-09-29. Built and parked on `feat/12o-mcp-server`; manual items 4 of 8
+  passed. See "12o and 12p moved here" below for the pickup steps.
+- [ ] **13m — The MCP server's read-only tools (was 12p).** Moved here
+  2026-09-29. Not started. After 13l.
 
 ### Scope extended, 2026-09-24
 
@@ -146,6 +176,75 @@ Slices 13a–13k added by the backlog sweep recorded in `phase-12.md`'s
 "Backlog sweep" Runbook entry, which has the full source-to-slice table and
 the reasoning for which items came here rather than to Phase 12. The
 second-execution-backend text is unchanged and still does not gate v1.0.
+
+### 12o and 12p moved here, 2026-09-29
+
+**Decision (Sean's).** Partway through 12o's manual pass, Sean decided the
+MCP work is too much for Phase 12 and moved it here: 12o becomes 13l and
+12p becomes 13m. Phase 12 goes on with 12n and 12q, and the preview release
+that follows Phase 12 ships without the MCP server (`PRODUCTION_PLAN.md`
+§8's 2026-09-29 amendment). Both slices still gate v1.0, as every Phase 13
+slice does.
+
+**Where the code is.** Branch `feat/12o-mcp-server`, commit `0506824`,
+pushed 2026-09-29. It branches from `main` at `0ce7334` (12m's merge). No PR
+was opened, so no CI or AI reviewer has run on it; CI runs only on PRs and
+on pushes to `main`. The branch holds:
+
+- `src/agent/`: `protocol.ts` (JSON-RPC), `guard.ts` (what a request must
+  carry), `registration.ts` (the `claude mcp` line, quoted per shell),
+  `headersFile.ts`, `server.ts` (`node:http`) and `agentServer.ts` (the VS
+  Code side), wired in from `src/extension.ts`.
+- Tests: `test/unit/agent-{protocol,guard,registration,headers-file,server}.test.ts`
+  and `test/integration/agent/agentServer.test.ts`.
+- The `pythonOnViya.agentServer.enabled` setting and the **Set Up Claude
+  Code Access** command (`package.json`, `package.nls.json`), with
+  `docs/reference/` updated.
+- ADR-0042 (the server's design, amending 12o's plan text), an ADR-0003
+  amendment for the two Node-only files, the `.c8rc.json` and
+  `eslint.config.mjs` changes for them, and a `CHANGELOG.md` entry.
+- User docs: a new `docs/claude-code.md` (in the VitePress nav) and
+  `docs/agent-skill.md` updated.
+- In that branch's `docs/phases/phase-12.md`: the "12o built" Runbook entry
+  (probes, reviews, test list, Sean's four design calls) and a "Parked and
+  moved to Phase 13" entry. Its manual items are in its
+  `docs/dev/manual-tests/phase-12.md` under "12o".
+
+**State when parked.** `npm run verify` and `npm run test:integration` were
+green on the tree merged with 12m (2,096 unit, one pending; 549
+integration). The adversarial review and ADR-0037's security review both
+ran and are folded in. Manual items 12.41–12.44 passed; 12.45–12.48 (each
+Windows shell's line, turning it off, a taken port, refusals) did not run.
+
+**Pickup steps for 13l**, in order:
+
+1. Rebase `feat/12o-mcp-server` onto `main`. Expect conflicts in
+   `STATUS.md`, `docs/phases/phase-12.md`, `docs/dev/manual-tests/phase-12.md`,
+   `CHANGELOG.md`, `package.json`, `package.nls.json` and
+   `src/extension.ts`.
+2. Move the branch's Phase 12 records here. Its "12o built" and "Parked"
+   Runbook entries come into this file as 13l entries, and its `STATUS.md`
+   paragraph and punch-list line become 13l's. `main`'s `phase-12.md`
+   keeps only the "moved" notes.
+3. Renumber its manual items. 12n claimed 12.41–12.48 on its own branch, so
+   the "12o" section moves to `docs/dev/manual-tests/phase-13.md` with
+   `13.x` numbers. Run all eight against a build of the rebased branch: the
+   four that passed ran before the rebase.
+4. Check that ADR-0042 is still free on `main`. If not, renumber it, as 12o
+   already did once when 12m took ADR-0041. Change its "12o"/"12p" wording
+   to 13l/13m.
+5. Move its `CHANGELOG.md` entry to whatever section is unreleased at that
+   point. It must not appear under the Phase 12 preview release.
+6. Re-run the branch's probe (a) against the current Claude Code. The
+   server speaks the legacy MCP protocol era only, because Claude Code
+   2.1.245 sent nothing newer. If Claude Code has moved to the 2026-07-28
+   stateless revision, that design call needs revisiting before merge.
+7. Look into an observation from manual item 12.43. After running `claude`
+   and `/mcp` in the setup terminal, Sean had to sign in to Claude Code in
+   VS Code again. It may be unrelated.
+8. `npm run verify` and `npm run test:integration`, then the pre-PR steps
+   in `CLAUDE.md`. Both reviews are done, so the adversarial pass covers
+   what the rebase and the steps above changed. Then the PR.
 
 ---
 

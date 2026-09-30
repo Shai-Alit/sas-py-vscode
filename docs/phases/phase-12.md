@@ -578,14 +578,14 @@ well (`PRODUCTION_PLAN.md` §8's 2026-09-24 amendment).
   in. Manual items 12.33–12.40 passed 2026-09-28. Merged 2026-09-28 (PR
   #222). See the "12m
   design" and "12m built" Runbook entries.
-- [ ] **12n — A reusable CAS connection.** Added 2026-09-24. Built
+- [x] **12n — A reusable CAS connection.** Added 2026-09-24. Built
   2026-09-28: the token file has a stable name, `pythonOnViya.cas.tokenFileref`
   (`CASTOKEN` by default), rewritten in place and never written into a
   fileref the user's SAS code holds; **Refresh CAS Token** writes it without
   inserting anything. The session's own `SAS_SERVICES_TOKEN` was ruled out:
   it is never refreshed (Finding 12.25). Manual items 12.41–12.48 all passed
-  2026-09-28 (12.43 after a rewording, see the Runbook entry). See the "12n
-  built" Runbook entry.
+  2026-09-28 (12.43 after a rewording, see the Runbook entry). Merged
+  2026-09-29 (PR #223). See the "12n built" Runbook entry.
 - [ ] **12o — Option C, part 1: loopback MCP server and lifecycle.** Added
   2026-09-24. Not started. Security review before its PR.
 - [ ] **12p — Option C, part 2: read-only tool surface.** Added 2026-09-24.
@@ -2701,7 +2701,7 @@ one against `markdown-it` 14.3.0, through `@vscode/vsce` and
 parents' declared ranges, so two `overrides` pins clear them, the same route
 as `qs` and `fast-uri` in the 5d-ii PR. `scripts/advisory-allowlist.json`
 records it, and `docs/dev/ci.md`'s count of `overrides` pins, stale at two
-since 5d-ii, now reads six.
+since 5d-ii, now reads six. Merged 2026-09-29 (PR #223).
 
 ---
 

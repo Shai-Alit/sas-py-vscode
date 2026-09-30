@@ -314,6 +314,10 @@ All three are corrected.
 all five against a `.vsix` built from this branch on 2026-09-30, before the
 push, and all passed.
 
+**Merged** 2026-09-30 as
+[PR #230](https://github.com/Shai-Alit/sas-py-vscode/pull/230), squash
+`4622508`. Not yet in a release.
+
 **Not reproduced.** Two things Sean saw on v0.1.4 did not recur on the
 probe. A traceback stayed lost until a disconnect and reconnect: the probe
 never saw the `note` typing outlast its job. A notebook cell's `SAS.show()`

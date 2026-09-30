@@ -106,417 +106,42 @@ slice-by-slice narrative that used to live here has moved to
 [`docs/status-archive.md`](docs/status-archive.md), per this file's own
 archival rule.
 
-**Phase 12 started 2026-09-22. 12a (Agent Skill) shipped the same day** —
-`.claude/skills/python-on-viya/SKILL.md`, no production code, teaching an
-agent this project's actual execution model (upload-plus-`infile=`
-submission, `SYSCC` as the real success signal, the interpreter
-banner/`>>>` prompts as inherent noise, namespace lifecycle, one-run-at-a-
-time, library/CAS access, the read-only environment probe, and the command
-surface). Docs-only per `CLAUDE.md`'s adversarial-review section, so no
-mandatory pre-PR pass — but Sean asked for a manual review anyway, since the
-skill's content is something an agent acts on. That review found and fixed
-three things: a real distribution gap (the skill has no path to an end user
-— `.claude/` is excluded from the packaged `.vsix` — closed by adding
-[`docs/agent-skill.md`](docs/agent-skill.md), wired into the site nav and
-cross-linked from `getting-started.md`/`running-python.md`); a `SYSCC`/
-`sessionConditionCode` conflation; and an overstated credential-leak claim
-that surfaced a contradiction between ADR-0014 and `docs/data-access.md`.
-**That contradiction was settled the same day by a live probe against
-`verde`** — [Finding 12.1](docs/phases/phase-12.md) — confirming ADR-0014
-(the outer Python cell is never echoed) and refuting `data-access.md`'s
-"`SAS.submit()` masks a `password=`" claim: a `LIBNAME` statement's password
-came back in the raw log in full plaintext, unmasked, when the statement
-failed to parse. `docs/data-access.md` and `docs/cas-python-connection.md`
-are corrected accordingly. `prettier --check`, `check:secrets`, and
-`check:docs` (reference check, samples, self-links, VitePress build) all
-clean.
+**Phase 12 (AI-agent integration) is done — every slice merged, decided or
+moved, 2026-09-22 through 2026-09-29.** What shipped:
 
-**12b (Option C spike) ran 2026-09-22 — viable, go.** A standalone loopback
-HTTP MCP server (never touching `src/`) confirmed both questions the
-2026-09-21 research memo flagged as genuinely undocumented: a real,
-separate Claude Code CLI session connects over loopback HTTP with an
-out-of-band bearer token and completes an actual tool call; and a killed/
-restarted server (standing in for a VS Code window reload) is transparent
-to the CLI when port and token are both stable, with `headersHelper` —
-confirmed from Claude Code's own live docs, not assumed — as the
-documented, right-shaped mechanism for the case where the token isn't (one
-real prerequisite found along the way: Claude Code requires its own
-one-time interactive per-workspace trust acceptance before running a
-`headersHelper`, layered on top of and separate from VS Code's own
-workspace trust/ADR-0002). Three secondary questions from the memo (Agent
-Host forwarding of extension-registered servers; whether the in-VS-Code
-Claude harness sees them; `resolveMcpServerDefinition` re-invocation on
-token expiry) remain undocumented after a fresh check today — unchanged
-from the memo, out of this spike's scope. Full method and results in
-`docs/phases/phase-12.md`'s Runbook. Per ADR-0037's own consequences
-section, the actual build is a separate, not-yet-scoped slice, not started
-here, and still carries the ADR's named requirement for its own security
-review before any code merges.
+- 12a: the `python-on-viya` Agent Skill.
+- 12e: an opt-in CSV formula-injection guard.
+- 12f: three Phase 11 follow-ups.
+- 12j: inline graphics through an always-on ODS wrapper
+  ([ADR-0038](docs/adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md)).
+- 12k: a failed SAS step no longer poisons the session
+  ([ADR-0039](docs/adr/0039-every-job-switches-syntax-check-mode-off.md)).
+- 12l: notebook staleness fixes.
+- 12r: URI schemes renamed so this extension and SAS's own can both activate
+  ([ADR-0040](docs/adr/0040-every-uri-scheme-is-the-extensions-own.md)).
+- 12m: a Python startup snippet
+  ([ADR-0041](docs/adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md)).
+- 12n: a reusable CAS connection, with **Refresh CAS Token**.
+- 12q: housekeeping, including a licence gate
+  ([ADR-0005](docs/adr/0005-supply-chain-policy.md) amended).
 
-**12c (scope the actual Option C build) added and scoped 2026-09-22, the
-same day, once 12b returned viable/go** — inserted ahead of the phase's
-other unstarted slices, which renumbered old 12c→12d (Python-startup-snippet
-spike) and old 12d→12e (CSV-guard research). 12c's own deliverable — a
-design and punch list for a not-yet-numbered future build slice, no `src/`
-code — settles the tool surface (read-only `LibraryAdapter`/`CasAdapter`
-operations only; `ExecutionBackend` named as a separate, later,
-separately-reviewed decision), the token/lifecycle design (a
-`headersHelper`-shaped local secret independent of the Viya token,
-replacing the static-header design 12b found cannot self-heal on
-rotation), and what ADR-0037's own named pre-code security review must
-cover. **The audience-boundary question — external CLI agents only for
-v1, vs. also VS Code's own in-editor agent discovery — is fully settled,
-not just recommended.** Sean asked how to decide it with nothing
-documented; the answer was to probe VS Code's own behaviour directly
-rather than keep reasoning from absent docs, the same posture this
-project already takes toward Viya. A live Extension Development Host
-probe the same day found VS Code's core does automatically query an
-extension-registered `contributes.mcpServerDefinitionProviders` provider
-— but a VS Code core team member and a still-open `microsoft/vscode`
-issue ([#265912](https://github.com/microsoft/vscode/issues/265912))
-confirm that such a server never appears in the installed-servers surface
-VS Code points users at, so it cannot be trusted, started, stopped or
-removed there — a real, current, tracked product gap, not an unproven
-integration. Decision: build against the external-CLI path only for v1;
-revisit in-editor discovery once that VS Code issue closes. Full method
-and findings in `docs/phases/phase-12.md`'s "12c scoped" and "12c
-audience boundary settled" Runbook entries.
+12b/12c (the Option C MCP design), 12d, 12g, 12h and 12i settled what they
+set out to without product code. **The MCP server (12o, built and parked on
+`feat/12o-mcp-server`) and its read-only tools (12p) moved to Phase 13 as
+13l/13m on 2026-09-29 (Sean's call)**, so the preview release ships without
+them. Findings 12.1–12.26 and bugs B12.1–B12.3 (all fixed) are in
+[`docs/phases/phase-12.md`](docs/phases/phase-12.md). Final PR
+[#226](https://github.com/Shai-Alit/sas-py-vscode/pull/226), squash
+`7063b9c`. `npm run verify` green (2,018 unit; coverage
+96.24/96.07/95.96/96.24); `npm run test:integration` green (544 passing).
+**The Phase 12→13 between-phase housekeeping (`HOUSEKEEPING.md`) ran and
+closed 2026-09-29** — see the "Phase 12→13 housekeeping" section below. The
+full slice-by-slice narrative that used to live here has moved to
+[`docs/status-archive.md`](docs/status-archive.md), per this file's own
+archival rule.
 
-**Three more slices — 12g, 12h and 12i — were added 2026-09-22**, from two
-pieces of work that ran entirely outside this repository the same day
-(labeled 12f/12g/12h when added; renumbered 12g/12h/12i the same day once
-12c's own insertion, above, shifted every later slice one letter — see
-"Letter collision reconciled" below). Hand-running SAS's own VS Code
-extension in a `.sasnb` notebook against a Viya 4 deployment produced
-Findings 12.2 and 12.3: `PROC PYTHON` emits a
-`NOTE: Resuming Python state from previous PROC PYTHON invocation.` when
-interpreter state survives between steps in one session (**12g** — does that
-`NOTE` reach *our* transcript, and is it misleading on Run File or flatly
-wrong after Reset Python State? no Viya probe needed, just run the extension
-and read the output channel), and SAS's extension opens a named
-`ods html5(id=…)` destination with images inlined as base64 `data:` URIs
-before every run, which is how `SAS.show(plt)` renders a figure in a cell
-(**12h** — a spike, Sean's call: settle the cheap blocking questions, leave
-any build to a separate, not-yet-scoped slice, the same boundary 12b drew
-for Option C). Two of 12h's four questions are already answered from this
-repository's own source, and favourably: the notebook sanitizer does **not**
-strip `data:` image URIs — it accepts inline PNG/JPEG/GIF/WebP and rejects
-SVG deliberately — so no [ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)
-relaxation is needed for the PNG path, and
-[ADR-0019](docs/adr/0019-rich-output-is-captured-by-diffing-the-working-directory.md)'s
-rich-output capture already diffs the session's files and whitelists
-`.png`/`.html`, so a figure written to a file already reaches users today.
-Separately, a dependency-licence inventory produced for an internal
-open-source-contribution request found that MIT packages ship inside the
-built bundles (twelve by its count; seven on measurement — see 12i below)
-despite `package.json` declaring no
-`dependencies` at all, and that the root `NOTICE` attributes none of them
-(**12i** — append a "Bundled third-party components" section; `NOTICE`
-already ships, so packaging does not change). 12d–12i are all unstarted —
-see `docs/phases/phase-12.md` for the full account.
-
-**12d (Python startup-snippet spike) ran 2026-09-23 — submission path
-confirmed, viable, not parked.** A live probe against `verde` (approved by
-Sean before its mutating calls ran) settled both questions 12d's own Plan
-entry raised: a plain (non-restart) `proc python infile=` job, submitted once
-right after session creation — mirroring `autoExecLines`'s own role for SAS
-setup — successfully seeds the interpreter, and that state is provably
-readable in the very first ordinary run afterward, not merely inferred
-([Finding 12.4](docs/phases/phase-12.md)). The restart question resolved
-wider than scoped: the statement that destroys it is not particular to Reset
-Python State — it is the exact statement **every Run File sends**,
-unconditionally (`freshNamespace: true`, `src/run/commands.ts:500`), so a
-design scoped only around an explicit Reset would still leave a user's very
-first Run File silently starting from a blank namespace. No `src/` code, same
-footprint as 12b/12c — a design recommendation is recorded for whoever sizes
-a future build slice, not committed to here. Full method and results in
-`docs/phases/phase-12.md`'s "12d spike run" Runbook entry and Finding 12.4.
-
-**12e (CSV formula-injection guard) built 2026-09-23 — both surfaces, not
-CAS-only.** The research the slice was scoped for found the real cost was
-correctness, not effort: a SAS library table's export relays the server's
-CSV untouched by design (Finding 7.20), so guarding it needs a real RFC-4180
-parser (`src/data/csvParse.ts`, new); and a numeric column's own leading `-`
-must never be guarded (it is not a formula-injection risk and guarding it
-would silently corrupt the column), which both APIs' column-type metadata
-makes a complete, safe partition rather than a heuristic. Shipped as an
-opt-in `pythonOnViya.csvExport.guardFormulaInjection` setting (default
-`false`) covering CAS and SAS Libraries alike, so the guard never silently
-protects only some of a user's exports. A real bug — `LibraryCsvSource.sample()`
-guarding unconditionally, ignoring the setting — was caught by this session's
-own new integration test before the branch was considered done; see
-`docs/phases/phase-12.md`'s "12e built" Runbook entry for the full account,
-including the fix. **The pre-push adversarial review then found and fixed
-six things**, before the branch was pushed: a citation defect that was also
-a real bypass (the guard's trigger set was missing tab/CR/LF — the exact
-CVE-2021-41270 shape), an overstated user-doc claim about the leading-`'`
-mitigation, a dead branch in `csvParse.ts`, an implicit sentinel coupling now
-commented, and two test gaps (a multi-page guard-on stream, a
-column-count-overflow row) — full account and the one deferred finding (an
-options-object refactor for `formatCsvPage`'s two boolean parameters) in
-`docs/phases/phase-12.md`'s "Adversarial review, before push" entry. `npm
-run coverage` green (96.41/95.86/96.2/96.41); `npm run test:integration`
-green (509 passing, 14 new). **Manual test 12.4 (CAS) then failed, 2026-09-23:**
-CAS columns were listed alphabetically while row cells stay in table order,
-so the headers were swapped and the guard checked each cell against the
-wrong column (Finding 12.6, **B12.2** — older than 12e, and it also affects
-the CAS data viewer). Fixed on the branch by sorting columns by their
-`index`; coverage 96.42/95.87/96.21/96.42, integration 510 passing. 12.4
-and a new 12.9 (column order in the CAS tree and data viewer) then passed
-live against the fix, so all of 12.1–12.9 are ticked. A second pre-push
-adversarial pass over the whole branch found nothing to fix, and the branch
-went up for PR — see `docs/phases/phase-12.md`'s "12e manual test 12.4
-failed" entry. **Merged as PR #210; B12.2 ticked.**
-
-**12f (three Phase 11 follow-ups) built 2026-09-24, on one branch.** A SAS
-library table's CSV export now asks above an estimated 100 MB, the same
-threshold as CAS (Finding 12.12: a 250,000-row, 20-column `WORK` table
-paged at a flat ~0.47 s per 500 rows, ~300 bytes a row). An over-cap CAS or
-Compute response is now its own problem (`cas-response-too-large`,
-`compute-response-too-large`), not "check your proxy". On the Compute side
-it also no longer reads as a lost session. A bad autoExec line's `ERROR`
-text now reaches the log and the warning, read from the session's own log
-(Finding 12.11). The echoed source line is deliberately left out, since it
-could carry a password. `npm run verify` green (1,898 unit; coverage
-96.45/95.89/96.24/96.45); `npm run test:integration` 517 passing. The
-pre-push adversarial review found six things, all folded in. Manual items
-12.10–12.13 all passed live, 2026-09-24. See `docs/phases/phase-12.md`'s "12f
-built" entry. **Merged as PR #212.**
-
-**12g (the "resuming Python state" `NOTE`) run 2026-09-24 — nothing to
-build.** A probe (approved by Sean) found every Python-state `NOTE` typed
-`note`, which the log filter already drops, on all five paths tried,
-including a plain run after Reset Python State. That path does log
-"Resuming" over an empty namespace, but a user never sees it (Finding
-12.13). The slice also found that Run File restarts the interpreter the same
-way Reset does (Finding 38), which the shipped skill and
-`docs/running-python.md` said it did not. Both are corrected. Docs only.
-Manual item 12.14 passed live, 2026-09-24. See `docs/phases/phase-12.md`'s "12g run"
-entry.
-
-**12h (inline-graphics spike) run 2026-09-24 — viable, and mostly
-plumbing; build not scoped.** Two probe sessions (approved by Sean) found
-that with a named ODS HTML5 destination open around a run, `SAS.show`'s
-output lands as a new `sashtml*.htm` in the session's working directory,
-where the existing ADR-0019 diff already looks (Finding 12.14). Without one,
-`SAS.show` and `SAS.pyplot` run cleanly and show nothing, which is what
-users get today. A figure comes out as SVG unless the call passes
-`filetype="png"`; `ods graphics / outputfmt=png` does not change that. The
-notebook sanitizer turns the SVG into junk text. A build would also have to
-skip the empty body ODS writes on every run. **Sean's decision: the build
-wraps every run, always on.** A second probe round found the error signal
-intact and no measurable job-time cost, and set two build requirements:
-start the wrapper with a `close`, and capture only the body file the run's
-own `NOTE` names (Finding 12.15). Docs only: the skill and
-`docs/running-python.md` now say `SAS.show` displays nothing here. See
-`docs/phases/phase-12.md`'s "12h spike run" entry.
-
-**12j (the inline-graphics build) added 2026-09-24.** The always-on ODS
-wrapper 12h recommended, now its own slice. Sean's call: it is part of
-Phase 12, so it gates v1.0. Not started and not yet sized. See
-`docs/phases/phase-12.md`'s Plan item 10.
-
-**Backlog sweep, 2026-09-24: every researched, deferred or flagged item in
-Phases 11 and 12 now has a slice, and v1.0 moves to after Phase 13.** Sean
-found that research had been done without the work ever being planned
-(12b/12c's Option C design, 12d's startup snippet), and asked for both
-phase files to be swept. Ready-to-build work went to Phase 12 as **12k–12q**:
-the B12.1 fix, three notebook-staleness carry-overs, the startup snippet, a
-reusable CAS connection, Option C in two parts, and housekeeping. Work that
-still needs a design pass, a probe or an architecture decision went to
-Phase 13, retitled **Feature completion**, as **13a–13k** (SAS Content
-upload/download and copy, F6, F11, F10, F8, F1, an MCP execution tool,
-polish). Sean's calls: **v1.0 now waits for Phase 13** (he is waiting on
-SAS's approval to merge this into the official SAS code base), and **a
-preview release follows Phase 12**. The second execution backend stays in
-Phase 13 as an ungated section. Recorded in `PRODUCTION_PLAN.md` §8's
-2026-09-24 amendment; full source-to-slice table in
-`docs/phases/phase-12.md`'s "Backlog sweep" entry.
-
-**12i (`NOTICE`) done 2026-09-24: seven bundled MIT packages are now
-attributed, not the twelve first counted.** Measuring esbuild's own output
-per package showed that the licence inventory's lockfile walk was wrong in
-both directions. It over-counted six packages that never reach a bundle
-(`prop-types` and what hangs off it, and `ag-charts-types`, which is types
-only). It also missed `@vscode/python-extension`, which is inlined into
-`dist/extension.js`. `NOTICE` now lists all seven by bundle, with their
-copyright lines and the MIT text. This is a docs-only change, and packaging
-is unchanged. See `docs/phases/phase-12.md`'s "12i done" entry.
-
-**12j (inline graphics) built 2026-09-24.** Every run is now wrapped in a
-named ODS HTML5 destination, so `SAS.show()`, `SAS.pyplot()` and ODS output
-from `SAS.submit()` reach the Result panel and notebook cells
-([ADR-0038](docs/adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md)).
-Reading upstream showed that the 12h plan's "read the body name from the
-`NOTE`, as upstream does" was wrong about upstream. Sean instead chose a
-body file named by the wrapper, `pyviya_ods.htm`. A scoping probe confirmed
-that each run overwrites it and that a cancelled run's lock clears on the
-next run (Finding 12.16). Empty bodies are all the same size, so a
-print-only run costs no extra request. A notebook cell drops an SVG figure
-whole, and the docs say to pass `filetype="png"`. The pre-push adversarial
-review found five real issues, all fixed on the branch. The largest came
-from two follow-up probes (Finding 12.17): a SAS procedure's graph needed
-`outputfmt=png`, and a LISTING side file would have shown each such graph
-twice. See `docs/phases/phase-12.md`'s "12j built" entry.
-
-**12j manual pass done 2026-09-25; 12j merged 2026-09-25 (PR #217).** Manual
-items 12.15–12.22 all pass. The pass found two defects, both fixed on the
-branch (Finding 12.18): an SVG figure in a notebook cell left only an
-`Output` title above a gap and now gets a one-line note, and an ODS body's
-`<style>` restyled other cells in a dark theme and is now dropped in a
-cell. Item 12.22 covers the second. An adversarial review of those fixes
-found no defect; its minor findings are folded in. The same push adds
-`CLAUDE.md`'s new pre-PR step 5 (manual items pass before push) and a
-PreToolUse hook (`.claude/settings.json`,
-`.claude/hooks/pre-pr-checklist.mjs`) that shows the pre-PR checklist
-before any `git push` or `gh pr create`. See the phase file's "12j manual
-pass" entry.
-
-**12k (B12.1 fix) built 2026-09-25.** The probe came first, across seven
-throwaway sessions (Finding 12.19). A compute session starts with SAS's
-`SYNTAXCHECK` option. Some step errors, such as a DATA step writing to an
-unassigned libref, then set `OBS=0` and put the session in syntax-check
-mode, after which no Python runs at all. That happens whether the step is
-its own job or comes through `SAS.submit()`. A `set` from an unassigned
-libref does not do it, which is why Finding 12.15 missed it. Sean chose to
-prefix every job: `execute()`, `reset()` and `probeRuntime()` now begin
-with `options nosyntaxcheck;` and an `OBS` restore that applies only when
-`OBS` is `0`
-([ADR-0039](docs/adr/0039-every-job-switches-syntax-check-mode-off.md),
-amending ADR-0038's job layout). The prefix recovers a poisoned session in
-the same job and stops the next error from poisoning it. It keeps a user's
-own `obs=5` and costs no extra request. The pre-push adversarial review
-found no code defect, but found that the manual items never exercised
-recovery; they now start from a poisoned session. Manual items 12.23–12.26
-passed 2026-09-25. See `docs/phases/phase-12.md`'s "12k built" entry.
-Merged 2026-09-25 (PR #219).
-
-**12l (notebook execution-surface staleness) built 2026-09-25.** VS Code's
-own source at 1.109.5 showed that 9c's record of a closed notebook was wrong
-(Finding 12.20). The running cell's output calls don't reject; the next
-queued cell's `createNotebookCellExecution` throws. `executeHandler` now
-stops at a closed notebook, and a started cell always ends in a `finally`.
-The "still no output" notice names a cancelled cell while that session's
-last run was cancelled and no later run has settled; otherwise it says the
-cell is still running. Clearing notebook Problems entries on sign-out was
-built, failed manual item 12.27, and was dropped on 2026-09-27 as ordinary
-behaviour, not a defect. Review done; manual items 12.28–12.29 passed
-2026-09-27. Merged 2026-09-27 (PR #220).
-
-**12r (B12.3: this extension and the SAS extension could not both activate)
-built 2026-09-27**, from a customer report and the developer's own machine.
-Since v0.1.2 both extensions registered a `FileSystemProvider` for the
-`sasContent` scheme. VS Code allows one per scheme in an extension host, so
-whichever activated second failed. The SAS extension then showed "Your
-connection does not support SAS content navigation" and could not sign in,
-or this one lost its notebook kernel and its CAS and SAS Libraries views. The
-developer's extension-host logs held five such failures, in both directions
-(Finding 12.21). All three SAS Content schemes are now `pythonOnViyaContent*`
-([ADR-0040](docs/adr/0040-every-uri-scheme-is-the-extensions-own.md)). Sean's calls: it ships in the Phase 12
-release, and old editor tabs are not migrated. See `docs/phases/phase-12.md`'s
-"12r built" entry. The adversarial review found nothing blocking, and its
-small points are folded in. Manual items 12.30–12.32 passed 2026-09-28.
-Merged 2026-09-28 (PR #221).
-
-**12m (Python startup snippet) started 2026-09-28.** Every Run File and
-Reset Python State restarts the interpreter, so the snippet has to come
-back each time. A probe (Finding 12.22) settled a shape neither of the
-plan's two options had: the snippet as its own `PROC PYTHON` step in the
-same job as the restart, with the user's file unmodified. That keeps
-ADR-0014 intact, keeps `from __future__` imports and traceback line
-numbers working, and costs no measurable time. Sean accepted
-[ADR-0041](docs/adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md) the same day, and 12m was built: a
-profile's `pythonStartup` runs in every restarting job and in a new
-session's first job, and a reattached session's snippet fileref is found
-and rewritten in place (Finding 12.23). See `docs/phases/phase-12.md`'s
-"12m design" and "12m built" entries.
-Manual items 12.33–12.40 passed 2026-09-28. The adversarial review's six
-real findings are folded in: the dropped-lines fallback, a possibly stale
-snippet result, the reset message and the log-split wording among them. A
-seventh, `OBS=0` after a snippet's failed `SAS.submit()`, was settled by a
-probe as not a defect (Finding 12.24).
-Merged 2026-09-28 (PR #222).
-
-**12n (a reusable CAS connection) built 2026-09-28.** The plan's open
-questions U3 and U5 were already answered by earlier findings. At Sean's
-request, the session's own `SAS_SERVICES_TOKEN` was probed as a way to need
-no token file at all; a 70-minute probe showed it is never refreshed, so
-every new CAS connect fails after its first hour (Finding 12.25). Sean's
-calls: the token file's name is the `pythonOnViya.cas.tokenFileref` setting
-(`CASTOKEN` by default), rewritten in place; a fileref the user's own SAS
-code holds is never written into, checked against the session's
-`homeDirectory`; and a new **Refresh CAS Token** command writes the file
-without inserting a snippet. `npm run verify` is green (1,985 unit), as is
-`npm run test:integration` (539). See `docs/phases/phase-12.md`'s "12n
-built" entry. The adversarial review is done and its findings are folded
-in. A probe while checking 12.46 found `assign` refuses a name SAS code holds and changes
-nothing (Finding 12.26). 12.43 could not show whether a reload reattached, so
-it was reworded to leave a marker file before the reload and check it after,
-and then passed, so all of 12.41–12.48 passed 2026-09-28.
-Merged 2026-09-29 (PR #223).
-
-**12q (housekeeping) built 2026-09-29, Phase 12's last slice.** A licence
-gate, `check:licenses`, now checks every lockfile package in the
-`supply-chain` job. Its allow-list holds only licences fine for a package
-that ships, and 18 tooling packages are named exceptions
-([ADR-0005](docs/adr/0005-supply-chain-policy.md) amended).
-`formatCsvPage` takes an options object. Dropping items on **My Favorites**
-now adds them. The review before the PR found no code defect, and its seven
-points are folded in. `npm run verify` is green (2,018 unit), and
-`test:integration` passes (544). Manual items 12.49–12.51 passed; 11.10
-was tried and closed as not provokable. See `docs/phases/phase-12.md`'s
-"12q built" entry. The same day, two Dependabot alerts on `brace-expansion`,
-both dev-tree only, were cleared by a lockfile refresh (PR #224). Merged
-2026-09-29 (PR #226). **Every Phase 12 slice is now merged or moved.**
-**Next:** the Phase 12→13 checkpoint (`HOUSEKEEPING.md`), then the v0.1.4
-preview release. 12o and 12p moved to
-Phase 13 as 13l and 13m (see "The MCP server work moved to Phase 13",
-below).
-
-**`docs/cas-python-connection.md` corrected 2026-09-23, from an unrelated
-customer support investigation.** Two customer reports came in from the same
-call: a hand-rolled `swat` REST/HTTP connection failing with `Expecting value:
-line 1 column 1 (char 0)` (the customer's Python, already inside a compute
-session, went out the deployment's own public ingress and back in, and a
-`403` HTML error page got parsed as JSON), and whether a CAS connection
-survives its access token expiring. Neither needed a code change. The
-ingress failure is now a documented gotcha rather than a wire mystery
-(Findings 12.7/12.8); the token question refuted this page's own prior
-wording — a held CAS connection outlives its token, confirmed with a control
-proving the token had genuinely expired (Finding 12.9) — and that page's
-"Reconnecting after a while" section is rewritten accordingly. A fourth,
-unrelated probe (Finding 12.10) confirmed a Compute fileref can be rewritten
-in place under a stable name, backing a new design candidate recorded
-alongside 12d (making the CAS-token snippet reusable across sessions,
-Sean's own placement call) — not scoped or built, an open idea the same way
-12d's own outcome already is. Full account in `docs/phases/phase-12.md`'s own
-Runbook entries.
-
-**The MCP server work moved to Phase 13, 2026-09-29 (Sean's call).** 12o
-(the MCP server for Claude Code) was built in a second clone and was
-part-way through its manual pass (12.41–12.44 passed) when Sean decided the
-MCP work is too much for Phase 12. 12o and 12p (its read-only tools) are now
-Phase 13's **13l** and **13m**. **12o's code is parked, unmerged, on the
-branch `feat/12o-mcp-server`** (commit `0506824`), pushed with no PR. It is
-ready to pick up, not to rebuild. The preview release that follows Phase 12
-ships without it (`PRODUCTION_PLAN.md` §8's 2026-09-29 amendment). What is
-on the branch and the pickup steps are in
-[`docs/phases/phase-13.md`](docs/phases/phase-13.md)'s "12o and 12p moved
-here" Runbook entry. With 12n merged the same day, 12q is the only Phase 12
-slice left.
-
-**Letter collision reconciled, 2026-09-22.** 12c's own insertion (above)
-and PR #207's 12f/12g/12h were scoped in two sessions working this phase
-concurrently from separate clones, this project's own established
-parallel-phases pattern — both independently reached for the next free
-letter after the same five-slice base, so 12c's branch and #207 each used
-`12f` for a different slice. Caught when 12c's branch rebased onto #207
-after it merged; resolved by a uniform shift preserving both sides' own
-relative order (12c's insertion point right after 12b stands; everything
-from the old 12c onward, #207's newly merged trio included, moves one
-letter later) rather than re-litigating which slice belongs where. Full
-account in `docs/phases/phase-12.md`'s own "Letter collision reconciled"
-Runbook entry.
+**Next: the v0.1.4 preview release** (`docs/release-checklist.md`, D1–D8),
+then Phase 13 ([`docs/phases/phase-13.md`](docs/phases/phase-13.md)).
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -744,6 +369,48 @@ The outcomes:
   `phase-3.md`, `PRODUCTION_PLAN.md` §8, `docs/dev/manual-tests/`) already
   points at Phase 13, none stale.
 
+## Phase 12→13 housekeeping — done 2026-09-29
+
+The outcomes:
+
+- **ADRs correct.** 0037–0041 are Accepted, indexed, and cross-linked
+  where one amends another. ADR-0005's 12q amendment (licences) is indexed.
+  ADR-0037 still reads true after the MCP move: it records 12a/12b as
+  executing it and claims no Phase 12 build. Nothing to fix.
+- **Punch list complete.** 12a–12n, 12q and 12r are ticked. 12o and 12p
+  carry "moved to Phase 13" notes rather than ticks, and B12.1–B12.3 are
+  all fixed.
+- **Plan current.** `PRODUCTION_PLAN.md` §8's 2026-09-29 amendment records
+  the MCP move and that the preview ships without it. Coverage thresholds
+  (`.c8rc.json`, 95.8/95.8/95.6/95.4) are cleared by the last run
+  (96.24/96.07/95.96/96.24), so no ratchet is needed.
+- **`STATUS.md` trimmed.** Phase 12's narrative and its phase-index row
+  moved to `docs/status-archive.md`, with links rebased to that folder.
+- **No scratch or pending files** existed to reconcile. 12q's Runbook edits
+  were held for one PR (#225, which edited the same lines) and applied in
+  12q's own PR, not in a scratch file.
+- **Manual tests complete.** `docs/dev/manual-tests/phase-12.md` has every
+  item passed except 12.27, which was dropped with the sign-out change it
+  tested (recorded). Phase 11's last open item, 11.10, was tried in 12q and
+  closed as not provokable. No new manual tests are needed: the one
+  untested path, 12o's four unrun items, travels with 12o to Phase 13, and
+  the 5d-i user-provided-CA row stays carried below.
+- **Dependency advisories clean.** Two moderate dev-tree `brace-expansion`
+  alerts were cleared by a lockfile refresh (PR #224). 0 alerts are open,
+  checked live. `scripts/advisory-allowlist.json`'s `allowed` is empty, so
+  nothing can expire. The new licence exceptions carry no expiry by design
+  (ADR-0005). Dependabot's grouped dev-tooling PR #200 stays open: it is not
+  a security fix, and it fails `npm ci` on Node 22 (lockfile drift). It is
+  deliberately left out of v0.1.4 (Sean's call) and is expected to be
+  superseded, as #175, #188 and #196 were.
+- **Release prep found two `CHANGELOG.md` gaps.** 12f (PR #212) added no
+  entry for its three changes. 12l's closed-notebook fix is not listed;
+  only its notice change is. Both are to be filled in the v0.1.4 release PR
+  (checklist D1), as the v0.1.3 release PR filled its own two gaps.
+- **Phase 13 scoping: no drift found.** 13a–13m read consistently with the
+  backlog sweep and the MCP move. 13l's pickup steps are in `phase-13.md`,
+  and the phase-index row now names 13l–13m.
+
 ## Open items carried forward
 
 - **Open VSX namespace claim — closed, confirmed 2026-09-22.** The `shai-alit`
@@ -793,12 +460,10 @@ inserted ahead of it) (`docs/phases/phase-12.md`), added at the Phase
   2026-09-24 as Phase 13 slice 13d** (backlog sweep).
 
 - **Open bugs** are listed in the current phase file's "Bugs found in this
-  phase" section — for Phase 12, [`docs/phases/phase-12.md`](docs/phases/phase-12.md)
-  (**B12.1**, 2026-09-23: a failed SAS step poisons the compute session and
-  Reset Python State cannot clear it — Finding 12.5; fixed on the 12k
-  branch, 2026-09-25 — Finding 12.19, ADR-0039; **B12.2**, 2026-09-23: CAS columns
-  mispaired with their row cells — Finding 12.6; fixed and merged with 12e,
-  PR #210).
+  phase" section. Phase 12's three (B12.1–B12.3,
+  [`docs/phases/phase-12.md`](docs/phases/phase-12.md)) are all fixed and
+  merged (12k, 12e, 12r). Phase 13's go in
+  [`docs/phases/phase-13.md`](docs/phases/phase-13.md).
 
 No new GitHub issues are being filed while the project is pre-release /
 invite-only — tracked work lives in the phase files and as `fix/` PRs. Revisit
@@ -835,7 +500,9 @@ PRs and every review round, the manual-test session, and the 2026-09-16
 deep-dive pass — was appended 2026-09-16 at the Phase 10→11 housekeeping
 checkpoint. Phase 11's own narrative — 11a–11e, every review round, and both
 manual-test sessions — was appended 2026-09-22 at the Phase 11→12
-housekeeping checkpoint. Per-phase detail
+housekeeping checkpoint. Phase 12's own narrative — 12a–12r, the MCP move
+to Phase 13, and its phase-index row — was appended 2026-09-29 at the Phase
+12→13 housekeeping checkpoint. Per-phase detail
 (plan, punch list, probe findings) is bundled in each
 `docs/phases/phase-N.md`.
 
@@ -863,8 +530,8 @@ housekeeping checkpoint. Per-phase detail
 | 9 — Notebooks | ✅ **done — 9a–9d all merged or decided, 2026-09-14/15.** ipynb-native execution, no `ms-toolsai.jupyter` dependency, against the notebook's own compute session ([ADR-0035](docs/adr/0035-notebook-gets-its-own-compute-session.md)); cell output via VS Code's own built-in `notebook-renderers` extension, `text/html` sanitized first ([ADR-0036](docs/adr/0036-notebook-html-output-is-sanitized.md)); Problems-panel diagnostics for a raised cell. 9d (export) scoped and dropped outright — ipynb's own portability and VS Code core's native per-output commands already cover it. Final PRs [#172](https://github.com/Shai-Alit/sas-py-vscode/pull/172)/[#176](https://github.com/Shai-Alit/sas-py-vscode/pull/176)/[#177](https://github.com/Shai-Alit/sas-py-vscode/pull/177), squash `6884e49`/`9eca850`/`fa7222f`. `npm run verify` green (1753 unit, 96.04/95.51/95.9/96.04); `npm run test:integration` green (433 passing). Phase 9→10 housekeeping ran and closed 2026-09-15 (see above). | `docs/phases/phase-9.md` |
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
-| 12 — AI-agent integration | **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. **12c (scope the Option C build) scoped 2026-09-22** — read-only v1 tool surface, `headersHelper`-shaped token design, security-review checklist; audience boundary settled by a live Extension Development Host probe (external CLI only for v1 — see `microsoft/vscode`#265912). Inserted ahead of the phase's other slices; a same-day letter collision with a concurrently-merged PR (#207) was found and reconciled (see the narrative above), landing on a uniform shift rather than either branch's original lettering. Phase 11's row above names the three follow-ups it handed over by their pre-shift letter (12e); in this phase they are **12f**, and that row is left as it stands — a closed phase's row is not edited from here. **12g, 12h and 12i added 2026-09-22** from two pieces of work outside the repository: the `PROC PYTHON` "resuming Python state" `NOTE` and whether it reaches our own transcript (12g, Findings 12.2/12.3); a spike on inline graphics via `SAS.show`/ODS HTML5, build explicitly deferred (12h); and `NOTICE` attribution for the bundled MIT components (12i). **12d (Python startup-snippet spike) ran 2026-09-23** — submission mechanism confirmed via a live probe against `verde`, viable and not parked; Run File itself, not only Reset Python State, wipes the snippet's state (Finding 12.4). **12e (CSV formula-injection guard) merged 2026-09-23 (PR #210)** — an opt-in `pythonOnViya.csvExport.guardFormulaInjection` setting covering both CAS and SAS Libraries CSV export, not CAS-only; B12.2 fixed with it. **12f (three small Phase 11 follow-ups) merged 2026-09-24 (PR #212)** — library large-export confirmation, too-large CAS/Compute problems, autoExec error text (Findings 12.11/12.12); manual items 12.10–12.13 passed. **12g ("resuming" `NOTE`) run 2026-09-24 — nothing to build**: every Python-state `NOTE` is typed `note` and already filtered (Finding 12.13); Run File's restart semantics corrected in the skill and user docs. **12h (inline-graphics spike) run 2026-09-24 — viable, mostly plumbing**: with a named ODS HTML5 destination open, `SAS.show` output lands where the ADR-0019 diff already looks; without one it is a silent no-op today (Finding 12.14). Decision: the build wraps every run, always on (Finding 12.15). **12j (that build) added 2026-09-24 — gates v1.0 — and built the same day**: an always-on ODS wrapper with a wrapper-named body file ([ADR-0038](docs/adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md), Findings 12.16/12.17); manual items 12.15–12.22 passed 2026-09-25 after two fixes (Finding 12.18); merged 2026-09-25 (PR #217). **12k–12q added 2026-09-24** by a backlog sweep of Phases 11 and 12 (B12.1 fix, notebook staleness, startup snippet, reusable CAS connection, Option C in two parts, housekeeping); a preview release follows this phase. **12i (`NOTICE`) done 2026-09-24**: seven bundled MIT packages attributed, not twelve. The measured bundles inline six packages into `dataViewer.js` and `@vscode/python-extension` into `extension.js`. **12k (B12.1 fix) built 2026-09-25**: the cause is SAS's `SYNTAXCHECK` option, and every job now starts by switching it off and undoing a SAS-set `OBS=0` ([ADR-0039](docs/adr/0039-every-job-switches-syntax-check-mode-off.md), Finding 12.19); manual items 12.23–12.26 passed 2026-09-25; merged 2026-09-25 (PR #219). **12l (notebook staleness) built 2026-09-25**: a started cell always ends, a closed notebook's queued cells are skipped (Finding 12.20), and the waiting notice names a cancelled cell when that is the cause; sign-out clearing of notebook Problems entries was dropped 2026-09-27 as not a defect; manual items 12.28–12.29 passed 2026-09-27; merged 2026-09-27 (PR #220). **12r (B12.3 fix) built 2026-09-27**: this extension and the SAS extension both registered the `sasContent` scheme, so whichever activated second failed (Finding 12.21); our three SAS Content schemes are now `pythonOnViyaContent*` ([ADR-0040](docs/adr/0040-every-uri-scheme-is-the-extensions-own.md)); manual items 12.30–12.32 passed 2026-09-28; merged 2026-09-28 (PR #221). **12m (Python startup snippet) built 2026-09-28**: the snippet runs as its own step in every restarting job and in a new session's first job ([ADR-0041](docs/adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md), Findings 12.22–12.24); adversarial review folded in; manual items 12.33–12.40 passed 2026-09-28; merged 2026-09-28 (PR #222). **12n (reusable CAS connection) built 2026-09-28**: a stable token fileref, `pythonOnViya.cas.tokenFileref`, rewritten in place and guarded against the user's own filerefs, plus **Refresh CAS Token**; `SAS_SERVICES_TOKEN` ruled out as never refreshed (Finding 12.25); manual items 12.41–12.48 passed 2026-09-28; merged 2026-09-29 (PR #223). | `docs/phases/phase-12.md` |
-| 13 — Feature completion | not started — **gates v1.0 from 2026-09-24** (`PRODUCTION_PLAN.md` §8). Retitled from "Second execution backend" when the backlog sweep added 13a–13k (SAS Content upload/download and copy, F6, F11, F10, F8, F1, an MCP execution tool, polish). The second-execution-backend section stays, ungated. | `docs/phases/phase-13.md` |
+| 12 — AI-agent integration | ✅ **done — every slice merged, decided or moved, 2026-09-22–29.** Agent Skill, CSV formula guard, inline graphics ([ADR-0038](docs/adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md)), session-poisoning fix ([ADR-0039](docs/adr/0039-every-job-switches-syntax-check-mode-off.md)), scheme rename for coexistence with the SAS extension ([ADR-0040](docs/adr/0040-every-uri-scheme-is-the-extensions-own.md)), Python startup snippet ([ADR-0041](docs/adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md)), reusable CAS connection, licence gate. 12o/12p (MCP server) moved to Phase 13 as 13l/13m. Final PR [#226](https://github.com/Shai-Alit/sas-py-vscode/pull/226), squash `7063b9c`. `npm run verify` green (2,018 unit; coverage 96.24/96.07/95.96/96.24); `npm run test:integration` green (544 passing). Phase 12→13 housekeeping ran and closed 2026-09-29 (see above). | `docs/phases/phase-12.md` |
+| 13 — Feature completion | **next, after the v0.1.4 preview release** — not started; **gates v1.0 from 2026-09-24** (`PRODUCTION_PLAN.md` §8). Retitled from "Second execution backend" when the backlog sweep added 13a–13k (SAS Content upload/download and copy, F6, F11, F10, F8, F1, an MCP execution tool, polish); 13l/13m (the MCP server, built and parked on `feat/12o-mcp-server`, and its read-only tools) moved in from Phase 12 on 2026-09-29. The second-execution-backend section stays, ungated. | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section
 (architecture, scope), the runbook punch list (commands, order, barriers), and

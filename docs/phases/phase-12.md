@@ -2691,6 +2691,18 @@ session's run directory before the reload and checks it afterwards, so the
 rewrite path is known to be the one taken. It then passed, so all of
 12.41–12.48 passed 2026-09-28.
 
+**PR #223, 2026-09-29.** The Claude reviewer raised one nit: `STATUS.md`
+cited the pre-review integration count (537), not 539; fixed. Codex raised
+nothing. The `supply-chain` job failed on eleven dev-tree advisories
+published after `main` last passed, none from this slice's change: ten
+against `undici` 7.29.0, reached only through `@vscode/vsce`'s `cheerio`, and
+one against `markdown-it` 14.3.0, through `@vscode/vsce` and
+`@vscode/l10n-dev`. Both fixed releases (7.29.1, 14.3.1) are in their
+parents' declared ranges, so two `overrides` pins clear them, the same route
+as `qs` and `fast-uri` in the 5d-ii PR. `scripts/advisory-allowlist.json`
+records it, and `docs/dev/ci.md`'s count of `overrides` pins, stale at two
+since 5d-ii, now reads six.
+
 ---
 
 ## Probe findings

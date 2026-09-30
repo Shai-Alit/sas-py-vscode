@@ -492,8 +492,14 @@ entry, the `low` `diff` advisory (`GHSA-73RR-HH4G-FPGX`), was removed on
 vulnerable range, so it cleared without an override. The allow-list is now
 empty.
 
-That `overrides` block carries two pins, [ADR-0005](../adr/0005-supply-chain-policy.md)
-records why for both. Both overrule a declared range: `vitepress@1.6.4` asks for
+That `overrides` block carries six pins. Four only lift a child to a patched
+release inside the range its parent already declares, so they overrule nothing:
+`qs ^6.16.0` and `fast-uri ^3.1.6` (2026-09-02) under `@vscode/vsce`, and
+`undici ^7.29.1` and `markdown-it ^14.3.1` (2026-09-29) under `@vscode/vsce` and
+`@vscode/l10n-dev`. `scripts/advisory-allowlist.json`'s comment names the
+advisories each one cleared. The other two,
+[ADR-0005](../adr/0005-supply-chain-policy.md) records why for both. Both
+overrule a declared range: `vitepress@1.6.4` asks for
 `vite ^5.4.14`, and `mocha@11.8.0` asks for `serialize-javascript ^6.0.2`. What
 differs is the cover. `docs:build` exercises the `vite` pin end to end — VitePress
 is the only consumer of vite here, so a red `docs` job is the alarm. The

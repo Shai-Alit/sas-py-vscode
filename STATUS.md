@@ -447,7 +447,7 @@ calls: the token file's name is the `pythonOnViya.cas.tokenFileref` setting
 code holds is never written into, checked against the session's
 `homeDirectory`; and a new **Refresh CAS Token** command writes the file
 without inserting a snippet. `npm run verify` is green (1,985 unit), as is
-`npm run test:integration` (537). See `docs/phases/phase-12.md`'s "12n
+`npm run test:integration` (539). See `docs/phases/phase-12.md`'s "12n
 built" entry. The adversarial review is done and its findings are folded
 in. A probe while checking 12.46 found `assign` refuses a name SAS code holds and changes
 nothing (Finding 12.26). 12.43 could not show whether a reload reattached, so

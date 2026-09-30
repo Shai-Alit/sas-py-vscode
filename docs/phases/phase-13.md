@@ -164,12 +164,14 @@ where `PROC PYTHON` actually hurts.
   After 13m.
 - [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
   checks). Added 2026-09-24. Not started.
-- [ ] **13l — The MCP server for Claude Code (was 12o).** Moved here
+- [x] **13l — The MCP server for Claude Code (was 12o).** Moved here
   2026-09-29. Built and parked on `feat/12o-mcp-server`. Picked up
   2026-09-30 on `feat/13l-mcp-server`; reviewed, and manual items
-  13.6–13.13 passed. PR next. See "13l picked up" below.
+  13.6–13.13 passed. Merged 2026-09-30 as
+  [PR #233](https://github.com/Shai-Alit/sas-py-vscode/pull/233), squash
+  `5acb03a`. See "13l picked up" below.
 - [ ] **13m — The MCP server's read-only tools (was 12p).** Moved here
-  2026-09-29. Not started. After 13l.
+  2026-09-29. Not started. 13l has merged, so it can start.
 - [x] **13n — Output lost after a `SAS.submit()` graph.** Added 2026-09-30
   from v0.1.4's release smoke test. Every run turns SAS notes off
   ([ADR-0043](../adr/0043-every-run-turns-sas-notes-off.md)). See "13n
@@ -557,6 +559,9 @@ The pickup steps from "12o and 12p moved here", in order.
     Sean ran all eight against a `.vsix` built from this branch with the
     review fixes on 2026-09-30, before the push, and all passed —
     including 13.10's Windows PowerShell 5.1 and 7.x lines.
+11. **Merged** 2026-09-30 as
+    [PR #233](https://github.com/Shai-Alit/sas-py-vscode/pull/233), squash
+    `5acb03a`.
 
 ### 13n built, 2026-09-30
 

@@ -192,7 +192,7 @@ exercises from the code under test rather than restate them — the interval
 between writing one and first running it is the interval in which it is
 unverified, and `viya4-connectivity.test.ts`'s own first run on 2026-08-19
 failed on exactly such a restated media type ([finding
-6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6-the-obvious-media-type-is-wrong-and-wrong-is-a-406)).
+6](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-1.md#finding-6--the-obvious-media-type-is-wrong-and-wrong-is-a-406)).
 
 **Running it — the env vars in full, the CA-certificate case, what each suite
 costs the deployment, the cleanup contract for mutating tests, and the 5b

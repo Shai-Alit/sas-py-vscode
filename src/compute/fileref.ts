@@ -120,10 +120,22 @@ export const FILEREF_UPLOAD_REL = "upload";
  * belong to whichever slice adds cleanup, not to this one, which only ever runs
  * once per corpus case today, and which the session-gone reading above depends
  * on continuing to be true.
+ *
+ * `accessMethod`, `fileName` and `filePath` are read for one caller:
+ * `casToken.ts`, which rewrites a held fileref only if it is one its own
+ * `assign` made (Finding 12.25). Each is absent when the body did not carry
+ * it as a string.
  */
 export interface Fileref {
   readonly id: string;
   readonly links: readonly Link[];
+  /** `DISK` for an `assign` with a relative `path`, `TEMP` for a SAS
+   * `filename … temp` (Finding 12.25). */
+  readonly accessMethod?: string | undefined;
+  /** The file's own name, with the case the `path` was sent in. */
+  readonly fileName?: string | undefined;
+  /** The file's absolute path on the compute server. */
+  readonly filePath?: string | undefined;
 }
 
 export interface CreateFilerefOptions {
@@ -445,18 +457,30 @@ export async function writeFilerefContent(
 /**
  * A fileref representation, or `undefined` if the body was not one.
  *
- * Only `id` is required. `accessMethod`, `fileName`, `filePath` and `fileSize`
- * (finding 36) are left on the wire until something needs them.
+ * Only `id` is required. `accessMethod`, `fileName` and `filePath` are kept
+ * when they are strings (see {@link Fileref}); `fileSize` (finding 36) is
+ * left on the wire until something needs it.
  */
 function readFileref(response: ComputeResponse): Fileref | undefined {
   const body: unknown = response.body;
   if (typeof body !== "object" || body === null) return undefined;
 
-  const candidate = body as { id?: unknown };
-  const { id } = candidate;
+  const candidate = body as {
+    id?: unknown;
+    accessMethod?: unknown;
+    fileName?: unknown;
+    filePath?: unknown;
+  };
+  const { id, accessMethod, fileName, filePath } = candidate;
   if (typeof id !== "string" || id === "") return undefined;
 
-  return { id, links: readLinks(body) };
+  return {
+    id,
+    links: readLinks(body),
+    ...(typeof accessMethod === "string" ? { accessMethod } : {}),
+    ...(typeof fileName === "string" ? { fileName } : {}),
+    ...(typeof filePath === "string" ? { filePath } : {}),
+  };
 }
 
 /** The failure for a representation that carried no such relation. */

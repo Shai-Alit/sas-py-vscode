@@ -3,7 +3,8 @@
 
 /**
  * Delivers a CAS access token into a Compute session as a plain file a
- * Python cell can `open()` by name — 8b's own mechanism.
+ * Python cell can `open()` by name — 8b's own mechanism, under a stable name
+ * since 12n.
  *
  * **This module must never import `vscode`.**
  *
@@ -19,6 +20,28 @@
  * `files.ts` lists for rich-output capture — so the Python side opens it by
  * that bare name, no path resolution or macro variable needed.
  *
+ * ## One stable name, rewritten in place (12n)
+ *
+ * Until 12n every call picked a fresh `CT` + six random digits, so no code
+ * that read the file could be committed or shared. The name is now the
+ * `pythonOnViya.cas.tokenFileref` setting, `CASTOKEN` by default, and a
+ * second call in the same session rewrites the same file: `assign` answers
+ * `400`/5402 for a held name (Finding 12.10), {@link findFileref} reads the
+ * held fileref's full representation (Finding 12.23), and
+ * `writeFilerefContent` rewrites it. Nothing is deassigned or deleted, so
+ * `fileref.ts`'s never-deassign invariant holds.
+ *
+ * ## Never write into a fileref this module did not create
+ *
+ * A fileref the user's own SAS code assigned under the same name is listed
+ * in the same collection, with the same `upload` link (Finding 12.25).
+ * Rewriting it would put the token into whatever file the user named. So a
+ * held fileref is rewritten only when it is one this module's own `assign`
+ * produces: `accessMethod` `DISK`, `fileName` equal to the name, and
+ * `filePath` equal to the session's `homeDirectory` plus the name
+ * ({@link isOwnTokenFileref}). Anything else comes back as `held-elsewhere`
+ * and nothing is written.
+ *
  * ## Reused as-is, deliberately never deleted
  *
  * `fileref.ts`'s own doc comment states a load-bearing invariant: nothing in
@@ -31,129 +54,142 @@
  * life of the session, the same exposure window an already-borrowed token
  * has anyway, and the whole point of this project's own upload discipline
  * is that Python source is never deleted either.
- *
- * ## Naming: `CT` + six digits, mirroring `procPython.ts`'s `PYnnnnnn`
- *
- * A SAS fileref name is capped at eight characters, the same constraint
- * `procPython.ts`'s `PYnnnnnn` names satisfy. Unlike that module, this one
- * has no persistent per-session counter to seed — a command invocation is a
- * one-shot call, not a class instance a backend holds for a session's whole
- * life — so each attempt picks a fresh random six-digit suffix rather than
- * incrementing one, and retries under a new name on the same retriable
- * `4xx` `createFileref` can answer for a name already assigned in the
- * session (a stale token file from an earlier invocation, per the never-
- * delete invariant above). {@link isRetriableFilerefName} mirrors
- * `procPython.ts`'s own function of the same name and reasoning.
  */
 
+import { type ComputeClient, type ComputeResult } from "./client";
 import {
-  type ComputeClient,
-  type ComputeFailure,
-  type ComputeResult,
-} from "./client";
-import { createFileref, writeFilerefContent } from "./fileref";
+  createFileref,
+  type Fileref,
+  findFileref,
+  isFilerefAlreadyAssigned,
+  writeFilerefContent,
+} from "./fileref";
 import { type ComputeSession } from "./session";
 
-/** How many fileref names one call will try before giving up — mirrors
- * `procPython.ts`'s `MAX_FILEREF_ASSIGN_ATTEMPTS` and its reasoning: far
- * more than a random six-digit collision can realistically need, and still
- * a hard stop rather than a loop. */
-export const MAX_CAS_TOKEN_ASSIGN_ATTEMPTS = 16;
+/** The token fileref's name when `pythonOnViya.cas.tokenFileref` is unset. */
+export const DEFAULT_CAS_TOKEN_FILEREF = "CASTOKEN";
+
+/** A SAS fileref name: a letter or underscore, then up to seven letters,
+ * digits or underscores. Checked after upper-casing. */
+const SAS_FILEREF_NAME = /^[A-Z_][A-Z0-9_]{0,7}$/;
+
+/** The names `procPython.ts` assigns: `PYnnnnnn` per run, and `PYVSTART`
+ * for the startup snippet (ADR-0041). Kept here as literals rather than
+ * imported, because `src/compute` does not import `src/backend`; a unit test
+ * pins both against `procPython.ts`'s own exports, `FILEREF_NAME_PATTERN`
+ * and `STARTUP_FILEREF_NAME`. */
+const RESERVED_FILEREF_NAME = /^(PY\d{6}|PYVSTART)$/;
+
+/** The `accessMethod` of a fileref `assign` creates with a relative `path`
+ * (Finding 12.25). */
+const OWN_ACCESS_METHOD = "DISK";
+
+/**
+ * The token fileref name for a setting's raw value, or `undefined` if it is
+ * not one this module will write to.
+ *
+ * Upper-cased, so the file's name on disk, which follows the `path` sent
+ * (Finding 12.25), does not change with the case the setting was typed in:
+ * SAS resolves fileref names ignoring case (Finding 12.23), but the Python
+ * side opens the file by its exact name. Surrounding whitespace is ignored;
+ * an empty value means the default.
+ */
+export function normaliseCasTokenFilerefName(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === "") return DEFAULT_CAS_TOKEN_FILEREF;
+  const name = trimmed.toUpperCase();
+  if (!SAS_FILEREF_NAME.test(name)) return undefined;
+  if (RESERVED_FILEREF_NAME.test(name)) return undefined;
+  return name;
+}
 
 export interface WriteCasTokenOptions {
   signal?: AbortSignal | undefined;
 }
 
-export interface CasTokenFileref {
-  /** The fileref name the CAS-connect snippet opens by, exactly as assigned
-   * — bare, no path, since the fileref's content lands directly in the
-   * session's own run directory (finding 57). */
-  readonly filerefName: string;
-}
+/** What {@link writeCasToken} did with the name it was given. */
+export type CasTokenOutcome =
+  /** The token is in the file the snippet opens by `filerefName`. */
+  | { readonly kind: "written"; readonly filerefName: string }
+  /** The session holds `filerefName` for a file this module did not create,
+   * so nothing was written. */
+  | { readonly kind: "held-elsewhere"; readonly filerefName: string };
 
 /**
- * Writes `token`'s UTF-8 bytes into a fresh fileref in `session`, retrying
- * under a new name on a retriable name collision.
+ * Writes `token`'s UTF-8 bytes into the fileref `name` in `session`,
+ * creating it on first use and rewriting it in place afterwards.
  *
- * Two Compute calls per successful attempt, the same pair `procPython.ts`
- * makes per run: `createFileref` (an `assign` `POST`), then
- * `writeFilerefContent` (a `self` `GET` for a fresh `ETag`, then an `upload`
- * `PUT`) — see `fileref.ts`'s own doc comment for why the `ETag` read is not
- * skipped. Neither ever composes or submits a SAS statement naming the
- * token; only the Compute REST API's own fileref resources are touched.
+ * `name` must already have passed {@link normaliseCasTokenFilerefName}.
+ *
+ * Three Compute calls on first use (`assign`, then `writeFilerefContent`'s
+ * `self` `GET` and `upload` `PUT`), and at least five on a rewrite (the
+ * refused `assign`, a page or more of the `files` collection, the item's
+ * `self`, then the same two). Neither path ever composes or submits a SAS
+ * statement naming the token; only the Compute REST API's own fileref
+ * resources are touched.
  */
 export async function writeCasToken(
   client: ComputeClient,
   session: ComputeSession,
+  name: string,
   token: string,
   options?: WriteCasTokenOptions,
-): Promise<ComputeResult<CasTokenFileref>> {
-  const bytes = new TextEncoder().encode(token);
+): Promise<ComputeResult<CasTokenOutcome>> {
+  const signal = options?.signal;
 
-  let lastCollision: ComputeFailure | undefined;
-  for (let attempt = 0; attempt < MAX_CAS_TOKEN_ASSIGN_ATTEMPTS; attempt += 1) {
-    const name = randomFilerefName();
-    const created = await createFileref(client, session, name, {
-      signal: options?.signal,
-    });
-    if (!created.ok) {
-      if (!isRetriableFilerefName(created)) return created;
-      lastCollision = created;
-      continue;
+  let fileref: Fileref;
+  const created = await createFileref(client, session, name, { signal });
+  if (created.ok) {
+    fileref = created.value;
+  } else if (isFilerefAlreadyAssigned(created)) {
+    const found = await findFileref(client, session, name, { signal });
+    if (!found.ok) return found;
+    if (found.value === undefined) {
+      const detail = `the session reported the fileref "${name}" as already assigned, but its fileref list does not hold it`;
+      return {
+        ok: false,
+        reason: detail,
+        problem: { code: "response-malformed", detail },
+      };
     }
-
-    const written = await writeFilerefContent(client, created.value, bytes, {
-      signal: options?.signal,
-    });
-    if (!written.ok) return written;
-
-    return { ok: true, value: { filerefName: name } };
+    if (!isOwnTokenFileref(found.value, name, session.homeDirectory)) {
+      return { ok: true, value: { kind: "held-elsewhere", filerefName: name } };
+    }
+    fileref = found.value;
+  } else {
+    return created;
   }
 
-  const detail =
-    lastCollision === undefined
-      ? `${String(MAX_CAS_TOKEN_ASSIGN_ATTEMPTS)} fileref names were all already assigned in the session`
-      : `${lastCollision.reason} (${String(MAX_CAS_TOKEN_ASSIGN_ATTEMPTS)} names tried, all already assigned)`;
-  return {
-    ok: false,
-    reason: detail,
-    problem: { code: "response-malformed", detail },
-  };
-}
-
-/** `CT` plus six random digits — eight characters, a valid SAS fileref name,
- * matching `procPython.ts`'s `PYnnnnnn` shape. Not sequential: see this
- * module's own doc comment for why a one-shot call has no counter to seed.
- *
- * `globalThis.crypto.getRandomValues`, not `node:crypto` — ADR-0003 confines
- * Node built-ins to a five-file allow-list (`eslint.config.mjs`) precisely so
- * a web extension host build never has to reimplement one, and the Web
- * Crypto global this project already targets covers this module's whole
- * need (a name unlikely to collide, nothing cryptographically load-bearing)
- * without joining that list. */
-function randomFilerefName(): string {
-  const buffer = new Uint32Array(1);
-  globalThis.crypto.getRandomValues(buffer);
-  const value = buffer[0] ?? 0;
-  const digits = (value % 1_000_000).toString().padStart(6, "0");
-  return `CT${digits}`;
+  const written = await writeFilerefContent(
+    client,
+    fileref,
+    new TextEncoder().encode(token),
+    { signal },
+  );
+  if (!written.ok) return written;
+  return { ok: true, value: { kind: "written", filerefName: name } };
 }
 
 /**
- * Whether a failed `createFileref` is worth retrying under a different name.
+ * Whether a held fileref is the file this module's own `assign` of `name`
+ * produces: a `DISK` fileref whose file is `name`, directly inside the
+ * session's own run directory (Finding 12.25).
  *
- * Identical reasoning to `procPython.ts`'s function of the same name: the
- * only per-call variable this module controls is the fileref `name`, so a
- * `4xx` from the `assign` `POST` (most often `400`, "the fileref … already
- * exists") means that name is unusable and a new one is the fix. A `404` is
- * already remapped to `session-gone` by `fileref.ts`, and neither that nor a
- * `5xx`/transport failure is something a new name would change.
+ * Every field has to be present and match. A session representation without
+ * a `homeDirectory`, or a fileref without a `filePath`, reads as not ours:
+ * refusing costs the user a rename, while guessing wrong writes a credential
+ * into a file they chose.
  */
-function isRetriableFilerefName(failure: ComputeFailure): boolean {
-  const { problem } = failure;
+export function isOwnTokenFileref(
+  fileref: Fileref,
+  name: string,
+  homeDirectory: string | undefined,
+): boolean {
+  if (homeDirectory === undefined || homeDirectory === "") return false;
+  const directory = homeDirectory.replace(/\/+$/, "");
   return (
-    problem.code === "compute-rejected" &&
-    problem.error.status >= 400 &&
-    problem.error.status < 500
+    fileref.accessMethod === OWN_ACCESS_METHOD &&
+    fileref.fileName === name &&
+    fileref.filePath === `${directory}/${name}`
   );
 }

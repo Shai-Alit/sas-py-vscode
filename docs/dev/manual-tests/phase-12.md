@@ -470,3 +470,49 @@ a new one.
   and connect. **Expect:** a message that the Python startup file could not
   be read and was skipped, and a connect that goes ahead; Run File on
   `print(STARTUP_OK)` still prints `2`.
+
+## 12n — a reusable CAS connection
+
+See `docs/phases/phase-12.md`'s "12n built" Runbook entry and Finding 12.25.
+Build a `.vsix` from this branch. The compute context needs `swat`. Leave
+`pythonOnViya.cas.tokenFileref` unset, then **Disconnect** and connect
+again, so the session is a new one.
+
+- [x] **12.41** **The default name.** Open a `.py` file and run **Insert CAS
+  Connection Snippet**. **Expect:** the inserted snippet opens
+  `open("CASTOKEN")`. Add `print(conn.serverstatus().severity)` below it and
+  Run File. **Expect:** `0`.
+- [x] **12.42** **Run again, same session.** Run the command again into a
+  second, empty `.py` file. **Expect:** the same `open("CASTOKEN")` and no
+  error; Run File on the first file still prints `0`, now with the new token.
+- [x] **12.43** **A reloaded window.** First Run Selection on
+  `open("reload-marker.txt", "w").write("x")`, which leaves a file in the
+  session's run directory. Run **Developer: Reload Window**, which reattaches
+  to the same session. Run Selection on
+  `import os; print(os.path.exists("reload-marker.txt"))`. **Expect:** `True`,
+  so the window reattached to the same session and `CASTOKEN` from 12.41 is
+  still held. Then run the command again. **Expect:** no error, and Run File
+  on the 12.41 file prints `0`. This window did not create `CASTOKEN`; it
+  found it and rewrote it.
+- [x] **12.44** **A name from the setting.** Set
+  `"pythonOnViya.cas.tokenFileref": "teamtok"` in the workspace settings and
+  run the command. **Expect:** `open("TEAMTOK")`, and Run File prints `0`.
+- [x] **12.45** **A name the command refuses.** Set the setting to `PYVSTART`
+  (the Settings UI marks it; save it anyway in `settings.json`) and run the
+  command. **Expect:** an error naming `pythonOnViya.cas.tokenFileref` and
+  `PYVSTART`, and nothing inserted. Set it to `SASTOK` before going on.
+- [x] **12.46** **A name your SAS code holds.** Run Selection on
+  `SAS.submit("filename sastok temp;")`, then run the command. **Expect:** an
+  error that the session already has a fileref named `SASTOK` that the
+  extension did not create, suggesting `filename SASTOK clear;`, and nothing
+  inserted. Run Selection on `SAS.submit("filename sastok clear;")`, then run
+  the command again. **Expect:** `open("SASTOK")`, and Run File prints `0`.
+  Remove the setting afterwards.
+- [x] **12.47** **Refresh CAS Token.** With no Python file open (a Markdown
+  file active, say), run **Python on Viya: Refresh CAS Token**. **Expect:**
+  a notification that the token in `CASTOKEN` is refreshed, and nothing
+  inserted anywhere; Run File on the 12.41 file still prints `0`.
+- [x] **12.48** **A new session, then Refresh.** **Disconnect** and connect,
+  then Run File on the 12.41 file. **Expect:** a `FileNotFoundError` for
+  `CASTOKEN`, since the new session has no token file. Run **Refresh CAS
+  Token**, then Run File again. **Expect:** `0`.

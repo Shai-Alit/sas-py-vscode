@@ -282,6 +282,12 @@ describe("createSession", () => {
     // Read, not assumed: it is a configurable, and 2a-ii wants to tell the user
     // how long their session will survive being ignored.
     assert.equal(result.value.inactiveTimeoutSeconds, 900);
+    // Where a fileref assigned with a relative path lands (Finding 12.25);
+    // the CAS token write compares against it.
+    assert.equal(
+      result.value.homeDirectory,
+      "/opt/sas/viya/config/var/run/compsrv/default/3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34",
+    );
     // The session API arrives in the body. If this number ever drops, something
     // is being filtered out that a later slice navigates by.
     assert.equal(result.value.links.length, 22);
@@ -439,6 +445,28 @@ describe("createSession", () => {
 
       assert.ok(result.ok, "a session without a usable timeout was rejected");
       assert.equal(result.value.inactiveTimeoutSeconds, undefined);
+    }
+  });
+
+  it("leaves homeDirectory out when the attributes carry no usable one", async () => {
+    for (const attributes of [
+      undefined,
+      null,
+      {},
+      { homeDirectory: "" },
+      { homeDirectory: 42 },
+    ]) {
+      const scripted = fake([
+        ok(
+          { id: SESSION_ID, state: "pending", attributes, links: [] },
+          { status: 201 },
+        ),
+      ]);
+
+      const result = await createSession(scripted.client, context());
+
+      assert.ok(result.ok, "a session without a home directory was rejected");
+      assert.equal(result.value.homeDirectory, undefined);
     }
   });
 

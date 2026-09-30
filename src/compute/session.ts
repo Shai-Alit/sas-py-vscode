@@ -175,6 +175,12 @@ export interface ComputeSession {
    * not from `createSession`.
    */
   readonly conditionCode?: number | undefined;
+  /**
+   * `attributes.homeDirectory`: the session's own run directory on the
+   * compute server, where a fileref `assign`ed with a relative `path` lands
+   * (Finding 12.25). Absent when not reported.
+   */
+  readonly homeDirectory?: string | undefined;
   readonly links: readonly Link[];
 }
 
@@ -543,9 +549,10 @@ function withWait(href: string, seconds: number): string {
 /**
  * A session representation, or `undefined` if the body was not one.
  *
- * `id` and `state` are required; everything else the payload carries —
- * `applicationName`, `owner`, `serverId`, `creationTimeStamp` —
- * is left on the wire until something needs it. Note
+ * `id` and `state` are required. `attributes.sessionInactiveTimeout` and
+ * `attributes.homeDirectory` are read when present; everything else the
+ * payload carries — `applicationName`, `owner`, `serverId`,
+ * `creationTimeStamp` — is left on the wire until something needs it. Note
  * that `applicationName` is the OAuth client id and `owner` is the user's email
  * address, so not reading them is also the reason neither can end up in a log.
  */
@@ -559,6 +566,7 @@ function readSession(response: ComputeResponse): ComputeSession | undefined {
   if (id === "" || state === "") return undefined;
 
   const timeout = readInactiveTimeout(body);
+  const homeDirectory = readHomeDirectory(body);
   const code = (body as { sessionConditionCode?: unknown })
     .sessionConditionCode;
   return {
@@ -569,6 +577,7 @@ function readSession(response: ComputeResponse): ComputeSession | undefined {
       : {}),
     ...(response.etag === undefined ? {} : { etag: response.etag }),
     ...(timeout === undefined ? {} : { inactiveTimeoutSeconds: timeout }),
+    ...(homeDirectory === undefined ? {} : { homeDirectory }),
     links: readLinks(body),
   };
 }
@@ -589,6 +598,16 @@ function readInactiveTimeout(body: object): number | undefined {
   return typeof value === "number" && Number.isFinite(value)
     ? value
     : undefined;
+}
+
+/** `attributes.homeDirectory`, when the deployment reports it as a
+ * non-empty string. */
+function readHomeDirectory(body: object): string | undefined {
+  const attributes: unknown = (body as { attributes?: unknown }).attributes;
+  if (typeof attributes !== "object" || attributes === null) return undefined;
+  const value: unknown = (attributes as { homeDirectory?: unknown })
+    .homeDirectory;
+  return typeof value === "string" && value !== "" ? value : undefined;
 }
 
 /** The failure for a session representation that carried no such relation. */

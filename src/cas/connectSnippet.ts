@@ -25,8 +25,9 @@
  * `escapeForPythonString` treatment `dragSnippet.ts` gives `libref`/`table` —
  * `host` comes off the wire (Finding 8.10) and this project has never
  * assumed a wire string is free of characters that would break out of a
- * literal; `filerefName` is this project's own fixed `CTnnnnnn` shape
- * (`src/compute/casToken.ts`) and never needs it in practice, but escaping
+ * literal; `filerefName` has passed `normaliseCasTokenFilerefName`
+ * (`src/compute/casToken.ts`), a SAS name of letters, digits and
+ * underscores, and never needs it in practice, but escaping
  * it anyway costs nothing and keeps this module honest about what it
  * assumes. `port` is a plain number this project itself constrains to a
  * `number` (`CasConnectionInfo.port` — `readCasConnectionInfo` in

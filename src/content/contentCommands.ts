@@ -719,8 +719,8 @@ function renameSelection(name: string): [number, number] {
 /** The signed-out / no-target message. `adapter === undefined` is the real
  * case (the view's welcome content usually pre-empts it); a missing `item`
  * would mean the command was invoked outside its menu, which the `when`
- * clauses prevent. */
-function reportNoTarget(adapter: ContentAdapter | undefined): void {
+ * clauses prevent. Exported for `contentTransfer.ts` (13a). */
+export function reportNoTarget(adapter: ContentAdapter | undefined): void {
   void vscode.window.showErrorMessage(
     adapter === undefined
       ? vscode.l10n.t("Sign in to SAS Viya to change SAS Content.")

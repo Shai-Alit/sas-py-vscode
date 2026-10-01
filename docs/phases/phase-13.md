@@ -43,6 +43,12 @@ loop, conventions).
 > See [ADR-0044](../adr/0044-the-mcp-server-for-claude-code-is-removed.md)
 > and the Runbook's "MCP server removed" entry.
 
+> **Scope extended: the SAS Server view, 2026-09-30 (Sean's own call).**
+> Upstream `vscode-sas-extension` has a **SAS Server** view, which browses
+> files on the SAS server. Nothing in this project's parity work picked it
+> up. It is added as **13o** (review, scoping and probes) and **13p** (the
+> build). See the Runbook's "Scope extended, 2026-09-30" entry.
+
 ---
 
 ## Plan
@@ -140,9 +146,26 @@ deliberate event".
     port, without sending `Authorization` when its helper cannot run, so
     once tools exist a program on that port could offer Claude Code its own
     (probe (c) in the branch's "12o built" Runbook entry). After 13l.
+14. **13o — The SAS Server view: review, scoping and probes.** Added
+    2026-09-30 (Sean). Upstream's **SAS Server** view
+    (`views.SAS.serverExplorer`, `RestServerAdapter.ts`) browses files on
+    the SAS server itself rather than in SAS Content. Its root is set per
+    profile (`fileNavigationRoot`: `USER`, `SYSTEM` or `CUSTOM`, with
+    `fileNavigationCustomRootPath`), and an administrator can set it for
+    everyone. Its context menu has create, delete, rename, copy path and
+    download. This project has no such view. This slice reads upstream's
+    implementation. It probes the endpoints the view would use: what serves
+    the listing, how a root resolves, and what a Viya 4 deployment returns
+    for each root setting. Then it writes the scope with Sean: which actions
+    earn a place, whether it reuses 13a's upload and download, how it
+    relates to the SAS Content view and to the compute session this
+    extension already holds, and whether any of that is an architecture
+    decision needing an ADR. No build here.
+15. **13p — The SAS Server view: build.** Builds what 13o scoped. After 13o.
 
 **Order.** 13a–13d are independent. 13f needs 13e; 13g needs 13e/13f;
-13i needs 13h; 13m needs 13l; 13j needs 13m. 13k is independent.
+13i needs 13h; 13m needs 13l; 13j needs 13m. 13k is independent. 13p needs
+13o, and may reuse 13a's upload and download.
 
 ### Second execution backend (does not gate v1.0)
 
@@ -156,7 +179,9 @@ where `PROC PYTHON` actually hurts.
 
 ### Punch list
 
-- [ ] **13a — SAS Content upload/download.** Added 2026-09-24. Not started.
+- [ ] **13a — SAS Content upload/download.** Added 2026-09-24. Built
+  2026-09-30 on `feat/13a-content-upload-download`, not yet merged. See
+  "13a built" below.
 - [ ] **13b — SAS Content Copy/Paste.** Added 2026-09-24. Not started.
   Probe server-side copy first.
 - [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Not started.
@@ -184,6 +209,9 @@ where `PROC PYTHON` actually hurts.
   from v0.1.4's release smoke test. Every run turns SAS notes off
   ([ADR-0043](../adr/0043-every-run-turns-sas-notes-off.md)). See "13n
   built" below.
+- [ ] **13o — The SAS Server view: review, scoping and probes.** Added
+  2026-09-30. Not started.
+- [ ] **13p — The SAS Server view: build.** Added 2026-09-30. Not started.
 
 ### Scope extended, 2026-09-24
 
@@ -676,6 +704,110 @@ which supersedes ADR-0042.
 `.claude/worktrees/`; `npm run check:docs` green; `npm run
 test:integration` green (544 passing).
 
+### Scope extended, 2026-09-30 — the SAS Server view
+
+Sean's call, while 13a was being built: upstream's **SAS Server** view was
+missed when this project's views were planned, and belongs in this phase.
+Added as 13o and 13p (Plan items 14 and 15). Docs only; nothing is built
+yet. 13o starts with a read of upstream's `RestServerAdapter.ts` and the
+view's contribution in its `package.json`, then probes before any scope is
+written. No wire behaviour of that view has been probed yet, and none is
+claimed here.
+
+### 13a built, 2026-09-30
+
+**What it does.** Two new commands on the SAS Content view's right-click
+menu. **Upload Files...** on a folder or My Folder picks local files and
+creates each in the folder with its bytes. **Download...** on a file, a
+folder or My Folder picks a local folder and writes the item into it,
+folders recursively. Both run behind a cancellable notification, keep going
+past a failed file, and end with a count. Upstream uploads folders too;
+this slice uploads files only.
+
+**Probes first.** Findings 13.6–13.8, against `verde`. `innov` did not
+resolve that day, so none of the three is confirmed on Stable 2026.06.
+
+**The code.**
+
+- `src/content/adapter.ts`: `createFile` takes the file's bytes as an
+  optional fourth argument and sends them in the create `POST` (Finding
+  13.6). New File still sends none. A non-empty body gets a five-minute
+  timeout. `downloadFileContent` is `readFileContent` with a 100 MiB cap
+  (`MAX_TRANSFER_BYTES`, Finding 13.6's `maxFileSizeMB`) in place of the
+  editor's 10 MiB.
+- `src/content/transfer.ts` (new, `vscode`-free): `planDownload` walks a
+  file or folder into folders to create and files to fetch. It leaves out
+  and reports members that are not files (data flows), names that cannot be
+  a Windows file name (a `\`, `:`, `..`, `CON`, a trailing dot), and a
+  second sibling whose name differs only in case. The Windows rules apply on
+  every platform, so a download behaves the same everywhere.
+- `src/content/contentTransfer.ts` (new, the `vscode` shell): the dialogs,
+  the local reads and writes through `vscode.workspace.fs`, the progress
+  and the summary. An upload over 100 MiB is refused before it is sent,
+  because the service answers one only with a connection reset (Finding
+  13.7). A blocked-type refusal quotes the service's own sentence, which it
+  sends in `message` rather than `details` (Finding 13.8). A download asks
+  before replacing a local item of the same name.
+- `package.json`: the two commands, hidden from the palette, in a new
+  `3_transfer` menu group.
+
+**Tests.** `test/unit/content-adapter.test.ts`: the bytes, media type and
+timeout on an upload, an untyped extension, a blocked-type refusal, and the
+download cap and timeout. `test/unit/content-transfer.test.ts` (new):
+`isSafeLocalName` and `planDownload`.
+`test/integration/content/transfer.test.ts` (new): both commands against a
+stub adapter and a real temporary folder.
+
+**Adversarial review, 2026-09-30,** before any push. Nothing blocking.
+Folded in:
+
+- **A cancel read as a finished job.** Cancelling after some files left
+  the summary as `Uploaded 3 files…`. Both commands now track a cancel and
+  say `Upload to "X" cancelled. 3 of 10 files were uploaded.` (or the
+  download equivalent, with no **Show in Folder**). A download cancelled
+  while its folders are still being listed says only that it was cancelled.
+  The progress wrapper also aborts at once on a token that is already
+  cancelled. Manual item 13.20 now expects the message, for both
+  directions.
+- **Untested error paths.** Integration tests now cover the too-large
+  upload (a sparse local file just over the limit), more than one failure
+  in each direction, a local folder that cannot be created and a local file
+  that cannot be written (each made by putting a file or folder in the way),
+  cancelling each direction partway and during the folder walk, and
+  **Show in Folder**.
+- **`exists()` swallowed every `stat` error.** It now answers "not there"
+  only for `FileSystemError` `FileNotFound` and rethrows anything else,
+  which the download reports as the chosen folder not being checkable.
+- **The exact 100 MiB boundary is unprobed.** A file of exactly
+  `MAX_TRANSFER_BYTES` is let through. The constant's comment now says
+  Finding 13.7 saw 99 MiB accepted and 101 MiB reset, and nothing between.
+
+Not changed: the messages say "100 MB" for a 100 MiB limit, which only
+errs toward refusing less; the progress bar's last increment lands as the
+last file starts; and `planDownload`'s own unsafe-name check on the chosen
+item, unreachable from `download()`, stays for other callers. **Follow-up,
+not this slice:** in `createFile`, a cancel landing during `addMember` after
+the server has linked the file makes the client delete the file resource,
+which may leave a dangling member entry. New File has the same window;
+uploads make it likelier.
+
+**Not built.** Folder upload. Multi-select download. Reading a deployment's
+own `maxFileSizeMB`, since whether an ordinary account may read it was not
+probed. A deployment set below 100 MB resets the connection on a smaller
+file, and the user sees "could not reach SAS Viya".
+
+**Verify, 2026-09-30,** from a clean `out/`: `npm run verify`'s steps
+green (2,036 unit; coverage 96.28/96.11/96.00/96.28; `transfer.ts` 100%),
+`format:check` leaving out `.claude/worktrees/`; `npm run
+test:integration` green (558 passing). After the review fixes:
+the same steps green again (2,036 unit; coverage unchanged at
+96.28/96.11/96.00/96.28; `contentTransfer.ts` is outside coverage scope),
+and `npm run test:integration` green (567 passing).
+
+**Manual items** 13.14–13.20 in `docs/dev/manual-tests/phase-13.md`,
+all passed 2026-09-30 (Sean, against a `.vsix` built after the review
+fixes).
+
 ---
 
 ## Probe findings
@@ -684,7 +816,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.6.
+finding is 13.9.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -808,3 +940,90 @@ with two `submit` blocks could not show it, because the second block raised a
 extension submits one `infile=` step. Also unsettled: output beyond about
 500 KB, `stderr`, other releases and deployments, and why.
 
+### Finding 13.6 — A file's bytes go in the create `POST`, and come back unchanged (2026-09-30)
+
+**Documented:** the Files service's `POST /files/files` takes the file's
+content as the request body, with its name in `Content-Disposition`.
+Finding 6.4 created only empty files that way. Finding 6.2 noted in passing
+that a raw body also returns `201`, without reading it back.
+
+**Observed (`verde`, Viya 4 LTS 2026.03, 2026-09-30).** Read-only first:
+
+- `GET /configuration/configurations?definitionName=sas.files` returned
+  `maxFileSizeMB: 100`, `maxFileSize: 0` and `blockedTypes:
+  "application/x-msdownload, application/x-ms-installer"`. Read with the
+  developer's own token; whether an ordinary account may read it was not
+  checked.
+- `GET /types/types?filter=contains('extensions','<ext>')` resolves `.txt`
+  and `.log` to `file_text` (`text/plain`), `.csv` to `file_csv`
+  (`text/csv`), and `.json`, `.ipynb`, `.png`, `.jpg`, `.xlsx`, `.zip`,
+  `.html`, `.sas7bdat` and `.exe` each to a `file_<ext>` type with its own
+  media type (`.exe` to `application/x-msdownload`). `.md` and `.parquet`
+  find nothing.
+
+Then, approved by Sean, in a throwaway `probe13a-<ts>` folder under My
+Folder, everything deleted afterwards and read back as `404`, with a sweep
+finding nothing left:
+
+- `POST /files/files?typeDefName=file_png`, `Content-Type: image/png`, a
+  64 KiB body holding every byte value → `201`, `size: 65536`,
+  `contentType: image/png`, an `ETag` header. `addMember` → `201`. `GET
+  …/content` returned the same 65,536 bytes, with `Content-Type:
+  image/png;charset=UTF-8`, `Content-Length: 65536` and
+  `Content-Disposition: filename*=UTF-8''probe.png`. `HEAD …/content` gave
+  the same length.
+- `.md` with `typeDefName=file` and `Content-Type:
+  application/octet-stream` → `201`, stored as `application/octet-stream`.
+
+**What this establishes.** An upload is one create `POST` carrying the
+bytes, then `addMember`: the same two calls as New File. The media type
+recorded is the one sent, so the Types lookup's media type is the one to
+send.
+
+**Not settled:** Stable 2026.06 (`innov` did not resolve that day), text
+encodings other than UTF-8, and whether an ordinary account can read
+`sas.files`.
+
+### Finding 13.7 — Past 100 MiB, the Files service resets the connection (2026-09-30)
+
+**Documented:** `maxFileSizeMB` is the Files service's largest file.
+Nothing found on how it refuses a larger one.
+
+**Observed (`verde`, 2026-09-30).** Random bytes as `file_zip`, each
+created file deleted and read back as `404`:
+
+| Body | Result |
+|---|---|
+| 20 MiB | `201` in 1.9 s |
+| 99 MiB (103,809,024 bytes, over 100 decimal MB) | `201` in 16.7 s |
+| 101 MiB | the connection reset partway through the body; no HTTP status |
+
+**What this establishes.** `maxFileSizeMB: 100` means 100 MiB, and a
+client cannot tell a too-large upload from a network failure by the
+response. So the extension checks the size before sending.
+
+**Not settled:** where the reset comes from (the service or the ingress in
+front of it), the exact boundary between 99 and 101 MiB, other deployments,
+and a deployment configured below 100.
+
+### Finding 13.8 — A blocked type is decided by the request's `Content-Type`, not the name (2026-09-30)
+
+**Documented:** `blockedTypes` lists media types the Files service refuses.
+
+**Observed (`verde`, 2026-09-30).** In the Finding 13.6 folder:
+
+- `probe.exe` with `Content-Type: application/x-msdownload` → `400`,
+  `errorCode 124007`, `message`: *The file "probe.exe" has a file type of
+  "application/x-msdownload", which is blocked.* `details` held only the
+  `path:` entry.
+- The same bytes and name with `Content-Type: application/octet-stream`
+  → `201`.
+
+**What this establishes.** The service checks the media type it is sent.
+The Types lookup sends `application/x-msdownload` for a `.exe`, so the
+extension's upload is refused cleanly, and nothing tries to get around it.
+The refusal's sentence is in `message`, which `readViyaError` keeps but
+`localiseContentProblem` does not show, so the upload quotes it itself.
+
+**Not settled:** `application/x-ms-installer` (`.msi`), and a deployment
+with a different `blockedTypes`.

@@ -143,6 +143,30 @@ export const MAX_FILE_CONTENT_BYTES = 10 * 1024 * 1024;
  */
 const CONTENT_TRANSFER_TIMEOUT_MS = 60_000;
 
+/**
+ * The largest file 13a moves between SAS Content and local disk, in either
+ * direction — 100 MiB, the Files service's own default `maxFileSizeMB`
+ * (Finding 13.6). An upload over it is refused before it is sent: the service
+ * answers one by resetting the connection partway through the body, with no
+ * HTTP status (Finding 13.7), which would otherwise reach the user as "could
+ * not reach SAS Viya". A download over it is capped by the transport so a
+ * file that somehow exceeds it is refused rather than buffered without bound.
+ * A deployment configured *lower* than this still resets the connection, and
+ * that is reported as unreachable. The setting is not fetched: whether an
+ * ordinary account may read it was not probed. A file of exactly this size is
+ * let through; Finding 13.7 saw 99 MiB accepted and 101 MiB reset, and the
+ * exact boundary between them was not probed.
+ */
+export const MAX_TRANSFER_BYTES = 100 * 1024 * 1024;
+
+/**
+ * The per-request timeout for a 13a upload or download. A 99 MiB upload took
+ * about 17 seconds against `verde` (Finding 13.7); five minutes leaves room
+ * for a slower link at {@link MAX_TRANSFER_BYTES}, and the user can cancel
+ * sooner from the progress notification.
+ */
+const BULK_TRANSFER_TIMEOUT_MS = 300_000;
+
 /** The `Content-Type` sent on a write when the preceding read did not report
  * one. Finding 6.2: the Files service does not validate it, so this only has to
  * be a sane default, not the true type. */
@@ -500,10 +524,43 @@ export class ContentAdapter {
     resourceHref: string,
     signal?: AbortSignal,
   ): Promise<ContentResult<FileContent>> {
+    return await this.readContent(
+      resourceHref,
+      MAX_FILE_CONTENT_BYTES,
+      CONTENT_TRANSFER_TIMEOUT_MS,
+      signal,
+    );
+  }
+
+  /**
+   * Read a file's bytes for a download to local disk (13a) — the same
+   * `GET ${resourceHref}/content` as {@link readFileContent}, capped at
+   * {@link MAX_TRANSFER_BYTES} rather than the editor's
+   * {@link MAX_FILE_CONTENT_BYTES}, with a longer timeout. A file over the cap
+   * comes back `content-too-large`.
+   */
+  async downloadFileContent(
+    resourceHref: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<FileContent>> {
+    return await this.readContent(
+      resourceHref,
+      MAX_TRANSFER_BYTES,
+      BULK_TRANSFER_TIMEOUT_MS,
+      signal,
+    );
+  }
+
+  private async readContent(
+    resourceHref: string,
+    maxBodyBytes: number,
+    timeoutMs: number,
+    signal: AbortSignal | undefined,
+  ): Promise<ContentResult<FileContent>> {
     const result = await this.client.send({
       link: { rel: CONTENT_REL, href: `${resourceHref}/content` },
-      maxBodyBytes: MAX_FILE_CONTENT_BYTES,
-      timeoutMs: CONTENT_TRANSFER_TIMEOUT_MS,
+      maxBodyBytes,
+      timeoutMs,
       ...withSignal(signal),
     });
     if (!result.ok) return result;
@@ -623,9 +680,9 @@ export class ContentAdapter {
   }
 
   /**
-   * Create an empty file under `parent` and link it in — two calls (finding
+   * Create a file under `parent` and link it in — two calls (finding
    * 6.4): `POST /files/files?typeDefName=…` with a `Content-Disposition` name
-   * and an empty body, then `POST` the parent's `addMember` link with
+   * and the file's bytes as the body, then `POST` the parent's `addMember` link with
    * `{uri,type:"CHILD",name,contentType}`. If the second call fails the just
    * created file resource is deleted before the failure is returned, so a
    * half-made file is never left orphaned.
@@ -633,11 +690,21 @@ export class ContentAdapter {
    * The `typeDefName` comes from {@link getTypeDefinition}: `.sas` →
    * `programFile`, `.py` (and everything else) from a cached
    * `/types/types` lookup, falling back to `file`.
+   *
+   * `content` is empty for **New File** and the local file's bytes for an
+   * upload (13a). One `POST` carries them: the bytes read back identical, and
+   * the resolved type's media type is what the service records (Finding
+   * 13.6). That media type is also what the service checks against its
+   * blocked types — a `.exe` resolves to `application/x-msdownload` and is
+   * refused `400` (Finding 13.8), which comes back as `content-rejected`
+   * carrying the service's own sentence. A non-empty body gets the bulk
+   * transfer timeout; an empty one keeps the client's default.
    */
   async createFile(
     parent: ContentItem,
     name: string,
     signal?: AbortSignal,
+    content: Uint8Array = new Uint8Array(0),
   ): Promise<ContentResult<ContentItem>> {
     const addMember = findLink(parent.links, ADD_MEMBER_REL);
     if (addMember === undefined) {
@@ -662,9 +729,12 @@ export class ContentAdapter {
         method: "POST",
         type: "application/vnd.sas.file",
       },
-      rawBody: new Uint8Array(0),
+      rawBody: content,
       contentType: type.mediaType ?? DEFAULT_NEW_FILE_CONTENT_TYPE,
       contentDisposition: `filename*=UTF-8''${encodeURIComponent(name)}`,
+      ...(content.byteLength > 0
+        ? { timeoutMs: BULK_TRANSFER_TIMEOUT_MS }
+        : {}),
       ...withSignal(signal),
     });
     if (!created.ok) return created;

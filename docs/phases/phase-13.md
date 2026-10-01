@@ -179,9 +179,10 @@ where `PROC PYTHON` actually hurts.
 
 ### Punch list
 
-- [ ] **13a — SAS Content upload/download.** Added 2026-09-24. Built
-  2026-09-30 on `feat/13a-content-upload-download`, not yet merged. See
-  "13a built" below.
+- [x] **13a — SAS Content upload/download.** Added 2026-09-24. Built
+  2026-09-30 on `feat/13a-content-upload-download`. Merged 2026-10-01 as
+  [PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235), squash
+  `ace92ea`. See "13a built" below.
 - [ ] **13b — SAS Content Copy/Paste.** Added 2026-09-24. Not started.
   Probe server-side copy first.
 - [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Not started.
@@ -896,6 +897,26 @@ integration tests green again (575 passing).
 all passed 2026-09-30 (Sean, against a `.vsix` built after the review
 fixes). 13.21, added in the second review round, passed 2026-10-01
 (Sean, against a `.vsix` built after that round's fixes).
+
+**AI review on PR #235, third round, 2026-10-01.** One finding, not
+blocking, and not fixed in the PR (Sean's call). **Follow-up, not this
+slice:** after a failed call, the transfer commands read `signal.aborted`
+to tell a cancel from a failure. A genuine failure that lands as the user
+clicks **Cancel** is reported as a cancel, and its technical sentence
+never reaches the log. Three checks follow a failed call: an upload's
+create, a download's plan and a download's fetch. The checks before a call
+starts are not affected. The outcome is still right either way: the
+transfer stops and reports how far it got. The reviewer suggested a
+failure that says itself it was aborted, but `ContentFailure.reason` is
+free text, and the content client reports an abort as
+`content-unreachable`, the same as a host it cannot reach. Only the
+integration tests' `abortedResult` stub writes `"aborted"` there. A fix
+needs the client to mark an abort itself, which every content caller
+would then see.
+
+**Merged** 2026-10-01 as
+[PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235), squash
+`ace92ea`.
 
 ---
 

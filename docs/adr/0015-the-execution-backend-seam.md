@@ -1,6 +1,9 @@
 # ADR-0015 — The `ExecutionBackend` seam: opaque bytes, a handle that streams, and a reject-when-busy contract
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-10-01 by
+  [ADR-0046](0046-notebook-cells-display-their-result.md): `ExecuteOptions`
+  gains `displayResults`, which only a notebook or interactive-window cell
+  sets
 - **Date:** 2026-08-16
 - **Decides:** the exact shape of the interface everything above execution talks
   to, and what the dialect layer is allowed to own

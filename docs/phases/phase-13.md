@@ -190,8 +190,13 @@ where `PROC PYTHON` actually hurts.
   `c5c2512`. See "13b built" below.
 - [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Not started.
 - [ ] **13d — F11, snippet library.** Added 2026-09-24. Not started.
-- [ ] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Not started.
+- [x] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Decided
+  2026-10-01: a notebook cell displays its last expression and its open
+  figures ([ADR-0046](../adr/0046-notebook-cells-display-their-result.md),
+  Findings 13.13–13.15). See "13e decided" below.
 - [ ] **13f — F10, build (or closed by 13e).** Added 2026-09-24. Not started.
+  Builds ADR-0046: the cell runner, the figure flush, `displayResults` on
+  `ExecuteOptions`, and the traceback frames it adds.
 - [ ] **13g — F8, DataFrame grid.** Added 2026-09-24. Not started.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
@@ -1030,6 +1035,39 @@ nothing to fix. The Claude reviewer's one flag, two Pastes of one copy into
 one folder at once, is the race `copyItem`'s single retry covers (ADR-0045
 decision 4, Finding 13.11), and manual item 13.29 passed on it.
 
+### 13e decided, 2026-10-01
+
+F10 (a notebook cell shows a trailing value and an open plot, the way
+Jupyter does) needed a decision against ADR-0014 before 13f could build it.
+Decided as [ADR-0046](../adr/0046-notebook-cells-display-their-result.md).
+Docs only: the ADR, Findings 13.13–13.15, and amendment notes on ADR-0014,
+ADR-0015 and ADR-0041.
+
+**Probes first.** Findings 13.13–13.15, against `verde`, in one throwaway
+session that Sean approved, deleted afterwards and read back as `404`. They
+settled the three questions the design rested on: whether open figures
+survive into a later step and can be saved there (they do), whether a later
+step's failure changes the user's `SYSCC` (it does, unless `SYSCC` is saved
+and restored around it), and what a runner that compiles the user's file
+does to the namespace and to tracebacks.
+
+**Sean's decisions,** 2026-10-01:
+
+1. **Figures and the trailing expression,** not figures only. The trailing
+   expression needs a runner between `PROC PYTHON` and the user's file,
+   which is why ADR-0046 amends ADR-0014.
+2. **Notebook and interactive-window cells only.** Run File and Run
+   Selection keep today's job exactly. A script that saves a figure and
+   leaves it open would otherwise show it twice.
+
+**For 13f.** ADR-0046's decision points 1–7 are the build. Its
+Consequences name what 13f still decides or documents: the trailing
+semicolon, the display order for objects with both `_repr_html_` and
+`_repr_png_`, the fixed fileref and macro variable names, the double display
+of a figure saved and left open (`docs/notebooks.md`), and a manual pass
+that covers seaborn and pandas plotting, which no probe did. 13g's
+DataFrame grid takes the trailing expression as its trigger.
+
 ---
 
 ## Probe findings
@@ -1038,7 +1076,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.13.
+finding is 13.16.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -1373,3 +1411,107 @@ accepting a top-level folder is intended.
 **Not settled:** a paste by a user who is not an administrator; a
 deployment whose administrators changed these rules (the call would then
 fail with the server's refusal, which the paste reports).
+
+### Finding 13.13 — Open matplotlib figures survive into a later step, which can save them (2026-10-01)
+
+Probed for 13e, to ask whether open figures can be shown without touching
+the user's code.
+
+**Documented:** matplotlib's documentation says `plt.show()` does nothing
+on a non-interactive backend such as `agg`, and a figure stays open until
+it is closed. SAS's `PROC PYTHON` documentation says the Python state
+persists between `PROC PYTHON` steps in one session.
+
+**Observed (`verde`, Python 3.12.12, 2026-10-01).** Approved by Sean. One
+throwaway session in the SAS Studio compute context, its files uploaded
+to filerefs, and each job prefixed with ADR-0039's recovery lines. The
+session was deleted afterwards (`204`) and read back as `404`:
+
+- The backend is `agg`. Open figures before `plt.show()` were `[1]`, and
+  after it still `[1]`: `plt.show()` closed nothing.
+- In one job, a second `proc python infile=` step after the user's step
+  found both open figures (`NOTE: Resuming Python state from previous PROC
+  PYTHON invocation.`), saved each as a PNG into the working directory
+  (25,589 and 13,029 bytes) and closed them. Both files appeared in the
+  working directory's member listing.
+- When the user's step raised `ZeroDivisionError`, the following step
+  still ran and saved the figure the user's step had opened.
+- With `matplotlib.pyplot` imported and no figure open, the flush step
+  found `[]` and saved nothing.
+- Saving over an earlier figure's file name changed its size (25,589 to
+  19,261 bytes).
+- The flush step took 0.14 s the first time, saving two figures, and
+  0.00–0.04 s after that. Whole jobs took about 500 ms, and about 5.2 s
+  with `restart`.
+
+**What this establishes.** Open figures can be saved by a step of the
+project's own, after the user's, with nothing added to the user's code.
+The working-directory diff (ADR-0019) sees the saved files like any other.
+A reused file name is caught only when its size changes, which is why
+ADR-0046 names each file uniquely.
+
+**Not settled:** other releases and Python versions; figures from seaborn
+or pandas plotting; libraries with their own figure registry; a cancel
+during the flush.
+
+### Finding 13.14 — A later step's failure sets `SYSCC` unless it is saved and restored (2026-10-01)
+
+**Documented:** SAS's documentation says `SYSCC` holds the highest
+condition code so far, and that `%let syscc=` may set it.
+
+**Observed (`verde`, 2026-10-01, same session as Finding 13.13):**
+
+- The user's step raises, the flush step succeeds → job state `error`,
+  `SYSCC=1012`.
+- The user's step succeeds, the flush step raises → job state `error`,
+  `SYSCC=1012`.
+- The same, with `%let PV_USERCC=&syscc;` before the flush step and
+  `%let syscc=&PV_USERCC;` after it → job state `completed`, `SYSCC=0`.
+
+**What this establishes.** A failing flush would otherwise report the
+user's cell as failed. Saving `SYSCC` before the flush step and restoring
+it after keeps `SYSCC` about the user's code alone, as ADR-0041 does for
+the startup snippet.
+
+**Not settled:** a flush step that ends in a SAS `ERROR` rather than a
+Python exception.
+
+### Finding 13.15 — A runner that compiles the cell keeps its namespace, and adds traceback frames (2026-10-01)
+
+**Documented:** Python's documentation says `exec` and `eval` run code in
+the globals they are given, and that a file passed to `compile()` keeps
+its name and line numbers in tracebacks.
+
+**Observed (`verde`, Python 3.12.12, 2026-10-01, same session as Finding
+13.13).** A runner, uploaded to its own fileref, read the cell's fileref
+name with `SAS.symget()`, `ast.parse`d the cell's file, split off a
+trailing bare expression, `exec`ed the rest and `eval`ed the expression:
+
+- In a `proc python infile=` step, `globals() is __main__.__dict__` is
+  `True`.
+- A cell ending in `df.head()`: the value came back, and its
+  `_repr_html_()` returned 565 characters of HTML. `x = 41` and `df`
+  were still defined in a later, plain `infile=` step.
+- `from __future__ import annotations` with an undefined annotation
+  worked, and a trailing `"done"` came back as the value.
+- A cell raising on line 3: the traceback ran `File "<stdin>", line 5`,
+  `File "<stdin>", line 2`, then two runner frames (`File "<string>"`, in
+  `<module>`, and `in _pyviya_run`), then
+  `File "PYU4", line 3, in <module>`. That last frame showed the source line and a caret, because
+  the cell's file sits in the working directory under that name.
+- A `SyntaxError` on line 2 added a frame in the standard library's
+  `ast.py`, `in parse`, before `File "PYU6", line 2` with its caret. Run
+  directly, the same file reports `File "<string>", line 2`.
+- Without a `try`/`finally`, the runner's own function was left in the
+  user's globals after the cell raised. With `try`/`finally` deleting it,
+  nothing was left.
+
+**What this establishes.** A cell run through the runner keeps the
+namespace a direct `infile=` step has, so variables persist between cells
+as they do today. Tracebacks keep the user's line numbers but gain the
+runner's frames and, for a `SyntaxError`, an `ast.py` frame, which the
+traceback parser must drop. The runner must clean up its own names in a
+`finally`.
+
+**Not settled:** other Python versions; a cell that never returns; a
+cell that changes `sys.displayhook` or `__main__`.

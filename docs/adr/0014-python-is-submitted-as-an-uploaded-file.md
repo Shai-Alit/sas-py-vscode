@@ -20,6 +20,12 @@
 > probed there, and names "the 3.5 dialect" as owing that confirmation. There
 > is no 3.5 dialect any more — Viya 3.5 support is dropped, not carried as a
 > standing obligation to eventually verify.
+> **Amended 2026-10-01 by [ADR-0046](0046-notebook-cells-display-their-result.md),
+> for notebook and interactive-window cells only.** There the user's file is
+> still uploaded unmodified, but `PROC PYTHON` runs a project-owned cell
+> runner, which compiles that file and displays its last expression. Run
+> File and Run Selection are unchanged. The transfer decided below holds on
+> every path.
 
 ## Context
 

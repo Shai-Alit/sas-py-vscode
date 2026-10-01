@@ -27,6 +27,14 @@ called out under **Changed** with a migration note.
   figures, as in Jupyter. A DataFrame shows as a table. End the line with
   `;` to hide the value. Run File and Run Selection are unchanged. See
   [Notebooks](docs/notebooks.md).
+- **Browse the SAS server's files.** A new **SAS Server** view, below SAS
+  Content, lists the compute server's files through your connected
+  session. Click a file to open it in an editor; saving writes it back, and
+  a file changed on the server since you opened it is not overwritten.
+  Right-click for **Copy Path**. A connection profile's
+  `fileNavigationRoot` and `fileNavigationCustomRootPath` choose the
+  starting folder, and `pythonOnViya.sasServer.showHiddenFiles` shows
+  dot-files. See [Browsing the SAS server](docs/browsing-sas-server.md).
 
 ## [0.1.5] - 2026-09-30
 

@@ -223,14 +223,15 @@ where `PROC PYTHON` actually hurts.
   built" below.
 - [x] **13o — The SAS Server view: review, scoping and probes.** Added
   2026-09-30. Done 2026-10-01: upstream read, Findings 13.20–13.26, scope
-  agreed with Sean. Recorded on `feat/13p-i-server-view`, with the code
+  agreed with Sean. Merged with 13p-i, the code
   that relies on it. See "13o done" below.
 - [ ] **13p — The SAS Server view: build.** Added 2026-09-30. Split by 13o
   into two slices:
-  - [ ] **13p-i — The view, read-only, plus open and save.**
+  - [x] **13p-i — The view, read-only, plus open and save.**
     [ADR-0047](../adr/0047-sas-server-view-composes-file-paths.md), root
     settings, the tree, open/save, Copy Path. Built 2026-10-01 on
-    `feat/13p-i-server-view`; manual items 13.43–13.52 passed
+    `feat/13p-i-server-view`; merged 2026-10-01 as [PR #239](https://github.com/Shai-Alit/sas-py-vscode/pull/239),
+    squash `902f455`; manual items 13.43–13.52 passed
     2026-10-01; adversarial review answered; manual item 13.53, which it
     added, passed 2026-10-01. See "13p-i built" below.
   - [ ] **13p-ii — Changing files.** New File/Folder, Rename, Move, Delete,
@@ -1394,6 +1395,12 @@ ADR-0047 and its findings moved from 13.13–13.22 to 13.16–13.25. 13f
 Findings 13.16–13.19 and manual items 13.30–13.42, so its findings moved
 again, to 13.20–13.29, and its manual items from 13.30–13.40 to
 13.43–13.53, everywhere they are cited.
+
+**Merged** 2026-10-01 as [PR #239](https://github.com/Shai-Alit/sas-py-vscode/pull/239), squash
+`902f455`, in one commit, with every check passing. Codex found nothing
+blocking. The Claude reviewer's one finding was real: the slice had no
+`CHANGELOG.md` entry, unlike its sibling slices. It was added in this
+post-merge note on `main`.
 
 ---
 

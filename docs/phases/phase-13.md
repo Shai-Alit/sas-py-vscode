@@ -185,7 +185,9 @@ where `PROC PYTHON` actually hurts.
   `ace92ea`. See "13a built" below.
 - [x] **13b — SAS Content Copy/Paste.** Added 2026-09-24. Built
   2026-10-01 on `feat/13b-content-copy-paste`
-  ([ADR-0045](../adr/0045-content-copy-paste.md)). See "13b built" below.
+  ([ADR-0045](../adr/0045-content-copy-paste.md)). Merged 2026-10-01 as
+  [PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash
+  `c5c2512`. See "13b built" below.
 - [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Not started.
 - [ ] **13d — F11, snippet library.** Added 2026-09-24. Not started.
 - [ ] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Not started.
@@ -1020,6 +1022,10 @@ signed-in user add there (Finding 13.12).
 Favorites, which Cut refuses too. **Copy** still shows on a data flow and
 is then refused, for the reason **Download...** does (the 13a follow-up),
 and on a top-level folder, which Cut refuses too.
+
+**Merged** 2026-10-01 as
+[PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash
+`c5c2512`, with every check passing.
 
 ---
 

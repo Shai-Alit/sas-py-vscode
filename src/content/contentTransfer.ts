@@ -586,5 +586,9 @@ function describeSkip(reason: SkipReason): string {
       return vscode.l10n.t(
         "another item in the same folder already has that name",
       );
+    case "already-listed":
+      return vscode.l10n.t(
+        "it is the same folder as one already downloaded elsewhere in the tree",
+      );
   }
 }

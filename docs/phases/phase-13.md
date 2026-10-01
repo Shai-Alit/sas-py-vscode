@@ -782,6 +782,18 @@ Folded in:
   `MAX_TRANSFER_BYTES` is let through. The constant's comment now says
   Finding 13.7 saw 99 MiB accepted and 101 MiB reset, and nothing between.
 
+**AI review on PR #235, 2026-09-30.** Two findings.
+
+- **A folder reached twice vanished from the summary.** `planDownload`
+  walked it once, as intended, but recorded nothing for its second path,
+  so a download could say it finished while part of the tree was missing.
+  The second path is now skipped with reason `already-listed`, and it is
+  counted and logged like the other skips.
+- **"Upload names a file percent-encoded" was not a bug.** `Uri.path` is
+  the decoded path. Only `toString()` encodes. A new integration test
+  uploads `My résumé 100%.py` through VS Code's own `Uri` and gets that
+  name back unchanged.
+
 Not changed: the messages say "100 MB" for a 100 MiB limit, which only
 errs toward refusing less; the progress bar's last increment lands as the
 last file starts; and `planDownload`'s own unsafe-name check on the chosen

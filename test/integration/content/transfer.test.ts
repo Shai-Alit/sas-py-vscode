@@ -238,6 +238,24 @@ describe("SAS Content upload and download (13a)", () => {
       assert.deepEqual(holder.errorToasts, []);
     });
 
+    it("names an uploaded file as it is spelled on disk, not percent-encoded", async () => {
+      // `Uri.path` is the decoded path; only `toString()` percent-encodes.
+      const name = "My résumé 100%.py";
+      fs.writeFileSync(path.join(dir, name), "x");
+      const created: string[] = [];
+      const holder = harness({
+        createFile: (_parent, newName) => {
+          created.push(newName);
+          return Promise.resolve(ok({ ...file, name: newName }));
+        },
+      });
+      holder.pick = [vscode.Uri.file(path.join(dir, name))];
+
+      await withStubs(holder, () => upload(holder.deps, folder));
+
+      assert.deepEqual(created, [name]);
+    });
+
     it("keeps going after one file fails, then reports the count and logs the failure", async () => {
       fs.writeFileSync(path.join(dir, "taken.py"), "x");
       fs.writeFileSync(path.join(dir, "free.py"), "y");

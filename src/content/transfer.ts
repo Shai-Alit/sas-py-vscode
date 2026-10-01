@@ -11,7 +11,7 @@
  * here; the shell does the writing, so every decision about *what* is written
  * is unit-tested without a filesystem.
  *
- * Two kinds of member are left out and reported rather than failing the
+ * Three kinds of member are left out and reported rather than failing the
  * whole download:
  *
  * - **Not a file.** A folder listing also carries `dataFlow` leaves
@@ -25,6 +25,10 @@
  *   macOS, and SAS Content allows a file and a folder of the same name in one
  *   folder (Finding 6.6's clash is per type), so a second sibling with a name
  *   already taken is left out the same way.
+ * - **A folder already listed.** A folder reached a second time, through a
+ *   different member pointing at the same resource, is not walked again; its
+ *   second path is reported, so the summary does not look complete while that
+ *   part of the tree is missing.
  */
 
 import { type ContentAdapter } from "./adapter";
@@ -46,7 +50,8 @@ export interface DownloadFile {
 }
 
 /** Why a member was left out of a download. */
-export type SkipReason = "not-a-file" | "unsafe-name" | "duplicate-name";
+export type SkipReason =
+  "not-a-file" | "unsafe-name" | "duplicate-name" | "already-listed";
 
 /** One member left out of a download, for the summary and the log. */
 export interface SkippedItem {
@@ -95,7 +100,7 @@ export function isSafeLocalName(name: string): boolean {
  *
  * Each folder is listed once, keyed by its resource href, so a folder reached
  * twice (a favourite pointing at a folder the walk is already inside) is not
- * walked again.
+ * walked again, and its second path is reported as skipped.
  */
 export async function planDownload(
   adapter: ContentAdapter,
@@ -114,7 +119,10 @@ export async function planDownload(
     if (isContainer(node)) {
       const href = resourceHrefOf(node);
       if (href !== undefined) {
-        if (visited.has(href)) return undefined;
+        if (visited.has(href)) {
+          skipped.push({ path, reason: "already-listed" });
+          return undefined;
+        }
         visited.add(href);
       }
       folders.push(path);

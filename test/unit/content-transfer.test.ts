@@ -270,7 +270,7 @@ describe("content/transfer", () => {
       assert.equal(calls.length, 0);
     });
 
-    it("lists a folder reached twice only once", async () => {
+    it("lists a folder reached twice only once, and reports the second path", async () => {
       const { adapter, calls } = adapterWith([
         {
           when: `${TOP}/members`,
@@ -293,6 +293,10 @@ describe("content/transfer", () => {
         result.value.files.map((f) => f.path),
         [["Project", "a", "x.py"]],
       );
+      assert.deepEqual(result.value.folders, [["Project"], ["Project", "a"]]);
+      assert.deepEqual(result.value.skipped, [
+        { path: ["Project", "b"], reason: "already-listed" },
+      ]);
     });
 
     it("fails the whole plan when a folder listing fails", async () => {

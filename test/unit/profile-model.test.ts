@@ -440,6 +440,47 @@ describe("readProfiles: pythonStartup (ADR-0041)", () => {
   });
 });
 
+describe("readProfiles: the SAS Server view's root (ADR-0047)", () => {
+  const read = (extra: Record<string, unknown>) =>
+    readProfiles({ P: { endpoint: "https://v.example.com", ...extra } });
+
+  it("reads each of upstream's three roots, and a trimmed custom path", () => {
+    for (const root of ["USER", "SYSTEM", "CUSTOM"]) {
+      const { profiles, rejected } = read({
+        fileNavigationRoot: root,
+        fileNavigationCustomRootPath: "  /mnt/shared  ",
+      });
+      assert.deepEqual(rejected, []);
+      const profile = Object.values(profiles).at(0);
+      assert.ok(profile);
+      assert.equal(profile.fileNavigationRoot, root);
+      assert.equal(profile.fileNavigationCustomRootPath, "/mnt/shared");
+    }
+  });
+
+  it("leaves both absent when unset, and treats a blank path as absent", () => {
+    const { profiles } = read({ fileNavigationCustomRootPath: "   " });
+    const profile = Object.values(profiles).at(0) ?? {};
+    assert.equal("fileNavigationRoot" in profile, false);
+    assert.equal("fileNavigationCustomRootPath" in profile, false);
+  });
+
+  it("rejects the profile, naming the field, for a value it cannot read", () => {
+    for (const [bad, field] of [
+      [{ fileNavigationRoot: "user" }, /fileNavigationRoot/],
+      [{ fileNavigationRoot: 1 }, /fileNavigationRoot/],
+      [
+        { fileNavigationCustomRootPath: ["/tmp"] },
+        /fileNavigationCustomRootPath/,
+      ],
+    ] as const) {
+      const { profiles, rejected } = read(bad);
+      assert.deepEqual(Object.keys(profiles), [], JSON.stringify(bad));
+      assert.match(rejected[0]?.reason ?? "", field, JSON.stringify(bad));
+    }
+  });
+});
+
 describe("createProfile and secretKey", () => {
   it("stamps the current version and omits empty optional fields", () => {
     assert.deepEqual(

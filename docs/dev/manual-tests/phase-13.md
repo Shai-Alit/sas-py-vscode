@@ -364,3 +364,104 @@ items in order in that notebook unless an item says otherwise.
       `Broken._repr_html_() raised ValueError('no html')`, then `Broken()`,
       and no failure. Run a cell holding `Broken`, the class. **Expect:**
       `<class '__main__.Broken'>` and no `raised` line.
+
+## 13p-i — the SAS Server view: browse, open and save
+
+See `docs/phases/phase-13.md`'s "13p-i built" Runbook entry. Build a `.vsix`
+from this branch, install it, and sign in to a Viya profile, but do not
+connect yet.
+
+**Set up**, after 13.43. Run this as a selection from any local `.py` file
+(**Python on Viya: Run Selection**). It makes `/tmp/sv-test` with three files:
+
+```python
+import os
+os.makedirs("/tmp/sv-test", exist_ok=True)
+for name, text in [(".hidden", "x
+"), ("a b é.py", "print('hi')
+"), ("x;y~z#q.py", "print(1)
+")]:
+    with open(os.path.join("/tmp/sv-test", name), "w") as f:
+        f.write(text)
+```
+
+- [x] **13.43** **Not connected.** Open the **Python on Viya** activity bar.
+  **Expect:** a **SAS Server** view below **SAS Content**, showing
+  *Connect to SAS Viya to browse files on the SAS server through your
+  session.* with a **Connect** button, and no session started (no
+  `Connecting` line in **Python on Viya: Output**). Press **Connect**.
+  **Expect:** the view shows **Home**, expanded, folders first.
+- [x] **13.44** **Browsing and Copy Path.** Run the set-up above, then press
+  the view's refresh button. Expand **tmp**, then **sv-test**. **Expect:**
+  `a b é.py` and `x;y~z#q.py`, and no `.hidden`. Hover over `sv-test`.
+  **Expect:** the tooltip `/tmp/sv-test`. Right-click it → **Copy Path**,
+  and paste into an editor. **Expect:** `/tmp/sv-test`. **Copy Path** is
+  not in the Command Palette.
+- [x] **13.45** **Hidden files.** Turn on
+  `pythonOnViya.sasServer.showHiddenFiles` in Settings. **Expect:** the
+  tree refreshes by itself, and `.hidden` appears in `sv-test`. Turn it
+  off again: it disappears.
+- [x] **13.46** **Open, edit, save, run.** Click `a b é.py`. **Expect:** a
+  tab titled `a b é.py` showing `print('hi')`. Add a line `print('saved')`
+  and save. Close the tab, then click the file in the tree again.
+  **Expect:** both lines. With that editor active, **Python on
+  Viya: Run File**. **Expect:** `hi` and `saved` in the output. Repeat the edit and
+  save on `x;y~z#q.py`. **Expect:** it saves, and reopens with the edit.
+- [x] **13.47** **Changed on the server.** Open `a b é.py` and type a line
+  without saving. From a local `.py` file, run as a selection:
+  `open("/tmp/sv-test/a b é.py", "w").write("changed")`. Now save
+  the server file's editor. **Expect:** the save fails with 
+  *"/tmp/sv-test/a b é.py" changed on the SAS server since you opened it. ...*, and the
+  file on the server is unchanged: close the tab without saving, reopen it,
+  and it shows `changed`.
+- [x] **13.48** **During a run.** From a local `.py` file, **Run File** on
+  `import time; time.sleep(30)`. While it runs, collapse and expand
+  **sv-test**, then open `x;y~z#q.py`, add a line and save. **Expect:** the
+  tree lists at once and the save succeeds, both before the run ends.
+- [x] **13.49** **A custom root.** In `settings.json`, add
+  `"fileNavigationRoot": "CUSTOM", "fileNavigationCustomRootPath": "/tmp/sv-test"` to the profile. **Expect:** the view's top folder is
+  `sv-test`, holding the two files. Change the path to `/tmp/sv-nope`.
+  **Expect:** one warning row reading *The files cannot be accessed from
+  "/tmp/sv-nope", the root folder set in your connection profile. Check
+  fileNavigationCustomRootPath.* Click it after changing the path back.
+  **Expect:** `sv-test` again. Then set `"fileNavigationRoot": "custom"`
+  (lower case). **Expect:** `settings.json` underlines the value, and the
+  **Python on Viya** output channel (the log, not **Python on Viya:
+  Output**) warns *Ignoring profile "…": fileNavigationRoot must be USER,
+  SYSTEM or CUSTOM*, naming the profile. The profile is not loaded, as
+  `docs/connection-profiles.md` says. If it is your only profile, the SAS
+  Content, SAS Server, SAS Libraries and CAS views all show their *add a
+  connection profile* message. Change it back to `CUSTOM`. **Expect:** the
+  views return.
+  Remove both fields.
+- [x] **13.50** **Saving after the session ends.** This needs a folder you
+  can write to that outlives a session; `/tmp` may not, because each
+  session can run on its own server. Find one (look under **Home** for a
+  shared or mounted folder) and make a file in it the same way as the
+  set-up. Open it from the tree and type a line without saving. Run
+  **Python on Viya: Disconnect from SAS Viya**. **Expect:** the view shows its
+  **Connect** prompt. Save the editor. **Expect:** it fails with *Connect
+  to SAS Viya to open or save files on the SAS server.* Press **Connect**
+  in the view, then save again. **Expect:** it saves, and the file reopens with the
+  line. Delete the file afterwards.
+- [x] **13.51** **Next to the SAS extension.** Only if the SAS extension
+  is installed: with both enabled, reload the window. **Expect:** both
+  extensions activate, and this view and the SAS extension's **SAS Server**
+  view each list files. A file opened from this view has a tab whose
+  editor does not show the SAS extension's run button.
+- [x] **13.52** **Clean up.** Run as a selection:
+  `import shutil; shutil.rmtree("/tmp/sv-test")`. Press refresh.
+  **Expect:** `sv-test` is gone from **tmp**.
+- [x] **13.53** **Compare with Saved, then save.** Added by the adversarial
+  review: any read of a file replaces the tag its next save sends, so this
+  checks that VS Code's own check still stops the overwrite. Run as a
+  selection: `open("/tmp/sv-cmp.py", "w").write("print(1)")`. Press
+  refresh, expand **tmp** and open `sv-cmp.py`. Type a line without saving.
+  Run as a selection: `open("/tmp/sv-cmp.py", "w").write("changed")`.`
+  With the server file's editor active, run **File: Compare Active File
+  with Saved**. **Expect:** the saved side shows `changed`. Close the diff
+  and save the editor. **Expect:** the save does not go through: VS Code
+  says the file's content is newer, or the save fails with *changed on the
+  SAS server since you opened it*. Do not choose **Overwrite**. Close the
+  tab without saving and reopen it. **Expect:** `changed`. Clean up: run
+  `import os; os.remove("/tmp/sv-cmp.py")`.

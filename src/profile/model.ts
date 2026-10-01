@@ -19,6 +19,8 @@
  * difference lives. See docs/adr/0007-connection-profile-storage.md.
  */
 
+import { isFileNavigationRoot, type FileNavigationRoot } from "../server/path";
+
 /**
  * The shape version carried by every profile.
  *
@@ -90,6 +92,16 @@ export interface ViyaProfile {
    * reattach included.
    */
   pythonStartup?: AutoExecEntry[];
+  /**
+   * Where the SAS Server view starts: `USER` (the default) and `SYSTEM` both
+   * start at `/`, `CUSTOM` at {@link fileNavigationCustomRootPath}. The names
+   * and values are upstream's, so an imported profile keeps them. A compute
+   * context's attributes override them (`src/server/path.ts`).
+   */
+  fileNavigationRoot?: FileNavigationRoot;
+  /** The SAS Server view's root when {@link fileNavigationRoot} is
+   * `CUSTOM`. */
+  fileNavigationCustomRootPath?: string;
 }
 
 /** One `autoExec` or `pythonStartup` entry: a line of code, or a local file
@@ -407,7 +419,43 @@ function readProfile(name: string, raw: unknown): Result<ViyaProfile> {
   if (!setup.ok) return setup;
   Object.assign(profile, setup.value);
 
+  const navigation = readNavigation(raw);
+  if (!navigation.ok) return navigation;
+  Object.assign(profile, navigation.value);
+
   return ok(profile);
+}
+
+/**
+ * Reads `fileNavigationRoot` and `fileNavigationCustomRootPath`.
+ *
+ * Strict on type, like {@link readSessionSetup}: a root that is not one of
+ * the three would otherwise fall back to `USER` unannounced, and the view
+ * would show a folder the user did not ask for. An empty path is absent.
+ */
+export function readNavigation(
+  raw: Record<string, unknown>,
+): Result<
+  Pick<ViyaProfile, "fileNavigationRoot" | "fileNavigationCustomRootPath">
+> {
+  const navigation: Pick<
+    ViyaProfile,
+    "fileNavigationRoot" | "fileNavigationCustomRootPath"
+  > = {};
+  if (raw.fileNavigationRoot !== undefined) {
+    if (!isFileNavigationRoot(raw.fileNavigationRoot)) {
+      return fail("fileNavigationRoot must be USER, SYSTEM or CUSTOM");
+    }
+    navigation.fileNavigationRoot = raw.fileNavigationRoot;
+  }
+  if (raw.fileNavigationCustomRootPath !== undefined) {
+    if (typeof raw.fileNavigationCustomRootPath !== "string") {
+      return fail("fileNavigationCustomRootPath must be a string");
+    }
+    const path = raw.fileNavigationCustomRootPath.trim();
+    if (path !== "") navigation.fileNavigationCustomRootPath = path;
+  }
+  return ok(navigation);
 }
 
 /**

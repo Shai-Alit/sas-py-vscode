@@ -182,6 +182,28 @@ Three things to know:
   **Developer: Reload Window**, or disconnecting and connecting again, picks
   up the change for the next restart.
 
+## Where the SAS Server view starts
+
+The [SAS Server](browsing-sas-server.md) view starts at the server's root,
+`/`. Two fields change that:
+
+```json
+"fileNavigationRoot": "CUSTOM",
+"fileNavigationCustomRootPath": "/mnt/shared/project"
+```
+
+`fileNavigationRoot` is `USER` (the default), `SYSTEM` or `CUSTOM`. `USER`
+and `SYSTEM` both start at `/`, as the SAS extension does. `CUSTOM` starts at
+`fileNavigationCustomRootPath`; a path without a leading `/` is read from
+`/`. Any other value for `fileNavigationRoot` is refused, so the profile is
+not loaded until it is fixed.
+
+If the compute context your profile uses sets either one as an attribute,
+the context's settings are used instead of the profile's.
+
+The SAS extension's profiles use the same two fields, so **Import Connection
+Profiles** carries them across.
+
 ## Choosing which profile is active
 
 There are two levels, and the difference matters if you work in more than one

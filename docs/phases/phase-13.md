@@ -221,9 +221,20 @@ where `PROC PYTHON` actually hurts.
   from v0.1.4's release smoke test. Every run turns SAS notes off
   ([ADR-0043](../adr/0043-every-run-turns-sas-notes-off.md)). See "13n
   built" below.
-- [ ] **13o — The SAS Server view: review, scoping and probes.** Added
-  2026-09-30. Not started.
-- [ ] **13p — The SAS Server view: build.** Added 2026-09-30. Not started.
+- [x] **13o — The SAS Server view: review, scoping and probes.** Added
+  2026-09-30. Done 2026-10-01: upstream read, Findings 13.20–13.26, scope
+  agreed with Sean. Recorded on `feat/13p-i-server-view`, with the code
+  that relies on it. See "13o done" below.
+- [ ] **13p — The SAS Server view: build.** Added 2026-09-30. Split by 13o
+  into two slices:
+  - [ ] **13p-i — The view, read-only, plus open and save.**
+    [ADR-0047](../adr/0047-sas-server-view-composes-file-paths.md), root
+    settings, the tree, open/save, Copy Path. Built 2026-10-01 on
+    `feat/13p-i-server-view`; manual items 13.43–13.52 passed
+    2026-10-01; adversarial review answered; manual item 13.53, which it
+    added, passed 2026-10-01. See "13p-i built" below.
+  - [ ] **13p-ii — Changing files.** New File/Folder, Rename, Move, Delete,
+    Upload/Download. After 13p-i.
 
 ### Scope extended, 2026-09-24
 
@@ -1191,6 +1202,199 @@ commit: a `CHANGELOG.md` entry, and `cellRunner.ts`'s comment now says the
 runner's name is in the cell's `globals()` while the cell runs. The second
 round found nothing.
 
+### 13o done, 2026-10-01 — the SAS Server view, scoped
+
+**Upstream, read.** `RestServerAdapter.ts`, `ContentAdapterFactory.ts`,
+`ContentNavigator/index.ts` and the view's `package.json` contribution
+(`serverdataprovider`, commands `SAS.server.*`). The view reads the
+**compute session's** `/compute/sessions/{id}/files/…` API, not the Files
+service SAS Content uses. Expanding it calls `session.setup()`, so it starts
+a session. It composes every URL itself, writing `/` as `~fs~`. It sends
+the same root, `~fs~`, for `USER` and `SYSTEM`; only `CUSTOM` changes the
+path. Administrators can override the profile's root through the compute
+context's `fileNavigationRoot` and `fileNavigationCustomRootPath`
+attributes, and gate Download with `allowDownload`. A `404` on a custom
+root gets one of two messages, depending on who set the root. Delete and
+rename send `If-Match: ""`. Favourites are a `TODO` upstream. Its context
+menu: New File, New Folder, Rename, Delete, Copy Path, Download, Upload
+Files, Upload Folders, plus drag-and-drop move.
+
+**Probed.** Findings 13.20–13.26, `verde`, three runs, all approved by
+Sean. Every session and scratch item was deleted and read back as `404`.
+
+**Decisions (Sean's, 2026-10-01).**
+
+1. **The view borrows the active profile's run session**, as the Library
+   view does (ADR-0027). It never starts a session or signs anyone in.
+   With no session, it shows a welcome with a Connect button. A listing
+   does not wait behind a running job (Finding 13.23), so reads need no
+   busy guard.
+2. **A new ADR allows composing a session's files URL from a server
+   path** ([ADR-0047](../adr/0047-sas-server-view-composes-file-paths.md)),
+   encoded as Finding 13.22 describes. No link reaches `/` or a custom path
+   (Finding 13.20), so without this the view could not be built. It is the
+   project's third composed URL, after the two `src/compute/session.ts`
+   names (ADR-0010). First agreed for the root only. **Widened the same
+   day (Sean's call)** to an open file too: a file's own links name the
+   session they were read from, so an editor could not save after a
+   reconnect. The editor URI carries the profile id and the server path.
+   Below the root, the tree still follows each item's links.
+3. **Every upstream action is in**: browse and open/save; New File, New
+   Folder, Rename, Move and Delete; Upload and Download.
+4. **Split in two.** 13p-i: the ADR, root settings, the read-only tree,
+   open/save, Copy Path. 13p-ii: everything that changes files.
+
+**Where this departs from upstream, from the probes.**
+
+- **A write sends the item's real `ETag`, never `""`.** An empty
+  `If-Match` skips the server's check entirely, and deletes a non-empty
+  folder with everything in it (Finding 13.26). A save that finds the file
+  changed gets `412` and says so.
+- **Every rename sends `If-Match`.** Without it the server answers `200`
+  with an error body, and nothing is renamed (Finding 13.25). The reply's
+  body is checked, not just its status.
+- **`USER` and `SYSTEM` both root at `~fs~`, as upstream does.** On
+  `verde` the session's `HOME` is `/` (Finding 13.21), so they are the same
+  folder. The root's label follows upstream: **Home**, or a custom root's
+  last path segment.
+
+**13p-i's scope.**
+
+- A **SAS Server** view in the existing container, shown with a profile.
+- Profile fields `fileNavigationRoot` (`USER`/`SYSTEM`/`CUSTOM`, default
+  `USER`) and `fileNavigationCustomRootPath`. The compute context's
+  attributes override them when set. A `404` at a custom root says whether
+  the profile or the administrator set it, as upstream does.
+- A tree that pages by `next`, sorts folders first, and hides dot-files
+  unless a `showHiddenItems` setting is on (Finding 13.22).
+- Open and save through a `pythonOnViyaServer:` `FileSystemProvider`
+  (ADR-0040), with the real `ETag` on save.
+- **Copy Path**, and refresh and collapse-all on the view title.
+- Refresh on `onDidChangeConnection` and on sign-out, as the Library view
+  does.
+
+**13p-ii's scope.** New File, New Folder, Rename and drag-and-drop Move
+(one `PUT` with a new `path`, Finding 13.25), and Delete with a
+confirmation that says it is permanent. Upload and Download reuse 13a by
+generalising `src/content/transfer.ts`'s planner over an adapter interface
+both views implement. Download is hidden when the context sets
+`allowDownload` to `false`. **Probe first:** whether a create, rename or
+delete waits behind a running job (Findings 13.23 and 13.27 measured reads
+and a content write only).
+
+### 13p-i built, 2026-10-01 — the SAS Server view, read-only, with open and save
+
+**What it does.** A **SAS Server** view, below SAS Content, lists the
+compute server's files through the active profile's session. One top
+folder, **Home** (`/`), or a custom root labelled by its last segment,
+expanded; folders first, then files, each by name. A click opens a file in
+an editor through the `pythonOnViyaServer:` `FileSystemProvider`, and a
+save writes it back. **Copy Path** is on the context menu. Refresh is on
+the view title, and collapse-all comes from `showCollapseAll`. Dot-files
+show only with the new setting `pythonOnViya.sasServer.showHiddenFiles`.
+With no session, the view shows a **Connect** welcome.
+
+**Profile.** `fileNavigationRoot` (`USER`, `SYSTEM` or `CUSTOM`) and
+`fileNavigationCustomRootPath`, upstream's names, read strictly (a root
+outside the three rejects the profile), kept on **Edit Connection
+Profile**, and carried by **Import Connection Profiles**. A compute
+context's attributes override them, read once per session by following the
+context summary's `self` link to its detail (a summary has no
+`attributes`, checked on `verde`).
+
+**Code.** `src/server/`: `path.ts` (the root, the encoding, the one
+composed URL, the editor URI), `types.ts`, `problems.ts`, `adapter.ts`,
+`editorFiles.ts` (the save's `ETag` guard) (`vscode`-free); `messages.ts`, `serverTree.ts`, `serverFileSystem.ts`,
+`serverExplorer.ts` (the shell, excluded from unit coverage as ADR-0009
+requires). Wired in `src/extension.ts` beside the Library view. User page
+`docs/browsing-sas-server.md`; profile fields in
+`docs/connection-profiles.md`.
+
+**Decisions made while building.**
+
+- **The editor URI's query values are base64url.** `vscode.Uri`
+  percent-decodes a query before `uri.query` returns it, so a file name's
+  `&` or `+` would split the query or turn into a space. A hand-written
+  profile's id is its name, which can hold anything too.
+- **A save reads the file's properties first**, for its `createFile` link,
+  and sends the `ETag` the editor's read returned, not the fresh one.
+- **Open and save both use `application/octet-stream`**, as Finding
+  13.24 measured, although the file's `getFile` and `createFile` links
+  advertise `text/plain`.
+- **The editor cap is 10 MiB**, SAS Content's.
+
+**More probes**, approved by Sean, the same day: Findings 13.27–13.29.
+
+**Not built.** Everything that changes files (13p-ii). Favourites and
+folder shortcuts (upstream has neither working for this view). Run from the
+tree's context menu: a server `.py` file runs from its editor like any
+other, since Run is not gated by scheme.
+
+**Adversarial review, 2026-10-01** (the local pass only; no other reviewer
+has seen it). Nothing blocking. Seven findings, each checked against the
+code, all real and all fixed before the push:
+
+1. Open asked for the link's `text/plain`, not the `application/octet-stream`
+   Finding 13.24 names. The probe had in fact read the same bytes back under
+   `text/plain` too (now recorded in 13.24), so nothing was corrupted, but
+   the code now matches the finding, and the test checks the header.
+2. The save's `ETag` guard sat in the `FileSystemProvider`, which the unit
+   tier cannot reach, with no test. It moved to `editorFiles.ts`, with
+   `server-editor-files.test.ts`.
+3. A tree node listed under one profile, expanded after a switch to another
+   before the refresh, followed its links with the new profile's client. It
+   now lists nothing until the refresh.
+4. A folder past `MAX_MEMBER_PAGES` was cut short silently. The listing is
+   now marked `truncated`, and the tree logs a warning.
+5. The session check a `404` makes did not get the caller's signal. It does
+   now.
+6. A `CUSTOM` root of `/` showed the unlocalised `Home`. It now shows
+   `l10n.t("Home")`, as `USER` and `SYSTEM` do.
+7. `SESSION_SELF_REL` was also used for a context's `self` link; renamed
+   `SELF_REL`.
+
+**Verify, 2026-10-01,** after the review fixes, from a clean `out/`:
+`npm run verify`'s steps green (2,149 unit; coverage 96.48/96.16/96.34/96.48), `format:check` leaving out
+`.claude/worktrees/`; `npm run check:docs` green; `npm run
+test:integration` green (593 passing). **Manual items** 13.43–13.52:
+passed 2026-10-01. 13.49 first came back partial, and both parts were
+the item's wording, not the code: it sent the reader to **Python on
+Viya: Output** for the profile warning, which is written to the **Python
+on Viya** log, and it did not say that refusing the only profile leaves
+every view showing its *add a connection profile* message, as
+`docs/connection-profiles.md` documents. The item was reworded and the
+step passed on a re-run.
+
+**Re-verified, 2026-10-01,** after reconciling with 13f's merge (the
+renumbering below), from a clean `out/`: `npm run verify`'s steps green
+(2,171 unit; coverage 96.52/96.2/96.37/96.52), `npm run check:docs` green,
+`npm run test:integration` green (593 passing).
+
+**Adversarial review, 2026-10-01** (Sean's pass, by hand, on the
+uncommitted tree): no blocking defects. Three points, each checked
+against the code:
+
+1. **The save tag is per file, not per editor.** Real: any read, such as
+   **Compare with Saved**, replaces the tag the next save sends, so the
+   module's comment claimed more than it does. Reworded; VS Code's own
+   `stat` check before a save is the protection then, and new manual item
+   13.53 checks it; it passed 2026-10-01. A per-editor tag would need the vscode layer to track
+   editors, a design change left out of this slice.
+2. **An unprobed claim.** Real: `normaliseServerPath`'s comment said the
+   server resolves `..`, which no finding shows. Reworded to say only
+   that `..` is sent as written.
+3. **One failed context read empties the view.** Deliberate and tested:
+   the view shows an error rather than guess a root. Kept.
+
+**Renumbered twice, 2026-10-01,** as slices merged to `main` while this
+branch was open. 13e ([PR #237](https://github.com/Shai-Alit/sas-py-vscode/pull/237))
+took ADR-0046 and Findings 13.13–13.15, so this branch's ADR became
+ADR-0047 and its findings moved from 13.13–13.22 to 13.16–13.25. 13f
+([PR #238](https://github.com/Shai-Alit/sas-py-vscode/pull/238)) then took
+Findings 13.16–13.19 and manual items 13.30–13.42, so its findings moved
+again, to 13.20–13.29, and its manual items from 13.30–13.40 to
+13.43–13.53, everywhere they are cited.
+
 ---
 
 ## Probe findings
@@ -1199,7 +1403,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.20.
+finding is 13.30.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -1778,3 +1982,237 @@ and the flush write beside the cell's file, by the absolute path
 
 **Not settled:** a cell that deletes or replaces the cell's file while it
 runs.
+
+### Finding 13.20 — No link reaches the server's root; it has to be composed (2026-10-01)
+
+**Documented:** the Compute API's `/files` endpoint lists, creates,
+deletes, renames, copies, uploads and downloads files on the compute
+server's file system. A path is written with `~fs~` for `/`. Upstream
+composes every such URL.
+
+**Observed (`verde`, Viya 4 LTS 2026.03, 2026-10-01).** A session on *SAS
+Job Execution compute context*, created and deleted by the probe:
+
+- The session's `getFiles` relation (`GET`, `type`
+  `application/vnd.sas.compute.file.properties`) resolves to the session's
+  **working directory**, a per-session folder under
+  `/opt/sas/viya/config/var/run/compsrv/default/`. It was empty.
+- The session's `files` relation is not files: it is the `filerefs`
+  collection (`itemType` `…compute.fileref.summary`).
+- No directory or item carries a parent link. A directory's relations are
+  `self`, `getDirectoryProperties`, `getDirectoryMembers`, `makeDirectory`,
+  `createFile`, `renameDirectory`, `deleteDirectory` and `copyDirectory`.
+- `GET /compute/sessions/{id}/files/~fs~` → `200`, the root's properties:
+  `name: ""`, `isDirectory: true`, **`readOnly: true`**, with an `ETag`.
+  Its relations are only `self`, `getDirectoryProperties`,
+  `getDirectoryMembers`, `makeDirectory` and `copyDirectory`.
+
+**What this establishes.** Following links from the session reaches only
+the working directory. The root, and any custom root, can only be reached
+by composing `/compute/sessions/{id}/files/{encoded path}`. Below a root,
+every item carries the links a view needs. `src/compute/files.ts` already
+follows `getFiles` (Findings 61 and 68).
+
+**Not settled:** other compute contexts; Stable 2026.06.
+
+### Finding 13.21 — On `verde`, `HOME` is `/`, and the root shows only some folders (2026-10-01)
+
+**Documented:** `fileNavigationRoot` is `USER` (the user's login
+directory, the default), `SYSTEM` (the server's root) or `CUSTOM` (with
+`fileNavigationCustomRootPath`). An administrator can set both as compute
+context attributes. Upstream's REST adapter sends `~fs~` for both `USER`
+and `SYSTEM`.
+
+**Observed (`verde`, 2026-10-01).**
+
+- No compute context on `verde` sets `fileNavigationRoot`,
+  `fileNavigationCustomRootPath` or `allowDownload` (read-only, all 13
+  contexts).
+- In a session, `%sysget(HOME)` is `/`.
+- `~fs~`'s members (`count: 9`): `config`, `mnt`, `opt`, `rdutil`,
+  `sashelp`, `sasuser`, `security`, `tmp`, `usr`. Not `etc`, `bin` or
+  `root`.
+- `~fs~root`'s members → `404`, `errorCode 5436`, *The path requested is
+  not available or does not represent a directory.* A path that does not
+  exist → `404`, `errorCode 5437`, *The path requested "…" is not
+  available.* A refused path is not a `403`.
+
+**What this establishes.** On this deployment `USER` and `SYSTEM` are the
+same folder, so upstream's single `~fs~` root loses nothing here. A
+folder the server will not show is a `404`, as a missing one is.
+
+**Not settled:** why the root shows only those nine (SAS's lockdown path
+list is the likely reason, not checked); a deployment where users have a
+home directory, where `USER` and `SYSTEM` may differ; a context that sets
+the attributes.
+
+### Finding 13.22 — A listing's shape, paging, hidden files and path encoding (2026-10-01)
+
+**Documented:** upstream's generated client: `GET …/files/{path}/members`
+with `start`, `limit`, `showAll`; `FileProperties` has `name`, `path`,
+`isDirectory`, `readOnly`, `size`, `modifiedTimeStamp`.
+
+**Observed (`verde`, 2026-10-01).**
+
+- `getDirectoryMembers` returns `application/vnd.sas.collection+json`,
+  `version: 2`, `name: "Directory listing"`, `accept:
+  application/vnd.sas.compute.file.properties`. **`count` is populated.**
+- With `limit=2`, the envelope carries `self`, `collection`, `next` and
+  `last`; `next` is `…?limit=2&start=2`. **`next` drops `showAll`**: the
+  page was asked for with `showAll=true`, and its `next` carries no
+  `showAll`, so following it as-is lists page 2 without hidden files.
+- Each item has `name`, `path`, `isDirectory`, `readOnly`, `size`,
+  `modifiedTimeStamp` (ISO 8601) and `version: 1`. **`path` is the parent
+  directory**, not the item's own path.
+- A file's relations: `self`, `getFileProperties`, `getFile` (`GET
+  …/content`, `type text/plain`), `createFile` (**`PUT` …/content**, the
+  write), `renameFile`, `deleteFile`, `copyFile` (`href`
+  `{destinationFile}`, a template).
+- `showAll` defaults to `false`, which hides names starting with `.`;
+  `showAll=true` lists them.
+- A file named `x;y~z#q.txt` comes back in its `self` href as
+  `x~sc~y~~z%23q.txt`: `/` → `~fs~`, `;` → `~sc~`, `~` → `~~`, then
+  percent-encoding.
+
+**What this establishes.** The tree pages by following `next`, adding
+`showAll` back to each page, reads type and size from the listing alone,
+and hides dot-files unless asked. A custom root is encoded as above.
+
+**Not settled:** a directory of more than a few hundred entries; how the
+listing sorts; whether `count` is ever `null` here.
+
+### Finding 13.23 — A listing does not wait behind a running job (2026-10-01)
+
+**Documented:** nothing found. Finding 7.3: a data-access read blocks at
+the SAS kernel behind a running job.
+
+**Observed (`verde`, 2026-10-01).** A job running `rc=sleep(15,1)`; 1.5 s
+in, a directory listing → `200` in **0.3 s**, and a properties read →
+`200` in about 0.5 s. Both jobs then completed.
+
+**What this establishes.** The files API is served outside the SAS kernel.
+The view can read while a run is in progress, so reads need no busy guard,
+unlike the Library view.
+
+**Not settled:** a create, rename or delete during a run; 13p-ii probes
+them before building. A content write during a run is Finding 13.27.
+
+### Finding 13.24 — Create, write and read file content (2026-10-01)
+
+**Documented:** upstream: create is a `POST` to the parent's path with
+`application/vnd.sas.compute.file.properties+json` and `{name,
+isDirectory}`; content is `PUT …/content`, `application/octet-stream`,
+with `If-Match`.
+
+**Observed (`verde`, 2026-10-01).** In a throwaway `/tmp/probe13o_<ts>`
+(the root and `HOME` are read-only):
+
+- `POST` to a directory's `makeDirectory` (or `createFile`) link with
+  `{name, isDirectory}` → `201`, the new item's properties, a `Location`
+  and an `ETag`. A taken name → `409`, `errorCode 5451`, *The file or
+  directory "…" already exists.*
+- `PUT …/content` with no `If-Match` → `428`; with a stale one → `412`;
+  with the current `ETag` → `200`, the file's properties as the body, and
+  a new `ETag`.
+- `GET …/content` → the same 1,024 bytes (every byte value). Its
+  `Content-Type` follows `Accept`: `application/octet-stream` when asked,
+  otherwise `text/plain`. Asked with `Accept: text/plain`, or with no
+  `Accept`, the bytes were the same 1,024, unchanged. The `ETag` matches
+  the properties'.
+
+**What this establishes.** Open reads `…/content` with `Accept:
+application/octet-stream`; save reads the `ETag` from the properties, then
+`PUT`s with it, the pattern `src/compute/fileref.ts` uses.
+
+**Not settled:** a large file.
+
+### Finding 13.25 — Rename and move are one `PUT`, and a missing `If-Match` fails with `200` (2026-10-01)
+
+**Documented:** upstream: `PUT` on the item with `{name, path}`;
+`moveItem` sends a new `path`.
+
+**Observed (`verde`, 2026-10-01).**
+
+- `PUT` on a file's `renameFile` link, `{name: "renamed.txt", path:
+  <a different directory>}`, with the current `ETag` → `200`. The file was
+  renamed **and moved**: `path` is the destination directory. The `ETag`
+  did not change.
+- The same with **no `If-Match`** → **`200`**, with an error as the body:
+  `httpStatusCode: 0`, `errorCode 5033`, and an inner error with
+  `httpStatusCode: 428`, *An If-Match header containing the current entity
+  tag of this resource is required.* The file kept its old name.
+
+**What this establishes.** One call renames and moves. A client that
+checks only the status would report a rename that did not happen, so the
+reply's body is checked for an error.
+
+**Not settled:** a move into a folder that holds the name; a directory
+move.
+
+### Finding 13.26 — An empty `If-Match` skips the check, even for a non-empty folder (2026-10-01)
+
+**Documented:** nothing found. Upstream sends `If-Match: ""` on delete and
+rename.
+
+**Observed (`verde`, 2026-10-01).**
+
+- `If-Match: ""` → content `PUT` `200`; rename `200`; file `DELETE` `204`.
+- `If-Match: "*"` → `412`.
+- A file `DELETE` with no `If-Match` → `428`; with a stale one → `412`.
+- A directory holding a file and a sub-directory: `DELETE` with no
+  `If-Match` → `428`; with `""` → **`204`**, the directory and everything
+  in it gone.
+
+**What this establishes.** An empty `If-Match` turns the server's
+concurrency check off. A delete with it removes a whole folder at once,
+and nothing goes to a recycle bin. This extension sends the real `ETag`.
+
+**Not settled:** whether a directory's `ETag` changes when its contents do.
+
+### Finding 13.27 — A content write does not wait behind a running job (2026-10-01)
+
+**Documented:** nothing found.
+
+**Observed (`verde`, 2026-10-01).** Approved by Sean. A job running
+`rc=sleep(15,1)`; 1.5 s in, `PUT …/content` with the file's current `ETag`
+→ `200` in **0.24 s**, the job still `running` straight after. Reading the
+content back gave the new bytes. A properties read took 0.22 s.
+
+**What this establishes.** An editor save need not wait for a run, or be
+refused during one.
+
+**Not settled:** a create, rename or delete during a run.
+
+### Finding 13.28 — A composed path matches the server's href for spaces and non-ASCII names (2026-10-01)
+
+**Documented:** nothing found beyond `~fs~` for `/`.
+
+**Observed (`verde`, 2026-10-01).** A file created as `a b é.py` in
+`/tmp/probe13p_<ts>` came back with the `self` href
+`…~fs~tmp~fs~probe13p_<ts>~fs~a%20b%20%C3%A9.py`. Composing the same path
+with Finding 13.22's encoding (UTF-8 percent-encoding, `%20` for a space)
+gave the identical string, and a `GET` on it → `200` with that file's
+properties.
+
+**What this establishes.** `src/server/path.ts`'s encoding addresses names
+with spaces and non-ASCII characters correctly.
+
+**Not settled:** names with characters outside those tested (`;`, `~`,
+`#`, space, `é`).
+
+### Finding 13.29 — On a session that is gone, a files request is a plain `404` (2026-10-01)
+
+**Documented:** nothing found.
+
+**Observed (`verde`, 2026-10-01).** After the probe deleted its session,
+`GET …/files/~fs~tmp`, `GET …/files/~fs~tmp/members` and `GET …/state`
+each → `404`, `errorCode 5837`, *A session with the ID "…" could not be
+found.* A missing path on a live session is also `404`, with `errorCode`
+5436 or 5437 (Finding 13.21).
+
+**What this establishes.** The status alone cannot tell a missing path from
+a gone session. The view reads the session's `state` link on a `404`: a
+`404` there means the session is gone. It does not branch on `errorCode`
+(`src/wire/viyaError.ts`).
+
+**Not settled:** a session that ends between the two requests.

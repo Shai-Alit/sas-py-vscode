@@ -74,6 +74,7 @@ export default defineConfig({
           { text: "Connecting to Viya", link: "/connecting" },
           { text: "Running Python", link: "/running-python" },
           { text: "Browsing SAS Content", link: "/browsing-sas-content" },
+          { text: "Browsing the SAS server", link: "/browsing-sas-server" },
           { text: "Browsing SAS libraries", link: "/browsing-sas-libraries" },
           { text: "Browsing CAS", link: "/browsing-cas" },
           { text: "Python and SAS libraries", link: "/data-access" },

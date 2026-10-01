@@ -91,6 +91,35 @@ describe("scanSasProfiles", () => {
     ]);
   });
 
+  it("carries the SAS Server root settings across, and skips a profile whose are malformed", () => {
+    const { candidates, skipped } = scanSasProfiles(
+      {
+        profiles: {
+          Good: {
+            ...rest("https://a.example.com"),
+            fileNavigationRoot: "CUSTOM",
+            fileNavigationCustomRootPath: "/mnt/shared",
+          },
+          Bad: { ...rest("https://b.example.com"), fileNavigationRoot: "HOME" },
+        },
+      },
+      { makeId: counter() },
+    );
+
+    assert.equal(candidates.length, 1);
+    assert.equal(candidates.at(0)?.profile.fileNavigationRoot, "CUSTOM");
+    assert.equal(
+      candidates.at(0)?.profile.fileNavigationCustomRootPath,
+      "/mnt/shared",
+    );
+    assert.deepEqual(skipped, [
+      {
+        name: "Bad",
+        reason: "fileNavigationRoot must be USER, SYSTEM or CUSTOM",
+      },
+    ]);
+  });
+
   it("reports the presence of a secret without carrying its value anywhere", () => {
     const { candidates } = scanSasProfiles(
       { profiles: { A: rest("https://a.example.com") } },

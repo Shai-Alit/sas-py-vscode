@@ -49,7 +49,7 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0007](0007-connection-profile-storage.md) | Connection profiles: separate storage, a versioned schema, and no secret in settings | Accepted |
 | [0008](0008-auth-core-transport-and-security-deltas.md) | Auth core: a `fetch`-shaped transport port, and the security deltas from upstream `auth.ts` | Accepted — its "Viya 3.5 client-id path" section is superseded by [ADR-0022](0022-drop-viya-35-support.md) |
 | [0009](0009-coverage-scope.md) | Coverage measures what the unit tier can reach, and the exclusion is a checked rule | Accepted |
-| [0010](0010-compute-client-is-hand-written.md) | The Compute client is hand-written against the observed wire shape, not a vendored generated client | Accepted |
+| [0010](0010-compute-client-is-hand-written.md) | The Compute client is hand-written against the observed wire shape, not a vendored generated client | Accepted — amended 2026-10-01 by ADR-0047: the SAS Server view composes a session's files URL from a server path |
 | [0011](0011-choosing-where-python-runs.md) | Where Python runs is a visible per-workspace target, not a reinterpretation of the run button | Accepted — its "Default: Viya" paragraph is superseded by [ADR-0020](0020-run-target-defaults-to-local.md) |
 | [0012](0012-compute-session-lifetime-and-storage.md) | A compute session belongs to a workspace and a profile, and its id is a hint | Accepted — its "one session per (workspace, profile)" framing is narrowed by [ADR-0035](0035-notebook-gets-its-own-compute-session.md) to "one session per (workspace, profile, surface)"; everything else is unchanged |
 | [0013](0013-signing-in-opens-a-session.md) | Signing in opens a compute session, and only from the command | Accepted |
@@ -86,3 +86,4 @@ and [ADR-0020](0020-run-target-defaults-to-local.md) are the first example of th
 | [0044](0044-the-mcp-server-for-claude-code-is-removed.md) | The MCP server for Claude Code is removed before any release, and no MCP work replaces it; the agent skill stays | Accepted |
 | [0045](0045-content-copy-paste.md) | Copy shares Cut's clipboard; a file is copied on the server, a folder by recreating it, and a taken name becomes `{base}_Copy{n}{ext}` | Accepted |
 | [0046](0046-notebook-cells-display-their-result.md) | A notebook cell displays its last expression and its open figures, as a Jupyter cell does: a cell runner compiles the unmodified file, and a separate step saves open figures | Accepted |
+| [0047](0047-sas-server-view-composes-file-paths.md) | The SAS Server view composes a session's files URL from a server path, for its root and for an open file; it borrows the run session and sends the real `ETag` | Accepted |

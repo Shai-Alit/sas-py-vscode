@@ -194,7 +194,7 @@ where `PROC PYTHON` actually hurts.
   2026-10-01: a notebook cell displays its last expression and its open
   figures ([ADR-0046](../adr/0046-notebook-cells-display-their-result.md),
   Findings 13.13–13.15). See "13e decided" below.
-- [ ] **13f — F10, build (or closed by 13e).** Added 2026-09-24. Not started.
+- [ ] **13f — F10, build.** Added 2026-09-24. Not started.
   Builds ADR-0046: the cell runner, the figure flush, `displayResults` on
   `ExecuteOptions`, and the traceback frames it adds.
 - [ ] **13g — F8, DataFrame grid.** Added 2026-09-24. Not started.
@@ -1061,7 +1061,12 @@ does to the namespace and to tracebacks.
    leaves it open would otherwise show it twice.
 
 **For 13f.** ADR-0046's decision points 1–7 are the build. Its
-Consequences name what 13f still decides or documents: the trailing
+decision points and Consequences name what 13f still decides or documents:
+how the user's frame is mapped once the runner relabels it (point 7: teach
+the mapper the cell's fileref name, or compile with `filename="<string>"`),
+how the runner and the flush learn the run's id (point 6), passing the
+module's `__future__` flags to the trailing expression's `compile()`
+(point 3), the trailing
 semicolon, the display order for objects with both `_repr_html_` and
 `_repr_png_`, the fixed fileref and macro variable names, the double display
 of a figure saved and left open (`docs/notebooks.md`), and a manual pass

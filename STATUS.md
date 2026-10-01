@@ -198,7 +198,7 @@ displays its last expression and its open figures
 13.13–13.15). 13f builds it. **13o/13p, the SAS Server view**, were
 added 2026-09-30 (Sean's call): upstream has it, this project missed it.
 13o reviews upstream, probes and scopes; 13p builds. 13c, 13d, 13f–13i,
-13k and 13o are not started; 13p is in progress.
+13k, 13o and 13p are not started.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

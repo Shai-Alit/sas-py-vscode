@@ -81,7 +81,11 @@ unmodified file. Run File and Run Selection are unchanged.**
    - if the last top-level statement is a bare expression, splits it off;
    - `exec`s the rest in `__main__`'s globals, which are the globals an
      `infile=` step already runs in (Finding 13.15);
-   - `eval`s the split-off expression in the same globals. A value that is
+   - `eval`s the split-off expression in the same globals. It is compiled
+     separately from the rest, so it is compiled with the module's
+     `__future__` flags (`compile(..., flags=…, dont_inherit=True)`) to
+     behave as it would in the module. Finding 13.15's `__future__` case
+     did not exercise this; 13f tests it. A value that is
      not `None` is displayed through the IPython display protocol:
      `_repr_html_` is written to an `.html` file and `_repr_png_` to a
      `.png` file. Any other value is printed as its `repr()`, which reaches
@@ -97,19 +101,33 @@ unmodified file. Run File and Run Selection are unchanged.**
    the pattern ADR-0041 point 2 uses (Finding 13.14). A flush that fails
    adds one line to the run's output, the way a failing startup snippet
    does. Its traceback is never parsed as the user's: the log is split at
-   the save's `source` echo.
+   the save's `source` echo, which relies on source echo staying on while
+   ADR-0043 turns notes off, as ADR-0041 point 3's split already does.
 6. **Captured files are named so no two runs collide.** Each name includes
    the run's id and a counter. ADR-0019 diffs the directory by name and
    size, so a reused name with an unchanged size would be missed (Finding
-   13.13 overwrote one name with a different size). The working-directory
+   13.13 overwrote one name with a different size). The job below passes
+   only the cell's fileref, so 13f decides how the runner and the flush
+   learn the run's id: a second macro variable, or a value derived from
+   the cell's fileref. The working-directory
    diff, the whitelist, the size cap, fetch and delete are all unchanged,
    and so are `RichOutput`, the transport and `richOutput.ts`.
 7. **Tracebacks look as they do today.** The runner adds two frames below
    the two `<stdin>` frames ADR-0014 already drops, and a `SyntaxError`
    raised while the runner parses the cell adds a frame from the standard
    library's `ast.py` (Finding 13.15). `tracebackDiagnostics.ts` and
-   `parseTraceback` drop them too. The user's frame and its line number
-   stay correct against the cell, as finding 39 requires.
+   `parseTraceback` drop them too. The relabelling needs more than that.
+   `tracebackDiagnostics.ts` maps only frames labelled `<string>`
+   (`STRING_FRAME_FILE`), which today is the user's frame. Under the
+   runner, `<string>` is the runner's own frame, and the user's frame is
+   labelled with the cell's fileref name, such as `File "PYU4"` (Finding
+   13.15). Left as it is, the mapper would place a cell's diagnostic at the
+   runner's line. 13f picks one of two fixes so the user's frame and its
+   line number stay correct against the cell, as finding 39 requires:
+   - the mapper learns the cell's fileref name as the user's frame label;
+     or
+   - the runner compiles with `filename="<string>"`, which keeps today's
+     mapping but loses the source line and caret Finding 13.15 saw.
 
 A cell's job becomes:
 
@@ -195,6 +213,6 @@ HTML or PNG output, so the runner calls the display protocol itself.
   that session.
 - **The seam grows by one field.** It is an option, not a new method, and
   `test/helpers/fake-backend.ts` honours it like any other.
-- **Probed against one Viya 4 deployment (`verde`, Python 3.12.12).** A cell that never returns, a cancel during the flush,
-  and figures from libraries that keep their own figure registry were not
-  probed.
+- **Probed against one Viya 4 deployment (`verde`, Python 3.12.12).** A
+  cell that never returns, a cancel during the flush, and figures from
+  libraries that keep their own figure registry were not probed.

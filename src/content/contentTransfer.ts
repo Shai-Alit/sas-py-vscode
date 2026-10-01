@@ -22,8 +22,8 @@
  * Every file is attempted even when an earlier one fails, so one name clash
  * does not strand the rest; the summary says how many made it, and the log
  * has each failure's technical sentence. Cancel stops before the next file,
- * and the summary then says it was cancelled and how many made it, rather
- * than reading as if the job had finished.
+ * and the summary then says it was cancelled and, for more than one file,
+ * how many made it, rather than reading as if the job had finished.
  */
 
 import * as vscode from "vscode";
@@ -32,7 +32,12 @@ import { MAX_TRANSFER_BYTES } from "./adapter";
 import { type ContentCommandDeps, reportNoTarget } from "./contentCommands";
 import { localiseContentProblem } from "./messages";
 import { describeContentProblem, type ContentProblem } from "./problems";
-import { isSafeLocalName, planDownload, type SkipReason } from "./transfer";
+import {
+  isDownloadable,
+  isSafeLocalName,
+  planDownload,
+  type SkipReason,
+} from "./transfer";
 import { type ContentItem } from "./types";
 
 /** Registers the two commands. Every disposable goes on `context.subscriptions`. */
@@ -105,6 +110,8 @@ export async function upload(
           cancelled = true;
           return;
         }
+        // `Uri.path` is already decoded (only `toString()` percent-encodes),
+        // so this is the name as it is spelled on disk.
         const name = uri.path.slice(uri.path.lastIndexOf("/") + 1);
         progress.report({
           message: vscode.l10n.t(
@@ -160,28 +167,35 @@ export async function upload(
   deps.refresh(folder);
 
   if (cancelled) {
-    void vscode.window.showInformationMessage(
-      failures.length === 0
-        ? vscode.l10n.t(
-            'Upload to "{0}" cancelled. {1} of {2} files were uploaded.',
-            folder.name,
-            String(uploaded),
-            String(picked.length),
-          )
-        : vscode.l10n.t(
-            'Upload to "{0}" cancelled. {1} of {2} files were uploaded, and {3} could not be. See the Python on Viya log for details.',
-            folder.name,
-            String(uploaded),
-            String(picked.length),
-            String(failures.length),
-          ),
-    );
+    let message: string;
+    // `cancelled` is set only before a file starts or when its own upload was
+    // aborted, so with one file picked nothing was uploaded, and there is no
+    // count worth giving.
+    if (picked.length === 1) {
+      message = vscode.l10n.t('Upload to "{0}" cancelled.', folder.name);
+    } else if (failures.length === 0) {
+      message = vscode.l10n.t(
+        'Upload to "{0}" cancelled. {1} of {2} files were uploaded.',
+        folder.name,
+        String(uploaded),
+        String(picked.length),
+      );
+    } else {
+      message = vscode.l10n.t(
+        'Upload to "{0}" cancelled. {1} of {2} files were uploaded, and {3} could not be. See the Python on Viya log for details.',
+        folder.name,
+        String(uploaded),
+        String(picked.length),
+        String(failures.length),
+      );
+    }
+    void vscode.window.showInformationMessage(message);
     return;
   }
 
   const first = failures[0];
   if (first === undefined) {
-    if (uploaded === 0) return;
+    // No failure and no cancel: every picked file was uploaded.
     void vscode.window.showInformationMessage(
       uploaded === 1
         ? vscode.l10n.t('Uploaded 1 file to "{0}".', folder.name)
@@ -233,6 +247,15 @@ export async function download(
   const adapter = deps.adapter();
   if (adapter === undefined || item === undefined) {
     reportNoTarget(adapter);
+    return;
+  }
+  if (!isDownloadable(item)) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t(
+        '"{0}" can\'t be downloaded. Only files and folders can be.',
+        item.name,
+      ),
+    );
     return;
   }
   if (!isSafeLocalName(item.name)) {
@@ -327,20 +350,12 @@ export async function download(
         return;
       }
 
-      for (const skip of plan.value.skipped) {
-        deps.log.warn(
-          vscode.l10n.t(
-            'SAS Content: "{0}" was not downloaded: {1}',
-            skip.path.join("/"),
-            describeSkip(skip.reason),
-          ),
-        );
-      }
-      skipped = plan.value.skipped.length;
-      total = plan.value.files.length;
-
       try {
         for (const folder of plan.value.folders) {
+          if (aborted(signal)) {
+            cancelled = true;
+            return;
+          }
           await vscode.workspace.fs.createDirectory(
             vscode.Uri.joinPath(destination, ...folder),
           );
@@ -353,6 +368,20 @@ export async function download(
         );
         return;
       }
+
+      // Counted only once the folders exist, so a download that stops before
+      // then reports no file count and nothing left out.
+      for (const skip of plan.value.skipped) {
+        deps.log.warn(
+          vscode.l10n.t(
+            'SAS Content: "{0}" was not downloaded: {1}',
+            skip.path.join("/"),
+            describeSkip(skip.reason),
+          ),
+        );
+      }
+      skipped = plan.value.skipped.length;
+      total = plan.value.files.length;
 
       for (const [index, file] of plan.value.files.entries()) {
         if (aborted(signal)) {
@@ -402,7 +431,10 @@ export async function download(
 
   if (cancelled) {
     let message: string;
-    if (total === 0) {
+    // `cancelled` is set only before a file starts or when its own fetch was
+    // aborted, so with one file or none nothing was downloaded, and there is
+    // no count worth giving.
+    if (total <= 1) {
       message = vscode.l10n.t('Download of "{0}" cancelled.', item.name);
     } else if (failures.length === 0) {
       message = vscode.l10n.t(
@@ -420,7 +452,7 @@ export async function download(
         String(failures.length),
       );
     }
-    void vscode.window.showInformationMessage(message);
+    void vscode.window.showInformationMessage(withLeftOut(message, skipped));
     return;
   }
 
@@ -450,7 +482,7 @@ export async function download(
         item.name,
       );
     }
-    void vscode.window.showErrorMessage(message);
+    void vscode.window.showErrorMessage(withLeftOut(message, skipped));
     return;
   }
   // Nothing written and nothing skipped is a folder tree with no files in it:
@@ -468,21 +500,11 @@ export async function download(
             String(written),
             item.name,
           );
-  const message =
-    skipped === 0
-      ? summary
-      : skipped === 1
-        ? vscode.l10n.t(
-            "{0} 1 item was left out. See the Python on Viya log for which, and why.",
-            summary,
-          )
-        : vscode.l10n.t(
-            "{0} {1} items were left out. See the Python on Viya log for which, and why.",
-            summary,
-            String(skipped),
-          );
   const reveal = vscode.l10n.t("Show in Folder");
-  const choice = await vscode.window.showInformationMessage(message, reveal);
+  const choice = await vscode.window.showInformationMessage(
+    withLeftOut(summary, skipped),
+    reveal,
+  );
   if (choice === reveal) {
     await vscode.commands.executeCommand("revealFileInOS", target);
   }
@@ -582,6 +604,21 @@ function transferProblemMessage(problem: ContentProblem): string {
     return vscode.l10n.t("SAS Viya refused it: {0}", problem.error.message);
   }
   return localiseContentProblem(problem);
+}
+
+/** `message`, then how many items a download left out, when any were. */
+function withLeftOut(message: string, skipped: number): string {
+  if (skipped === 0) return message;
+  return skipped === 1
+    ? vscode.l10n.t(
+        "{0} 1 item was left out. See the Python on Viya log for which, and why.",
+        message,
+      )
+    : vscode.l10n.t(
+        "{0} {1} items were left out. See the Python on Viya log for which, and why.",
+        message,
+        String(skipped),
+      );
 }
 
 function describeSkip(reason: SkipReason): string {

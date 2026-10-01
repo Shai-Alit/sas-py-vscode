@@ -4,7 +4,11 @@
 import assert from "node:assert/strict";
 
 import { ContentAdapter } from "../../src/content/adapter";
-import { isSafeLocalName, planDownload } from "../../src/content/transfer";
+import {
+  isDownloadable,
+  isSafeLocalName,
+  planDownload,
+} from "../../src/content/transfer";
 import { type ContentItem } from "../../src/content/types";
 import {
   contentFail,
@@ -106,11 +110,42 @@ describe("content/transfer", () => {
         "nul.py",
         "COM1",
         "lpt9.log",
+        "COM¹",
+        "lpt³.txt",
       ]) {
         assert.equal(isSafeLocalName(name), false, name);
       }
       assert.equal(isSafeLocalName("console.py"), true);
       assert.equal(isSafeLocalName("COM10"), true);
+      assert.equal(isSafeLocalName("COM⁴"), true);
+    });
+  });
+
+  describe("isDownloadable", () => {
+    const base: ContentItem = {
+      id: "m1",
+      name: "x",
+      type: "child",
+      contentType: "file",
+      uri: "/files/files/f1",
+      links: [],
+    };
+
+    it("accepts a folder and a file with a resource address", () => {
+      assert.equal(isDownloadable(topFolder), true);
+      assert.equal(isDownloadable(base), true);
+    });
+
+    it("refuses a data flow, and a file with no resource address", () => {
+      assert.equal(
+        isDownloadable({
+          ...base,
+          contentType: "dataFlow",
+          uri: "/dataFlows/dataFlows/x",
+        }),
+        false,
+      );
+      assert.equal(isDownloadable({ ...base, uri: undefined }), false);
     });
   });
 

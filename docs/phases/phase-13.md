@@ -811,6 +811,68 @@ the server has linked the file makes the client delete the file resource,
 which may leave a dangling member entry. New File has the same window;
 uploads make it likelier.
 
+**AI review on PR #235, second round, 2026-09-30.** Three findings, none
+blocking. All are fixed in one commit, with the gaps a read ahead of the
+next round turned up.
+
+- **Download... was offered in the Recycle Bin.** The menu rule matched
+  `.recycled` items, which nothing documented and no probe covered.
+  Upstream does not offer it there: its `SAS.content.downloadResource`
+  rule needs the `update` or `createChild` action
+  ([`package.json`](https://github.com/sassoftware/vscode-sas-extension/blob/009bc9a380de51649100bd67e8c15ea6beb7a8e8/package.json#L1023-L1027)),
+  and `ContextMenuProvider` gives a recycled item neither
+  ([`utils.ts`](https://github.com/sassoftware/vscode-sas-extension/blob/009bc9a380de51649100bd67e8c15ea6beb7a8e8/client/src/components/ContentNavigator/utils.ts#L213-L216)).
+  The rule now leaves recycled items out, and the user guide says to
+  restore an item first.
+- **The folder-cycle guard relied on an href without saying so.** A comment
+  in `planDownload` now says why every folder has one: a listed member
+  through `uri`, and a delegate or root folder through its `self` link.
+- **A cancel during folder creation still made the folders.** The loop now
+  checks for a cancel before each folder and stops before the next one. A
+  folder already being created is finished, since `createDirectory` cannot
+  be aborted. A cancel that lands before the first folder creates nothing,
+  and the message says only that the download was cancelled.
+
+Also fixed:
+
+- **Download... on a data flow** planned nothing but its own skip, then said
+  it downloaded 0 files and offered a **Show in Folder** with nothing to
+  show. `isDownloadable` in `transfer.ts` now refuses anything but a folder
+  or a file with a resource address, before any dialog.
+- **A local folder that could not be created** gave "Downloaded 0 of N
+  files… Could not download…", because the file count was set before the
+  folders existed. It is now set only after they do.
+- **A download with a failed file** dropped the "items were left out"
+  count. The error and cancel summaries now add it too.
+- **Cancelling a single file** said "0 of 1 files were uploaded" (or
+  downloaded). With one file it now says only that it was cancelled.
+- **Unreachable code.** The upload's silent return when nothing was
+  uploaded, failed or cancelled could not be reached, and is gone.
+- **`COM¹`–`COM³` and `LPT¹`–`LPT³`** are Windows device names too, per
+  Microsoft's "Naming Files, Paths, and Namespaces". `isSafeLocalName` now
+  refuses them.
+- **Reports and jobs** in a folder are filtered out of the listing, so a
+  download never sees them. The `transfer.ts` header and the user guide now
+  say so.
+
+Tests: unit, `isDownloadable` and the superscript device names;
+integration, the data-flow refusal, the left-out count beside a failure
+and on a cancel, a cancel before folder creation, and a single-file cancel
+each way. The test of a local folder that cannot be created now plans two
+files and a data flow, so it fails against a count taken too early. Manual
+item 13.21 covers the Recycle Bin menu and the data-flow refusal.
+
+**Adversarial review of these fixes, 2026-09-30,** before the push.
+Nothing blocking. Folded in: the folder-creation test, which with one file
+passed against the old code too; the left-out count on a cancel; the
+cancel wording; and the upstream citation.
+
+The "Not changed" list and the follow-up above stand. **Follow-up, not
+this slice:** **Download...** still shows on a data flow and is then
+refused, because leaves that are not files share the `sasContent:file`
+context value. Hiding it needs a context value of their own, which every
+content menu rule would then have to account for.
+
 **Not built.** Folder upload. Multi-select download. Reading a deployment's
 own `maxFileSizeMB`, since whether an ordinary account may read it was not
 probed. A deployment set below 100 MB resets the connection on a smaller
@@ -822,11 +884,18 @@ green (2,036 unit; coverage 96.28/96.11/96.00/96.28; `transfer.ts` 100%),
 test:integration` green (558 passing). After the review fixes:
 the same steps green again (2,036 unit; coverage unchanged at
 96.28/96.11/96.00/96.28; `contentTransfer.ts` is outside coverage scope),
-and `npm run test:integration` green (567 passing).
+and `npm run test:integration` green (567 passing). After the second
+round, from a clean `out/`: prettier and ESLint on the touched files,
+`npm run typecheck` and `npm run coverage` green (2,038 unit; coverage
+96.28/96.12/96.00/96.28; `transfer.ts` 100%), and the integration tests
+green (575 passing). After the adversarial review's fixes, which touch no
+unit-tier code: the same file checks, `npm run typecheck` and the
+integration tests green again (575 passing).
 
 **Manual items** 13.14–13.20 in `docs/dev/manual-tests/phase-13.md`,
 all passed 2026-09-30 (Sean, against a `.vsix` built after the review
-fixes).
+fixes). 13.21, added in the second review round, passed 2026-10-01
+(Sean, against a `.vsix` built after that round's fixes).
 
 ---
 

@@ -77,7 +77,8 @@ Right-click an item in the tree for its actions:
   Viya's message says so. A file over 100 MB is refused before anything is
   sent. SAS Viya also refuses some file types outright (installers and
   Windows programs, by default), and its reason is shown.
-- **Download...** — on any file or folder, and on **My Folder**. Pick a folder
+- **Download...** — on any file or folder outside the **Recycle Bin**, and on
+  **My Folder**; restore a recycled item first to download it. Pick a folder
   on your computer; the item is saved into it under its own name, and a
   folder comes with everything below it. If something of that name is
   already there, you are asked before it is replaced; replacing a folder
@@ -85,11 +86,14 @@ Right-click an item in the tree for its actions:
   alone. Items that are not files, such as data flows, are left out, as is
   anything whose name cannot be a file name on Windows (for example one
   containing `\` or `:`); the message says how many, and the **Python on
-  Viya** log says which. A single file over 100 MB is not downloaded.
+  Viya** log says which. Only what this view shows is downloaded, so a
+  report or a job in the folder is not part of it. A single file over
+  100 MB is not downloaded.
 
 Both show their progress in a notification you can cancel. Cancelling stops
 before the next file; files already copied stay where they are, and a message
-says the upload or download was cancelled and how many files it copied first.
+says the upload or download was cancelled and, when it was copying more than
+one file, how many it copied first.
 
 ## Favourites
 

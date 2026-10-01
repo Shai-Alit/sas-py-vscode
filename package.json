@@ -487,7 +487,7 @@
         },
         {
           "command": "pythonOnViya.downloadContentItem",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:(folder|file)(\\.fav|\\.recycled)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
           "group": "3_transfer@2"
         },
         {

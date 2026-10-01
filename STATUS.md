@@ -183,7 +183,9 @@ server. 13j, 13l and 13m are dropped; the agent skill stays. See
 as [PR #234](https://github.com/Shai-Alit/sas-py-vscode/pull/234), squash
 `933ded6`. **13a** (upload to and download from SAS Content) is built on
 `feat/13a-content-upload-download`, reviewed and manual-tested (13.14–13.20
-passed 2026-09-30), awaiting its PR;
+passed 2026-09-30, 13.21 on 2026-10-01), open as
+[PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235), its second
+round of AI review findings fixed;
 see `phase-13.md`'s "13a built" entry and Findings 13.6–13.8. **13o/13p,
 the SAS Server view**, were added 2026-09-30 (Sean's call): upstream has
 it, this project missed it. 13o reviews upstream, probes and scopes; 13p

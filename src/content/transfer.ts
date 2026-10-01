@@ -16,6 +16,8 @@
  *
  * - **Not a file.** A folder listing also carries `dataFlow` leaves
  *   (`LISTED_MEMBER_TYPES`), which have no bytes at `/files/files/{id}/content`.
+ *   Members the listing filters out altogether (reports, jobs) never reach
+ *   the plan, so they are neither downloaded nor counted.
  * - **A name that cannot be a local file name.** SAS Content refuses only `/`
  *   in a name, so a member can be called `a\b`, `..`, `CON`, or end in a dot.
  *   Written as-is, a separator or `..` would land outside the chosen folder,
@@ -69,8 +71,9 @@ export interface DownloadPlan {
   readonly skipped: readonly SkippedItem[];
 }
 
-/** Windows' reserved device names, with or without an extension. */
-const RESERVED_NAME = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/i;
+/** Windows' reserved device names, with or without an extension. `COM` and
+ * `LPT` take a superscript `¹`, `²` or `³` as well as a digit. */
+const RESERVED_NAME = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(\..*)?$/i;
 
 /** Characters no Windows file name may contain, `/` and `\` among them. */
 const FORBIDDEN_CHARACTERS = /[<>:"/\\|?*]/;
@@ -90,6 +93,18 @@ export function isSafeLocalName(name: string): boolean {
   }
   if (name.endsWith(".") || name.endsWith(" ")) return false;
   return !RESERVED_NAME.test(name);
+}
+
+/**
+ * Whether `item` can be downloaded at all: a folder, or a file with a resource
+ * address. Anything else, such as a data flow chosen on its own, would plan
+ * nothing but its own skip, so the download command refuses it up front.
+ */
+export function isDownloadable(item: ContentItem): boolean {
+  if (isContainer(item)) return true;
+  return (
+    typeNameOf(item) === FILE_CONTENT_TYPE && resourceHrefOf(item) !== undefined
+  );
 }
 
 /**
@@ -118,6 +133,9 @@ export async function planDownload(
   ): Promise<ContentFailure | undefined> => {
     if (isContainer(node)) {
       const href = resourceHrefOf(node);
+      // The guard relies on every folder resolving to an href: a listed
+      // member carries `uri`, and a delegate or root folder its `self` link
+      // (see `resourceHrefOf`). A folder with neither is listed unkeyed.
       if (href !== undefined) {
         if (visited.has(href)) {
           skipped.push({ path, reason: "already-listed" });

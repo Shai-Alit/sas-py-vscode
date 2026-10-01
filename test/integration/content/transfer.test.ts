@@ -417,6 +417,23 @@ describe("SAS Content upload and download (13a)", () => {
       assert.deepEqual(holder.refreshed, [folder]);
     });
 
+    it("says only that a single-file upload was cancelled, with no count", async () => {
+      fs.writeFileSync(path.join(dir, "a.py"), "a");
+      const holder = harness({
+        createFile: () => {
+          holder.cancel();
+          return Promise.resolve(abortedResult<ContentItem>());
+        },
+      });
+      holder.fakeProgress = true;
+      holder.pick = [vscode.Uri.file(path.join(dir, "a.py"))];
+
+      await withStubs(holder, () => upload(holder.deps, folder));
+
+      assert.deepEqual(holder.errorToasts, []);
+      assert.deepEqual(holder.info, ['Upload to "Destination" cancelled.']);
+    });
+
     it("does nothing when the dialog is dismissed", async () => {
       const holder = harness({
         createFile: () => {
@@ -640,6 +657,24 @@ describe("SAS Content upload and download (13a)", () => {
       );
     });
 
+    it("refuses a data flow, which is neither a file nor a folder, before any dialog", async () => {
+      const holder = harness({});
+
+      await withStubs(holder, () =>
+        download(holder.deps, {
+          ...file,
+          name: "etl.flw",
+          contentType: "dataFlow",
+          uri: "/dataFlows/dataFlows/x",
+        }),
+      );
+
+      assert.equal(holder.dialogs, 0);
+      assert.deepEqual(holder.errorToasts, [
+        '"etl.flw" can\'t be downloaded. Only files and folders can be.',
+      ]);
+    });
+
     it("words a too-large file as a download limit, not an editor one", async () => {
       const holder = harness({
         downloadFileContent: () =>
@@ -702,6 +737,47 @@ describe("SAS Content upload and download (13a)", () => {
       );
     });
 
+    it("counts a left-out item in the summary when a file also fails", async () => {
+      const holder = harness({
+        getChildItems: () =>
+          Promise.resolve(
+            ok([
+              {
+                ...file,
+                name: "etl.flw",
+                contentType: "dataFlow",
+                uri: "/dataFlows/dataFlows/x",
+              },
+              { ...file, name: "a.py", uri: "/files/files/fa" },
+              { ...file, name: "b.py", uri: "/files/files/fb" },
+            ]),
+          ),
+        downloadFileContent: (href) =>
+          Promise.resolve(
+            href.endsWith("fa")
+              ? {
+                  ok: false,
+                  reason: "gone",
+                  problem: {
+                    code: "content-rejected",
+                    error: { status: 404 },
+                  },
+                }
+              : ok(bytesOf("b")),
+          ),
+      });
+      holder.pick = [vscode.Uri.file(dir)];
+
+      await withStubs(holder, () => download(holder.deps, folder));
+
+      assert.equal(holder.errorToasts.length, 1);
+      assert.match(
+        holder.errorToasts[0] ?? "",
+        /^Downloaded 1 of 2 files from "Destination"\. .* 1 item was left out\. See the Python on Viya log for which, and why\.$/,
+      );
+      assert.equal(holder.warns.length, 1);
+    });
+
     it("sends the rest to the log when more than one file in a folder fails", async () => {
       const holder = harness({
         getChildItems: () =>
@@ -738,12 +814,26 @@ describe("SAS Content upload and download (13a)", () => {
       assert.equal(holder.errors.length, 2);
     });
 
-    it("reports a local folder that cannot be created, before fetching anything", async () => {
+    it("reports a local folder that cannot be created, before fetching or counting anything", async () => {
       // A file where the folder has to go: Replace is confirmed, and creating
-      // the folder then fails.
+      // the folder then fails. Two files and a data flow in the plan, so a
+      // count taken before the folders exist would show as "0 of 2" and a
+      // left-out item.
       fs.writeFileSync(path.join(dir, "Destination"), "in the way");
       const holder = harness({
-        getChildItems: () => Promise.resolve(ok([file])),
+        getChildItems: () =>
+          Promise.resolve(
+            ok([
+              {
+                ...file,
+                name: "etl.flw",
+                contentType: "dataFlow",
+                uri: "/dataFlows/dataFlows/x",
+              },
+              { ...file, name: "a.py", uri: "/files/files/fa" },
+              { ...file, name: "b.py", uri: "/files/files/fb" },
+            ]),
+          ),
         downloadFileContent: () => {
           throw new Error("downloadFileContent should not be called");
         },
@@ -757,6 +847,7 @@ describe("SAS Content upload and download (13a)", () => {
         'Could not download "Destination". A folder could not be created on this computer.',
       ]);
       assert.equal(holder.errors.length, 1);
+      assert.deepEqual(holder.warns, []);
     });
 
     it("reports a file that cannot be written to local disk", async () => {
@@ -776,18 +867,24 @@ describe("SAS Content upload and download (13a)", () => {
       assert.deepEqual(holder.info, []);
     });
 
-    it("stops at a cancel, fetches nothing after it, and says it was cancelled", async () => {
+    it("stops at a cancel, fetches nothing after it, and says it was cancelled and what was left out", async () => {
       const fetched: string[] = [];
       const holder = harness({
         getChildItems: () =>
           Promise.resolve(
-            ok(
-              ["a", "b", "c"].map((name) => ({
+            ok([
+              {
+                ...file,
+                name: "etl.flw",
+                contentType: "dataFlow",
+                uri: "/dataFlows/dataFlows/x",
+              },
+              ...["a", "b", "c"].map((name) => ({
                 ...file,
                 name: `${name}.py`,
                 uri: `/files/files/f${name}`,
               })),
-            ),
+            ]),
           ),
         downloadFileContent: (href, signal) => {
           fetched.push(href);
@@ -813,8 +910,9 @@ describe("SAS Content upload and download (13a)", () => {
       assert.deepEqual(holder.errorToasts, []);
       assert.deepEqual(holder.errors, []);
       assert.deepEqual(holder.info, [
-        'Download of "Destination" cancelled. 1 of 3 files were downloaded.',
+        'Download of "Destination" cancelled. 1 of 3 files were downloaded. 1 item was left out. See the Python on Viya log for which, and why.',
       ]);
+      assert.equal(holder.warns.length, 1);
     });
 
     it("says a download cancelled while listing its folder was cancelled", async () => {
@@ -834,6 +932,50 @@ describe("SAS Content upload and download (13a)", () => {
 
       assert.deepEqual(holder.errorToasts, []);
       assert.deepEqual(holder.info, ['Download of "Destination" cancelled.']);
+    });
+
+    it("creates no folder when cancelled after the listing, and says it was cancelled", async () => {
+      const holder = harness({
+        getChildItems: () => {
+          // The listing itself completes; the cancel lands right after it.
+          holder.cancel();
+          return Promise.resolve(
+            ok([
+              { ...file, name: "a.py", uri: "/files/files/fa" },
+              { ...file, name: "b.py", uri: "/files/files/fb" },
+            ]),
+          );
+        },
+        downloadFileContent: () => {
+          throw new Error("downloadFileContent should not be called");
+        },
+      });
+      holder.fakeProgress = true;
+      holder.pick = [vscode.Uri.file(dir)];
+
+      await withStubs(holder, () => download(holder.deps, folder));
+
+      assert.equal(fs.existsSync(path.join(dir, "Destination")), false);
+      assert.deepEqual(holder.errorToasts, []);
+      assert.deepEqual(holder.warns, []);
+      assert.deepEqual(holder.info, ['Download of "Destination" cancelled.']);
+    });
+
+    it("says only that a single-file download was cancelled, with no count", async () => {
+      const holder = harness({
+        downloadFileContent: () => {
+          holder.cancel();
+          return Promise.resolve(abortedResult<FileContent>());
+        },
+      });
+      holder.fakeProgress = true;
+      holder.pick = [vscode.Uri.file(dir)];
+
+      await withStubs(holder, () => download(holder.deps, file));
+
+      assert.equal(fs.existsSync(path.join(dir, "model.py")), false);
+      assert.deepEqual(holder.errorToasts, []);
+      assert.deepEqual(holder.info, ['Download of "model.py" cancelled.']);
     });
 
     it("reports a folder listing failure as one failed download", async () => {

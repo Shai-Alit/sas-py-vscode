@@ -57,6 +57,12 @@ say `upload-test`), and a local scratch folder with a `.py`, a `.csv`, a
   `upload-test` to an empty local folder and cancel it partway the same way.
   **Expect:** `Download of "upload-test" cancelled. <n> of <total> files
   were downloaded.`, no **Show in Folder**, and `<n>` files on disk.
+- [x] **13.21** **Not in the Recycle Bin, and not on a data flow.** Delete a
+  file from `upload-test` (it goes to the **Recycle Bin**), then right-click
+  it in the Recycle Bin. **Expect:** no **Download...** in the menu.
+  **Restore** it. If a data flow is available in your SAS Content,
+  right-click it → **Download...**. **Expect:** `"<name>" can't be
+  downloaded. Only files and folders can be.`, with no folder picker.
 
 ## 13n — output after a `SAS.submit()` graph
 

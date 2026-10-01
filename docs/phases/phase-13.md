@@ -1025,7 +1025,10 @@ and on a top-level folder, which Cut refuses too.
 
 **Merged** 2026-10-01 as
 [PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash
-`c5c2512`, with every check passing.
+`c5c2512`, with every check passing. Codex and the Claude reviewer found
+nothing to fix. The Claude reviewer's one flag, two Pastes of one copy into
+one folder at once, is the race `copyItem`'s single retry covers (ADR-0045
+decision 4, Finding 13.11), and manual item 13.29 passed on it.
 
 ---
 

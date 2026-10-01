@@ -27,6 +27,7 @@
     "src/content/contentDragAndDrop.ts",
     "src/content/contentExplorer.ts",
     "src/content/contentFileSystem.ts",
+    "src/content/contentTransfer.ts",
     "src/content/contentTree.ts",
     "src/content/messages.ts",
     "src/data/csvExportCommand.ts",

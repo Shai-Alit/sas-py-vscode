@@ -11,6 +11,59 @@ See [`setup.md`](setup.md) for pre-flight/activation and the tagging legend.
 Add numbered items here (`13.1`, `13.2`, …) as slices land, the same way
 every other phase file did.
 
+## 13a — upload to and download from SAS Content
+
+See `docs/phases/phase-13.md`'s "13a built" Runbook entry. Build a `.vsix`
+from this branch, install it, and sign in to a Viya profile. Make a scratch
+folder under **My Folder** in the SAS Content view first (**New Folder**,
+say `upload-test`), and a local scratch folder with a `.py`, a `.csv`, a
+`.png` and a file with no extension in it. Delete both afterwards.
+
+- [x] **13.14** **Upload several files.** Right-click `upload-test` →
+  **Upload Files...**, pick all four local files. **Expect:** a cancellable
+  notification counting through them, then `Uploaded 4 files to
+  "upload-test".`, and all four under the folder. Open the `.py` from the
+  tree: its text matches the local file.
+- [x] **13.15** **A name already taken.** Upload the `.py` into `upload-test`
+  again, together with one new file. **Expect:** the new file is uploaded,
+  and an error `Uploaded 1 of 2 files to "upload-test". Could not upload
+  "<name>.py".` followed by SAS Viya's "already exists" sentence. The
+  **Python on Viya** log has the technical line.
+- [x] **13.16** **A blocked type.** Copy any small file locally and rename
+  the copy to `test.exe`. Upload it. **Expect:** `Could not upload
+  "test.exe". SAS Viya refused it:` followed by the sentence saying the
+  type is blocked. Nothing new appears in the folder.
+- [x] **13.17** **Too large.** Make a local file over 100 MB (in Git Bash:
+  `head -c 110000000 /dev/urandom > big.bin`) and upload it. **Expect:**
+  `Could not upload "big.bin". It is larger than the 100 MB SAS Viya accepts
+  for one file.` quickly, with nothing sent. Delete `big.bin`.
+- [x] **13.18** **Download a file.** Right-click the uploaded `.png` →
+  **Download...**, pick an empty local folder. **Expect:** `Downloaded 1 file
+  from "<name>.png".` with **Show in Folder**, which opens the folder with
+  the file selected. The file opens as the same image.
+- [x] **13.19** **Download a folder, and replace.** Add a sub-folder with one
+  file inside `upload-test`, then download `upload-test` into the same local
+  folder. **Expect:** `upload-test` locally with every file and the
+  sub-folder. Download it again to the same place. **Expect:** a modal
+  saying it already exists; **Cancel** leaves it untouched, **Replace**
+  overwrites it. If a data flow is available in your SAS Content, download
+  its folder too. **Expect:** the summary says 1 item was left out, and the
+  log names it.
+- [x] **13.20** **Cancel.** Upload 10 or more files and click **Cancel** on
+  the notification partway. **Expect:** no error notification, and
+  `Upload to "upload-test" cancelled. <n> of <total> files were uploaded.`,
+  where `<n>` is the number of files now in the folder from this upload —
+  the ones before the cancel, and none after it. Then download
+  `upload-test` to an empty local folder and cancel it partway the same way.
+  **Expect:** `Download of "upload-test" cancelled. <n> of <total> files
+  were downloaded.`, no **Show in Folder**, and `<n>` files on disk.
+- [x] **13.21** **Not in the Recycle Bin, and not on a data flow.** Delete a
+  file from `upload-test` (it goes to the **Recycle Bin**), then right-click
+  it in the Recycle Bin. **Expect:** no **Download...** in the menu.
+  **Restore** it. If a data flow is available in your SAS Content,
+  right-click it → **Download...**. **Expect:** `"<name>" can't be
+  downloaded. Only files and folders can be.`, with no folder picker.
+
 ## 13n — output after a `SAS.submit()` graph
 
 See `docs/phases/phase-13.md`'s "13n built" Runbook entry. Build a `.vsix`

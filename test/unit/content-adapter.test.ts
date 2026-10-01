@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   ContentAdapter,
   MAX_FILE_CONTENT_BYTES,
+  MAX_TRANSFER_BYTES,
 } from "../../src/content/adapter";
 import { type ContentRequest } from "../../src/content/client";
 import {
@@ -738,6 +739,45 @@ describe("content/adapter", () => {
       });
     });
 
+    describe("downloadFileContent (13a)", () => {
+      it("reads {href}/content under the transfer cap and timeout, not the editor's", async () => {
+        let seen: ContentRequest | undefined;
+        const { adapter, calls } = adapterWith([
+          {
+            when: isGet,
+            reply: (request) => {
+              seen = request;
+              return contentBytes("a,b\n1,2\n", { contentType: "text/csv" });
+            },
+          },
+        ]);
+        const result = await adapter.downloadFileContent(FILE_RES);
+        assert.ok(result.ok);
+        assert.equal(
+          new TextDecoder().decode(result.value.bytes),
+          "a,b\n1,2\n",
+        );
+        assert.equal(seen?.maxBodyBytes, MAX_TRANSFER_BYTES);
+        assert.equal(seen.timeoutMs, 300_000);
+        assert.deepEqual(calls, [{ href: CONTENT, method: "GET" }]);
+      });
+
+      it("passes a too-large failure straight through", async () => {
+        const { adapter } = adapterWith([
+          {
+            when: isGet,
+            reply: contentFail({
+              code: "content-too-large",
+              limitBytes: MAX_TRANSFER_BYTES,
+            }),
+          },
+        ]);
+        const result = await adapter.downloadFileContent(FILE_RES);
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-too-large");
+      });
+    });
+
     describe("writeFileContent", () => {
       it("PUTs the bytes with the caller's ETag as If-Match, and returns the server's fresh ETag", async () => {
         let put: ContentRequest | undefined;
@@ -1000,6 +1040,8 @@ describe("content/adapter", () => {
         assert.match(filePost.link.href, /typeDefName=file_py/);
         assert.equal(filePost.contentDisposition, "filename*=UTF-8''model.py");
         assert.equal(filePost.contentType, "application/x-python");
+        assert.equal(filePost.rawBody?.byteLength, 0);
+        assert.equal(filePost.timeoutMs, undefined);
         assert.deepEqual(memberBody, {
           uri: FILE_SELF,
           type: "CHILD",
@@ -1062,6 +1104,101 @@ describe("content/adapter", () => {
         assert.equal(
           calls.filter((c) => c.href.startsWith("/types/types")).length,
           1,
+        );
+      });
+
+      it("uploads the bytes it is given in the create POST, with the bulk timeout (13a)", async () => {
+        let filePost: ContentRequest | undefined;
+        const { adapter } = adapterWith(
+          routesFor([
+            {
+              when: (href, method) =>
+                href.startsWith("/files/files?") && method === "POST",
+              reply: (request) => {
+                filePost = request;
+                return contentOk(fileRep(), { status: 201 });
+              },
+            },
+          ]),
+        );
+        const bytes = Uint8Array.from({ length: 256 }, (_, i) => i);
+        const result = await adapter.createFile(
+          parentFolder(),
+          "model.py",
+          undefined,
+          bytes,
+        );
+        assert.ok(result.ok);
+        assert.equal(filePost?.rawBody, bytes);
+        assert.equal(filePost.contentType, "application/x-python");
+        assert.equal(filePost.timeoutMs, 300_000);
+      });
+
+      it("sends application/octet-stream for an upload whose extension has no type", async () => {
+        let filePost: ContentRequest | undefined;
+        const { adapter } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          { when: "/types/types", reply: contentOk({ count: 0, items: [] }) },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: (request) => {
+              filePost = request;
+              return contentOk(fileRep(), { status: 201 });
+            },
+          },
+          {
+            when: `${PARENT}/members`,
+            reply: contentFixture("member-created.json"),
+          },
+        ]);
+        const result = await adapter.createFile(
+          parentFolder(),
+          "notes.md",
+          undefined,
+          new TextEncoder().encode("# hi\n"),
+        );
+        assert.ok(result.ok);
+        assert.equal(filePost?.contentType, "application/octet-stream");
+      });
+
+      it("returns a blocked-type refusal from the create POST without linking anything", async () => {
+        const { adapter, calls } = adapterWith([
+          { when: VALIDATE_NEW, reply: contentOk({ valid: true }) },
+          {
+            when: "/types/types",
+            reply: contentOk({
+              count: 1,
+              items: [
+                { name: "file_exe", mediaType: "application/x-msdownload" },
+              ],
+            }),
+          },
+          {
+            when: (href, method) =>
+              href.startsWith("/files/files?") && method === "POST",
+            reply: contentFail({
+              code: "content-rejected",
+              error: {
+                status: 400,
+                message:
+                  'The file "tool.exe" has a file type of "application/x-msdownload", which is blocked.',
+              },
+            }),
+          },
+        ]);
+        const result = await adapter.createFile(
+          parentFolder(),
+          "tool.exe",
+          undefined,
+          new Uint8Array([0x4d, 0x5a]),
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+        assert.equal(
+          calls.some((c) => c.href.startsWith(PARENT)),
+          false,
+          "nothing is linked into the folder after a refused create",
         );
       });
 

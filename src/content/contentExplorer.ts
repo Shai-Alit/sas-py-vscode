@@ -41,6 +41,7 @@ import {
   type SessionLike,
 } from "./contentSession";
 import { SasContentFileSystemProvider } from "./contentFileSystem";
+import { registerContentTransferCommands } from "./contentTransfer";
 import { SasContentTreeProvider, type ContentTreeNode } from "./contentTree";
 import { type ContentItem } from "./types";
 import { CONTENT_READONLY_SCHEME, CONTENT_SCHEME } from "./uri";
@@ -171,18 +172,21 @@ export function registerContentExplorer(
   });
   viewRef.current = view;
 
-  // The tree context-menu mutations (6c-i). They read the same
-  // per-active-deployment adapter the tree does, and reload through the tree.
-  registerContentCommands(context, {
+  // The tree context-menu mutations (6c-i), and upload/download (13a). They
+  // read the same per-active-deployment adapter the tree does, and reload
+  // through the tree.
+  const commandDeps = {
     adapter: () => session.adapterFor(activeEndpoint()),
     activeEndpoint,
-    refresh: (item) => {
+    refresh: (item?: ContentItem) => {
       provider.refresh(item);
     },
     reveal,
     log,
     viewId: CONTENT_VIEW_ID,
-  });
+  };
+  registerContentCommands(context, commandDeps);
+  registerContentTransferCommands(context, commandDeps);
 
   context.subscriptions.push(
     provider,

@@ -10,6 +10,14 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Added
+
+- **Upload to and download from SAS Content.** Right-click a folder in the
+  SAS Content view and choose **Upload Files...** to copy files from your
+  computer into it. Right-click a file or folder and choose **Download...**
+  to save it, with everything below a folder, to your computer. Files up to
+  100 MB. See [Browsing SAS Content](docs/browsing-sas-content.md).
+
 ## [0.1.5] - 2026-09-30
 
 ### Fixed

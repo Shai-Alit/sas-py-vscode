@@ -50,6 +50,8 @@ under their category.
 | Empty Recycle Bin | `Python on Viya: Empty Recycle Bin` | `pythonOnViya.emptyRecycleBin` | SAS Content |
 | Cut | `Python on Viya: Cut` | `pythonOnViya.cutContentItem` | SAS Content |
 | Paste | `Python on Viya: Paste` | `pythonOnViya.pasteContentItem` | SAS Content |
+| Upload Files... | `Python on Viya: Upload Files...` | `pythonOnViya.uploadToContentFolder` | SAS Content |
+| Download... | `Python on Viya: Download...` | `pythonOnViya.downloadContentItem` | SAS Content |
 | Open Table | `Python on Viya: Open Table` | `pythonOnViya.openTable` | SAS Libraries |
 | Table Properties | `Python on Viya: Table Properties` | `pythonOnViya.showTableProperties` | SAS Libraries |
 | Export to CSV | `Python on Viya: Export to CSV` | `pythonOnViya.exportTableToCsv` | SAS Libraries |

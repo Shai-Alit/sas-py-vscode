@@ -270,6 +270,18 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.uploadToContentFolder",
+        "title": "%command.uploadToContentFolder.title%",
+        "category": "%extension.category%",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "pythonOnViya.downloadContentItem",
+        "title": "%command.downloadContentItem.title%",
+        "category": "%extension.category%",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "pythonOnViya.openTable",
         "title": "%command.openTable.title%",
         "category": "%extension.category%"
@@ -408,6 +420,14 @@
           "when": "false"
         },
         {
+          "command": "pythonOnViya.uploadToContentFolder",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.downloadContentItem",
+          "when": "false"
+        },
+        {
           "command": "pythonOnViya.openTable",
           "when": "false"
         },
@@ -459,6 +479,16 @@
           "command": "pythonOnViya.createContentFile",
           "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
           "group": "1_new@2"
+        },
+        {
+          "command": "pythonOnViya.uploadToContentFolder",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
+          "group": "3_transfer@1"
+        },
+        {
+          "command": "pythonOnViya.downloadContentItem",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ || viewItem == sasContent:myFolder) && !listMultiSelection",
+          "group": "3_transfer@2"
         },
         {
           "command": "pythonOnViya.addContentToFavorites",

@@ -466,11 +466,16 @@ export async function download(
   const message =
     skipped === 0
       ? summary
-      : vscode.l10n.t(
-          "{0} {1} items were left out. See the Python on Viya log for which, and why.",
-          summary,
-          String(skipped),
-        );
+      : skipped === 1
+        ? vscode.l10n.t(
+            "{0} 1 item was left out. See the Python on Viya log for which, and why.",
+            summary,
+          )
+        : vscode.l10n.t(
+            "{0} {1} items were left out. See the Python on Viya log for which, and why.",
+            summary,
+            String(skipped),
+          );
   const reveal = vscode.l10n.t("Show in Folder");
   const choice = await vscode.window.showInformationMessage(message, reveal);
   if (choice === reveal) {

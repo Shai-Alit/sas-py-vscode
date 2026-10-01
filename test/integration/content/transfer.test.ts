@@ -533,9 +533,33 @@ describe("SAS Content upload and download (13a)", () => {
       );
       assert.equal(holder.info.length, 1);
       assert.match(holder.info[0] ?? "", /Downloaded 2 files/);
-      assert.match(holder.info[0] ?? "", /1 items were left out/);
+      assert.match(holder.info[0] ?? "", /1 item was left out\./);
       assert.equal(holder.warns.length, 1);
       assert.match(holder.warns[0] ?? "", /etl\.flw/);
+    });
+
+    it("counts more than one left-out item in the plural", async () => {
+      const flow = (name: string): ContentItem => ({
+        id: `m-${name}`,
+        name,
+        type: "child",
+        contentType: "dataFlow",
+        uri: `/dataFlows/dataFlows/${name}`,
+        links: [],
+      });
+      const holder = harness({
+        getChildItems: () =>
+          Promise.resolve(
+            ok([flow("a.flw"), flow("b.flw"), { ...file, name: "main.py" }]),
+          ),
+        downloadFileContent: () => Promise.resolve(ok(bytesOf("x"))),
+      });
+      holder.pick = [vscode.Uri.file(dir)];
+
+      await withStubs(holder, () => download(holder.deps, folder));
+
+      assert.equal(holder.info.length, 1);
+      assert.match(holder.info[0] ?? "", /2 items were left out\./);
     });
 
     it("leaves an existing local file alone when the user does not confirm", async () => {

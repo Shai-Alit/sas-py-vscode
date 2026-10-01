@@ -3,7 +3,10 @@
 - **Status:** Accepted — amended 2026-09-30 by
   [ADR-0043](0043-every-run-turns-sas-notes-off.md): a run's job turns SAS
   notes off before the wrapper and restores the session's setting after
-  it; Reset Python State's job is unchanged
+  it; Reset Python State's job is unchanged. Amended 2026-10-01 by
+  [ADR-0046](0046-notebook-cells-display-their-result.md): a notebook or
+  interactive-window cell's job runs the user's file through a cell runner
+  and adds a figure-flush step after it
 - **Date:** 2026-09-28
 - **Decides:** how a profile's Python startup snippet reaches the
   interpreter, and how it survives the restart that every Run File and

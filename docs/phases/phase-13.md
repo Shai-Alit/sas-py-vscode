@@ -197,7 +197,9 @@ where `PROC PYTHON` actually hurts.
 - [x] **13f — F10, build.** Added 2026-09-24. Built 2026-10-01 on
   `feat/13f-cell-display`: the cell runner, the figure flush,
   `displayResults` on `ExecuteOptions`, and dropping the runner's traceback
-  frames (ADR-0046, Findings 13.16–13.19). See "13f built" below.
+  frames (ADR-0046, Findings 13.16–13.19). Merged 2026-10-01 as
+  [PR #238](https://github.com/Shai-Alit/sas-py-vscode/pull/238), squash
+  `e42decb`. See "13f built" below.
 - [ ] **13g — F8, DataFrame grid.** Added 2026-09-24. Not started.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
@@ -1176,6 +1178,18 @@ cover a trailing `;` and `os.chdir`.
 
 **Manual pass, 2026-10-01:** items 13.30–13.42 all passed. `verde` has no
 seaborn, so 13.33's seaborn half could not run; its `df.plot` half passed.
+
+**Merged** 2026-10-01 as
+[PR #238](https://github.com/Shai-Alit/sas-py-vscode/pull/238), squash
+`e42decb`, with every check passing. The first review round raised three
+findings. Codex's one blocker, that the helpers were not re-uploaded after
+a reconnect, was wrong on inspection: `backendCache.ts` builds a new
+`ProcPythonBackend` for every new connection, so `cellHelpersUploaded`
+starts `false` for each session, as `startupUploaded` does, and manual item
+13.40 passed on that path. The Claude reviewer's two were fixed in one
+commit: a `CHANGELOG.md` entry, and `cellRunner.ts`'s comment now says the
+runner's name is in the cell's `globals()` while the cell runs. The second
+round found nothing.
 
 ---
 

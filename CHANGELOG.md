@@ -22,6 +22,11 @@ called out under **Changed** with a migration note.
   copied with everything below it. A copy pasted where its name is taken is
   named like `model_Copy1.py`. See
   [Browsing SAS Content](docs/browsing-sas-content.md).
+- **Notebook cells show their result.** A notebook or interactive-window
+  cell now shows its last expression's value and its open matplotlib
+  figures, as in Jupyter. A DataFrame shows as a table. End the line with
+  `;` to hide the value. Run File and Run Selection are unchanged. See
+  [Notebooks](docs/notebooks.md).
 
 ## [0.1.5] - 2026-09-30
 

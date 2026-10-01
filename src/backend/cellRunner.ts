@@ -27,7 +27,9 @@
  * Python's working directory is the user's to change, and after an
  * `os.chdir` a relative write would land outside the directory the Files API
  * lists (Finding 13.19). Both remove their one global name when they finish,
- * so nothing leaks into the cell's namespace (Finding 13.16).
+ * so nothing is left in the cell's namespace afterwards (Finding 13.16).
+ * While the cell runs, its `globals()` still holds
+ * {@link RUNNER_FUNCTION_NAME}.
  *
  * The cell's `Program.bytes` still reach the interpreter unmodified, through
  * the run's own fileref (ADR-0014). The runner compiles them under the name

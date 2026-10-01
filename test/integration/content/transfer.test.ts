@@ -562,6 +562,37 @@ describe("SAS Content upload and download (13a)", () => {
       assert.match(holder.info[0] ?? "", /2 items were left out\./);
     });
 
+    it("says so, and offers Show in Folder, when a folder tree has no files", async () => {
+      const empty: ContentItem = {
+        id: "m-empty",
+        name: "empty",
+        type: "child",
+        contentType: "folder",
+        uri: "/folders/folders/empty",
+        links: [],
+      };
+      const holder = harness({
+        getChildItems: (parent) =>
+          Promise.resolve(ok(parent.id === "dest" ? [empty] : [])),
+        downloadFileContent: () => {
+          throw new Error("downloadFileContent should not be called");
+        },
+      });
+      holder.pick = [vscode.Uri.file(dir)];
+      holder.infoAnswer = "Show in Folder";
+
+      await withStubs(holder, () => download(holder.deps, folder));
+
+      assert.ok(
+        fs.statSync(path.join(dir, "Destination", "empty")).isDirectory(),
+      );
+      assert.deepEqual(holder.info, [
+        'Downloaded "Destination". It has no files, so only its folders were created.',
+      ]);
+      assert.equal(holder.commands.length, 1);
+      assert.equal(holder.commands[0]?.command, "revealFileInOS");
+    });
+
     it("leaves an existing local file alone when the user does not confirm", async () => {
       fs.writeFileSync(path.join(dir, "model.py"), "mine");
       const holder = harness({

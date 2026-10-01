@@ -453,16 +453,21 @@ export async function download(
     void vscode.window.showErrorMessage(message);
     return;
   }
-  if (written === 0 && skipped === 0) return;
-
+  // Nothing written and nothing skipped is a folder tree with no files in it:
+  // its folders were still created, so it gets a summary like any other.
   const summary =
-    written === 1
-      ? vscode.l10n.t('Downloaded 1 file from "{0}".', item.name)
-      : vscode.l10n.t(
-          'Downloaded {0} files from "{1}".',
-          String(written),
+    written === 0 && skipped === 0
+      ? vscode.l10n.t(
+          'Downloaded "{0}". It has no files, so only its folders were created.',
           item.name,
-        );
+        )
+      : written === 1
+        ? vscode.l10n.t('Downloaded 1 file from "{0}".', item.name)
+        : vscode.l10n.t(
+            'Downloaded {0} files from "{1}".',
+            String(written),
+            item.name,
+          );
   const message =
     skipped === 0
       ? summary

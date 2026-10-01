@@ -782,7 +782,7 @@ Folded in:
   `MAX_TRANSFER_BYTES` is let through. The constant's comment now says
   Finding 13.7 saw 99 MiB accepted and 101 MiB reset, and nothing between.
 
-**AI review on PR #235, 2026-09-30.** Three findings.
+**AI review on PR #235, 2026-09-30.** Four findings.
 
 - **A folder reached twice vanished from the summary.** `planDownload`
   walked it once, as intended, but recorded nothing for its second path,
@@ -797,6 +797,10 @@ Folded in:
   singular, and the integration test asserted the plural for one item,
   against manual item 13.19's "1 item was left out". It now says "1 item
   was left out", and a second integration test checks the plural.
+- **A download of a folder tree with no files ended silently.** Its folders
+  were created, but no summary appeared and there was no **Show in
+  Folder**. It now says the item has no files, so only its folders were
+  created, and offers **Show in Folder**.
 
 Not changed: the messages say "100 MB" for a 100 MiB limit, which only
 errs toward refusing less; the progress bar's last increment lands as the

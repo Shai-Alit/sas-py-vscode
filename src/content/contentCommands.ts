@@ -5,7 +5,20 @@
  * The SAS Content tree's context-menu mutations — create a folder, create a
  * file, rename an item, delete an item (6c-i); add an item to / remove it from
  * My Favorites (6d-i); restore a recycled item, empty the Recycle Bin (6d-ii);
- * cut an item, paste it into a folder (6e).
+ * cut an item, paste it into a folder (6e); copy an item (13b).
+ *
+ * ## Copy (13b) shares Cut's single slot
+ *
+ * **Copy** records the item the same way **Cut** does, in the same slot, so
+ * whichever ran last is what **Paste** uses — the way a file manager's
+ * clipboard behaves. A cut is cleared by its paste; a copy stays, so it can be
+ * pasted into several folders. A copy's paste is `contentCopy.ts`'s
+ * `pasteCopy`, after {@link copyObjection}; see
+ * [ADR-0045](../../docs/adr/0045-content-copy-paste.md). The slot was named
+ * for Cut alone until then, and its names (`clearContentClipboard`, the
+ * `pythonOnViya.hasContentClipboard` context key) changed with it. What the
+ * section below says about the slot's endpoint and its clearing applies to a
+ * copy unchanged.
  *
  * ## Cut / Paste (6e) — an unambiguous alternative to drag-and-drop
  *
@@ -25,7 +38,7 @@
  * is recorded alongside it, since a `ContentAdapter` is per-endpoint and
  * reused across profile switches (the same fact 6d-i's `favoritesFolder()`
  * finding turned on); {@link paste} refuses a cut from one deployment
- * pasted after switching to another. `clearCutContentItem` is called on a
+ * pasted after switching to another. `clearContentClipboard` is called on a
  * profile change and on sign-out (`contentExplorer.ts`) so a stale cut
  * cannot linger past either. There is no "cancel cut" command otherwise;
  * cutting a second item just replaces the first, and there is no visual
@@ -65,8 +78,10 @@ import * as vscode from "vscode";
 
 import { type ContentAdapter } from "./adapter";
 import { type ContentResult } from "./client";
+import { pasteCopy } from "./contentCopy";
 import { moveObjection, type MoveObjection } from "./contentMove";
-import { localiseContentProblem } from "./messages";
+import { copyObjection, isCopyable, type CopyObjection } from "./copy";
+import { localiseContentProblem, reportNoTarget } from "./messages";
 import { describeContentProblem } from "./problems";
 import {
   isContainer,
@@ -77,52 +92,57 @@ import {
   type ContentItem,
 } from "./types";
 
-/**
- * The item a Cut is pending for, and the deployment it was cut from — a
- * `ContentAdapter` is per-endpoint, reused across profile switches (the
- * same fact 6d-i's `favoritesFolder()` finding turned on), so a paste must
- * refuse to run a stale item's `self` link against a different deployment's
- * adapter. `undefined` means nothing is cut. See the file doc comment's
- * Cut/Paste section for why this is a single slot, not a list.
- */
-let cutState:
-  { readonly item: ContentItem; readonly endpoint: string } | undefined;
+/** What the clipboard holds: an item, the deployment it came from, and
+ * whether it was cut or copied. */
+interface ClipboardEntry {
+  readonly item: ContentItem;
+  readonly endpoint: string;
+  readonly mode: "cut" | "copy";
+}
 
 /**
- * Bumped by every {@link setCutState} call, including a clear. {@link paste}
- * captures this right after its own clear and checks it again after the
+ * The item a Cut or a Copy is pending for, and the deployment it came from —
+ * a `ContentAdapter` is per-endpoint, reused across profile switches (the
+ * same fact 6d-i's `favoritesFolder()` finding turned on), so a paste must
+ * refuse to run a stale item's `self` link against a different deployment's
+ * adapter. `undefined` means nothing is held. See the file doc comment's
+ * Cut/Paste section for why this is a single slot, not a list.
+ */
+let clipboard: ClipboardEntry | undefined;
+
+/**
+ * Bumped by every {@link setClipboard} call, including a clear. {@link paste}
+ * captures this right after a cut's clear and checks it again after the
  * move settles, so it can tell "nothing has touched the slot since" from
  * "the slot happens to be undefined again" — the latter is also true right
- * after an unrelated {@link clearCutContentItem} (a profile switch, a
+ * after an unrelated {@link clearContentClipboard} (a profile switch, a
  * sign-out), which must not be undone by a late failure resurrecting a
  * stale cut.
  */
-let cutGeneration = 0;
+let clipboardGeneration = 0;
 
-/** Sets (or clears) the pending cut and its context key together, so the two
+/** Sets (or clears) the clipboard and its context key together, so the two
  * can never drift apart. */
-function setCutState(
-  next: { readonly item: ContentItem; readonly endpoint: string } | undefined,
-): void {
-  cutState = next;
-  cutGeneration += 1;
+function setClipboard(next: ClipboardEntry | undefined): void {
+  clipboard = next;
+  clipboardGeneration += 1;
   void vscode.commands.executeCommand(
     "setContext",
-    "pythonOnViya.hasCutContentItem",
+    "pythonOnViya.hasContentClipboard",
     next !== undefined,
   );
 }
 
 /**
- * Clears a pending Cut, if any. Exported so `contentExplorer.ts` can call it
- * on a profile switch or sign-out — a cut item's endpoint check in
- * {@link paste} would already refuse a cross-endpoint paste, but a stale cut
- * surviving a sign-out with no way to clear it, or offering itself on a
- * profile it was never cut from, is confusing on its own; and so tests can
+ * Clears a pending Cut or Copy, if any. Exported so `contentExplorer.ts` can
+ * call it on a profile switch or sign-out — the endpoint check in
+ * {@link paste} would already refuse a cross-endpoint paste, but a stale
+ * item surviving a sign-out with no way to clear it, or offering itself on a
+ * profile it never came from, is confusing on its own; and so tests can
  * reset this module-level slot between cases.
  */
-export function clearCutContentItem(): void {
-  setCutState(undefined);
+export function clearContentClipboard(): void {
+  setClipboard(undefined);
 }
 
 /** What the command layer needs from its surroundings — supplied by
@@ -148,7 +168,7 @@ export interface ContentCommandDeps {
   viewId: string;
 }
 
-/** Registers the ten commands. Every disposable goes on `context.subscriptions`. */
+/** Registers the eleven commands. Every disposable goes on `context.subscriptions`. */
 export function registerContentCommands(
   context: vscode.ExtensionContext,
   deps: ContentCommandDeps,
@@ -192,6 +212,12 @@ export function registerContentCommands(
       },
     ),
     vscode.commands.registerCommand(
+      "pythonOnViya.copyContentItem",
+      (item?: ContentItem) => {
+        copy(deps, item);
+      },
+    ),
+    vscode.commands.registerCommand(
       "pythonOnViya.pasteContentItem",
       (item?: ContentItem) => paste(deps, item),
     ),
@@ -229,13 +255,90 @@ export function cut(
     return;
   }
 
-  setCutState({ item, endpoint });
+  setClipboard({ item, endpoint, mode: "cut" });
   void vscode.window.showInformationMessage(
     vscode.l10n.t(
       'Cut "{0}". Right-click a folder and choose Paste.',
       item.name,
     ),
   );
+}
+
+/**
+ * "Copy" (13b). Records the item for a later Paste, replacing whatever was
+ * cut or copied before; nothing on the server changes yet. Refuses what
+ * Cut refuses, and also anything that is not a folder or a file — a data
+ * flow shares a file's menu entries but has no file resource to copy.
+ */
+export function copy(
+  deps: ContentCommandDeps,
+  item: ContentItem | undefined,
+): void {
+  if (item?.inRecycleBin === true) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t(
+        "Restore this item from the Recycle Bin before copying it.",
+      ),
+    );
+    return;
+  }
+  if (item !== undefined && item.type !== "child") {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t('"{0}" cannot be copied from here.', item.name),
+    );
+    return;
+  }
+  if (item !== undefined && !isCopyable(item)) {
+    void vscode.window.showErrorMessage(
+      vscode.l10n.t(
+        '"{0}" can\'t be copied. Only files and folders can be.',
+        item.name,
+      ),
+    );
+    return;
+  }
+
+  const adapter = deps.adapter();
+  const endpoint = deps.activeEndpoint();
+  if (adapter === undefined || endpoint === undefined || item === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+
+  setClipboard({ item, endpoint, mode: "copy" });
+  void vscode.window.showInformationMessage(
+    vscode.l10n.t(
+      'Copied "{0}". Right-click a folder and choose Paste.',
+      item.name,
+    ),
+  );
+}
+
+/** The message for why {@link copyObjection} refused a paste — one full
+ * sentence per case, as {@link describeMoveObjection} writes them. */
+function describeCopyObjection(
+  reason: CopyObjection,
+  item: ContentItem,
+  target: ContentItem,
+): string {
+  switch (reason) {
+    case "not-a-member":
+      return vscode.l10n.t('"{0}" cannot be copied from here.', item.name);
+    case "not-copyable":
+      return vscode.l10n.t(
+        '"{0}" can\'t be copied. Only files and folders can be.',
+        item.name,
+      );
+    case "in-recycle-bin":
+      return vscode.l10n.t(
+        "You can't copy an item into or out of the Recycle Bin.",
+      );
+    case "target-not-a-folder":
+      return vscode.l10n.t(
+        '"{0}" is not a folder you can copy items into.',
+        target.name,
+      );
+  }
 }
 
 /** The complete, standalone message for why {@link moveObjection} rejected a
@@ -273,7 +376,11 @@ function describeMoveObjection(
 }
 
 /**
- * "Paste" (6e). Moves {@link cutState}'s item into `target` via the exact
+ * "Paste" (6e; copy added in 13b). A copied item is copied into `target` by
+ * `pasteCopy`, after {@link copyObjection}, and stays on the clipboard. The
+ * rest of this comment is about a cut item.
+ *
+ * Moves {@link clipboard}'s item into `target` via the exact
  * same `moveObjection` / `ContentAdapter.moveItem` pair
  * `contentDragAndDrop.ts`'s `handleDrop` calls — one implementation of "is
  * this move valid" and "how do you do it," reached two ways.
@@ -293,14 +400,14 @@ function describeMoveObjection(
  *
  * A third race the clear-early order doesn't resolve on its own: the
  * `await run(...)` below is a yield point, so the user can `cut()` a
- * *different* item, or something can call {@link clearCutContentItem}
+ * *different* item, or something can call {@link clearContentClipboard}
  * (a profile switch, a sign-out), while this move is still in flight.
- * Checking `cutState === undefined` on failure can't distinguish "nothing
+ * Checking `clipboard === undefined` on failure can't distinguish "nothing
  * has touched the slot" from "something intentionally cleared it" — both
  * look identical — so the failure-restore instead captures
- * {@link cutGeneration} right after this function's own clear and only
+ * {@link clipboardGeneration} right after this function's own clear and only
  * restores `pending` if the generation is still the one it left behind. Any
- * intervening `cut()` or `clearCutContentItem()` bumps it, so a failed paste
+ * intervening `cut()`, `copy()` or `clearContentClipboard()` bumps it, so a failed paste
  * can never clobber a newer cut or resurrect one an intentional clear just
  * removed.
  */
@@ -313,23 +420,42 @@ export async function paste(
     reportNoTarget(adapter);
     return;
   }
-  const pending = cutState;
+  const pending = clipboard;
   if (pending === undefined) {
     void vscode.window.showErrorMessage(
-      vscode.l10n.t("Nothing has been cut yet. Cut an item first."),
+      vscode.l10n.t(
+        "Nothing has been cut or copied yet. Cut or copy an item first.",
+      ),
     );
     return;
   }
   if (pending.endpoint !== deps.activeEndpoint()) {
     void vscode.window.showErrorMessage(
-      vscode.l10n.t(
-        '"{0}" was cut from a different connection. Cut it again to paste it here.',
-        pending.item.name,
-      ),
+      pending.mode === "cut"
+        ? vscode.l10n.t(
+            '"{0}" was cut from a different connection. Cut it again to paste it here.',
+            pending.item.name,
+          )
+        : vscode.l10n.t(
+            '"{0}" was copied from a different connection. Copy it again to paste it here.',
+            pending.item.name,
+          ),
     );
     return;
   }
   const item = pending.item;
+
+  if (pending.mode === "copy") {
+    const refused = copyObjection(item, target);
+    if (refused !== undefined) {
+      void vscode.window.showWarningMessage(
+        describeCopyObjection(refused, item, target),
+      );
+      return;
+    }
+    await pasteCopy(deps, adapter, item, target);
+    return;
+  }
 
   const objection = moveObjection(item, target);
   if (objection !== undefined) {
@@ -347,8 +473,8 @@ export async function paste(
     return;
   }
 
-  clearCutContentItem();
-  const generationAtClear = cutGeneration;
+  clearContentClipboard();
+  const generationAtClear = clipboardGeneration;
 
   const { result, aborted } = await run(
     deps,
@@ -359,8 +485,8 @@ export async function paste(
 
   if (result.ok) {
     if (!aborted) await deps.reveal(result.value);
-  } else if (cutGeneration === generationAtClear) {
-    setCutState(pending);
+  } else if (clipboardGeneration === generationAtClear) {
+    setClipboard(pending);
   }
 }
 
@@ -714,16 +840,4 @@ function validateName(value: string): string | undefined {
 function renameSelection(name: string): [number, number] {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? [0, dot] : [0, name.length];
-}
-
-/** The signed-out / no-target message. `adapter === undefined` is the real
- * case (the view's welcome content usually pre-empts it); a missing `item`
- * would mean the command was invoked outside its menu, which the `when`
- * clauses prevent. Exported for `contentTransfer.ts` (13a). */
-export function reportNoTarget(adapter: ContentAdapter | undefined): void {
-  void vscode.window.showErrorMessage(
-    adapter === undefined
-      ? vscode.l10n.t("Sign in to SAS Viya to change SAS Content.")
-      : vscode.l10n.t("Select an item in the SAS Content view first."),
-  );
 }

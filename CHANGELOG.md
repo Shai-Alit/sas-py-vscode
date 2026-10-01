@@ -17,6 +17,11 @@ called out under **Changed** with a migration note.
   computer into it. Right-click a file or folder and choose **Download...**
   to save it, with everything below a folder, to your computer. Files up to
   100 MB. See [Browsing SAS Content](docs/browsing-sas-content.md).
+- **Copy and Paste in SAS Content.** Right-click a file or folder and choose
+  **Copy**, then right-click a folder and choose **Paste**. A folder is
+  copied with everything below it. A copy pasted where its name is taken is
+  named like `model_Copy1.py`. See
+  [Browsing SAS Content](docs/browsing-sas-content.md).
 
 ## [0.1.5] - 2026-09-30
 

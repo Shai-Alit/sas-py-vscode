@@ -75,7 +75,7 @@ deliberate event".
 3. **13c — F6: a panel of common commands.** From `phase-11.md` (F6). A
    small view so users do not have to remember palette names. Design pass
    first: which commands earn a place (connect/disconnect, environment,
-   snippets, Run File are the obvious ones) and where the view lives.
+   snippets are the obvious ones) and where the view lives.
 4. **13d — F11: a snippet library for common Viya patterns.** From
    `phase-11.md` (F11). Start with a candidate list (connection setup,
    common `PROC PYTHON` and `SAS` bridge idioms, 7d's data-exchange
@@ -183,8 +183,9 @@ where `PROC PYTHON` actually hurts.
   2026-09-30 on `feat/13a-content-upload-download`. Merged 2026-10-01 as
   [PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235), squash
   `ace92ea`. See "13a built" below.
-- [ ] **13b — SAS Content Copy/Paste.** Added 2026-09-24. Not started.
-  Probe server-side copy first.
+- [x] **13b — SAS Content Copy/Paste.** Added 2026-09-24. Built
+  2026-10-01 on `feat/13b-content-copy-paste`
+  ([ADR-0045](../adr/0045-content-copy-paste.md)). See "13b built" below.
 - [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Not started.
 - [ ] **13d — F11, snippet library.** Added 2026-09-24. Not started.
 - [ ] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Not started.
@@ -918,6 +919,108 @@ would then see.
 [PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235), squash
 `ace92ea`.
 
+### 13b built, 2026-10-01
+
+**What it does.** A **Copy** command on the SAS Content view's right-click
+menu, beside **Cut**. **Paste** on a folder or My Folder then copies the
+item there. A file is copied on the server. A folder is copied with
+everything below it. Data flows are left out and counted, as a download
+leaves them out. When the target already has an item of that name, the
+copy is named `{base}_Copy{n}{ext}`, so a paste into the item's own folder
+works. A folder copy runs behind a cancellable notification, keeps going
+past a failed file, and ends with a count.
+
+**Probes first.** Findings 13.9 and 13.10, against `verde`. Sean approved
+the mutating probe. `innov` did not resolve, so neither finding is
+confirmed on Stable 2026.06.
+
+**Decisions (Sean's, 2026-10-01, after the probe),** recorded as
+[ADR-0045](../adr/0045-content-copy-paste.md), which amends ADR-0032:
+
+- Folders are copied too, by recreating them, since the Folders service has
+  no copy (Finding 13.10).
+- A taken name gets upstream's `{base}_Copy{n}{ext}`, with no prompt and no
+  overwrite.
+- Copy shares Cut's one clipboard slot. A copy stays after a paste, and a
+  cut is cleared by its paste.
+
+**The code.**
+
+- `src/content/adapter.ts`: `copyFile` reads the file resource for its
+  `copyFile` link, then `POST`s it with `?parentFolderUri=` and the name in
+  `Content-Disposition` (Finding 13.9). It returns the new file's address.
+  It uses the bulk transfer timeout, since a large copy's duration was not
+  probed. `types.ts` gains `COPY_FILE_REL`.
+- `src/content/copy.ts` (new, `vscode`-free): `freeCopyName`, `isCopyable`,
+  `copyObjection`, and `copyItem`. `copyItem` lists the target for a free
+  name, lists the whole source before creating anything, then makes the
+  folders and copies the files.
+- `src/content/contentCopy.ts` (new, the shell): progress, the log, the
+  summary, and revealing the copy. It reuses 13a's `withTransferProgress`
+  (now generic, returning the work's value), `transferProblemMessage` and
+  `withLeftOut`, now exported from `contentTransfer.ts`.
+- `src/content/contentCommands.ts`: the clipboard holds a mode. There is a
+  new `copy` command, and `paste` sends a copied item to `pasteCopy`. The
+  slot's names changed: `clearContentClipboard`, and the context key
+  `pythonOnViya.hasContentClipboard`.
+- `reportNoTarget` moved to `messages.ts`, so `contentCommands.ts` →
+  `contentCopy.ts` → `contentTransfer.ts` has no import cycle.
+  `contentMove.ts` exports `canReceiveMembers`, the target check move and
+  copy now share.
+- `package.json`: the command, hidden from the palette, at `7_modify@4`
+  between Cut and Paste.
+
+**Tests.** `test/unit/content-copy.test.ts` (new) runs the real adapter
+against a scripted Folders/Files service. It covers names, objections, a
+file and a folder copy, every failure and every cancel point (`copy.ts`
+100%). `test/unit/content-adapter.test.ts` adds `copyFile`'s wire shape and
+failures. `test/integration/content/copyPaste.test.ts` (new) covers the
+clipboard and every message. `cutPaste.test.ts` and `explorer.test.ts`
+follow the renamed slot and the third menu entry.
+
+**Verify, 2026-10-01,** from a clean `out/`, after the review fixes below:
+`npm run verify`'s steps green (2,082 unit; coverage
+96.34/96.23/96.09/96.34; `copy.ts` 100%), with
+`format:check` leaving out the gitignored `.claude/worktrees/`. `npm run
+test:integration` is green (593 passing).
+
+**Adversarial review, 2026-10-01** (the manual pass, not a PR review): no
+blocking findings. Five minor ones, each checked against the code and
+handled:
+
+- Two quick Pastes of one copy into one folder could both choose the same
+  free name, and the second failed. Now `copyItem` retries the copy's own
+  file or folder once under the next free name, when the service refused it
+  and a fresh listing shows the name taken (ADR-0045 decision 4). A raced
+  folder create is refused `409`, and two folders of one name never exist
+  (Finding 13.11, probed after the review). A call with no answer is not
+  retried, since it may have copied.
+- `copyFile` joined `?parentFolderUri=` onto the link blindly. It now uses
+  `&` when the link already has a query. The probed link has none.
+- **Copy** shows on a data flow and on a top-level folder and then refuses.
+  Documented in `browsing-sas-content.md` and ADR-0045 rather than giving
+  them their own context value, which would touch every file and folder
+  menu entry.
+- A cancel during a single file's copy call may not stop the copy. Cosmetic,
+  as for an upload; documented in `browsing-sas-content.md` and ADR-0045,
+  and 13.28's expectation allows for it.
+- ADR-0032's body still used the slot's old names. Swept, with a note of
+  the rename.
+
+Seven unit tests were added (six for the retry, one for the query join).
+The manual items were rewritten with an exact starting tree, exact counts
+and exact messages, and 13.29 (two pastes at once) was added.
+
+**Manual items** 13.22–13.29 in `docs/dev/manual-tests/phase-13.md`
+passed, 2026-10-01, against a `.vsix` built from this branch. On 13.27 a
+paste directly into `Public` worked. That is intended: Viya lets any
+signed-in user add there (Finding 13.12).
+
+**Not built.** Multi-select Copy. Copying a favourite from under My
+Favorites, which Cut refuses too. **Copy** still shows on a data flow and
+is then refused, for the reason **Download...** does (the 13a follow-up),
+and on a top-level folder, which Cut refuses too.
+
 ---
 
 ## Probe findings
@@ -926,7 +1029,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.9.
+finding is 13.13.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -1137,3 +1240,127 @@ The refusal's sentence is in `message`, which `readViyaError` keeps but
 
 **Not settled:** `application/x-ms-installer` (`.msi`), and a deployment
 with a different `blockedTypes`.
+
+### Finding 13.9 — A file is copied on the server, into a folder, in one call (2026-10-01)
+
+**Documented:** the Files service's reference lists `POST /files/{fileId}/copy`,
+"Copy an existing file", for a user with Read access to it. Upstream
+`vscode-sas-extension`'s client, generated from SAS's OpenAPI, gives it an
+optional `parentFolderUri` query ("the folder in which to add the file"),
+an `expirationTimeStamp` query and a `Content-Disposition` header. Upstream
+never calls it. Nothing found on a name clash.
+
+**Observed (`verde`, Viya 4 LTS 2026.03, 2026-10-01).** Read-only first: a
+file resource carries `copyFile` (`POST`, `/files/files/{id}/copy`,
+`responseType: application/vnd.sas.file`, no `type`). The member record a
+folder listing returns for the same file does not. Then, approved by Sean,
+in a throwaway `probe13b-<ts>` folder under My Folder with sub-folders `A`
+and `B`. Everything was deleted afterwards and read back as `404`, and a
+sweep found nothing left:
+
+- `x.py` (29 bytes, `text/x-python`, `typeDefName: file`), copied with
+  `?parentFolderUri=/folders/folders/{B}` and no body → `201` in 0.29 s,
+  with the new file resource as the body and no `Location` header. `B`
+  listed it at once as a `child` member named `x.py`; no `addMember` was
+  sent. `GET …/content` returned the same bytes. The copy kept
+  `contentType`, `typeDefName` and `encoding`, and had its own `copyFile`
+  link.
+- A 64 KiB `.png` holding every byte value (`image/png`, `file_png`) →
+  `201`, with the same bytes, `image/png` and `file_png`.
+- Into `A`, which already held `x.py` → `409`, `message`: *File with name
+  "x.py" already exists in folder "{id}".* `details` held only `path:`. The
+  number of files named `x.py` was the same before and after, so nothing
+  was left behind.
+- Into `A` with `Content-Disposition: attachment; filename="x_copy.py"` →
+  `201`, named `x_copy.py`. With `filename*=UTF-8''<percent-encoded>`, the
+  form `createFile` sends → `201`, and names with `é`, `ó` and a space read
+  back unchanged. The member took the same name.
+- With no `parentFolderUri` → `201`, and the copy was in no folder (deleted
+  at once).
+
+**What this establishes.** A file is copied with two calls: `GET` the file
+resource for its `copyFile` link, then `POST` it with `parentFolderUri` and
+the name. The service adds the copy to the folder, so unlike a create there
+is nothing to roll back, as long as `parentFolderUri` is sent.
+
+**Not settled:** Stable 2026.06 (`innov` did not resolve that day); a copy
+near 100 MiB, and how long it takes; whether names clash ignoring case; a
+target folder the account cannot write to; `expirationTimeStamp`.
+
+### Finding 13.10 — The Folders service has no copy (2026-10-01)
+
+**Documented:** SAS's Folders documentation says a child member has one
+parent, so it cannot be copied or duplicated to another folder, only moved.
+
+**Observed (`verde`, 2026-10-01, read-only).** No relation that copies: not
+on the Folders service root (18 relations), My Folder, a sub-folder or a
+file's member record. The Files service root offers `create` and
+`bulkFiles`, and no copy.
+
+**What this establishes.** The documentation is right. A folder is copied by
+the client: a new folder for each folder, and each file copied with Finding
+13.9's call.
+
+**Not settled:** other releases.
+
+### Finding 13.11 — A folder create refuses a taken name with `409`, even racing another (2026-10-01)
+
+Probed after 13b's adversarial review, which asked what happens when two
+Pastes of one copy into one folder choose the same free name.
+
+**Documented:** nothing found on a create racing another. Finding 6.6
+covers only the `validateNewMemberName` check a client runs first, which
+answers `200` with `valid:false`, `httpStatusCode: 409` and `errorCode
+11552`.
+
+**Observed (`verde`, Viya 4 LTS 2026.03, 2026-10-01).** Approved by Sean.
+`POST /folders/folders?parentFolderUri=…` with `{name}` and no name check
+first, in a throwaway `probe13b-race-<ts>` folder under My Folder.
+Everything was deleted afterwards, read back as `404`, and a sweep found
+nothing left:
+
+- `dup`, then `dup` again → `201`, then `409` in 0.3 s, `errorCode 11552`,
+  *An item named "dup" of type "Folder" already exists in the folder
+  "…".* `details`: `Existing member: `, the winner's `/folders/folders/{id}`,
+  `Suggestion: dup (1)`, `path:` and `correlator:`. The same envelope the
+  name check carries (finding 6.6), now as the HTTP status.
+- `DUP` after `dup` → the same `409`, naming the existing `dup` folder.
+  Folder names clash ignoring case.
+- Five rounds of two creates of one name, released together from two
+  threads → in every round exactly one `201` and one `409`, either thread
+  winning. The listing then held each name once.
+
+**What this establishes.** The Folders service enforces unique names,
+ignoring case, at the create itself, so two racing creates never make two
+folders of one name. A copy that loses the race gets `content-rejected`
+`409`, which `copyItem`'s retry treats as a refusal. `freeCopyName`
+comparing names ignoring case matches the service for folders.
+
+**Not settled:** Stable 2026.06; whether a file copy's name clash ignores
+case (Finding 13.9 leaves it open); more than two creates at once.
+
+### Finding 13.12 — Any signed-in user may add to `Public` (2026-10-01)
+
+Probed after manual-test item 13.27, where a file pasted directly into
+`Public` was accepted, to ask whether the paste had gone around a Viya
+control.
+
+**Documented:** SAS's default authorization rules describe `Public` as
+shared content that every signed-in user can read and add to.
+
+**Observed (`verde`, 2026-10-01, read-only).** `GET /authorization/rules`
+filtered on `objectUri` for the `Public` root folder: no rule on
+`/folders/folders/{id}` itself; one enabled `grant` to
+`authenticatedUsers` of `read`, `add` and `remove` on
+`/folders/folders/{id}/**`, which covers the folder's members.
+
+**What this establishes.** The documentation is right. A paste into
+`Public` is allowed by the deployment's own rules, not by the tester being
+an administrator, and not by anything the extension does. The extension
+never decides a permission: a paste is a create call under the user's own
+token, and the authorization service decides it. `canReceiveMembers`
+accepting a top-level folder is intended.
+
+**Not settled:** a paste by a user who is not an administrator; a
+deployment whose administrators changed these rules (the call would then
+fail with the server's refusal, which the paste reports).

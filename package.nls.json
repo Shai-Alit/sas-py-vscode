@@ -35,6 +35,7 @@
   "command.restoreContentItem.title": "Restore",
   "command.emptyRecycleBin.title": "Empty Recycle Bin",
   "command.cutContentItem.title": "Cut",
+  "command.copyContentItem.title": "Copy",
   "command.pasteContentItem.title": "Paste",
   "command.uploadToContentFolder.title": "Upload Files...",
   "command.downloadContentItem.title": "Download...",

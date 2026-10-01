@@ -63,7 +63,7 @@
  * inline string compare here.
  */
 
-import { findLink, type Link } from "../wire/links";
+import { findLink, readLinks, type Link } from "../wire/links";
 import {
   type ContentClient,
   type ContentFailure,
@@ -73,6 +73,7 @@ import {
 import {
   ADD_MEMBER_REL,
   ANCESTORS_REL,
+  COPY_FILE_REL,
   CREATE_CHILD_REL,
   DELEGATE_FOLDERS,
   DELETE_RECURSIVELY_REL,
@@ -784,6 +785,81 @@ export class ContentAdapter {
       );
     }
     return { ok: true, value: item };
+  }
+
+  /**
+   * Copy a file into `parent` under `name`, on the server (13b, Finding
+   * 13.9), and return the new file resource's address. Two calls: `GET` the
+   * file resource, then `POST` its `copyFile` link with `?parentFolderUri=`
+   * naming the folder and a `Content-Disposition` naming the copy.
+   *
+   * The service links the copy into the folder itself, so unlike
+   * {@link createFile} there is no `addMember` and no orphan to roll back. A
+   * copy with no `parentFolderUri` lands in no folder at all, which is why it
+   * is always sent. The copy keeps the source's bytes, media type and
+   * `typeDefName`. A name already taken in the folder is refused `409`, which
+   * leaves nothing behind.
+   *
+   * The `copyFile` link is on the file resource, not on the member record a
+   * folder listing returns, so the resource is read for it rather than
+   * `/copy` composed onto its address. The name is always sent, so the copy
+   * carries the name the tree shows, whatever the file resource itself is
+   * called. The query is sent unencoded, as the probe sent it and as the
+   * service writes `parentFolderUri` into its own `createChild` links. The
+   * probed link carries no query of its own; were one to, the parameter is
+   * appended to it rather than starting a second `?`.
+   *
+   * Finding 13.9 copied only small files, in about 0.3 s. How long a copy
+   * near {@link MAX_TRANSFER_BYTES} takes was not probed, so the copy gets
+   * the bulk transfer timeout.
+   */
+  async copyFile(
+    item: ContentItem,
+    parent: ContentItem,
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<ContentResult<string>> {
+    const fileHref = resourceHrefOf(item);
+    if (fileHref === undefined) {
+      return linkMissing(`file "${item.name}"`, SELF_REL);
+    }
+    const folderHref = resourceHrefOf(parent);
+    if (folderHref === undefined) {
+      return linkMissing(`folder "${parent.name}"`, SELF_REL);
+    }
+
+    const resource = await this.client.send({
+      link: { rel: SELF_REL, href: fileHref, method: "GET" },
+      ...withSignal(signal),
+    });
+    if (!resource.ok) return resource;
+
+    const copy = findLink(readLinks(resource.value.body), COPY_FILE_REL);
+    if (copy === undefined) {
+      return linkMissing(`file "${item.name}"`, COPY_FILE_REL);
+    }
+
+    const copied = await this.client.send({
+      link: {
+        ...copy,
+        href: `${copy.href}${copy.href.includes("?") ? "&" : "?"}parentFolderUri=${folderHref}`,
+        method: "POST",
+      },
+      contentDisposition: `filename*=UTF-8''${encodeURIComponent(name)}`,
+      timeoutMs: BULK_TRANSFER_TIMEOUT_MS,
+      ...withSignal(signal),
+    });
+    if (!copied.ok) return copied;
+
+    const copyHref = selfHrefOf(copied.value.body);
+    if (copyHref === undefined) {
+      return malformed(
+        copied.value,
+        "the file it copied",
+        "and the body carried no self link",
+      );
+    }
+    return { ok: true, value: copyHref };
   }
 
   /**

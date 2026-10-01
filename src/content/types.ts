@@ -191,6 +191,10 @@ export const VALIDATE_RENAME_REL = "validateRename";
  * new child's name before creating it (finding 6.6). */
 export const VALIDATE_NEW_MEMBER_NAME_REL = "validateNewMemberName";
 
+/** `POST` (with `?parentFolderUri=`) to copy a file on the server. Carried by
+ * the file resource itself, not by its member record (Finding 13.9). */
+export const COPY_FILE_REL = "copyFile";
+
 /** The Files service collection new file resources are `POST`ed to. Composed,
  * like {@link FOLDERS_COLLECTION}, because create has no representation to hang
  * a link off yet. */

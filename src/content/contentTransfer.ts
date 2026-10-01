@@ -29,8 +29,8 @@
 import * as vscode from "vscode";
 
 import { MAX_TRANSFER_BYTES } from "./adapter";
-import { type ContentCommandDeps, reportNoTarget } from "./contentCommands";
-import { localiseContentProblem } from "./messages";
+import { type ContentCommandDeps } from "./contentCommands";
+import { localiseContentProblem, reportNoTarget } from "./messages";
 import { describeContentProblem, type ContentProblem } from "./problems";
 import {
   isDownloadable,
@@ -511,18 +511,19 @@ export async function download(
 }
 
 /**
- * Run `work` behind a cancellable notification. Cancel aborts the signal the
- * adapter calls are given; the loops check it between files, so a file
- * already on the wire is abandoned and nothing after it starts.
+ * Run `work` behind a cancellable notification, and return what it returns.
+ * Cancel aborts the signal the adapter calls are given; the loops check it
+ * between files, so a file already on the wire is abandoned and nothing
+ * after it starts. Also used by a copy's paste (`contentCopy.ts`, 13b).
  */
-async function withTransferProgress(
+export async function withTransferProgress<T>(
   title: string,
   work: (
     progress: vscode.Progress<{ message?: string; increment?: number }>,
     signal: AbortSignal,
-  ) => Promise<void>,
-): Promise<void> {
-  await vscode.window.withProgress(
+  ) => Promise<T>,
+): Promise<T> {
+  return await vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title,
@@ -536,7 +537,7 @@ async function withTransferProgress(
       // A token cancelled already may deliver its event only later.
       if (token.isCancellationRequested) controller.abort();
       try {
-        await work(progress, controller.signal);
+        return await work(progress, controller.signal);
       } finally {
         sub.dispose();
       }
@@ -588,7 +589,7 @@ function tooLargeToUpload(): string {
  *   and "refused (HTTP 400)" alone would not tell the user why their file
  *   was turned away.
  */
-function transferProblemMessage(problem: ContentProblem): string {
+export function transferProblemMessage(problem: ContentProblem): string {
   if (problem.code === "content-too-large") {
     return vscode.l10n.t(
       "It is larger than the {0} MB this extension downloads.",
@@ -606,8 +607,9 @@ function transferProblemMessage(problem: ContentProblem): string {
   return localiseContentProblem(problem);
 }
 
-/** `message`, then how many items a download left out, when any were. */
-function withLeftOut(message: string, skipped: number): string {
+/** `message`, then how many items a download or a copy left out, when any
+ * were. */
+export function withLeftOut(message: string, skipped: number): string {
   if (skipped === 0) return message;
   return skipped === 1
     ? vscode.l10n.t(

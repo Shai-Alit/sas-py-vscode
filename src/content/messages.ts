@@ -21,6 +21,7 @@
 import * as vscode from "vscode";
 
 import { localiseAuthProblem } from "../auth/messages";
+import { type ContentAdapter } from "./adapter";
 import { type ContentProblem } from "./problems";
 
 /**
@@ -103,4 +104,18 @@ export function localiseContentProblem(problem: ContentProblem): string {
  * stop when there is nothing to add. */
 function detailSuffix(detail: string | undefined): string {
   return detail === undefined ? "" : ` ${detail}`;
+}
+
+/** The signed-out / no-target message for a SAS Content command.
+ * `adapter === undefined` is the real case (the view's welcome content
+ * usually pre-empts it); a missing item would mean the command was invoked
+ * outside its menu, which the `when` clauses prevent. Lives here, beside the
+ * other messages, so both command shells can use it without importing each
+ * other. */
+export function reportNoTarget(adapter: ContentAdapter | undefined): void {
+  void vscode.window.showErrorMessage(
+    adapter === undefined
+      ? vscode.l10n.t("Sign in to SAS Viya to change SAS Content.")
+      : vscode.l10n.t("Select an item in the SAS Content view first."),
+  );
 }

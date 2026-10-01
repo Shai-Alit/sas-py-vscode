@@ -31,7 +31,7 @@ import { AUTH_PROVIDER_ID } from "../auth/authProvider";
 import type { HttpTransport } from "../auth/transport";
 import type { ProfileStore } from "../profile/store";
 import {
-  clearCutContentItem,
+  clearContentClipboard,
   registerContentCommands,
 } from "./contentCommands";
 import { SasContentDragAndDropController } from "./contentDragAndDrop";
@@ -219,21 +219,21 @@ export function registerContentExplorer(
     view.onDidChangeVisibility((event) => {
       if (event.visible) provider.refresh();
     }),
-    // A cut item (6e) is scoped to the deployment it was cut from; a profile
-    // switch, a session change, or a sign-out all mean "the deployment this
-    // extension is talking to may have just changed," so a pending cut is
+    // A cut (6e) or copied (13b) item is scoped to the deployment it came
+    // from; a profile switch, a session change, or a sign-out all mean "the
+    // deployment this extension is talking to may have just changed," so it is
     // cleared alongside the tree reload rather than left to `paste`'s own
     // endpoint check to catch silently.
     profiles.onDidChange(() => {
-      clearCutContentItem();
+      clearContentClipboard();
       provider.refresh();
     }),
     authEvents.onDidChangeSessions(() => {
-      clearCutContentItem();
+      clearContentClipboard();
       provider.refresh();
     }),
     authEvents.onDidSignOut(() => {
-      clearCutContentItem();
+      clearContentClipboard();
       session.clear();
       provider.refresh();
     }),

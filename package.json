@@ -265,6 +265,11 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.copyContentItem",
+        "title": "%command.copyContentItem.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "pythonOnViya.pasteContentItem",
         "title": "%command.pasteContentItem.title%",
         "category": "%extension.category%"
@@ -416,6 +421,10 @@
           "when": "false"
         },
         {
+          "command": "pythonOnViya.copyContentItem",
+          "when": "false"
+        },
+        {
           "command": "pythonOnViya.pasteContentItem",
           "when": "false"
         },
@@ -521,9 +530,14 @@
           "group": "7_modify@3"
         },
         {
-          "command": "pythonOnViya.pasteContentItem",
-          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && pythonOnViya.hasCutContentItem && !listMultiSelection",
+          "command": "pythonOnViya.copyContentItem",
+          "when": "view == pythonOnViya.contentExplorer && viewItem =~ /^sasContent:(folder|file)(\\.fav)?$/ && !listMultiSelection",
           "group": "7_modify@4"
+        },
+        {
+          "command": "pythonOnViya.pasteContentItem",
+          "when": "view == pythonOnViya.contentExplorer && (viewItem =~ /^sasContent:folder(\\.fav)?$/ || viewItem == sasContent:myFolder) && pythonOnViya.hasContentClipboard && !listMultiSelection",
+          "group": "7_modify@5"
         },
         {
           "command": "pythonOnViya.emptyRecycleBin",

@@ -49,6 +49,7 @@ under their category.
 | Restore | `Python on Viya: Restore` | `pythonOnViya.restoreContentItem` | SAS Content |
 | Empty Recycle Bin | `Python on Viya: Empty Recycle Bin` | `pythonOnViya.emptyRecycleBin` | SAS Content |
 | Cut | `Python on Viya: Cut` | `pythonOnViya.cutContentItem` | SAS Content |
+| Copy | `Python on Viya: Copy` | `pythonOnViya.copyContentItem` | SAS Content |
 | Paste | `Python on Viya: Paste` | `pythonOnViya.pasteContentItem` | SAS Content |
 | Upload Files... | `Python on Viya: Upload Files...` | `pythonOnViya.uploadToContentFolder` | SAS Content |
 | Download... | `Python on Viya: Download...` | `pythonOnViya.downloadContentItem` | SAS Content |

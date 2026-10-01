@@ -1271,6 +1271,174 @@ describe("content/adapter", () => {
       });
     });
 
+    describe("copyFile (13b, Finding 13.9)", () => {
+      const COPY = `${FILE_SELF}/copy`;
+      const NEW_FILE = "/files/files/eeee0000-0000-4000-8000-000000000002";
+      const source: ContentItem = {
+        id: "m-analysis",
+        name: "analysis.py",
+        type: "child",
+        contentType: "file",
+        uri: FILE_SELF,
+        links: [],
+      };
+      const copied = () =>
+        contentOk(
+          {
+            ...(fileRep() as Record<string, unknown>),
+            id: "eeee0000-0000-4000-8000-000000000002",
+            links: [{ rel: "self", href: NEW_FILE, method: "GET" }],
+          },
+          { status: 201, contentType: "application/vnd.sas.file+json" },
+        );
+      const getsFile = (href: string, method: string) =>
+        href === FILE_SELF && method === "GET";
+      const postsCopy = (href: string, method: string) =>
+        href.startsWith(COPY) && method === "POST";
+
+      it("reads the file for its copyFile link, then POSTs it with the folder and the name", async () => {
+        let post: ContentRequest | undefined;
+        const { adapter, calls } = adapterWith([
+          { when: getsFile, reply: contentOk(fileRep()) },
+          {
+            when: postsCopy,
+            reply: (request) => {
+              post = request;
+              return copied();
+            },
+          },
+        ]);
+        const result = await adapter.copyFile(
+          source,
+          parentFolder(),
+          "résumé copy.py",
+        );
+        assert.ok(result.ok);
+        assert.equal(result.value, NEW_FILE);
+        assert.deepEqual(calls, [
+          { href: FILE_SELF, method: "GET" },
+          { href: `${COPY}?parentFolderUri=${PARENT}`, method: "POST" },
+        ]);
+        assert.ok(post);
+        assert.equal(post.link.responseType, "application/vnd.sas.file");
+        assert.equal(
+          post.contentDisposition,
+          "filename*=UTF-8''r%C3%A9sum%C3%A9%20copy.py",
+        );
+        assert.equal(post.timeoutMs, 300_000);
+        assert.equal(post.rawBody, undefined);
+        assert.equal(post.jsonBody, undefined);
+      });
+
+      it("adds the folder to a copyFile link that already has a query", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: getsFile,
+            reply: contentOk({
+              ...(fileRep() as Record<string, unknown>),
+              links: [{ rel: "copyFile", href: `${COPY}?v=1`, method: "POST" }],
+            }),
+          },
+          { when: postsCopy, reply: copied() },
+        ]);
+        const result = await adapter.copyFile(source, parentFolder(), "x.py");
+        assert.ok(result.ok);
+        assert.equal(calls[1]?.href, `${COPY}?v=1&parentFolderUri=${PARENT}`);
+      });
+
+      it("refuses an item with no address before any request", async () => {
+        const { adapter, calls } = adapterWith([]);
+        const result = await adapter.copyFile(
+          { ...source, uri: undefined },
+          parentFolder(),
+          "x.py",
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.deepEqual(calls, []);
+      });
+
+      it("refuses a folder with no address before any request", async () => {
+        const { adapter, calls } = adapterWith([]);
+        const result = await adapter.copyFile(
+          source,
+          { id: "p", name: "Nowhere", type: "folder", links: [] },
+          "x.py",
+        );
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "link-missing");
+        assert.deepEqual(calls, []);
+      });
+
+      it("passes a failed read of the file straight through", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: getsFile,
+            reply: contentFail({
+              code: "content-rejected",
+              error: { status: 404 },
+            }),
+          },
+        ]);
+        const result = await adapter.copyFile(source, parentFolder(), "x.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+        assert.equal(calls.length, 1);
+      });
+
+      it("reports a file that offers no copyFile link", async () => {
+        const { adapter, calls } = adapterWith([
+          {
+            when: getsFile,
+            reply: contentOk({
+              ...(fileRep() as Record<string, unknown>),
+              links: [{ rel: "self", href: FILE_SELF, method: "GET" }],
+            }),
+          },
+        ]);
+        const result = await adapter.copyFile(source, parentFolder(), "x.py");
+        assert.ok(!result.ok);
+        assert.deepEqual(result.problem, {
+          code: "link-missing",
+          rel: "copyFile",
+          resource: 'file "analysis.py"',
+        });
+        assert.equal(calls.length, 1);
+      });
+
+      it("passes the service's refusal of a taken name straight through", async () => {
+        const { adapter } = adapterWith([
+          { when: getsFile, reply: contentOk(fileRep()) },
+          {
+            when: postsCopy,
+            reply: contentFail({
+              code: "content-rejected",
+              error: {
+                status: 409,
+                message: 'File with name "x.py" already exists in folder.',
+              },
+            }),
+          },
+        ]);
+        const result = await adapter.copyFile(source, parentFolder(), "x.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "content-rejected");
+      });
+
+      it("reports a copy response with no self link as malformed", async () => {
+        const { adapter } = adapterWith([
+          { when: getsFile, reply: contentOk(fileRep()) },
+          {
+            when: postsCopy,
+            reply: contentOk({ id: "x", name: "x.py" }, { status: 201 }),
+          },
+        ]);
+        const result = await adapter.copyFile(source, parentFolder(), "x.py");
+        assert.ok(!result.ok);
+        assert.equal(result.problem.code, "response-malformed");
+      });
+    });
+
     describe("renameItem", () => {
       it("PUTs a minimal {name} body for a folder read directly", async () => {
         let body: unknown;

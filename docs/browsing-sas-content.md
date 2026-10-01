@@ -59,9 +59,26 @@ Right-click an item in the tree for its actions:
   item's own folder) is quietly ignored. **Cut**, then **Paste** on the
   destination folder, does the same move without dragging — useful when a
   drag-and-drop target is awkward to reach, or you would rather not wonder
-  whether dropping onto a folder moves or copies (it always moves; there is no
-  copy). Only one item can be cut at a time, and Cut never appears on an item
-  already in the Recycle Bin or during a multi-selection.
+  whether dropping onto a folder moves or copies (it always moves). Only one
+  item can be cut at a time, and Cut never appears on an item already in the
+  Recycle Bin or during a multi-selection.
+- **Copy** — on folders and files outside the **Recycle Bin**. It also
+  appears on a data flow and on a folder directly under **SAS Content**,
+  which cannot be copied; choosing it there says so. Then **Paste** on a
+  folder, or on **My Folder**, puts a copy there. Cut and Copy
+  share one clipboard, so Paste uses whichever you chose last. A copy stays
+  on the clipboard, so you can paste it into several folders. If the folder
+  already has an item of that name, including when you paste into the
+  item's own folder, the copy is named like `model_Copy1.py` (a folder:
+  `Project_Copy1`). A folder is copied with everything below it. Items that
+  are not files, such as data flows, are left out; the message says how
+  many, and the **Python on Viya** log says which. Only what this view
+  shows is copied, so a report or a job in the folder is not. A copy shows
+  its progress in a notification you can cancel; files already copied stay
+  where they are, and the message says how far it got. A file that was
+  being copied at the moment you cancel may still arrive, since the server
+  can finish a copy it has already been sent; the folder is refreshed, so
+  you will see it.
 - **Delete** — on any folder or file. An ordinary folder or file is moved to
   the **Recycle Bin**, with no confirmation, because you can restore it. A
   top-level folder — one directly under **SAS Content** — has no recycle step;
@@ -159,6 +176,8 @@ It also refreshes itself when you switch connection profile or sign in or out.
   extension rather than the server.
 - [ADR-0032](adr/0032-content-cut-paste.md) — why Cut/Paste ships alongside
   drag-and-drop instead of replacing it.
+- [ADR-0045](adr/0045-content-copy-paste.md) — how Copy shares Cut's
+  clipboard, and how a file and a folder are copied.
 - Probe findings 97–101 and 6.1–6.15 in
   [`docs/phases/phase-6.md`](https://github.com/Shai-Alit/sas-py-vscode/blob/main/docs/phases/phase-6.md)
   — the live Folders/Files wire shapes this is built from: the `ETag`/`If-Match`

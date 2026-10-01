@@ -64,6 +64,111 @@ say `upload-test`), and a local scratch folder with a `.py`, a `.csv`, a
   right-click it → **Download...**. **Expect:** `"<name>" can't be
   downloaded. Only files and folders can be.`, with no folder picker.
 
+## 13b — Copy and Paste in SAS Content
+
+See `docs/phases/phase-13.md`'s "13b built" Runbook entry. Build a `.vsix`
+from this branch, install it, and sign in to a Viya profile.
+
+**Set up**, all in the SAS Content view. Under **My Folder**, make a folder
+`copy-test` (**New Folder**). In `copy-test`, make two sub-folders, `dest`
+and `sub`. Then use **Upload Files...** (13a) to put three small files in
+place: `a.py` (any text) and `pic.png` (any image) into `copy-test`, and
+`b.py` into `sub`. Make sure **My Folder** has no folder named
+`copy-test_Copy1` to `copy-test_Copy4`. You should have:
+
+```text
+My Folder
+└── copy-test
+    ├── dest        (empty)
+    ├── sub
+    │   └── b.py
+    ├── a.py
+    └── pic.png
+```
+
+Run the items in order: each one starts from what the one before left.
+Every **Copy** and **Paste** below is on the right-click menu of the item
+named. When you finish, delete `copy-test` and `copy-test_Copy1` to
+`copy-test_Copy4` from **My Folder**, then empty the **Recycle Bin**.
+
+- [x] **13.22** **Copy a file, twice into one folder.** Right-click `a.py`
+  → **Copy**. **Expect:** the message `Copied "a.py". Right-click a folder
+  and choose Paste.` Right-click `dest` → **Paste**. **Expect:** `a.py`
+  appears under `dest` and is selected, with no message. Open
+  `dest/a.py`: its text matches `copy-test/a.py`. Right-click `dest` →
+  **Paste** again, without copying again. **Expect:** `a_Copy1.py` appears
+  under `dest`, and the message `Pasted as "a_Copy1.py", because "dest"
+  already has an item named "a.py".`
+- [x] **13.23** **Into its own folder, and an image.** Right-click
+  `pic.png` → **Copy**, then right-click `copy-test` → **Paste**.
+  **Expect:** `pic_Copy1.png` appears beside `pic.png` in `copy-test`.
+  Right-click `pic_Copy1.png` → **Download...** (13a), save it, and open
+  the saved file. **Expect:** the same image as `pic.png`.
+- [x] **13.24** **Copy a folder.** `copy-test` now holds 6 files: `a.py`,
+  `pic.png`, `pic_Copy1.png`, `dest/a.py`, `dest/a_Copy1.py` and
+  `sub/b.py`. Right-click `copy-test` → **Copy**, then right-click **My
+  Folder** → **Paste**. **Expect:** a progress notification, then `Copied
+  6 files into "copy-test_Copy1".` `copy-test_Copy1` is selected in the
+  tree; expand it and check it has the same folders and files as
+  `copy-test`.
+  **Optional, only if your SAS Content has a data flow you may move:** move
+  one into `copy-test` first, then do the step above. **Expect:** the
+  message ends `1 item was left out. See the Python on Viya log for which,
+  and why.`, and the **Python on Viya** output channel has a line naming
+  the data flow with `it is not a file`. Move the data flow back
+  afterwards.
+- [x] **13.25** **A folder into itself.** Right-click `copy-test` →
+  **Copy**, then right-click `copy-test` itself → **Paste**. **Expect:**
+  `Copied 6 files into "copy-test".`, and a new folder `copy-test` inside
+  `copy-test`. Expand it. **Expect:** the 6 files and 2 sub-folders listed
+  in 13.24, and no `copy-test` inside it — the copy holds the tree as it
+  was before the paste and does not repeat. Delete the inner `copy-test`
+  before going on.
+- [x] **13.26** **Cut and Copy share one clipboard.** Right-click `a.py` →
+  **Copy**. Then right-click `pic_Copy1.png` → **Cut**. Then right-click
+  `dest` → **Paste**. **Expect:** `pic_Copy1.png` moves from `copy-test`
+  into `dest`, and no new `a.py` copy appears anywhere: the later Cut
+  replaced the Copy. Right-click any folder. **Expect:** no **Paste** entry,
+  since a cut is used up by its paste. Now right-click `a.py` → **Copy**
+  again, then switch to another connection profile (or sign out and sign
+  back in). Right-click any folder. **Expect:** no **Paste** entry.
+- [x] **13.27** **Where Copy and Paste refuse.** Right-click
+  `dest/a_Copy1.py` → **Delete**; it goes to the **Recycle Bin**. Expand
+  the **Recycle Bin** and right-click `a_Copy1.py` there. **Expect:** no
+  **Copy** entry. Right-click `copy-test/a.py` → **Copy**, then right-click
+  the **Recycle Bin**, and then `a_Copy1.py` inside it. **Expect:** no
+  **Paste** entry on either. Expand **SAS Content** and right-click a folder
+  directly under it, such as `Public` → **Copy**. **Expect:** the error
+  `"<name>" cannot be copied from here.`: **Copy** is on the menu, but a
+  top-level folder cannot be copied. **Optional, only if a data flow is
+  available:** right-click it → **Copy**. **Expect:** the error `"<name>"
+  can't be copied. Only files and folders can be.` **Copy** is on its menu
+  too, since a data flow shares a file's menu.
+  Pasting *into* a top-level folder such as `Public` is not refused: any
+  signed-in user may add there (Finding 13.12).
+  **(10/1/2026)** Passed. A paste of `a.py` into `Public` worked, as
+  intended.
+- [x] **13.28** **Cancel a folder copy.** Upload 10 or more files into
+  `sub`, so the copy takes long enough to cancel. Right-click `copy-test` →
+  **Copy**, then right-click **My Folder** → **Paste**. While the
+  notification is still counting, click its **Cancel** button.
+  **Expect:** no error, and the message
+  `Copy of "copy-test" cancelled. <n> of <total> files were copied into "copy-test_Copy2".`
+  Expand
+  `copy-test_Copy2` and count its files. **Expect:** `<n>`, or `<n> + 1`
+  if the file being copied at the moment of the cancel still arrived (the
+  server may finish a copy it already received).
+- [x] **13.29** **Two pastes of one copy at once.** Right-click
+  `copy-test` → **Copy**. Right-click **My Folder** → **Paste**, then at
+  once, while the first notification is showing, right-click **My Folder**
+  → **Paste** again. **Expect:** two notifications, both ending in a
+  `Copied <n> files into ...` message, no error, and two new folders,
+  `copy-test_Copy3` and `copy-test_Copy4`, each with the same contents.
+  Two pastes this close can both choose the same free name; the second
+  then tries once more under the next one. Whether a hand-driven double
+  paste is fast enough to hit that is luck, so this checks only that it
+  never errors; the race itself is covered by `content-copy.test.ts`.
+
 ## 13n — output after a `SAS.submit()` graph
 
 See `docs/phases/phase-13.md`'s "13n built" Runbook entry. Build a `.vsix`

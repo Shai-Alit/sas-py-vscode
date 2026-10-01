@@ -1,6 +1,8 @@
 # ADR-0032 — Right-click Cut/Paste ships as a SAS Content move interaction, alongside drag-and-drop
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-10-01 by
+  [ADR-0045](0045-content-copy-paste.md): Copy now exists, and shares this
+  slot
 - **Date:** 2026-09-11
 - **Decides:** whether the SAS Content tree gets a right-click Cut/Paste
   command pair for moving an item, in addition to drag-and-drop, and how
@@ -106,12 +108,14 @@ Two new commands, `pythonOnViya.cutContentItem` and
 
 - `contentCommands.ts` grows a second cross-command piece of state (the cut
   slot, alongside the file's existing `run()` helper) and a
-  `pythonOnViya.hasCutContentItem` context key the Paste menu entry gates
-  on, both managed through one `setCutState`/`clearCutContentItem` pair so
-  the slot and its context key can never drift apart. Neither is expected
+  `pythonOnViya.hasContentClipboard` context key the Paste menu entry gates
+  on, both managed through one `setClipboard`/`clearContentClipboard` pair so
+  the slot and its context key can never drift apart. (These were
+  `hasCutContentItem`, `setCutState` and `clearCutContentItem` until
+  [ADR-0045](0045-content-copy-paste.md) let the slot hold a copy too.) Neither is expected
   to need to generalise to multiple simultaneous cuts. The slot is
   module-level, shared across the whole extension host (and, in the
-  integration test suite, across every test in the process) — `clearCutContentItem`
+  integration test suite, across every test in the process) — `clearContentClipboard`
   is exported partly so tests can reset it between cases, since nothing
   currently does and the first test that sets it would otherwise leak into
   every later one in the file.

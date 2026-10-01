@@ -24,6 +24,7 @@
     "src/compute/sessionManager.ts",
     "src/connectionProblemNode.ts",
     "src/content/contentCommands.ts",
+    "src/content/contentCopy.ts",
     "src/content/contentDragAndDrop.ts",
     "src/content/contentExplorer.ts",
     "src/content/contentFileSystem.ts",

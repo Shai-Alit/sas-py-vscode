@@ -136,9 +136,9 @@ export interface ContentRequest {
    */
   jsonBody?: unknown;
   /**
-   * Sent as `Content-Disposition`. File create needs
+   * Sent as `Content-Disposition`. File create and file copy need
    * `filename*=UTF-8''<name>` so the Files service names the new resource
-   * (finding 6.4); nothing else sets it.
+   * (findings 6.4 and 13.9); nothing else sets it.
    */
   contentDisposition?: string | undefined;
   /**

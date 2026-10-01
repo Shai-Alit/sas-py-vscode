@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import type { ContentAdapter } from "../../../src/content/adapter";
 import type { ContentResult } from "../../../src/content/client";
 import {
-  clearCutContentItem,
+  clearContentClipboard,
   cut,
   paste,
   type ContentCommandDeps,
@@ -23,9 +23,9 @@ import type { ContentItem } from "../../../src/content/types";
  * other `vscode` shells this coverage gate does not see. `cut`/`paste` are
  * exported from `contentCommands.ts` for exactly this.
  *
- * `cutState` is process-lifetime module state, shared with every other test
+ * The clipboard is process-lifetime module state, shared with every other test
  * in this file (and, in principle, every other test file the integration
- * run loads) — `afterEach` below calls `clearCutContentItem()` so no test
+ * run loads) — `afterEach` below calls `clearContentClipboard()` so no test
  * leaks a pending cut into the next.
  */
 
@@ -161,7 +161,7 @@ async function withMessageStubs(
 
 describe("SAS Content Cut/Paste (6e)", () => {
   afterEach(() => {
-    clearCutContentItem();
+    clearContentClipboard();
   });
 
   it("cuts, then pastes into a valid folder: moves, refreshes, reveals, and clears the cut", async () => {
@@ -193,7 +193,10 @@ describe("SAS Content Cut/Paste (6e)", () => {
       holder.errorToasts.length = 0;
       await paste(holder.deps, targetFolder);
       assert.equal(moves.length, 1, "moveItem should not run a second time");
-      assert.match(holder.errorToasts[0] ?? "", /Nothing has been cut yet/);
+      assert.match(
+        holder.errorToasts[0] ?? "",
+        /Nothing has been cut or copied yet/,
+      );
     });
   });
 
@@ -204,7 +207,7 @@ describe("SAS Content Cut/Paste (6e)", () => {
       assert.equal(holder.state.refreshed, 0);
       assert.match(
         holder.errorToasts[0] ?? "",
-        /Nothing has been cut yet\. Cut an item first\./,
+        /Nothing has been cut or copied yet\. Cut or copy an item first\./,
       );
     });
   });
@@ -220,7 +223,10 @@ describe("SAS Content Cut/Paste (6e)", () => {
 
       await paste(holder.deps, targetFolder);
       assert.equal(holder.state.refreshed, 0);
-      assert.match(holder.errorToasts[1] ?? "", /Nothing has been cut yet/);
+      assert.match(
+        holder.errorToasts[1] ?? "",
+        /Nothing has been cut or copied yet/,
+      );
     });
   });
 
@@ -327,7 +333,7 @@ describe("SAS Content Cut/Paste (6e)", () => {
     });
   });
 
-  it("refuses a paste after switching to a different deployment, and clearCutContentItem resets it cleanly", async () => {
+  it("refuses a paste after switching to a different deployment, and clearContentClipboard resets it cleanly", async () => {
     const holder = depsWith(notCalled, ENDPOINT_A);
     await withMessageStubs(holder, async () => {
       cut(holder.deps, fileMember);
@@ -347,13 +353,16 @@ describe("SAS Content Cut/Paste (6e)", () => {
       assert.equal(holder.state.refreshed, 0);
     });
 
-    // clearCutContentItem (what contentExplorer.ts calls on a real profile
+    // clearContentClipboard (what contentExplorer.ts calls on a real profile
     // change / sign-out) leaves no cut behind for the next paste either.
     holder.errorToasts.length = 0;
-    clearCutContentItem();
+    clearContentClipboard();
     await withMessageStubs(holder, async () => {
       await paste(holder.deps, targetFolder);
-      assert.match(holder.errorToasts[0] ?? "", /Nothing has been cut yet/);
+      assert.match(
+        holder.errorToasts[0] ?? "",
+        /Nothing has been cut or copied yet/,
+      );
     });
   });
 
@@ -391,7 +400,7 @@ describe("SAS Content Cut/Paste (6e)", () => {
       await paste(succeeding.deps, targetFolder);
       assert.doesNotMatch(
         succeeding.errorToasts[0] ?? "",
-        /Nothing has been cut yet/,
+        /Nothing has been cut or copied yet/,
       );
       assert.equal(succeeding.state.refreshed, 1);
       assert.deepEqual(
@@ -448,7 +457,7 @@ describe("SAS Content Cut/Paste (6e)", () => {
     });
   });
 
-  it("a failed paste does not resurrect a cut that clearCutContentItem removed while its move was in flight", async () => {
+  it("a failed paste does not resurrect a cut that clearContentClipboard removed while its move was in flight", async () => {
     let resolveMove!: (value: ContentResult<ContentItem>) => void;
     const movePromise = new Promise<ContentResult<ContentItem>>((resolve) => {
       resolveMove = resolve;
@@ -466,7 +475,7 @@ describe("SAS Content Cut/Paste (6e)", () => {
       // Something else — a profile switch, a sign-out — clears the slot
       // while the move above is still in flight, exactly as
       // contentExplorer.ts's onDidChange/onDidSignOut handlers do.
-      clearCutContentItem();
+      clearContentClipboard();
 
       resolveMove({
         ok: false,
@@ -483,7 +492,10 @@ describe("SAS Content Cut/Paste (6e)", () => {
       holder.errorToasts.length = 0;
       await paste(holder.deps, targetFolder);
       assert.equal(moves.length, 1, "moveItem should not run a second time");
-      assert.match(holder.errorToasts[0] ?? "", /Nothing has been cut yet/);
+      assert.match(
+        holder.errorToasts[0] ?? "",
+        /Nothing has been cut or copied yet/,
+      );
     });
   });
 });

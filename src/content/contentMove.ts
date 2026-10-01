@@ -56,6 +56,20 @@ export type MoveObjection =
   | "already-there";
 
 /**
+ * Whether `target` is a folder an item can be moved or copied (13b) into: an
+ * ordinary folder or My Folder. Not a file, not the synthetic "SAS Content"
+ * root (no representation to put anything in), and not the My Favorites or
+ * Recycle Bin delegates, whose drops mean something else.
+ */
+export function canReceiveMembers(target: ContentItem): boolean {
+  return (
+    isContainer(target) &&
+    !isSasContentRoot(target) &&
+    (!isDelegateFolder(target) || isMyFolderDelegate(target))
+  );
+}
+
+/**
  * `undefined` when `dragged` may be moved into `target`, otherwise the reason
  * not to try. A caller with several dragged items filters the list through this
  * and moves what is left, silently skipping the rest.
@@ -69,11 +83,7 @@ export function moveObjection(
     return "in-recycle-bin";
   }
 
-  const targetCanReceive =
-    isContainer(target) &&
-    !isSasContentRoot(target) &&
-    (!isDelegateFolder(target) || isMyFolderDelegate(target));
-  if (!targetCanReceive) return "target-not-a-folder";
+  if (!canReceiveMembers(target)) return "target-not-a-folder";
 
   const targetHref = resourceHrefOf(target);
   const draggedHref = resourceHrefOf(dragged);

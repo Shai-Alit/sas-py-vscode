@@ -46,15 +46,43 @@ same way it does in the output channel for a run: SAS Viya holds printed
 output until the step ends ([Watching the
 output](running-python.md#watching-the-output)).
 
-An image or an HTML table needs an explicit call, exactly as it does in [the
-Result panel](running-python.md#the-result-panel): `SAS.show(plt,
-filetype="png")` or `SAS.show(df)`, or a file your code **writes** to the
-session's working directory, such as `fig.savefig("plot.png")` or
-`df.to_html("table.html")`. There is no implicit `plt.show()` or `_repr_html_`
-capture. A bare `DataFrame` or figure as a cell's last expression produces
-nothing, which is a difference from how a Jupyter kernel normally behaves.
+A cell shows its result the way a Jupyter cell does:
 
-Pass `filetype="png"` when you show a figure. `SAS.show(plt)` on its own
+- **Its last expression.** If the cell ends in an expression whose value is
+  not `None`, the cell shows it: as HTML if the value has `_repr_html_` (a
+  `DataFrame`, `df.head()`), as an image if it has `_repr_png_`, and
+  otherwise as its `repr()`, in plain text. End the line with `;` to hide
+  it, as in Jupyter. If the value's `_repr_html_` or `_repr_png_` raises,
+  one line in the cell's output names it, and the value is shown the next
+  way down.
+- **Its open matplotlib figures.** After the cell runs, every figure still
+  open is shown as a PNG and closed, whether or not you called `plt.show()`
+  and whether or not the cell raised. Plots drawn by libraries built on
+  matplotlib, such as seaborn and pandas' `.plot()`, are matplotlib figures
+  too.
+
+A figure you also show yourself, with `SAS.show(plt, filetype="png")` or by
+saving it with `fig.savefig(...)`, and leave open, is shown twice: once from
+your own call and once by the cell. Call `plt.close()` after showing it to
+avoid that. Jupyter behaves the same way.
+
+The explicit ways still work as they do in [the Result
+panel](running-python.md#the-result-panel): `SAS.show(df)`, `SAS.show(plt,
+filetype="png")`, or a file your code **writes** to the session's working
+directory, such as `df.to_html("table.html")`. Run File and Run Selection do
+not show a last expression or open figures; only notebook and interactive
+window cells do ([ADR-0046](adr/0046-notebook-cells-display-their-result.md)).
+
+The cell runs through two small helper programs the extension keeps in the
+session under the filerefs `PYVRUN` and `PYVFLUSH`, and passes values in the
+macro variables `PYVIYA_CELL`, `PYVIYA_USERCC` and `PYVIYA_FLUSHCC`. Don't use
+those names in your own `SAS.submit()` code. If showing the figures fails,
+the cell's output ends with one line saying so, and the cell's own result is
+unaffected. If the helpers cannot be uploaded at all, the cell still runs,
+without showing its result, and the **Python on Viya** output channel says
+why.
+
+Pass `filetype="png"` when you show a figure with `SAS.show`. `SAS.show(plt)` on its own
 produces an SVG figure, and a notebook cell drops SVG entirely (it can carry
 script). In SAS output the cell shows `SAS.show`'s `Output` title and,
 where the figure would be, a one-line note saying to pass `filetype="png"`.
@@ -101,11 +129,19 @@ File's session, not the notebook's.
 
 ## When it does not work
 
-**A figure or table never appears in the output.** The same rule as the
-Result panel: call `SAS.show(...)`, or `fig.savefig(...)` / `df.to_html(...)`,
-explicitly — there is no implicit capture of a bare expression or
-`plt.show()`. For a figure shown with `SAS.show`, check that you passed
-`filetype="png"`.
+**A figure or table never appears in the output.** A value shows only when
+it is the cell's last statement, with no `;` after it, and is not `None`;
+`print(df)` or a value earlier in the cell shows only what it prints. A
+figure shows only if it is still open when the cell ends, so a `plt.close()`
+in the cell hides it. Check the **Python on Viya** output channel for a line
+saying the cell ran without displaying its result. For a figure shown with
+`SAS.show`, check that you passed `filetype="png"`.
+
+**A figure appears twice.** You showed or saved it yourself and left it open,
+[see above](#output). Close it with `plt.close()` after showing it.
+
+**A plotly chart shows nothing.** Its HTML depends on a script, which never
+runs (next item). Have your code save it as an image file instead.
 
 **An embedded chart or widget in an HTML output doesn't do anything.** If it
 depends on a `<script>` tag to render or become interactive, that script never
@@ -128,3 +164,5 @@ notebooks.
   notebook cannot share a session with Run File.
 - [ADR-0036](adr/0036-notebook-html-output-is-sanitized.md) — what the HTML
   sanitizer allows and drops, and why.
+- [ADR-0046](adr/0046-notebook-cells-display-their-result.md) — how a cell
+  shows its last expression and its open figures.

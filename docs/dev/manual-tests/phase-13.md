@@ -296,3 +296,71 @@ level each refused request.
   **Expect:** the output channel shows one `refused a request` debug line
   for each, with the status and message only. Set the log level back to
   **Info**: the lines no longer appear.
+
+## 13f — a notebook cell displays its result
+
+See `docs/phases/phase-13.md`'s "13f built" Runbook entry. Build a `.vsix`
+from this branch, install it, and sign in to a Viya profile. Create
+`display-test.ipynb`, pick the **Python on Viya** kernel, and run the
+items in order in that notebook unless an item says otherwise.
+
+- [x] **13.30** **A trailing value.** Run a cell holding
+      `import pandas as pd` and
+      `df = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})`, then a
+      cell holding only `df`. **Expect:** the first cell shows nothing; the
+      second shows the table as HTML, in the notebook's table styling. Run
+      a cell holding `x = 41` and `x + 1`. **Expect:** `42`, in plain text.
+- [x] **13.31** **The semicolon, and `None`.** Run a cell holding `df;`,
+      then one holding `print("hi")`. **Expect:** the first shows nothing;
+      the second shows `hi` once, with no `None` after it.
+- [x] **13.32** **A plot left open.** Run a cell holding
+      `import matplotlib.pyplot as plt` and `plt.plot([1, 3, 2])`.
+      **Expect:** one figure, as a PNG, and no repr of the line list. Run a
+      cell holding `plt.plot([1, 2]); plt.show()`. **Expect:** one figure.
+      Run a cell holding `plt.plot([1, 2]); plt.close()`. **Expect:**
+      nothing.
+- [x] **13.33** **seaborn and pandas.** If the server has seaborn, run
+      `import seaborn as sns` and
+      `sns.barplot(x=["a", "b"], y=[1, 2]);`. **Expect:** one figure. Run
+      `df.plot(x="a", y="a");`. **Expect:** one figure. Note in the Runbook
+      entry if seaborn is missing on the server.
+      **(10/1/2026)** the server does not have seaborn; the `df.plot`
+      half passed.
+- [x] **13.34** **A figure shown twice.** Run a cell holding
+      `fig = plt.figure(); plt.plot([1, 2]); fig.savefig("twice.png")`.
+      **Expect:** the figure twice, as `docs/notebooks.md` says.
+- [x] **13.35** **A cell that raises.** Run a cell holding
+      `plt.plot([1, 2])` on line 1, a blank line 2, and `1 / 0` on line 3.
+      **Expect:** the `ZeroDivisionError` traceback with no
+      `_pyviya_run_cell` frame in it, one **Problems** entry on line 3 of
+      that cell, and the figure still shown. Run a cell holding `1 / 0` as
+      its only line, the trailing expression. **Expect:** the entry on
+      line 1.
+- [x] **13.36** **A syntax error.** Run a cell holding `x = 1` and
+      `print(`. **Expect:** a `SyntaxError` naming line 2, with the source
+      line and caret, and no `_pyviya_run_cell` or `ast.py` frame. The next
+      cell runs normally.
+- [x] **13.37** **`os.chdir`.** Run a cell holding `import os` and
+      `os.chdir("/tmp")`, then a cell holding `plt.plot([3, 1])`, then one
+      holding `df`. **Expect:** the figure and the table both show.
+- [x] **13.38** **The interactive window.** Run **Python on Viya: New
+      Interactive Window**, and run `import pandas as pd` and
+      `pd.DataFrame({"a": [1]})` in it. **Expect:** the table as HTML.
+- [x] **13.39** **Run File is unchanged.** Save a `.py` file holding
+      `x = 41`, `x + 1` and `import matplotlib.pyplot as plt;
+      plt.plot([1, 2])`, and use **Run File**. **Expect:** no `42` in the
+      output channel and no figure in the Result panel.
+- [x] **13.40** **After reconnecting.** **Disconnect**, then run the
+      notebook's `df` cell again. **Expect:** the run starts a new session
+      and the table shows.
+- [x] **13.41** **`from __future__`.** Run a cell holding
+      `from __future__ import annotations`,
+      `def f(a: Missing) -> int: return 1` and `f.__annotations__`.
+      **Expect:** `{'a': 'Missing', 'return': 'int'}`, and no `NameError`.
+- [x] **13.42** **A `_repr_html_` that raises.** Run a cell defining
+      `class Broken:` with `def _repr_html_(self): raise ValueError("no html")`
+      and `def __repr__(self): return "Broken()"`, then a cell holding
+      `Broken()`. **Expect:** one line naming
+      `Broken._repr_html_() raised ValueError('no html')`, then `Broken()`,
+      and no failure. Run a cell holding `Broken`, the class. **Expect:**
+      `<class '__main__.Broken'>` and no `raised` line.

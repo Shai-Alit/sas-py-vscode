@@ -195,10 +195,16 @@ the same actions on a SAS Libraries table.
 
 ## Notebooks
 
-**A figure or table never appears in a cell's output.** The same rule as the
-Result panel: rich output is captured from a file your code writes, not an
-implicit `plt.show()` or `_repr_html_` capture. Call `fig.savefig(...)` or
-`df.to_html(...)` explicitly. See [Notebooks](notebooks.md#output).
+**A figure or table never appears in a cell's output.** A cell shows only
+its last expression, and only without a trailing `;`, plus the matplotlib
+figures still open when it ends; a `plt.close()` in the cell hides its
+figure. If the **Python on Viya** output channel says the cell ran without
+displaying its result, run the cell again. See
+[Notebooks](notebooks.md#when-it-does-not-work).
+
+**A figure appears twice in a cell's output.** You showed or saved it
+yourself and left it open, so the cell showed it again. Call `plt.close()`
+after showing it. See [Notebooks](notebooks.md#output).
 
 **An embedded chart or widget in an HTML output does nothing.** If it depends
 on a `<script>` tag to render, that script never runs — the output is

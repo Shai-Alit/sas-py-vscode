@@ -8,6 +8,15 @@ import {
   type RichOutput,
 } from "../../src/backend/backend";
 import {
+  CELL_RUNNER_BYTES,
+  CELL_RUNNER_FILEREF_NAME,
+  cellRunnerStatements,
+  FIGURE_FLUSH_BYTES,
+  FIGURE_FLUSH_FILEREF_NAME,
+  FIGURE_FLUSH_STEP,
+  FLUSH_BOUNDARY_STATEMENT,
+} from "../../src/backend/cellRunner";
+import {
   ENVIRONMENT_PROBE_FILENAME,
   environmentProbeStatements,
 } from "../../src/backend/environment";
@@ -224,6 +233,10 @@ interface RouterOptions {
   executeReply?: Reply;
   /** Held instead of answered on the first `log` request, if given. */
   logGate?: Promise<Reply>;
+  /** The items of the second `log` request onwards, one page each, after
+   * {@link RouterOptions.logLines}. Each is answered only once every line
+   * already queued has been read, as a real poll's round trip allows. */
+  laterLogPages?: readonly (readonly unknown[])[];
   /** Held instead of answered on the `assign` request, if given. */
   assignGate?: Promise<Reply>;
   /** Held instead of answered on the first `execute` (job-creation) request,
@@ -289,11 +302,27 @@ interface RouterOptions {
    * 12.23) unless {@link startupListed} is `false`. */
   startupAssigned?: boolean;
   startupListed?: boolean;
+  /** The value of the macro variable `FIGURE_FLUSH_STEP` saves the flush
+   * step's `SYSCC` in (ADR-0046). Absent means the filter matches nothing. */
+  flushSyscc?: string;
+  /** Overrides that variable's read outright. */
+  flushSysccReply?: Reply;
+  /** Other fixed filerefs the session already holds, the way
+   * {@link startupAssigned} holds the snippet's: `assign` answers
+   * `400`/5402 and the `files` collection lists each one. */
+  heldFilerefs?: readonly string[];
+  /** Overrides the `assign` reply for the named filerefs only. */
+  assignReplyFor?: Readonly<Record<string, Reply>>;
 }
 
-/** Where the router keeps a reattached session's snippet fileref, lowercased
- * as the service reports it (Finding 12.23). */
-const STARTUP_FILEREF_PATH = `${SESSION_PATH}/filerefs/${STARTUP_FILEREF_NAME.toLowerCase()}`;
+/** Where the router keeps a fixed fileref the session already holds,
+ * lowercased as the service reports it (Finding 12.23). */
+function heldFilerefPath(name: string): string {
+  return `${SESSION_PATH}/filerefs/${name.toLowerCase()}`;
+}
+
+/** Where the router keeps a reattached session's snippet fileref. */
+const STARTUP_FILEREF_PATH = heldFilerefPath(STARTUP_FILEREF_NAME);
 
 /** The file name a `getFileProperties`/`getFile`/`deleteFile` href names —
  * the last path segment, `/content` stripped, percent-decoded. Mirrors how
@@ -364,17 +393,20 @@ function router(opts: RouterOptions): {
           const listed: unknown[] = (opts.filerefList ?? []).map((id) => ({
             id,
           }));
-          if (opts.startupAssigned === true && opts.startupListed !== false) {
+          const heldListed = [
+            ...(opts.startupAssigned === true && opts.startupListed !== false
+              ? [STARTUP_FILEREF_NAME]
+              : []),
+            ...(opts.heldFilerefs ?? []),
+          ];
+          for (const name of heldListed) {
+            const path = heldFilerefPath(name);
             listed.push({
-              id: STARTUP_FILEREF_NAME.toLowerCase(),
+              id: name.toLowerCase(),
               links: [
-                { rel: "self", method: "GET", href: STARTUP_FILEREF_PATH },
-                { rel: "alternate", method: "GET", href: STARTUP_FILEREF_PATH },
-                {
-                  rel: "deassign",
-                  method: "DELETE",
-                  href: STARTUP_FILEREF_PATH,
-                },
+                { rel: "self", method: "GET", href: path },
+                { rel: "alternate", method: "GET", href: path },
+                { rel: "deassign", method: "DELETE", href: path },
               ],
             });
           }
@@ -387,9 +419,12 @@ function router(opts: RouterOptions): {
           if (opts.assignGate !== undefined) return await opts.assignGate;
           if (opts.assignReply !== undefined) return opts.assignReply;
           const body = request.body as { name: string };
+          const replyFor = opts.assignReplyFor?.[body.name];
+          if (replyFor !== undefined) return replyFor;
           if (
-            opts.startupAssigned === true &&
-            body.name === STARTUP_FILEREF_NAME
+            (opts.startupAssigned === true &&
+              body.name === STARTUP_FILEREF_NAME) ||
+            opts.heldFilerefs?.includes(body.name) === true
           ) {
             return {
               ok: false,
@@ -434,16 +469,17 @@ function router(opts: RouterOptions): {
         }
         case "self":
           if (opts.selfReply !== undefined) return opts.selfReply;
-          if (request.link.href === STARTUP_FILEREF_PATH) {
+          if (request.link.href.startsWith(`${SESSION_PATH}/filerefs/pyv`)) {
+            const path = request.link.href;
             return ok(
               {
-                id: STARTUP_FILEREF_NAME.toLowerCase(),
+                id: path.split("/").pop(),
                 links: [
-                  { rel: "self", method: "GET", href: STARTUP_FILEREF_PATH },
+                  { rel: "self", method: "GET", href: path },
                   {
                     rel: "upload",
                     method: "PUT",
-                    href: `${STARTUP_FILEREF_PATH}/content`,
+                    href: `${path}/content`,
                     type: "application/octet-stream",
                   },
                 ],
@@ -493,8 +529,17 @@ function router(opts: RouterOptions): {
           if (logCalls === 1 && opts.logGate !== undefined) {
             return await opts.logGate;
           }
+          const later =
+            logCalls > 1 ? opts.laterLogPages?.[logCalls - 2] : undefined;
+          if (later !== undefined) {
+            await new Promise<void>((resolve) => {
+              setImmediate(resolve);
+            });
+          }
           const items =
-            logCalls === 1 && opts.logLines !== undefined ? opts.logLines : [];
+            logCalls === 1 && opts.logLines !== undefined
+              ? opts.logLines
+              : (later ?? []);
           return ok(
             {
               count: 99,
@@ -548,6 +593,14 @@ function router(opts: RouterOptions): {
             return opts.startupSyscc === undefined
               ? ok({ count: 0, items: [] })
               : ok({ count: 1, items: [{ name, value: opts.startupSyscc }] });
+          }
+          if (name === "PYVIYA_FLUSHCC") {
+            if (opts.flushSysccReply !== undefined) {
+              return opts.flushSysccReply;
+            }
+            return opts.flushSyscc === undefined
+              ? ok({ count: 0, items: [] })
+              : ok({ count: 1, items: [{ name, value: opts.flushSyscc }] });
           }
           return ok({ count: 0, items: [] });
         }
@@ -648,6 +701,13 @@ function texts(outputs: readonly RichOutput[]): string[] {
 function accept(result: BackendResult<ExecutionHandle>): ExecutionHandle {
   assert.ok(result.ok, "execute() did not accept the run");
   return result.value;
+}
+
+/** Each submitted job's `code` array, in order. */
+function jobCodes(requests: readonly ComputeRequest[]): string[][] {
+  return requests
+    .filter((request) => request.link.rel === "execute")
+    .map((request) => (request.body as { code: string[] }).code);
 }
 
 describe("ProcPythonBackend", () => {
@@ -3392,12 +3452,6 @@ describe("ProcPythonBackend: the Python startup snippet (ADR-0041)", () => {
     );
   }
 
-  function jobCodes(requests: readonly ComputeRequest[]): string[][] {
-    return requests
-      .filter((request) => request.link.rel === "execute")
-      .map((request) => (request.body as { code: string[] }).code);
-  }
-
   function startupResultReads(requests: readonly ComputeRequest[]): number {
     return requests.filter(
       (request) =>
@@ -3924,5 +3978,643 @@ describe("ProcPythonBackend: the Python startup snippet (ADR-0041)", () => {
       assert.deepEqual(upload.rawBody, SNIPPET);
       assert.equal(jobCodes(requests).length, 1);
     });
+  });
+});
+
+/**
+ * ADR-0046: a notebook cell runs through the cell runner, then the figure
+ * flush, so it shows its trailing expression and open figures.
+ */
+describe("ProcPythonBackend: a notebook cell displays its result (ADR-0046)", () => {
+  const SNIPPET = new TextEncoder().encode("import os\n");
+  const STARTUP_BOUNDARY = line(
+    `70   ${STARTUP_RESULT_CAPTURE[0] ?? ""}`,
+    "source",
+  );
+  /** The `source` echo of the flush step's first line, where the cell's log
+   * ends (Finding 13.18). */
+  const FLUSH_BOUNDARY = line(`75   ${FLUSH_BOUNDARY_STATEMENT}`, "source");
+  /** A cell's traceback through the runner, as Finding 13.16 recorded it. */
+  const CELL_TRACEBACK = [
+    line("Traceback (most recent call last):"),
+    line('  File "<stdin>", line 5, in <module>'),
+    line('  File "<stdin>", line 2, in <module>'),
+    line('  File "<string>", line 44, in <module>'),
+    line('  File "<string>", line 13, in _pyviya_run_cell'),
+    line('  File "<string>", line 3, in <module>'),
+    line("ZeroDivisionError: division by zero"),
+  ];
+  /** The flush's own traceback (Finding 13.18). */
+  const FLUSH_TRACEBACK = [
+    line("Traceback (most recent call last):"),
+    line('  File "<stdin>", line 5, in <module>'),
+    line('  File "<stdin>", line 2, in <module>'),
+    line('  File "<string>", line 14, in <module>'),
+    line('  File "<string>", line 10, in _pyviya_flush_figures'),
+    line("OSError: disk full"),
+  ];
+
+  type Options = Parameters<ProcPythonBackend["execute"]>[1];
+  const CELL: Options = { freshNamespace: false, displayResults: true };
+
+  function backendWith(
+    client: ComputeClient,
+    options?: {
+      readonly startup?: boolean;
+      readonly sessionValue?: ComputeSession;
+      readonly background?: string[];
+      readonly maxBufferedLines?: number;
+    },
+  ): ProcPythonBackend {
+    return new ProcPythonBackend(
+      client,
+      options?.sessionValue ?? session(),
+      dialect(),
+      guard(),
+      (reason) => options?.background?.push(reason),
+      options?.maxBufferedLines === undefined
+        ? undefined
+        : { maxBufferedLines: options.maxBufferedLines },
+      options?.startup === true
+        ? { bytes: SNIPPET, seedFirstJob: false }
+        : undefined,
+    );
+  }
+
+  async function run(
+    backend: ProcPythonBackend,
+    options: Options,
+  ): Promise<{
+    readonly outputs: RichOutput[];
+    readonly settled: Awaited<ExecutionHandle["done"]>;
+  }> {
+    const accepted = accept(await backend.execute(fakeProgram(), options));
+    const outputs = await collect(accepted.outputs);
+    return { outputs, settled: await accepted.done };
+  }
+
+  function assigns(requests: readonly ComputeRequest[]): string[] {
+    return requests
+      .filter((request) => request.link.rel === "assign")
+      .map((request) => (request.body as { name: string }).name);
+  }
+
+  function flushResultReads(requests: readonly ComputeRequest[]): number {
+    return requests.filter(
+      (request) =>
+        request.link.rel === "variables" &&
+        variableName(request.link.href) === "PYVIYA_FLUSHCC",
+    ).length;
+  }
+
+  type TracebackOutput = Extract<
+    RichOutput,
+    { mime: "application/vnd.python.traceback" }
+  >;
+
+  function tracebackOf(
+    outputs: readonly RichOutput[],
+  ): TracebackOutput["data"] | undefined {
+    return outputs.find(
+      (output): output is TracebackOutput =>
+        output.mime === "application/vnd.python.traceback",
+    )?.data;
+  }
+
+  it("uploads both helpers, then runs the cell through the runner and the flush after it", async () => {
+    const { client, requests } = router({ syscc: "0", flushSyscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    const names = assigns(requests);
+    assert.deepEqual(names.slice(0, 2), [
+      CELL_RUNNER_FILEREF_NAME,
+      FIGURE_FLUSH_FILEREF_NAME,
+    ]);
+    const runFileref = names[2] ?? "";
+    assert.match(runFileref, /^PY\d{6}$/);
+    const uploads = requests.filter((request) => request.link.rel === "upload");
+    assert.deepEqual(uploads[0]?.rawBody, CELL_RUNNER_BYTES);
+    assert.deepEqual(uploads[1]?.rawBody, FIGURE_FLUSH_BYTES);
+
+    const [code] = jobCodes(requests);
+    assert.deepEqual(code, [
+      ...SYNTAX_CHECK_RECOVERY,
+      ...QUIET_NOTES_BEFORE,
+      ...ODS_WRAPPER_BEFORE,
+      `%let PYVIYA_CELL=%sysfunc(pathname(${runFileref}));`,
+      `proc python infile=${CELL_RUNNER_FILEREF_NAME};`,
+      "run;",
+      ...FIGURE_FLUSH_STEP,
+      ...ODS_WRAPPER_AFTER,
+      ...QUIET_NOTES_AFTER,
+    ]);
+  });
+
+  it("uploads the helpers once per connection", async () => {
+    const { client, requests } = router({ syscc: "0", flushSyscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, CELL);
+    await run(backend, CELL);
+
+    const names = assigns(requests);
+    assert.equal(
+      names.filter((name) => name === CELL_RUNNER_FILEREF_NAME).length,
+      1,
+    );
+    assert.equal(
+      names.filter((name) => name === FIGURE_FLUSH_FILEREF_NAME).length,
+      1,
+    );
+    const codes = jobCodes(requests);
+    assert.equal(codes.length, 2);
+    for (const code of codes) {
+      assert.ok(
+        code.includes(`proc python infile=${CELL_RUNNER_FILEREF_NAME};`),
+      );
+    }
+  });
+
+  it("runs a script as before when displayResults is false or absent", async () => {
+    const { client, requests } = router({ syscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, { freshNamespace: false, displayResults: false });
+    await run(backend, { freshNamespace: false });
+
+    assert.ok(
+      assigns(requests).every((name) => /^PY\d{6}$/.test(name)),
+      "no helper was uploaded",
+    );
+    for (const code of jobCodes(requests)) {
+      assert.ok(
+        !code.some((statement) =>
+          /PYVRUN|PYVFLUSH|PYVIYA_CELL/.test(statement),
+        ),
+      );
+      assert.ok(
+        code.some((statement) =>
+          /^proc python infile=PY\d{6};$/.test(statement),
+        ),
+      );
+    }
+    assert.equal(flushResultReads(requests), 0);
+  });
+
+  it("restarts through the runner for a fresh namespace", async () => {
+    const { client, requests } = router({ syscc: "0", flushSyscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, { freshNamespace: true, displayResults: true });
+
+    const [code] = jobCodes(requests);
+    const runFileref = assigns(requests)[2] ?? "";
+    assert.ok(
+      code !== undefined &&
+        cellRunnerStatements(runFileref, true).every((statement) =>
+          code.includes(statement),
+        ),
+    );
+    assert.ok(
+      code.includes(`proc python restart infile=${CELL_RUNNER_FILEREF_NAME};`),
+    );
+  });
+
+  it("runs the startup snippet first and the runner after it, without a second restart", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      startupSyscc: "0",
+      flushSyscc: "0",
+      logLines: [
+        line("seed printed"),
+        STARTUP_BOUNDARY,
+        line("42"),
+        FLUSH_BOUNDARY,
+        line("flush printed"),
+      ],
+    });
+    const backend = backendWith(client, { startup: true });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, {
+      freshNamespace: true,
+      displayResults: true,
+    });
+
+    assert.ok(settled.ok);
+    assert.deepEqual(texts(outputs), ["42\n"]);
+    const code = jobCodes(requests)[0] ?? [];
+    const startupAt = code.indexOf(
+      `proc python restart infile=${STARTUP_FILEREF_NAME};`,
+    );
+    const runnerAt = code.indexOf(
+      `proc python infile=${CELL_RUNNER_FILEREF_NAME};`,
+    );
+    assert.ok(startupAt !== -1);
+    assert.ok(runnerAt > startupAt);
+  });
+
+  it("keeps the flush's log out of the cell's output (Finding 13.18)", async () => {
+    const background: string[] = [];
+    const { client, requests } = router({
+      syscc: "0",
+      flushSyscc: "0",
+      logLines: [line("cell printed"), FLUSH_BOUNDARY, line("flush printed")],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["cell printed\n"]);
+    assert.equal(flushResultReads(requests), 1);
+    assert.deepEqual(background, []);
+  });
+
+  it("keeps a drop among the flush's lines out of the cell's output", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      flushSyscc: "0",
+      logLines: [line("cell printed"), FLUSH_BOUNDARY],
+      // A cap of 3 drops "f1" and "f2", after the boundary has been read.
+      laterLogPages: [
+        [line("f1"), line("f2"), line("f3"), line("f4"), line("f5")],
+      ],
+    });
+    const backend = backendWith(client, { maxBufferedLines: 3 });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["cell printed\n"]);
+    assert.equal(flushResultReads(requests), 1);
+  });
+
+  it("reports a failing flush in one line and still reports the cell's success (Finding 13.17)", async () => {
+    const background: string[] = [];
+    const { client } = router({
+      syscc: "0",
+      flushSyscc: "1012",
+      logLines: [line("cell printed"), FLUSH_BOUNDARY, ...FLUSH_TRACEBACK],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    const shown = texts(outputs);
+    assert.equal(shown.length, 2);
+    assert.equal(shown[0], "cell printed\n");
+    assert.match(
+      shown[1] ?? "",
+      /open matplotlib figures failed: OSError: disk full\. The cell's own result is unaffected/,
+    );
+    assert.equal(tracebackOf(outputs), undefined);
+    assert.equal(background.length, 1);
+    assert.match(
+      background[0] ?? "",
+      /the cell's figure flush failed \(SYSCC=1012\)/,
+    );
+    assert.match(background[0] ?? "", /OSError: disk full/);
+  });
+
+  it("parses the cell's traceback without the runner's frames, never the flush's, and reports the flush after it", async () => {
+    const { client } = router({
+      syscc: "1012",
+      syserrortext: "Unhandled Python exception.",
+      flushSyscc: "1012",
+      logLines: [...CELL_TRACEBACK, FLUSH_BOUNDARY, ...FLUSH_TRACEBACK],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(!settled.value.succeeded);
+    assert.match(
+      settled.value.diagnostics[0]?.message ?? "",
+      /ZeroDivisionError/,
+    );
+    assert.deepEqual(tracebackOf(outputs), {
+      message: "ZeroDivisionError: division by zero",
+      frames: [{ file: "<string>", line: 3, name: "<module>" }],
+    });
+    const tracebackAt = outputs.findIndex(
+      (output) => output.mime === "application/vnd.python.traceback",
+    );
+    const flushAt = outputs.findIndex(
+      (output) =>
+        output.mime === "text/plain" &&
+        output.data.includes("OSError: disk full"),
+    );
+    assert.ok(tracebackAt !== -1);
+    assert.ok(flushAt > tracebackAt);
+  });
+
+  it("leaves a cell's syntax error with no frames, its location in the message", async () => {
+    const { client } = router({
+      syscc: "1012",
+      syserrortext: "Unhandled Python exception.",
+      flushSyscc: "0",
+      logLines: [
+        line("Traceback (most recent call last):"),
+        line('  File "<stdin>", line 5, in <module>'),
+        line('  File "<stdin>", line 2, in <module>'),
+        line('  File "<string>", line 44, in <module>'),
+        line('  File "<string>", line 8, in _pyviya_run_cell'),
+        line('  File "<string>", line 2'),
+        line("    print(("),
+        line("         ^"),
+        line("SyntaxError: '(' was never closed"),
+        FLUSH_BOUNDARY,
+      ],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs } = await run(backend, CELL);
+
+    const traceback = tracebackOf(outputs);
+    assert.deepEqual(traceback?.frames, []);
+    assert.match(traceback.message, /line 2/);
+    assert.match(traceback.message, /SyntaxError: '\(' was never closed$/);
+  });
+
+  it("keeps runner-looking frames when the cell did not run through the runner", async () => {
+    const { client } = router({
+      syscc: "1012",
+      syserrortext: "Unhandled Python exception.",
+      logLines: CELL_TRACEBACK,
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs } = await run(backend, { freshNamespace: false });
+
+    assert.deepEqual(
+      tracebackOf(outputs)?.frames.map((frame) => frame.name),
+      ["<module>", "_pyviya_run_cell", "<module>"],
+    );
+  });
+
+  it("drops the runner's frames only when both are there, in order", async () => {
+    const { client } = router({
+      syscc: "1012",
+      syserrortext: "Unhandled Python exception.",
+      flushSyscc: "0",
+      logLines: [
+        line("Traceback (most recent call last):"),
+        line('  File "<stdin>", line 5, in <module>'),
+        line('  File "<string>", line 44, in <module>'),
+        line('  File "<string>", line 3, in <module>'),
+        line("ValueError: boom"),
+        FLUSH_BOUNDARY,
+      ],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs } = await run(backend, CELL);
+
+    assert.deepEqual(tracebackOf(outputs)?.frames, [
+      { file: "<string>", line: 44, name: "<module>" },
+      { file: "<string>", line: 3, name: "<module>" },
+    ]);
+  });
+
+  it("shows every line when the flush's boundary never arrives, and does not read a possibly stale result", async () => {
+    const background: string[] = [];
+    const { client, requests } = router({
+      syscc: "0",
+      // An earlier cell's value: without the boundary it must not be read.
+      flushSyscc: "1012",
+      logLines: [line("first"), line("second")],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["first\n", "second\n"]);
+    assert.equal(flushResultReads(requests), 0);
+    assert.equal(background.length, 1);
+    assert.match(
+      background[0] ?? "",
+      /could not tell whether the cell's figure flush succeeded/,
+    );
+  });
+
+  it("shows the snippet's lines when the flush's boundary arrives before the snippet's", async () => {
+    const background: string[] = [];
+    const { client } = router({
+      syscc: "0",
+      flushSyscc: "0",
+      logLines: [line("seed printed"), FLUSH_BOUNDARY, line("flush printed")],
+    });
+    const backend = backendWith(client, { startup: true, background });
+    await backend.connect();
+
+    const { outputs } = await run(backend, {
+      freshNamespace: true,
+      displayResults: true,
+    });
+
+    assert.deepEqual(texts(outputs), ["seed printed\n"]);
+    assert.equal(background.length, 1);
+    assert.match(
+      background[0] ?? "",
+      /could not tell whether the profile's Python startup snippet succeeded/,
+    );
+  });
+
+  it("does not take a printed copy of the boundary's text for the boundary", async () => {
+    const copy = `75   ${FLUSH_BOUNDARY_STATEMENT}`;
+    const { client } = router({
+      syscc: "0",
+      flushSyscc: "0",
+      logLines: [line(copy), line("after"), FLUSH_BOUNDARY, line("flush")],
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { outputs } = await run(backend, CELL);
+
+    assert.deepEqual(texts(outputs), [`${copy}\n`, "after\n"]);
+  });
+
+  it("logs a failed read of the flush's result and leaves the cell alone", async () => {
+    const background: string[] = [];
+    const { client } = router({
+      syscc: "0",
+      flushSysccReply: rejected(
+        "compute-rejected",
+        "500 Internal Server Error",
+      ),
+      logLines: [line("cell printed"), FLUSH_BOUNDARY],
+    });
+    const backend = backendWith(client, { background });
+    await backend.connect();
+
+    const { outputs, settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    assert.ok(settled.value.succeeded);
+    assert.deepEqual(texts(outputs), ["cell printed\n"]);
+    assert.match(
+      background[0] ?? "",
+      /could not read whether the cell's figure flush succeeded/,
+    );
+  });
+
+  for (const failing of [CELL_RUNNER_FILEREF_NAME, FIGURE_FLUSH_FILEREF_NAME]) {
+    it(`runs the cell plainly when ${failing} cannot be uploaded`, async () => {
+      const background: string[] = [];
+      const { client, requests } = router({
+        syscc: "0",
+        assignReplyFor: {
+          [failing]: rejected("compute-rejected", "500 Internal Server Error"),
+        },
+        logLines: [line("cell printed")],
+      });
+      const backend = backendWith(client, { background });
+      await backend.connect();
+
+      const { outputs, settled } = await run(backend, CELL);
+
+      assert.ok(settled.ok);
+      assert.ok(settled.value.succeeded);
+      assert.deepEqual(texts(outputs), ["cell printed\n"]);
+      const code = jobCodes(requests)[0] ?? [];
+      assert.ok(
+        !code.some((statement) =>
+          /PYVRUN|PYVFLUSH|PYVIYA_CELL/.test(statement),
+        ),
+      );
+      assert.ok(
+        code.some((statement) =>
+          /^proc python infile=PY\d{6};$/.test(statement),
+        ),
+      );
+      assert.equal(flushResultReads(requests), 0);
+      assert.equal(background.length, 1);
+      assert.match(
+        background[0] ?? "",
+        /could not upload the cell runner, so this cell ran without displaying its result/,
+      );
+    });
+  }
+
+  it("uploads both helpers again on the next cell after one failed", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      assignReplyFor: {
+        [FIGURE_FLUSH_FILEREF_NAME]: rejected(
+          "compute-rejected",
+          "500 Internal Server Error",
+        ),
+      },
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, CELL);
+    await run(backend, CELL);
+
+    assert.equal(
+      assigns(requests).filter((name) => name === CELL_RUNNER_FILEREF_NAME)
+        .length,
+      2,
+    );
+  });
+
+  it("fails the cell, submitting nothing, when the session is lost during the upload", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      assignReplyFor: {
+        [CELL_RUNNER_FILEREF_NAME]: rejected(
+          "compute-unreachable",
+          "connect ECONNREFUSED",
+        ),
+      },
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    const { settled } = await run(backend, CELL);
+
+    assert.ok(!settled.ok);
+    assert.equal(settled.problem.code, "backend-gone");
+    assert.equal(jobCodes(requests).length, 0);
+  });
+
+  it("reports a cancel during the upload as cancelled, submitting nothing", async () => {
+    const gate = deferred<Reply>();
+    const { client, requests } = router({
+      syscc: "0",
+      assignGate: gate.promise,
+    });
+    const backend = backendWith(client);
+    await backend.connect();
+    const accepted = accept(await backend.execute(fakeProgram(), CELL));
+    await flush();
+
+    assert.ok((await backend.cancel(accepted)).ok);
+    gate.resolve(rejected("compute-unreachable", "aborted"));
+    const settled = await accepted.done;
+
+    assert.ok(!settled.ok);
+    assert.equal(settled.problem.code, "cancelled");
+    assert.equal(jobCodes(requests).length, 0);
+  });
+
+  it("rewrites a reattached session's helper filerefs in place (Findings 12.10, 12.23)", async () => {
+    const { client, requests } = router({
+      syscc: "0",
+      flushSyscc: "0",
+      heldFilerefs: [CELL_RUNNER_FILEREF_NAME, FIGURE_FLUSH_FILEREF_NAME],
+    });
+    const backend = backendWith(client, {
+      sessionValue: sessionWithFilerefList(),
+    });
+    await backend.connect();
+
+    const { settled } = await run(backend, CELL);
+
+    assert.ok(settled.ok);
+    const helpers = [
+      [CELL_RUNNER_FILEREF_NAME, CELL_RUNNER_BYTES],
+      [FIGURE_FLUSH_FILEREF_NAME, FIGURE_FLUSH_BYTES],
+    ] as const;
+    for (const [name, bytes] of helpers) {
+      const upload = requests.find(
+        (request) =>
+          request.link.rel === "upload" &&
+          request.link.href === `${heldFilerefPath(name)}/content`,
+      );
+      assert.ok(upload !== undefined, `${name} was rewritten`);
+      assert.deepEqual(upload.rawBody, bytes);
+    }
+    assert.ok(
+      jobCodes(requests)[0]?.includes(
+        `proc python infile=${CELL_RUNNER_FILEREF_NAME};`,
+      ),
+    );
   });
 });

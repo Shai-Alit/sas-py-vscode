@@ -90,6 +90,17 @@ export interface ExecuteOptions {
    * own bug.
    */
   readonly freshNamespace: boolean;
+  /**
+   * Whether the program's result is shown the way a notebook shows it
+   * (ADR-0046): the value of a trailing expression is displayed, through its
+   * `_repr_html_`, `_repr_png_` or `repr()`, unless a `;` ends it, and every
+   * open matplotlib figure is shown and then closed.
+   *
+   * A notebook cell passes `true`; Run File and Run Selection pass `false`.
+   * Absent means `false`. Best-effort: a backend that cannot set this up runs
+   * the program without it rather than failing the run.
+   */
+  readonly displayResults?: boolean;
 }
 
 /**
@@ -227,7 +238,9 @@ export interface TracebackFrame {
    * (finding 39) before a {@link Traceback} ever reaches this seam. A frame
    * labelled the same way the harness's are (`<stdin>`) can still appear
    * further down the stack if the user's own code produced it, and is left
-   * alone — only the leading run is the harness's. Mapping what remains back to
+   * alone — only the leading run is the harness's. With
+   * {@link ExecuteOptions.displayResults}, the two frames the cell runner adds
+   * below that run are dropped too (ADR-0046). Mapping what remains back to
    * a {@link ProgramOrigin} is **Phase 4's** job, not 3c's: this comment used
    * to assign both to 3c, but `logFilter.ts`'s own doc and `phase-3.md`'s
    * Phase 4 plan text settled on Phase 4 for the editor-position mapping, and

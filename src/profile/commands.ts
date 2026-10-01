@@ -301,6 +301,14 @@ async function editProfile(
     ...(existing.pythonStartup === undefined
       ? {}
       : { pythonStartup: existing.pythonStartup }),
+    ...(existing.fileNavigationRoot === undefined
+      ? {}
+      : { fileNavigationRoot: existing.fileNavigationRoot }),
+    ...(existing.fileNavigationCustomRootPath === undefined
+      ? {}
+      : {
+          fileNavigationCustomRootPath: existing.fileNavigationCustomRootPath,
+        }),
   };
 
   if (updated.clientId === undefined) {

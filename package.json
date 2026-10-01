@@ -60,7 +60,8 @@
   },
   "activationEvents": [
     "onStartupFinished",
-    "onFileSystem:pythonOnViyaContent"
+    "onFileSystem:pythonOnViyaContent",
+    "onFileSystem:pythonOnViyaServer"
   ],
   "contributes": {
     "authentication": [
@@ -184,6 +185,17 @@
         "title": "%command.refreshContentExplorer.title%",
         "category": "%extension.category%",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "pythonOnViya.refreshServerExplorer",
+        "title": "%command.refreshServerExplorer.title%",
+        "category": "%extension.category%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pythonOnViya.copyServerPath",
+        "title": "%command.copyServerPath.title%",
+        "category": "%extension.category%"
       },
       {
         "command": "pythonOnViya.refreshDataExplorer",
@@ -334,6 +346,11 @@
           "contextualTitle": "%views.contentExplorer.name%"
         },
         {
+          "id": "pythonOnViya.serverExplorer",
+          "name": "%views.serverExplorer.name%",
+          "contextualTitle": "%views.serverExplorer.name%"
+        },
+        {
           "id": "pythonOnViya.dataExplorer",
           "name": "%views.dataExplorer.name%",
           "contextualTitle": "%views.dataExplorer.name%"
@@ -355,6 +372,21 @@
         "view": "pythonOnViya.contentExplorer",
         "when": "pythonOnViya.hasProfiles && !pythonOnViya.authorized",
         "contents": "%viewsWelcome.contentExplorer.signedOut%"
+      },
+      {
+        "view": "pythonOnViya.serverExplorer",
+        "when": "!pythonOnViya.hasProfiles",
+        "contents": "%viewsWelcome.serverExplorer.noProfile%"
+      },
+      {
+        "view": "pythonOnViya.serverExplorer",
+        "when": "pythonOnViya.hasProfiles && !pythonOnViya.authorized",
+        "contents": "%viewsWelcome.serverExplorer.signedOut%"
+      },
+      {
+        "view": "pythonOnViya.serverExplorer",
+        "when": "pythonOnViya.hasProfiles && pythonOnViya.authorized && !pythonOnViya.connected",
+        "contents": "%viewsWelcome.serverExplorer.notConnected%"
       },
       {
         "view": "pythonOnViya.dataExplorer",
@@ -459,12 +491,21 @@
         {
           "command": "pythonOnViya.exportCasTableToCsv",
           "when": "false"
+        },
+        {
+          "command": "pythonOnViya.copyServerPath",
+          "when": "false"
         }
       ],
       "view/title": [
         {
           "command": "pythonOnViya.refreshContentExplorer",
           "when": "view == pythonOnViya.contentExplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.refreshServerExplorer",
+          "when": "view == pythonOnViya.serverExplorer",
           "group": "navigation"
         },
         {
@@ -573,6 +614,11 @@
           "command": "pythonOnViya.exportCasTableToCsv",
           "when": "view == pythonOnViya.casExplorer && viewItem == sasCas:table",
           "group": "navigation"
+        },
+        {
+          "command": "pythonOnViya.copyServerPath",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:/",
+          "group": "6_copypath"
         }
       ],
       "editor/title/run": [
@@ -730,6 +776,20 @@
                   ]
                 },
                 "markdownDescription": "%configuration.profile.pythonStartup.description%"
+              },
+              "fileNavigationRoot": {
+                "type": "string",
+                "enum": [
+                  "USER",
+                  "SYSTEM",
+                  "CUSTOM"
+                ],
+                "default": "USER",
+                "markdownDescription": "%configuration.profile.fileNavigationRoot.description%"
+              },
+              "fileNavigationCustomRootPath": {
+                "type": "string",
+                "markdownDescription": "%configuration.profile.fileNavigationCustomRootPath.description%"
               }
             }
           }
@@ -754,6 +814,12 @@
           "default": false,
           "scope": "window",
           "markdownDescription": "%configuration.csvExport.guardFormulaInjection.description%"
+        },
+        "pythonOnViya.sasServer.showHiddenFiles": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "markdownDescription": "%configuration.sasServer.showHiddenFiles.description%"
         },
         "pythonOnViya.cas.tokenFileref": {
           "type": "string",

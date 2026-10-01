@@ -1,6 +1,8 @@
 # ADR-0010 — The Compute client is hand-written against the observed wire shape, not a vendored generated client
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-10-01 by
+  [ADR-0047](0047-sas-server-view-composes-file-paths.md): the SAS Server
+  view composes a session's files URL from a server path
 - **Date:** 2026-08-14
 - **Decides:** how the extension talks to the SAS Viya Compute service, reversing
   the vendoring approach `PRODUCTION_PLAN.md` pre-agreed for slice 2a

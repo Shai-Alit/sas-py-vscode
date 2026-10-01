@@ -32,6 +32,7 @@ import { createEnvironmentStatusBarItem } from "./run/environmentStatusBar";
 import { EnvironmentStore } from "./run/environmentStore";
 import { createRunTargetStatusBarItem } from "./run/statusBar";
 import { RunTargetStore } from "./run/targetStore";
+import { registerServerExplorer } from "./server/serverExplorer";
 
 /**
  * Activation is deliberately cheap, and happens once per window.
@@ -385,6 +386,22 @@ export function activate(context: vscode.ExtensionContext): void {
     },
     dataViewerPanels,
     tablePropertiesPanels,
+    forgetProfile,
+  );
+
+  // Phase 13p-i: the "SAS Server" view, files on the compute server. Bound to
+  // the session like SAS Libraries above (ADR-0047, ADR-0027), so it takes
+  // `sessions` and refreshes on `onDidChangeConnection`.
+  registerServerExplorer(
+    context,
+    profiles,
+    sessions,
+    output,
+    {
+      onDidChangeSessions: auth.onDidChangeSessions,
+      onDidSignOut: auth.onDidSignOut,
+      onDidChangeConnection,
+    },
     forgetProfile,
   );
 

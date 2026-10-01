@@ -27,6 +27,7 @@ import {
   CURRENT_PROFILE_VERSION,
   MAX_PROFILE_NAME_LENGTH,
   normaliseEndpoint,
+  readNavigation,
   readSessionSetup,
   type ViyaProfile,
 } from "./model";
@@ -213,6 +214,14 @@ export function scanSasProfiles(
       continue;
     }
     Object.assign(profile, setup.value);
+
+    // Upstream's root settings for its SAS Server view use the same names.
+    const navigation = readNavigation(value);
+    if (!navigation.ok) {
+      skipped.push({ name: originalName, reason: navigation.reason });
+      continue;
+    }
+    Object.assign(profile, navigation.value);
 
     candidates.push({
       name,

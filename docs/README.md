@@ -34,6 +34,7 @@ feature it describes. So far that is
 [Connection profiles](connection-profiles.md), [Signing in](signing-in.md),
 [Connecting to Viya](connecting.md), [Running Python](running-python.md),
 [Browsing SAS Content](browsing-sas-content.md),
+[Browsing the SAS server](browsing-sas-server.md),
 [Browsing SAS libraries](browsing-sas-libraries.md),
 [Browsing CAS](browsing-cas.md),
 [Python and SAS libraries](data-access.md),

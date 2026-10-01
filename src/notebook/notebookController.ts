@@ -399,8 +399,12 @@ export function createNotebookExecutionHandlers(
 
     // `freshNamespace: false` — `backend.ts:80-93`'s own documented case: "a
     // notebook cell passes `false`". The interpreter's globals, and every
-    // earlier cell's own state, survive.
-    const executed = await backend.execute(program, { freshNamespace: false });
+    // earlier cell's own state, survive. `displayResults: true` shows the
+    // cell's trailing value and open figures, as Jupyter does (ADR-0046).
+    const executed = await backend.execute(program, {
+      freshNamespace: false,
+      displayResults: true,
+    });
     if (!executed.ok) {
       log.warn(executed.reason);
       await appendError(execution, localiseBackendProblem(executed.problem));

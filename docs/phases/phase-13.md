@@ -194,9 +194,10 @@ where `PROC PYTHON` actually hurts.
   2026-10-01: a notebook cell displays its last expression and its open
   figures ([ADR-0046](../adr/0046-notebook-cells-display-their-result.md),
   Findings 13.13–13.15). See "13e decided" below.
-- [ ] **13f — F10, build.** Added 2026-09-24. Not started.
-  Builds ADR-0046: the cell runner, the figure flush, `displayResults` on
-  `ExecuteOptions`, and the traceback frames it adds.
+- [x] **13f — F10, build.** Added 2026-09-24. Built 2026-10-01 on
+  `feat/13f-cell-display`: the cell runner, the figure flush,
+  `displayResults` on `ExecuteOptions`, and dropping the runner's traceback
+  frames (ADR-0046, Findings 13.16–13.19). See "13f built" below.
 - [ ] **13g — F8, DataFrame grid.** Added 2026-09-24. Not started.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
@@ -1073,6 +1074,109 @@ of a figure saved and left open (`docs/notebooks.md`), and a manual pass
 that covers seaborn and pandas plotting, which no probe did. 13g's
 DataFrame grid takes the trailing expression as its trigger.
 
+### 13f built, 2026-10-01
+
+**What it does.** A notebook or interactive-window cell now shows its
+trailing expression's value and its open matplotlib figures, as a Jupyter
+cell does. A value with `_repr_html_` shows as HTML, then `_repr_png_` as
+an image, and anything else as its `repr()`. A trailing `;` hides it. Each
+open figure is saved as a PNG after the cell and closed. Run File and Run
+Selection are unchanged.
+
+**Probes first.** Findings 13.16–13.19, against `verde`, in throwaway
+sessions Sean approved, each deleted afterwards (`204`) and read back as
+`404`. They ran the runner and flush end to end, measured `SYSCC` in all
+four pass/fail combinations, checked where the log can be split, and found
+that a relative output path breaks after the cell calls `os.chdir`.
+
+**What 13f decided** (ADR-0046's open points, recorded in the ADR's "Resolved
+in 13f" section):
+
+- The runner compiles the cell under the name `<string>`, so
+  `tracebackDiagnostics.ts` maps the user's frame unchanged. It parses with
+  `compile(..., ast.PyCF_ONLY_AST)`, so a syntax error gains no `ast.py`
+  frame (Finding 13.16).
+- The job passes the cell file's absolute path, from
+  `%sysfunc(pathname())`, in `PYVIYA_CELL` (Finding 13.19). The run's id
+  is that file's own name, the last part of the path (`PY000001` in
+  Finding 13.16). Output is named `pyviya_<fileref>_out.html` or `.png`,
+  and `pyviya_<fileref>_plot001.png` onward.
+- The fixed names are `PYVRUN`, `PYVFLUSH`, `PYVIYA_CELL`, `PYVIYA_USERCC`
+  and `PYVIYA_FLUSHCC`.
+- The trailing `;` is read from the source after the expression's end.
+
+**The code.**
+
+- `src/backend/cellRunner.ts` (new, `vscode`-free): the runner and flush
+  sources, the job statements, `FIGURE_FLUSH_STEP` with the `SYSCC` save
+  and restore (Finding 13.17), and `isFlushBoundary` (Finding 13.18).
+- `src/backend/procPython.ts`: with `displayResults`, `runProgram` uploads
+  both helpers once per connection (re-attach rewrites them in place, as
+  for `PYVSTART`). The user's step becomes the runner's plus the flush's.
+  The flush's log lines are kept apart after its boundary, and its result is
+  read only when that boundary was seen. A failed flush adds one line to the
+  output and logs the details. A helper upload that fails runs the cell
+  plainly and logs why; only a cancel or a lost session fails the cell.
+  `parseTraceback` drops the runner's two frames, only when both are there
+  in order. `uploadStartup`'s fileref logic is now shared as
+  `uploadFixedFileref`, and `readStartupResult` became `readStepResult`
+  for both steps.
+- `src/backend/backend.ts`: `ExecuteOptions.displayResults`.
+  `notebookController.ts` passes `true` (the interactive window runs
+  through it); `run/commands.ts` passes `false`.
+
+**Tests.** `test/unit/proc-python-backend.test.ts` gains a block of 22
+tests: the exact job and uploaded bytes, upload once per connection, false
+and absent unchanged, restart, the startup snippet, the flush's log kept out, a
+drop among the flush's lines kept out, a failing flush reported after the
+cell's traceback, both steps failing, a syntax error, the frame-dropping edge
+cases, a missing boundary, a boundary before the snippet's, a printed copy
+of the boundary, a failed `PYVIYA_FLUSHCC` read, each helper's upload
+failing, retry, a lost session, a cancel during the upload, and re-attach.
+The router gains `flushSyscc`, `heldFilerefs`, `assignReplyFor` and
+`laterLogPages`.
+
+**Docs.** `docs/notebooks.md`, `docs/faq.md` and `docs/troubleshooting.md`
+no longer say a cell shows nothing without an explicit call.
+
+**Adversarial review, 2026-10-01**, of the local branch: nothing
+blocking; six minor findings, each checked against the code.
+
+1. `SYSERRORTEXT` is not saved around the flush, so a SAS-side cell error
+   followed by a failing flush reports the flush's text. **Accepted**
+   (Sean's call). Fixing it needed a mutating probe of whether
+   `SYSERRORTEXT` takes a `%let` and how `%superq` reads back, for a case
+   that needs a cell failing in SAS and a figure failing to save. The
+   cell's own `ERROR` line still shows. `FIGURE_FLUSH_STEP`'s comment says
+   so.
+2. A dropped-lines notice after the flush's boundary still reached the
+   cell's output. **Fixed:** it is kept apart with the flush's lines, and
+   a test covers it (checked to fail without the fix).
+3. A `_repr_html_` or `_repr_png_` that raised was skipped silently.
+   **Fixed:** one `stderr` line names it. A local check of the first
+   version found that it also reported a merely missing `_repr_png_`,
+   which nearly every value lacks, and a class value, whose repr methods
+   need an instance. A missing method is now skipped silently, and a class
+   goes straight to `repr()`, as in IPython.
+4. A failed flush's line came before the cell's traceback. **Fixed:** it
+   now comes after, and the both-fail test asserts the order.
+5. `isFlushBoundary`'s `?? ""` fallback would have matched every echo if
+   the step were reordered. **Fixed:** `FLUSH_BOUNDARY_STATEMENT` is the
+   one constant both use.
+6. `%sysfunc(pathname())` is not macro-quoted. **Accepted:** the server
+   chooses that path. A quoting function is a change that would need its
+   own probe of `SAS.symget`. `cellRunnerStatements`'s comment says so.
+
+At the reviewer's request, manual items 13.41 (`from __future__`) and
+13.42 (a raising `_repr_html_`) were added. Items 13.31 and 13.37 already
+cover a trailing `;` and `os.chdir`.
+
+`npm run verify` green with the fixes folded in: 2104 unit tests, coverage
+96.39/96.27/96.13/96.39 (statements/branches/functions/lines).
+
+**Manual pass, 2026-10-01:** items 13.30–13.42 all passed. `verde` has no
+seaborn, so 13.33's seaborn half could not run; its `df.plot` half passed.
+
 ---
 
 ## Probe findings
@@ -1081,7 +1185,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.16.
+finding is 13.20.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -1520,3 +1624,143 @@ traceback parser must drop. The runner must clean up its own names in a
 
 **Not settled:** other Python versions; a cell that never returns; a
 cell that changes `sys.displayhook` or `__main__`.
+
+### Finding 13.16 — The cell runner and the figure flush work end to end, and the runner adds exactly two frames (2026-10-01)
+
+Probed for 13f, with the runner and flush 13f ships.
+
+**Documented:** `compile()` with `ast.PyCF_ONLY_AST` returns the AST
+without the extra `ast.parse` frame. A `from __future__` import sets
+compiler flags on the code object it compiles. `end_col_offset` counts
+UTF-8 bytes.
+
+**Observed (`verde`, Python 3.12.12, 2026-10-01).** Approved by Sean. Two
+throwaway sessions, each deleted afterwards (`204`) and read back as `404`.
+Each cell ran as ADR-0046's job, with the recovery and notes lines and
+without the ODS wrapper. Round one passed the fileref name in
+`PYVIYA_CELL`; round two passed the absolute path that 13f ships (Finding
+13.19), and re-ran a plot, a value, a table and a raise:
+
+- A cell that raises on its own line 3 gives these frames, the middle two
+  the runner's (their line numbers depend on the runner's revision):
+
+  ```text
+  File "<stdin>", line 5, in <module>
+  File "<stdin>", line 2, in <module>
+  File "<string>", line …, in <module>
+  File "<string>", line …, in _pyviya_run_cell
+  File "<string>", line 3, in <module>
+  ```
+
+  That holds both when the body raises and when the trailing expression
+  raises. The `ERROR: Unhandled Python exception.` line is
+  typed `error`, and the traceback lines are typed `normal`.
+- A syntax error on line 2 gives the first four frames above, then
+  `File "<string>", line 2` with no `, in`, the source line, a caret, and
+  `SyntaxError: '(' was never closed`. No `ast.py` frame appears.
+- A trailing `x + 1` with `x = 41` printed `42` as one `normal` line.
+  `x + 1;` printed nothing.
+- `from __future__ import annotations` with an undefined annotation, then
+  a trailing `f.__annotations__`, printed `{'a': 'Missing', 'return':
+  'int'}`. The trailing expression is compiled with the module's flags.
+- A cell ending in a DataFrame wrote a 514-byte `pyviya_PY000001_out.html`.
+  A figure drawn in that cell and shown with `plt.show()` was still saved,
+  by the flush, as `pyviya_PY000001_plot001.png` (17,356 bytes).
+- Afterwards a check step found no `_pyviya_` names in `globals()`, `x`
+  still `41`, and no open figures.
+
+The two final changes to the runner were checked with a local CPython 3
+and a stub `SAS`, not on Viya: accepting IPython's `(data, metadata)` tuple
+form, and skipping a `_repr_html_` that raises (a class value) or returns
+the wrong type. After 13f's adversarial review, two more were checked the
+same way, on CPython 3.14: a repr method that raises now prints one
+`stderr` line naming it, and a class value skips the repr methods for its
+`repr()`. That line reaches the log as the traceback's `stderr` lines do
+above; manual item 13.42 checks it on Viya.
+
+**What this establishes.** The runner keeps the namespace and line numbers
+a direct step has. It adds exactly two `<string>` frames, `<module>` then
+`_pyviya_run_cell`, directly below the `<stdin>` frames, and nothing else.
+So `parseTraceback` drops those two, and `tracebackDiagnostics.ts`'s
+`<string>` mapping is unchanged. A syntax error's message carries its
+location, as a plain run's does (Finding 13.15).
+
+**Not settled:** other Python versions; a cell that never returns; a cell
+that redefines `_pyviya_run_cell`, `SAS` or `globals`; seaborn and pandas
+plotting (13f's manual pass).
+
+### Finding 13.17 — `SYSCC` describes the cell alone, and `PYVIYA_FLUSHCC` the flush (2026-10-01)
+
+**Documented:** as Finding 13.14.
+
+**Observed (same sessions as Finding 13.16),** with `FIGURE_FLUSH_STEP`'s
+save, reset and restore around the flush:
+
+| Cell | Flush | Job state | `SYSCC` | `PYVIYA_USERCC` | `PYVIYA_FLUSHCC` |
+|---|---|---|---|---|---|
+| succeeds | succeeds | `completed` | `0` | `0` | `0` |
+| raises | succeeds | `error` | `1012` | `1012` | `0` |
+| succeeds | raises | `completed` | `0` | `0` | `1012` |
+| raises | raises | `error` | `1012` | `1012` | `1012` |
+
+`SYSERRORTEXT` kept `Unhandled Python exception.` from an earlier failure
+in later successful jobs.
+
+**What this establishes.** After the job, `SYSCC` and the job's state are
+the cell's alone, and `PYVIYA_FLUSHCC` is the flush's alone. Resetting
+`SYSCC` to `0` before the flush is what makes `PYVIYA_FLUSHCC` the flush's
+own result when the cell has already failed. A stale `SYSERRORTEXT` is
+harmless, since it is read only when `SYSCC` is not `0`.
+
+**Not settled:** a flush that ends in a SAS `ERROR` rather than a Python
+exception (as Finding 13.14).
+
+### Finding 13.18 — The flush's log starts at the `PYVIYA_USERCC` echo (2026-10-01)
+
+**Documented:** nothing found. Finding 13.2 measured the startup capture's
+echo as `source` with notes off.
+
+**Observed (same sessions as Finding 13.16).** In every job, the cell's
+output and traceback came first, then `%let PYVIYA_USERCC=&syscc;` typed
+`source` with SAS's line number in front, then the flush step's lines. A
+failing flush's traceback ran the `<stdin>` frames, then the flush's two
+`<string>` frames (`<module>` at line 14, `_pyviya_flush_figures` at line
+10), then the frame that raised. `title` lines (a page header) came in at arbitrary points, once
+between two traceback frames. That probe ran without the ODS wrapper's
+`PAGESIZE MAX`, and `logFilter.ts` drops `title` lines anyway.
+
+**What this establishes.** The `source` echo of `FIGURE_FLUSH_STEP`'s first
+line splits the log as ADR-0041's capture echo does: the lines before it
+are the cell's, those after it the flush's. A line the cell prints is
+typed `normal`, so it cannot be taken for the boundary.
+
+**Not settled:** other releases.
+
+### Finding 13.19 — After `os.chdir`, a relative write lands outside the listed directory (2026-10-01)
+
+Probed for 13f when round one's runner wrote output by relative path.
+
+**Documented:** the Compute service's `files/cwd` lists the session's
+working directory. Nothing found on whether it follows the Python process.
+
+**Observed (`verde`, 2026-10-01, a third throwaway session, deleted
+afterwards and read back as `404`; the file written to `/tmp` was removed):**
+
+- A cell ran `os.chdir("/tmp")`, then wrote one file by relative name and
+  one by the original directory's absolute path. The Files API listing
+  (`getFiles`, then `getDirectoryMembers`) then held the absolute-path file
+  and not the relative one.
+- In a later step, Python's working directory was still `/tmp`, and the
+  directory of `%sysfunc(pathname(<fileref>))` was not the working
+  directory.
+- In round two of Finding 13.16, a cell that ran `os.chdir("/tmp")` and
+  drew a figure, and the next cell, which ended in a DataFrame, both had
+  their output written to the listed directory.
+
+**What this establishes.** The listing ADR-0019 diffs does not follow
+Python's working directory, and a `chdir` lasts across cells. So the runner
+and the flush write beside the cell's file, by the absolute path
+`%sysfunc(pathname())` gives, never by a relative name.
+
+**Not settled:** a cell that deletes or replaces the cell's file while it
+runs.

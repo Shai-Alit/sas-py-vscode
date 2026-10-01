@@ -195,9 +195,14 @@ no copy (Findings 13.9–13.12,
 "13b built" entry. **13e** decided F10 on 2026-10-01: a notebook cell
 displays its last expression and its open figures
 ([ADR-0046](docs/adr/0046-notebook-cells-display-their-result.md), Findings
-13.13–13.15). 13f builds it. **13o/13p, the SAS Server view**, were
+13.13–13.15). **13f** built it on 2026-10-01 on `feat/13f-cell-display`:
+a cell runner and a figure flush, uploaded once per connection, with
+`SYSCC` kept as the cell's own (Findings 13.16–13.19). Its adversarial
+review is done and folded in, and manual items 13.30–13.42 passed (the
+server has no seaborn, so 13.33 ran its pandas half only); the PR is
+next. See `phase-13.md`'s "13f built" entry. **13o/13p, the SAS Server view**, were
 added 2026-09-30 (Sean's call): upstream has it, this project missed it.
-13o reviews upstream, probes and scopes; 13p builds. 13c, 13d, 13f–13i,
+13o reviews upstream, probes and scopes; 13p builds. 13c, 13d, 13g–13i,
 13k, 13o and 13p are not started.
 
 ## Phase 5→6 housekeeping — done 2026-09-09

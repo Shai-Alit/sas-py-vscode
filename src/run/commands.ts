@@ -496,8 +496,10 @@ export function createRunCommandHandlers(
 
     syncRunningContext(true);
     try {
+      // A script run shows only what it prints or saves (ADR-0046).
       const executed = await backend.execute(program, {
         freshNamespace: whole,
+        displayResults: false,
       });
       if (!executed.ok) {
         // Added 2026-08-28 (Phase 3's 3f slice): this call used to report the

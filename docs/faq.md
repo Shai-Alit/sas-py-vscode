@@ -115,11 +115,12 @@ gets its own compute session, so running a cell does not disturb whatever Run
 File or Run Selection are doing in the same window, and vice versa. See
 [Notebooks](notebooks.md).
 
-**Why doesn't a bare `DataFrame` or `plt.show()` render as a cell's output?**
-Rich output is captured from a file your code writes, the same rule as
-[Running Python](running-python.md#the-result-panel) — call
-`fig.savefig(...)` or `df.to_html(...)` explicitly. There is no implicit
-capture of a cell's last expression. See [Notebooks](notebooks.md#output).
+**Does a bare `DataFrame` or a plot render as a cell's output?** Yes, as in
+Jupyter. A cell shows its last expression's value, as HTML where the value
+has `_repr_html_`, and every matplotlib figure still open when it ends. A
+trailing `;` hides the value. Run File and Run Selection do not do this;
+there, call `SAS.show(...)` or write a file. See
+[Notebooks](notebooks.md#output).
 
 ## Everything else
 

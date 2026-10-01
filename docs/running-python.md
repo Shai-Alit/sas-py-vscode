@@ -106,8 +106,9 @@ in full — an image, an HTML table, or a traceback. A run that only `print()`s
 never pops it. If you already have it open from an earlier run, it still comes
 back to the front for the next run's first figure.
 
-There is no implicit `plt.show()`. A figure or table reaches the panel in one
-of two ways.
+There is no implicit `plt.show()` here: a run does not show its last
+expression or its open figures, as a [notebook cell](notebooks.md#output)
+does. A figure or table reaches the panel in one of two ways.
 
 **`SAS.show()` and `SAS.pyplot()`**, `PROC PYTHON`'s own display helpers. Every
 run is wrapped in an ODS HTML5 destination

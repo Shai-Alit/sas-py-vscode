@@ -216,3 +216,51 @@ HTML or PNG output, so the runner calls the display protocol itself.
 - **Probed against one Viya 4 deployment (`verde`, Python 3.12.12).** A
   cell that never returns, a cancel during the flush, and figures from
   libraries that keep their own figure registry were not probed.
+
+## Resolved in 13f
+
+13f built this decision on 2026-10-01 and settled the points left open
+above. The evidence is Findings 13.16–13.19 in `docs/phases/phase-13.md`.
+
+- **Point 3, the runner.** It parses the cell with
+  `compile(..., ast.PyCF_ONLY_AST, dont_inherit=True)` rather than
+  `ast.parse`, so a syntax error raises from the runner's own frame and no
+  `ast.py` frame appears (Finding 13.16). The trailing expression is
+  compiled with the flags the cell's `from __future__` imports set, which
+  13.16 confirmed. A value is shown through `_repr_html_`, then
+  `_repr_png_`, then `repr()`. A repr method that raises is skipped, and
+  one `stderr` line names it. One that is missing or returns the wrong
+  type is skipped silently, and a class goes straight to its `repr()`, as
+  in IPython. IPython's `(data, metadata)` tuple form is accepted. Those
+  changes were checked locally, not on Viya.
+- **Point 6, the run's id.** The job sets `PYVIYA_CELL` to the cell file's
+  absolute path, from `%sysfunc(pathname(<cell fileref>))`. The runner
+  and the flush take the run's id from that file's name and write beside
+  it by absolute path. A relative path would follow a cell's `os.chdir`
+  out of the directory ADR-0019 lists (Finding 13.19). The names are
+  `pyviya_<id>_out.html` or `.png`, and `pyviya_<id>_plot001.png` onward.
+- **Point 7, the traceback.** The runner compiles the cell under the
+  filename `<string>`, so `tracebackDiagnostics.ts` maps the user's frame
+  as before and is unchanged. Contrary to the second option's expectation
+  above, Finding 13.16 saw a syntax error keep its source line and caret,
+  because the runner compiles from the file's text. `parseTraceback` drops
+  the runner's two frames (`<string>` `<module>`, then `<string>`
+  `_pyviya_run_cell`) directly below the `<stdin>` frames, only when both
+  are there, in order, and only for a cell run with display on.
+- **The names.** The filerefs are `PYVRUN` and `PYVFLUSH`. The macro
+  variables are `PYVIYA_CELL`, `PYVIYA_USERCC` and `PYVIYA_FLUSHCC`.
+- **Point 5, `SYSCC`.** The flush step saves `SYSCC` in `PYVIYA_USERCC`,
+  resets it to `0`, runs, saves its own in `PYVIYA_FLUSHCC`, and restores
+  the user's. The reset is what keeps a flush after a failed cell from
+  reporting the cell's failure as its own (Finding 13.17). The log splits
+  at the `source` echo of the save (Finding 13.18). The flush's result is
+  read only when that echo was seen.
+- **The semicolon.** A trailing `;` after the last expression hides its
+  value. The runner reads it from the source line after the expression's
+  `end_col_offset`, so the Consequence that said it does not suppress yet
+  no longer holds.
+- **A helper that cannot be uploaded** does not fail the cell. The cell
+  runs as a plain step, and the background log says why. Only a cancel or
+  a lost session fails it.
+- **The order is unchanged.** `_repr_html_` is still preferred over
+  `_repr_png_`, so a plotly figure still does not render.

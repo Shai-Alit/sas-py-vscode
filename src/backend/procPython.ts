@@ -141,6 +141,19 @@
  * interpreter through its own fileref, uploaded once per connection, so
  * `Program.bytes` is still untouched (ADR-0014).
  *
+ * ## A notebook cell displays its result (ADR-0046, 13f)
+ *
+ * With `displayResults`, the user's step becomes the cell runner's and is
+ * followed by the figure flush's, both from `cellRunner.ts`, each in a fixed
+ * fileref uploaded once per connection like the startup snippet's. The
+ * flush's `%let` echo is where the cell's log ends (Finding 13.18): the
+ * flush's own lines are neither relayed nor parsed as the run's traceback,
+ * and a failing flush adds one line to the run's output without failing it
+ * (Finding 13.17). The runner's two frames are dropped from a traceback the
+ * same way the harness's `<stdin>` frames are. If the helpers cannot be
+ * uploaded, the cell runs the plain way and the failure is logged: showing
+ * the result is not worth failing the run over.
+ *
  * ## Traceback wrapper frames are dropped here; editor-position mapping is not
  *
  * 3a shipped `parseTraceback` reading every frame exactly as the runtime
@@ -197,6 +210,17 @@ import {
   type TracebackFrame,
 } from "./backend";
 import {
+  CELL_RUNNER_BYTES,
+  CELL_RUNNER_FILEREF_NAME,
+  cellRunnerStatements,
+  FIGURE_FLUSH_BYTES,
+  FIGURE_FLUSH_FILEREF_NAME,
+  FIGURE_FLUSH_STEP,
+  FLUSH_SYSCC_NAME,
+  isFlushBoundary,
+  RUNNER_FUNCTION_NAME,
+} from "./cellRunner";
+import {
   ENVIRONMENT_PROBE_FILENAME,
   environmentProbeStatements,
   MAX_ENVIRONMENT_PROBE_BYTES,
@@ -205,6 +229,7 @@ import {
 import { droppedLinesOutput, isNoiseLine, logLineOutput } from "./logFilter";
 import { type BackendFailure, type BackendResult, fail } from "./problems";
 import {
+  STRING_FRAME_FILE,
   SYNTHESIZED_TRACEBACK_MESSAGE,
   withModuleNotFoundGuidance,
 } from "./tracebackDiagnostics";
@@ -291,6 +316,12 @@ export const STARTUP_FILEREF_NAME = "PYVSTART";
 
 /** The macro variable the snippet step's `SYSCC` is saved in. */
 const STARTUP_SYSCC_NAME = "PYVIYA_STARTCC";
+
+/** How the snippet's step is named in a logged failure. */
+const STARTUP_STEP_LABEL = "the profile's Python startup snippet";
+
+/** How the figure flush's step is named in a logged failure (ADR-0046). */
+const FLUSH_STEP_LABEL = "the cell's figure flush";
 
 /**
  * The statements between the snippet's step and the user's (ADR-0041).
@@ -555,6 +586,23 @@ function startupFailedOutput(failure: string): RichOutput {
   };
 }
 
+/** The one line a cell's output gains when its figure flush failed
+ * (ADR-0046). English, for the same reason as {@link startupFailedOutput}. */
+function flushFailedOutput(failure: string): RichOutput {
+  return {
+    mime: "text/plain",
+    data: `[Showing this cell's open matplotlib figures failed: ${failure}. The cell's own result is unaffected; the Python on Viya log has the details.]\n`,
+  };
+}
+
+/** Whether a frame is one of the cell runner's own: `<string>`, in `name`. */
+function isRunnerFrame(
+  frame: TracebackFrame | undefined,
+  name: string,
+): boolean {
+  return frame?.file === STRING_FRAME_FILE && frame.name === name;
+}
+
 /** Reads an `AsyncIterable` to its end without keeping anything it yielded. */
 async function drainEvents(events: AsyncIterable<unknown>): Promise<void> {
   const iterator = events[Symbol.asyncIterator]();
@@ -588,8 +636,17 @@ async function drainEvents(events: AsyncIterable<unknown>): Promise<void> {
  * different case, and is returned as a `Traceback` with an empty `frames`
  * array rather than falling back, since a header and a message were both
  * genuinely found.
+ *
+ * With `runnerFrames`, the two frames the cell runner adds right below that
+ * run (ADR-0046, Finding 13.16) are dropped too, but only when both are
+ * there in that order: `<string>` in `<module>`, then `<string>` in
+ * {@link RUNNER_FUNCTION_NAME}. A cell's syntax error then leaves no frames
+ * at all, and its message carries the location, as a plain run's does.
  */
-function parseTraceback(lines: readonly string[]): Traceback | undefined {
+function parseTraceback(
+  lines: readonly string[],
+  runnerFrames: boolean,
+): Traceback | undefined {
   const headerIndex = lines.lastIndexOf(TRACEBACK_HEADER);
   if (headerIndex === -1) return undefined;
 
@@ -617,6 +674,13 @@ function parseTraceback(lines: readonly string[]): Traceback | undefined {
     rawFrames[wrapperCount]?.file === WRAPPER_FRAME_FILE
   ) {
     wrapperCount += 1;
+  }
+  if (
+    runnerFrames &&
+    isRunnerFrame(rawFrames[wrapperCount], "<module>") &&
+    isRunnerFrame(rawFrames[wrapperCount + 1], RUNNER_FUNCTION_NAME)
+  ) {
+    wrapperCount += 2;
   }
   const frames = rawFrames.slice(wrapperCount);
 
@@ -646,15 +710,16 @@ function parseTraceback(lines: readonly string[]): Traceback | undefined {
  * ties that value specifically to an unhandled Python exception, and a SAS-side
  * error (`SYSCC=3000`, or anything else) has no Python frames to parse, so it
  * is reported as a plain message instead of a traceback this parser would have
- * to invent frames for.
+ * to invent frames for. `runnerFrames` is {@link parseTraceback}'s.
  */
 function buildFailureOutcome(
   syscc: string,
   syserrortext: string | undefined,
   lines: readonly string[],
+  runnerFrames: boolean,
 ): { outcome: ExecutionOutcome; trailingOutput?: RichOutput } {
   if (syscc === PYTHON_EXCEPTION_SYSCC) {
-    const traceback = parseTraceback(lines);
+    const traceback = parseTraceback(lines, runnerFrames);
     if (traceback !== undefined) {
       const diagnostic: PythonDiagnostic = {
         severity: "error",
@@ -731,6 +796,10 @@ export class ProcPythonBackend implements ExecutionBackend {
    * this connection. A failed upload leaves it `false`, so the next job
    * tries again. */
   private startupUploaded = false;
+  /** Set once both ADR-0046 helpers are in their filerefs for this
+   * connection. A failed upload leaves it `false`, so the next cell tries
+   * again. */
+  private cellHelpersUploaded = false;
   /** Whether the next job must seed the snippet even without a restart: a
    * session this connect created, whose interpreter has not run it yet.
    * Cleared once a job that ran the snippet has settled. */
@@ -987,8 +1056,10 @@ export class ProcPythonBackend implements ExecutionBackend {
       if (sysccResult.value.succeeded) {
         if (startup === undefined) return { ok: true, value: undefined };
         this.startupPending = false;
-        const snippet = await this.readStartupResult(
+        const snippet = await this.readStepResult(
           controller.signal,
+          STARTUP_SYSCC_NAME,
+          STARTUP_STEP_LABEL,
           startupLines,
         );
         if (snippet === undefined) return { ok: true, value: undefined };
@@ -1236,6 +1307,25 @@ export class ProcPythonBackend implements ExecutionBackend {
         if (!uploaded.ok) return uploaded;
       }
 
+      // ADR-0046: showing a cell's result is best-effort. Only a cancel or a
+      // lost session stops the run; anything else runs the cell plainly.
+      let display = false;
+      if (opts.displayResults === true) {
+        const helpers = await this.uploadCellHelpers(run.controller.signal);
+        if (helpers.ok) {
+          display = true;
+        } else if (
+          helpers.problem.code === "cancelled" ||
+          helpers.problem.code === "backend-gone"
+        ) {
+          return helpers;
+        } else {
+          this.onBackgroundFailure?.(
+            `could not upload the cell runner, so this cell ran without displaying its result: ${helpers.reason}`,
+          );
+        }
+      }
+
       const created = await this.createRunFileref(run);
       if (!created.ok) return created;
       const { fileref, name: filerefName } = created.value;
@@ -1250,11 +1340,15 @@ export class ProcPythonBackend implements ExecutionBackend {
         return this.translate(written, "running the program", true);
 
       // When seeding, the snippet's step does the restart, and the user's
-      // step reuses the interpreter it started (Finding 12.22).
-      const statement =
-        opts.freshNamespace && !seeding
-          ? `proc python restart infile=${filerefName};`
-          : `proc python infile=${filerefName};`;
+      // step reuses the interpreter it started (Finding 12.22). A displaying
+      // cell runs through the runner and is followed by the flush (ADR-0046).
+      const restart = opts.freshNamespace && !seeding;
+      const userStep = display
+        ? [...cellRunnerStatements(filerefName, restart), ...FIGURE_FLUSH_STEP]
+        : [
+            `proc python ${restart ? "restart " : ""}infile=${filerefName};`,
+            "run;",
+          ];
       const startupStep = seeding
         ? [
             `proc python ${opts.freshNamespace ? "restart " : ""}infile=${STARTUP_FILEREF_NAME};`,
@@ -1296,8 +1390,7 @@ export class ProcPythonBackend implements ExecutionBackend {
           ...QUIET_NOTES_BEFORE,
           ...ODS_WRAPPER_BEFORE,
           ...startupStep,
-          statement,
-          "run;",
+          ...userStep,
           ...ODS_WRAPPER_AFTER,
           ...QUIET_NOTES_AFTER,
         ],
@@ -1317,9 +1410,14 @@ export class ProcPythonBackend implements ExecutionBackend {
       // output nor parsed as its traceback. Without that echo, which lines
       // were the user's cannot be told, and showing them all beats hiding
       // the user's output. That covers an echo that never arrives and one
-      // that may have been among dropped lines.
+      // that may have been among dropped lines. After the flush's echo,
+      // every line is the flush's (Finding 13.18) and is kept apart the same
+      // way, and so is a drop among them; without that echo they are shown
+      // with the cell's.
       let inStartup = seeding;
       let boundarySeen = false;
+      let inFlush = false;
+      const flushLines: string[] = [];
       const startupLines: LogLine[] = [];
       const showStartupLines = (): void => {
         inStartup = false;
@@ -1331,7 +1429,7 @@ export class ProcPythonBackend implements ExecutionBackend {
       for await (const event of stream.events) {
         if (event.kind === "dropped") {
           if (inStartup) showStartupLines();
-          relay.push(droppedLinesOutput(event.lines));
+          if (!inFlush) relay.push(droppedLinesOutput(event.lines));
           continue;
         }
         if (seeding && !boundarySeen && isStartupBoundary(event.line)) {
@@ -1339,9 +1437,18 @@ export class ProcPythonBackend implements ExecutionBackend {
           inStartup = false;
           continue;
         }
+        if (display && !inFlush && isFlushBoundary(event.line)) {
+          if (inStartup) showStartupLines();
+          inFlush = true;
+          continue;
+        }
         if (isNoiseLine(event.line.type)) continue;
         if (inStartup) {
           startupLines.push(event.line);
+          continue;
+        }
+        if (inFlush) {
+          flushLines.push(event.line.line);
           continue;
         }
         run.lines.push(event.line.line);
@@ -1366,14 +1473,16 @@ export class ProcPythonBackend implements ExecutionBackend {
         // Without the capture's echo there is no sign the capture ran, and
         // `PYVIYA_STARTCC` may still hold an earlier job's value.
         if (boundarySeen) {
-          const snippet = await this.readStartupResult(
+          const snippet = await this.readStepResult(
             run.controller.signal,
+            STARTUP_SYSCC_NAME,
+            STARTUP_STEP_LABEL,
             startupLines.map((startupLine) => startupLine.line),
           );
           if (snippet !== undefined) relay.push(startupFailedOutput(snippet));
         } else {
           this.onBackgroundFailure?.(
-            "could not tell whether the profile's Python startup snippet succeeded: the job's log never showed where its step ended, so its result was not read",
+            `could not tell whether ${STARTUP_STEP_LABEL} succeeded: the job's log never showed where its step ended, so its result was not read`,
           );
         }
       }
@@ -1386,10 +1495,30 @@ export class ProcPythonBackend implements ExecutionBackend {
           sysccResult.value.syscc,
           sysccResult.value.message,
           run.lines,
+          display,
         );
         outcome = built.outcome;
         if (built.trailingOutput !== undefined)
           relay.push(built.trailingOutput);
+      }
+
+      // After the cell's own traceback, since the flush ran after the cell.
+      // Same reasoning as the snippet's: without the flush's echo,
+      // `PYVIYA_FLUSHCC` may still hold an earlier cell's value.
+      if (display) {
+        if (inFlush) {
+          const flush = await this.readStepResult(
+            run.controller.signal,
+            FLUSH_SYSCC_NAME,
+            FLUSH_STEP_LABEL,
+            flushLines,
+          );
+          if (flush !== undefined) relay.push(flushFailedOutput(flush));
+        } else {
+          this.onBackgroundFailure?.(
+            `could not tell whether ${FLUSH_STEP_LABEL} succeeded: the job's log never showed where its step ended, so its result was not read`,
+          );
+        }
       }
 
       // ADR-0019: reached only once a genuine `ExecutionOutcome` is about to
@@ -1560,11 +1689,6 @@ export class ProcPythonBackend implements ExecutionBackend {
   /**
    * Puts the startup snippet in {@link STARTUP_FILEREF_NAME}, once per
    * connection (ADR-0041).
-   *
-   * A reattached session already holds the name from an earlier connection,
-   * and `assign` answers "already exists" (Finding 12.10). That fileref is
-   * found and rewritten in place instead (Finding 12.23). Nothing is ever
-   * deassigned, so `fileref.ts`'s session-gone reading still holds.
    */
   private async uploadStartup(
     startup: StartupSnippet,
@@ -1572,29 +1696,72 @@ export class ProcPythonBackend implements ExecutionBackend {
     context: string,
   ): Promise<BackendResult<void>> {
     if (this.startupUploaded) return { ok: true, value: undefined };
-
-    let fileref: Fileref;
-    const created = await createFileref(
-      this.client,
-      this.session,
+    const uploaded = await this.uploadFixedFileref(
       STARTUP_FILEREF_NAME,
-      { signal },
+      startup.bytes,
+      signal,
+      context,
     );
+    if (uploaded.ok) this.startupUploaded = true;
+    return uploaded;
+  }
+
+  /**
+   * Puts the cell runner and the figure flush in their filerefs, once per
+   * connection (ADR-0046). If either fails, both are uploaded again next
+   * time; the one already there is rewritten in place.
+   */
+  private async uploadCellHelpers(
+    signal: AbortSignal,
+  ): Promise<BackendResult<void>> {
+    if (this.cellHelpersUploaded) return { ok: true, value: undefined };
+    const helpers: readonly (readonly [string, Uint8Array])[] = [
+      [CELL_RUNNER_FILEREF_NAME, CELL_RUNNER_BYTES],
+      [FIGURE_FLUSH_FILEREF_NAME, FIGURE_FLUSH_BYTES],
+    ];
+    for (const [name, bytes] of helpers) {
+      const uploaded = await this.uploadFixedFileref(
+        name,
+        bytes,
+        signal,
+        "running the program",
+      );
+      if (!uploaded.ok) return uploaded;
+    }
+    this.cellHelpersUploaded = true;
+    return { ok: true, value: undefined };
+  }
+
+  /**
+   * Writes `bytes` to the fileref `name`, assigning it first.
+   *
+   * A reattached session already holds the name from an earlier connection,
+   * and `assign` answers "already exists" (Finding 12.10). That fileref is
+   * found and rewritten in place instead (Finding 12.23). Nothing is ever
+   * deassigned, so `fileref.ts`'s session-gone reading still holds.
+   */
+  private async uploadFixedFileref(
+    name: string,
+    bytes: Uint8Array,
+    signal: AbortSignal,
+    context: string,
+  ): Promise<BackendResult<void>> {
+    let fileref: Fileref;
+    const created = await createFileref(this.client, this.session, name, {
+      signal,
+    });
     if (created.ok) {
       fileref = created.value;
     } else if (isFilerefAlreadyAssigned(created)) {
-      const found = await findFileref(
-        this.client,
-        this.session,
-        STARTUP_FILEREF_NAME,
-        { signal },
-      );
+      const found = await findFileref(this.client, this.session, name, {
+        signal,
+      });
       if (!found.ok) return this.translate(found, context, true);
       if (found.value === undefined) {
         return fail(
           {
             code: "transfer-failed",
-            detail: `the session reported the fileref "${STARTUP_FILEREF_NAME}" as already assigned, but its fileref list does not hold it`,
+            detail: `the session reported the fileref "${name}" as already assigned, but its fileref list does not hold it`,
           },
           context,
         );
@@ -1604,41 +1771,37 @@ export class ProcPythonBackend implements ExecutionBackend {
       return this.translate(created, context, true);
     }
 
-    const written = await writeFilerefContent(
-      this.client,
-      fileref,
-      startup.bytes,
-      { signal },
-    );
+    const written = await writeFilerefContent(this.client, fileref, bytes, {
+      signal,
+    });
     if (!written.ok) return this.translate(written, context, true);
-
-    this.startupUploaded = true;
     return { ok: true, value: undefined };
   }
 
   /**
-   * Reads the `SYSCC` {@link STARTUP_RESULT_CAPTURE} saved for the snippet's
-   * step. Resolves a short description of the failure, or `undefined` when
-   * the snippet succeeded.
+   * Reads the `SYSCC` a step's capture saved in the macro variable `name`:
+   * {@link STARTUP_RESULT_CAPTURE}'s for the snippet, or
+   * `FIGURE_FLUSH_STEP`'s for the flush. Resolves a short description of the
+   * failure, or `undefined` when the step succeeded. `label` names the step
+   * in what is logged.
    *
-   * A failure goes to {@link onBackgroundFailure} in full, with the
-   * snippet's log lines, which the caller keeps out of the run's output. A
-   * failed read is reported the same way and treated as success: the user's
-   * own result is already known, and it is not the snippet's to change.
+   * A failure goes to {@link onBackgroundFailure} in full, with the step's
+   * log lines, which the caller keeps out of the run's output. A failed read
+   * is reported the same way and treated as success: the user's own result
+   * is already known, and it is not this step's to change.
    */
-  private async readStartupResult(
+  private async readStepResult(
     signal: AbortSignal,
+    name: string,
+    label: string,
     lines: readonly string[],
   ): Promise<string | undefined> {
-    const result = await readVariable(
-      this.client,
-      this.session,
-      STARTUP_SYSCC_NAME,
-      { signal },
-    );
+    const result = await readVariable(this.client, this.session, name, {
+      signal,
+    });
     if (!result.ok) {
       this.onBackgroundFailure?.(
-        `could not read whether the profile's Python startup snippet succeeded: ${result.reason}`,
+        `could not read whether ${label} succeeded: ${result.reason}`,
       );
       return undefined;
     }
@@ -1646,14 +1809,11 @@ export class ProcPythonBackend implements ExecutionBackend {
       return undefined;
     }
 
-    const traceback = parseTraceback(lines);
+    const traceback = parseTraceback(lines, false);
     const failure =
       traceback === undefined ? `SYSCC=${result.value}` : traceback.message;
     this.onBackgroundFailure?.(
-      [
-        `the profile's Python startup snippet failed (SYSCC=${result.value}):`,
-        ...lines,
-      ].join("\n"),
+      [`${label} failed (SYSCC=${result.value}):`, ...lines].join("\n"),
     );
     return failure;
   }

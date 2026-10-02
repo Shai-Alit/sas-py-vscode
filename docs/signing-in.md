@@ -76,8 +76,7 @@ name shown is your Viya display name (see [above](#the-accounts-menu)), and two
 profiles for different deployments can easily show the same name side by side
 with nothing to tell them apart. There is no setting on this side that adds the
 profile or deployment to the row. Tracked as
-[#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42); not planned before
-1.0.
+[#42](https://github.com/Shai-Alit/sas-py-vscode/issues/42); not planned.
 
 ## Staying signed in
 

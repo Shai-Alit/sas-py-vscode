@@ -1062,12 +1062,23 @@ carries the 1.0.0 version bump.
 > a Phase 14, which is not yet planned. See `docs/phases/phase-13.md`'s
 > "13h done" and "F1 moved to Phase 14" Runbook entries.
 
+> **Amended 2026-10-02 (Sean's own call): there will be no 1.0.** SAS is
+> folding this extension's features into its official SAS VS Code
+> extension, so this project will not make the "this is supported" claim
+> 1.0 stands for. Releases stay in preview: `"preview": true` stays in
+> `package.json`, and the next release is `v0.1.6`. The criteria above
+> stand as the record of what 1.0 would have required; none of them is
+> pending. Nothing is planned after Phase 13: F1's Phase 14 and Phase 13's
+> second-execution-backend section are not planned, and a new phase starts
+> only if Sean adds features later. See `docs/phases/phase-13.md`'s "Phase
+> 13 housekeeping" Runbook entry.
+
 > **What 1.0 does not require.** The second execution backend does not
 > gate it. That work was all of Phase 13 when this paragraph was written
 > (renumbered from Phase 12 on 2026-09-22 — see the amendment above); since
 > 2026-09-24 it is one ungated section of Phase 13, and the rest of Phase 13
 > (13a–13k, and 13l–13m since 2026-09-29 — less 13j, 13l and 13m, dropped
-2026-09-30, and 13i, moved to Phase 14 on 2026-10-01) **does** gate 1.0, per the
+> 2026-09-30, and 13i, moved to Phase 14 on 2026-10-01) **does** gate 1.0, per the
 > amendments above. §3.1
 > already holds that parity is the destination rather than the
 > release bar and that the post-v0.1.0 phase order is demand-driven, so a

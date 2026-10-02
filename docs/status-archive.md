@@ -3257,3 +3257,108 @@ Runbook entry.
 The Phase 12 row of `STATUS.md`'s phase index, as it stood before the same checkpoint trimmed it:
 
 > **started 2026-09-22 — gates v1.0** (`PRODUCTION_PLAN.md` §8). **12a (Agent Skill) shipped 2026-09-22** — `.claude/skills/python-on-viya/SKILL.md`, no production code. **12b (Option C spike) ran 2026-09-22 — viable, go**; the actual build is a separate, not-yet-scoped slice per ADR-0037. **12c (scope the Option C build) scoped 2026-09-22** — read-only v1 tool surface, `headersHelper`-shaped token design, security-review checklist; audience boundary settled by a live Extension Development Host probe (external CLI only for v1 — see `microsoft/vscode`#265912). Inserted ahead of the phase's other slices; a same-day letter collision with a concurrently-merged PR (#207) was found and reconciled (see the narrative above), landing on a uniform shift rather than either branch's original lettering. Phase 11's row above names the three follow-ups it handed over by their pre-shift letter (12e); in this phase they are **12f**, and that row is left as it stands — a closed phase's row is not edited from here. **12g, 12h and 12i added 2026-09-22** from two pieces of work outside the repository: the `PROC PYTHON` "resuming Python state" `NOTE` and whether it reaches our own transcript (12g, Findings 12.2/12.3); a spike on inline graphics via `SAS.show`/ODS HTML5, build explicitly deferred (12h); and `NOTICE` attribution for the bundled MIT components (12i). **12d (Python startup-snippet spike) ran 2026-09-23** — submission mechanism confirmed via a live probe against `verde`, viable and not parked; Run File itself, not only Reset Python State, wipes the snippet's state (Finding 12.4). **12e (CSV formula-injection guard) merged 2026-09-23 (PR #210)** — an opt-in `pythonOnViya.csvExport.guardFormulaInjection` setting covering both CAS and SAS Libraries CSV export, not CAS-only; B12.2 fixed with it. **12f (three small Phase 11 follow-ups) merged 2026-09-24 (PR #212)** — library large-export confirmation, too-large CAS/Compute problems, autoExec error text (Findings 12.11/12.12); manual items 12.10–12.13 passed. **12g ("resuming" `NOTE`) run 2026-09-24 — nothing to build**: every Python-state `NOTE` is typed `note` and already filtered (Finding 12.13); Run File's restart semantics corrected in the skill and user docs. **12h (inline-graphics spike) run 2026-09-24 — viable, mostly plumbing**: with a named ODS HTML5 destination open, `SAS.show` output lands where the ADR-0019 diff already looks; without one it is a silent no-op today (Finding 12.14). Decision: the build wraps every run, always on (Finding 12.15). **12j (that build) added 2026-09-24 — gates v1.0 — and built the same day**: an always-on ODS wrapper with a wrapper-named body file ([ADR-0038](adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md), Findings 12.16/12.17); manual items 12.15–12.22 passed 2026-09-25 after two fixes (Finding 12.18); merged 2026-09-25 (PR #217). **12k–12q added 2026-09-24** by a backlog sweep of Phases 11 and 12 (B12.1 fix, notebook staleness, startup snippet, reusable CAS connection, Option C in two parts, housekeeping); a preview release follows this phase. **12i (`NOTICE`) done 2026-09-24**: seven bundled MIT packages attributed, not twelve. The measured bundles inline six packages into `dataViewer.js` and `@vscode/python-extension` into `extension.js`. **12k (B12.1 fix) built 2026-09-25**: the cause is SAS's `SYNTAXCHECK` option, and every job now starts by switching it off and undoing a SAS-set `OBS=0` ([ADR-0039](adr/0039-every-job-switches-syntax-check-mode-off.md), Finding 12.19); manual items 12.23–12.26 passed 2026-09-25; merged 2026-09-25 (PR #219). **12l (notebook staleness) built 2026-09-25**: a started cell always ends, a closed notebook's queued cells are skipped (Finding 12.20), and the waiting notice names a cancelled cell when that is the cause; sign-out clearing of notebook Problems entries was dropped 2026-09-27 as not a defect; manual items 12.28–12.29 passed 2026-09-27; merged 2026-09-27 (PR #220). **12r (B12.3 fix) built 2026-09-27**: this extension and the SAS extension both registered the `sasContent` scheme, so whichever activated second failed (Finding 12.21); our three SAS Content schemes are now `pythonOnViyaContent*` ([ADR-0040](adr/0040-every-uri-scheme-is-the-extensions-own.md)); manual items 12.30–12.32 passed 2026-09-28; merged 2026-09-28 (PR #221). **12m (Python startup snippet) built 2026-09-28**: the snippet runs as its own step in every restarting job and in a new session's first job ([ADR-0041](adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md), Findings 12.22–12.24); adversarial review folded in; manual items 12.33–12.40 passed 2026-09-28; merged 2026-09-28 (PR #222). **12n (reusable CAS connection) built 2026-09-28**: a stable token fileref, `pythonOnViya.cas.tokenFileref`, rewritten in place and guarded against the user's own filerefs, plus **Refresh CAS Token**; `SAS_SERVICES_TOKEN` ruled out as never refreshed (Finding 12.25); manual items 12.41–12.48 passed 2026-09-28; merged 2026-09-29 (PR #223).
+
+---
+
+**Phase 13 (Feature completion), 13a–13p, 2026-09-30 through 2026-10-02.** Moved here verbatim from `STATUS.md` at the Phase 13 between-phase housekeeping checkpoint, 2026-10-02 (links rebased to this folder). The full per-slice record is in [`phases/phase-13.md`](phases/phase-13.md).
+
+**Phase 13 (Feature completion) is in progress**
+([`docs/phases/phase-13.md`](phases/phase-13.md)). **13n** fixes a bug
+v0.1.4's release smoke test found: a `SAS.submit()` ending in `PROC SGPLOT` or
+`PROC SGPANEL` made SAS type the run's printed output and traceback `note`,
+so the extension hid them (Finding 13.1). Each run now turns SAS notes off
+while it runs ([ADR-0043](adr/0043-every-run-turns-sas-notes-off.md),
+Finding 13.2). The smoke test itself is new in `test/smoke/`. Merged
+2026-09-30 as [PR #230](https://github.com/Shai-Alit/sas-py-vscode/pull/230),
+squash `4622508`, and released in `v0.1.5`. **13l** (the MCP server for
+Claude Code, built as 12o) was picked up 2026-09-30 on `feat/13l-mcp-server`.
+Claude Code 2.1.284 now tries MCP's 2026-07-28 revision first and falls back
+to the legacy one the server speaks; the server stays legacy-only (Sean's
+call). Merged 2026-09-30 as
+[PR #233](https://github.com/Shai-Alit/sas-py-vscode/pull/233), squash
+`5acb03a`. See `phase-13.md`'s "13l picked up" entry. **The MCP server was
+then removed, 2026-09-30, before any release** (Sean's call,
+[ADR-0044](adr/0044-the-mcp-server-for-claude-code-is-removed.md)): it
+reached only the Claude Code command line, and SAS ships its own Viya MCP
+server. 13j, 13l and 13m are dropped; the agent skill stays. See
+`phase-13.md`'s "MCP server removed" entry. The removal merged 2026-09-30
+as [PR #234](https://github.com/Shai-Alit/sas-py-vscode/pull/234), squash
+`933ded6`. **13a** (upload to and download from SAS Content) merged
+2026-10-01 as [PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235),
+squash `ace92ea`, with manual items 13.14–13.21 passed. One review finding
+is left as a follow-up: a failure that lands as the user cancels is
+reported as a cancel. See `phase-13.md`'s "13a built" entry and Findings
+13.6–13.8. **13b** (Copy and Paste in SAS Content) merged 2026-10-01 as
+[PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash
+`c5c2512`, with manual items 13.22–13.29 passed. A file is copied on the
+server; a folder is copied by recreating it, since the Folders service has
+no copy (Findings 13.9–13.12,
+[ADR-0045](adr/0045-content-copy-paste.md)). See `phase-13.md`'s
+"13b built" entry. **13e** decided F10 on 2026-10-01: a notebook cell
+displays its last expression and its open figures
+([ADR-0046](adr/0046-notebook-cells-display-their-result.md), Findings
+13.13–13.15). **13f** built it and merged 2026-10-01 as
+[PR #238](https://github.com/Shai-Alit/sas-py-vscode/pull/238), squash
+`e42decb`, with manual items 13.30–13.42 passed: a cell runner and a
+figure flush, uploaded once per connection, with `SYSCC` kept as the
+cell's own (Findings 13.16–13.19). See `phase-13.md`'s "13f built" entry.
+**13o/13p, the SAS Server view**, were
+added 2026-09-30 (Sean's call): upstream has it, this project missed it.
+**13o is done** (2026-10-01): it read upstream, probed (Findings
+13.20–13.26), and agreed the scope with Sean. The view borrows the run
+session, a new ADR allows composing the root URL, and writes send the
+real `ETag`, never upstream's empty one (Finding 13.26). 13p is split:
+**13p-i** (the read-only view, open and save,
+[ADR-0047](adr/0047-sas-server-view-composes-file-paths.md)) is
+**merged** 2026-10-01 as [PR #239](https://github.com/Shai-Alit/sas-py-vscode/pull/239), squash `902f455`, with
+13o's write-up, manual items 13.43–13.53 passed and every check passing.
+**13p-ii** (changing files: New File/Folder, Rename, drag-and-drop Move,
+Delete, Upload and Download, Findings 13.30–13.34) is **merged** 2026-10-01
+as [PR #240](https://github.com/Shai-Alit/sas-py-vscode/pull/240), squash
+`453cb84`, with manual items 13.54–13.62 passed. It generalises 13a's
+upload and download so both views share them. See `phase-13.md`'s "13p-ii
+built" entry. **13g** (a trailing DataFrame shows as a sortable grid in a
+notebook or interactive-window cell,
+[ADR-0048](adr/0048-a-trailing-dataframe-is-a-sortable-grid.md),
+Finding 13.35) is **merged** 2026-10-01 as
+[PR #241](https://github.com/Shai-Alit/sas-py-vscode/pull/241), squash
+`a8a6365`, with manual items 13.63–13.74 passed and nothing blocking from
+either PR reviewer. See `phase-13.md`'s "13g built" entry. **13h** (the
+F1 spike) is done and merged 2026-10-01 as
+[PR #242](https://github.com/Shai-Alit/sas-py-vscode/pull/242), squash
+`13a77ab`. Sean narrowed F1 to a
+native-SQL helper: a libref and the database's own SQL in, a DataFrame
+out, with no rewriting of Python. The spike recommends declining F1 as
+written (no interception, no libname UI) and building the helper as a
+snippet command in 13i, after a probe against a real SAS/ACCESS libname
+(Findings 13.36–13.41). **Sean then moved F1 to Phase 14** (not yet
+planned): it needs more work and thought, and no longer gates 1.0
+(`PRODUCTION_PLAN.md` §8). 13i is closed unstarted. See `phase-13.md`'s
+"13h done" and "F1 moved to Phase 14" entries. **13c** (F6, the
+**Commands** view) merged 2026-10-02 ([PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), squash `743b126`): a
+state-aware tree of common commands, first in the sidebar, fed by a new
+context-key mirror (`src/contextKeys.ts`). Adversarial review found nothing
+blocking; manual items 13.75–13.80 passed, with Refresh CAS Token moved
+from Snippets to Run; CI and both PR reviewers were green. It also makes
+prettier and eslint ignore `.claude/worktrees/`, so stray agent worktrees no
+longer fail verify. See `phase-13.md`'s "13c built" entry. **13d** (F11, the snippet
+library) merged 2026-10-02 ([PR #244](https://github.com/Shai-Alit/sas-py-vscode/pull/244), squash `3e1a8b2`): twelve
+`viya-` snippets for the `SAS` bridge, CAS and a credential-safe
+`libname`, and an **Insert Viya Snippet...** picker first in the Commands
+view's Snippets group (Findings 13.42–13.46). Adversarial review found
+nothing blocking (three findings folded in); manual items 13.81–13.85
+passed; CI and both PR reviewers were green. See `phase-13.md`'s "13d built" entry. **13k** (polish)
+merged 2026-10-02 ([PR #245](https://github.com/Shai-Alit/sas-py-vscode/pull/245), squash `1e92dbd`). Adversarial review found
+nothing blocking (five findings folded in); manual items 13.86–13.88
+passed; CI and both PR reviewers were green. CSV export shows rows and a
+percentage, a CAS table's **Table Properties** shows its source file size
+(Finding 13.47), and `pythonOnViya.pylanceStubs.enabled` turns generated
+Pylance stubs off. Sean closed its F9 checks without a probe: `verde` has
+no non-Snowflake database caslib, and the large-result probe could not run
+(Findings 13.48–13.49). See `phase-13.md`'s "13k built" entry. **Every
+Phase 13 punch-list slice is now merged, decided, dropped or moved.** Next
+is the Phase 13→14 between-phase housekeeping (`HOUSEKEEPING.md`).
+
+The Phase 13 row of `STATUS.md`'s phase index, as it stood before the same checkpoint trimmed it:
+
+> **in progress** (v0.1.4 and v0.1.5 shipped 2026-09-30) — 13n (output lost after a `SAS.submit()` graph, [ADR-0043](adr/0043-every-run-turns-sas-notes-off.md)) merged 2026-09-30 ([PR #230](https://github.com/Shai-Alit/sas-py-vscode/pull/230), squash `4622508`) and released in v0.1.5; 13l (the MCP server) merged 2026-09-30 ([PR #233](https://github.com/Shai-Alit/sas-py-vscode/pull/233), squash `5acb03a`) and was removed before any release ([ADR-0044](adr/0044-the-mcp-server-for-claude-code-is-removed.md), [PR #234](https://github.com/Shai-Alit/sas-py-vscode/pull/234)), dropping 13j/13m; 13a (SAS Content upload/download) merged 2026-10-01 ([PR #235](https://github.com/Shai-Alit/sas-py-vscode/pull/235), squash `ace92ea`); 13b (SAS Content copy/paste, [ADR-0045](adr/0045-content-copy-paste.md)) merged 2026-10-01 ([PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash `c5c2512`); 13e (F10 decided, [ADR-0046](adr/0046-notebook-cells-display-their-result.md)) 2026-10-01; 13f (notebook cells display their result) merged 2026-10-01 ([PR #238](https://github.com/Shai-Alit/sas-py-vscode/pull/238), squash `e42decb`); 13o/13p (the SAS Server view) added 2026-09-30; 13o (scoping, Findings 13.20–13.26) done 2026-10-01; 13p-i (the SAS Server view, read-only, with open and save, [ADR-0047](adr/0047-sas-server-view-composes-file-paths.md)) merged 2026-10-01 ([PR #239](https://github.com/Shai-Alit/sas-py-vscode/pull/239), squash `902f455`); 13p-ii (changing files) merged 2026-10-01 ([PR #240](https://github.com/Shai-Alit/sas-py-vscode/pull/240), squash `453cb84`); 13g (a sortable DataFrame grid, [ADR-0048](adr/0048-a-trailing-dataframe-is-a-sortable-grid.md)) merged 2026-10-01 ([PR #241](https://github.com/Shai-Alit/sas-py-vscode/pull/241), squash `a8a6365`); 13h (the F1 spike, Findings 13.36–13.41) merged 2026-10-01 ([PR #242](https://github.com/Shai-Alit/sas-py-vscode/pull/242), squash `13a77ab`), recommending a native-SQL snippet over F1's interception; 13i and F1 moved to Phase 14 the same day, no longer gating v1.0; 13c (the Commands view) merged 2026-10-02 ([PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), squash `743b126`); 13d (the snippet library) merged 2026-10-02 ([PR #244](https://github.com/Shai-Alit/sas-py-vscode/pull/244), squash `3e1a8b2`); 13k (polish) merged 2026-10-02 ([PR #245](https://github.com/Shai-Alit/sas-py-vscode/pull/245), squash `1e92dbd`); every punch-list slice now merged, decided, dropped or moved, with Phase 13→14 housekeeping next; **gates v1.0 from 2026-09-24** (`PRODUCTION_PLAN.md` §8). Retitled from "Second execution backend" when the backlog sweep added 13a–13k (SAS Content upload/download and copy, F6, F11, F10, F8, F1, an MCP execution tool, polish); 13l/13m (the MCP server, built and parked on `feat/12o-mcp-server`, and its read-only tools) moved in from Phase 12 on 2026-09-29. The second-execution-backend section stays, ungated.

@@ -884,3 +884,141 @@ item says otherwise.
 3. Open that output's **Change Presentation**.
    - Expect: `text/html` is offered and shows the table.
 4. Close the notebook and delete `grid-test.ipynb`.
+
+## 13c — the Commands view
+
+See `docs/phases/phase-13.md`'s "13c built" Runbook entry.
+
+**Set-up, once.**
+
+1. Build a `.vsix` from this branch, install it, and reload the window.
+2. Have at least one connection profile, and start signed out and not
+   connected (**Sign Out** from the palette if need be).
+3. Open a folder holding a short `.py` file, say `hello.py` with
+   `print("hello")`, and open it in an editor.
+
+### 13.75 — Where it is and what it shows
+
+- [x] **13.75** The view is first in the sidebar, with three groups and
+      Show Log.
+
+1. Click the **Python on Viya** icon in the activity bar.
+   - Expect: **Commands** is the first view, above **SAS Content**.
+   - Expect: three expanded groups, **Connection**, **Run** and
+     **Snippets**, then **Show Log** on its own.
+   - Expect: every entry has an icon, and its label matches the palette
+     entry of the same name, without the "Python on Viya:" prefix.
+2. Look at **Connection**.
+   - Expect: **Sign In**, **Connect to SAS Viya**, **Switch Connection
+     Profile**, **Add Connection Profile**. No **Disconnect from SAS Viya**.
+3. Look at **Run**.
+   - Expect: **Run File**, **New Interactive Window**, **Reset Python
+     State**, **Select Run Target**, **Refresh CAS Token**. No **Cancel**.
+4. Look at **Snippets**.
+   - Expect: **Insert CAS Connection Snippet**, **Insert CAS SQL
+     Passthrough Snippet**.
+
+### 13.76 — Connection follows the state
+
+- [x] **13.76** Sign In, Connect and Disconnect come and go with the
+      state, however it changes.
+
+1. Click **Sign In** in the view and finish signing in.
+   - Expect: **Sign In** leaves the Connection group; **Connect to SAS
+     Viya** stays.
+2. Click **Connect to SAS Viya**.
+   - Expect: the usual "Connected to SAS Viya" message, and **Connect to
+     SAS Viya** turns into **Disconnect from SAS Viya**.
+3. Run **Python on Viya: Disconnect from SAS Viya** from the palette, not
+   the view.
+   - Expect: the view shows **Connect to SAS Viya** again.
+4. Collapse the **Run** group, then click **Connect to SAS Viya**.
+   - Expect: **Run** stays collapsed after the view changes.
+5. Run **Python on Viya: Sign Out** from the palette.
+   - Expect: **Sign In** is back in the Connection group.
+6. If you have a second connection profile, sign in with the first, then
+   **Switch Connection Profile** to the second. Otherwise skip to step 8.
+   - Expect: no **Sign In** in the view: it hides Sign In while any
+     account is signed in, as the welcome views do.
+7. Click **Connect to SAS Viya**.
+   - Expect: you are asked to sign in to the second profile, then
+     connected. Switch back to the first profile afterwards.
+8. Sign in and connect again for the items below.
+
+### 13.77 — Run and Cancel
+
+- [x] **13.77** Run File runs the open file, and Cancel shows only while
+      it runs.
+
+1. With `hello.py` the active editor, click **Run File** in the view.
+   - Expect: the run happens as it does from the editor's Run button, and
+     `hello` appears in **Python on Viya: Output**.
+   - Expect: no **Cancel** in the Run group once it ends.
+2. Change `hello.py` to:
+
+   ```python
+   import time
+   time.sleep(30)
+   ```
+
+   Click **Run File** in the view.
+   - Expect: **Cancel** appears in the Run group, after **New Interactive
+     Window**, while it runs.
+3. Click **Cancel** in the view.
+   - Expect: the run is cancelled, as from the palette, and **Cancel**
+     leaves the group.
+4. Click **Run File** again and let it finish.
+   - Expect: **Cancel** appears, then leaves when the run ends by itself.
+
+### 13.78 — Every other entry
+
+- [x] **13.78** Each entry does what its palette entry does.
+
+With `hello.py` the active editor, click each in turn:
+
+1. **New Interactive Window**. Expect: an interactive window opens.
+2. **Reset Python State**. Expect: the usual reset message.
+3. **Select Run Target**. Expect: the run-target picker; press Escape.
+4. **Switch Connection Profile**. Expect: the profile picker; press
+   Escape.
+5. **Add Connection Profile**. Expect: the first step of the add-profile
+   prompts; press Escape.
+6. **Insert CAS Connection Snippet**, with the cursor on an empty line of
+   `hello.py`. Expect: the snippet is inserted at the cursor, as from the
+   palette.
+7. **Insert CAS SQL Passthrough Snippet**. Expect: the same as from the
+   palette.
+8. **Refresh CAS Token**. Expect: the same message as from the palette.
+9. **Show Log**. Expect: the **Python on Viya** output channel opens.
+10. Undo the snippet insertions and close the interactive window.
+
+### 13.79 — With no profile
+
+- [x] **13.79** With no connection profile, Connection offers only Add
+      Connection Profile.
+
+1. Create a new VS Code profile (**Profiles: New Profile...**, empty, not
+   copied from yours), install the `.vsix` in it, and open the **Python
+   on Viya** sidebar.
+   - Expect: **Connection** holds only **Add Connection Profile**; **Run**
+     and **Snippets** are as in 13.75.
+2. Click **Add Connection Profile** and add a profile (any endpoint will
+   do).
+   - Expect: **Sign In**, **Connect to SAS Viya**, **Switch Connection
+     Profile** and **Add Connection Profile** appear.
+3. Switch back to your own VS Code profile and delete the new one.
+
+### 13.80 — An untrusted folder
+
+- [x] **13.80** In an untrusted folder, Sign In and Connect explain
+      themselves.
+
+1. Run **Workspaces: Manage Workspace Trust** and mark this folder
+   untrusted (or open a new, untrusted folder). Disconnect and **Sign
+   Out** first.
+2. Click **Connect to SAS Viya** in the view.
+   - Expect: a message that connecting needs a trusted folder, not
+     silence.
+3. Click **Sign In** in the view.
+   - Expect: the same "requires a trusted folder" message, not silence.
+4. Trust the folder again.

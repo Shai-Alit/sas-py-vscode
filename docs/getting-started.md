@@ -91,6 +91,20 @@ From here, [Running Python](running-python.md) covers running a selection
 instead of a whole file, cancelling, and what happens with output that is not
 plain text (a chart, a DataFrame rendered as a table).
 
+## The Commands view
+
+The **Python on Viya** icon in the activity bar opens a sidebar. Its first
+view, **Commands**, lists the commands you will use most, so you need not
+remember their names in the Command Palette. They are grouped under
+**Connection**, **Run** and **Snippets**, with **Show Log** at the end. Click
+one to run it: it does exactly what the palette entry of the same name does.
+
+The list follows what you can do right now. It offers **Connect to SAS Viya**
+or **Disconnect from SAS Viya**, never both. It offers **Sign In** only while
+no account is signed in, and **Cancel** only while a run is going. If you are
+signed in with one profile and switch to another, **Connect to SAS Viya**
+signs you in to the new one first.
+
 ## Where to next
 
 - **[Browsing SAS Content](browsing-sas-content.md)** — a tree view of your

@@ -52,6 +52,7 @@
 
 import * as vscode from "vscode";
 
+import { setContextKey } from "../contextKeys";
 import type { ViyaProfile } from "../profile/model";
 import type { ProfileStore } from "../profile/store";
 import { diffSessions, isEmptyDiff, type SessionSummary } from "./accounts";
@@ -109,7 +110,8 @@ export function authProviderLabel(): string {
  *
  * Set through `setContext` rather than exposed as an API, because a `when`
  * clause is the only consumer and a second way to ask the same question is a
- * second way for it to be answered differently.
+ * second way for it to be answered differently. The Commands view reads it
+ * too, but through `src/contextKeys.ts`, which records what was set here.
  */
 export const AUTHORIZED_CONTEXT_KEY = "pythonOnViya.authorized";
 
@@ -152,7 +154,7 @@ const BUDGET_SPENT = Symbol("the resolve budget is spent");
 export interface AuthProviderDeps {
   token?: TokenEndpointDeps | undefined;
   identity?: IdentityDeps | undefined;
-  /** Defaults to {@link vscode.commands.executeCommand} for `setContext`. */
+  /** Defaults to {@link setContextKey}. */
   setContext?: ((key: string, value: unknown) => Thenable<unknown>) | undefined;
   /**
    * The browser-facing ports of {@link signInWithBrowser}, passed straight
@@ -881,10 +883,7 @@ export class ViyaAuthenticationProvider
   }
 
   private async setAuthorized(authorized: boolean): Promise<void> {
-    const setContext =
-      this.deps.setContext ??
-      ((key: string, value: unknown) =>
-        vscode.commands.executeCommand("setContext", key, value));
+    const setContext = this.deps.setContext ?? setContextKey;
     await setContext(AUTHORIZED_CONTEXT_KEY, authorized);
   }
 

@@ -81,6 +81,7 @@
 
 import * as vscode from "vscode";
 
+import { setContextKey } from "../contextKeys";
 import type { ProfileStore } from "../profile/store";
 import type {
   ComputeConnection,
@@ -218,9 +219,5 @@ async function syncConnectedContext(
   const active = profiles.active();
   const connected =
     active !== undefined && sessions.current(active.profile.id) !== undefined;
-  await vscode.commands.executeCommand(
-    "setContext",
-    CONNECTED_CONTEXT_KEY,
-    connected,
-  );
+  await setContextKey(CONNECTED_CONTEXT_KEY, connected);
 }

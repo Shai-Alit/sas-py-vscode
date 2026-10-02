@@ -188,7 +188,9 @@ where `PROC PYTHON` actually hurts.
   ([ADR-0045](../adr/0045-content-copy-paste.md)). Merged 2026-10-01 as
   [PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash
   `c5c2512`. See "13b built" below.
-- [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Not started.
+- [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Built
+  2026-10-02 on `feat/13c-commands-panel`: a state-aware **Commands** view,
+  first in the sidebar (manual items 13.75–13.80). See "13c built" below.
 - [ ] **13d — F11, snippet library.** Added 2026-09-24. Not started.
 - [x] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Decided
   2026-10-01: a notebook cell displays its last expression and its open
@@ -1800,6 +1802,110 @@ this file.
 [PR #242](https://github.com/Shai-Alit/sas-py-vscode/pull/242), squash
 `13a77ab`, in one commit, with every check passing. Neither Codex nor the
 Claude reviewer found anything.
+
+### 13c built, 2026-10-02 — the Commands view
+
+**What it does.** A **Commands** view, first in the Python on Viya sidebar,
+lists common commands so a user need not remember their palette names
+(F6). Three expanded groups, then **Show Log**:
+
+- **Connection**: Sign In, Connect to SAS Viya *or* Disconnect from SAS
+  Viya, Switch Connection Profile, Add Connection Profile.
+- **Run**: Run File, New Interactive Window, Cancel, Reset Python State,
+  Select Run Target, Refresh CAS Token.
+- **Snippets**: Insert CAS Connection Snippet, Insert CAS SQL Passthrough
+  Snippet. 13d's snippets will join this group.
+
+Clicking an entry runs the command; labels are the palette titles without
+the category.
+
+**Sean's choices, 2026-10-02** (the design pass the Plan item asks for):
+
+- A grouped tree view, not `viewsWelcome` buttons.
+- State-aware: Connect or Disconnect, never both; Sign In only while
+  no account is signed in; Cancel only while a run is going. With no profile, the
+  Connection group holds only Add Connection Profile. Everything else is
+  always shown, and a command that cannot act says why, as from the
+  palette.
+- First in the sidebar, above SAS Content (F6 had suggested under CAS).
+- Connection, Run, and Snippets + Log. The environment commands (Show,
+  Search, Refresh Environment) were left out.
+- The state comes from a shared context-key mirror, not from events
+  threaded out of each module (below).
+
+**Code.**
+
+- `src/contextKeys.ts` (new): `setContextKey` records a context key's
+  value, fires `onDidChangeContextKey` when it changes, and calls
+  `setContext` as before. VS Code cannot read a context key back, so the
+  four modules that set the keys the view follows now set them through it:
+  `pythonOnViya.hasProfiles` (`profile/commands.ts`, whose constant is now
+  exported as `HAS_PROFILES_CONTEXT_KEY`), `.authorized`
+  (`auth/authProvider.ts`'s default `setContext`), `.connected`
+  (`compute/commands.ts`) and `.running` (`run/commands.ts`). The view
+  reads the same values the palette's `enablement` clauses read, so the two
+  cannot disagree. Other context keys are unchanged.
+- One deliberate difference: `pythonOnViya.authorized` is set from "any
+  account is signed in" (`publish()` in `auth/authProvider.ts`), and Sign
+  In's `enablement` does not read it. Signed in with profile A and
+  switched to B, the view hides Sign In while the palette offers it. The
+  sidebar's welcome views test `!authorized` the same way, and Connect on B
+  still leads to sign-in (manual item 13.76, step 7).
+- `src/commandsView/model.ts` (new, no `vscode`): which entries show for a
+  state. An entry's id is its command id without `pythonOnViya.`.
+- `src/commandsView/commandsView.ts` (new): the tree provider, labels and
+  codicons, `readCommandsViewState`, and `followContextKeys`, which
+  refreshes the tree only for the four keys. Group items carry stable ids,
+  so a collapsed group stays collapsed across a refresh.
+- `package.json`: the view `pythonOnViya.commandsView`, first in the
+  container; `package.nls.json`: its name. No welcome content: the tree
+  always has entries.
+- `docs/getting-started.md`: a "The Commands view" section.
+
+**No probe.** Nothing here crosses the wire.
+
+**Tests.** `test/unit/commands-view-model.test.ts` covers every state's
+entries and checks each entry names a command in `package.json`.
+`test/integration/commandsView/commands-view.test.ts` covers the tree
+items (registered command, label, icon, group ids), the state read, the
+key filter, and the mirror. Those tests import `out/src`, a different copy
+of `contextKeys.ts` from the running extension's bundle, so that the real
+registrars feed the view is left to manual items 13.75–13.80. The unit test
+also reads the four registrars' source and fails if any of them sets its key
+with a raw `setContext` instead of `setContextKey`, so a regression there
+cannot leave the view quietly stale.
+
+**Not built.** The view does not follow workspace trust: in an untrusted
+folder it still offers Sign In and Connect, which explain that the folder
+must be trusted (manual item 13.80), where the palette hides them.
+
+**Adversarial review, 2026-10-02.** Nothing blocking; four low findings,
+all taken. (1) "Sign In only while signed out" overstated what
+`authorized` means: reworded to "while no account is signed in" in
+`model.ts`, here and in `getting-started.md`, and 13.76 gained a
+two-profile step; the behaviour is unchanged, matching the welcome views.
+(2) No guard that the registrars use the mirror: the unit test above. (3)
+13.80 now clicks Sign In as well as Connect. (4) A comment in
+`setContextKey` on why the value is recorded before `setContext` resolves.
+
+**Worktree ignore, folded into 13c (Sean, 2026-10-02).** Stray
+`.claude/worktrees/` copies made `prettier --check .` fail and slowed
+`eslint .` in nearly every verify run, and earlier slices' verify notes had
+to leave them out by hand. First planned as its own PR after 13c; Sean moved
+it into this slice once it failed 13c's verify again. `.prettierignore` now
+lists `.claude/worktrees/` and `eslint.config.mjs`'s `ignores` lists
+`".claude/worktrees/**"`, scoped to `worktrees/` only, since
+`.claude/hooks/` and `.claude/settings.json` are tracked and stay linted.
+
+**Verify, 2026-10-02.** `npm run verify` green with the review fixes and
+the worktree ignore in: 2276 unit tests; coverage 96.68/96.36/96.64/96.68
+lines/branches/functions/statements.
+
+**Manual tests, 2026-10-02.** Items 13.75–13.80 all passed. Sean asked for
+one change: **Refresh CAS Token** moves from Snippets to the end of Run,
+since it inserts nothing into the editor and acts on the run's Python
+session. `model.ts`, both test tiers, 13.75 and the list above are updated.
+Sean ruled the move needs no new manual test or adversarial pass.
 
 ---
 

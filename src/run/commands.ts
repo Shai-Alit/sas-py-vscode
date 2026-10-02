@@ -42,6 +42,7 @@ import { localiseBackendProblem } from "../backend/messages";
 import type { BackendProblem } from "../backend/problems";
 import type { ProcPythonBackend } from "../backend/procPython";
 import type { ComputeSessionManager } from "../compute/sessionManager";
+import { setContextKey } from "../contextKeys";
 import type { ProfileStore } from "../profile/store";
 import { createBackendCache, type BackendCache } from "./backendCache";
 import { RunDiagnostics } from "./diagnostics";
@@ -297,11 +298,7 @@ export function createRunCommandHandlers(
     );
   };
   const syncRunningContext = (value: boolean): void => {
-    void vscode.commands.executeCommand(
-      "setContext",
-      RUNNING_CONTEXT_KEY,
-      value,
-    );
+    void setContextKey(RUNNING_CONTEXT_KEY, value);
   };
   const targetChangeSubscription = targets.onDidChange(() => {
     syncTargetContext();

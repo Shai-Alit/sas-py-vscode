@@ -556,9 +556,10 @@ left off.
    - Expect: VS Code still shows `Home` being dragged (its tree API cannot
      stop a drag from starting), but the drop does nothing: no move, no
      error, and `Home` is still the top folder with everything in place.
-   **(10/1/2026) fail** home drags. I was too afraid to actually drop it onto anything.
-   **Rewritten 2026-10-01:** the old expectation ("it does not drag") was
-   one VS Code cannot meet. Re-run this step.
+   **Rewritten 2026-10-01:** the first run failed this step, because `Home`
+   could still be dragged. The old expectation ("it does not drag") was one
+   VS Code cannot meet. The rewritten step was re-run the same day and
+   passed (`docs/phases/phase-13.md`, "13p-ii built").
 6. Expand `made/sub2`. Click `sub2`, then Ctrl+click `b.txt` inside it, so
    both are selected. Drag them onto `sv2`.
    - Expect: `sub2` moves into `sv2` with `b.txt` still inside it, and no
@@ -673,7 +674,9 @@ item says otherwise.
 6. Click the `b` header.
    - Expect: `b` reads x, y, z.
 
-  **(10/1/2026) fail** nothing in the developer tab at all. 
+  **2026-10-01:** first noted as a fail because the Console showed nothing
+  at all. That is step 3's expected result (no ag-grid error), and 13.63
+  passed (`docs/phases/phase-13.md`, "13g built").
 
 ### 13.64 — The theme
 

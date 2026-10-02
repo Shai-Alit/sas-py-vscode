@@ -49,6 +49,13 @@ loop, conventions).
 > up. It is added as **13o** (review, scoping and probes) and **13p** (the
 > build). See the Runbook's "Scope extended, 2026-09-30" entry.
 
+> **The last planned phase, 2026-10-02 (Sean's own call).** SAS is folding
+> this extension's features into its official SAS VS Code extension, so
+> there will be no 1.0 (`PRODUCTION_PLAN.md` §8's 2026-10-02 amendment).
+> Nothing is planned after this phase: F1's Phase 14 and the
+> second-execution-backend section below are not planned. See the Runbook's
+> "Phase 13 housekeeping" entry.
+
 ---
 
 ## Plan
@@ -172,6 +179,9 @@ deliberate event".
 Only if warranted. The `ExecutionBackend` seam exists so this is additive. Revisit
 native Python runtimes (SAS Workbench, batch/job execution) once real usage shows
 where `PROC PYTHON` actually hurts.
+
+**Not planned, 2026-10-02.** There will be no 1.0, and nothing is planned
+after this phase. See the Runbook's "Phase 13 housekeeping" entry.
 
 ---
 
@@ -2153,6 +2163,44 @@ against this branch after the review fixes.
 **PR review and merge, 2026-10-02.** CI and both AI reviewers were green
 on [PR #245](https://github.com/Shai-Alit/sas-py-vscode/pull/245), with
 nothing to fold in. Merged 2026-10-02, squash `1e92dbd`.
+
+### Phase 13 housekeeping, 2026-10-02
+
+The between-phase checkpoint (`HOUSEKEEPING.md`), run once every slice
+above was merged, decided, dropped or moved. `STATUS.md`'s "Phase 13
+housekeeping" section has the checklist outcomes. This entry records the
+two decisions that belong to this phase.
+
+**No 1.0, and nothing after this phase (Sean's call).** SAS is folding this
+extension's features into its official SAS VS Code extension, so there
+will be no 1.0, and releases stay in preview. The next is `v0.1.6`.
+`PRODUCTION_PLAN.md` §8 is amended to say so. F1 (13i, moved to "Phase 14"
+on 2026-10-01) and the second-execution-backend section are not planned. If
+F1 is ever picked up, the "13h done" spike above is still its starting
+point. A new phase starts only if Sean adds features to the roadmap.
+
+**Known limitations, not scheduled (Sean's call).** Four "follow-up, not
+this slice" items from 13a and 13b had no slice to land in. With no later
+phase they are recorded here as known limitations, not fixed:
+
+1. **A cancel during `addMember` can leave a dangling member entry**
+   (13a). In `createFile`, a cancel that lands after the server has linked
+   the file makes the client delete the file resource, which may leave the
+   folder's member entry pointing at nothing. New File has the same window;
+   uploads make it likelier.
+2. **Download... shows on a data flow and is then refused** (13a). Leaves
+   that are not files share the `sasContent:file` context value, so hiding
+   it needs a context value of their own. The user guide
+   (`docs/browsing-sas-content.md`) already says data flows are refused.
+3. **Copy shows on a data flow and on a top-level folder, and is then
+   refused** (13b), for the same reason as item 2. Cut refuses a top-level
+   folder too.
+4. **A failure that lands as the user cancels is reported as a cancel**
+   (13a, PR #235's third review round). The transfer commands read
+   `signal.aborted` after a failed call, so the failure's technical
+   sentence never reaches the log. The transfer still stops and reports how
+   far it got. A fix needs the content client to mark an abort itself,
+   which every content caller would then see.
 
 ---
 

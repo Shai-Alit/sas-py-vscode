@@ -374,6 +374,11 @@
     "views": {
       "pythonOnViya": [
         {
+          "id": "pythonOnViya.commandsView",
+          "name": "%views.commandsView.name%",
+          "contextualTitle": "%views.commandsView.name%"
+        },
+        {
           "id": "pythonOnViya.contentExplorer",
           "name": "%views.contentExplorer.name%",
           "contextualTitle": "%views.contentExplorer.name%"

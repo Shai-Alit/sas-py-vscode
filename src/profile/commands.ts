@@ -22,6 +22,8 @@
 import { randomUUID } from "node:crypto";
 import * as vscode from "vscode";
 
+import { setContextKey } from "../contextKeys";
+
 import {
   scanSasProfiles,
   SAS_PROFILES_SETTING,
@@ -36,8 +38,9 @@ import {
 import { localiseProblem } from "./problems";
 import { type ProfileStore } from "./store";
 
-/** Context key backing the `enablement` clauses in `package.json`. */
-const HAS_PROFILES = "pythonOnViya.hasProfiles";
+/** Context key backing the `enablement` clauses in `package.json`, and
+ * the Commands view (`src/commandsView/`). */
+export const HAS_PROFILES_CONTEXT_KEY = "pythonOnViya.hasProfiles";
 
 export function registerProfileCommands(
   context: vscode.ExtensionContext,
@@ -45,11 +48,7 @@ export function registerProfileCommands(
   log: vscode.LogOutputChannel,
 ): void {
   const syncContextKey = (): void => {
-    void vscode.commands.executeCommand(
-      "setContext",
-      HAS_PROFILES,
-      store.names().length > 0,
-    );
+    void setContextKey(HAS_PROFILES_CONTEXT_KEY, store.names().length > 0);
   };
   syncContextKey();
 

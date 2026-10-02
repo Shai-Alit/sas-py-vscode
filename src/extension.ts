@@ -16,6 +16,7 @@ import { SessionBindingStore } from "./compute/bindingStore";
 import { registerCasConnectCommand } from "./cas/casConnectCommand";
 import { registerCasExplorer } from "./cas/casExplorer";
 import { registerCasSqlPassthroughCommand } from "./cas/casSqlPassthroughCommand";
+import { registerCommandsView } from "./commandsView/commandsView";
 import { registerComputeCommands } from "./compute/commands";
 import { ComputeSessionManager } from "./compute/sessionManager";
 import { registerContentExplorer } from "./content/contentExplorer";
@@ -118,6 +119,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const profiles = new ProfileStore(context, output);
   context.subscriptions.push(profiles);
   registerProfileCommands(context, profiles, output);
+
+  // 13c: the Commands view. It reads the context keys the registrars below
+  // set, through `src/contextKeys.ts`, so it needs nothing passed in.
+  registerCommandsView(context);
 
   // The run target (ADR-0011): local vs. Viya, kept separately from — but
   // reading — the active profile. Its own workspaceState key, never a

@@ -53,6 +53,7 @@
   "command.openCasTable.title": "Open Table",
   "viewsContainers.pythonOnViya.title": "Python on Viya",
   "views.serverExplorer.name": "SAS Server",
+  "views.commandsView.name": "Commands",
   "views.contentExplorer.name": "SAS Content",
   "views.dataExplorer.name": "SAS Libraries",
   "views.casExplorer.name": "CAS",

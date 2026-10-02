@@ -29,6 +29,9 @@ export default tseslint.config(
       "test/scratch/**",
       "site/**",
       "docs/.vitepress/cache/**",
+      // Agent worktrees (repository copies; see .prettierignore). Only
+      // worktrees/: .claude/hooks/ is tracked and stays linted.
+      ".claude/worktrees/**",
     ],
   },
 

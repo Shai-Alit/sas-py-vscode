@@ -121,6 +121,12 @@
  * `execution.end(false, …)` call. What 9c adds instead is a *second, different*
  * use of the same `Traceback` — see the next section.
  *
+ * A trailing pandas DataFrame is the one output that needs a renderer of this
+ * extension's own (ADR-0048, 13g): its grid has a mime of this extension's
+ * own, which `src/webview/dataFrameGridRenderer.ts` renders, with the HTML as
+ * the same output's alternative. The grid's size comes from the two
+ * `pythonOnViya.notebook.dataFrameGrid` settings, read for each cell.
+ *
  * ## Diagnostics — the Problems panel (9c)
  *
  * `RunDiagnostics` (`../run/diagnostics`) ports with no change at all: its
@@ -203,11 +209,15 @@ import type {
   RichOutput,
   Traceback,
 } from "../backend/backend";
+import {
+  DATAFRAME_GRID_MIME,
+  dataFrameGridLimits,
+} from "../backend/dataFrameGrid";
 import { localiseBackendProblem } from "../backend/messages";
 import type { ProcPythonBackend } from "../backend/procPython";
 import type { BackendCache } from "../run/backendCache";
 import { RunDiagnostics } from "../run/diagnostics";
-import { toNotebookOutputPieces } from "./notebookRender";
+import { type GridExtent, toNotebookOutputPieces } from "./notebookRender";
 
 /** The id VS Code's kernel picker and `NotebookController.dispose()` key on. */
 export const NOTEBOOK_CONTROLLER_ID = "pythonOnViya.viyaNotebookKernel";
@@ -400,10 +410,16 @@ export function createNotebookExecutionHandlers(
     // `freshNamespace: false` — `backend.ts:80-93`'s own documented case: "a
     // notebook cell passes `false`". The interpreter's globals, and every
     // earlier cell's own state, survive. `displayResults: true` shows the
-    // cell's trailing value and open figures, as Jupyter does (ADR-0046).
+    // cell's trailing value and open figures, as Jupyter does (ADR-0046),
+    // and a trailing DataFrame as a grid this size (ADR-0048).
+    const settings = vscode.workspace.getConfiguration("pythonOnViya");
     const executed = await backend.execute(program, {
       freshNamespace: false,
       displayResults: true,
+      dataFrameGrid: dataFrameGridLimits(
+        settings.get<unknown>("notebook.dataFrameGrid.maxRows"),
+        settings.get<unknown>("notebook.dataFrameGrid.maxColumns"),
+      ),
     });
     if (!executed.ok) {
       log.warn(executed.reason);
@@ -629,6 +645,7 @@ export async function appendRichOutput(
     svgDropped: vscode.l10n.t(
       '[an SVG figure is not shown in a notebook cell — pass filetype="png" to SAS.show]',
     ),
+    gridSummary,
   };
   for (const piece of toNotebookOutputPieces(output, labels)) {
     if (piece.kind === "stdout") {
@@ -640,6 +657,13 @@ export async function appendRichOutput(
     } else if (piece.kind === "html") {
       await execution.appendOutput(
         new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.text(piece.markup, "text/html"),
+        ]),
+      );
+    } else if (piece.kind === "grid") {
+      await execution.appendOutput(
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(piece.grid, DATAFRAME_GRID_MIME),
           vscode.NotebookCellOutputItem.text(piece.markup, "text/html"),
         ]),
       );
@@ -655,4 +679,34 @@ export async function appendRichOutput(
       );
     }
   }
+}
+
+/** The grid's summary line (ADR-0048). Says when rows or columns were left
+ * out, and that sorting covers only the rows shown. */
+function gridSummary(shown: GridExtent, total: GridExtent): string {
+  const count = (value: number): string =>
+    value.toLocaleString(vscode.env.language);
+  const rowsCut = shown.rows < total.rows;
+  const rows = rowsCut
+    ? vscode.l10n.t(
+        "Rows: first {0} of {1}",
+        count(shown.rows),
+        count(total.rows),
+      )
+    : vscode.l10n.t("Rows: {0}", count(total.rows));
+  const columns =
+    shown.columns < total.columns
+      ? vscode.l10n.t(
+          "Columns: first {0} of {1}",
+          count(shown.columns),
+          count(total.columns),
+        )
+      : vscode.l10n.t("Columns: {0}", count(total.columns));
+  return rowsCut
+    ? vscode.l10n.t(
+        "{0} · {1} · sorting applies to the rows shown",
+        rows,
+        columns,
+      )
+    : vscode.l10n.t("{0} · {1}", rows, columns);
 }

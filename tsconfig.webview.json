@@ -40,7 +40,9 @@
     "src/webview/**/*.tsx",
     "src/run/resultPanelDom.ts",
     "src/run/resultPanelModel.ts",
-    "src/data/dataViewerModel.ts"
+    "src/data/dataViewerModel.ts",
+    "src/backend/dataFrameGrid.ts",
+    "src/notebook/dataFrameGridModel.ts"
   ],
   "exclude": ["node_modules", "dist", "out"]
 }

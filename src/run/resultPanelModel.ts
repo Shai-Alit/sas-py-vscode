@@ -29,6 +29,7 @@ import type {
   RichOutput,
   TracebackFrame,
 } from "../backend/backend";
+import { DATAFRAME_GRID_MIME } from "../backend/dataFrameGrid";
 
 /** The input shape {@link RenderItemLabels.tracebackFrame} formats into one
  * already-localised line. Mirrors {@link TracebackFrame} field for field;
@@ -130,6 +131,9 @@ export function toRenderItem(
       return { kind: "text", text: output.data };
     case "text/html":
       return { kind: "html", markup: output.data };
+    // The panel shows a DataFrame grid as the table's HTML (ADR-0048).
+    case DATAFRAME_GRID_MIME:
+      return { kind: "html", markup: output.data.html };
     case "image/png":
       return {
         kind: "image",

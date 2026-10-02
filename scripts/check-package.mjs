@@ -133,6 +133,9 @@ const REQUIRED = [
   // a packaging failure vsce does not raise. Named here so it fails packaging
   // instead.
   "extension/media/icon.png",
+  // The DataFrame grid's notebook renderer, which `package.json`'s
+  // `notebookRenderer` entrypoint names (ADR-0048). Same reason as the icon.
+  "extension/dist/renderer/dataFrameGrid.js",
 ];
 
 /**

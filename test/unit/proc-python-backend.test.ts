@@ -31,6 +31,7 @@ import {
   type SubmissionGuard,
   SYNTAX_CHECK_RECOVERY,
 } from "../../src/backend/procPython";
+import { DATAFRAME_GRID_MIME } from "../../src/backend/dataFrameGrid";
 import { ODS_BODY_FILE_NAME } from "../../src/backend/richOutput";
 import { type BackendResult } from "../../src/backend/problems";
 import {
@@ -2726,6 +2727,67 @@ describe("ProcPythonBackend", () => {
       assert.equal(deletedNames.length, 0);
     });
 
+    it("captures the cell runner's grid file as a DataFrame grid, and deletes it (ADR-0048)", async () => {
+      const file = {
+        rows: 1,
+        columns: 1,
+        fields: [{ name: "a", kind: "number", index: false }],
+        data: [[1]],
+        html: "<table></table>",
+      };
+      const bytes = new TextEncoder().encode(
+        JSON.stringify({ format: 1, ...file }),
+      );
+      const { client, deletedNames } = router({
+        syscc: "0",
+        filesAfter: [{ name: "pyviya_PY000001_grid.json", size: bytes.length }],
+        fileContent: { "pyviya_PY000001_grid.json": bytes },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      assert.ok((await accepted.done).ok);
+
+      assert.deepEqual(outputs, [{ mime: DATAFRAME_GRID_MIME, data: file }]);
+      assert.deepEqual(deletedNames, ["pyviya_PY000001_grid.json"]);
+    });
+
+    it("skips a grid file that is not a grid with a text/plain note, and does not delete it", async () => {
+      const bytes = new TextEncoder().encode('{"format": 2}');
+      const { client, deletedNames } = router({
+        syscc: "0",
+        filesAfter: [{ name: "pyviya_PY000001_grid.json", size: bytes.length }],
+        fileContent: { "pyviya_PY000001_grid.json": bytes },
+      });
+      const backend = new ProcPythonBackend(
+        client,
+        session(),
+        dialect(),
+        guard(),
+      );
+      await backend.connect();
+      const accepted = accept(
+        await backend.execute(fakeProgram(), { freshNamespace: false }),
+      );
+      const outputs = await collect(accepted.outputs);
+      assert.ok((await accepted.done).ok);
+
+      assert.ok(!outputs.some((output) => output.mime === DATAFRAME_GRID_MIME));
+      const note = texts(outputs).find((text) =>
+        text.includes("pyviya_PY000001_grid.json"),
+      );
+      assert.ok(note?.includes("its format is not 1"));
+      assert.equal(deletedNames.length, 0);
+    });
+
     it("captures nothing at all on a cancelled run", async () => {
       // ADR-0019: capture never runs for a cancelled run. A candidate is
       // configured here specifically so the assertion is meaningful — if
@@ -4106,6 +4168,8 @@ describe("ProcPythonBackend: a notebook cell displays its result (ADR-0046)", ()
       ...SYNTAX_CHECK_RECOVERY,
       ...QUIET_NOTES_BEFORE,
       ...ODS_WRAPPER_BEFORE,
+      "%let PYVIYA_GRID_ROWS=0;",
+      "%let PYVIYA_GRID_COLS=0;",
       `%let PYVIYA_CELL=%sysfunc(pathname(${runFileref}));`,
       `proc python infile=${CELL_RUNNER_FILEREF_NAME};`,
       "run;",
@@ -4113,6 +4177,36 @@ describe("ProcPythonBackend: a notebook cell displays its result (ADR-0046)", ()
       ...ODS_WRAPPER_AFTER,
       ...QUIET_NOTES_AFTER,
     ]);
+  });
+
+  it("passes the DataFrame grid's caps to the runner (ADR-0048)", async () => {
+    const { client, requests } = router({ syscc: "0", flushSyscc: "0" });
+    const backend = backendWith(client);
+    await backend.connect();
+
+    await run(backend, {
+      ...CELL,
+      dataFrameGrid: { maxRows: 250, maxColumns: 12 },
+    });
+
+    const [code = []] = jobCodes(requests);
+    assert.ok(code.includes("%let PYVIYA_GRID_ROWS=250;"));
+    assert.ok(code.includes("%let PYVIYA_GRID_COLS=12;"));
+  });
+
+  it("writes a cap that is not a whole number of zero or more as 0, so only digits reach SAS", () => {
+    const statements = cellRunnerStatements("PY000001", false, {
+      maxRows: -1,
+      maxColumns: 1.5,
+    });
+    assert.ok(statements.includes("%let PYVIYA_GRID_ROWS=0;"));
+    assert.ok(statements.includes("%let PYVIYA_GRID_COLS=0;"));
+    const unsafe = cellRunnerStatements("PY000001", false, {
+      maxRows: Number.NaN,
+      maxColumns: 2 ** 60,
+    });
+    assert.ok(unsafe.includes("%let PYVIYA_GRID_ROWS=0;"));
+    assert.ok(unsafe.includes("%let PYVIYA_GRID_COLS=0;"));
   });
 
   it("uploads the helpers once per connection", async () => {

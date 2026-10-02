@@ -559,7 +559,6 @@ left off.
    **(10/1/2026) fail** home drags. I was too afraid to actually drop it onto anything.
    **Rewritten 2026-10-01:** the old expectation ("it does not drag") was
    one VS Code cannot meet. Re-run this step.
-   **(10/1/2026) pass** on re-run: the drop did nothing.
 6. Expand `made/sub2`. Click `sub2`, then Ctrl+click `b.txt` inside it, so
    both are selected. Drag them onto `sv2`.
    - Expect: `sub2` moves into `sv2` with `b.txt` still inside it, and no
@@ -633,3 +632,255 @@ left off.
 2. Press the SAS Server view's refresh button.
    - Expect: `sv2` is gone from `tmp`.
 3. Delete the local folder you downloaded into in 13.60.
+
+## 13g — a trailing DataFrame is a sortable grid
+
+See `docs/phases/phase-13.md`'s "13g built" Runbook entry and ADR-0048.
+
+**Set-up, once.**
+
+1. Build a `.vsix` from this branch, install it, and reload the window.
+2. Sign in to a Viya profile.
+3. Check that `pythonOnViya.notebook.dataFrameGrid.maxRows` is `100` and
+   `pythonOnViya.notebook.dataFrameGrid.maxColumns` is `20`, the defaults.
+4. Create `grid-test.ipynb` and pick the **Python on Viya** kernel.
+
+Run the items in order, each in a new cell of `grid-test.ipynb` unless the
+item says otherwise.
+
+### 13.63 — A small DataFrame
+
+- [x] **13.63** A trailing DataFrame shows as a sortable grid.
+
+1. Run a cell holding:
+
+   ```python
+   import pandas as pd
+   df = pd.DataFrame({"a": [3, 1, 2], "b": ["x", "z", "y"]})
+   ```
+
+   - Expect: no output.
+2. Run a cell holding only `df`.
+   - Expect: a grid, not an HTML table.
+   - Expect: the index column first, in bold, then `a`, then `b`.
+   - Expect: above the grid, the line *Rows: 3 · Columns: 2*.
+3. Run **Developer: Toggle Developer Tools** and open its **Console** tab.
+   - Expect: no error mentioning ag-grid.
+4. Click the `a` header.
+   - Expect: `a` reads 1, 2, 3.
+5. Click the `a` header again.
+   - Expect: `a` reads 3, 2, 1.
+6. Click the `b` header.
+   - Expect: `b` reads x, y, z.
+
+  **(10/1/2026) fail** nothing in the developer tab at all. 
+
+### 13.64 — The theme
+
+- [x] **13.64** The grid follows VS Code's colour theme.
+
+1. Keep the 13.63 grid in view. Run **Preferences: Color Theme** and pick
+   a light theme.
+   - Expect: the grid's background, text, borders and header turn light,
+     and the text is readable.
+2. Pick a dark theme.
+   - Expect: the same, dark.
+3. Pick a high-contrast theme.
+   - Expect: the same, high-contrast.
+4. Switch back to your usual theme.
+
+### 13.65 — Change Presentation
+
+- [x] **13.65** The HTML table is one menu away.
+
+1. Hover over the 13.63 output, open its **...** menu and choose **Change
+   Presentation**.
+   - Expect: the list offers the grid and `text/html`.
+2. Choose `text/html`.
+   - Expect: the HTML table that 13f showed.
+3. Open **Change Presentation** again and choose the grid.
+   - Expect: the grid is back.
+
+### 13.66 — The size settings
+
+- [x] **13.66** The two settings set how much is shown, and 0 turns the
+      grid off.
+
+1. Run a cell holding:
+
+   ```python
+   wide = pd.DataFrame([[r * 100 + c for c in range(30)] for r in range(250)])
+   wide
+   ```
+
+   - Expect: a grid of 100 rows and 20 columns. Scroll to check.
+   - Expect: the line *Rows: first 100 of 250 · Columns: first 20 of 30 ·
+     sorting applies to the rows shown*.
+2. Set `maxRows` to `250` and `maxColumns` to `30`. Re-run the cell.
+   - Expect: all 250 rows and 30 columns.
+   - Expect: the line *Rows: 250 · Columns: 30*.
+3. Set `maxRows` to `0`. Re-run the cell.
+   - Expect: no grid; an HTML table.
+4. Set `maxRows` back to `100` and `maxColumns` back to `20`.
+
+### 13.67 — Dates and times on Viya
+
+- [x] **13.67** Date, time-zone and duration columns show in the grid.
+
+1. Run a cell holding:
+
+   ```python
+   t = pd.DataFrame({
+       "naive": pd.to_datetime(["2026-01-02 03:04:05.123456789", None]),
+       "zoned": pd.to_datetime(["2026-01-02 03:04:05", None]).tz_localize("America/New_York"),
+       "delta": pd.to_timedelta(["1 days 02:03:04", None]),
+   })
+   t
+   ```
+
+   - Expect: a grid, with no line saying the grid could not be built.
+   - Expect: `naive` shows `2026-01-02 03:04:05.123456789`, all nine
+     digits.
+   - Expect: `zoned` shows `2026-01-02 03:04:05-05:00`.
+   - Expect: `delta` shows `1 days 02:03:04`.
+   - Expect: the missing values read `NaT` in `naive` and `zoned`, and
+     `None` in `delta`.
+2. Click the `naive` header.
+   - Expect: the `NaT` row comes first.
+3. Note what you saw in the 13g Runbook entry, even if it all passed:
+   Finding 13.35 left a similar frame unexplained.
+
+### 13.68 — Rows left out
+
+- [x] **13.68** Sorting covers only the rows shown, and the line says so.
+
+1. Run a cell holding:
+
+   ```python
+   big = pd.DataFrame({"n": range(1500, 0, -1)})
+   big
+   ```
+
+   - Expect: the line ends *sorting applies to the rows shown*.
+2. Click the `n` header.
+   - Expect: the first row is `1401`, not `1`.
+
+### 13.69 — The interactive window
+
+- [x] **13.69** The grid shows in the interactive window too.
+
+1. Open a new `.py` file holding:
+
+   ```python
+   import pandas as pd
+   pd.DataFrame({"a": [2, 1]})
+   ```
+
+2. Select both lines. Run **Run Selection in Interactive Window**.
+   - Expect: the interactive window opens and shows a grid with `a`
+     reading 2, 1.
+3. Click the `a` header.
+   - Expect: `a` reads 1, 2.
+4. Close the `.py` file without saving.
+
+### 13.70 — Numbers too large for JavaScript
+
+- [x] **13.70** Big integers, infinities and `NaN` show and sort by value.
+
+1. Run a cell holding:
+
+   ```python
+   import numpy as np
+   n = pd.DataFrame({
+       "i": [9007199254740993, 9007199254740992, -4611686018427387904],
+       "f": [np.inf, np.nan, -np.inf],
+   })
+   n
+   ```
+
+   - Expect: `i` shows `9007199254740993` and `9007199254740992`, each
+     exactly. They are not rounded to the same number.
+   - Expect: `f` shows `inf`, `NaN` and `-inf`.
+2. Click the `i` header.
+   - Expect: `-4611686018427387904`, then `9007199254740992`, then
+     `9007199254740993`.
+3. Click the `f` header.
+   - Expect: `NaN`, then `-inf`, then `inf`.
+
+### 13.71 — What is not a grid
+
+- [x] **13.71** A Series, a Styler and a hidden value are not grids.
+
+1. Run a cell holding only `df["a"]`.
+   - Expect: the Series as plain text, not a grid.
+2. Run a cell holding only `df.style`.
+   - Expect: a styled HTML table, not a grid.
+3. Run a cell holding only `df;`.
+   - Expect: no output.
+
+### 13.72 — Fallbacks
+
+- [x] **13.72** A grid that cannot be built falls back, and a long label
+      is cut.
+
+1. Run a cell holding:
+
+   ```python
+   class Odd(pd.DataFrame):
+       def _repr_html_(self):
+           raise RuntimeError("boom")
+   Odd({"a": [1]})
+   ```
+
+   - Expect: the line *The DataFrame grid could not be built:
+     RuntimeError('boom'); showing the value another way.*
+   - Expect: the line *Odd._repr_html_() raised RuntimeError('boom');
+     showing the value another way.*
+   - Expect: the frame as plain text.
+2. Set `maxColumns` to `200`. Run a cell holding:
+
+   ```python
+   pd.DataFrame([["x" * 1000] * 200] * 100)
+   ```
+
+   - Expect: a line saying the grid could not be built because it is
+     larger than 10485760 bytes.
+   - Expect: an HTML table under it.
+3. Set `maxColumns` back to `20`.
+4. Run a cell holding:
+
+   ```python
+   pd.DataFrame([[1]], columns=pd.MultiIndex.from_tuples([("a" * 900, "b" * 900, "c" * 900)]))
+   ```
+
+   - Expect: a grid, not a line saying a rich output file could not be
+     retrieved.
+   - Expect: the one column header ends in `…`. Widen the column or hover
+     over the header to see the end.
+
+### 13.73 — A saved notebook
+
+- [x] **13.73** A saved notebook keeps both the grid and the HTML.
+
+1. Save `grid-test.ipynb`.
+2. Run **View: Reopen Editor With...** and choose **Text Editor**.
+3. Search for `dataframe+json`.
+   - Expect: the 13.63 output holds both
+     `application/vnd.python-on-viya.dataframe+json` and `text/html`.
+4. If Jupyter or a GitHub preview is to hand, open the file there.
+   - Expect: the HTML tables, no grids.
+   - If neither is to hand, note that in the 13g Runbook entry.
+
+### 13.74 — A hand-edited payload
+
+- [x] **13.74** A broken grid in a saved notebook shows an error, not a
+      blank.
+
+1. In the text view from 13.73, find the 13.63 output's `"format": 1` and
+   change it to `"format": 2`. Save.
+2. Run **View: Reopen Editor With...** and choose the notebook editor.
+   - Expect: the 13.63 output shows a rendering error, not a grid.
+   - Expect: every other output looks as before.
+3. Open that output's **Change Presentation**.
+   - Expect: `text/html` is offered and shows the table.
+4. Close the notebook and delete `grid-test.ipynb`.

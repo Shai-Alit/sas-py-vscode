@@ -49,9 +49,27 @@
  * exception's log lines straight through), and a raised cell already gets
  * VS Code's own red-X execution-failure indicator. Rendering it a second time
  * here would be the same information twice, not more of it readable.
+ *
+ * ## A DataFrame grid is one output with two items (ADR-0048)
+ *
+ * The grid, for this extension's own renderer, and the DataFrame's HTML,
+ * sanitized like any other, as its alternative. VS Code shows the grid
+ * first: its `MimeTypeDisplayOrder` sorts a mime type missing from
+ * `NOTEBOOK_DISPLAY_ORDER` ahead of every listed one, `text/html` included,
+ * unless the user's `notebook.displayOrder` setting, or a "Change
+ * Presentation" choice earlier in the window, puts `text/html` first.
+ * "Change Presentation" switches to the HTML. A notebook saved and opened in Jupyter shows the
+ * HTML. The grid carries one localised summary line, written here from
+ * `labels`.
  */
 
 import type { RichOutput } from "../backend/backend";
+import {
+  DATAFRAME_GRID_MIME,
+  DATAFRAME_GRID_FORMAT,
+  type DataFrameGridFile,
+  type DataFrameGridOutputJson,
+} from "../backend/dataFrameGrid";
 import { hasOdsOutput } from "../backend/richOutput";
 import { sanitizeHtml } from "./htmlSanitize";
 
@@ -72,13 +90,27 @@ export type NotebookOutputPiece =
    * result-panel/webview concern, `resultPanelModel.ts`'s own doc comment);
    * `appendRichOutput` decodes it straight to the `Uint8Array`
    * `NotebookCellOutputItem`'s constructor wants. */
-  | { readonly kind: "image"; readonly base64: string };
+  | { readonly kind: "image"; readonly base64: string }
+  /** `grid` is the renderer's item, `markup` the sanitized HTML beside it. */
+  | {
+      readonly kind: "grid";
+      readonly grid: DataFrameGridOutputJson;
+      readonly markup: string;
+    };
 
 /** The localised text {@link toNotebookOutputPieces} inserts, passed in by
  * `../notebookController.ts` because this module cannot call `l10n.t()`. */
 export interface NotebookOutputLabels {
   /** Stands in for an SVG figure the sanitizer drops (Finding 12.18). */
   readonly svgDropped: string;
+  /** The grid's summary line. A function, so it is only written for a grid. */
+  readonly gridSummary: (shown: GridExtent, total: GridExtent) => string;
+}
+
+/** A DataFrame's size in rows and columns, index levels not counted. */
+export interface GridExtent {
+  readonly rows: number;
+  readonly columns: number;
 }
 
 /** What, if anything, one streamed {@link RichOutput} contributes to a
@@ -110,7 +142,32 @@ export function toNotebookOutputPieces(
     }
     case "image/png":
       return [{ kind: "image", base64: output.data }];
+    case DATAFRAME_GRID_MIME:
+      return [gridPiece(output.data, labels)];
     case "application/vnd.python.traceback":
       return [];
   }
+}
+
+function gridPiece(
+  file: DataFrameGridFile,
+  labels: NotebookOutputLabels,
+): NotebookOutputPiece {
+  const shown = {
+    rows: file.data.length,
+    columns: file.fields.filter((field) => !field.index).length,
+  };
+  const total = { rows: file.rows, columns: file.columns };
+  return {
+    kind: "grid",
+    grid: {
+      format: DATAFRAME_GRID_FORMAT,
+      rows: file.rows,
+      columns: file.columns,
+      fields: file.fields,
+      data: file.data,
+      summary: labels.gridSummary(shown, total),
+    },
+    markup: sanitizeHtml(file.html),
+  };
 }

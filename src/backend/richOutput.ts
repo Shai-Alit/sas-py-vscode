@@ -26,9 +26,11 @@
  *    listing call per file to resolve it.
  * 2. **Filter to a closed whitelist by extension**
  *    ({@link richOutputMimeForName}): `.png` → `image/png`, `.html`/`.htm` →
- *    `text/html`. Nothing else, on purpose — those are the only two arms
- *    {@link RichOutput} has today, and recognising a third extension here
- *    would capture bytes the seam has nowhere to put.
+ *    `text/html`, and one reserved name, the cell runner's
+ *    `pyviya_<cell>_grid.json`, → the DataFrame grid (ADR-0048). Nothing
+ *    else, on purpose — recognising another extension here would capture
+ *    bytes the seam has nowhere to put. A `.json` file of any other name is
+ *    not captured.
  * 3. **Order by filename, ascending.** A directory listing carries no
  *    ordering signal this project can rely on (finding 61/67's evidence is
  *    silent on it), so filename is the one ordering a user actually controls.
@@ -40,7 +42,8 @@
  *    fetch — the same reason size, not an `ETag`, is the diff key: it costs
  *    nothing beyond the listing request every run already makes.
  * 5. **Decode** ({@link decodeRichOutput}): base64 for `image/png` (per
- *    {@link RichOutput}'s own contract), UTF-8 text for `text/html`.
+ *    {@link RichOutput}'s own contract), UTF-8 text for `text/html`, and
+ *    for a grid, JSON checked field by field (`dataFrameGrid.ts`).
  *
  * ## The ODS body file is not a candidate like the others (ADR-0038)
  *
@@ -68,6 +71,7 @@
  */
 
 import { type RichOutput } from "./backend";
+import { DATAFRAME_GRID_MIME, parseDataFrameGridFile } from "./dataFrameGrid";
 
 import { type SessionFile } from "../compute/files";
 
@@ -84,7 +88,8 @@ export const MAX_CAPTURE_BYTES = 10 * 1024 * 1024;
 /** One extension this slice recognises, and the {@link RichOutput} arm it
  * fills. Nothing else — see this module's own doc comment on why the
  * whitelist is closed. */
-export type RichOutputMime = "image/png" | "text/html";
+export type RichOutputMime =
+  "image/png" | "text/html" | typeof DATAFRAME_GRID_MIME;
 
 /** A file the diff identified as worth capturing, and which arm of
  * {@link RichOutput} its content will become. */
@@ -102,7 +107,8 @@ export interface RichOutputCandidate {
  * extension a plausible future slice might add (`.jpg`, `.svg`, `.csv`) —
  * they are not {@link RichOutput} arms yet, and recognising one here would be
  * this module quietly deciding a question ADR-0019 assigns to whichever slice
- * adds the arm.
+ * adds the arm. The grid is matched by its whole reserved name, not by
+ * `.json` (ADR-0048).
  */
 export function richOutputMimeForName(
   name: string,
@@ -110,8 +116,12 @@ export function richOutputMimeForName(
   const lower = name.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
   if (lower.endsWith(".html") || lower.endsWith(".htm")) return "text/html";
+  if (GRID_FILE_NAME.test(lower)) return DATAFRAME_GRID_MIME;
   return undefined;
 }
+
+/** The cell runner's grid file, `pyviya_<cell>_grid.json` (`cellRunner.ts`). */
+const GRID_FILE_NAME = /^pyviya_.+_grid\.json$/;
 
 /**
  * Diffs two directory snapshots and returns the whitelisted candidates, in
@@ -234,15 +244,32 @@ export function exceedsCaptureCap(file: SessionFile): boolean {
  * already uses; `pandas.DataFrame.to_html()` output is text by construction,
  * so there is no lossy-binary concern here the way there is for `image/png`'s
  * *input* bytes (see `client.ts`'s `rawBody` doc comment for that one).
+ *
+ * The grid: UTF-8 JSON, checked by `dataFrameGrid.ts`. A file that is not a
+ * valid grid becomes {@link skippedCaptureOutput} naming `name` and why,
+ * the same as a file that could not be fetched (ADR-0048).
  */
 export function decodeRichOutput(
   mime: RichOutputMime,
   bytes: Uint8Array,
+  name: string,
 ): RichOutput {
   if (mime === "image/png") {
     return { mime: "image/png", data: Buffer.from(bytes).toString("base64") };
   }
-  return { mime: "text/html", data: decodeHtml(bytes) };
+  if (mime === "text/html") {
+    return { mime: "text/html", data: decodeHtml(bytes) };
+  }
+  let json: unknown;
+  try {
+    json = JSON.parse(decodeHtml(bytes));
+  } catch {
+    return skippedCaptureOutput(name, "it is not valid JSON");
+  }
+  const grid = parseDataFrameGridFile(json);
+  return grid.ok
+    ? { mime: DATAFRAME_GRID_MIME, data: grid.value }
+    : skippedCaptureOutput(name, `it is not a DataFrame grid: ${grid.reason}`);
 }
 
 /** The `text/html` arm of {@link decodeRichOutput}, on its own for the ODS
@@ -253,8 +280,8 @@ export function decodeHtml(bytes: Uint8Array): string {
 
 /**
  * The shared wording for a candidate that did not make it into the run's
- * output — too large to fetch (ADR-0019 point 7) or a genuine fetch failure
- * (point 8). `procPython.ts` supplies `reason`; this function only fixes the
+ * output — too large to fetch (ADR-0019 point 7), a genuine fetch failure
+ * (point 8), or a grid file that is not one (ADR-0048). `procPython.ts` supplies `reason`; this function only fixes the
  * shape, so the two call sites cannot drift into different phrasing for the
  * same idea.
  *

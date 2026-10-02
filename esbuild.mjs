@@ -108,15 +108,29 @@ const dataViewerContext = await esbuild.context({
   plugins: [problemMatcherPlugin],
 });
 
+// The DataFrame grid's notebook renderer (13g, ADR-0048) — a fourth context.
+// VS Code imports a `notebookRenderer` entrypoint as an ES module and calls
+// its exported `activate`, so this one is `esm`, not `iife`. Like the two
+// above, it runs in a browser frame, the notebook's, never in Node.
+const rendererContext = await esbuild.context({
+  entryPoints: ["src/webview/dataFrameGridRenderer.ts"],
+  bundle: true,
+  outfile: "dist/renderer/dataFrameGrid.js",
+
+  format: "esm",
+  platform: "browser",
+  target: "es2022",
+
+  sourcemap: production ? false : "linked",
+  minify: production,
+  logLevel: "warning",
+  plugins: [problemMatcherPlugin],
+});
+
+const contexts = [context, webviewContext, dataViewerContext, rendererContext];
 if (watch) {
-  await context.watch();
-  await webviewContext.watch();
-  await dataViewerContext.watch();
+  for (const each of contexts) await each.watch();
 } else {
-  await context.rebuild();
-  await webviewContext.rebuild();
-  await dataViewerContext.rebuild();
-  await context.dispose();
-  await webviewContext.dispose();
-  await dataViewerContext.dispose();
+  for (const each of contexts) await each.rebuild();
+  for (const each of contexts) await each.dispose();
 }

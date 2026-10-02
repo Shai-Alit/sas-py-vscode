@@ -49,8 +49,9 @@ output](running-python.md#watching-the-output)).
 A cell shows its result the way a Jupyter cell does:
 
 - **Its last expression.** If the cell ends in an expression whose value is
-  not `None`, the cell shows it: as HTML if the value has `_repr_html_` (a
-  `DataFrame`, `df.head()`), as an image if it has `_repr_png_`, and
+  not `None`, the cell shows it: a pandas `DataFrame` as a sortable grid
+  (see below), anything else as HTML if the value has `_repr_html_` (a
+  Series, a Styler), as an image if it has `_repr_png_`, and
   otherwise as its `repr()`, in plain text. End the line with `;` to hide
   it, as in Jupyter. If the value's `_repr_html_` or `_repr_png_` raises,
   one line in the cell's output names it, and the value is shown the next
@@ -66,6 +67,38 @@ saving it with `fig.savefig(...)`, and leave open, is shown twice: once from
 your own call and once by the cell. Call `plt.close()` after showing it to
 avoid that. Jupyter behaves the same way.
 
+### A DataFrame as a grid
+
+A cell whose last expression is a pandas `DataFrame`, such as `df` or
+`df.head(50)`, shows it as a grid. Click a column header to sort by it, and
+again to reverse. The index comes first, in bold.
+
+The grid holds the first 100 rows and 20 columns. The line above it gives
+the DataFrame's full size and says when rows or columns were left out. Sorting
+reorders only the rows the grid holds, not the whole DataFrame, and the line
+says so. Two settings change the size:
+
+- `pythonOnViya.notebook.dataFrameGrid.maxRows`: up to 5,000.
+- `pythonOnViya.notebook.dataFrameGrid.maxColumns`: up to 200.
+
+Set either to `0` to show DataFrames as pandas' HTML table instead.
+
+Each value is shown as text, the way Python's `str()` writes it, not with
+pandas' display options. A missing value reads `NaN`, `NaT` or `None`. A
+number column sorts by value, including integers too large for JavaScript
+and infinities. Any other column sorts as text.
+
+To see pandas' own HTML table for one output, choose **Change
+Presentation** from the output's `...` menu. If your
+`notebook.displayOrder` setting lists `text/html`, the HTML table shows
+first and the grid is the alternative. A notebook saved with a grid
+opens in Jupyter, or on GitHub, as that HTML table.
+
+If the grid cannot be built, for example because a value cannot be
+converted to text, one line in the cell's output says so and the DataFrame
+is shown as HTML. A Series is shown as text and a Styler as HTML, as
+before.
+
 The explicit ways still work as they do in [the Result
 panel](running-python.md#the-result-panel): `SAS.show(df)`, `SAS.show(plt,
 filetype="png")`, or a file your code **writes** to the session's working
@@ -75,7 +108,8 @@ window cells do ([ADR-0046](adr/0046-notebook-cells-display-their-result.md)).
 
 The cell runs through two small helper programs the extension keeps in the
 session under the filerefs `PYVRUN` and `PYVFLUSH`, and passes values in the
-macro variables `PYVIYA_CELL`, `PYVIYA_USERCC` and `PYVIYA_FLUSHCC`. Don't use
+macro variables `PYVIYA_CELL`, `PYVIYA_USERCC`, `PYVIYA_FLUSHCC`,
+`PYVIYA_GRID_ROWS` and `PYVIYA_GRID_COLS`. Don't use
 those names in your own `SAS.submit()` code. If showing the figures fails,
 the cell's output ends with one line saying so, and the cell's own result is
 unaffected. If the helpers cannot be uploaded at all, the cell still runs,

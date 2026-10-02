@@ -43,6 +43,7 @@ import assert from "node:assert/strict";
 
 import * as vscode from "vscode";
 
+import { DATAFRAME_GRID_MIME } from "../../../src/backend/dataFrameGrid";
 import {
   appendRichOutput,
   createNotebookExecutionHandlers,
@@ -860,6 +861,69 @@ describe("notebook execution (9b)", () => {
       // Adversarial review, 2026-09-14 (Finding 9): VS Code's own built-in
       // renderer reads alt text from output metadata, not from the item.
       assert.equal(output.metadata?.vscode_altText, "Output image 2");
+    });
+
+    it("renders a DataFrame grid as one output: the grid first, then its sanitized HTML (ADR-0048)", async () => {
+      const { cell } = await openCell("pass");
+      const created = fakeExecution(cell);
+      const fields = [
+        { name: "", kind: "number", index: true },
+        { name: "a", kind: "number", index: false },
+      ] as const;
+
+      await appendRichOutput(created.execution, {
+        mime: DATAFRAME_GRID_MIME,
+        data: {
+          rows: 1500,
+          columns: 1,
+          fields,
+          data: [[0, 1]],
+          html: "<table><script>alert(1)</script></table>",
+        },
+      });
+
+      const outputs = created.outputs();
+      assert.equal(outputs.length, 1);
+      const [grid, html] = outputs[0]?.items ?? [];
+      assert.ok(grid && html);
+      assert.equal(grid.mime, DATAFRAME_GRID_MIME);
+      assert.deepEqual(JSON.parse(new TextDecoder().decode(grid.data)), {
+        format: 1,
+        rows: 1500,
+        columns: 1,
+        fields,
+        data: [[0, 1]],
+        summary:
+          "Rows: first 1 of 1,500 · Columns: 1 · sorting applies to the rows shown",
+      });
+      assert.equal(html.mime, "text/html");
+      assert.equal(new TextDecoder().decode(html.data), "<table></table>");
+    });
+
+    it("says nothing about sorting when every row is shown", async () => {
+      const { cell } = await openCell("pass");
+      const created = fakeExecution(cell);
+
+      await appendRichOutput(created.execution, {
+        mime: DATAFRAME_GRID_MIME,
+        data: {
+          rows: 1,
+          columns: 3,
+          fields: [{ name: "a", kind: "text", index: false }],
+          data: [["x"]],
+          html: "",
+        },
+      });
+
+      const grid = created.outputs()[0]?.items[0];
+      assert.ok(grid);
+      const parsed: unknown = JSON.parse(new TextDecoder().decode(grid.data));
+      assert.deepEqual(
+        typeof parsed === "object" && parsed !== null && "summary" in parsed
+          ? parsed.summary
+          : undefined,
+        "Rows: 1 · Columns: first 1 of 3",
+      );
     });
 
     it("renders nothing for a structured traceback — already streamed as text/plain", async () => {

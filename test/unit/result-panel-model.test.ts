@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 
 import type { RichOutput } from "../../src/backend/backend";
+import { DATAFRAME_GRID_MIME } from "../../src/backend/dataFrameGrid";
 import {
   isAlreadyVisibleAsText,
   isRenderItem,
@@ -38,6 +39,23 @@ describe("run/resultPanelModel", () => {
       const output: RichOutput = {
         mime: "text/html",
         data: "<table><tr><td>1</td></tr></table>",
+      };
+      assert.deepEqual(toRenderItem(output, labels, 1, RUN_TOKEN), {
+        kind: "html",
+        markup: "<table><tr><td>1</td></tr></table>",
+      });
+    });
+
+    it("shows a DataFrame grid as its HTML (ADR-0048)", () => {
+      const output: RichOutput = {
+        mime: DATAFRAME_GRID_MIME,
+        data: {
+          rows: 1,
+          columns: 1,
+          fields: [{ name: "a", kind: "number", index: false }],
+          data: [[1]],
+          html: "<table><tr><td>1</td></tr></table>",
+        },
       };
       assert.deepEqual(toRenderItem(output, labels, 1, RUN_TOKEN), {
         kind: "html",

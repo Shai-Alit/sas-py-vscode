@@ -1,6 +1,6 @@
 # ADR-0019 — Rich output is captured by diffing the session's working directory
 
-- **Status:** Accepted — amended by [ADR-0038](0038-every-run-is-wrapped-in-a-named-ods-destination.md), 2026-09-24
+- **Status:** Accepted — amended by [ADR-0038](0038-every-run-is-wrapped-in-a-named-ods-destination.md), 2026-09-24; by [ADR-0048](0048-a-trailing-dataframe-is-a-sortable-grid.md), 2026-10-01
 - **Date:** 2026-08-25
 - **Decides:** how `RichOutput`'s `image/png` and `text/html` arms get filled
   for a `PROC PYTHON` run — what counts as "output worth capturing", when it
@@ -29,6 +29,13 @@
 > "nothing may wrap or inject code around a user's own script" overstated
 > ADR-0014, which protects the script's bytes, not the job's other
 > statements. ADR-0038 says why the wrapper leaves those bytes untouched.
+
+> **Amended 2026-10-01 by [ADR-0048](0048-a-trailing-dataframe-is-a-sortable-grid.md)
+> (slice 13g).** Point 5's whitelist admits one more name: a file named
+> `pyviya_<id>_grid.json`, which the notebook cell runner writes for a
+> trailing DataFrame. No other `.json` file is captured. Its content is
+> parsed and checked before it becomes a `RichOutput`; one that fails is
+> skipped with the reason and left in place, as an oversized file is.
 
 ## Context
 

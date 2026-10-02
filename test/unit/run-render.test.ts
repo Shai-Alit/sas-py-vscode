@@ -4,6 +4,7 @@
 import assert from "node:assert/strict";
 
 import type { RichOutput } from "../../src/backend/backend";
+import { DATAFRAME_GRID_MIME } from "../../src/backend/dataFrameGrid";
 import { renderRichOutput } from "../../src/run/render";
 
 describe("run/render", () => {
@@ -17,6 +18,22 @@ describe("run/render", () => {
 
     it("defers text/html to a placeholder the shell localises", () => {
       const output: RichOutput = { mime: "text/html", data: "<table></table>" };
+      assert.deepEqual(renderRichOutput(output), [
+        { kind: "deferred-rich-output", mime: "text/html" },
+      ]);
+    });
+
+    it("defers a DataFrame grid as the HTML table it also is (ADR-0048)", () => {
+      const output: RichOutput = {
+        mime: DATAFRAME_GRID_MIME,
+        data: {
+          rows: 1,
+          columns: 1,
+          fields: [{ name: "a", kind: "number", index: false }],
+          data: [[1]],
+          html: "<table><tr><td>1</td></tr></table>",
+        },
+      };
       assert.deepEqual(renderRichOutput(output), [
         { kind: "deferred-rich-output", mime: "text/html" },
       ]);

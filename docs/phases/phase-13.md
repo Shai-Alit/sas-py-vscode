@@ -204,7 +204,9 @@ where `PROC PYTHON` actually hurts.
   `feat/13g-dataframe-grid`: a trailing DataFrame shows as a sortable grid
   inline in a notebook or interactive-window cell, from a payload the cell
   runner writes (ADR-0048, Finding 13.35). Review answered and manual
-  items 13.63–13.74 passed. See "13g built" below.
+  items 13.63–13.74 passed. Merged 2026-10-01 as
+  [PR #241](https://github.com/Shai-Alit/sas-py-vscode/pull/241), squash
+  `a8a6365`. See "13g built" below.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
 - [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
@@ -229,8 +231,8 @@ where `PROC PYTHON` actually hurts.
   2026-09-30. Done 2026-10-01: upstream read, Findings 13.20–13.26, scope
   agreed with Sean. Merged with 13p-i, the code
   that relies on it. See "13o done" below.
-- [ ] **13p — The SAS Server view: build.** Added 2026-09-30. Split by 13o
-  into two slices:
+- [x] **13p — The SAS Server view: build.** Added 2026-09-30. Split by 13o
+  into two slices, both merged:
   - [x] **13p-i — The view, read-only, plus open and save.**
     [ADR-0047](../adr/0047-sas-server-view-composes-file-paths.md), root
     settings, the tree, open/save, Copy Path. Built 2026-10-01 on
@@ -1679,6 +1681,12 @@ manual items from 13.54–13.65 to 13.63–13.74, everywhere they are cited.
 (2,263 unit tests; coverage 96.67% statements, 96.36% branches, 96.62%
 functions, 96.67% lines); `npm run test:integration` green (623 passing);
 `npm run check:docs` green.
+
+**Merged** 2026-10-01 as [PR #241](https://github.com/Shai-Alit/sas-py-vscode/pull/241), squash
+`a8a6365`, in one commit, with every check passing. Neither Codex nor the
+Claude reviewer found anything blocking. The Claude reviewer re-derived the
+two issues the pre-push review had already raised (the long MultiIndex
+label and the don't-delete check) and confirmed both fixes were present.
 
 ---
 

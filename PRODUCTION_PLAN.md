@@ -1055,12 +1055,19 @@ carries the 1.0.0 version bump.
 > [ADR-0044](docs/adr/0044-the-mcp-server-for-claude-code-is-removed.md)
 > and `docs/phases/phase-13.md`'s "MCP server removed" Runbook entry.
 
+> **Amended 2026-10-01 (Sean's own call): F1 moves to Phase 14 and no
+> longer gates 1.0.** 13h, the F1 spike, is done (Findings 13.36–13.41).
+> The native-SQL helper it recommends needs more work and thought than a
+> Phase 13 slice, so 13i is not built in Phase 13. F1 is to be revisited in
+> a Phase 14, which is not yet planned. See `docs/phases/phase-13.md`'s
+> "13h done" and "F1 moved to Phase 14" Runbook entries.
+
 > **What 1.0 does not require.** The second execution backend does not
 > gate it. That work was all of Phase 13 when this paragraph was written
 > (renumbered from Phase 12 on 2026-09-22 — see the amendment above); since
 > 2026-09-24 it is one ungated section of Phase 13, and the rest of Phase 13
 > (13a–13k, and 13l–13m since 2026-09-29 — less 13j, 13l and 13m, dropped
-2026-09-30) **does** gate 1.0, per the
+2026-09-30, and 13i, moved to Phase 14 on 2026-10-01) **does** gate 1.0, per the
 > amendments above. §3.1
 > already holds that parity is the destination rather than the
 > release bar and that the post-v0.1.0 phase order is demand-driven, so a

@@ -211,7 +211,9 @@ where `PROC PYTHON` actually hurts.
   `docs/13h-f1-spike` (Findings 13.36–13.41). Recommends declining F1 as
   written and building a native-SQL snippet command in 13i. See "13h
   done" below.
-- [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
+- [x] **13i — F1, build or decline.** Added 2026-09-24. **Moved to Phase
+  14 on 2026-10-01**, unstarted, and no longer gates 1.0. See "F1 moved to
+  Phase 14" below.
 - [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
   2026-09-30**, never started. See "MCP server removed" below.
 - [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
@@ -1781,6 +1783,17 @@ session-scoped in `CASUSER`. A read-only `casManagement` check afterwards
 found no leftover CAS session. One round was discarded: it put
 `proc python; submit;` on one line, and one job's `sd2df` callback code
 ran inside the next job.
+
+### F1 moved to Phase 14, 2026-10-01
+
+Sean's call, on reading the spike above: the native-SQL helper needs more
+work and thought than a Phase 13 slice. It is not built in Phase 13, and it
+no longer gates 1.0 (`PRODUCTION_PLAN.md` §8, amended the same day). F1 is
+to be revisited in a Phase 14, which is not yet planned. When it is, the
+spike above is its starting point: the recommendation, the two shapes, and
+the probe listed under "Before 13i builds anything", which needs a compute
+libname to a database. 13i is closed here unstarted. 13h's findings stay in
+this file.
 
 ---
 

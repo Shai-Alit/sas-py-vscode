@@ -258,6 +258,11 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.insertViyaSnippet",
+        "title": "%command.insertViyaSnippet.title%",
+        "category": "%extension.category%"
+      },
+      {
         "command": "pythonOnViya.createContentFolder",
         "title": "%command.createContentFolder.title%",
         "category": "%extension.category%",
@@ -400,6 +405,12 @@
         }
       ]
     },
+    "snippets": [
+      {
+        "language": "python",
+        "path": "./snippets/python.json"
+      }
+    ],
     "viewsWelcome": [
       {
         "view": "pythonOnViya.contentExplorer",

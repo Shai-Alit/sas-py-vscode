@@ -34,6 +34,7 @@ import { EnvironmentStore } from "./run/environmentStore";
 import { createRunTargetStatusBarItem } from "./run/statusBar";
 import { RunTargetStore } from "./run/targetStore";
 import { registerServerExplorer } from "./server/serverExplorer";
+import { registerInsertViyaSnippetCommand } from "./snippets/insertSnippetCommand";
 
 /**
  * Activation is deliberately cheap, and happens once per window.
@@ -370,6 +371,10 @@ export function activate(context: vscode.ExtensionContext): void {
     { current: (profileId) => sessions.current(profileId) },
     profiles,
   );
+
+  // 13d: the snippet library's picker. It needs no session: it reads the
+  // extension's own `snippets/python.json` and inserts a snippet.
+  registerInsertViyaSnippetCommand(context);
 
   // Phase 7a: the read-only "SAS Libraries" tree, a second view inside the
   // same activity-bar container 6a-ii created (the phase file's own

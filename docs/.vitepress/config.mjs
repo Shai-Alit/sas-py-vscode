@@ -83,6 +83,7 @@ export default defineConfig({
             link: "/cas-python-connection",
           },
           { text: "Notebooks", link: "/notebooks" },
+          { text: "Snippets", link: "/snippets" },
           { text: "Diagnostics", link: "/diagnostics" },
           { text: "The Python environment", link: "/python-environment" },
           { text: "AI agent skill", link: "/agent-skill" },

@@ -133,6 +133,9 @@ const PLACEHOLDERS = [
   /^\$[A-Za-z_]/, // $TOKEN
   /\{\{/, // {{ template }}
   /%[A-Za-z_][A-Za-z0-9_]*%/, // %WINDOWS_VAR%
+  // A SAS macro variable, quoted: the value is read when the code runs. The
+  // credential snippet (13d, Finding 13.44) passes a password this way.
+  /^%superq\([A-Za-z_][A-Za-z0-9_]*\)$/i, // %superq(dbpass)
   /<[^>]*>/, // <your-token-here>
   /process\.env|os\.environ|secrets\./i,
   /\b(?:changeme|placeholder|redacted|example|your[-_])/i,

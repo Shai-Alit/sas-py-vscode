@@ -193,6 +193,7 @@ describe("what is not a credential", () => {
       "${{ secrets.VIYA_TOKEN }}",
       "$(cat /run/secret)",
       "%VIYA_TOKEN%",
+      "%superq(viya_token)",
       "{{ viya_token }}",
       "process.env.VIYA_TOKEN",
     ]) {

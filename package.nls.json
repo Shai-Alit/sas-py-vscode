@@ -34,6 +34,7 @@
   "command.insertCasConnectionSnippet.title": "Insert CAS Connection Snippet",
   "command.refreshCasToken.title": "Refresh CAS Token",
   "command.insertCasSqlPassthroughSnippet.title": "Insert CAS SQL Passthrough Snippet",
+  "command.insertViyaSnippet.title": "Insert Viya Snippet...",
   "command.createContentFolder.title": "New Folder",
   "command.createContentFile.title": "New File",
   "command.renameContentItem.title": "Rename",

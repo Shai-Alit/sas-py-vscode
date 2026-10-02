@@ -192,7 +192,10 @@ where `PROC PYTHON` actually hurts.
   state-aware **Commands** view, first in the sidebar (manual items
   13.75–13.80 passed). Merged 2026-10-02 as [PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), squash
   `743b126`. See "13c built" below.
-- [ ] **13d — F11, snippet library.** Added 2026-09-24. Not started.
+- [ ] **13d — F11, snippet library.** Added 2026-09-24. Built 2026-10-02
+  on `feat/13d-snippet-library`: twelve `viya-` snippets and an **Insert
+  Viya Snippet...** picker (Findings 13.42–13.46, manual items
+  13.81–13.85). See "13d built" below.
 - [x] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Decided
   2026-10-01: a notebook cell displays its last expression and its open
   figures ([ADR-0046](../adr/0046-notebook-cells-display-their-result.md),
@@ -1914,13 +1917,122 @@ on [PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), with nothing 
 
 ---
 
+### 13d built, 2026-10-02 — the snippet library
+
+**What it does.** Twelve snippets for common Viya patterns in Python files
+and notebook cells (F11), each with a `viya-` prefix, plus an **Insert Viya
+Snippet...** command that lists only these. The command is first in the
+Commands view's **Snippets** group (13c).
+
+| Prefix                             | Pattern                                                              |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| `viya-read`, `viya-write`          | `SAS.sd2df`, `SAS.df2sd`                                             |
+| `viya-sql-read`                    | a `PROC SQL` view, then `sd2df` of it (7d's pattern)                 |
+| `viya-symget`, `viya-symput`       | macro variables                                                      |
+| `viya-submit`                      | `SAS.submit`, then raise unless `SYSERR` is 0 or 4                   |
+| `viya-show-figure`, `viya-show-df` | `SAS.show`                                                           |
+| `viya-log-warning`                 | `SAS.logMessage(..., "warning")`                                     |
+| `viya-cas-upload`, `viya-cas-read` | `conn.upload_frame`, `CASTable.to_frame`                             |
+| `viya-libname-secret`              | a `libname` whose password goes through `%superq`, then `SYSLIBRC`   |
+
+**Sean's choices, 2026-10-02** (the candidate-list step the Plan item asks
+for): every candidate offered except, at first, the credential pattern,
+which he then added. Delivery: static `contributes.snippets` with a `viya-`
+prefix, so none crowds the Python extensions' own, plus a picker command in
+the Commands view, not one command per snippet. The CAS connection and SQL
+passthrough snippets stay as their own commands (8b, 11b), since the first
+needs live values.
+
+**Code.**
+
+- `snippets/python.json` (new): the library, in VS Code's snippet format.
+  `package.json` contributes it for `python`. `scripts/check-package.mjs`
+  now requires it in the `.vsix`.
+- `src/snippets/library.ts` (new, no `vscode`): `parseSnippetLibrary`, the
+  file's entries in order, or why it is not one.
+- `src/snippets/insertSnippetCommand.ts` (new):
+  `pythonOnViya.insertViyaSnippet`. It reads the same file from the
+  extension's root at each use, so the picker and the prefixes cannot
+  disagree, then shows a quick pick (prefix as description, matched on the
+  description and detail too) and inserts a `SnippetString`. Same Python
+  editor check and message as 11b's command; no connection check, since a
+  snippet is only text. `.c8rc.json`-excluded, as 11b's command is.
+- `src/commandsView/`: the new entry, first in Snippets.
+- Docs: `docs/snippets.md` (new, in the guide's sidebar), pointers from
+  `data-access.md` (its patterns, and its credential section now names the
+  snippet) and `getting-started.md`. `docs/reference/commands.md`
+  regenerated.
+
+**Probe.** Findings 13.42–13.46. The first round ran Python through an
+inline `submit;` block and was discarded: that block goes through the macro
+processor, which the extension's `infile=` path does not, so `%superq` in
+it resolved before Python ran. The rounds recorded ran each step as the
+extension does: the code uploaded to a fileref and run with
+`proc python infile=`, under `nosyntaxcheck` and `nonotes`.
+
+**Tests.** `test/unit/snippet-library.test.ts`: the parser's accepted and
+refused shapes, and the shipped file: twelve unique `viya-` prefixes in
+order, and bodies that keep what the findings settled (`SYSERR` after
+`SAS.submit`, passing only 0 and 4, the `warning` level, `%superq` and
+never `&`, `SYSLIBRC`, `%symdel` in a `finally`). `test/integration/snippets/insert-snippet-command.test.ts`: the
+real file read from the repository root, what the picker is offered, the
+inserted text, a dismissed picker, no editor, a non-Python editor, an
+unreadable and a malformed library, and the registration. The Commands view
+model test gains the entry.
+
+**Not built.** The snippet names and descriptions are English only: VS Code
+does not localise a contributed snippet file, and upstream's are English
+too.
+
+**Secret scan.** `scripts/check-secrets.mjs` flagged
+`password="%superq(...)"` as a literal, in the docs and in Finding 13.44.
+Its placeholder list, which already passes `${VAR}` and `%VAR%`, now also
+passes exactly `%superq(name)`: a macro reference whose value is read at
+run time. `test/unit/secret-scan.test.ts` gains the case. The unit test's
+regex for the same text carries an allow marker instead.
+
+**Adversarial review, 2026-10-02** (VS Code window, before any push).
+Nothing blocking; one should-fix and four minor findings. Taken: (1)
+`viya-submit` raised only above 4, so `SYSERR` 3 (a step left in
+syntax-check mode, seen in Finding 13.43's discarded round) passed
+silently for a user who sets `options syntaxcheck;`; it now raises unless
+`SYSERR` is `0` or `4`, with a unit assertion, `snippets.md` reworded and
+a manual step in 13.83. (2) `viya-libname-secret` left the password's
+macro variable set if anything between `symput` and `%symdel` raised; the
+`libname` and the `SYSLIBRC` read now sit in a `try`, the `%symdel` in its
+`finally`. (3) `parseSnippetLibrary` read each entry's fields through a
+cast from `any`; the entries are now typed `unknown` and each field read
+with an `in` check, no cast. Left, as the review allowed: the parser's
+reasons are English inside the localised message (only a corrupt shipped
+file shows them), and the command reads the active editor before its two
+awaits, as 8b's and 11b's commands do.
+
+**Verify, 2026-10-02.** `npm run verify` green from a clean `out/`: 2290
+unit tests; coverage 96.69/96.36/96.64/96.69 lines/branches/functions/
+statements. `npm run test:integration` green, 640 passing (the Commands view
+test's label list gained the entry). `npm run check:docs` green.
+
+**Verify after the review fixes, 2026-10-02.** `npm run verify` green from
+a clean `out/`, then `npm run check:docs` green. That run showed
+`library.ts`'s new `"body" in value` branch uncovered, so the parser's
+refused shapes gained a missing `body`; `npm run coverage` from a clean
+`out/` then: 2293 unit tests, coverage 96.69/96.36/96.64/96.69, with only
+`library.ts` line 45 (a non-`Error` from `JSON.parse`) uncovered there, as
+before. Integration not re-run: its test pins no snippet text, and the
+command did not change.
+
+**Manual tests, 2026-10-02.** Items 13.81–13.85 all passed, against the
+branch with the review fixes in, with nothing to fold in.
+
+---
+
 ## Probe findings
 
 Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.42.
+finding is 13.47.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -3038,3 +3150,88 @@ them, for example with `as` aliases in the native SQL. Otherwise the run
 hangs, and so does every later run in that session.
 
 **Not settled.** Whether `options validvarname=any` avoids it.
+
+### Finding 13.42 — The bridge's table and macro-variable calls, run as the extension runs them (2026-10-02)
+
+**Documented.** `SAS.symget` and `SAS.symput` read and set a macro
+variable; Finding 13.38 has `sd2df`'s and `submit`'s signatures.
+
+**Observed (`verde`, 2026-10-02, the code uploaded and run with
+`proc python infile=`, `nonotes` on):**
+
+- `SAS.symget` returns a `str`: `'V.04.00'` for `SYSVER`, and `''` for a
+  variable that does not exist. It raises nothing.
+- `SAS.symput('pv_n', 42)` returns `1`; `symget` then reads `'42'`.
+- `SAS.sd2df('sashelp.class')` is a 19 × 5 `DataFrame`;
+  `SAS.df2sd(df.head(3), 'work.pv_out')` returns `0`, and reads back 3 × 5.
+- A `PROC SQL` view created through `SAS.submit` reads back through
+  `sd2df` with its `where` applied (9 rows).
+- `SAS.logMessage('…', 'warning')` returns `None` and logs a line typed
+  `warning`: `WARNING: Python-Subprocess - …`.
+
+**Not settled.** `SAS.show`, which the snippets use as
+`docs/running-python.md` documents it (ADR-0038), was not run again here.
+
+### Finding 13.43 — `SAS.submit` returns 0 when its step fails; `SYSERR` is the step's code (2026-10-02)
+
+**Documented.** `SAS.submit(code: str) -> int` (Finding 13.38). SAS
+documents `SYSERR` as the last step's return code and `SYSCC` as the
+highest so far.
+
+**Observed (same session, `nosyntaxcheck` set as ADR-0039 does):**
+
+- `data work.pv_x; set work.pv_nosuch; run;` through `SAS.submit`: return
+  value `0`, `SYSERR` `'1012'`, `SYSCC` `'1012'`.
+- A later, succeeding step in the same run: return value `0`, `SYSERR`
+  `'0'`, `SYSCC` still `'1012'`. The job ended `error`, code 1012.
+- Without `nosyntaxcheck` (the discarded round), the later step did not
+  run and `SYSERR` was `'3'`.
+
+**What this establishes.** The return value says nothing about the SAS
+code. `SYSERR`, read right after the call, is the check for that call;
+`SYSCC` is sticky and says only that something in the run failed. Finding
+13.40 saw the same return value after a `PROC FEDSQL` failure.
+
+### Finding 13.44 — A password passed as `%superq(name)` stays out of the log; `&name` does not (2026-10-02)
+
+**Documented.** `%superq` returns a macro variable's value without
+resolving it further. Finding 12.1 saw a failing `libname`'s literal
+password echoed in full.
+
+**Observed.** A fake password was put in a macro variable with
+`SAS.symput`, then a `postgres` `libname` to an unresolvable host was
+submitted with `options symbolgen mprint`:
+
+- `password="%superq(pv_pw)"`: the log's source echo shows
+  `%superq(pv_pw)`, and no line anywhere holds the value. `SYMBOLGEN`
+  writes nothing for it.
+- `password="&pv_pw"`: `SYMBOLGEN: Macro variable PV_PW resolves to` and
+  the value, in a line typed `normal`.
+- Without `symbolgen`, neither form showed the value.
+- After `%symdel pv_pw;`, `symget('pv_pw')` is `''`.
+
+**Not settled.** Engines other than `postgres`, and a `libname` that
+connects. This deployment has no reachable database libname (Finding
+13.36).
+
+### Finding 13.45 — A failed `libname` sets only `SYSLIBRC` (2026-10-02)
+
+**Observed (same probe).** The failed `libname` logged `ERROR: Error in
+the LIBNAME statement.`, then `SYSLIBRC` was `10040002`, and `SYSERR` and
+`SYSCC` were both `0`. The job ended `completed`, code 0. A later
+`libname pvok (work);` set `SYSLIBRC` back to `0`.
+
+**What this establishes.** A run whose `libname` failed reports success.
+`SYSLIBRC` is the only sign, and has to be read before the next `libname`.
+
+### Finding 13.46 — `upload_frame` makes a session table; `to_frame` reads it back (2026-10-02)
+
+**Observed.** With `conn` opened as 8b's snippet opens it (the token in a
+fileref written as `src/compute/casToken.ts` writes it):
+
+- `conn.upload_frame(df, casout={'name': …, 'caslib': 'casuser',
+  'replace': True})` returned a `CASTable`; `table.tableInfo` reported
+  `Global` `0`, a table for this CAS session only.
+- `conn.CASTable(name, caslib='casuser').to_frame()` returned a
+  `SASDataFrame` with the same shape and columns.
+- `table.dropTable` dropped it, and `conn.close()` ended the session.

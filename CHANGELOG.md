@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Until `1.0.0`, minor versions may contain breaking changes; they will always be
 called out under **Changed** with a migration note.
 
-## [Unreleased]
+## [0.1.6] - 2026-10-02
 
 ### Added
 
@@ -49,6 +49,12 @@ called out under **Changed** with a migration note.
   turns the grid off. **Change Presentation** on the output still offers
   pandas' HTML table, which is also what Jupyter and GitHub show. See
   [Notebooks](docs/notebooks.md).
+- **A Commands view.** The first view in the **Python on Viya** sidebar
+  lists the commands you will use most, grouped under **Connection**,
+  **Run** and **Snippets**, so you need not remember their names in the
+  Command Palette. It follows what you can do right now: **Connect** or
+  **Disconnect**, never both, and **Cancel** only while a run is going. See
+  [Getting started](docs/getting-started.md#the-commands-view).
 - **Snippets for common Viya patterns.** Type `viya` in a Python file or
   notebook cell, or run **Insert Viya Snippet...**, for twelve snippets:
   reading and writing SAS tables, macro variables, running SAS code and

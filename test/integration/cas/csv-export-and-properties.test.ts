@@ -124,6 +124,7 @@ const SELF_BODY = {
   encoding: "utf-8",
   characterSet: "UTF8",
   repeated: false,
+  attributes: { encryption: "NONE", size: 8432, view: false },
 };
 
 /** The rows fixture's own two rows for the first page, an empty page for any
@@ -411,6 +412,116 @@ describe("CAS table CSV export (11d)", () => {
   });
 });
 
+describe("export progress (13k)", () => {
+  interface ProgressUpdate {
+    message?: string;
+    increment?: number;
+  }
+
+  async function exportWithProgress(
+    source: CsvExportSource,
+  ): Promise<ProgressUpdate[]> {
+    const { log } = fakeLog();
+    const updates: ProgressUpdate[] = [];
+    await runSourceCsvExport(source, {
+      log,
+      showSaveDialog: () => Promise.resolve(SAVE_URI),
+      withProgress: (_title, work) =>
+        work(new vscode.CancellationTokenSource().token, {
+          report: (value) => updates.push(value),
+        }),
+      createWriteStream: () => fakeStream().stream,
+      rename: () => Promise.resolve(),
+      unlink: () => Promise.resolve(),
+      statfs: AMPLE_DISK,
+    });
+    return updates;
+  }
+
+  /** A source with a fixed row count that records the `onRows` it was given
+   * and reports `reads` through it. */
+  function countingSource(
+    rowCount: number | undefined,
+    reads: readonly number[],
+  ): { source: CsvExportSource; given: unknown[] } {
+    const given: unknown[] = [];
+    const source: CsvExportSource = {
+      name: "SOME.TABLE",
+      logPrefix: "Test",
+      open: () => Promise.resolve({ ok: true, value: { rowCount } }),
+      sample: () => Promise.resolve({ ok: true, value: "x\n" }),
+      stream: async (sink, _signal, onRows) => {
+        given.push(onRows);
+        for (const rows of reads) {
+          await sink("x\n");
+          onRows?.(rows);
+        }
+        return { ok: true, value: undefined };
+      },
+    };
+    return { source, given };
+  }
+
+  it("reports rows done and a percentage from a CAS table's live row count", async () => {
+    const { adapter } = adapterWith(EXPORT_ROUTES);
+
+    const updates = await exportWithProgress(
+      new CasCsvSource(adapter, table()),
+    );
+
+    // One 500-row page holds all 12 rows; the empty page after it ends the
+    // export without another update.
+    assert.deepEqual(updates, [
+      {
+        increment: 100,
+        message: `${(12).toLocaleString()} of ${(12).toLocaleString()} rows`,
+      },
+    ]);
+  });
+
+  it("moves the bar by each page's share, never past 100", async () => {
+    const { source } = countingSource(1000, [400, 800, 1200]);
+
+    const updates = await exportWithProgress(source);
+
+    assert.deepEqual(
+      updates.map((update) => update.increment),
+      [40, 40, 20],
+    );
+    const total = (1000).toLocaleString();
+    assert.equal(updates[2]?.message, `${total} of ${total} rows`);
+  });
+
+  it("stays indeterminate when the row count is unknown or zero", async () => {
+    for (const rowCount of [undefined, 0]) {
+      const { source, given } = countingSource(rowCount, [500]);
+
+      const updates = await exportWithProgress(source);
+
+      assert.deepEqual(updates, []);
+      assert.deepEqual(given, [undefined]);
+    }
+  });
+
+  it("reports nothing when the notification offers no progress to update", async () => {
+    const { source, given } = countingSource(1000, [500]);
+    const { log } = fakeLog();
+
+    await runSourceCsvExport(source, {
+      log,
+      showSaveDialog: () => Promise.resolve(SAVE_URI),
+      withProgress: (_title, work) =>
+        work(new vscode.CancellationTokenSource().token),
+      createWriteStream: () => fakeStream().stream,
+      rename: () => Promise.resolve(),
+      unlink: () => Promise.resolve(),
+      statfs: AMPLE_DISK,
+    });
+
+    assert.deepEqual(given, [undefined]);
+  });
+});
+
 describe("large-export confirmation (11d)", () => {
   /** A source that reports a fixed size and records whether it was streamed. */
   function fakeSource(options: {
@@ -554,6 +665,9 @@ describe("CAS table properties panel (11d)", () => {
     assert.match(html, />cas-shared-default</);
     assert.match(html, />someone</);
     assert.match(html, />UTF8</);
+    // Finding 13.47: attributes.size, the source file's size.
+    assert.match(html, />Source File Size</);
+    assert.match(html, />8\.4 KB</);
     // Columns tab: CODE (varchar, no rawLength) and VALUE (double, 8).
     assert.match(html, />CODE</);
     assert.match(html, />VALUE</);

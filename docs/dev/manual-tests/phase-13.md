@@ -1140,3 +1140,62 @@ See `docs/phases/phase-13.md`'s "13d built" Runbook entry.
    `not-a-real-password`.
    - Expect: no match.
 3. Undo the edit and close `snippets.py` without saving.
+
+## 13k — polish
+
+See `docs/phases/phase-13.md`'s "13k built" Runbook entry.
+
+**Set-up, once.**
+
+1. Build a `.vsix` from this branch, install it, and reload the window.
+2. Sign in and connect.
+3. Open a folder.
+
+### 13.86 — CSV export shows rows and a percentage
+
+- [x] **13.86** The export notification counts rows for both views.
+
+1. In **SAS Libraries**, right-click `SASHELP.HEART` (5,209 rows) and
+   choose **Export to CSV**. Save it anywhere.
+   - Expect: the notification shows `500 of 5,209 rows`, then larger
+     counts, and its bar fills as it goes. The last count is
+     `5,209 of 5,209 rows`.
+   - Expect: the file has 5,210 lines (a header and 5,209 rows).
+2. In **CAS**, export a table with more than a few thousand rows (load
+   one from `Samples` if none is loaded) the same way.
+   - Expect: the same kind of count, ending at the table's row count.
+3. Start the `SASHELP.HEART` export again and press **Cancel** at once.
+   - Expect: the export stops, no file is left at the destination, and no
+     error is shown.
+
+### 13.87 — A CAS table's source file size
+
+- [x] **13.87** **Table Properties** shows **Source File Size** for a table
+      loaded from a file.
+
+1. In **CAS**, right-click a table in `Samples` and choose **Table
+   Properties**.
+   - Expect: **Size Information** has **Source File Size**, such as
+     `13.7 MB`, after **Column Count**.
+2. If you have a table that exists only in memory (for example, one
+   uploaded with the `viya-cas-upload` snippet and promoted), open its
+   **Table Properties**.
+   - Expect: **Source File Size** is blank.
+
+### 13.88 — Turning generated Pylance stubs off
+
+- [x] **13.88** `pythonOnViya.pylanceStubs.enabled` stops stub
+      generation without a reload, and turning it on resumes it.
+
+1. Run **Refresh Environment Info**.
+   - Expect: a `.pythonOnViya/typings` folder in the workspace, and
+     `python.analysis.stubPath` in its `.vscode/settings.json`.
+2. Set `pythonOnViya.pylanceStubs.enabled` to `false` in the workspace
+   settings. Delete the `.pythonOnViya` folder. Run **Refresh Environment
+   Info** again.
+   - Expect: the environment opens as usual, `.pythonOnViya` is not
+     created again, and no notification about stubs appears.
+3. Set it back to `true` and run **Refresh Environment Info**.
+   - Expect: `.pythonOnViya/typings` is created again.
+4. Remove the setting and `python.analysis.stubPath` from the workspace
+   settings, and delete `.pythonOnViya`.

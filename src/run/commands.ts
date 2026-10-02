@@ -168,6 +168,11 @@ export interface RunCommandDeps {
         packages: readonly StubbablePackage[],
       ) => Promise<PylanceStubSyncResult>)
     | undefined;
+  /** Defaults to reading `pythonOnViya.pylanceStubs.enabled` (13k, on by
+   * default). Read on every fresh probe, so turning it off takes effect at
+   * the next one with no reload. Off skips the whole stub sync; it removes
+   * nothing a past sync wrote. */
+  pylanceStubsEnabled?: (() => boolean) | undefined;
   /** Defaults to a fresh `RunOutputChannel`. Supplying one hands its
    * lifecycle to the caller — this module then leaves it off
    * `context.subscriptions`, so a test can inspect it after the fact without
@@ -750,6 +755,14 @@ export function createRunCommandHandlers(
     // must degrade to "no stub sync happened" rather than lose an
     // already-successful probe. Adversarial review, before this PR's push.
     try {
+      const enabled =
+        deps.pylanceStubsEnabled ??
+        (() =>
+          vscode.workspace
+            .getConfiguration("pythonOnViya")
+            .get<boolean>("pylanceStubs.enabled", true));
+      if (!enabled()) return false;
+
       const local = await readActiveLocalEnvironment();
       const diff = diffEnvironments(
         remote,

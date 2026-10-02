@@ -258,6 +258,89 @@ describe("run commands — 10b Pylance stub sync wiring (fresh probe)", () => {
     assert.ok(/reload/i.test(recorder.informed[0] ?? ""));
   });
 
+  it("13k: skips the sync, and says nothing about stubs, when pythonOnViya.pylanceStubs.enabled is off", async () => {
+    const recorder = fakeRecorder();
+    const { calls, pylanceStubs } = fakePylanceStubs({
+      kind: "synced",
+      changed: true,
+    });
+    const { channel } = recordingLog("13k opt-out");
+    const { targets, handlers } = build(
+      { ...recorder.deps, pylanceStubs, pylanceStubsEnabled: () => false },
+      channel,
+    );
+    await targets.setKind("viya");
+
+    await handlers.showEnvironment();
+
+    assert.equal(calls.length, 0);
+    assert.deepEqual(recorder.informed, []);
+    // The probe itself is unaffected: the environment still opens.
+    assert.equal(
+      vscode.window.activeTextEditor?.document.uri.scheme,
+      "pythonOnViyaEnvironment",
+    );
+  });
+
+  it("13k: reads the setting on every fresh probe, so turning it back on resumes the sync", async () => {
+    const recorder = fakeRecorder();
+    const { calls, pylanceStubs } = fakePylanceStubs({
+      kind: "synced",
+      changed: false,
+    });
+    const { channel } = recordingLog("13k opt-out re-enabled");
+    let enabled = false;
+    const { targets, handlers } = build(
+      { ...recorder.deps, pylanceStubs, pylanceStubsEnabled: () => enabled },
+      channel,
+    );
+    await targets.setKind("viya");
+
+    await handlers.showEnvironment();
+    assert.equal(calls.length, 0);
+
+    enabled = true;
+    await handlers.refreshEnvironment();
+    assert.equal(calls.length, 1);
+  });
+
+  it("13k: reads the real pythonOnViya.pylanceStubs.enabled setting when no seam is injected", async () => {
+    // The two cases above inject `pylanceStubsEnabled`, so a typo in the
+    // default's section or key, or a mismatch with `package.json`, would pass
+    // them and leave stubs always on. Adversarial review, before the push.
+    // `Global`, as the other integration suites write settings: the host may
+    // have no workspace open, and a `Workspace` write then throws.
+    const config = vscode.workspace.getConfiguration("pythonOnViya");
+    await config.update(
+      "pylanceStubs.enabled",
+      false,
+      vscode.ConfigurationTarget.Global,
+    );
+    try {
+      const recorder = fakeRecorder();
+      const { calls, pylanceStubs } = fakePylanceStubs({
+        kind: "synced",
+        changed: true,
+      });
+      const { channel } = recordingLog("13k opt-out, real setting");
+      const { targets, handlers } = build(
+        { ...recorder.deps, pylanceStubs },
+        channel,
+      );
+      await targets.setKind("viya");
+
+      await handlers.showEnvironment();
+
+      assert.equal(calls.length, 0);
+    } finally {
+      await config.update(
+        "pylanceStubs.enabled",
+        undefined,
+        vscode.ConfigurationTarget.Global,
+      );
+    }
+  });
+
   it("does not advise a reload when the sync says nothing changed — the regression StubTreeSyncPlan.changed fixes", async () => {
     const recorder = fakeRecorder();
     const { pylanceStubs } = fakePylanceStubs({

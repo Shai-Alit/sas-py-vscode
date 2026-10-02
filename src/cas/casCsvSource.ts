@@ -33,6 +33,7 @@ import {
   type CsvExportResult,
   type CsvExportSource,
   type CsvSink,
+  type RowsReadThrough,
 } from "../data/csvExportModel";
 
 export class CasCsvSource implements CsvExportSource {
@@ -90,12 +91,14 @@ export class CasCsvSource implements CsvExportSource {
   async stream(
     sink: CsvSink,
     signal?: AbortSignal,
+    onRows?: RowsReadThrough,
   ): Promise<CsvExportResult<void>> {
     return await streamCsvPages(
       (window, first, pageSignal) => this.readPage(window, first, pageSignal),
       pageRowsFor(this.columns.length),
       sink,
       signal,
+      onRows,
     );
   }
 

@@ -180,6 +180,13 @@ to work around: confirmed against a real Snowflake-backed caslib (Finding
 read is not allowed with the FedSQL execDirect action` line names it
 explicitly.
 
+**What has and has not been tried.** Pass-through has been confirmed only
+against a Snowflake caslib, with a small result. Other databases and large
+results have not been measured. SAS documents that a result set returned
+to the client is assembled in full in the CAS controller's memory before
+it comes back, so for a large result, try your native query with a row
+limit first.
+
 The caslib already owns the credential to the external database — configured
 by whoever defined the caslib — so this needs no separate credential of its
 own; it rides on the same connection **Insert CAS Connection Snippet**

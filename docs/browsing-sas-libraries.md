@@ -59,7 +59,8 @@ query against something you have not looked at yet.
 ## Export to CSV
 
 Right-click a table and choose **Export to CSV** for a save dialog, then a
-cancellable progress notification. Rows stream straight from Viya to the file
+cancellable progress notification that shows the rows exported so far and a
+percentage, when Viya reports the table's row count. Rows stream straight from Viya to the file
 you chose as they arrive — there is no size limit tied to what the grid, or
 memory, can hold, unlike opening the table itself.
 

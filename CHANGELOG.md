@@ -55,6 +55,16 @@ called out under **Changed** with a migration note.
   checking it worked, showing a figure or table, CAS upload and read, and a
   database `libname` whose password stays out of your code and the log.
   See [Snippets](docs/snippets.md).
+- **CSV export shows how far it has got.** Exporting a SAS library or CAS
+  table to CSV now shows the rows exported so far and a percentage, such
+  as `12,000 of 555,856 rows`, when Viya reports the table's row count.
+- **A CAS table's source file size.** **Table Properties** on a CAS table
+  now shows **Source File Size**, the size of the file the table loads
+  from. See [Browsing CAS](docs/browsing-cas.md).
+- **Turn off generated Pylance stubs.** Set
+  `pythonOnViya.pylanceStubs.enabled` to `false` to stop the extension
+  writing stubs and setting `python.analysis.stubPath`. See
+  [Python environment](docs/python-environment.md).
 
 ## [0.1.5] - 2026-09-30
 

@@ -318,6 +318,29 @@ describe("cas/types 11d additions", () => {
       assert.equal(properties.repeated, false);
     });
 
+    it("reads attributes.size as the source file's size (Finding 13.47)", () => {
+      const properties = readCasTableProperties(
+        { attributes: { encryption: "NONE", size: 8432, view: false } },
+        table,
+      );
+      assert.equal(properties.sourceFileSize, 8432);
+    });
+
+    it("has no source file size for an in-memory table, or a malformed one", () => {
+      for (const attributes of [
+        { view: false },
+        { size: "8432" },
+        { size: -1 },
+        null,
+        "size",
+      ]) {
+        assert.equal(
+          readCasTableProperties({ attributes }, table).sourceFileSize,
+          undefined,
+        );
+      }
+    });
+
     it("drops absent, empty, and wrong-typed fields rather than defaulting them", () => {
       const properties = readCasTableProperties(
         { state: "", rowCount: "12", repeated: "no" },

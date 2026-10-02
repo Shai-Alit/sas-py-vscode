@@ -71,6 +71,15 @@ export const CSV_EXPORT_PAGE_SIZE = 500;
  */
 export type CsvSink = (chunk: string) => Promise<void>;
 
+/**
+ * Told, after each page reaches the sink, how many rows the export has read
+ * through so far — `start + pageSize` of the page just written (13k). That is
+ * exact for every page but the last, which can hold fewer rows than asked
+ * for, so a caller that knows the table's row count caps it there (see
+ * {@link exportProgressStep}).
+ */
+export type RowsReadThrough = (rows: number) => void;
+
 /** A failed export step in the form the command layer reports — both
  * strings already produced by whichever backend owns the failure, matching
  * `TableSourceResult`'s own two-string shape (`./tableSource.ts`): `message`
@@ -111,8 +120,13 @@ export interface CsvExportSource {
   /** The first `limit` rows as CSV text, header included — the disk-space
    * pre-flight's sample. */
   sample(limit: number, signal?: AbortSignal): Promise<CsvExportResult<string>>;
-  /** Streams every row to `sink`; see {@link streamCsvPages}. */
-  stream(sink: CsvSink, signal?: AbortSignal): Promise<CsvExportResult<void>>;
+  /** Streams every row to `sink`; see {@link streamCsvPages}. `onRows`, when
+   * given, is told after each page how far the export has read. */
+  stream(
+    sink: CsvSink,
+    signal?: AbortSignal,
+    onRows?: RowsReadThrough,
+  ): Promise<CsvExportResult<void>>;
 }
 
 /** Reads one window of CSV text — `includeHeader` is true only for the first
@@ -132,12 +146,14 @@ export type CsvPageReader<F extends { readonly ok: false }> = (
  *
  * `signal`, when given, cancels the in-flight page request; the sink itself is
  * not aborted here — closing the underlying stream is the caller's own job.
+ * `onRows`, when given, is called once per page the sink accepted.
  */
 export async function streamCsvPages<F extends { readonly ok: false }>(
   read: CsvPageReader<F>,
   pageSize: number,
   sink: CsvSink,
   signal?: AbortSignal,
+  onRows?: RowsReadThrough,
 ): Promise<{ readonly ok: true; readonly value: undefined } | F> {
   let start = 0;
   let first = true;
@@ -150,6 +166,7 @@ export async function streamCsvPages<F extends { readonly ok: false }>(
     await sink(page.value);
     first = false;
     start += pageSize;
+    onRows?.(start);
   }
 
   return { ok: true, value: undefined };
@@ -165,6 +182,7 @@ export async function exportTableToCsv(
   table: TableDetail,
   sink: CsvSink,
   signal?: AbortSignal,
+  onRows?: RowsReadThrough,
 ): Promise<DataResult<void>> {
   return await streamCsvPages<DataFailure>(
     (window, first, pageSignal) =>
@@ -172,5 +190,59 @@ export async function exportTableToCsv(
     CSV_EXPORT_PAGE_SIZE,
     sink,
     signal,
+    onRows,
   );
+}
+
+/** One update of the export's progress notification — see
+ * {@link exportProgressStep}. */
+export interface ExportProgressStep {
+  /** Rows exported so far. Never more than the table's row count, unless
+   * {@link outgrown}. */
+  readonly rowsDone: number;
+  /** Whole percent done, `0`–`100`. */
+  readonly percent: number;
+  /** What to add to the notification's bar: VS Code's `Progress.report`
+   * takes an increment, not a total. Never negative. */
+  readonly increment: number;
+  /** The table has more rows than the count read before the export began, so
+   * "N of M rows" no longer holds: `rowsDone` is then a lower bound past `M`,
+   * and the caller shows it as "N+ rows" instead. */
+  readonly outgrown: boolean;
+}
+
+/**
+ * The progress update for an export that has read through `rowsReadThrough`
+ * rows of a `rowCount`-row table, when `reportedPercent` has already been
+ * reported (13k). `previousReadThrough` is what the page before this one
+ * read through (`0` for the first). `rowCount` must be positive; the caller
+ * shows an indeterminate notification when it is not known.
+ *
+ * Rounds down, so the bar reaches 100 only once every row is read. Caps
+ * `rowsReadThrough` at `rowCount`, since the last page can be short (see
+ * {@link RowsReadThrough}). A row count read before the export began can be
+ * stale if the table grew since; a page that starts at or past `rowCount`
+ * proves it did, and the step is then {@link ExportProgressStep.outgrown},
+ * with `previousReadThrough` as the rows done: every page before this one
+ * was written in full.
+ */
+export function exportProgressStep(
+  reportedPercent: number,
+  rowsReadThrough: number,
+  rowCount: number,
+  previousReadThrough = 0,
+): ExportProgressStep {
+  const outgrown = previousReadThrough >= rowCount;
+  const rowsDone = outgrown
+    ? previousReadThrough
+    : Math.min(rowsReadThrough, rowCount);
+  const percent = outgrown
+    ? 100
+    : Math.min(100, Math.floor((rowsDone / rowCount) * 100));
+  return {
+    rowsDone,
+    percent,
+    increment: Math.max(0, percent - reportedPercent),
+    outgrown,
+  };
 }

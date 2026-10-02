@@ -144,6 +144,12 @@ Python on Viya writes its own `.gitignore` inside `.pythonOnViya/`, so you do
 not need to add anything to your own — the folder is regenerated on every
 refresh and has nothing worth committing.
 
+**To turn stub generation off**, set `pythonOnViya.pylanceStubs.enabled` to
+`false`. It takes effect at the next probe, with no reload. Turning it off
+does not remove stubs already written: delete the `.pythonOnViya` folder and
+remove `python.analysis.stubPath` from your workspace settings yourself, then
+restart the language server.
+
 ## Probing does not touch your session
 
 The probe runs a fixed, extension-authored script — never your code — and

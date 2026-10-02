@@ -912,6 +912,12 @@
           "scope": "machine",
           "markdownDescription": "%configuration.userProvidedCertificates.description%"
         },
+        "pythonOnViya.pylanceStubs.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "%configuration.pylanceStubs.enabled.description%"
+        },
         "pythonOnViya.csvExport.guardFormulaInjection": {
           "type": "boolean",
           "default": false,

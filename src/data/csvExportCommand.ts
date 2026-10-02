@@ -40,6 +40,13 @@
  * own doc comment); the per-write failure path below still catches a real
  * out-of-space error the estimate did not anticipate.
  *
+ * **The notification shows rows done and a percentage when the row count is
+ * known** (13k) — "12,000 of 555,856 rows". Both sources report a row count
+ * from `open`; when one does not (or reports `0`), the notification stays
+ * indeterminate rather than guess. The count is read once, before the
+ * export, so {@link exportProgressStep} caps the rows shown at it; once the
+ * table has provably outgrown it, the message becomes "5,500+ rows".
+ *
  * **`withProgress`/`showSaveDialog`/the write stream are all injectable**,
  * the same reasoning `ResultPanelDeps.createPanel`/
  * `DataViewerPanelDeps.createPanel`/`ComputeSessionManagerDeps.withProgress`
@@ -64,9 +71,11 @@ import * as vscode from "vscode";
 
 import { type LibraryAdapter } from "./adapter";
 import {
+  exportProgressStep,
   type CsvExportFailure,
   type CsvExportResult,
   type CsvExportSource,
+  type RowsReadThrough,
 } from "./csvExportModel";
 import { LibraryCsvSource } from "./libraryCsvSource";
 import { localiseDataProblem } from "./messages";
@@ -101,16 +110,26 @@ export interface FreeSpace {
   readonly bsize: number;
 }
 
+/** The narrow surface of `vscode.Progress` this module reports through. */
+export interface CsvExportProgress {
+  report(value: { message?: string; increment?: number }): void;
+}
+
 export interface CsvExportDeps {
   /** Defaults to `vscode.window.showSaveDialog`. */
   showSaveDialog?:
     | ((options: vscode.SaveDialogOptions) => Thenable<vscode.Uri | undefined>)
     | undefined;
-  /** Defaults to `vscode.window.withProgress`, a cancellable notification. */
+  /** Defaults to `vscode.window.withProgress`, a cancellable notification.
+   * `progress` is optional so a double that has no notification to update can
+   * leave it out; the export then reports no rows. */
   withProgress?:
     | (<T>(
         title: string,
-        run: (token: CancellationLike) => Promise<T>,
+        run: (
+          token: CancellationLike,
+          progress?: CsvExportProgress,
+        ) => Promise<T>,
       ) => Thenable<T>)
     | undefined;
   /** Defaults to `fs.createWriteStream`. */
@@ -287,7 +306,7 @@ export async function runSourceCsvExport(
 
   await withProgress(
     vscode.l10n.t('Exporting "{0}" to {1}…', source.name, uri.fsPath),
-    async (token) => {
+    async (token, progress) => {
       const bridge = abortOn(token);
       let succeeded = false;
       // Set once `createWriteStream` actually runs (below) — a table this
@@ -356,6 +375,7 @@ export async function runSourceCsvExport(
         const result = await source.stream(
           (chunk) => writeChunk(openedStream, chunk, () => streamError),
           bridge.signal,
+          rowReporter(progress, opened.value.rowCount),
         );
         if (!result.ok) {
           report(deps.log, source, result, bridge.signal.aborted);
@@ -467,9 +487,44 @@ async function confirmLargeExport(
   return choice === exportAnyway;
 }
 
+/**
+ * Turns each page's "read through this many rows" into a notification update
+ * — rows done and the bar's increment (see {@link exportProgressStep}).
+ * `undefined`, so the notification stays indeterminate, when there is no
+ * notification to update or no positive row count to measure against.
+ */
+function rowReporter(
+  progress: CsvExportProgress | undefined,
+  rowCount: number | undefined,
+): RowsReadThrough | undefined {
+  if (progress === undefined || rowCount === undefined || !(rowCount > 0)) {
+    return undefined;
+  }
+  const total = rowCount.toLocaleString();
+  let reportedPercent = 0;
+  let previousReadThrough = 0;
+  return (rows) => {
+    const step = exportProgressStep(
+      reportedPercent,
+      rows,
+      rowCount,
+      previousReadThrough,
+    );
+    reportedPercent = step.percent;
+    previousReadThrough = rows;
+    const done = step.rowsDone.toLocaleString();
+    progress.report({
+      increment: step.increment,
+      message: step.outgrown
+        ? vscode.l10n.t("{0}+ rows", done)
+        : vscode.l10n.t("{0} of {1} rows", done, total),
+    });
+  };
+}
+
 function realWithProgress<T>(
   title: string,
-  run: (token: CancellationLike) => Promise<T>,
+  run: (token: CancellationLike, progress?: CsvExportProgress) => Promise<T>,
 ): Thenable<T> {
   return vscode.window.withProgress(
     {
@@ -477,7 +532,7 @@ function realWithProgress<T>(
       title,
       cancellable: true,
     },
-    async (_progress, token) => await run(token),
+    async (progress, token) => await run(token, progress),
   );
 }
 

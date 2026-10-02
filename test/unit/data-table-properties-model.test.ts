@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 
 import {
   escapeHtml,
+  formatBytes,
   formatOptionalNumber,
   formatTimestamp,
 } from "../../src/data/tablePropertiesModel";
@@ -71,6 +72,28 @@ describe("data/tablePropertiesModel", function () {
 
     it("renders an empty cell for an absent value", () => {
       assert.equal(formatOptionalNumber(undefined), "");
+    });
+  });
+
+  describe("formatBytes", () => {
+    it("shows whole bytes below a kilobyte", () => {
+      assert.equal(formatBytes(0), "0 bytes");
+      assert.equal(formatBytes(999), "999 bytes");
+    });
+
+    it("steps through decimal units with one decimal place", () => {
+      assert.equal(formatBytes(8432), "8.4 KB");
+      assert.equal(formatBytes(1_218_136_208), "1.2 GB");
+    });
+
+    it("steps up a unit when rounding would show 1000 of the smaller one", () => {
+      assert.equal(formatBytes(999_949), "999.9 KB");
+      assert.equal(formatBytes(999_950), "1.0 MB");
+      assert.equal(formatBytes(999_950_000), "1.0 GB");
+    });
+
+    it("stays in terabytes for anything larger", () => {
+      assert.equal(formatBytes(5e15), "5000.0 TB");
     });
   });
 });

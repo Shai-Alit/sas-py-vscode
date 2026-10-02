@@ -60,6 +60,8 @@
     "src/run/statusBar.ts",
     "src/run/targetStore.ts",
     "src/server/messages.ts",
+    "src/server/serverCommands.ts",
+    "src/server/serverDragAndDrop.ts",
     "src/server/serverExplorer.ts",
     "src/server/serverFileSystem.ts",
     "src/server/serverTree.ts",

@@ -22,7 +22,7 @@
 
 import * as vscode from "vscode";
 
-import { type ServerAdapter } from "./adapter";
+import { type RootListing, type ServerAdapter } from "./adapter";
 import { localiseServerProblem } from "./messages";
 import { SERVER_FOLDER_SCHEME, serverUriString } from "./path";
 import { describeServerProblem, type ServerProblem } from "./problems";
@@ -48,9 +48,15 @@ export type ServerTreeNode = ServerTreeItem | ConnectionProblemNode;
 /** This view's refresh command, which a problem node's click retries. */
 export const REFRESH_SERVER_COMMAND = "pythonOnViya.refreshServerExplorer";
 
-/** `contextValue`s, matched by `package.json`'s menus. */
+/** `contextValue`s, matched by `package.json`'s menus. The root is its own
+ * kind, so it can be created in and downloaded but not renamed, moved or
+ * deleted. A folder the server marks `readOnly` gains
+ * {@link SERVER_READ_ONLY_SUFFIX}, and is offered nothing that creates in it:
+ * the root is one, and a create there fails with a `404` (Finding 13.34). */
+export const SERVER_ROOT_CONTEXT = "sasServer:root";
 export const SERVER_FOLDER_CONTEXT = "sasServer:folder";
 export const SERVER_FILE_CONTEXT = "sasServer:file";
+export const SERVER_READ_ONLY_SUFFIX = ".readOnly";
 
 export function isServerTreeItem(node: unknown): node is ServerTreeItem {
   return (
@@ -74,11 +80,14 @@ export class SasServerTreeProvider
    * @param log The shared channel a failed listing is logged to.
    * @param forgetProfile Drops a profile's cached connection once a listing
    *   finds its session gone (`src/data/dataTree.ts` explains why).
+   * @param onRoot Told each root the tree reads, for the context's
+   *   `allowDownload`.
    */
   constructor(
     private readonly currentAdapter: () => ServerAdapter | undefined,
     private readonly log: vscode.LogOutputChannel,
     private readonly forgetProfile: (profileId: string) => void,
+    private readonly onRoot: (root: RootListing) => void = () => undefined,
   ) {}
 
   dispose(): void {
@@ -104,9 +113,13 @@ export class SasServerTreeProvider
     // Stable across refreshes, so expansion and selection survive one.
     tree.id = `sasServer:${profileId}:${item.path}`;
     tree.tooltip = item.path;
-    tree.contextValue = item.isDirectory
-      ? SERVER_FOLDER_CONTEXT
-      : SERVER_FILE_CONTEXT;
+    tree.contextValue =
+      (rootLabel !== undefined
+        ? SERVER_ROOT_CONTEXT
+        : item.isDirectory
+          ? SERVER_FOLDER_CONTEXT
+          : SERVER_FILE_CONTEXT) +
+      (item.isDirectory && item.readOnly ? SERVER_READ_ONLY_SUFFIX : "");
     if (item.isDirectory) {
       // An identity URI only, never opened (`SERVER_FOLDER_SCHEME`).
       tree.resourceUri = vscode.Uri.parse(
@@ -142,6 +155,7 @@ export class SasServerTreeProvider
     if (node === undefined) {
       const root = await adapter.getRoot();
       if (!root.ok) return this.failed(adapter, root.problem);
+      this.onRoot(root.value);
       return [
         {
           kind: "serverItem",

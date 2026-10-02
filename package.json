@@ -198,6 +198,39 @@
         "category": "%extension.category%"
       },
       {
+        "command": "pythonOnViya.createServerFolder",
+        "title": "%command.createServerFolder.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.createServerFile",
+        "title": "%command.createServerFile.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.renameServerItem",
+        "title": "%command.renameServerItem.title%",
+        "category": "%extension.category%"
+      },
+      {
+        "command": "pythonOnViya.deleteServerItem",
+        "title": "%command.deleteServerItem.title%",
+        "category": "%extension.category%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "pythonOnViya.uploadToServerFolder",
+        "title": "%command.uploadToServerFolder.title%",
+        "category": "%extension.category%",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "pythonOnViya.downloadServerItem",
+        "title": "%command.downloadServerItem.title%",
+        "category": "%extension.category%",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "pythonOnViya.refreshDataExplorer",
         "title": "%command.refreshDataExplorer.title%",
         "category": "%extension.category%",
@@ -495,6 +528,30 @@
         {
           "command": "pythonOnViya.copyServerPath",
           "when": "false"
+        },
+        {
+          "command": "pythonOnViya.createServerFolder",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.createServerFile",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.renameServerItem",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.deleteServerItem",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.uploadToServerFolder",
+          "when": "false"
+        },
+        {
+          "command": "pythonOnViya.downloadServerItem",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -616,9 +673,39 @@
           "group": "navigation"
         },
         {
+          "command": "pythonOnViya.createServerFolder",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:(root|folder)$/",
+          "group": "1_new@1"
+        },
+        {
+          "command": "pythonOnViya.createServerFile",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:(root|folder)$/",
+          "group": "1_new@2"
+        },
+        {
+          "command": "pythonOnViya.uploadToServerFolder",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:(root|folder)$/",
+          "group": "3_transfer@1"
+        },
+        {
+          "command": "pythonOnViya.downloadServerItem",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:(root|folder|file)(\\.readOnly)?$/ && pythonOnViya.serverDownloadAllowed",
+          "group": "3_transfer@2"
+        },
+        {
           "command": "pythonOnViya.copyServerPath",
           "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:/",
           "group": "6_copypath"
+        },
+        {
+          "command": "pythonOnViya.renameServerItem",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:(folder|file)(\\.readOnly)?$/",
+          "group": "7_modify@1"
+        },
+        {
+          "command": "pythonOnViya.deleteServerItem",
+          "when": "view == pythonOnViya.serverExplorer && viewItem =~ /^sasServer:(folder|file)(\\.readOnly)?$/",
+          "group": "7_modify@2"
         }
       ],
       "editor/title/run": [

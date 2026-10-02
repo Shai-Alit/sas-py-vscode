@@ -37,6 +37,12 @@ under their category.
 | Refresh SAS Content | `Python on Viya: Refresh SAS Content` | `pythonOnViya.refreshContentExplorer` | SAS Content |
 | Refresh SAS Server | `Python on Viya: Refresh SAS Server` | `pythonOnViya.refreshServerExplorer` | SAS Server |
 | Copy Path | `Python on Viya: Copy Path` | `pythonOnViya.copyServerPath` | SAS Server |
+| New Folder | `Python on Viya: New Folder` | `pythonOnViya.createServerFolder` | SAS Server |
+| New File | `Python on Viya: New File` | `pythonOnViya.createServerFile` | SAS Server |
+| Rename | `Python on Viya: Rename` | `pythonOnViya.renameServerItem` | SAS Server |
+| Delete | `Python on Viya: Delete` | `pythonOnViya.deleteServerItem` | SAS Server |
+| Upload Files... | `Python on Viya: Upload Files...` | `pythonOnViya.uploadToServerFolder` | SAS Server |
+| Download... | `Python on Viya: Download...` | `pythonOnViya.downloadServerItem` | SAS Server |
 | Refresh SAS Libraries | `Python on Viya: Refresh SAS Libraries` | `pythonOnViya.refreshDataExplorer` | SAS Libraries |
 | Refresh CAS | `Python on Viya: Refresh CAS` | `pythonOnViya.refreshCasExplorer` | CAS |
 | Insert CAS Connection Snippet | `Python on Viya: Insert CAS Connection Snippet` | `pythonOnViya.insertCasConnectionSnippet` | — |

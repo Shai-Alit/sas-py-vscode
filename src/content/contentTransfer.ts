@@ -4,7 +4,8 @@
 /**
  * Upload local files into a SAS Content folder, and download a SAS Content
  * file or folder to local disk (13a) — the two directions Phase 6's
- * `pythonOnViyaContent:` `FileSystemProvider` and tree did not cover.
+ * `pythonOnViyaContent:` `FileSystemProvider` and tree did not cover. The SAS
+ * Server view uploads and downloads through the same two functions (13p-ii).
  *
  * Structure follows: `uploadResource` / `uploadUrisToTarget` /
  * `downloadContentItems` in sassoftware/vscode-sas-extension (Apache-2.0) —
@@ -12,12 +13,16 @@
  * a platform-dependent picker; this slice uploads files only, several at a
  * time, and downloads a file or a whole folder.
  *
- * A thin `vscode` shell, the same shape as `src/content/contentCommands.ts`:
- * the wire calls are `ContentAdapter.createFile` (with the file's bytes) and
- * `ContentAdapter.downloadFileContent`, and what a folder download writes is
- * decided by `src/content/transfer.ts`'s `planDownload`, all unit-tested.
- * This file picks the files or the destination, reads and writes the local
- * disk through `vscode.workspace.fs`, shows progress, and reports.
+ * A thin `vscode` shell. {@link uploadFiles} and {@link downloadItem} talk to
+ * a view only through a {@link TransferEndpoint}: create a file with its
+ * bytes, plan a download, read a file's bytes, and word a problem. SAS
+ * Content's endpoint is {@link contentTransferEndpoint}, over
+ * `ContentAdapter.createFile` and `downloadFileContent` and
+ * `src/content/transfer.ts`'s `planDownload`; the SAS Server view's is in
+ * `src/server/serverCommands.ts`. What a folder download writes is decided by
+ * the shared planner, unit-tested. This file picks the files or the
+ * destination, reads and writes the local disk through `vscode.workspace.fs`,
+ * shows progress, and reports.
  *
  * Every file is attempted even when an earlier one fails, so one name clash
  * does not strand the rest; the summary says how many made it, and the log
@@ -28,7 +33,7 @@
 
 import * as vscode from "vscode";
 
-import { MAX_TRANSFER_BYTES } from "./adapter";
+import { MAX_TRANSFER_BYTES, type ContentAdapter } from "./adapter";
 import { type ContentCommandDeps } from "./contentCommands";
 import { localiseContentProblem, reportNoTarget } from "./messages";
 import { describeContentProblem, type ContentProblem } from "./problems";
@@ -36,6 +41,7 @@ import {
   isDownloadable,
   isSafeLocalName,
   planDownload,
+  type DownloadPlan,
   type SkipReason,
 } from "./transfer";
 import { type ContentItem } from "./types";
@@ -57,17 +63,96 @@ export function registerContentTransferCommands(
   );
 }
 
-/** One file that did not transfer, and the localised reason. */
-interface Failure {
-  readonly name: string;
-  readonly message: string;
-}
+/** A view call's outcome, as both adapters' results satisfy it. */
+export type TransferOutcome<T, P> =
+  | { readonly ok: true; readonly value: T }
+  | { readonly ok: false; readonly problem: P };
 
 /**
- * "Upload Files…" on a folder. Picks one or more local files and creates each
- * in `folder` with its bytes. A name already taken in the folder is refused by
- * the adapter's own name check, before anything is sent.
+ * What {@link uploadFiles} and {@link downloadItem} need from a view. `I` is
+ * an item in its tree, `S` what a file's bytes are read from, `P` a problem.
  */
+export interface TransferEndpoint<I, S, P> {
+  /** Starts each log line, as `SAS Content` or `SAS Server`. */
+  readonly logLabel: string;
+  /** The largest file an upload sends. */
+  readonly maxUploadBytes: number;
+  /** Why a file over {@link maxUploadBytes} was not uploaded. */
+  readonly uploadTooLarge: string;
+  readonly log: vscode.LogOutputChannel;
+  nameOf(item: I): string;
+  /** Creates `name` in `folder` holding `bytes`. A name already taken is
+   * refused, not overwritten. */
+  createFile(
+    folder: I,
+    name: string,
+    bytes: Uint8Array,
+    signal: AbortSignal,
+  ): Promise<TransferOutcome<unknown, P>>;
+  planDownload(
+    item: I,
+    signal: AbortSignal,
+  ): Promise<TransferOutcome<DownloadPlan<S>, P>>;
+  readFile(
+    source: S,
+    signal: AbortSignal,
+  ): Promise<TransferOutcome<Uint8Array, P>>;
+  /** Why `item` cannot be downloaded at all, as a sentence for the user, or
+   * `undefined` when it can. Checked before the folder picker opens. */
+  downloadObjection(item: I): string | undefined;
+  /** The problem as a sentence for the user. */
+  problemMessage(problem: P): string;
+  /** The problem as a log fragment. */
+  describeProblem(problem: P): string;
+  /** Reloads `folder` in the tree after an upload. */
+  refresh(folder: I): void;
+}
+
+/** SAS Content's {@link TransferEndpoint}. */
+export function contentTransferEndpoint(
+  deps: ContentCommandDeps,
+  adapter: ContentAdapter,
+): TransferEndpoint<ContentItem, string, ContentProblem> {
+  return {
+    logLabel: "SAS Content",
+    maxUploadBytes: MAX_TRANSFER_BYTES,
+    uploadTooLarge: vscode.l10n.t(
+      "It is larger than the {0} MB SAS Viya accepts for one file.",
+      String(MAX_TRANSFER_BYTES / (1024 * 1024)),
+    ),
+    log: deps.log,
+    nameOf: (item) => item.name,
+    createFile: (folder, name, bytes, signal) =>
+      adapter.createFile(folder, name, signal, bytes),
+    planDownload: (item, signal) => planDownload(adapter, item, signal),
+    readFile: async (href, signal) => {
+      const result = await adapter.downloadFileContent(href, signal);
+      return result.ok ? { ok: true, value: result.value.bytes } : result;
+    },
+    downloadObjection: (item) => {
+      if (!isDownloadable(item)) {
+        return vscode.l10n.t(
+          '"{0}" can\'t be downloaded. Only files and folders can be.',
+          item.name,
+        );
+      }
+      if (!isSafeLocalName(item.name)) {
+        return vscode.l10n.t(
+          '"{0}" can\'t be saved under that name on this computer. Rename it in SAS Content first.',
+          item.name,
+        );
+      }
+      return undefined;
+    },
+    problemMessage: transferProblemMessage,
+    describeProblem: describeContentProblem,
+    refresh: (folder) => {
+      deps.refresh(folder);
+    },
+  };
+}
+
+/** "Upload Files…" on a SAS Content folder. */
 export async function upload(
   deps: ContentCommandDeps,
   folder: ContentItem | undefined,
@@ -77,9 +162,40 @@ export async function upload(
     reportNoTarget(adapter);
     return;
   }
+  await uploadFiles(contentTransferEndpoint(deps, adapter), folder);
+}
 
+/** "Download…" on a SAS Content file or folder. */
+export async function download(
+  deps: ContentCommandDeps,
+  item: ContentItem | undefined,
+): Promise<void> {
+  const adapter = deps.adapter();
+  if (adapter === undefined || item === undefined) {
+    reportNoTarget(adapter);
+    return;
+  }
+  await downloadItem(contentTransferEndpoint(deps, adapter), item);
+}
+
+/** One file that did not transfer, and the localised reason. */
+interface Failure {
+  readonly name: string;
+  readonly message: string;
+}
+
+/**
+ * Picks one or more local files and creates each in `folder` with its bytes.
+ * A name already taken in the folder is refused by the endpoint, not
+ * overwritten.
+ */
+export async function uploadFiles<I, S, P>(
+  endpoint: TransferEndpoint<I, S, P>,
+  folder: I,
+): Promise<void> {
+  const folderName = endpoint.nameOf(folder);
   const picked = await vscode.window.showOpenDialog({
-    title: vscode.l10n.t('Upload files to "{0}"', folder.name),
+    title: vscode.l10n.t('Upload files to "{0}"', folderName),
     openLabel: vscode.l10n.t("Upload"),
     canSelectFiles: true,
     canSelectFolders: false,
@@ -93,9 +209,10 @@ export async function upload(
   let cancelled = false as boolean;
   const fail = (name: string, message: string, technical: string): void => {
     failures.push({ name, message });
-    deps.log.error(
+    endpoint.log.error(
       vscode.l10n.t(
-        'SAS Content: upload of "{0}" failed: {1}',
+        '{0}: upload of "{1}" failed: {2}',
+        endpoint.logLabel,
         name,
         technical,
       ),
@@ -103,7 +220,7 @@ export async function upload(
   };
 
   await withTransferProgress(
-    vscode.l10n.t('Uploading to "{0}"', folder.name),
+    vscode.l10n.t('Uploading to "{0}"', folderName),
     async (progress, signal) => {
       for (const [index, uri] of picked.entries()) {
         if (aborted(signal)) {
@@ -129,8 +246,8 @@ export async function upload(
           // memory at all; the length is checked again after the read in case
           // the file grew in between.
           const stat = await vscode.workspace.fs.stat(uri);
-          if (stat.size > MAX_TRANSFER_BYTES) {
-            fail(name, tooLargeToUpload(), `${String(stat.size)} bytes`);
+          if (stat.size > endpoint.maxUploadBytes) {
+            fail(name, endpoint.uploadTooLarge, `${String(stat.size)} bytes`);
             continue;
           }
           bytes = await vscode.workspace.fs.readFile(uri);
@@ -142,12 +259,16 @@ export async function upload(
           );
           continue;
         }
-        if (bytes.byteLength > MAX_TRANSFER_BYTES) {
-          fail(name, tooLargeToUpload(), `${String(bytes.byteLength)} bytes`);
+        if (bytes.byteLength > endpoint.maxUploadBytes) {
+          fail(
+            name,
+            endpoint.uploadTooLarge,
+            `${String(bytes.byteLength)} bytes`,
+          );
           continue;
         }
 
-        const result = await adapter.createFile(folder, name, signal, bytes);
+        const result = await endpoint.createFile(folder, name, bytes, signal);
         if (result.ok) {
           uploaded += 1;
         } else if (aborted(signal)) {
@@ -156,15 +277,15 @@ export async function upload(
         } else {
           fail(
             name,
-            transferProblemMessage(result.problem),
-            describeContentProblem(result.problem),
+            endpoint.problemMessage(result.problem),
+            endpoint.describeProblem(result.problem),
           );
         }
       }
     },
   );
 
-  deps.refresh(folder);
+  endpoint.refresh(folder);
 
   if (cancelled) {
     let message: string;
@@ -172,18 +293,18 @@ export async function upload(
     // aborted, so with one file picked nothing was uploaded, and there is no
     // count worth giving.
     if (picked.length === 1) {
-      message = vscode.l10n.t('Upload to "{0}" cancelled.', folder.name);
+      message = vscode.l10n.t('Upload to "{0}" cancelled.', folderName);
     } else if (failures.length === 0) {
       message = vscode.l10n.t(
         'Upload to "{0}" cancelled. {1} of {2} files were uploaded.',
-        folder.name,
+        folderName,
         String(uploaded),
         String(picked.length),
       );
     } else {
       message = vscode.l10n.t(
         'Upload to "{0}" cancelled. {1} of {2} files were uploaded, and {3} could not be. See the Python on Viya log for details.',
-        folder.name,
+        folderName,
         String(uploaded),
         String(picked.length),
         String(failures.length),
@@ -198,11 +319,11 @@ export async function upload(
     // No failure and no cancel: every picked file was uploaded.
     void vscode.window.showInformationMessage(
       uploaded === 1
-        ? vscode.l10n.t('Uploaded 1 file to "{0}".', folder.name)
+        ? vscode.l10n.t('Uploaded 1 file to "{0}".', folderName)
         : vscode.l10n.t(
             'Uploaded {0} files to "{1}".',
             String(uploaded),
-            folder.name,
+            folderName,
           ),
     );
     return;
@@ -219,7 +340,7 @@ export async function upload(
       'Uploaded {0} of {1} files to "{2}". Could not upload "{3}". {4}',
       String(uploaded),
       String(picked.length),
-      folder.name,
+      folderName,
       first.name,
       first.message,
     );
@@ -228,48 +349,31 @@ export async function upload(
       'Uploaded {0} of {1} files to "{2}". The rest could not be uploaded. See the Python on Viya log for details.',
       String(uploaded),
       String(picked.length),
-      folder.name,
+      folderName,
     );
   }
   void vscode.window.showErrorMessage(message);
 }
 
 /**
- * "Download…" on a file or folder. Picks a local folder and writes the item
- * into it under its own name — a folder with everything below it. Asks first
- * when something of that name is already there; replacing a folder overwrites
- * the files the download brings and leaves everything else in it alone.
+ * Picks a local folder and writes `item` into it under its own name — a
+ * folder with everything below it. Asks first when something of that name is
+ * already there; replacing a folder overwrites the files the download brings
+ * and leaves everything else in it alone.
  */
-export async function download(
-  deps: ContentCommandDeps,
-  item: ContentItem | undefined,
+export async function downloadItem<I, S, P>(
+  endpoint: TransferEndpoint<I, S, P>,
+  item: I,
 ): Promise<void> {
-  const adapter = deps.adapter();
-  if (adapter === undefined || item === undefined) {
-    reportNoTarget(adapter);
-    return;
-  }
-  if (!isDownloadable(item)) {
-    void vscode.window.showErrorMessage(
-      vscode.l10n.t(
-        '"{0}" can\'t be downloaded. Only files and folders can be.',
-        item.name,
-      ),
-    );
-    return;
-  }
-  if (!isSafeLocalName(item.name)) {
-    void vscode.window.showErrorMessage(
-      vscode.l10n.t(
-        '"{0}" can\'t be saved under that name on this computer. Rename it in SAS Content first.',
-        item.name,
-      ),
-    );
+  const itemName = endpoint.nameOf(item);
+  const objection = endpoint.downloadObjection(item);
+  if (objection !== undefined) {
+    void vscode.window.showErrorMessage(objection);
     return;
   }
 
   const picked = await vscode.window.showOpenDialog({
-    title: vscode.l10n.t('Download "{0}"', item.name),
+    title: vscode.l10n.t('Download "{0}"', itemName),
     openLabel: vscode.l10n.t("Download Here"),
     canSelectFiles: false,
     canSelectFolders: true,
@@ -278,22 +382,23 @@ export async function download(
   const destination = picked?.[0];
   if (destination === undefined) return;
 
-  const target = vscode.Uri.joinPath(destination, item.name);
+  const target = vscode.Uri.joinPath(destination, itemName);
   let present: boolean;
   try {
     present = await exists(target);
   } catch (error) {
-    deps.log.error(
+    endpoint.log.error(
       vscode.l10n.t(
-        'SAS Content: download of "{0}" failed: {1}',
-        item.name,
+        '{0}: download of "{1}" failed: {2}',
+        endpoint.logLabel,
+        itemName,
         String(error),
       ),
     );
     void vscode.window.showErrorMessage(
       vscode.l10n.t(
         'Could not download "{0}". The folder you chose could not be checked.',
-        item.name,
+        itemName,
       ),
     );
     return;
@@ -303,7 +408,7 @@ export async function download(
     const answer = await vscode.window.showWarningMessage(
       vscode.l10n.t(
         '"{0}" already exists in the folder you chose. Replace it?',
-        item.name,
+        itemName,
       ),
       {
         modal: true,
@@ -324,9 +429,10 @@ export async function download(
   let cancelled = false as boolean;
   const fail = (name: string, message: string, technical: string): void => {
     failures.push({ name, message });
-    deps.log.error(
+    endpoint.log.error(
       vscode.l10n.t(
-        'SAS Content: download of "{0}" failed: {1}',
+        '{0}: download of "{1}" failed: {2}',
+        endpoint.logLabel,
         name,
         technical,
       ),
@@ -334,17 +440,17 @@ export async function download(
   };
 
   await withTransferProgress(
-    vscode.l10n.t('Downloading "{0}"', item.name),
+    vscode.l10n.t('Downloading "{0}"', itemName),
     async (progress, signal) => {
-      const plan = await planDownload(adapter, item, signal);
+      const plan = await endpoint.planDownload(item, signal);
       if (!plan.ok) {
         if (aborted(signal)) {
           cancelled = true;
         } else {
           fail(
-            item.name,
-            transferProblemMessage(plan.problem),
-            describeContentProblem(plan.problem),
+            itemName,
+            endpoint.problemMessage(plan.problem),
+            endpoint.describeProblem(plan.problem),
           );
         }
         return;
@@ -362,7 +468,7 @@ export async function download(
         }
       } catch (error) {
         fail(
-          item.name,
+          itemName,
           vscode.l10n.t("A folder could not be created on this computer."),
           String(error),
         );
@@ -372,9 +478,10 @@ export async function download(
       // Counted only once the folders exist, so a download that stops before
       // then reports no file count and nothing left out.
       for (const skip of plan.value.skipped) {
-        deps.log.warn(
+        endpoint.log.warn(
           vscode.l10n.t(
-            'SAS Content: "{0}" was not downloaded: {1}',
+            '{0}: "{1}" was not downloaded: {2}',
+            endpoint.logLabel,
             skip.path.join("/"),
             describeSkip(skip.reason),
           ),
@@ -399,7 +506,7 @@ export async function download(
           increment: 100 / total,
         });
 
-        const result = await adapter.downloadFileContent(file.href, signal);
+        const result = await endpoint.readFile(file.source, signal);
         if (!result.ok) {
           if (aborted(signal)) {
             cancelled = true;
@@ -407,15 +514,15 @@ export async function download(
           }
           fail(
             name,
-            transferProblemMessage(result.problem),
-            describeContentProblem(result.problem),
+            endpoint.problemMessage(result.problem),
+            endpoint.describeProblem(result.problem),
           );
           continue;
         }
         try {
           await vscode.workspace.fs.writeFile(
             vscode.Uri.joinPath(destination, ...file.path),
-            result.value.bytes,
+            result.value,
           );
           written += 1;
         } catch (error) {
@@ -435,18 +542,18 @@ export async function download(
     // aborted, so with one file or none nothing was downloaded, and there is
     // no count worth giving.
     if (total <= 1) {
-      message = vscode.l10n.t('Download of "{0}" cancelled.', item.name);
+      message = vscode.l10n.t('Download of "{0}" cancelled.', itemName);
     } else if (failures.length === 0) {
       message = vscode.l10n.t(
         'Download of "{0}" cancelled. {1} of {2} files were downloaded.',
-        item.name,
+        itemName,
         String(written),
         String(total),
       );
     } else {
       message = vscode.l10n.t(
         'Download of "{0}" cancelled. {1} of {2} files were downloaded, and {3} could not be. See the Python on Viya log for details.',
-        item.name,
+        itemName,
         String(written),
         String(total),
         String(failures.length),
@@ -470,7 +577,7 @@ export async function download(
         'Downloaded {0} of {1} files from "{2}". Could not download "{3}". {4}',
         String(written),
         String(total),
-        item.name,
+        itemName,
         first.name,
         first.message,
       );
@@ -479,7 +586,7 @@ export async function download(
         'Downloaded {0} of {1} files from "{2}". The rest could not be downloaded. See the Python on Viya log for details.',
         String(written),
         String(total),
-        item.name,
+        itemName,
       );
     }
     void vscode.window.showErrorMessage(withLeftOut(message, skipped));
@@ -491,14 +598,14 @@ export async function download(
     written === 0 && skipped === 0
       ? vscode.l10n.t(
           'Downloaded "{0}". It has no files, so only its folders were created.',
-          item.name,
+          itemName,
         )
       : written === 1
-        ? vscode.l10n.t('Downloaded 1 file from "{0}".', item.name)
+        ? vscode.l10n.t('Downloaded 1 file from "{0}".', itemName)
         : vscode.l10n.t(
             'Downloaded {0} files from "{1}".',
             String(written),
-            item.name,
+            itemName,
           );
   const reveal = vscode.l10n.t("Show in Folder");
   const choice = await vscode.window.showInformationMessage(
@@ -571,13 +678,6 @@ async function exists(uri: vscode.Uri): Promise<boolean> {
   }
 }
 
-function tooLargeToUpload(): string {
-  return vscode.l10n.t(
-    "It is larger than the {0} MB SAS Viya accepts for one file.",
-    String(MAX_TRANSFER_BYTES / (1024 * 1024)),
-  );
-}
-
 /**
  * {@link localiseContentProblem}, with two changes for a transfer:
  *
@@ -638,6 +738,14 @@ function describeSkip(reason: SkipReason): string {
     case "already-listed":
       return vscode.l10n.t(
         "it is the same folder as one already downloaded elsewhere in the tree",
+      );
+    case "too-deep":
+      return vscode.l10n.t(
+        "it is nested too deeply to download; a link may loop back to a folder above it",
+      );
+    case "listing-truncated":
+      return vscode.l10n.t(
+        "only part of it was; the folder has more entries than can be listed, and the rest were left out",
       );
   }
 }

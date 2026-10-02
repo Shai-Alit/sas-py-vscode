@@ -465,3 +465,171 @@ for name, text in [(".hidden", "x
   SAS server since you opened it*. Do not choose **Overwrite**. Close the
   tab without saving and reopen it. **Expect:** `changed`. Clean up: run
   `import os; os.remove("/tmp/sv-cmp.py")`.
+
+## 13p-ii — the SAS Server view: changing files
+
+See `docs/phases/phase-13.md`'s "13p-ii built" Runbook entry.
+
+**Before you start**
+
+1. Build a `.vsix` from this branch, install it, sign in and connect.
+2. On your computer, make a folder holding two small text files, `up1.txt`
+   and `up2.txt`. 13.59 uploads them.
+3. Open any local `.py` file, paste the code below, select it, and run
+   **Python on Viya: Run Selection**. It makes `/tmp/sv2` holding `a.py`
+   and a folder `sub` with `b.txt` inside.
+
+   ```python
+   import os
+   os.makedirs("/tmp/sv2/sub", exist_ok=True)
+   open("/tmp/sv2/a.py", "w").write("print('a')\n")
+   open("/tmp/sv2/sub/b.txt", "w").write("b\n")
+   ```
+
+4. In the SAS Server view, press the refresh button, then expand `tmp`,
+   then `sv2`.
+
+The items below run in order; each one starts from where the last one
+left off.
+
+### 13.54 — Menus
+
+- [x] **13.54** Each item's right-click menu shows only what applies to it.
+
+1. Right-click `Home`.
+   - Expect: Download... and Copy Path only. No New Folder, New File,
+     Upload Files..., Rename or Delete (the top folder is read-only).
+2. Right-click `sv2`.
+   - Expect: all seven: New Folder, New File, Upload Files...,
+     Download..., Copy Path, Rename, Delete.
+3. Right-click `a.py`.
+   - Expect: Download..., Copy Path, Rename and Delete only.
+4. Open the Command Palette and type `SAS Server`.
+   - Expect: none of the new commands are listed.
+
+### 13.55 — New Folder and New File
+
+- [x] **13.55** New items are created, and a bad name is refused.
+
+1. Right-click `sv2` → New Folder. Type `made`, press Enter.
+   - Expect: `made` appears inside `sv2`.
+2. Right-click `sv2` → New File.
+   - Expect: the box shows `untitled.py`, with `untitled` selected.
+3. Type `n.py`, press Enter.
+   - Expect: `n.py` appears inside `sv2`.
+4. Click `n.py`.
+   - Expect: an empty editor opens.
+5. Right-click `sv2` → New Folder. Type `made` again, press Enter.
+   - Expect: an error: `"/tmp/sv2/made" already exists on the SAS server`.
+6. Right-click `sv2` → New Folder. Type `a/b`.
+   - Expect: the box says *A name cannot contain "/".* and Enter does
+     nothing.
+7. Press Escape.
+
+### 13.56 — Rename
+
+- [x] **13.56** Files and folders rename, and a taken name is refused.
+
+1. Right-click `a.py` → Rename.
+   - Expect: the box selects `a`, not `.py`.
+2. Type `a2.py`, press Enter.
+   - Expect: the tree shows `a2.py`.
+3. Right-click `a2.py` → Rename. Type `made`, press Enter.
+   - Expect: an error saying it already exists. `a2.py` is unchanged.
+4. Right-click `sub` → Rename. Type `sub2`, press Enter. Expand `sub2`.
+   - Expect: `b.txt` is inside.
+
+### 13.57 — Move by dragging
+
+- [x] **13.57** Dragging onto a folder moves items there; a drop that makes
+  no sense does nothing.
+
+1. Drag `a2.py` onto `made`.
+   - Expect: `a2.py` is now inside `made`.
+2. Drag `sub2` onto `made`.
+   - Expect: `sub2` is now inside `made`, with `b.txt` still inside it.
+3. Drag `made` onto `made/sub2` (a folder inside itself).
+   - Expect: nothing happens, and no error.
+4. Drag `n.py` onto `sv2` (the folder it is already in).
+   - Expect: nothing happens, and no error.
+5. Drag `Home` onto `made` and drop it there.
+   - Expect: VS Code still shows `Home` being dragged (its tree API cannot
+     stop a drag from starting), but the drop does nothing: no move, no
+     error, and `Home` is still the top folder with everything in place.
+   **(10/1/2026) fail** home drags. I was too afraid to actually drop it onto anything.
+   **Rewritten 2026-10-01:** the old expectation ("it does not drag") was
+   one VS Code cannot meet. Re-run this step.
+   **(10/1/2026) pass** on re-run: the drop did nothing.
+6. Expand `made/sub2`. Click `sub2`, then Ctrl+click `b.txt` inside it, so
+   both are selected. Drag them onto `sv2`.
+   - Expect: `sub2` moves into `sv2` with `b.txt` still inside it, and no
+     error appears.
+7. Drag `sub2` back onto `made`.
+   - Expect: `sub2` is inside `made` again.
+
+### 13.58 — Delete
+
+- [x] **13.58** Delete asks first, and removes a folder with its contents.
+
+1. Right-click `n.py` → Delete.
+   - Expect: a dialog *Permanently delete "n.py"?* that says the server has
+     no recycle bin.
+2. Press Cancel.
+   - Expect: `n.py` is still there.
+3. Right-click `n.py` → Delete, and choose Delete Permanently.
+   - Expect: `n.py` is gone.
+4. Right-click `made` → Delete.
+   - Expect: the dialog says the folder goes *and everything inside it*.
+5. Choose Delete Permanently.
+   - Expect: `made` is gone. `sv2` is now empty.
+
+### 13.59 — Upload
+
+- [x] **13.59** Files upload, and a name already taken is refused.
+
+1. Right-click `sv2` → Upload Files.... Pick `up1.txt` and `up2.txt`.
+   - Expect: the message *Uploaded 2 files to "sv2".* Both files appear.
+2. Click `up1.txt`.
+   - Expect: its content matches your local copy.
+3. Right-click `sv2` → Upload Files.... Pick `up1.txt` only.
+   - Expect: the error *Could not upload "up1.txt". "/tmp/sv2/up1.txt"
+     already exists on the SAS server. Choose another name.* The file on
+     the server is unchanged.
+
+### 13.60 — Download
+
+- [x] **13.60** A folder and a file download, and an existing file is not
+  overwritten without asking.
+
+1. Right-click `sv2` → Download.... Pick an empty local folder.
+   - Expect: the message *Downloaded 2 files from "sv2".* with a Show in
+     Folder button.
+2. Look in the local folder.
+   - Expect: a folder `sv2` holding `up1.txt` and `up2.txt`, the same
+     content as the originals.
+3. Right-click `up1.txt` → Download.... Pick the same local folder.
+   - Expect: a file `up1.txt` appears beside the `sv2` folder.
+4. Download `up1.txt` into the same local folder again.
+   - Expect: a dialog asking whether to replace it.
+
+### 13.61 — Changes while code is running
+
+- [x] **13.61** Changing files doesn't wait for a running program.
+
+1. In a local `.py` file, put `import time; time.sleep(30)` and run
+   **Python on Viya: Run File**.
+2. While it runs, right-click `sv2` → New Folder, and type `busy`.
+   - Expect: `busy` appears at once.
+3. Still while it runs, rename `busy` to `busy2`.
+   - Expect: the rename happens at once.
+4. Still while it runs, delete `busy2`.
+   - Expect: it is gone at once, before the run ends.
+
+### 13.62 — Clean up
+
+- [x] **13.62** Remove what these tests made.
+
+1. Run this as a selection: `import shutil; shutil.rmtree("/tmp/sv2")`.
+2. Press the SAS Server view's refresh button.
+   - Expect: `sv2` is gone from `tmp`.
+3. Delete the local folder you downloaded into in 13.60.

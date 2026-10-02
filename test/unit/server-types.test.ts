@@ -143,7 +143,39 @@ describe("describeServerProblem", () => {
         size: 20,
         limitBytes: 10,
       }),
-      '"/x" is 20 bytes, over the 10-byte editor limit',
+      '"/x" is 20 bytes, over the 10-byte limit',
+    );
+    assert.equal(
+      describeServerProblem({
+        code: "name-taken",
+        path: "/x/a",
+        error: { status: 409 },
+      }),
+      '"/x/a" already exists on the SAS server (HTTP 409)',
+    );
+    assert.equal(
+      describeServerProblem({ code: "invalid-name", name: "a/b" }),
+      '"a/b" is not a name a file or folder can have',
+    );
+    assert.equal(
+      describeServerProblem({
+        code: "invalid-move",
+        path: "/a",
+        target: "/a/b",
+      }),
+      '"/a" cannot be moved into "/a/b"',
+    );
+    assert.equal(
+      describeServerProblem({
+        code: "left-empty",
+        path: "/x/a",
+        cause: {
+          code: "changed-on-server",
+          path: "/x/a",
+          error: { status: 412 },
+        },
+      }),
+      '"/x/a" changed on the SAS server since it was opened (HTTP 412); an empty "/x/a" was left on the SAS server',
     );
     assert.equal(
       describeServerProblem({ code: "no-version", path: "/x" }),

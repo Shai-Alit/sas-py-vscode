@@ -35,6 +35,12 @@ called out under **Changed** with a migration note.
   `fileNavigationRoot` and `fileNavigationCustomRootPath` choose the
   starting folder, and `pythonOnViya.sasServer.showHiddenFiles` shows
   dot-files. See [Browsing the SAS server](docs/browsing-sas-server.md).
+- **Change files in the SAS Server view.** Right-click for **New Folder**,
+  **New File**, **Rename** and **Delete**, and drag a file or folder onto
+  another folder to move it. **Upload Files...** and **Download...** work as
+  they do in SAS Content, up to 100 MB a file. Delete is permanent, after
+  you confirm: the server has no recycle bin. See
+  [Browsing the SAS server](docs/browsing-sas-server.md).
 
 ## [0.1.5] - 2026-09-30
 

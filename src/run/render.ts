@@ -29,10 +29,12 @@
  * here as their own line rather than silently dropped, so the person watching
  * the channel knows their program *did* produce something, and that the
  * extension has not lost it — 3d-ii's Result panel is where it is actually
- * shown.
+ * shown. A DataFrame grid (ADR-0048) is the same table as HTML, and gets the
+ * same line.
  */
 
 import type { RichOutput } from "../backend/backend";
+import { DATAFRAME_GRID_MIME } from "../backend/dataFrameGrid";
 
 /** One line the output channel writes, or the shape of one it defers. */
 export type OutputLine =
@@ -55,6 +57,8 @@ export function renderRichOutput(output: RichOutput): readonly OutputLine[] {
     case "text/html":
     case "image/png":
       return [{ kind: "deferred-rich-output", mime: output.mime }];
+    case DATAFRAME_GRID_MIME:
+      return [{ kind: "deferred-rich-output", mime: "text/html" }];
     case "application/vnd.python.traceback":
       return [];
   }

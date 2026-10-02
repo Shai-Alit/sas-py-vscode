@@ -28,6 +28,11 @@
 import type { Uri } from "vscode";
 
 import type { DialectId, Deployment } from "../dialects/dialect";
+import type {
+  DATAFRAME_GRID_MIME,
+  DataFrameGridFile,
+  DataFrameGridLimits,
+} from "./dataFrameGrid";
 import type { BackendResult } from "./problems";
 
 /**
@@ -101,6 +106,12 @@ export interface ExecuteOptions {
    * the program without it rather than failing the run.
    */
   readonly displayResults?: boolean;
+  /**
+   * With {@link displayResults}, how much of a trailing pandas DataFrame is
+   * shown as a sortable grid (ADR-0048). Absent, or either limit 0, shows it
+   * as before, through `_repr_html_`.
+   */
+  readonly dataFrameGrid?: DataFrameGridLimits;
 }
 
 /**
@@ -212,6 +223,12 @@ export type RichOutput =
   | {
       readonly mime: "application/vnd.python.traceback";
       readonly data: Traceback;
+    }
+  /** A DataFrame's first rows and columns, and its HTML (ADR-0048). The
+   * notebook shows the grid; a surface that cannot shows the HTML. */
+  | {
+      readonly mime: typeof DATAFRAME_GRID_MIME;
+      readonly data: DataFrameGridFile;
     };
 
 /**

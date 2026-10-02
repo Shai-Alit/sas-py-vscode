@@ -16,6 +16,7 @@ import {
   skippedCaptureOutput,
 } from "../../src/backend/richOutput";
 
+import { DATAFRAME_GRID_MIME } from "../../src/backend/dataFrameGrid";
 import { type SessionFile } from "../../src/compute/files";
 import { readFixtureBytes } from "../helpers/fixtures";
 
@@ -50,6 +51,24 @@ describe("richOutputMimeForName", () => {
     assert.equal(richOutputMimeForName("plot.svg"), undefined);
     assert.equal(richOutputMimeForName("table.csv"), undefined);
     assert.equal(richOutputMimeForName("noextension"), undefined);
+  });
+
+  it("recognises the cell runner's grid file by its whole name", () => {
+    assert.equal(
+      richOutputMimeForName("pyviya_PY000042_grid.json"),
+      DATAFRAME_GRID_MIME,
+    );
+    assert.equal(
+      richOutputMimeForName("PYVIYA_PY000042_GRID.JSON"),
+      DATAFRAME_GRID_MIME,
+    );
+  });
+
+  it("does not recognise any other .json name", () => {
+    assert.equal(richOutputMimeForName("data.json"), undefined);
+    assert.equal(richOutputMimeForName("pyviya__grid.json"), undefined);
+    assert.equal(richOutputMimeForName("my_pyviya_x_grid.json"), undefined);
+    assert.equal(richOutputMimeForName("pyviya_x_grid.json.bak"), undefined);
   });
 });
 
@@ -192,7 +211,7 @@ describe("decodeHtml", () => {
   it("decodes UTF-8, the same text decodeRichOutput gives for text/html", () => {
     const bytes = new TextEncoder().encode("<p>café</p>");
     assert.equal(decodeHtml(bytes), "<p>café</p>");
-    assert.deepEqual(decodeRichOutput("text/html", bytes), {
+    assert.deepEqual(decodeRichOutput("text/html", bytes, "t.html"), {
       mime: "text/html",
       data: "<p>café</p>",
     });
@@ -251,7 +270,7 @@ describe("decodeRichOutput", () => {
   it("base64-encodes a real PNG's bytes with no data-URI prefix", () => {
     const bytes = readFixtureBytes("rich-output", "tiny.png");
 
-    const output = decodeRichOutput("image/png", bytes);
+    const output = decodeRichOutput("image/png", bytes, "tiny.png");
 
     assert.equal(output.mime, "image/png");
     assert.ok(!output.data.startsWith("data:"));
@@ -272,10 +291,79 @@ describe("decodeRichOutput", () => {
       "<table><tr><td>café</td></tr></table>",
     );
 
-    const output = decodeRichOutput("text/html", bytes);
+    const output = decodeRichOutput("text/html", bytes, "table.html");
 
     assert.equal(output.mime, "text/html");
     assert.equal(output.data, "<table><tr><td>café</td></tr></table>");
+  });
+
+  describe("a DataFrame grid file (ADR-0048)", () => {
+    // The file as parsed: `format` is checked, and not kept.
+    const file = {
+      rows: 2,
+      columns: 1,
+      fields: [
+        { name: "", kind: "number", index: true },
+        { name: "café", kind: "text", index: false },
+      ],
+      data: [
+        [0, "a"],
+        [1, null],
+      ],
+      html: "<table></table>",
+    };
+    const grid = { format: 1, ...file };
+    const encode = (value: unknown): Uint8Array =>
+      new TextEncoder().encode(JSON.stringify(value));
+
+    it("parses a valid grid into the grid arm, decoding UTF-8", () => {
+      const output = decodeRichOutput(
+        DATAFRAME_GRID_MIME,
+        encode(grid),
+        "pyviya_PY1_grid.json",
+      );
+
+      assert.deepEqual(output, { mime: DATAFRAME_GRID_MIME, data: file });
+    });
+
+    it("drops a field the grid does not know", () => {
+      const output = decodeRichOutput(
+        DATAFRAME_GRID_MIME,
+        encode({ ...grid, extra: "<script>" }),
+        "pyviya_PY1_grid.json",
+      );
+
+      assert.deepEqual(output, { mime: DATAFRAME_GRID_MIME, data: file });
+    });
+
+    it("skips a file that is not JSON, naming it", () => {
+      const output = decodeRichOutput(
+        DATAFRAME_GRID_MIME,
+        new TextEncoder().encode("{not json"),
+        "pyviya_PY1_grid.json",
+      );
+
+      assert.deepEqual(
+        output,
+        skippedCaptureOutput("pyviya_PY1_grid.json", "it is not valid JSON"),
+      );
+    });
+
+    it("skips JSON that is not a grid, with the parser's reason", () => {
+      const output = decodeRichOutput(
+        DATAFRAME_GRID_MIME,
+        encode({ ...grid, html: 1 }),
+        "pyviya_PY1_grid.json",
+      );
+
+      assert.deepEqual(
+        output,
+        skippedCaptureOutput(
+          "pyviya_PY1_grid.json",
+          "it is not a DataFrame grid: its html is not a string",
+        ),
+      );
+    });
   });
 });
 

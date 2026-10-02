@@ -4,9 +4,19 @@
 import assert from "node:assert/strict";
 
 import type { RichOutput } from "../../src/backend/backend";
-import { toNotebookOutputPieces } from "../../src/notebook/notebookRender";
+import { DATAFRAME_GRID_MIME } from "../../src/backend/dataFrameGrid";
+import {
+  toNotebookOutputPieces,
+  type GridExtent,
+  type NotebookOutputLabels,
+} from "../../src/notebook/notebookRender";
 
-const labels = { svgDropped: "[svg dropped]" };
+const labels: NotebookOutputLabels = {
+  svgDropped: "[svg dropped]",
+  gridSummary: (shown, total) =>
+    `${String(shown.rows)}/${String(total.rows)} x ` +
+    `${String(shown.columns)}/${String(total.columns)}`,
+};
 
 describe("notebook/notebookRender", () => {
   describe("toNotebookOutputPieces", () => {
@@ -94,6 +104,66 @@ describe("notebook/notebookRender", () => {
         data: { message: "ZeroDivisionError: division by zero", frames: [] },
       };
       assert.deepEqual(toNotebookOutputPieces(output, labels), []);
+    });
+
+    describe("a DataFrame grid (ADR-0048)", () => {
+      const fields = [
+        { name: "", kind: "number", index: true },
+        { name: "a", kind: "number", index: false },
+        { name: "b", kind: "text", index: false },
+      ] as const;
+      const data = [
+        [0, 1, "x"],
+        [1, null, "y"],
+      ];
+
+      it("is one grid piece: the grid with its summary, and the sanitized HTML", () => {
+        const output: RichOutput = {
+          mime: DATAFRAME_GRID_MIME,
+          data: {
+            rows: 500,
+            columns: 30,
+            fields,
+            data,
+            html: '<table onclick="x()"><script>x()</script></table>',
+          },
+        };
+        assert.deepEqual(toNotebookOutputPieces(output, labels), [
+          {
+            kind: "grid",
+            grid: {
+              format: 1,
+              rows: 500,
+              columns: 30,
+              fields,
+              data,
+              summary: "2/500 x 2/30",
+            },
+            markup: "<table></table>",
+          },
+        ]);
+      });
+
+      it("counts the shown rows and the shown columns, not the index levels", () => {
+        const calls: [GridExtent, GridExtent][] = [];
+        const output: RichOutput = {
+          mime: DATAFRAME_GRID_MIME,
+          data: { rows: 2, columns: 2, fields, data, html: "" },
+        };
+        toNotebookOutputPieces(output, {
+          ...labels,
+          gridSummary: (shown, total) => {
+            calls.push([shown, total]);
+            return "";
+          },
+        });
+        assert.deepEqual(calls, [
+          [
+            { rows: 2, columns: 2 },
+            { rows: 2, columns: 2 },
+          ],
+        ]);
+      });
     });
   });
 });

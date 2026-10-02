@@ -200,7 +200,11 @@ where `PROC PYTHON` actually hurts.
   frames (ADR-0046, Findings 13.16–13.19). Merged 2026-10-01 as
   [PR #238](https://github.com/Shai-Alit/sas-py-vscode/pull/238), squash
   `e42decb`. See "13f built" below.
-- [ ] **13g — F8, DataFrame grid.** Added 2026-09-24. Not started.
+- [x] **13g — F8, DataFrame grid.** Added 2026-09-24. Built 2026-10-01 on
+  `feat/13g-dataframe-grid`: a trailing DataFrame shows as a sortable grid
+  inline in a notebook or interactive-window cell, from a payload the cell
+  runner writes (ADR-0048, Finding 13.35). Review answered and manual
+  items 13.63–13.74 passed. See "13g built" below.
 - [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
 - [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
@@ -234,10 +238,11 @@ where `PROC PYTHON` actually hurts.
     squash `902f455`; manual items 13.43–13.52 passed
     2026-10-01; adversarial review answered; manual item 13.53, which it
     added, passed 2026-10-01. See "13p-i built" below.
-  - [ ] **13p-ii — Changing files.** New File/Folder, Rename, Move, Delete,
+  - [x] **13p-ii — Changing files.** New File/Folder, Rename, Move, Delete,
     Upload/Download. Built 2026-10-01 on `feat/13p-ii-server-changes`
-    (Findings 13.30–13.34, manual items 13.54–13.62). See "13p-ii built"
-    below.
+    (Findings 13.30–13.34, manual items 13.54–13.62). Merged 2026-10-01 as
+    [PR #240](https://github.com/Shai-Alit/sas-py-vscode/pull/240), squash
+    `453cb84`. See "13p-ii built" below.
 
 ### Scope extended, 2026-09-24
 
@@ -1512,6 +1517,169 @@ in `serverDragAndDrop.ts`'s header was corrected to match. No code changed.
 Sean re-ran the rewritten step the same day and it passed, so 13.57 and
 every 13p-ii manual item is ticked.
 
+### 13g built, 2026-10-01 — a trailing DataFrame is a sortable grid
+
+**What it does.** A notebook or interactive-window cell whose last
+expression is a pandas DataFrame shows it as a sortable grid, inline in the
+cell, instead of 13f's static HTML table. Clicking a column header sorts
+the rows shown. A summary line above the grid gives the rows and columns
+shown out of the DataFrame's own. When rows were left out, it says
+"sorting applies to the rows shown". **Change Presentation** offers pandas'
+HTML, which is also what a saved `.ipynb` shows in Jupyter or on GitHub.
+Two settings, `pythonOnViya.notebook.dataFrameGrid.maxRows` (default 100,
+at most 5,000) and `.maxColumns` (default 20, at most 200), set the caps;
+0 in either turns the grid off. A Series, a Styler and every other value
+take 13f's path unchanged. Recorded in
+[ADR-0048](../adr/0048-a-trailing-dataframe-is-a-sortable-grid.md), which
+amends ADR-0046, ADR-0019 and ADR-0015.
+
+**Sean's choices, 2026-10-01.**
+
+- The grid sits inline in the cell, not in the data viewer panel.
+- It shows first, with the HTML under Change Presentation.
+- It covers notebook and interactive-window cells.
+- Sorting is over the captured rows only, and the summary line says so,
+  rather than re-querying the session.
+
+**Probe.** Approved by Sean, the same day: Finding 13.35. pandas'
+`to_json` loses precision and information on ordinary data, and raises on a
+column of `bytes`, so the cell runner writes its own encoding. Both probe
+sessions were deleted and read back as `404`.
+
+**Code.**
+
+- `src/backend/dataFrameGrid.ts` (new, imports nothing at run time) holds:
+  - the mime and the payload types;
+  - the limits and their settings' fallback;
+  - the one parser the host and the renderer share.
+
+  The parser bounds every count by the payload's stated counts and the
+  settings' maximums. It also caps index levels at 32 and every string at
+  2,002 UTF-16 units.
+- `src/backend/cellRunner.ts`: the runner tries a grid before the display
+  protocol when two things hold:
+  - the value is a `pandas.DataFrame`, checked against `sys.modules` and
+    never imported;
+  - both caps are above 0.
+
+  Any failure, or a payload over 10 MiB, removes the partial file, writes
+  one `stderr` line, and falls back to 13f's order. The job passes the caps
+  as `PYVIYA_GRID_ROWS` and `PYVIYA_GRID_COLS`, written as 0 when invalid.
+- `src/backend/richOutput.ts` and `procPython.ts`: the whitelist admits
+  `pyviya_<id>_grid.json`; the file is parsed before it becomes a
+  `RichOutput`. `ExecuteOptions` gains `dataFrameGrid` (`backend.ts`).
+- `src/notebook/notebookRender.ts` and `notebookController.ts`: a grid
+  output carries two items:
+  - the grid JSON, with the localised summary line;
+  - the HTML, sanitised under ADR-0036.
+- `src/notebook/dataFrameGridModel.ts` (new): columns, rows, cell text, and
+  the sort comparator. The comparator puts missing values first, orders big
+  integers and infinities by value, and orders text by code unit, as Python
+  compares `str`.
+- `src/webview/dataFrameGridRenderer.ts` (new): the ESM
+  `notebookRenderer`, ag-grid 36 with VS Code's theme variables, built to
+  `dist/renderer/dataFrameGrid.js` with `requiresMessaging: "never"`.
+  Excluded from coverage by ADR-0009's browser-only rule.
+- The output channel gets ADR-0019's placeholder and the result panel the
+  HTML (`src/run/render.ts`, `resultPanelModel.ts`); neither path sets the
+  caps today.
+- `package.json`, `package.nls.json`, `esbuild.mjs`,
+  `tsconfig.webview.json`, `.c8rc.json`, `scripts/check-package.mjs`: the
+  renderer contribution, the two settings, the bundle and its package
+  check.
+
+**Decisions made while building.**
+
+- **The payload's version field is `format`**, not `version`. The lint rule
+  that confines version comparisons to `src/dialects/` caught the first
+  name, and a payload format is not a Viya version.
+- **A grid file that fails to parse is left in place**, like any other
+  skipped file. The first build deleted it.
+- **The settings-to-job wiring is unit-tested, not integration-tested.** The
+  recorded-connection helper does not record job code, and extending it was
+  out of scope. Manual item 13.66 covers the wiring end to end.
+
+**Tests.**
+
+- New: `test/unit/dataframe-grid.test.ts` and
+  `dataframe-grid-model.test.ts`.
+- Grid cases added to `backend-rich-output`, `notebook-render`,
+  `run-render`, `result-panel-model` and `proc-python-backend`.
+- Two integration tests in `test/integration/notebook/execution.test.ts`.
+
+**Docs.**
+
+- `docs/notebooks.md`: "A DataFrame as a grid", and the two new reserved
+  names.
+- `docs/reference/settings.md`, regenerated.
+- `CHANGELOG.md`.
+
+**Adversarial review, 2026-10-01** (VS Code window, before any push).
+Five findings, each checked here:
+
+1. **"VS Code shows the HTML first."** Wrong on inspection. VS Code's
+   `MimeTypeDisplayOrder.sort` (`notebookCommon.ts` on `main`, read
+   2026-10-01) sorts the mime types the user's `notebook.displayOrder`
+   does not list by their index in `NOTEBOOK_DISPLAY_ORDER`. A type
+   missing from that list has index -1, so it sorts ahead of `text/html`
+   (index 2). The claim it raised was loosely worded, though: ADR-0048,
+   `notebookRender.ts` and `docs/notebooks.md` now say that the setting,
+   or a Change Presentation choice earlier in the window, can put the
+   HTML first. Manual item 13.63 checks it on a real window.
+2. **A long `MultiIndex` label lost the value.** Real. The runner cut
+   each part of a tuple label but not the joined label, so three long
+   parts made a name the host's parser refuses, after the runner had
+   already written the grid and skipped the fallback. The runner now
+   cuts the joined label, and fails the grid on more than
+   `MAX_DATAFRAME_INDEX_LEVELS` (32) index levels, now shared with the
+   parser, so it never writes a grid the host rejects. A host-side
+   fallback to the file's `html` was not added: it would change
+   ADR-0048's point 5, and the runner fix removes the cause. Manual item
+   13.72 checks a long label.
+3. **The don't-delete check leaned on `text/plain`.** Real, minor.
+   `procPython.ts` now leaves a file in place only when it was a grid
+   candidate that did not decode as a grid. Leaving it in place is
+   kept: every other skipped file is, too.
+4. **Missing ag-grid modules.** Checked against ag-grid 36.0.2's
+   source: `ClientSideRowModelModule` depends on the sort module,
+   `cellClass` and `cellStyle` need `CellStyleModule`, and
+   `autoSizeStrategy` needs `ColumnAutoSizeModule`. All three are
+   registered; `headerClass` and `enableCellTextSelection` need none.
+   No change. Manual item 13.63 watches the console.
+5. **A number column's sort could be inconsistent** with a
+   non-numeric string, which only a hand-edited notebook holds. Real,
+   harmless. Such a string now sorts after every number.
+
+Found while checking them: the summary line is above the grid, not
+under it, and a Series shows as text, not HTML. `docs/notebooks.md`,
+this entry and the manual items are corrected.
+
+**Status.** Built 2026-10-01 on `feat/13g-dataframe-grid`. Before the
+review, `npm run verify` was green (2,212 unit tests; coverage 96.59%
+statements, 96.29% branches, 96.47% functions, 96.59% lines) and
+`npm run test:integration` was green (595 passing). After the review's
+fixes, `npm run verify` is green again (2,212 unit tests; coverage 96.59%
+statements, 96.30% branches, 96.47% functions, 96.59% lines); the
+integration suite was not re-run, since no fix touches a path it drives.
+
+**Manual pass, 2026-10-01.** Sean ran 13.63–13.74 against a `.vsix` built
+from this branch. All passed. On 13.63's step 3 the Console showed no
+ag-grid error. On 13.67, the dates and times showed as expected; see the
+"Since settled" note under Finding 13.35. On 13.73's step 4, the saved
+notebook held both mime types for each grid. Whether a Jupyter or GitHub
+preview was checked was not recorded.
+
+**Renumbered, 2026-10-01,** when 13p-ii merged to `main` as
+[PR #240](https://github.com/Shai-Alit/sas-py-vscode/pull/240) while this
+branch was open. 13p-ii took Findings 13.30–13.34 and manual items
+13.54–13.62, so this branch's finding moved from 13.30 to 13.35, and its
+manual items from 13.54–13.65 to 13.63–13.74, everywhere they are cited.
+
+**Verify after reconciling PR #240, 2026-10-01:** `npm run verify` green
+(2,263 unit tests; coverage 96.67% statements, 96.36% branches, 96.62%
+functions, 96.67% lines); `npm run test:integration` green (623 passing);
+`npm run check:docs` green.
+
 ---
 
 ## Probe findings
@@ -1520,7 +1688,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.35.
+finding is 13.36.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -2437,3 +2605,67 @@ read-only folder gets a misleading `404`, so the view does not offer one.
 
 **Not settled:** where between 110 MiB and anything larger the compute
 server stops; a `readOnly` folder other than `/`.
+
+### Finding 13.35 — pandas' `to_json` rounds, merges and drops; the runner needs its own encoding (2026-10-01)
+
+**Documented:** `DataFrame.to_json(orient="split")` writes `columns`,
+`index` and `data`. `NaN` and `None` are written as `null`. With
+`date_format="iso"`, dates are ISO 8601 at `date_unit` precision (default
+`"ms"`). `default_handler` is called for an object `to_json` cannot
+otherwise convert.
+
+**Observed (`verde`, pandas 3.0.5, numpy 2.5.3, Python 3.12.12,
+2026-10-01).** A probe job ran
+`to_json(orient="split", date_format="iso", default_handler=str)` on test
+frames:
+
+- **Large integers.** An `int64` column holding `9007199254740993`
+  (2^53 + 1) and `-4611686018427387904` was written as those exact digits.
+  Python's `json.loads` reads them back exactly. JavaScript's `JSON.parse`
+  would round 2^53 + 1: that is how the language works, not something the
+  probe observed.
+- **Missing and infinite values.** A float column of `NaN` and one holding
+  `-inf` were both written `null`, so `NaN`, `inf` and `-inf` become
+  indistinguishable.
+- **Bytes.** A column holding `b"\x00\xff"` raised `UnicodeDecodeError`.
+- **Nanoseconds.** A datetime with nanoseconds was written
+  `2026-01-02T03:04:05.123`.
+- **Index names.** An index named `id`, and a two-level index named `k` and
+  `n`, were written without their names.
+- **Column labels.** A tuple column label became the array `[1, 2]`.
+  Duplicate labels were accepted.
+- **Dtypes.** Column dtypes printed as `datetime64[us]`,
+  `datetime64[us, America/New_York]` and `timedelta64[us]`.
+- **Styler.** `df.style` is not a `DataFrame`. `isinstance` against
+  `sys.modules["pandas"].DataFrame` tells them apart.
+- **An unexplained empty result.** A frame holding a naive datetime, a
+  time-zoned one and a timedelta printed nothing for its `to_json` line.
+- **The first session.** It failed before reaching the frames: pandas 3's
+  strict format inference rejected a datetime string the probe had built.
+  The second session built the dates directly.
+
+**What this establishes.** `to_json` is not a safe encoder for a grid. It
+silently merges missing and infinite values, cuts precision, drops index
+names, and raises on ordinary data.
+
+So the cell runner writes its own encoding (ADR-0048, point 2):
+
+- missing values are `null`;
+- in a number column, big integers and infinities are strings;
+- every other value is `str()`.
+
+The runner tells a Styler from a DataFrame with `isinstance`, without
+importing pandas.
+
+**Not settled:**
+
+- Why the datetime frame printed nothing.
+
+**Since settled, 2026-10-01:** whether the runner's own encoder works on
+Viya, which this finding first left open because it had run only against a
+local pandas 3.0.3 harness. Manual items 13.67 and 13.70, on `verde`, saved
+grid payloads holding `2026-01-02 03:04:05.123456789`,
+`2026-01-02 03:04:05-05:00` and `1 days 02:03:04`, with `null` for each
+missing value, and `"9007199254740993"`, `"inf"` and `"-inf"` as strings,
+with `null` for `NaN`. A frame with the same three column kinds as the
+unexplained one encoded without error.

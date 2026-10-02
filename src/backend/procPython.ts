@@ -152,7 +152,9 @@
  * (Finding 13.17). The runner's two frames are dropped from a traceback the
  * same way the harness's `<stdin>` frames are. If the helpers cannot be
  * uploaded, the cell runs the plain way and the failure is logged: showing
- * the result is not worth failing the run over.
+ * the result is not worth failing the run over. `dataFrameGrid`'s limits
+ * reach the runner as two macro variables, and the grid file it writes is
+ * captured like any other output (ADR-0048).
  *
  * ## Traceback wrapper frames are dropped here; editor-position mapping is not
  *
@@ -220,6 +222,7 @@ import {
   isFlushBoundary,
   RUNNER_FUNCTION_NAME,
 } from "./cellRunner";
+import { DATAFRAME_GRID_MIME } from "./dataFrameGrid";
 import {
   ENVIRONMENT_PROBE_FILENAME,
   environmentProbeStatements,
@@ -1344,7 +1347,10 @@ export class ProcPythonBackend implements ExecutionBackend {
       // cell runs through the runner and is followed by the flush (ADR-0046).
       const restart = opts.freshNamespace && !seeding;
       const userStep = display
-        ? [...cellRunnerStatements(filerefName, restart), ...FIGURE_FLUSH_STEP]
+        ? [
+            ...cellRunnerStatements(filerefName, restart, opts.dataFrameGrid),
+            ...FIGURE_FLUSH_STEP,
+          ]
         : [
             `proc python ${restart ? "restart " : ""}infile=${filerefName};`,
             "run;",
@@ -1602,7 +1608,20 @@ export class ProcPythonBackend implements ExecutionBackend {
         (reason) => skippedCaptureOutput(candidate.file.name, reason),
       );
       if (bytes === undefined) continue;
-      relay.push(decodeRichOutput(candidate.mime, bytes));
+      const output = decodeRichOutput(
+        candidate.mime,
+        bytes,
+        candidate.file.name,
+      );
+      relay.push(output);
+      // A grid file that does not parse is skipped, and, like any other
+      // skipped file, left where it is (ADR-0048).
+      if (
+        candidate.mime === DATAFRAME_GRID_MIME &&
+        output.mime !== DATAFRAME_GRID_MIME
+      ) {
+        continue;
+      }
       await this.deleteCapture(run, candidate.file);
     }
 

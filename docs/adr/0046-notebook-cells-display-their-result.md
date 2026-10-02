@@ -1,6 +1,9 @@
 # ADR-0046 — A notebook cell displays its last expression and its open figures, as a Jupyter cell does
 
-- **Status:** Accepted
+- **Status:** Accepted — amended 2026-10-01 by
+  [ADR-0048](0048-a-trailing-dataframe-is-a-sortable-grid.md): when the
+  trailing value is a DataFrame, the cell runner writes a grid payload
+  before it tries the display protocol
 - **Date:** 2026-10-01
 - **Decides:** how a notebook or interactive-window cell shows a bare
   trailing expression's value and any matplotlib figure left open, without

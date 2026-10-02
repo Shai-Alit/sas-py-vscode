@@ -13,8 +13,9 @@
  *
  * - {@link CELL_RUNNER_SOURCE}, in {@link CELL_RUNNER_FILEREF_NAME}, reads the
  *   cell's file, runs every statement but a trailing expression, then
- *   evaluates that expression and displays its value: `_repr_html_` first,
- *   then `_repr_png_`, then `repr()` printed to the log. A trailing `;`
+ *   evaluates that expression and displays its value: a pandas DataFrame
+ *   as a grid (ADR-0048), then `_repr_html_`, then `_repr_png_`, then
+ *   `repr()` printed to the log. A trailing `;`
  *   suppresses it, as in Jupyter. HTML and PNG are written beside the cell's
  *   file, where the ADR-0019 directory diff finds them.
  * - {@link FIGURE_FLUSH_SOURCE}, in {@link FIGURE_FLUSH_FILEREF_NAME}, saves
@@ -40,6 +41,12 @@
 
 import { type LogLine } from "../compute/job";
 
+import {
+  type DataFrameGridLimits,
+  MAX_DATAFRAME_INDEX_LEVELS,
+} from "./dataFrameGrid";
+import { MAX_CAPTURE_BYTES } from "./richOutput";
+
 /** The fileref the cell runner is uploaded to. Outside the `PYnnnnnn` range
  * `procPython.ts` counts, like `PYVSTART`. */
 export const CELL_RUNNER_FILEREF_NAME = "PYVRUN";
@@ -54,6 +61,94 @@ const CELL_PATH_NAME = "PYVIYA_CELL";
  * `<stdin>` frames and the cell's own in every traceback the cell raises
  * (Finding 13.16), and `parseTraceback` drops it. */
 export const RUNNER_FUNCTION_NAME = "_pyviya_run_cell";
+
+/** The macro variables holding the DataFrame grid's row and column caps
+ * (ADR-0048). 0 turns the grid off. */
+const GRID_ROWS_NAME = "PYVIYA_GRID_ROWS";
+const GRID_COLUMNS_NAME = "PYVIYA_GRID_COLS";
+
+/**
+ * The function that encodes a DataFrame's first rows and columns as the grid
+ * file `dataFrameGrid.ts` reads (ADR-0048). Defined inside the runner, so it
+ * never reaches the cell's namespace.
+ *
+ * - A column's kind comes from its dtype. `bool` and `complex` read as text,
+ *   since neither sorts as a number would.
+ * - A missing value is `null`. `pandas.isna` returns an array for a value
+ *   that holds several, such as a list, which is not missing.
+ * - An integer is written exactly up to 2^53 and as its digits beyond it; an
+ *   infinity as `"inf"` or `"-inf"`; anything else as `str()` of it, cut at
+ *   1,000 characters (Finding 13.35).
+ * - A tuple label, from a `MultiIndex`, is joined with `", "` and then cut
+ *   like any other text. Each index level becomes a leading field; more
+ *   than `MAX_DATAFRAME_INDEX_LEVELS` fails the grid. Either way the file
+ *   stays within what the parser accepts, so a DataFrame is never written
+ *   as a grid the host then skips.
+ * - `_repr_html_()` rides along, and its failing fails the grid, so the
+ *   fallback shows the value the way it is shown today.
+ * - `json.dumps` escapes non-ASCII, so a lone surrogate cannot fail the
+ *   encode, and refuses a `NaN` that slipped through.
+ */
+const DATAFRAME_GRID_SOURCE: readonly string[] = [
+  "def grid(value, pandas, rows, columns):",
+  "    import json, math, numbers",
+  "    types = pandas.api.types",
+  "    shown = value.iloc[:rows, :columns]",
+  "    def kind(dtype):",
+  "        if types.is_bool_dtype(dtype) or types.is_complex_dtype(dtype):",
+  '            return "text"',
+  "        if types.is_numeric_dtype(dtype):",
+  '            return "number"',
+  "        if types.is_datetime64_any_dtype(dtype):",
+  '            return "datetime"',
+  '        return "text"',
+  "    def text(item):",
+  "        item = str(item)",
+  '        return item if len(item) <= 1000 else item[:1000] + "…"',
+  "    def cell(item, form):",
+  "        try:",
+  "            missing = pandas.isna(item)",
+  "        except (TypeError, ValueError):",
+  "            missing = False",
+  "        if missing is True:",
+  "            return None",
+  '        if form == "number" and isinstance(item, numbers.Integral) and not isinstance(item, bool):',
+  "            item = int(item)",
+  "            return item if -(2 ** 53) < item < 2 ** 53 else str(item)",
+  '        if form == "number" and isinstance(item, numbers.Real):',
+  "            item = float(item)",
+  '            return item if math.isfinite(item) else ("inf" if item > 0 else "-inf")',
+  "        return text(item)",
+  "    def label(name):",
+  "        if isinstance(name, tuple):",
+  '            return text(", ".join(str(part) for part in name))',
+  '        return "" if name is None else text(name)',
+  `    if shown.index.nlevels > ${String(MAX_DATAFRAME_INDEX_LEVELS)}:`,
+  `        raise ValueError("the index has more than ${String(MAX_DATAFRAME_INDEX_LEVELS)} levels")`,
+  "    fields = []",
+  "    data = []",
+  "    for level in range(shown.index.nlevels):",
+  "        values = shown.index.get_level_values(level)",
+  "        form = kind(values.dtype)",
+  '        fields.append({"name": label(shown.index.names[level]), "kind": form, "index": True})',
+  "        data.append([cell(item, form) for item in values.tolist()])",
+  "    for position in range(shown.shape[1]):",
+  "        series = shown.iloc[:, position]",
+  "        form = kind(series.dtype)",
+  '        fields.append({"name": label(shown.columns[position]), "kind": form, "index": False})',
+  "        data.append([cell(item, form) for item in series.tolist()])",
+  "    html = value._repr_html_()",
+  "    if not isinstance(html, str):",
+  '        raise TypeError("_repr_html_() returned " + type(html).__name__)',
+  "    return json.dumps({",
+  '        "format": 1,',
+  '        "rows": int(value.shape[0]),',
+  '        "columns": int(value.shape[1]),',
+  '        "fields": fields,',
+  '        "data": [list(row) for row in zip(*data)],',
+  '        "html": html,',
+  "    }, allow_nan=False)",
+];
 
 /**
  * The cell runner, as probed (Finding 13.16).
@@ -71,6 +166,12 @@ export const RUNNER_FUNCTION_NAME = "_pyviya_run_cell";
  *   missing or returns the wrong type is skipped silently. A class is shown
  *   by its `repr()`, as in IPython, since its repr methods need an instance.
  *   IPython's `(data, metadata)` tuple form is accepted.
+ * - A pandas `DataFrame` is first written as a grid file,
+ *   `pyviya_<cell>_grid.json`, when both caps are above 0 (ADR-0048). Only
+ *   if that fails, with one line on `stderr`, is it shown the other ways.
+ *   pandas is never imported: a value can only be a DataFrame once the cell
+ *   has imported it. A grid larger than `MAX_CAPTURE_BYTES` fails rather
+ *   than be skipped by the capture.
  */
 export const CELL_RUNNER_SOURCE: readonly string[] = [
   `def ${RUNNER_FUNCTION_NAME}():`,
@@ -98,6 +199,26 @@ export const CELL_RUNNER_SOURCE: readonly string[] = [
   '    lines = importlib.util.decode_source(source).split("\\n")',
   '    if lines[last.end_lineno - 1].encode("utf-8")[last.end_col_offset:].lstrip().startswith(b";"):',
   "        return",
+  '    pandas = sys.modules.get("pandas")',
+  '    if isinstance(getattr(pandas, "DataFrame", None), type) and isinstance(value, pandas.DataFrame):',
+  ...DATAFRAME_GRID_SOURCE.map((line) => `        ${line}`),
+  '        name = os.path.join(folder, "pyviya_" + cell + "_grid.json")',
+  "        try:",
+  `            rows = int(SAS.symget("${GRID_ROWS_NAME}") or 0)`,
+  `            columns = int(SAS.symget("${GRID_COLUMNS_NAME}") or 0)`,
+  "            if rows > 0 and columns > 0:",
+  '                data = grid(value, pandas, rows, columns).encode("utf-8")',
+  `                if len(data) > ${String(MAX_CAPTURE_BYTES)}:`,
+  `                    raise ValueError("the grid is larger than ${String(MAX_CAPTURE_BYTES)} bytes")`,
+  '                with open(name, "wb") as handle:',
+  "                    handle.write(data)",
+  "                return",
+  "        except Exception as error:",
+  "            try:",
+  "                os.remove(name)",
+  "            except OSError:",
+  "                pass",
+  '            print("The DataFrame grid could not be built: " + repr(error) + "; showing the value another way.", file=sys.stderr)',
   '    for method, suffix, kind in (("_repr_html_", ".html", str), ("_repr_png_", ".png", bytes)):',
   "        try:",
   "            render = None if isinstance(value, type) else getattr(value, method, None)",
@@ -160,16 +281,29 @@ export const FIGURE_FLUSH_BYTES: Uint8Array = encodeSource(FIGURE_FLUSH_SOURCE);
  * `proc python infile=<fileref>; run;`. `restart` composes with `infile=` the
  * same way it does for a plain run (finding 35). The path is not macro-quoted:
  * the server chooses it, and a `&` or `%` in it is accepted as not arising.
+ *
+ * `grid` gives the DataFrame grid's caps (ADR-0048); absent turns the grid
+ * off. A cap that is not a non-negative safe integer is written as 0, so
+ * nothing but digits ever reaches the SAS code.
  */
 export function cellRunnerStatements(
   filerefName: string,
   restart: boolean,
+  grid?: DataFrameGridLimits,
 ): readonly string[] {
   return [
+    `%let ${GRID_ROWS_NAME}=${String(cap(grid?.maxRows))};`,
+    `%let ${GRID_COLUMNS_NAME}=${String(cap(grid?.maxColumns))};`,
     `%let ${CELL_PATH_NAME}=%sysfunc(pathname(${filerefName}));`,
     `proc python ${restart ? "restart " : ""}infile=${CELL_RUNNER_FILEREF_NAME};`,
     "run;",
   ];
+}
+
+function cap(value: number | undefined): number {
+  return value !== undefined && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : 0;
 }
 
 /** The macro variable the cell step's `SYSCC` is held in while the flush

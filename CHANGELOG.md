@@ -41,6 +41,14 @@ called out under **Changed** with a migration note.
   they do in SAS Content, up to 100 MB a file. Delete is permanent, after
   you confirm: the server has no recycle bin. See
   [Browsing the SAS server](docs/browsing-sas-server.md).
+- **Notebook DataFrames show as a sortable grid.** A notebook or
+  interactive-window cell whose last line is a pandas DataFrame now shows
+  it as a grid you can sort by clicking a column header. Sorting applies
+  to the rows shown. `pythonOnViya.notebook.dataFrameGrid.maxRows`
+  (default 100) and `.maxColumns` (default 20) set how much is shown; 0
+  turns the grid off. **Change Presentation** on the output still offers
+  pandas' HTML table, which is also what Jupyter and GitHub show. See
+  [Notebooks](docs/notebooks.md).
 
 ## [0.1.5] - 2026-09-30
 

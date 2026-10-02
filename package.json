@@ -915,9 +915,36 @@
           "patternErrorMessage": "%configuration.cas.tokenFileref.patternError%",
           "scope": "window",
           "markdownDescription": "%configuration.cas.tokenFileref.description%"
+        },
+        "pythonOnViya.notebook.dataFrameGrid.maxRows": {
+          "type": "integer",
+          "default": 100,
+          "minimum": 0,
+          "maximum": 5000,
+          "scope": "window",
+          "markdownDescription": "%configuration.notebook.dataFrameGrid.maxRows.description%"
+        },
+        "pythonOnViya.notebook.dataFrameGrid.maxColumns": {
+          "type": "integer",
+          "default": 20,
+          "minimum": 0,
+          "maximum": 200,
+          "scope": "window",
+          "markdownDescription": "%configuration.notebook.dataFrameGrid.maxColumns.description%"
         }
       }
-    }
+    },
+    "notebookRenderer": [
+      {
+        "id": "python-on-viya-dataframe-grid",
+        "displayName": "%notebookRenderer.dataFrameGrid.displayName%",
+        "entrypoint": "./dist/renderer/dataFrameGrid.js",
+        "mimeTypes": [
+          "application/vnd.python-on-viya.dataframe+json"
+        ],
+        "requiresMessaging": "never"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run l10n:extract && npm run build -- --production",

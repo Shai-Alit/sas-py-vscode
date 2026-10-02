@@ -99,8 +99,8 @@ Python. See [Browsing SAS libraries](browsing-sas-libraries.md).
 **Can I browse CAS the same way?** Yes — the **CAS** view in the activity bar
 shows CAS servers, caslibs and tables, and opens a table in the same kind of
 grid. Unlike SAS Libraries, it needs only a sign-in, not a connect — CAS
-browsing goes straight to CAS, not through a compute session. CSV export and
-table properties are not built for a CAS table yet. See [Browsing
+browsing goes straight to CAS, not through a compute session. A CAS table
+also has **Table Properties** and **Export to CSV**. See [Browsing
 CAS](browsing-cas.md).
 
 ## Notebooks

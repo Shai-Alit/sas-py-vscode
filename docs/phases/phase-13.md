@@ -224,7 +224,9 @@ where `PROC PYTHON` actually hurts.
 - [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
   2026-09-30**, never started. See "MCP server removed" below.
 - [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
-  checks). Added 2026-09-24. Not started.
+  checks). Added 2026-09-24. Built 2026-10-02 on `feat/13k-polish`; the
+  F9 checks closed without a probe (Findings 13.47–13.49). See "13k built"
+  below.
 - [x] **13l — The MCP server for Claude Code (was 12o).** Moved here
   2026-09-29. Built and parked on `feat/12o-mcp-server`. Picked up
   2026-09-30 on `feat/13l-mcp-server`; reviewed, and manual items
@@ -2028,6 +2030,125 @@ branch with the review fixes in, with nothing to fold in.
 on [PR #244](https://github.com/Shai-Alit/sas-py-vscode/pull/244), with nothing to fold in. Merged 2026-10-02, squash
 `3e1a8b2`.
 
+### 13k built, 2026-10-02 — polish
+
+**What it does.** Three of Plan item 11's four items, and a record of the
+fourth.
+
+- **CSV export progress.** The export notification now shows rows done
+  and fills its bar, `12,000 of 555,856 rows`, for a SAS library table and
+  a CAS table alike. With no row count, or a count of `0`, it stays
+  indeterminate as before.
+- **A CAS table's size.** **Table Properties** on a CAS table gains
+  **Source File Size**: the size of the file the table loads from
+  (Finding 13.47). Blank for a table with no source file. What a database
+  caslib shows is unprobed; see "Adversarial review" below.
+- **Opting out of Pylance stubs.** `pythonOnViya.pylanceStubs.enabled`, on
+  by default. Off skips the whole stub sync from the next probe, with no
+  reload.
+- **F9 checks: closed without a probe** (Sean's call, 2026-10-02). See
+  below.
+
+**Sean's choices, 2026-10-02.** The properties panel shows the source
+file size only, not the size in memory: that would need the
+`table.tableDetails` action through a CAS session, a call path
+`CasAdapter` does not have. Turning stubs off stops future syncs only; it
+deletes nothing and never edits `settings.json`. The docs say how to
+remove what a past sync wrote.
+
+**Code.**
+
+- `src/data/csvExportModel.ts`: `streamCsvPages` and `exportTableToCsv`
+  take an optional `onRows`, called after each page the sink accepted with
+  the rows read through so far. `exportProgressStep` (no `vscode`) turns
+  that into rows done, a whole percent (rounded down, so 100 means every
+  row), and the bar's increment, capped at the row count read before the
+  export began. Once a page starts at or past that count, the table has
+  outgrown it, and the step says so (`outgrown`). `CsvExportSource.stream`
+  takes the same `onRows`; both sources pass it through.
+- `src/data/csvExportCommand.ts`: the `withProgress` seam's `run` gets an
+  optional `CsvExportProgress` second argument. A double that leaves it
+  out reports nothing, so every existing test double is unchanged. An
+  outgrown step shows `5,500+ rows` instead of `N of N rows`.
+- `src/cas/types.ts`: `CasTableProperties.sourceFileSize`, read from
+  `attributes.size` when it is a non-negative number.
+  `src/cas/casPropertiesSource.ts` adds the row. `formatBytes` moves from
+  `src/data/messages.ts` to `src/data/tablePropertiesModel.ts`, exported,
+  so both share it. It now picks the unit after rounding, so 999,950 bytes
+  shows as `1.0 MB`, not `1000.0 KB`.
+- `package.json`/`package.nls.json`: the setting. `src/run/commands.ts`:
+  an injectable `pylanceStubsEnabled`, read at the top of the fresh-probe
+  stub sync.
+- Docs: `browsing-cas.md` (the size, and what it is not; the progress
+  count), `browsing-sas-libraries.md` (the count), `python-environment.md`
+  (turning stubs off), `cas-python-connection.md` (what F9's confirmation
+  covers), `CHANGELOG.md`, and `docs/reference/settings.md` regenerated.
+  Also `faq.md`, which still said CAS export and
+  properties were not built, stale since 11d.
+
+**F9, closed without a probe.** Plan item 11 asked for passthrough on a
+non-Snowflake connector and with a large result set. Neither could be
+measured on 2026-10-02. `verde` has no non-Snowflake database caslib
+(Finding 13.48). The large-result probe Sean approved (1,000 then
+1,000,000 rows from a Snowflake `GENERATOR`, through `swat` as the
+snippet runs it) never completed a query: first CAS was down, then any
+query Snowflake had to compute hung while a constant one returned
+(Finding 13.49), then `casManagement` answered `503`. Sean closed it
+there. `docs/cas-python-connection.md` now says what the confirmation
+covers and what it does not, and gives SAS's documented behaviour for a
+large result as documentation, not a measurement. Both cases stay open,
+as Finding 11.2 left them.
+
+**Tests.** `test/unit/data-csv-export-model.test.ts`: `onRows` after each
+accepted page and not after a rejected one; `exportProgressStep`'s
+increments, rounding, cap, outgrown table and no-backwards rule.
+`test/unit/data-table-properties-model.test.ts`: `formatBytes`, including
+the rounding boundary.
+`test/unit/cas-types.test.ts`: `attributes.size` read, and dropped when
+absent, not a number, negative, or `attributes` is not an object.
+`test/integration/cas/csv-export-and-properties.test.ts`: the CAS export's
+`12 of 12 rows` at 100; increments by each page's share; no updates and no
+`onRows` for an unknown or zero row count, or with no progress to report
+to; the properties panel's `8.4 KB`.
+`test/integration/run/commands-pylance-stub-sync.test.ts`: off skips the
+sync and says nothing while the environment still opens; the setting is
+read on every probe; and, with no seam injected, the real setting set to
+`false` skips the sync.
+
+**Adversarial review, 2026-10-02 (before push).** No blocking defects.
+Five findings, all real on inspection, all folded in:
+
+1. `browsing-cas.md` contradicted itself. The paragraph after the new
+   one still said CAS reports no size for a table not in memory, which
+   Finding 13.47 refutes. That sentence now gives the real reason the
+   panel loads the table first (columns only once loaded, row count `0`
+   until then).
+2. Both stub opt-out tests injected the seam, so the real setting key
+   never ran. A third test sets `pythonOnViya.pylanceStubs.enabled` to
+   `false` at `Global` scope, as the other suites write settings, and
+   restores it afterwards.
+3. The docs and the `sourceFileSize` comment stated what a database
+   caslib reports, which Finding 13.47 leaves open. A read-only probe of
+   two Snowflake caslibs' tables (`SNOWLIB`, `SF`) was tried on
+   2026-10-02, but `casManagement` answered `500` with an empty body for
+   every request, including `GET .../servers` and `Public`'s tables. CAS
+   was down, as at the end of Finding 13.49. That is not a finding, so
+   the wording is scoped instead: file-backed caslibs are described, and
+   database caslibs are named as not checked.
+4. A table that grew after the export began showed `N of N rows` while
+   pages still streamed. It now shows `N+ rows`, where `N` is the rows
+   already written.
+5. `formatBytes` showed `1000.0 KB` for 999,950 bytes. It now picks the
+   unit after rounding.
+
+**Verify, 2026-10-02, after the review fixes.** `npm run verify` green
+from a clean `out/`: 2307 unit tests; coverage 96.70/96.36/96.66/96.70
+lines/branches/functions/statements. `npm run test:integration` green,
+647 passing.
+
+**Manual tests.** Items 13.86–13.88 passed 2026-10-02, run by Sean
+against this branch after the review fixes.
+
 ---
 
 ## Probe findings
@@ -2036,7 +2157,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.47.
+finding is 13.50.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -3239,3 +3360,59 @@ fileref written as `src/compute/casToken.ts` writes it):
 - `conn.CASTable(name, caslib='casuser').to_frame()` returned a
   `SASDataFrame` with the same shape and columns.
 - `table.dropTable` dropped it, and `conn.close()` ended the session.
+
+### Finding 13.47 — A CAS table's `attributes.size` is its source file's size, not its size in memory (2026-10-02)
+
+**Documented:** the `casManagement` reference names `GET
+.../tables/{tableName}`, but its page shows no schema fields, so nothing
+says what a size field means.
+
+**Observed (`verde`, read-only).** Every table in `Public`, `Samples` and
+`Formats` that has a `sourceLastModified` carries `attributes` with
+`encryption`, `group`, `owner`, `size` and `time`, loaded or not, in the
+listing as well as on `self`. An unloaded table shows `rowCount` `0` and a
+real `size` (414,880 bytes, 96,847,416 bytes, and so on). A loaded table
+without a source file (no `sourceLastModified`) has `attributes` holding
+only `view`, and no `size`. A loaded 3,382,864-row, 33-column table showed
+`size` 1,218,136,208. `time` matches `sourceLastModified` to the second,
+and `owner` and `group` are numeric ids: a file's attributes.
+
+**What this establishes.** `size` is the byte size of the file the table
+loads from, not the table in memory, and is present whether or not the
+table is loaded. **What it does not establish:** the size in memory
+(`table.tableDetails` would report that; not probed), or what a caslib
+with no files behind it, such as a database caslib, reports.
+
+### Finding 13.48 — `verde`'s database caslibs are all Snowflake (2026-10-02)
+
+**Observed (read-only).** `GET .../caslibs/{name}` on each of
+`cas-shared-default`'s caslibs, reading the top-level `type` that the
+listing leaves `null` (as Finding 11.2 noted): 57 `PATH`, 7 `DNFS`, 2 `S3`
+and 4 `snowflake` (`HAL_SNOW`, `SF`, `SFCAS`, `SNOWLIB`).
+
+**What this establishes.** No caslib on `verde` reaches a database other
+than Snowflake. `S3` is object storage, which `connection to` does not
+reach. So Finding 11.2's open question about another connector cannot be
+probed on this deployment.
+
+### Finding 13.49 — A constant passthrough query returned; a computed one hung (2026-10-02)
+
+Probed with Sean's approval. Unsettled: recorded so the next attempt
+starts from here, not as a measurement of F9.
+
+**Observed.** On 2026-10-02, once CAS was back, `swat.CAS` connected from
+a Studio compute session over binary (0.9 s) and REST (1.5 s). Finding
+11.2's `select 1 as X from connection to SNOWLIB (select 1)` through
+`PROC CAS` completed in 4.2 s, with the same `numReadNodes=1` warning. A
+1,000-row `select ... from table(generator(rowcount => 1000))` through the
+same caslib hung past a 5-minute cap through `swat`, and past a 3-minute
+cap through `PROC CAS`. Shortly after, `casManagement` answered `503`.
+Earlier the same day, while CAS was down, both `swat` transports were
+refused and a session create failed with `500` (`errorCode` 5830, a
+compute server start timing out).
+
+**What it does not establish.** Why the computed query hung. A likely
+reading, unchecked: Snowflake answers a constant without a warehouse and
+needs one for `GENERATOR`, and `SNOWLIB`'s was unavailable. Nothing about
+a large result set was measured. **Cleanup:** every compute session was
+deleted and read back `404`.

@@ -245,6 +245,12 @@ export interface CasTableProperties {
   readonly encoding?: string | undefined;
   readonly characterSet?: string | undefined;
   readonly repeated?: boolean | undefined;
+  /** `attributes.size`: the byte size of the table's **source file** on
+   * disk, not of the table in memory (Finding 13.47). Present on a loaded or
+   * unloaded table in a file-backed caslib; absent on a table with no source
+   * file. A database caslib's tables are unprobed (Finding 13.47 leaves them
+   * open). */
+  readonly sourceFileSize?: number | undefined;
 }
 
 /** A CAS server's internal connection info (Finding 8.10) — 8b's own use:
@@ -395,6 +401,10 @@ export function readCasTableProperties(
     const field = raw[key];
     return typeof field === "number" ? field : undefined;
   };
+  const attributes =
+    typeof raw.attributes === "object" && raw.attributes !== null
+      ? (raw.attributes as Record<string, unknown>)
+      : {};
 
   return {
     name: table.name,
@@ -411,6 +421,10 @@ export function readCasTableProperties(
     encoding: text("encoding"),
     characterSet: text("characterSet"),
     repeated: typeof raw.repeated === "boolean" ? raw.repeated : undefined,
+    sourceFileSize:
+      typeof attributes.size === "number" && attributes.size >= 0
+        ? attributes.size
+        : undefined,
   };
 }
 

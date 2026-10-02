@@ -11,6 +11,12 @@
  * Fields this deployment's CAS does not report (`engine`, `format`,
  * `informat`, record lengths — Finding 11.5) are simply not rows; nothing here
  * invents a value for a SAS-library-only concept.
+ *
+ * **"Source File Size" is the file the table loads from, not the table in
+ * memory** (13k, Finding 13.47). It is the only byte size the table's
+ * representation carries; an in-memory size would need a CAS action this
+ * adapter does not call. Blank for a table with no source file. What a
+ * database caslib's table carries here is unprobed (Finding 13.47).
  */
 
 import * as vscode from "vscode";
@@ -24,6 +30,7 @@ import {
   type PropertiesView,
 } from "../data/propertiesSource";
 import {
+  formatBytes,
   formatOptionalNumber,
   formatTimestamp,
 } from "../data/tablePropertiesModel";
@@ -91,6 +98,13 @@ export class CasPropertiesSource implements PropertiesSource {
               {
                 label: vscode.l10n.t("Column Count"),
                 value: formatOptionalNumber(p.columnCount),
+              },
+              {
+                label: vscode.l10n.t("Source File Size"),
+                value:
+                  p.sourceFileSize === undefined
+                    ? ""
+                    : formatBytes(p.sourceFileSize),
               },
             ],
           },

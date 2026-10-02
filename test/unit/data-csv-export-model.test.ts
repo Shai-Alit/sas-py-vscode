@@ -19,6 +19,7 @@ import {
 } from "../../src/data/adapter";
 import {
   CSV_EXPORT_PAGE_SIZE,
+  exportProgressStep,
   exportTableToCsv,
   streamCsvPages,
 } from "../../src/data/csvExportModel";
@@ -253,6 +254,36 @@ describe("streamCsvPages", () => {
     assert.deepEqual(chunks, ["h\n"]);
   });
 
+  it("tells onRows how far it has read after each page the sink accepted, and not at the end", async () => {
+    const pages = ["h\n1\n2\n", "3\n", ""];
+    let call = 0;
+    const reported: number[] = [];
+    const result = await streamCsvPages(
+      () => Promise.resolve({ ok: true, value: pages[call++] ?? "" } as const),
+      2,
+      () => Promise.resolve(),
+      undefined,
+      (rows) => reported.push(rows),
+    );
+    assert.ok(result.ok);
+    assert.deepEqual(reported, [2, 4]);
+  });
+
+  it("does not tell onRows about a page the sink rejected", async () => {
+    const reported: number[] = [];
+    await assert.rejects(
+      streamCsvPages(
+        () => Promise.resolve({ ok: true, value: "x\n" } as const),
+        1,
+        () => Promise.reject(new Error("disk full")),
+        undefined,
+        (rows) => reported.push(rows),
+      ),
+      /disk full/,
+    );
+    assert.deepEqual(reported, []);
+  });
+
   it("stops at a rejected sink rather than fetching further pages", async () => {
     let reads = 0;
     await assert.rejects(
@@ -267,5 +298,53 @@ describe("streamCsvPages", () => {
       /disk full/,
     );
     assert.equal(reads, 1);
+  });
+});
+
+describe("exportProgressStep", () => {
+  it("reports the rows done, the whole percent, and what to add to the bar", () => {
+    assert.deepEqual(exportProgressStep(0, 500, 2000), {
+      rowsDone: 500,
+      percent: 25,
+      increment: 25,
+      outgrown: false,
+    });
+    assert.deepEqual(exportProgressStep(25, 1000, 2000, 500), {
+      rowsDone: 1000,
+      percent: 50,
+      increment: 25,
+      outgrown: false,
+    });
+  });
+
+  it("rounds down, so the bar reaches 100 only once every row is read", () => {
+    assert.equal(exportProgressStep(0, 1999, 2000).percent, 99);
+  });
+
+  it("caps a short last page at the row count", () => {
+    assert.deepEqual(exportProgressStep(50, 2500, 2000, 1000), {
+      rowsDone: 2000,
+      percent: 100,
+      increment: 50,
+      outgrown: false,
+    });
+  });
+
+  it("does not call a table outgrown when the last page ends exactly at the count", () => {
+    assert.equal(exportProgressStep(50, 2000, 2000, 1000).outgrown, false);
+  });
+
+  it("calls a table outgrown once a page starts at or past the count, with the rows before it as done", () => {
+    assert.deepEqual(exportProgressStep(100, 3000, 2000, 2500), {
+      rowsDone: 2500,
+      percent: 100,
+      increment: 0,
+      outgrown: true,
+    });
+    assert.equal(exportProgressStep(100, 2500, 2000, 2000).outgrown, true);
+  });
+
+  it("never asks the bar to move backwards", () => {
+    assert.equal(exportProgressStep(60, 500, 2000).increment, 0);
   });
 });

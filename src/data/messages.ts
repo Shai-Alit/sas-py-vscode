@@ -33,6 +33,7 @@ import * as vscode from "vscode";
 
 import { localiseComputeProblem } from "../compute/messages";
 import { type DataProblem } from "./problems";
+import { formatBytes } from "./tablePropertiesModel";
 
 /**
  * The message to show when opening a table, or requesting a page of its
@@ -65,25 +66,4 @@ export function localiseDataProblem(problem: DataProblem): string {
       // delegates to `localiseAuthProblem` rather than re-wording a 401.
       return localiseComputeProblem(problem.problem);
   }
-}
-
-/** A byte count as a human-scale string (`"12.3 MB"`) — decimal (1000-based)
- * units, matching how VS Code's own file-size UI and most desktop file
- * managers report free disk space, rather than the binary (1024-based) KiB/
- * MiB/GiB an `insufficient-disk-space` reader would otherwise have to
- * mentally convert. */
-function formatBytes(bytes: number): string {
-  const units = ["bytes", "KB", "MB", "GB", "TB"] as const;
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1000 && unitIndex < units.length - 1) {
-    value /= 1000;
-    unitIndex += 1;
-  }
-  // `unitIndex` never leaves `[0, units.length - 1]` — the loop guard above
-  // keeps it there — so this is always a real element, not the `undefined`
-  // a bare index type would otherwise carry.
-  const unit: string = units[unitIndex] ?? "bytes";
-  const precision = unitIndex === 0 ? 0 : 1;
-  return `${value.toFixed(precision)} ${unit}`;
 }

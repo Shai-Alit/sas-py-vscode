@@ -39,14 +39,21 @@ every request rather than something built once and reused.
 
 Right-click a table and choose **Table Properties** for a read-only summary in
 a new editor tab: which caslib and server it lives on, its row and column
-counts, who created it and when it was created, last modified and last
+counts, the size of the file it loads from, who created it and when it was created, last modified and last
 accessed, its encoding, and a **Columns** tab listing every column's name,
 type, length and label. Fields CAS does not report (there is no "engine" or
 format/informat column here, unlike a SAS library table) are simply left out.
 
+**Source File Size is the file on disk, not the table in memory.** For a
+caslib backed by files, it is the size of the file the table loads from, such
+as a `.sashdat` file. The size in memory can differ a good deal either way. A
+table with no file behind it, such as one created in memory, shows no size.
+What a database caslib, such as a Snowflake one, shows here has not been
+checked.
+
 As with opening a table, choosing this on a table that is not loaded yet loads
-it into CAS memory first — CAS reports no size or timestamps for a table that
-is not in memory.
+it into CAS memory first — CAS lists a table's columns only once it is loaded,
+and reports its row count as `0` until then.
 
 ## Exporting a table to CSV
 
@@ -55,7 +62,8 @@ file. The export reads the table a page at a time and writes it to a temporary
 file next to your chosen destination, moving it into place only once every row
 has arrived, so cancelling — or a failure part-way — never leaves a
 half-written file where a good one was. It shows a cancellable progress
-notification while it runs.
+notification while it runs, with the rows exported so far and a percentage
+(for example, `12,000 of 555,856 rows`).
 
 Two things differ from what CAS itself would hand back, both deliberately:
 numeric values are written without CAS's leading-space padding, and a missing

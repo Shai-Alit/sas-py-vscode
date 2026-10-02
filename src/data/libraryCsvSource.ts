@@ -30,6 +30,7 @@ import {
   type CsvExportResult,
   type CsvExportSource,
   type CsvSink,
+  type RowsReadThrough,
 } from "./csvExportModel";
 import { escapeCsvFormula, isTextColumnType } from "./csvFormulaGuard";
 import { csvField, parseCsvPage } from "./csvParse";
@@ -96,12 +97,19 @@ export class LibraryCsvSource implements CsvExportSource {
   async stream(
     sink: CsvSink,
     signal?: AbortSignal,
+    onRows?: RowsReadThrough,
   ): Promise<CsvExportResult<void>> {
     const detail = this.detail;
     if (detail === undefined) return notOpenYet();
 
     if (!this.guardFormulaInjection) {
-      const result = await exportTableToCsv(this.adapter, detail, sink, signal);
+      const result = await exportTableToCsv(
+        this.adapter,
+        detail,
+        sink,
+        signal,
+        onRows,
+      );
       return result.ok ? result : fail(result);
     }
 
@@ -120,6 +128,7 @@ export class LibraryCsvSource implements CsvExportSource {
       CSV_EXPORT_PAGE_SIZE,
       sink,
       signal,
+      onRows,
     );
     return result.ok ? result : fail(result);
   }

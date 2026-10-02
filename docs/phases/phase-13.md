@@ -209,8 +209,9 @@ where `PROC PYTHON` actually hurts.
   `a8a6365`. See "13g built" below.
 - [x] **13h — F1, spike.** Added 2026-09-24. Done 2026-10-01 on
   `docs/13h-f1-spike` (Findings 13.36–13.41). Recommends declining F1 as
-  written and building a native-SQL snippet command in 13i. See "13h
-  done" below.
+  written and building a native-SQL snippet command in 13i. Merged
+  2026-10-01 as [PR #242](https://github.com/Shai-Alit/sas-py-vscode/pull/242),
+  squash `13a77ab`. See "13h done" below.
 - [x] **13i — F1, build or decline.** Added 2026-09-24. **Moved to Phase
   14 on 2026-10-01**, unstarted, and no longer gates 1.0. See "F1 moved to
   Phase 14" below.
@@ -1794,6 +1795,11 @@ spike above is its starting point: the recommendation, the two shapes, and
 the probe listed under "Before 13i builds anything", which needs a compute
 libname to a database. 13i is closed here unstarted. 13h's findings stay in
 this file.
+
+**Merged** 2026-10-01, with 13h's write-up, as
+[PR #242](https://github.com/Shai-Alit/sas-py-vscode/pull/242), squash
+`13a77ab`, in one commit, with every check passing. Neither Codex nor the
+Claude reviewer found anything.
 
 ---
 

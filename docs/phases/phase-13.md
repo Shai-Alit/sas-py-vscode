@@ -207,7 +207,10 @@ where `PROC PYTHON` actually hurts.
   items 13.63–13.74 passed. Merged 2026-10-01 as
   [PR #241](https://github.com/Shai-Alit/sas-py-vscode/pull/241), squash
   `a8a6365`. See "13g built" below.
-- [ ] **13h — F1, spike.** Added 2026-09-24. Not started.
+- [x] **13h — F1, spike.** Added 2026-09-24. Done 2026-10-01 on
+  `docs/13h-f1-spike` (Findings 13.36–13.41). Recommends declining F1 as
+  written and building a native-SQL snippet command in 13i. See "13h
+  done" below.
 - [ ] **13i — F1, build or decline.** Added 2026-09-24. Not started.
 - [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
   2026-09-30**, never started. See "MCP server removed" below.
@@ -1688,6 +1691,97 @@ Claude reviewer found anything blocking. The Claude reviewer re-derived the
 two issues the pre-push review had already raised (the long MultiIndex
 label and the don't-delete check) and confirmed both fixes were present.
 
+### 13h done, 2026-10-01 — F1 spike: a native-SQL helper, not interception
+
+**The question.** F1 (`phase-11.md`) asked for two things: a UI for
+defining SAS libnames, and Python calls against such a library
+"intercepted and rewritten" as a database pass-through query. Asked which
+Python calls he meant, Sean chose a **native-SQL helper**: given a libref
+and the database's own SQL, return a DataFrame. Nothing in the user's
+Python is rewritten.
+
+`verde` has no compute libname that reaches a database (Finding 13.36).
+So, Sean's call, the probes went through CAS instead, with a CAS libref onto
+the Snowflake caslib `SNOWLIB` that Finding 11.2 used.
+
+**What the probes showed.**
+
+- **Rewriting pandas calls into SQL is out of reach anyway.** The server's
+  Python has no SQL compiler (Finding 13.37), so it would mean uploading a
+  translator into every session. Sean's narrowing takes it out of scope.
+- **`SAS.sd2df` already takes dataset options** such as `where=`, `keep=`
+  and `obs=` (Finding 13.38). SAS documents that a SAS/ACCESS engine sends
+  such a `where=` on to the database. That is not probed.
+- **The CAS route cannot answer that question.** A CAS libref sees only
+  tables already loaded into CAS, and `connect using` refuses a CAS libref.
+  `proc fedsql sessref=` with `connection to` the caslib does work
+  (Finding 13.39). For a caslib, F9's **Insert CAS SQL Passthrough
+  Snippet** already does this from Python through `swat`.
+- **The native SQL has to travel inside SAS source,** where the SAS
+  tokenizer and macro processor see it first (Finding 13.40). Quotes and a
+  `;` inside a single-quoted literal pass through. An `&` or `%` inside a
+  double-quoted identifier is resolved as a macro reference. `%superq`
+  stops that, but then a `;` anywhere splits the statement.
+- **Every result column must be a valid SAS name.** A column named
+  `Has Space` cannot be read, and `sd2df` then freezes the session
+  (Finding 13.41).
+- **Failures are quiet.** `sd2df` returns `None` for a missing table, and
+  `SAS.submit` returns `0` after errors (Findings 13.38, 13.40). Code built
+  on them has to check `SYSCC` itself.
+
+**What the helper would be.** For a SAS/ACCESS libref, the mechanism is
+explicit pass-through over the libref's own connection, then a read:
+
+```sas
+proc sql;
+  connect using MYLIB;
+  create table work.pyviya_sql as
+    select * from connection to MYLIB (
+      select ...
+    );
+  disconnect from MYLIB;
+quit;
+```
+
+followed by `SAS.sd2df("work.pyviya_sql")`. It could ship in two shapes:
+
+1. **A snippet command**, like F9's CAS snippet and the SAS Libraries
+   drag-and-drop's **Filter with PROC SQL first**. The user edits the
+   inserted code. It needs no architecture change. The edge cases in
+   Findings 13.40 and 13.41 are documented, not handled.
+2. **A function in every session**, for example `sas_sql("MYLIB", "...")`.
+   It could check `SYSCC` and raise, drop its temporary table, and deal
+   with the edge cases. But it composes code into the interpreter beyond
+   ADR-0046's cell runner, so it needs its own ADR, as 13e did.
+
+**Recommendation.** **Decline F1 as written.** Do not intercept pandas
+calls, and do not build a libname UI. A profile's `autoExec` already runs
+SAS code, such as a `LIBNAME` statement, when each session starts
+([connection profiles](../connection-profiles.md)). A site's auth domains
+already hold database credentials. A UI of our own would add a credential
+store this project does not otherwise need. **Build the helper as shape 1,
+a snippet command, in 13i.** Move to shape 2 only if the snippet proves too
+fragile in use.
+
+**Before 13i builds anything:** probe against a real compute libname to a
+database, which Sean would need to supply, through an auth domain so that
+no password is seen. The probe should settle:
+
+- `connect using` and explicit pass-through on a SAS/ACCESS libref;
+- whether `sd2df`'s `where=` reaches the database (`options sastrace`);
+- how PROC SQL, rather than PROC FEDSQL, tokenizes `;`, `&` and `%` in
+  the native SQL;
+- whether `options validvarname=any` lets `sd2df` read Finding 13.41's
+  columns;
+- a large result.
+
+**Probe hygiene.** Every probe ran in a throwaway compute session on the
+SAS Studio compute context, deleted afterwards (`204`). CAS tables were
+session-scoped in `CASUSER`. A read-only `casManagement` check afterwards
+found no leftover CAS session. One round was discarded: it put
+`proc python; submit;` on one line, and one job's `sd2df` callback code
+ran inside the next job.
+
 ---
 
 ## Probe findings
@@ -1696,7 +1790,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.36.
+finding is 13.42.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -2677,3 +2771,140 @@ grid payloads holding `2026-01-02 03:04:05.123456789`,
 missing value, and `"9007199254740993"`, `"inf"` and `"-inf"` as strings,
 with `null` for `NaN`. A frame with the same three column kinds as the
 unexplained one encoded without error.
+
+### Finding 13.36 — No compute libname reaches a database; the database sources are caslibs (2026-10-01)
+
+**Probe (`verde`, SAS Studio compute context).** A job listed every libref
+in `sashelp.vlibnam`, and `proc setinit` listed the licensed products. A
+read-only `GET` on `casManagement` listed the caslibs.
+
+**Observed.**
+
+- Every libref the context assigns uses the `V9` engine. None reaches a
+  database.
+- SAS/ACCESS engines are licensed in compute, Snowflake, Postgres, ODBC,
+  Oracle and SQL Server among them.
+- The database sources that exist are caslibs of type `snowflake`
+  (`SNOWLIB`, `SF`, `SFCAS`, `HAL_SNOW`). `SNOWLIB`'s attributes hold its
+  own `uid` and `pwd`, not an auth domain. Reusing them for a compute
+  libname would mean copying a credential, so the probe did not.
+
+**What this establishes.** A probe of SAS/ACCESS behaviour from compute
+needs a libname this deployment does not have.
+
+### Finding 13.37 — The server's Python has no SQL compiler (2026-10-01)
+
+**Probe.** A `PROC PYTHON` step printed its versions and tried to import
+some packages.
+
+**Observed.** Python 3.12.12 and pandas 3.0.5. `sqlglot`, `ibis`,
+`sqlalchemy`, `duckdb` and `polars` are not installed. `pyarrow` 25.0.1,
+`saspy` 5.108.7 and `swat` 1.18.1 are.
+
+**What this establishes.** Turning pandas calls into SQL would mean
+uploading a translator into the session. Nothing on the server does it.
+
+### Finding 13.38 — `sd2df` takes dataset options, and a missing table is `None` (2026-10-01)
+
+**Documented.** `SAS.sd2df`'s own docstring, printed on `verde`: "the
+'libref.table(optional dataset options)' name of the SAS Data Set". Its
+signature is `sd2df(dataset, rowsep, colsep, rowrep, colrep, **kwargs)`.
+`SAS.submit(code: str) -> int`.
+
+**Observed.**
+
+- `SAS.sd2df("sashelp.class(where=(age>13) keep=name age obs=3)")`
+  returned 3 rows and the 2 kept columns. A quoted `where=(name='Alfred')`
+  also worked.
+- It reads a PROC SQL view.
+- `SAS.sd2df("sashelp.nosuch")` printed "Data Set sashelp.nosuch does not
+  exist" and returned `None`. It raised nothing, and the job ended with
+  code 0.
+
+**Not settled.** Whether a SAS/ACCESS engine sends the `where=` on to the
+database. SAS documents that it does (implicit pass-through, visible with
+`options sastrace`), but this deployment has no such libname (Finding
+13.36).
+
+### Finding 13.39 — Through CAS, only `proc fedsql` reaches the database (2026-10-01)
+
+**Probe.** A compute job started a CAS session and assigned
+`libname sl cas caslib="SNOWLIB"`. `SNOWLIB` is Sean's own Snowflake
+sandbox, the caslib Finding 11.2 used.
+
+**Observed.**
+
+- `SAS.sd2df("sl.CARS_TESTING(obs=2)")` returned `None` ("does not
+  exist"), although `table.fileInfo` lists `CARS_TESTING`.
+  `table.tableInfo` on the caslib reported "No tables are available": a
+  CAS libref sees only tables loaded into CAS.
+- `proc sql; connect using sl;` failed: "A Connection to the CAS DBMS is
+  not currently supported". `SQLRC` was 8.
+- `proc fedsql sessref=mysess; create table casuser.t {options
+  replace=true} as select * from connection to SNOWLIB (select 1 as X,
+  'Audi' as M); quit;` created the table in Snowflake's answer. It logged
+  Finding 11.2's `numReadNodes=1` warning. A CAS libref on `CASUSER` then
+  read it with `sd2df`: `[{'X': 1.0, 'M': 'Audi'}]`.
+
+**What this establishes.** For a caslib, native SQL from compute works
+through `proc fedsql`, and from Python through F9's `swat` snippet. A
+helper for SAS/ACCESS librefs needs `connect using`, which a CAS libref
+does not support. The two kinds of libref need different mechanisms.
+
+### Finding 13.40 — Native SQL in SAS source meets the tokenizer and the macro processor (2026-10-01)
+
+**Probe.** From Python, `SAS.submit` ran
+`proc fedsql sessref=… create table … as select * from connection to
+SNOWLIB (<native SQL>); quit;` with the native SQL written in a few ways.
+
+**Observed.**
+
+- **Plain text, single-quoted literals.**
+  `select 'a;b' as S, '50%' as P, 'x&y' as Q, 'it''s' as R, '%put HI;' as M`
+  ran with `SYSCC` 0. The `;`, `%` and `&` inside single quotes were left
+  alone.
+- **Plain text, double-quoted identifiers.** `select 1 as "X&Y", 2 as
+  "A%B"` ran, but logged "Apparent symbolic reference Y not resolved" and
+  "Apparent invocation of macro B not resolved", and set `SYSCC` to 4. A
+  macro variable named `Y` would have been substituted.
+- **Through `%superq`.** The SQL was stored with `SAS.symput` and written
+  as `%superq(pyviya_q)`. Without a `;`, quotes, `%` and `&` all passed
+  with no warning. With `'a;b'` in it, the `;` split the PROC FEDSQL
+  statement: "Syntax error at or near "select 'a"", then two "Unsupported
+  SQL statement" errors for the rest.
+- **`SAS.submit`'s return value** was 0 after that failure, with `SYSCC`
+  at 1012.
+
+**What this establishes.** No single way of writing the SQL is safe for all
+of it. Plain text breaks on macro triggers in double quotes. `%superq`
+breaks on a `;`. A helper has to choose, and has to check `SYSCC` rather
+than `SAS.submit`'s return value.
+
+**Not settled.**
+
+- How PROC SQL handles the same text. Only PROC FEDSQL was probed.
+- A `--` comment holding an apostrophe. Its round was discarded (see "13h
+  done").
+
+### Finding 13.41 — A result column that is not a valid SAS name freezes `sd2df` (2026-10-01)
+
+**Probe.** `proc fedsql` created a `CASUSER` table from Snowflake with
+columns `"lower"`, `UPPERX` and `"Has Space"`. A second job in the same
+session was to copy it with `validvarname=v7` and read the copy.
+
+**Observed.**
+
+- `proc contents` on the table failed: "The value 'Has Space'n is not a
+  valid SAS name".
+- `SAS.sd2df` on it started its usual `proc printto` redirect, and the log
+  stopped there. The job ended in error with code 1012.
+- The second job in the same session ended in error with an empty log.
+- An earlier round, whose result table had columns `X&Y` and `A%B`, stopped
+  at the same point.
+
+**What this establishes.** A database's column names, which can hold
+spaces or mixed case, must be made valid SAS names before `sd2df` reads
+them, for example with `as` aliases in the native SQL. Otherwise the run
+hangs, and so does every later run in that session.
+
+**Not settled.** Whether `options validvarname=any` avoids it.

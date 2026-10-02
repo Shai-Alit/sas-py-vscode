@@ -223,10 +223,11 @@ where `PROC PYTHON` actually hurts.
   Phase 14" below.
 - [x] **13j — MCP tool that runs Python.** Added 2026-09-24. **Dropped
   2026-09-30**, never started. See "MCP server removed" below.
-- [ ] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
-  checks). Added 2026-09-24. Built 2026-10-02 on `feat/13k-polish`; the
-  F9 checks closed without a probe (Findings 13.47–13.49). See "13k built"
-  below.
+- [x] **13k — Polish** (CSV progress, CAS table size, stub opt-out, F9
+  checks). Added 2026-09-24. The F9 checks closed without a probe
+  (Findings 13.47–13.49); manual items 13.86–13.88 passed. Merged
+  2026-10-02 as [PR #245](https://github.com/Shai-Alit/sas-py-vscode/pull/245),
+  squash `1e92dbd`. See "13k built" below.
 - [x] **13l — The MCP server for Claude Code (was 12o).** Moved here
   2026-09-29. Built and parked on `feat/12o-mcp-server`. Picked up
   2026-09-30 on `feat/13l-mcp-server`; reviewed, and manual items
@@ -2148,6 +2149,10 @@ lines/branches/functions/statements. `npm run test:integration` green,
 
 **Manual tests.** Items 13.86–13.88 passed 2026-10-02, run by Sean
 against this branch after the review fixes.
+
+**PR review and merge, 2026-10-02.** CI and both AI reviewers were green
+on [PR #245](https://github.com/Shai-Alit/sas-py-vscode/pull/245), with
+nothing to fold in. Merged 2026-10-02, squash `1e92dbd`.
 
 ---
 

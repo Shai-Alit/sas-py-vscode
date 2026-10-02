@@ -124,6 +124,7 @@ describe("the Commands view's model", () => {
     for (const connected of [false, true]) {
       const roots = commandsViewRoots({ ...NONE, connected });
       assert.deepEqual(group(roots, "snippets"), [
+        "insertViyaSnippet",
         "insertCasConnectionSnippet",
         "insertCasSqlPassthroughSnippet",
       ]);
@@ -155,7 +156,7 @@ describe("the Commands view's model", () => {
         }),
       ),
     ]);
-    assert.equal(shown.size, 14);
+    assert.equal(shown.size, 15);
     for (const entry of shown) {
       assert.ok(
         contributed.has(commandFor(entry)),

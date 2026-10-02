@@ -239,7 +239,13 @@ context-key mirror (`src/contextKeys.ts`). Adversarial review found nothing
 blocking; manual items 13.75–13.80 passed, with Refresh CAS Token moved
 from Snippets to Run; CI and both PR reviewers were green. It also makes
 prettier and eslint ignore `.claude/worktrees/`, so stray agent worktrees no
-longer fail verify. See `phase-13.md`'s "13c built" entry. 13d and 13k are not started.
+longer fail verify. See `phase-13.md`'s "13c built" entry. **13d** (F11, the snippet
+library) was built 2026-10-02 on `feat/13d-snippet-library`: twelve
+`viya-` snippets for the `SAS` bridge, CAS and a credential-safe
+`libname`, and an **Insert Viya Snippet...** picker first in the Commands
+view's Snippets group (Findings 13.42–13.46). Its adversarial review found
+nothing blocking (three findings folded in) and manual items 13.81–13.85
+passed; its PR is next. See `phase-13.md`'s "13d built" entry. 13k is not started.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

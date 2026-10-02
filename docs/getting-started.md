@@ -119,6 +119,9 @@ signs you in to the new one first.
 - **[Python and SAS libraries](data-access.md)** — reading and writing that
   same library data directly from your own Python code, with no local
   database driver and no second credential to manage.
+- **[Snippets](snippets.md)** — type `viya` in a Python file, or run
+  **Insert Viya Snippet...**, for the common patterns: reading and writing
+  SAS tables, macro variables, running SAS code, showing output, and CAS.
 - **[Connecting to CAS from Python](cas-python-connection.md)** — one command
   gets your Python code an authenticated `swat.CAS()` connection, reusing the
   same Viya sign-in with no separate CAS credential of your own.

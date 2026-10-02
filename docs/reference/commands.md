@@ -48,6 +48,7 @@ under their category.
 | Insert CAS Connection Snippet | `Python on Viya: Insert CAS Connection Snippet` | `pythonOnViya.insertCasConnectionSnippet` | — |
 | Refresh CAS Token | `Python on Viya: Refresh CAS Token` | `pythonOnViya.refreshCasToken` | — |
 | Insert CAS SQL Passthrough Snippet | `Python on Viya: Insert CAS SQL Passthrough Snippet` | `pythonOnViya.insertCasSqlPassthroughSnippet` | — |
+| Insert Viya Snippet... | `Python on Viya: Insert Viya Snippet...` | `pythonOnViya.insertViyaSnippet` | — |
 | New Folder | `Python on Viya: New Folder` | `pythonOnViya.createContentFolder` | SAS Content |
 | New File | `Python on Viya: New File` | `pythonOnViya.createContentFile` | SAS Content |
 | Rename | `Python on Viya: Rename` | `pythonOnViya.renameContentItem` | SAS Content |

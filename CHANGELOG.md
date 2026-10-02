@@ -49,6 +49,12 @@ called out under **Changed** with a migration note.
   turns the grid off. **Change Presentation** on the output still offers
   pandas' HTML table, which is also what Jupyter and GitHub show. See
   [Notebooks](docs/notebooks.md).
+- **Snippets for common Viya patterns.** Type `viya` in a Python file or
+  notebook cell, or run **Insert Viya Snippet...**, for twelve snippets:
+  reading and writing SAS tables, macro variables, running SAS code and
+  checking it worked, showing a figure or table, CAS upload and read, and a
+  database `libname` whose password stays out of your code and the log.
+  See [Snippets](docs/snippets.md).
 
 ## [0.1.5] - 2026-09-30
 

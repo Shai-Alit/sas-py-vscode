@@ -136,6 +136,9 @@ const REQUIRED = [
   // The DataFrame grid's notebook renderer, which `package.json`'s
   // `notebookRenderer` entrypoint names (ADR-0048). Same reason as the icon.
   "extension/dist/renderer/dataFrameGrid.js",
+  // The snippet library `package.json` contributes and the Insert Viya
+  // Snippet command reads (13d). Same reason as the icon.
+  "extension/snippets/python.json",
 ];
 
 /**

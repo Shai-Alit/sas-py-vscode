@@ -48,6 +48,7 @@ export type CommandsEntryId =
   | "cancelRun"
   | "resetPythonState"
   | "selectRunTarget"
+  | "insertViyaSnippet"
   | "insertCasConnectionSnippet"
   | "insertCasSqlPassthroughSnippet"
   | "refreshCasToken"
@@ -76,7 +77,11 @@ export function commandsViewRoots(
     {
       kind: "group",
       id: "snippets",
-      entries: ["insertCasConnectionSnippet", "insertCasSqlPassthroughSnippet"],
+      entries: [
+        "insertViyaSnippet",
+        "insertCasConnectionSnippet",
+        "insertCasSqlPassthroughSnippet",
+      ],
     },
     { kind: "entry", id: "showOutputChannel" },
   ];

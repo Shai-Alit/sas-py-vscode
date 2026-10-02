@@ -83,6 +83,8 @@ function entryLabelAndIcon(entry: CommandsEntryId): [string, string] {
       return [vscode.l10n.t("Reset Python State"), "debug-restart"];
     case "selectRunTarget":
       return [vscode.l10n.t("Select Run Target"), "target"];
+    case "insertViyaSnippet":
+      return [vscode.l10n.t("Insert Viya Snippet..."), "symbol-snippet"];
     case "insertCasConnectionSnippet":
       return [vscode.l10n.t("Insert CAS Connection Snippet"), "symbol-snippet"];
     case "insertCasSqlPassthroughSnippet":

@@ -129,6 +129,7 @@ describe("the Commands view", () => {
       "Reset Python State",
       "Select Run Target",
       "Refresh CAS Token",
+      "Insert Viya Snippet...",
       "Insert CAS Connection Snippet",
       "Insert CAS SQL Passthrough Snippet",
       "Show Log",

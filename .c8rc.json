@@ -67,6 +67,7 @@
     "src/server/serverExplorer.ts",
     "src/server/serverFileSystem.ts",
     "src/server/serverTree.ts",
+    "src/snippets/insertSnippetCommand.ts",
     "src/webview/css.d.ts",
     "src/webview/dataFrameGridRenderer.ts",
     "src/webview/dataViewerEntry.tsx",

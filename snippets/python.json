@@ -1,0 +1,102 @@
+{
+  "Read a SAS table": {
+    "prefix": "viya-read",
+    "body": ["${1:df} = SAS.sd2df(\"${2:sashelp.class}\")"],
+    "description": "Read a SAS table or view into a pandas DataFrame. Dataset options go in brackets after the name, for example sashelp.class(where=(age>13)). A missing table returns None."
+  },
+  "Write a SAS table": {
+    "prefix": "viya-write",
+    "body": ["SAS.df2sd(${1:df}, \"${2:work.results}\")"],
+    "description": "Write a pandas DataFrame to a SAS table: work for this session, or a writable library to keep it."
+  },
+  "Filter with PROC SQL, then read": {
+    "prefix": "viya-sql-read",
+    "body": [
+      "SAS.submit(\"\"\"",
+      "proc sql;",
+      "  create view ${1:work.filtered} as",
+      "    select ${2:*} from ${3:sashelp.class}",
+      "    where ${4:age > 13};",
+      "quit;",
+      "\"\"\")",
+      "${5:filtered_df} = SAS.sd2df(\"${1:work.filtered}\")"
+    ],
+    "description": "Filter a large table on the SAS side with a PROC SQL view, then read only the view."
+  },
+  "Read a macro variable": {
+    "prefix": "viya-symget",
+    "body": ["${1:value} = SAS.symget(\"${2:name}\")"],
+    "description": "Read a SAS macro variable. The value is always a str, and \"\" when the variable does not exist."
+  },
+  "Set a macro variable": {
+    "prefix": "viya-symput",
+    "body": ["SAS.symput(\"${1:name}\", ${2:value})"],
+    "description": "Set a SAS macro variable. The value is stored as text: 42 reads back as \"42\"."
+  },
+  "Run SAS code and check it": {
+    "prefix": "viya-submit",
+    "body": [
+      "SAS.submit(\"\"\"",
+      "${1:proc print data=sashelp.class; run;}",
+      "\"\"\")",
+      "syserr = SAS.symget(\"SYSERR\")",
+      "if syserr not in (\"0\", \"4\"):",
+      "    raise RuntimeError(\"SAS step failed: SYSERR=\" + syserr)"
+    ],
+    "description": "Run SAS code, and stop if its last step failed. SAS.submit returns 0 even when a step fails; SYSERR is the last step's code, 0 for success and 4 for a warning."
+  },
+  "Show a figure": {
+    "prefix": "viya-show-figure",
+    "body": [
+      "import matplotlib.pyplot as plt",
+      "",
+      "plt.plot(${1:[1, 2, 3]}, ${2:[3, 1, 2]})",
+      "SAS.show(plt, filetype=\"png\")"
+    ],
+    "description": "Draw a matplotlib figure and show it in the Result panel, as PNG."
+  },
+  "Show a DataFrame": {
+    "prefix": "viya-show-df",
+    "body": ["SAS.show(${1:df})"],
+    "description": "Show a pandas DataFrame as a table in the Result panel."
+  },
+  "Write a warning to the SAS log": {
+    "prefix": "viya-log-warning",
+    "body": ["SAS.logMessage(\"${1:message}\", \"warning\")"],
+    "description": "Write a WARNING line to the SAS log, shown in the output. A message at the default NOTE level is not shown."
+  },
+  "Upload a DataFrame to CAS": {
+    "prefix": "viya-cas-upload",
+    "body": [
+      "${1:tbl} = conn.upload_frame(",
+      "    ${2:df}, casout={\"name\": \"${3:my_table}\", \"caslib\": \"${4:casuser}\", \"replace\": True}",
+      ")"
+    ],
+    "description": "Upload a pandas DataFrame to a CAS table. Needs conn from Insert CAS Connection Snippet. The table lasts as long as conn's CAS session."
+  },
+  "Read a CAS table": {
+    "prefix": "viya-cas-read",
+    "body": [
+      "${1:df} = conn.CASTable(\"${2:my_table}\", caslib=\"${3:casuser}\").to_frame()"
+    ],
+    "description": "Read a whole CAS table into a DataFrame. Needs conn from Insert CAS Connection Snippet."
+  },
+  "Assign a library without a password literal": {
+    "prefix": "viya-libname-secret",
+    "body": [
+      "import os",
+      "",
+      "SAS.symput(\"${1:dbpass}\", ${2:os.environ[\"DB_PASSWORD\"]})",
+      "try:",
+      "    SAS.submit(\"\"\"",
+      "    libname ${3:mydb} ${4:postgres} server=\"${5:host}\" user=\"${6:user}\" password=\"%superq(${1:dbpass})\" database=${7:db};",
+      "    \"\"\")",
+      "    librc = SAS.symget(\"SYSLIBRC\")",
+      "finally:",
+      "    SAS.submit(\"%symdel ${1:dbpass};\")",
+      "if librc != \"0\":",
+      "    raise RuntimeError(\"LIBNAME failed: SYSLIBRC=\" + librc)"
+    ],
+    "description": "Assign a database library with a password taken at run time, never written in the code. %superq keeps the password out of the SAS log."
+  }
+}

@@ -55,6 +55,9 @@ orders_df = SAS.sd2df("work.recent_orders")
 session. This example creates a view with the filter already applied, then
 reads only that view.
 
+The `viya-read`, `viya-write` and `viya-sql-read` [snippets](snippets.md)
+insert each of these patterns with placeholders to fill in.
+
 ## Dragging a table from the tree
 
 Dragging a table from the **SAS Libraries** view into a `.py` editor asks how
@@ -85,3 +88,8 @@ from a runtime value (an environment variable, or a macro variable via
 `SAS.symget`) instead of writing it in a `SAS.submit()` call, and prefer a
 site-assigned libref (already provisioned, no credential in your own code at
 all) over an ad hoc `SAS.submit("libname ...")` carrying one.
+
+When you do need one, the `viya-libname-secret` snippet passes the password
+through `%superq`, which keeps it out of the log even with `options
+symbolgen`, and checks `SYSLIBRC`, the only sign that a `libname` failed.
+See [Snippets](snippets.md#a-library-without-a-password-in-your-code).

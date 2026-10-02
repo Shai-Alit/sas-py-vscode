@@ -39,7 +39,8 @@ feature it describes. So far that is
 [Browsing CAS](browsing-cas.md),
 [Python and SAS libraries](data-access.md),
 [Connecting to CAS from Python](cas-python-connection.md),
-[Notebooks](notebooks.md), [Diagnostics](diagnostics.md),
+[Notebooks](notebooks.md), [Snippets](snippets.md),
+[Diagnostics](diagnostics.md),
 [The Python environment](python-environment.md),
 [AI agent skill](agent-skill.md) and
 [Troubleshooting](troubleshooting.md). A new top-level page has to be

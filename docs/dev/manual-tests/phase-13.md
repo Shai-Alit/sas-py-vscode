@@ -1022,3 +1022,121 @@ With `hello.py` the active editor, click each in turn:
 3. Click **Sign In** in the view.
    - Expect: the same "requires a trusted folder" message, not silence.
 4. Trust the folder again.
+
+## 13d — the snippet library
+
+See `docs/phases/phase-13.md`'s "13d built" Runbook entry.
+
+**Set-up, once.**
+
+1. Build a `.vsix` from this branch, install it, and reload the window.
+2. Sign in and connect.
+3. Open a folder and create an empty `snippets.py` in it.
+
+### 13.81 — Typing a prefix
+
+- [x] **13.81** Every snippet is offered by its `viya-` prefix, and its
+      placeholders work.
+
+1. In `snippets.py`, type `viya`.
+   - Expect: the suggestions include all twelve `viya-` snippets (scroll
+     if need be), each marked as a snippet.
+2. Choose `viya-sql-read`.
+   - Expect: the PROC SQL view snippet, with `work.filtered` selected.
+3. Type `work.teens`.
+   - Expect: the `SAS.sd2df("...")` line at the bottom changes to
+     `work.teens` as you type.
+4. Press Tab four times.
+   - Expect: the selection moves to `*`, `sashelp.class`, `age > 13`, then
+     `filtered_df`.
+5. Press Escape, then run the file (**Run File**).
+   - Expect: the run succeeds. Add `print(filtered_df.shape)` and run
+     again: `(9, 5)`.
+
+### 13.82 — Insert Viya Snippet
+
+- [x] **13.82** The command lists only this extension's snippets, from the
+      palette and from the Commands view.
+
+1. Run **Python on Viya: Insert Viya Snippet...** from the palette.
+   - Expect: a picker of the twelve snippets, each with its prefix and a
+     one-line description, and nothing else.
+2. Type `macro`.
+   - Expect: the list narrows to the two macro-variable snippets (the
+     match is on the descriptions too).
+3. Choose **Read a macro variable**.
+   - Expect: `value = SAS.symget("name")` at the cursor, `value` selected.
+4. Open the **Commands** view.
+   - Expect: **Insert Viya Snippet...** is first in the **Snippets** group,
+     above the two CAS snippet commands.
+5. Click it, then press Escape.
+   - Expect: the same picker; Escape inserts nothing.
+6. Open a Markdown file and click it again.
+   - Expect: "Open a Python file first, then run this command again."
+
+### 13.83 — The run-and-check snippets
+
+- [x] **13.83** `viya-submit`, `viya-symput`/`viya-symget` and
+      `viya-log-warning` behave as their descriptions say.
+
+1. Replace `snippets.py`'s contents with the `viya-submit` snippet, leaving
+   its placeholder as is, and run it.
+   - Expect: the run succeeds, with no traceback.
+2. Change the SAS code to `data work.x; set work.nosuch; run;` and run it.
+   - Expect: the run fails, with an `ERROR:` line for `WORK.NOSUCH` and a
+     traceback ending in `RuntimeError: SAS step failed: SYSERR=1012`.
+3. Change the SAS code to
+   `options syntaxcheck; data work.x; set work.nosuch; run; data work.y; run;`
+   and run it.
+   - Expect: the run fails, with a traceback ending in
+     `RuntimeError: SAS step failed: SYSERR=3`: the second step only
+     checked its syntax, and the snippet does not pass that.
+4. Replace the contents with a `viya-symput` snippet setting `n` to `42`,
+   then a `viya-symget` snippet reading `n` into `value`, then
+   `print(repr(value))`. Run it.
+   - Expect: `'42'` in the output.
+5. Add a `viya-log-warning` snippet with the message `hello` and run.
+   - Expect: `WARNING: Python-Subprocess - hello` in the output.
+
+### 13.84 — Showing output, and CAS
+
+- [x] **13.84** The show snippets reach the Result panel, and the CAS
+      snippets round-trip a table.
+
+1. Replace the contents with `viya-show-figure`, leaving its placeholders,
+   and run it.
+   - Expect: the Result panel shows a line plot.
+2. Replace the contents with `df = SAS.sd2df("sashelp.class")`, then a
+   `viya-show-df` snippet. Run it.
+   - Expect: the Result panel shows the 19-row table.
+3. Run **Insert CAS Connection Snippet**, then add the line
+   `import pandas as pd; df = pd.DataFrame({"a": [1, 2]})`, a
+   `viya-cas-upload` snippet, then a `viya-cas-read` snippet, then
+   `print(df)` and `conn.close()`. Run it (run **Refresh CAS Token**
+   first if asked).
+   - Expect: the run succeeds and prints the two-row frame read back from
+     CAS.
+
+### 13.85 — The credential snippet keeps the password out of the log
+
+- [x] **13.85** `viya-libname-secret` never shows the password, and
+      reports a failed `libname`.
+
+1. Replace the contents with:
+
+   ```python
+   SAS.submit("options symbolgen;")
+   ```
+
+   then a `viya-libname-secret` snippet. Change its second placeholder
+   from `os.environ["DB_PASSWORD"]` to `"not-a-real-password"`, and its
+   host to `nohost.invalid`. Leave the rest. Run it.
+   - Expect: an `ERROR: Error in the LIBNAME statement.` line, then a
+     traceback ending in `RuntimeError: LIBNAME failed: SYSLIBRC=` and a
+     non-zero number.
+   - Expect: `not-a-real-password` appears nowhere in the output, not even
+     in a `SYMBOLGEN:` line.
+2. Run **Python on Viya: Show Log** and search it for
+   `not-a-real-password`.
+   - Expect: no match.
+3. Undo the edit and close `snippets.py` without saving.

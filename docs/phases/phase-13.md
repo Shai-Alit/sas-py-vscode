@@ -188,9 +188,10 @@ where `PROC PYTHON` actually hurts.
   ([ADR-0045](../adr/0045-content-copy-paste.md)). Merged 2026-10-01 as
   [PR #236](https://github.com/Shai-Alit/sas-py-vscode/pull/236), squash
   `c5c2512`. See "13b built" below.
-- [ ] **13c — F6, common-commands panel.** Added 2026-09-24. Built
-  2026-10-02 on `feat/13c-commands-panel`: a state-aware **Commands** view,
-  first in the sidebar (manual items 13.75–13.80). See "13c built" below.
+- [x] **13c — F6, common-commands panel.** Added 2026-09-24. A
+  state-aware **Commands** view, first in the sidebar (manual items
+  13.75–13.80 passed). Merged 2026-10-02 as [PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), squash
+  `743b126`. See "13c built" below.
 - [ ] **13d — F11, snippet library.** Added 2026-09-24. Not started.
 - [x] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Decided
   2026-10-01: a notebook cell displays its last expression and its open
@@ -1906,6 +1907,10 @@ one change: **Refresh CAS Token** moves from Snippets to the end of Run,
 since it inserts nothing into the editor and acts on the run's Python
 session. `model.ts`, both test tiers, 13.75 and the list above are updated.
 Sean ruled the move needs no new manual test or adversarial pass.
+
+**PR review and merge, 2026-10-02.** CI and both AI reviewers were green
+on [PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), with nothing to fold in. Merged 2026-10-02, squash
+`743b126`.
 
 ---
 

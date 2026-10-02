@@ -50,7 +50,41 @@ A file larger than 10 MB does not open in the editor.
 If your session ends, for example after a while without use, an open
 file can still be saved: connect again, then save.
 
-## What is not here yet
+## Changing files and folders
 
-Creating, renaming, moving and deleting files and folders, and uploading and
-downloading them, are coming in a later release.
+Right-click a folder for **New Folder** and **New File**, or a file or
+folder for **Rename** and **Delete**. To move something, drag it onto
+another folder. A name already used in the folder is refused rather than
+replaced.
+
+**Delete is permanent.** The SAS server has no recycle bin, and deleting a
+folder deletes everything inside it. You are asked to confirm first.
+
+The top folder cannot be renamed, moved or deleted. A folder the server
+marks read-only, such as the server's root, `/`, offers nothing that creates
+files in it.
+
+These all work while your Python runs.
+
+If you rename or move a file that is open in an editor, close that editor:
+it still points at the old path, so saving it fails. Reopen the file from
+its new place.
+
+## Uploading and downloading
+
+- **Upload Files...**, on a folder: pick one or more files on your computer
+  to copy into it. A file whose name is already used in the folder is not
+  uploaded.
+- **Download...**, on a file or folder: pick a folder on your computer to
+  save it into. A folder comes with everything inside it. If something of
+  the same name is already there, you are asked before files are
+  overwritten.
+
+Each file can be up to 100 MB. A download leaves out anything whose name
+your computer cannot use, any folder more than 32 levels deep, and the
+rest of any folder with more entries than the view can list, and the
+summary says how many items it left out. The **Python on Viya** log says
+which ones, and why.
+
+Your SAS administrator can turn downloads off for a compute context. If
+they have, **Download...** is not offered.

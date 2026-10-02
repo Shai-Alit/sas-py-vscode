@@ -15,8 +15,9 @@
  * opened before the session ended saves after the user reconnects. With no
  * session, a call fails `Unavailable` with a Connect hint.
  *
- * Creating, deleting and renaming through this provider are refused: 13p-ii
- * does those from the tree.
+ * Creating, deleting and renaming through this provider are refused: the
+ * view does those from its tree (`serverCommands.ts`, 13p-ii), each with the
+ * item's current `ETag`.
  */
 
 import * as vscode from "vscode";
@@ -96,19 +97,21 @@ export class SasServerFileSystemProvider
 
   createDirectory(): void {
     throw vscode.FileSystemError.NoPermissions(
-      vscode.l10n.t("Creating folders on the SAS server is not supported yet."),
+      vscode.l10n.t(
+        "Create folders on the SAS server from the SAS Server view.",
+      ),
     );
   }
 
   delete(): void {
     throw vscode.FileSystemError.NoPermissions(
-      vscode.l10n.t("Deleting files on the SAS server is not supported yet."),
+      vscode.l10n.t("Delete files on the SAS server from the SAS Server view."),
     );
   }
 
   rename(): void {
     throw vscode.FileSystemError.NoPermissions(
-      vscode.l10n.t("Renaming files on the SAS server is not supported yet."),
+      vscode.l10n.t("Rename files on the SAS server from the SAS Server view."),
     );
   }
 
@@ -140,9 +143,14 @@ export class SasServerFileSystemProvider
         return problem.expected === "file"
           ? vscode.FileSystemError.FileIsADirectory(message)
           : vscode.FileSystemError.FileNotADirectory(message);
+      case "name-taken":
+        return vscode.FileSystemError.FileExists(message);
       case "changed-on-server":
       case "too-large":
       case "no-version":
+      case "invalid-name":
+      case "invalid-move":
+      case "left-empty":
         return new vscode.FileSystemError(message);
       case "compute":
         switch (problem.problem.code) {

@@ -164,7 +164,7 @@ describe("content/transfer", () => {
       assert.ok(result.ok);
       assert.deepEqual(result.value, {
         folders: [],
-        files: [{ path: ["model.py"], href: "/files/files/f1" }],
+        files: [{ path: ["model.py"], source: "/files/files/f1" }],
         skipped: [],
       });
       assert.equal(calls.length, 0);
@@ -190,10 +190,10 @@ describe("content/transfer", () => {
         ["Project", "data"],
       ]);
       assert.deepEqual(
-        result.value.files.map((f) => ({ path: f.path, href: f.href })),
+        result.value.files.map((f) => ({ path: f.path, source: f.source })),
         [
-          { path: ["Project", "data", "input.csv"], href: "/files/files/f2" },
-          { path: ["Project", "main.py"], href: "/files/files/f1" },
+          { path: ["Project", "data", "input.csv"], source: "/files/files/f2" },
+          { path: ["Project", "main.py"], source: "/files/files/f1" },
         ],
       );
       assert.deepEqual(result.value.skipped, []);

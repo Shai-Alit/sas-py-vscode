@@ -235,7 +235,9 @@ where `PROC PYTHON` actually hurts.
     2026-10-01; adversarial review answered; manual item 13.53, which it
     added, passed 2026-10-01. See "13p-i built" below.
   - [ ] **13p-ii — Changing files.** New File/Folder, Rename, Move, Delete,
-    Upload/Download. After 13p-i.
+    Upload/Download. Built 2026-10-01 on `feat/13p-ii-server-changes`
+    (Findings 13.30–13.34, manual items 13.54–13.62). See "13p-ii built"
+    below.
 
 ### Scope extended, 2026-09-24
 
@@ -1402,6 +1404,114 @@ blocking. The Claude reviewer's one finding was real: the slice had no
 `CHANGELOG.md` entry, unlike its sibling slices. It was added in this
 post-merge note on `main`.
 
+### 13p-ii built, 2026-10-01 — the SAS Server view changes files
+
+**What it does.** The SAS Server view's context menu gains **New Folder**,
+**New File**, **Rename**, **Delete**, **Upload Files...** and
+**Download...**, and a file or folder dragged onto a folder moves there.
+Delete is permanent, behind a modal that says the server has no recycle
+bin. The root is never renamed, moved or deleted, and a folder the
+server marks `readOnly` (the root `/` among them) offers nothing that
+creates in it. **Download...** is hidden when the compute context's
+`allowDownload` attribute is `false`, as upstream reads it, and the command
+checks again.
+
+**Probed first**, approved by Sean, the same day: Findings 13.30–13.34.
+Every scratch item and both sessions were deleted and read back as `404`.
+Two results shaped the code: a rename's `200` can carry an error, and is
+empty without `Accept` (13.32), so the reply's body is read; and a rename
+without `path` moves the item into the session's working directory (13.32),
+so `path` is always sent.
+
+**Decisions (Sean's, 2026-10-01).**
+
+1. **13a's whole transfer path is generalised, not just its planner.**
+   `src/content/transfer.ts`'s planner is `planTreeDownload` over a
+   `DownloadTree`, and `contentTransfer.ts`'s upload and download shell is
+   `uploadFiles` and `downloadItem` over a `TransferEndpoint`. SAS Content's
+   `upload`, `download` and `planDownload` keep their signatures as thin
+   wrappers, so 13a's tests needed only `href` renamed to `source`.
+2. **A failed upload deletes the empty file it made**, with the create's own
+   `ETag`, so it removes only that file. If the delete fails too, the
+   message says an empty file was left (`left-empty`). Upstream leaves it.
+3. **Create entries are hidden on a `readOnly` folder.** A create in `/`
+   fails with a `404` for a doubled `//` path (Finding 13.34). Rename and
+   Delete stay on `readOnly` items, since on Unix they depend on the
+   parent folder.
+4. **A download walks at most 32 folders deep** (`too-deep`, left out and
+   counted like any other skip). The listing does not say which folders are
+   symbolic links, and links were not probed. SAS Content's downloads have
+   no limit.
+
+**Code.** `src/server/`: `move.ts` (the move rule and name check),
+`transfer.ts` (the server's `DownloadTree`), and in `adapter.ts`
+`createFolder`, `createFile` (with bytes), `rename`, `move`, `delete` and
+`downloadFile` (`vscode`-free); `serverCommands.ts` and
+`serverDragAndDrop.ts` (the shells, excluded from unit coverage as ADR-0009
+requires). Every rename, move and delete reads the item's `ETag` from its
+`self` link just before sending it. Uploads and downloads are capped at
+100 MiB, SAS Content's limit, not the server's (Finding 13.34).
+
+**Known gap.** An editor open on a file that is then renamed or moved still
+points at the old path, so its save fails with *not available*. The user
+page says to reopen the file.
+
+**Tests.** Unit: `server-move.test.ts`, `server-transfer.test.ts`, and new
+blocks in `server-adapter.test.ts`. Integration (new):
+`test/integration/server/commands.test.ts`, the commands and drag-and-drop
+shells with a stub adapter.
+
+**Verify, 2026-10-01,** from a clean `out/`: `npm run verify`'s steps
+green (2,221 unit; coverage 96.6/96.26/96.53/96.6), `format:check` leaving
+out `.claude/worktrees/`; `npm run check:docs` green; `npm run
+test:integration` green (618 passing).
+
+**Review, 2026-10-01.** The pre-push adversarial pass (the developer's
+independent reviewer, run against the local branch) found one finding worth
+fixing and three minor ones. All four checked out on inspection; three were
+fixed, one left as a note:
+
+1. **A download of a folder whose listing was cut short reported success.**
+   `transfer.ts` dropped `MemberListing.truncated`, so a folder past the
+   adapter's page limit was downloaded in part with no word of it,
+   contradicting the planner's own rule that a download missing an unknown
+   part of the tree must say so. Fixed: `DownloadTree.listChildren` may now
+   return `truncated`, and the planner reports such a folder as a new skip
+   reason, `listing-truncated`, so the summary counts it and the log says
+   the rest of the folder was left out. Unit-tested in
+   `server-transfer.test.ts`; not manually testable without a folder past
+   the page limit.
+2. **Dragging a folder with something inside it showed a spurious error.**
+   The folder moved first, taking the inner item with it, and the inner
+   item's own move then failed on stale links. Fixed: `handleDrop` drops any
+   dragged item whose folder is dragged with it (`isWithinServerPath`).
+   Integration-tested, and added to manual test 13.57.
+3. **Rename and Delete did not refuse the root themselves**; only the menu
+   `when` clauses kept them off it. Fixed: both refuse a node with a
+   `rootLabel`, as Download re-checks `allowDownload`. Integration-tested.
+4. **A refused drop gives no feedback** (onto a file, the root's
+   read-only folder, or the item's own folder). Left as is: it matches the
+   SAS Content controller, and the reviewer raised it as a note. Treating a
+   drop onto a file as a drop into its folder would be new behaviour, not a
+   fix, so it was not taken up.
+
+**Verify after the review's fixes, 2026-10-01,** from a clean `out/`:
+typecheck and eslint on the touched files clean; `npm run test:unit` green
+(2,222 passing); `npm run test:integration` green (621 passing). Coverage
+was not re-run: the one new `vscode`-free branch is unit-tested.
+
+**Manual pass, 2026-10-01.** Sean ran 13.54–13.62 against a `.vsix` built
+from this branch; all passed except 13.57's step 5, where `Home` could
+still be dragged. The code was right and the step was wrong: VS Code's
+`TreeDragAndDropController` has no way to keep one item from starting a
+drag, only to leave it out of the drag's data. `handleDrag` already leaves
+the root out, so a drop of `Home` alone carries nothing and does nothing
+(unit-tested: "drags everything but the root"). The step now drags `Home`
+onto `made` and expects nothing to happen; the "or dragged" claim above and
+in `serverDragAndDrop.ts`'s header was corrected to match. No code changed.
+Sean re-ran the rewritten step the same day and it passed, so 13.57 and
+every 13p-ii manual item is ticked.
+
 ---
 
 ## Probe findings
@@ -1410,7 +1520,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.30.
+finding is 13.35.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -2101,8 +2211,8 @@ in, a directory listing → `200` in **0.3 s**, and a properties read →
 The view can read while a run is in progress, so reads need no busy guard,
 unlike the Library view.
 
-**Not settled:** a create, rename or delete during a run; 13p-ii probes
-them before building. A content write during a run is Finding 13.27.
+A content write during a run is Finding 13.27; a create, rename or
+delete during a run is Finding 13.30.
 
 ### Finding 13.24 — Create, write and read file content (2026-10-01)
 
@@ -2131,7 +2241,7 @@ with `If-Match`.
 application/octet-stream`; save reads the `ETag` from the properties, then
 `PUT`s with it, the pattern `src/compute/fileref.ts` uses.
 
-**Not settled:** a large file.
+A large file is Finding 13.34.
 
 ### Finding 13.25 — Rename and move are one `PUT`, and a missing `If-Match` fails with `200` (2026-10-01)
 
@@ -2153,8 +2263,7 @@ application/octet-stream`; save reads the `ETag` from the properties, then
 checks only the status would report a rename that did not happen, so the
 reply's body is checked for an error.
 
-**Not settled:** a move into a folder that holds the name; a directory
-move.
+A move onto a taken name, and a directory move, are Finding 13.31.
 
 ### Finding 13.26 — An empty `If-Match` skips the check, even for a non-empty folder (2026-10-01)
 
@@ -2174,7 +2283,8 @@ rename.
 concurrency check off. A delete with it removes a whole folder at once,
 and nothing goes to a recycle bin. This extension sends the real `ETag`.
 
-**Not settled:** whether a directory's `ETag` changes when its contents do.
+Whether a directory's `ETag` changes when its contents do is Finding
+13.33.
 
 ### Finding 13.27 — A content write does not wait behind a running job (2026-10-01)
 
@@ -2186,9 +2296,8 @@ and nothing goes to a recycle bin. This extension sends the real `ETag`.
 content back gave the new bytes. A properties read took 0.22 s.
 
 **What this establishes.** An editor save need not wait for a run, or be
-refused during one.
-
-**Not settled:** a create, rename or delete during a run.
+refused during one. A create, rename or delete during a run is Finding
+13.30.
 
 ### Finding 13.28 — A composed path matches the server's href for spaces and non-ASCII names (2026-10-01)
 
@@ -2223,3 +2332,108 @@ a gone session. The view reads the session's `state` link on a `404`: a
 (`src/wire/viyaError.ts`).
 
 **Not settled:** a session that ends between the two requests.
+
+### Finding 13.30 — Create, rename and delete do not wait behind a running job (2026-10-01)
+
+**Documented:** nothing found.
+
+**Observed (`verde`, 2026-10-01).** Approved by Sean. A job running
+`rc=sleep(15,1)`; 1.5 s in, in a throwaway `/tmp/probe13pii_<ts>`: a folder
+create → `201` in 0.23 s, a file create → `201` in 0.22 s, a rename → `200`
+in 0.45 s, a file delete → `204` in 0.53 s, and a folder delete → `204` in
+0.46 s (each including the properties read for its `ETag`). The job was
+still `running` after each, and then completed.
+
+**What this establishes.** With Findings 13.23 and 13.27, no files call the
+view makes waits for a run, so none needs a busy guard.
+
+### Finding 13.31 — A rename or move onto a taken name is `409`; a folder moves with its contents (2026-10-01)
+
+**Documented:** upstream sends `{name, path}` for both a rename and a move.
+
+**Observed (`verde`, 2026-10-01).**
+
+- Renaming a file to a name its folder holds, as a file or as a folder →
+  `409`, `errorCode 5451`, *The file or directory "…" already exists.*
+  Nothing changed. Moving a file into a folder that holds its name → the
+  same `409`. Renaming a folder to a taken folder name → the same.
+- A case-only rename (`a.txt` → `A.txt`) → `200`, renamed.
+- Moving a file into a folder that does not exist → `404`, `errorCode
+  5437`, naming the missing folder.
+- Renaming a folder → `200`, its members with it; its `ETag` did not
+  change. Moving it into another folder → `200`, members intact.
+- Moving a folder into its own child → `404`, `errorCode 5437`, *The path
+  requested "" is not available*, with an inner `400`, `errorCode 5455`,
+  *Host level error*. Nothing moved.
+
+**What this establishes.** A `409` on a create, rename or move means the
+name is taken. A move's `404` does not say whether the item or the target
+folder is missing; the error's detail does. A folder into itself is refused
+before sending (`src/server/move.ts`), since the server's answer names no
+path.
+
+### Finding 13.32 — A rename's `200` can be a failure, and a rename without `path` moves the item (2026-10-01)
+
+**Documented:** nothing found. Finding 13.25 saw a missing `If-Match`
+answer `200` with an error body.
+
+**Observed (`verde`, 2026-10-01).**
+
+- A rename with a **stale** `If-Match` → `200`, with an error as the body:
+  `httpStatusCode: 0`, `errorCode 5034`, and inside `errors[0]`
+  `httpStatusCode: 412`, *The given If-Match header does not match the
+  current ETag for the resource.* Nothing renamed. The same with `Accept:
+  application/json`.
+- A rename with no `If-Match` **and no `Accept`** → `200` with an **empty
+  body**. Nothing renamed. With a current `If-Match` and no `Accept` →
+  `200`, the properties, renamed.
+- A rename whose body has `name` but **no `path`** → `200`, and the file
+  was moved into the session's working directory
+  (`/opt/sas/viya/config/var/run/compsrv/default/<id>`).
+
+**What this establishes.** A rename or move is a success only when the
+reply's body is the item's properties at the new path. The adapter sends
+`Accept`, reads an error body by its inner status, treats an empty or
+mismatched body as malformed, and always sends `path`.
+
+### Finding 13.33 — A folder's `ETag` changes when a member is added, not when a member's bytes change (2026-10-01)
+
+**Documented:** nothing found.
+
+**Observed (`verde`, 2026-10-01).**
+
+- A folder's `ETag` changed after a file was created in it.
+- It did not change after a member file's content was rewritten.
+- A rename kept the item's `ETag` (a file, Finding 13.25, and a folder).
+- `DELETE` on a non-empty folder with its current `ETag` → `204`, the
+  folder and everything in it gone (read back `404`).
+
+**What this establishes.** A folder delete with its current `ETag` guards
+against members being added in the moment before it, not against their
+bytes changing. The delete's confirmation, which says the folder goes with
+everything in it, is the guard that matters.
+
+### Finding 13.34 — An upload is a create and a write; 110 MiB is accepted; a create in `/` fails (2026-10-01)
+
+**Documented:** upstream creates the file, then writes its bytes.
+
+**Observed (`verde`, 2026-10-01).**
+
+- A file create → `201` with an `ETag`, `size: 0`. Its content reads back
+  as 0 bytes. A `PUT …/content` with **the create's own `ETag`** → `200`, a
+  new `ETag`, and the bytes read back unchanged.
+- A 110 MiB `PUT …/content` → `200` in 4.1 s; the properties' `size` was
+  115,343,360, and a `GET` returned the same bytes in 3.4 s. (The Files
+  service resets the connection past 100 MiB, Finding 13.7; the compute
+  server did not.)
+- A folder create in the root `/` (`readOnly: true`, Finding 13.20) →
+  `404`, `errorCode 5437`, *The path requested `"//probe13pii_<ts>_root"` is
+  not available.* Nothing was created.
+
+**What this establishes.** An upload is two calls with one `ETag`, so an
+upload whose write fails leaves an empty file unless it is deleted. The
+view's 100 MiB cap is its own, matching SAS Content's. A create in a
+read-only folder gets a misleading `404`, so the view does not offer one.
+
+**Not settled:** where between 110 MiB and anything larger the compute
+server stops; a `readOnly` folder other than `/`.

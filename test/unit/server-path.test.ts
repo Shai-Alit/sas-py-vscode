@@ -9,9 +9,11 @@ import {
   encodeServerPath,
   HOME_LABEL,
   isFileNavigationRoot,
+  isWithinServerPath,
   joinServerPath,
   navigationRoot,
   normaliseServerPath,
+  parentServerPath,
   parseServerUri,
   SERVER_FOLDER_SCHEME,
   SERVER_SCHEME,
@@ -206,5 +208,21 @@ describe("serverUriString and parseServerUri", () => {
     ]) {
       assert.equal(parseServerUri(bad), undefined, bad);
     }
+  });
+});
+
+describe("parentServerPath and isWithinServerPath", () => {
+  it("gives a path's folder, and / for a top-level path or the root", () => {
+    assert.equal(parentServerPath("/tmp/x/a.py"), "/tmp/x");
+    assert.equal(parentServerPath("/tmp"), "/");
+    assert.equal(parentServerPath("/"), "/");
+  });
+
+  it("reads a path as within itself and its ancestors, not a sibling sharing a prefix", () => {
+    assert.equal(isWithinServerPath("/a/b", "/a"), true);
+    assert.equal(isWithinServerPath("/a", "/a"), true);
+    assert.equal(isWithinServerPath("/ab", "/a"), false);
+    assert.equal(isWithinServerPath("/a", "/a/b"), false);
+    assert.equal(isWithinServerPath("/anything", "/"), true);
   });
 });

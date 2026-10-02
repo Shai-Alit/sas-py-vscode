@@ -42,6 +42,28 @@ export function localiseServerProblem(problem: ServerProblem): string {
         '"{0}" changed on the SAS server since you opened it. Copy your changes, reopen the file, and apply them again.',
         problem.path,
       );
+    case "name-taken":
+      return vscode.l10n.t(
+        '"{0}" already exists on the SAS server. Choose another name.',
+        problem.path,
+      );
+    case "invalid-name":
+      return vscode.l10n.t(
+        '"{0}" can\'t be used as a name. A name can\'t be empty, "." or "..", or contain "/".',
+        problem.name,
+      );
+    case "invalid-move":
+      return vscode.l10n.t(
+        '"{0}" can\'t be moved into "{1}".',
+        problem.path,
+        problem.target,
+      );
+    case "left-empty":
+      return vscode.l10n.t(
+        '{0} An empty "{1}" was left on the SAS server. Delete it from the SAS Server view.',
+        localiseServerProblem(problem.cause),
+        problem.path,
+      );
     case "too-large":
       return vscode.l10n.t(
         '"{0}" is too large to open in the editor (over {1} MB).',

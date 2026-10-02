@@ -164,6 +164,19 @@ export function joinServerPath(parent: string, name: string): string {
   return parent === "/" ? `/${name}` : `${parent}/${name}`;
 }
 
+/** A path's parent: `/x/a` gives `/x`; `/a` and `/` give `/`. */
+export function parentServerPath(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index <= 0 ? "/" : path.slice(0, index);
+}
+
+/** Whether `path` is `ancestor` or below it: `/a/b` is within `/a` and
+ * `/a`, not within `/ab`. Every path is within `/`. */
+export function isWithinServerPath(path: string, ancestor: string): boolean {
+  if (ancestor === "/") return true;
+  return path === ancestor || path.startsWith(`${ancestor}/`);
+}
+
 /** A path's last segment, or `""` for `/`. */
 export function baseName(path: string): string {
   const index = path.lastIndexOf("/");

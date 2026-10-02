@@ -4,7 +4,9 @@
 /**
  * Wires the "SAS Server" view into the window: the tree, the
  * `pythonOnViyaServer:` filesystem provider, the refresh and Copy Path
- * commands, and the events the tree refreshes on.
+ * commands, the commands that change files and drag-and-drop move (13p-ii,
+ * `serverCommands.ts` and `serverDragAndDrop.ts`), and the events the tree
+ * refreshes on.
  *
  * A registrar with no branch in it, mirroring `src/data/dataExplorer.ts`. Like
  * the Library view, this one is session-bound: it borrows the active
@@ -23,6 +25,8 @@ import {
 } from "./adapter";
 import { ServerEditorFiles } from "./editorFiles";
 import { SERVER_SCHEME } from "./path";
+import { registerServerCommands } from "./serverCommands";
+import { SasServerDragAndDropController } from "./serverDragAndDrop";
 import { SasServerFileSystemProvider } from "./serverFileSystem";
 import {
   isServerTreeItem,
@@ -40,6 +44,11 @@ export const COPY_SERVER_PATH_COMMAND = "pythonOnViya.copyServerPath";
 
 /** The setting that shows dot-files, under `pythonOnViya`. */
 const SHOW_HIDDEN_SETTING = "sasServer.showHiddenFiles";
+
+/** The context key `package.json`'s Download menu entry reads: the compute
+ * context's `allowDownload`, from the last root the tree read. `true` until a
+ * root says otherwise, upstream's default. */
+const DOWNLOAD_ALLOWED_CONTEXT = "pythonOnViya.serverDownloadAllowed";
 
 /** What this module needs from the profile store. */
 export type ServerProfileSource = Pick<ProfileStore, "active" | "onDidChange">;
@@ -93,10 +102,26 @@ export function registerServerExplorer(
       attributes,
     });
 
+  let downloadAllowed = true;
+  const setDownloadAllowed = (allowed: boolean): void => {
+    downloadAllowed = allowed;
+    void vscode.commands.executeCommand(
+      "setContext",
+      DOWNLOAD_ALLOWED_CONTEXT,
+      allowed,
+    );
+  };
+  setDownloadAllowed(true);
+
   const provider = new SasServerTreeProvider(
     currentAdapter,
     log,
     forgetProfile,
+    (root) => {
+      if (root.allowDownload !== downloadAllowed) {
+        setDownloadAllowed(root.allowDownload);
+      }
+    },
   );
   const fileSystem = new SasServerFileSystemProvider(
     adapterFor,
@@ -104,9 +129,28 @@ export function registerServerExplorer(
     log,
     forgetProfile,
   );
+  const refresh = (): void => {
+    provider.refresh();
+  };
   const view = vscode.window.createTreeView(SERVER_VIEW_ID, {
     treeDataProvider: provider,
     showCollapseAll: true,
+    dragAndDropController: new SasServerDragAndDropController({
+      currentAdapter,
+      refresh,
+      forgetProfile,
+      log,
+      viewId: SERVER_VIEW_ID,
+    }),
+  });
+
+  registerServerCommands(context, {
+    currentAdapter,
+    refresh,
+    forgetProfile,
+    downloadAllowed: () => downloadAllowed,
+    log,
+    viewId: SERVER_VIEW_ID,
   });
 
   context.subscriptions.push(

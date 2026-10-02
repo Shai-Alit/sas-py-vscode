@@ -35,7 +35,18 @@ export type ServerProblem =
   /** A save whose `ETag` no longer matches: the file changed on the server
    * since it was opened (`412`, Finding 13.24). */
   | { code: "changed-on-server"; path: string; error: ViyaError }
-  /** A file larger than the editor cap. */
+  /** A create, rename or move onto a name the destination folder already
+   * holds, as a file or a folder (`409`, Findings 13.24 and 13.31). */
+  | { code: "name-taken"; path: string; error: ViyaError }
+  /** A name this view will not send: empty, `.`, `..`, or holding `/`. */
+  | { code: "invalid-name"; name: string }
+  /** A move into the item's own folder, into itself, or below itself. The
+   * server answers the last with a `404` naming no path (Finding 13.31). */
+  | { code: "invalid-move"; path: string; target: string }
+  /** An upload whose bytes failed after its empty file was created, and the
+   * empty file could not be removed again. `cause` is why the bytes failed. */
+  | { code: "left-empty"; path: string; cause: ServerProblem }
+  /** A file larger than the cap: the editor's, or a transfer's. */
   | { code: "too-large"; path: string; size: number; limitBytes: number }
   /** A save of a file whose read carried no `ETag`, so it cannot be
    * conditional, or of a file never read in this window. */
@@ -56,8 +67,16 @@ export function describeServerProblem(problem: ServerProblem): string {
       return `"${problem.path}" is not available on the SAS server${problem.root === undefined ? "" : ` (the root set by the ${problem.root.setBy})`} (HTTP ${String(problem.error.status)})`;
     case "changed-on-server":
       return `"${problem.path}" changed on the SAS server since it was opened (HTTP ${String(problem.error.status)})`;
+    case "name-taken":
+      return `"${problem.path}" already exists on the SAS server (HTTP ${String(problem.error.status)})`;
+    case "invalid-name":
+      return `"${problem.name}" is not a name a file or folder can have`;
+    case "invalid-move":
+      return `"${problem.path}" cannot be moved into "${problem.target}"`;
+    case "left-empty":
+      return `${describeServerProblem(problem.cause)}; an empty "${problem.path}" was left on the SAS server`;
     case "too-large":
-      return `"${problem.path}" is ${String(problem.size)} bytes, over the ${String(problem.limitBytes)}-byte editor limit`;
+      return `"${problem.path}" is ${String(problem.size)} bytes, over the ${String(problem.limitBytes)}-byte limit`;
     case "no-version":
       return `"${problem.path}" has no version tag to save against`;
     case "wrong-kind":

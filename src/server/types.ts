@@ -26,6 +26,25 @@ export const FILE_CONTENT_REL = "getFile";
  * the name (Finding 13.22). */
 export const FILE_WRITE_REL = "createFile";
 
+/** The relation on a folder that creates a folder in it. `POST`, `{name,
+ * isDirectory: true}` (Finding 13.24). */
+export const MAKE_DIRECTORY_REL = "makeDirectory";
+
+/** The relation on a **folder** that creates a file in it: `POST`, `{name,
+ * isDirectory: false}` (Finding 13.24). The same name on a file is
+ * {@link FILE_WRITE_REL}, a `PUT` of its bytes; which one a link is depends
+ * on the item that carries it. */
+export const CREATE_CHILD_FILE_REL = "createFile";
+
+/** The relations that rename or move a file and a folder: `PUT` on the item,
+ * `{name, path}` (Findings 13.25 and 13.31). */
+export const RENAME_FILE_REL = "renameFile";
+export const RENAME_DIRECTORY_REL = "renameDirectory";
+
+/** The relations that delete a file and a folder (Finding 13.26). */
+export const DELETE_FILE_REL = "deleteFile";
+export const DELETE_DIRECTORY_REL = "deleteDirectory";
+
 /** The relation on a collection page that reads the next one. */
 export const NEXT_REL = "next";
 

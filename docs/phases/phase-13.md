@@ -192,10 +192,10 @@ where `PROC PYTHON` actually hurts.
   state-aware **Commands** view, first in the sidebar (manual items
   13.75–13.80 passed). Merged 2026-10-02 as [PR #243](https://github.com/Shai-Alit/sas-py-vscode/pull/243), squash
   `743b126`. See "13c built" below.
-- [ ] **13d — F11, snippet library.** Added 2026-09-24. Built 2026-10-02
-  on `feat/13d-snippet-library`: twelve `viya-` snippets and an **Insert
-  Viya Snippet...** picker (Findings 13.42–13.46, manual items
-  13.81–13.85). See "13d built" below.
+- [x] **13d — F11, snippet library.** Added 2026-09-24. Twelve `viya-`
+  snippets and an **Insert Viya Snippet...** picker (Findings 13.42–13.46,
+  manual items 13.81–13.85 passed). Merged 2026-10-02 as [PR #244](https://github.com/Shai-Alit/sas-py-vscode/pull/244), squash
+  `3e1a8b2`. See "13d built" below.
 - [x] **13e — F10, the ADR-0014 decision.** Added 2026-09-24. Decided
   2026-10-01: a notebook cell displays its last expression and its open
   figures ([ADR-0046](../adr/0046-notebook-cells-display-their-result.md),
@@ -2023,6 +2023,10 @@ command did not change.
 
 **Manual tests, 2026-10-02.** Items 13.81–13.85 all passed, against the
 branch with the review fixes in, with nothing to fold in.
+
+**PR review and merge, 2026-10-02.** CI and both AI reviewers were green
+on [PR #244](https://github.com/Shai-Alit/sas-py-vscode/pull/244), with nothing to fold in. Merged 2026-10-02, squash
+`3e1a8b2`.
 
 ---
 

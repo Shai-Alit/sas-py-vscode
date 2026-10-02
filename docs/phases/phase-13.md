@@ -2202,6 +2202,13 @@ phase they are recorded here as known limitations, not fixed:
    far it got. A fix needs the content client to mark an abort itself,
    which every content caller would then see.
 
+**Merged** 2026-10-02 as
+[PR #246](https://github.com/Shai-Alit/sas-py-vscode/pull/246), squash
+`91cf19e`. The Claude reviewer found nothing blocking. Its one nit, a
+moved link in `docs/status-archive.md` whose label still reads
+`docs/phases/phase-13.md`, was left as is: the archive moves text
+verbatim and rebases only the targets, as the Phase 12 section does.
+
 ---
 
 ## Probe findings

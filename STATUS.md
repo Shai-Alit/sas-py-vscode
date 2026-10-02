@@ -505,6 +505,12 @@ call, the same day). The outcomes:
   security fix.
 - **1.0 wording swept.** `docs/signing-in.md` and
   `docs/release-checklist.md`'s D2 no longer point at a 1.0.
+- **Merged** 2026-10-02 as
+  [PR #246](https://github.com/Shai-Alit/sas-py-vscode/pull/246), squash
+  `91cf19e`. The Claude reviewer found nothing blocking. Its one nit, a
+  moved link in `docs/status-archive.md` whose label still reads
+  `docs/phases/phase-13.md`, was left as is: the archive moves text
+  verbatim and rebases only the targets, as the Phase 12 section does.
 
 ## Open items carried forward
 

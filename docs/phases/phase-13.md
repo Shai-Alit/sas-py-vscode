@@ -2209,6 +2209,11 @@ moved link in `docs/status-archive.md` whose label still reads
 `docs/phases/phase-13.md`, was left as is: the archive moves text
 verbatim and rebases only the targets, as the Phase 12 section does.
 
+**Released** 2026-10-02 as `v0.1.6`, from release PR
+[#247](https://github.com/Shai-Alit/sas-py-vscode/pull/247), squash
+`bc2076e`: VS Marketplace, Open VSX and the
+[GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.6).
+
 ---
 
 ## Probe findings

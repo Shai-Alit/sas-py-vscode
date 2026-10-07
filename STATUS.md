@@ -198,9 +198,16 @@ call, 2026-10-02).** SAS is folding these features into its official SAS VS
 Code extension, so this project stays in preview
 (`PRODUCTION_PLAN.md` §8's 2026-10-02 amendment). F1's Phase 14 and Phase
 13's second-execution-backend section are not planned. A new phase starts
-only if Sean adds features to the roadmap later. **Next: the `v0.1.6`
-preview release** (`docs/release-checklist.md`), carrying everything Phase
-13 merged since `v0.1.5`.
+only if Sean adds features to the roadmap later.
+
+**`v0.1.6` shipped 2026-10-02, the preview release carrying Phase 13.**
+`release.yml` published it to the VS Marketplace and Open VSX and created
+the [GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.6),
+from release PR [#247](https://github.com/Shai-Alit/sas-py-vscode/pull/247)
+(squash `bc2076e`). That PR also added the changelog entry for the
+**Commands** view, which 13c's own PR had left out. The post-publish manual
+pass (D7) is Sean's to run. With no 1.0 and nothing planned after Phase 13,
+there is no next phase; a patch release follows only if a fix is needed.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 
@@ -635,7 +642,7 @@ the Phase 13 housekeeping checkpoint. Per-phase detail
 | 10 — Viya environment awareness | ✅ **done — 10a and 10b both merged, 2026-09-15 and 2026-09-16** (local/remote diff + `Search environment` QuickPick; Pylance stub reflection via generated catch-all stubs and a managed `stubPath`, plus a "Restart Language Server" remedy). A 2026-09-16 deep-dive pass found and fixed the last shadowing gap after several review rounds — a generated stub could displace Pylance's own bundled typeshed (Finding 10.7, new `src/run/typeshedNames.ts`). Final PRs [#178](https://github.com/Shai-Alit/sas-py-vscode/pull/178)/[#182](https://github.com/Shai-Alit/sas-py-vscode/pull/182), squash `62cf217`/`2842722`. `npm run verify` green (1,814 unit; coverage 96.3/95.68/96.08/96.3); `npm run test:integration` green (454 passing). Phase 10→11 housekeeping ran and closed 2026-09-16 (see above). | `docs/phases/phase-10.md` |
 | 11 — Remaining parity gaps | ✅ **done — 11a–11e all merged, 2026-09-17–21** (interactive window; CAS/SWAT SQL passthrough; pre-release bugs; CAS table properties/CSV export; session startup). AI-agent integration and CSV-guard research moved to Phase 12, 2026-09-22 ([ADR-0037](docs/adr/0037-ai-agent-integration-approach.md)). Three decided-to-build follow-ups (large-table confirmation for SAS library tables, a `CasProblem` for an oversized response, autoExec-error text) folded into Phase 12 as slice 12e, not started. Final PRs [#192](https://github.com/Shai-Alit/sas-py-vscode/pull/192)/[#193](https://github.com/Shai-Alit/sas-py-vscode/pull/193)/[#194](https://github.com/Shai-Alit/sas-py-vscode/pull/194)/[#195](https://github.com/Shai-Alit/sas-py-vscode/pull/195)/[#197](https://github.com/Shai-Alit/sas-py-vscode/pull/197)/[#199](https://github.com/Shai-Alit/sas-py-vscode/pull/199). `npm run verify` green (1,856 unit; coverage 96.38/95.85/96.16/96.38); `npm run test:integration` green (495 passing). Phase 11→12 housekeeping ran and closed 2026-09-22 (see above). | `docs/phases/phase-11.md` |
 | 12 — AI-agent integration | ✅ **done — every slice merged, decided or moved, 2026-09-22–29.** Agent Skill, CSV formula guard, inline graphics ([ADR-0038](docs/adr/0038-every-run-is-wrapped-in-a-named-ods-destination.md)), session-poisoning fix ([ADR-0039](docs/adr/0039-every-job-switches-syntax-check-mode-off.md)), scheme rename for coexistence with the SAS extension ([ADR-0040](docs/adr/0040-every-uri-scheme-is-the-extensions-own.md)), Python startup snippet ([ADR-0041](docs/adr/0041-startup-snippet-is-a-separate-step-in-the-same-job.md)), reusable CAS connection, licence gate. 12o/12p (MCP server) moved to Phase 13 as 13l/13m. Final PR [#226](https://github.com/Shai-Alit/sas-py-vscode/pull/226), squash `7063b9c`. `npm run verify` green (2,018 unit; coverage 96.24/96.07/95.96/96.24); `npm run test:integration` green (544 passing). Phase 12→13 housekeeping ran and closed 2026-09-29 (see above). | `docs/phases/phase-12.md` |
-| 13 — Feature completion | ✅ **done — every slice merged, decided, dropped or moved, 2026-09-30–10-02; the last planned phase.** SAS Content upload/download and Copy/Paste, notebook cell results and a DataFrame grid, the SAS Server view, the Commands view, a snippet library, polish. The MCP server was removed before any release ([ADR-0044](docs/adr/0044-the-mcp-server-for-claude-code-is-removed.md)). Final PR [#245](https://github.com/Shai-Alit/sas-py-vscode/pull/245), squash `1e92dbd`. `npm run verify` green (2,307 unit; coverage 96.70/96.36/96.66/96.70); `npm run test:integration` green (647 passing). Phase 13 housekeeping ran and closed 2026-10-02 (see above). | `docs/phases/phase-13.md` |
+| 13 — Feature completion | ✅ **done — every slice merged, decided, dropped or moved, 2026-09-30–10-02; the last planned phase.** SAS Content upload/download and Copy/Paste, notebook cell results and a DataFrame grid, the SAS Server view, the Commands view, a snippet library, polish. The MCP server was removed before any release ([ADR-0044](docs/adr/0044-the-mcp-server-for-claude-code-is-removed.md)). Final PR [#245](https://github.com/Shai-Alit/sas-py-vscode/pull/245), squash `1e92dbd`; released in `v0.1.6`, 2026-10-02. `npm run verify` green (2,307 unit; coverage 96.70/96.36/96.66/96.70); `npm run test:integration` green (647 passing). Phase 13 housekeeping ran and closed 2026-10-02 (see above). | `docs/phases/phase-13.md` |
 
 Each phase file bundles everything that phase needs: the plan section
 (architecture, scope), the runbook punch list (commands, order, barriers), and

@@ -73,7 +73,25 @@
     "3.1.7, fixed in 3.1.8, and failed the v0.1.4 release PR's supply-chain job.",
     "It is reached through @vscode/vsce's secretlint (@secretlint/config-loader",
     "-> ajv). ajv wants fast-uri ^3.0.1, so `overrides.fast-uri`'s floor rises",
-    "from ^3.1.6 to ^3.1.8: the same child-override route, no entry here."
+    "from ^3.1.6 to ^3.1.8: the same child-override route, no entry here.",
+    "",
+    "On 2026-10-15 three high dev-tree advisories failed the post-v0.1.6 bump PR",
+    "(#249). GHSA-68FV-2MGG-JV7Q (source-map-js < 1.2.2, through vitepress's vue",
+    "and postcss) and GHSA-G2V6-RQMX-R4W6 (@vue/server-renderer < 3.5.42, through",
+    "vitepress's vue) are fixed inside their parents' ranges, so `npm update vue",
+    "@vue/server-renderer source-map-js postcss` cleared both with a lockfile",
+    "refresh alone. The third, GHSA-VFJ7-8CJW-P6XM (braces), has no patched",
+    "version at all and is carried below. @vscode/vsce 4.0.0 drops the path (it",
+    "replaces secretlint's globby with tinyglobby), but ovsx 1.2.0 still wants",
+    "@vscode/vsce ^3.7.1, so a vsce major bump alone would not clear it, and",
+    "overriding vsce under ovsx outside its declared range is a publishing-tool",
+    "risk this entry is cheaper than."
   ],
-  "allowed": []
+  "allowed": [
+    {
+      "id": "GHSA-VFJ7-8CJW-P6XM",
+      "why": "braces <= 3.0.3 (no patched release exists) is reached only through @vscode/vsce -> secretlint -> globby -> fast-glob -> micromatch, in the dev tree. It runs at package time over this repository's own files, on glob patterns the packaging tooling supplies; no untrusted pattern reaches it, and nothing on this path ships in the .vsix. Re-check when braces publishes a fix or ovsx accepts @vscode/vsce 4, which drops the path.",
+      "expires": "2026-12-31"
+    }
+  ]
 }

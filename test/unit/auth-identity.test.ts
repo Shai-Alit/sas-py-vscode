@@ -386,9 +386,10 @@ describe("fetchCurrentUser", () => {
     assert.equal(result.problem.code, "session-expired");
   });
 
-  it("tells a missing credential apart from a rejected one", async () => {
-    // A bare challenge means nothing was sent, which is our bug. Telling that
-    // user to sign in again cannot help, because they may already be signed in.
+  it("tells a token refused without a reason apart from an expired one", async () => {
+    // This service sends a bare challenge only when no token arrived, but this
+    // request always carries one, so the bare challenge still means the token
+    // was not accepted — not an expiry the deployment never claimed.
     viya.use(
       http.get(
         USER_URL,
@@ -403,7 +404,7 @@ describe("fetchCurrentUser", () => {
     const result = await fetchCurrentUser(request);
 
     assert.ok(!result.ok);
-    assert.equal(result.problem.code, "not-authenticated");
+    assert.equal(result.problem.code, "token-rejected");
   });
 
   it("does not claim a session expired when the 401 says something else", async () => {

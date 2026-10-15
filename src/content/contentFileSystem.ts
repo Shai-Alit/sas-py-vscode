@@ -281,10 +281,9 @@ export class SasContentFileSystemProvider
         // there is no live session for this deployment, so the user is signed
         // out for it — the same state `resolve()` catches when there is no
         // adapter at all. Give the sign-in prompt. Every other `unauthorized`
-        // keeps `localiseAuthProblem`'s wording, including a bare-challenge
-        // `not-authenticated`: the auth layer defines that as a dropped
-        // `Authorization` header — our bug — and words it "please report this",
-        // so sending that user to sign in again is a loop that cannot fix it.
+        // keeps `localiseAuthProblem`'s wording, which for a token the
+        // deployment refused (`session-expired`, `token-rejected`) already says
+        // to sign in again.
         if (problem.noSession === true) {
           return vscode.FileSystemError.Unavailable(
             vscode.l10n.t("Sign in to SAS Viya to open SAS Content files."),

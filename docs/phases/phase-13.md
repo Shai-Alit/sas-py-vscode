@@ -2214,6 +2214,37 @@ verbatim and rebases only the targets, as the Phase 12 section does.
 `bc2076e`: VS Marketplace, Open VSX and the
 [GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.6).
 
+### Post-release fix: stale sign-in after an endpoint edit (#250), 2026-10-15
+
+A customer on `v0.1.6` reported that, right after editing a connection
+profile, the CAS and SAS Content views logged "the request reached the
+deployment without credentials, so it was refused". Tracked as
+[#250](https://github.com/Shai-Alit/sas-py-vscode/issues/250). It had two
+causes, both fixed on `fix/250-stale-token-bare-challenge`.
+
+1. **A sign-in survived an edit of the profile's endpoint.** The provider
+   keeps the live session and the stored refresh token by profile id, and an
+   edit keeps the id. `resolve()` served an unexpired access token without
+   checking which deployment issued it, so the old deployment's token went to
+   the new one. The stored session now records the endpoint that issued it.
+   `resolve()` discards both halves when the held or stored endpoint differs
+   from the profile's, compared with `sameEndpoint` (the rule `accountId`
+   already uses), and logs why. An entry written before the field existed
+   still renews, and the renewal writes the field back. Whether the customer
+   changed the endpoint is not confirmed. This is the only path found that
+   produces the log.
+2. **A bare 401 challenge was read as "no credentials sent".** Finding 9 holds
+   for the identities service only. CAS management, Folders and Compute send
+   the same bare challenge for a refused token (Finding 13.50). A new
+   `AuthProblem`, `token-rejected`, now covers a bare challenge on a request
+   that carried a token, which is every request that can reach one. Its
+   message says to sign in again. `not-authenticated` now means only that no
+   token could be obtained. The troubleshooting page was rewritten to match.
+
+**Verify.** `npm run test:unit` 2,311 passing. `npm run test:integration`
+651 passing, four of them new endpoint-edit cases in
+`auth-provider.test.ts`.
+
 ---
 
 ## Probe findings
@@ -3481,3 +3512,37 @@ reading, unchecked: Snowflake answers a constant without a warehouse and
 needs one for `GENERATOR`, and `SNOWLIB`'s was unavailable. Nothing about
 a large result set was measured. **Cleanup:** every compute session was
 deleted and read back `404`.
+
+### Finding 13.50 — Most services answer a refused token with a bare challenge (2026-10-15)
+
+Probed for #250. Read-only `GET`s on `verde`, comparing the
+`WWW-Authenticate` header of each `401`.
+
+**Documented.** RFC 6750 §3 says a challenge with no `error` parameter is what
+a resource server sends when the request carried no credentials. A refused
+token gets `error="invalid_token"`. Finding 9 observed this on the identities
+service, and the extension read every bare challenge that way.
+
+**Observed.**
+
+| Request carried | `casManagement/servers` | `folders/folders/@myFolder` | `compute/contexts` | `identities/users/@currentUser` |
+|---|---|---|---|---|
+| A valid token | `200` | `200` | not run | not run |
+| No `Authorization` header | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer` |
+| `Bearer ` with nothing after it | `Bearer scope="openid"` | `Bearer scope="openid"` | not run | not run |
+| A string that is not a JWT | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer scope="openid"` | `error="invalid_token"`, "Provided token isn't active" |
+| A well-formed JWT signed by another issuer | `Bearer scope="openid"` | `Bearer scope="openid"` | not run | not run |
+| A real token with its signature altered | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer scope="openid"` | `error="invalid_token"`, "…Signed JWT rejected: Invalid signature" |
+
+**What this establishes.** On CAS management, Folders and Compute, a refused
+token and a missing one look the same. Only the identities service follows
+RFC 6750 §3 and Finding 9. A client that has attached a token must therefore
+read a bare challenge as "not accepted", not "not sent". That reading is
+`token-rejected` in `src/auth/challenge.ts`. Finding 9 still holds for the
+identities service, and only its general reading is superseded.
+
+**What it does not establish.** What an expired token, as opposed to an
+invalid one, gets from these three services. No expired token was to hand. A
+bare challenge reads as `token-rejected` either way, so the extension's
+behaviour does not depend on the answer. Other Viya services and other
+releases were not probed.

@@ -8,7 +8,7 @@
  *
  * ## Why this exists at all
  *
- * Probe finding 9 in `PROBE-FINDINGS.md`, against a live Viya 4: a request
+ * Probe finding 9 (`docs/phases/phase-1.md`), against a live Viya 4: a request
  * carrying a dead token comes back as **401 with a zero-byte body**. Not an error
  * envelope, not a JSON `{error}` like the token endpoint sends — nothing. The
  * whole diagnosis is in one response header:
@@ -20,12 +20,17 @@
  * ```
  *
  * With no credentials at all it degrades to a bare `www-authenticate: Bearer`.
- * That difference is worth reading precisely: one means the session expired and
- * the user should sign in again, the other means nothing was sent, which is a
- * bug on our side rather than something to ask the user to fix. A caller reading
- * only the status code cannot tell them apart and has to write one message
- * covering both, which is how "request failed" ends up in front of a user whose
- * session simply timed out.
+ *
+ * That was measured on the identities service, and it does not hold across
+ * Viya. CAS management, Folders and Compute send a bare `Bearer
+ * scope="openid"` for a refused token too — garbage, foreign-issued, or
+ * signature-broken alike (Finding 13.50). So a bare challenge cannot be read as
+ * "nothing was sent". Every caller here has already attached a token, so it is
+ * read as "the token was not accepted", and the remedy is to sign in again —
+ * the same as `invalid_token`, under its own code so the log does not claim an
+ * expiry the deployment never stated. A caller reading only the status code
+ * still cannot do better than "request failed", which is why this module
+ * exists.
  *
  * ## What is deliberately not implemented
  *
@@ -49,7 +54,8 @@ export interface BearerChallenge {
    * The challenge parameters, names lower-cased, quotes removed.
    *
    * Empty for a bare `Bearer`, which RFC 6750 §3 says is what a server sends
-   * when the request carried no credentials at all. Empty and absent therefore
+   * when the request carried no credentials at all (and which most Viya
+   * services also send for a refused one — Finding 13.50). Empty and absent therefore
    * mean different things and {@link parseBearerChallenge} keeps them apart:
    * `undefined` is "no Bearer challenge here", `{}` is "a challenge with nothing
    * to say".
@@ -133,10 +139,14 @@ export function parseBearerChallenge(
  * `error === "invalid_token"` is how one caller starts signing the user out
  * while another retries, which is the shape of a refresh loop.
  *
- * - No `error` parameter — a bare `Bearer` — is `not-authenticated`. RFC 6750 §3
- *   says that is what a server sends when the request carried no credentials, so
- *   it is our bug rather than the user's, and telling them to sign in again
- *   sends them round a loop that cannot fix it.
+ * - No `error` parameter — a bare `Bearer`, `Bearer scope="openid"`, or no
+ *   challenge at all — is `token-rejected`. RFC 6750 §3 reserves that for a
+ *   request with no credentials, but every caller has attached a token before
+ *   it can read a 401, and CAS management, Folders and Compute send the same
+ *   challenge for a token they refused (Finding 13.50). Reading it as "nothing
+ *   was sent" told users to report a bug when signing in again was the fix.
+ *   A request that really had no token never gets here: its client raises
+ *   `not-authenticated` before sending.
  * - `error="invalid_token"` is `session-expired`: recoverable, and the only
  *   correct response is to sign in again. `error_description` is carried
  *   verbatim because RFC 6750 §3 specifies it as a human-readable diagnostic.
@@ -159,7 +169,7 @@ export function challengeProblem(
   const error = challenge?.params.error;
 
   if (error === undefined || error === "") {
-    return { code: "not-authenticated" };
+    return { code: "token-rejected" };
   }
 
   if (error === "invalid_token") {

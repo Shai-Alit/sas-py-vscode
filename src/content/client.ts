@@ -234,11 +234,10 @@ async function sendRequest(
     // The message only: the thrown value came from the sign-in machinery.
     // `not-authenticated` rather than `session-expired` because nothing was
     // presented to the deployment at all. `noSession` marks *this* origin —
-    // no token was ever obtained — apart from a 401 the deployment answered
-    // with a bare challenge, which `challengeProblem` below also reads as
-    // `not-authenticated`: `src/content/contentFileSystem.ts` shows a sign-in
-    // prompt for the former and the auth layer's "please report this" for the
-    // latter.
+    // no token was ever obtained — so `src/content/contentFileSystem.ts` can
+    // word its own sign-in prompt for it. A 401 the deployment answered,
+    // including a bare-challenge one (`token-rejected`, Finding 13.50), keeps
+    // the auth layer's wording.
     return {
       ok: false,
       reason: `could not obtain an access token: ${messageOf(error)}`,
@@ -353,7 +352,7 @@ async function sendRequest(
         reason:
           problem.code === "session-expired"
             ? "the access token is no longer active"
-            : "the SAS Content service refused a request carrying no credentials",
+            : "the SAS Content service did not accept the access token, and gave no reason",
         problem: { code: "unauthorized", problem },
       };
     }

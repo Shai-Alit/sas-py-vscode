@@ -29,6 +29,7 @@ const every: AuthProblem[] = [
   { code: "session-expired" },
   { code: "session-expired", description: "Access token expired" },
   { code: "not-authenticated" },
+  { code: "token-rejected" },
   { code: "identity-unavailable", detail: "406 for the summary media type" },
 ];
 

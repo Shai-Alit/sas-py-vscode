@@ -58,11 +58,11 @@ export type ContentProblem =
    * `noSession` is set only when `src/content/client.ts` never obtained a
    * token — `config.token()` threw, so nothing was sent and there is no live
    * session for this deployment. It is *not* set for a 401 the deployment
-   * actually answered, including a bare-challenge one that `challengeProblem`
-   * also reads as `not-authenticated` (which the auth layer defines as a
-   * dropped `Authorization` header — our bug, "please report this", not a
-   * sign-in loop). `src/content/contentFileSystem.ts` needs the two apart: the
-   * first warrants a sign-in prompt, the second does not.
+   * actually answered, which carries the auth layer's own reading
+   * (`session-expired` or `token-rejected`, Finding 13.50) and its own
+   * wording. `src/content/contentFileSystem.ts` needs the two apart: the first
+   * gets a sign-in prompt worded for opening a file, the second the auth
+   * layer's message.
    */
   | { code: "unauthorized"; problem: AuthProblem; noSession?: true }
   /**

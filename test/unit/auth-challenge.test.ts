@@ -149,30 +149,40 @@ describe("challengeProblem", () => {
     );
   });
 
-  it("reads a bare challenge as a request that carried no credentials", () => {
-    // RFC 6750 §3: this is what a server sends when nothing was presented. It is
-    // our bug, not the user's, and telling them to sign in again sends them
-    // round a loop that cannot fix it.
+  it("reads a bare challenge as a token the deployment did not accept", () => {
+    // RFC 6750 §3 reserves this for a request with no credentials, but every
+    // caller has attached a token by the time it reads a 401, and CAS
+    // management, Folders and Compute send it for a refused token too (Finding
+    // 13.50). Reading it as "nothing was sent" told users to report a bug when
+    // signing in again was the fix (#250).
     assert.deepEqual(challengeProblem(parseBearerChallenge("Bearer")), {
-      code: "not-authenticated",
+      code: "token-rejected",
     });
+  });
+
+  it("reads the scope-only challenge most Viya services send the same way", () => {
+    // Verbatim from Finding 13.50: a parameter, but not an `error` one.
+    assert.deepEqual(
+      challengeProblem(parseBearerChallenge('Bearer scope="openid"')),
+      { code: "token-rejected" },
+    );
   });
 
   it("says the same for a 401 with no challenge at all", () => {
     assert.deepEqual(challengeProblem(parseBearerChallenge(undefined)), {
-      code: "not-authenticated",
+      code: "token-rejected",
     });
     assert.deepEqual(challengeProblem(parseBearerChallenge("")), {
-      code: "not-authenticated",
+      code: "token-rejected",
     });
     assert.deepEqual(
       challengeProblem(parseBearerChallenge('Basic realm="viya"')),
-      { code: "not-authenticated" },
+      { code: "token-rejected" },
     );
     // Passing `undefined` straight through is the same answer by a different
     // route, and it is the one a caller with no header at all takes.
     assert.deepEqual(challengeProblem(undefined), {
-      code: "not-authenticated",
+      code: "token-rejected",
     });
   });
 

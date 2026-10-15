@@ -380,11 +380,11 @@ async function send(
  *
  * Finding 9: the body is zero bytes, so the challenge header is the only place
  * the answer can come from. A challenge carrying `error="invalid_token"` means
- * the token died and the user should sign in again; a bare `Bearer` means
- * nothing was sent, which the user cannot fix by signing in again because they
- * may already be signed in.
+ * the token died and the user should sign in again. This service sends a bare
+ * `Bearer` only when no token arrived, but this request always carries one, so
+ * a bare challenge here still means the token was not accepted.
  *
- * Both of those readings now live in {@link challengeProblem}, because 2a-i
+ * Both of those readings live in {@link challengeProblem}, because 2a-i
  * needed the same two from Compute. Only the third arm — an error token this
  * service has to interpret for itself — stays here, and only the `reason`
  * wording is this module's own.
@@ -393,11 +393,11 @@ function unauthorized(response: TransportResponse): IdentityResult {
   const challenge = parseBearerChallenge(response.headers["www-authenticate"]);
   const problem = challengeProblem(challenge);
 
-  if (problem?.code === "not-authenticated") {
+  if (problem?.code === "token-rejected") {
     return {
       ok: false,
       reason:
-        "the identities service refused a request carrying no credentials",
+        "the identities service did not accept the access token, and gave no reason",
       problem,
     };
   }
@@ -426,6 +426,18 @@ function unauthorized(response: TransportResponse): IdentityResult {
       detail: `HTTP 401, WWW-Authenticate error=${error}`,
     },
   };
+}
+
+/**
+ * Whether two spellings of an endpoint name the same deployment.
+ *
+ * The same reduction {@link accountId} applies, so a session is judged to belong
+ * to a profile by exactly the rule that names its account: a stray space or a
+ * trailing slash added in an edit is not a different deployment, and must not
+ * sign anybody out.
+ */
+export function sameEndpoint(a: string, b: string): boolean {
+  return root(a) === root(b);
 }
 
 /** Trailing slashes off, so joining a path cannot produce a double slash. */

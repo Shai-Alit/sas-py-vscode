@@ -13,6 +13,10 @@ import {
 } from "../../../src/auth/authProvider";
 import { accountId } from "../../../src/auth/identity";
 import { SessionStore } from "../../../src/auth/sessionStore";
+import {
+  SESSION_SCHEMA_VERSION,
+  sessionSecretKey,
+} from "../../../src/auth/signIn";
 import type { HttpTransport } from "../../../src/auth/transport";
 import { AuthUriHandler } from "../../../src/auth/uriHandler";
 import { ProfileStore } from "../../../src/profile/store";
@@ -80,6 +84,8 @@ interface Harness {
   provider: ViyaAuthenticationProvider;
   profiles: ProfileStore;
   sessions: SessionStore;
+  /** The keychain double behind {@link sessions}, for writing a raw entry. */
+  secrets: ReturnType<typeof memorySecrets>;
   /** Every URL the transport was asked for, in order. */
   requests: string[];
   /**
@@ -299,6 +305,7 @@ function harness(
     provider,
     profiles,
     sessions,
+    secrets,
     requests,
     whoami,
     trust,
@@ -417,11 +424,15 @@ describe("Viya authentication provider", () => {
     it("materialises a session from a stored refresh token", async () => {
       // The fresh-window case: the access token was never written to disk, so
       // the first read has to renew it and then ask who it belongs to.
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
-      });
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
 
       const sessions = await h.provider.getSessions();
 
@@ -441,11 +452,15 @@ describe("Viya authentication provider", () => {
     it("does not refresh a token that is still good", async () => {
       // The assertion this file exists for. Upstream refreshes on every
       // `getSessions`, and the Accounts menu polls it.
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
-      });
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
       await h.provider.getSessions();
       const afterFirst = h.requests.length;
 
@@ -459,12 +474,121 @@ describe("Viya authentication provider", () => {
       );
     });
 
-    it("fires the change event once, on the transition", async () => {
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
+    describe("when the profile's endpoint is edited (#250)", () => {
+      // Both caches are keyed on the profile id, and an edit keeps the id. The
+      // defect these pin: the old deployment's unexpired access token was
+      // served for the new endpoint, and the new deployment refused it.
+
+      async function pointProfileAt(endpoint: string): Promise<void> {
+        await set("connectionProfiles", {
+          Prod: { version: 1, id: PROFILE_ID, endpoint },
+        });
+      }
+
+      it("discards a live session instead of serving it for the new endpoint", async () => {
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
+        assert.equal((await h.provider.getSessions()).length, 1);
+
+        await pointProfileAt(OTHER_ENDPOINT);
+        const before = h.requests.length;
+        const sessions = await h.provider.getSessions();
+
+        assert.deepEqual(sessions, []);
+        assert.equal(
+          h.requests.length,
+          before,
+          "the old deployment's refresh token was sent to the new one",
+        );
+        assert.equal(await h.sessions.read(PROFILE_ID), undefined);
+        assert.equal(linesMatching(h.logged, /now points at/).length, 1);
+        assert.deepEqual(h.contexts.at(-1), {
+          key: AUTHORIZED_CONTEXT_KEY,
+          value: false,
+        });
       });
+
+      it("does not renew a stored session against a different deployment", async () => {
+        // The fresh-window half: nothing is held in memory, so only the stored
+        // entry knows which deployment issued its refresh token.
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
+        await pointProfileAt(OTHER_ENDPOINT);
+
+        assert.deepEqual(await h.provider.getSessions(), []);
+        assert.equal(h.requests.length, 0, "a renewal was attempted");
+        assert.equal(await h.sessions.read(PROFILE_ID), undefined);
+      });
+
+      it("keeps the session when the edit only respells the same endpoint", async () => {
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
+        await h.provider.getSessions();
+
+        await pointProfileAt(`${ENDPOINT}/`);
+        const before = h.requests.length;
+        const sessions = await h.provider.getSessions();
+
+        assert.equal(sessions.length, 1);
+        assert.equal(
+          h.requests.length,
+          before,
+          "a respelling forced a renewal",
+        );
+        assert.equal(linesMatching(h.logged, /now points at/).length, 0);
+      });
+
+      it("still renews an entry written before the endpoint was recorded", async () => {
+        // v0.1.6 and earlier stored no endpoint. Such an entry cannot be judged,
+        // and discarding it would sign every existing user out on upgrade.
+        await h.secrets.store(
+          sessionSecretKey(PROFILE_ID),
+          JSON.stringify({
+            v: SESSION_SCHEMA_VERSION,
+            refreshToken: FAKE_REFRESH,
+          }),
+        );
+
+        const sessions = await h.provider.getSessions();
+
+        assert.equal(sessions.length, 1);
+        assert.equal(sessions[0]?.accessToken, NEXT_ACCESS);
+        // The renewal writes the endpoint back, so the next edit is caught.
+        assert.equal((await h.sessions.read(PROFILE_ID))?.endpoint, ENDPOINT);
+      });
+    });
+
+    it("fires the change event once, on the transition", async () => {
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
 
       await h.provider.getSessions();
       await h.provider.getSessions();
@@ -482,11 +606,15 @@ describe("Viya authentication provider", () => {
     });
 
     it("reports a sign-out as removed", async () => {
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
-      });
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
       await h.provider.getSessions();
 
       await h.provider.removeSession(PROFILE_ID);
@@ -514,11 +642,15 @@ describe("Viya authentication provider", () => {
       // the Problems panel, which a transient drop should not. Trust revocation
       // is the one such drop that doesn't need the in-memory token to have
       // expired first (`getSessions` serves a live token straight from memory).
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
-      });
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
       await h.provider.getSessions();
 
       h.trust.granted = false;
@@ -548,11 +680,15 @@ describe("Viya authentication provider", () => {
     });
 
     it("does not persist the access token", async () => {
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
-      });
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
 
       const sessions = await h.provider.getSessions();
       assert.equal(sessions[0]?.accessToken, NEXT_ACCESS);
@@ -571,11 +707,15 @@ describe("Viya authentication provider", () => {
       // in a dialog over whatever the user was doing.
       const refused = harness({ refreshOk: false });
       try {
-        await refused.sessions.write(PROFILE_ID, {
-          accessToken: FAKE_ACCESS,
-          refreshToken: FAKE_REFRESH,
-          tokenType: "bearer",
-        });
+        await refused.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
 
         assert.deepEqual(await refused.provider.getSessions(), []);
         assert.deepEqual(refused.contexts.at(-1), {
@@ -617,11 +757,15 @@ describe("Viya authentication provider", () => {
     it("answers for the account asked for without unpublishing the others", async () => {
       await configureBothProfiles();
       for (const id of [PROFILE_ID, OTHER_PROFILE_ID]) {
-        await h.sessions.write(id, {
-          accessToken: FAKE_ACCESS,
-          refreshToken: FAKE_REFRESH,
-          tokenType: "bearer",
-        });
+        await h.sessions.write(
+          id,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          id === PROFILE_ID ? ENDPOINT : OTHER_ENDPOINT,
+        );
       }
       await h.provider.getSessions();
       assert.equal(
@@ -694,11 +838,15 @@ describe("Viya authentication provider", () => {
       // is inside the expiry skew, so every read renews.
       const shortLived = harness({ expiresIn: 30 });
       try {
-        await shortLived.sessions.write(PROFILE_ID, {
-          accessToken: FAKE_ACCESS,
-          refreshToken: FAKE_REFRESH,
-          tokenType: "bearer",
-        });
+        await shortLived.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
 
         await shortLived.provider.getSessions();
         await shortLived.provider.getSessions();
@@ -721,11 +869,15 @@ describe("Viya authentication provider", () => {
       // session with no account behind it would put an empty row in the menu.
       const anonymous = harness({ identityStatus: 401 });
       try {
-        await anonymous.sessions.write(PROFILE_ID, {
-          accessToken: FAKE_ACCESS,
-          refreshToken: FAKE_REFRESH,
-          tokenType: "bearer",
-        });
+        await anonymous.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
 
         assert.deepEqual(await anonymous.provider.getSessions(), []);
       } finally {
@@ -855,11 +1007,15 @@ describe("Viya authentication provider", () => {
       // Without the second write the stalled profile would return before it
       // reached the network and prove nothing.
       for (const id of [PROFILE_ID, OTHER_PROFILE_ID]) {
-        await h.sessions.write(id, {
-          accessToken: FAKE_ACCESS,
-          refreshToken: FAKE_REFRESH,
-          tokenType: "bearer",
-        });
+        await h.sessions.write(
+          id,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          id === PROFILE_ID ? ENDPOINT : OTHER_ENDPOINT,
+        );
       }
     });
 
@@ -961,11 +1117,15 @@ describe("Viya authentication provider", () => {
       await configureProfile();
       // A session that is genuinely there: the point is that the gate refuses to
       // serve it, not that there was nothing to serve.
-      await h.sessions.write(PROFILE_ID, {
-        accessToken: FAKE_ACCESS,
-        refreshToken: FAKE_REFRESH,
-        tokenType: "bearer",
-      });
+      await h.sessions.write(
+        PROFILE_ID,
+        {
+          accessToken: FAKE_ACCESS,
+          refreshToken: FAKE_REFRESH,
+          tokenType: "bearer",
+        },
+        ENDPOINT,
+      );
     });
 
     afterEach(async () => {

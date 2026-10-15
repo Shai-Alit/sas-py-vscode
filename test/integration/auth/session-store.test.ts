@@ -29,6 +29,8 @@ import { memorySecrets, testLogChannel } from "../../helpers/auth-host";
 /** Not a credential: a shape that looks like one. */
 const FAKE_REFRESH = "refresh-token-placeholder";
 const PROFILE_ID = "session-store-integration";
+/** The deployment every write below says issued its tokens. */
+const ENDPOINT = "https://viya.example.com";
 
 function tokens(): Tokens {
   return {
@@ -60,31 +62,35 @@ describe("stored sessions", () => {
   });
 
   it("round-trips a session through the keychain", async () => {
-    await store.write(PROFILE_ID, tokens());
+    await store.write(PROFILE_ID, tokens(), ENDPOINT);
 
     const read = await store.read(PROFILE_ID);
     assert.ok(read, "a session was written and did not come back");
     assert.equal(read.refreshToken, FAKE_REFRESH);
+    // The issuing deployment comes back with it: the provider compares it with
+    // the profile's endpoint before renewing (#250).
+    assert.equal(read.endpoint, ENDPOINT);
   });
 
   it("stamps the stored record with a schema version", async () => {
     // The version is what lets a future shape be recognised as old rather than
     // corrupt, and it is only visible in the raw entry — `StoredSession` does not
     // carry it, because nothing above this layer should be deciding on it.
-    await store.write(PROFILE_ID, tokens());
+    await store.write(PROFILE_ID, tokens(), ENDPOINT);
 
     const raw = secrets.entries.get(sessionSecretKey(PROFILE_ID));
     assert.ok(raw);
     assert.deepEqual(JSON.parse(raw) as unknown, {
       v: SESSION_SCHEMA_VERSION,
       refreshToken: FAKE_REFRESH,
+      endpoint: ENDPOINT,
     });
   });
 
   it("persists the refresh token and nothing else", async () => {
     // Not tidiness: an access token on disk is a second long-lived copy of a
     // credential bought for a few minutes of convenience. Upstream keeps both.
-    await store.write(PROFILE_ID, tokens());
+    await store.write(PROFILE_ID, tokens(), ENDPOINT);
 
     const raw = secrets.entries.get(sessionSecretKey(PROFILE_ID)) ?? "";
     assert.ok(!raw.includes("access-token-placeholder"), raw);
@@ -101,7 +107,7 @@ describe("stored sessions", () => {
   });
 
   it("stores nothing under a name the user could rename", async () => {
-    await store.write(PROFILE_ID, tokens());
+    await store.write(PROFILE_ID, tokens(), ENDPOINT);
     assert.deepEqual(
       [...secrets.entries.keys()],
       [`pythonOnViya.session.${PROFILE_ID}`],
@@ -115,8 +121,8 @@ describe("stored sessions", () => {
   it("clears rather than storing a grant with no refresh token", async () => {
     // Some deployments are configured not to issue one. The honest record of
     // that is no stored session, so the next window starts at the browser.
-    await store.write(PROFILE_ID, tokens());
-    await store.write(PROFILE_ID, tokensWithoutRefresh());
+    await store.write(PROFILE_ID, tokens(), ENDPOINT);
+    await store.write(PROFILE_ID, tokensWithoutRefresh(), ENDPOINT);
 
     assert.equal(secrets.entries.size, 0);
     assert.equal(await store.read(PROFILE_ID), undefined);
@@ -144,7 +150,7 @@ describe("stored sessions", () => {
   });
 
   it("forgets a session on request and does not mind being asked twice", async () => {
-    await store.write(PROFILE_ID, tokens());
+    await store.write(PROFILE_ID, tokens(), ENDPOINT);
     await store.clear(PROFILE_ID);
     await store.clear(PROFILE_ID);
 

@@ -209,6 +209,15 @@ from release PR [#247](https://github.com/Shai-Alit/sas-py-vscode/pull/247)
 pass (D7) is Sean's to run. With no 1.0 and nothing planned after Phase 13,
 there is no next phase; a patch release follows only if a fix is needed.
 
+**A fix is needed: [#250](https://github.com/Shai-Alit/sas-py-vscode/issues/250),
+in progress 2026-10-15 on `fix/250-stale-token-bare-challenge`.** Editing a
+profile's endpoint kept the old deployment's sign-in, and a refused token was
+logged as a request sent "without credentials" (Finding 13.50). The fix and
+its record are in `phase-13.md`'s "Post-release fix" Runbook entry. Next:
+merge [#249](https://github.com/Shai-Alit/sas-py-vscode/pull/249) (the
+0.1.7-dev bump, held up by three dev-tree advisories, now cleared), then the
+#250 PR, then release `v0.1.7`.
+
 ## Phase 5→6 housekeeping — done 2026-09-09
 
 Full write-up in `docs/status-archive.md`; the outcomes:

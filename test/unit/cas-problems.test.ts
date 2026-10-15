@@ -28,6 +28,11 @@ describe("cas/problems describeCasProblem", () => {
       /refused the request:/,
     ],
     [
+      // The #250 log line, as it now reads: a refused token, not a missing one.
+      { code: "unauthorized", problem: { code: "token-rejected" } },
+      /refused the request: the deployment did not accept the access token/,
+    ],
+    [
       {
         code: "unauthorized",
         problem: { code: "not-authenticated" },

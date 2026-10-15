@@ -797,13 +797,15 @@ describe("createComputeClient", () => {
     });
 
     it("tells a bare challenge apart from a dead token", async () => {
+      // Compute's real challenge for a refused token, verbatim from Finding
+      // 13.50: no `error` parameter, so no claim that the token expired.
       const client = createComputeClient({
         root: ROOT,
         token: () => TOKEN,
         transport: record(
           response({
             status: 401,
-            headers: { "www-authenticate": "Bearer" },
+            headers: { "www-authenticate": 'Bearer scope="openid"' },
           }),
         ).transport,
       });
@@ -813,7 +815,7 @@ describe("createComputeClient", () => {
       assert.ok(!result.ok, "a 401 was reported as a success");
       assert.deepEqual(result.problem, {
         code: "unauthorized",
-        problem: { code: "not-authenticated" },
+        problem: { code: "token-rejected" },
       });
     });
 

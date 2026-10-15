@@ -64,6 +64,7 @@ import {
   accountId as toAccountId,
   accountLabel,
   fetchCurrentUser,
+  sameEndpoint,
   type IdentityDeps,
   type ViyaUser,
 } from "./identity";
@@ -654,11 +655,28 @@ export class ViyaAuthenticationProvider
     profile: ViyaProfile,
   ): Promise<vscode.AuthenticationSession | undefined> {
     const held = this.live.get(profile.id);
+    // Both caches are keyed on the profile's id, and an edit keeps the id while
+    // the endpoint changes underneath it — through the edit command or by hand
+    // in settings.json. Checked before the expiry, because an unexpired token
+    // from the old deployment is exactly the one that would otherwise be served.
+    if (held !== undefined && !sameEndpoint(held.endpoint, profile.endpoint)) {
+      await this.discardMoved(profile, held.endpoint);
+      return undefined;
+    }
     if (held !== undefined && !needsRefresh(held.tokens, Date.now())) {
       return toSession(profile.id, held);
     }
 
     const stored = await this.sessions.read(profile.id);
+    // An entry from before `endpoint` was recorded cannot be judged, and is
+    // renewed as before; the renewal then records it. See `StoredSession`.
+    if (
+      stored?.endpoint !== undefined &&
+      !sameEndpoint(stored.endpoint, profile.endpoint)
+    ) {
+      await this.discardMoved(profile, stored.endpoint);
+      return undefined;
+    }
     if (stored === undefined) {
       // Two different facts, and only one of them is ordinary.
       //
@@ -781,8 +799,37 @@ export class ViyaAuthenticationProvider
 
     const session: LiveSession = { tokens, user, endpoint: profile.endpoint };
     this.live.set(profile.id, session);
-    await this.sessions.write(profile.id, tokens);
+    await this.sessions.write(profile.id, tokens, profile.endpoint);
     return toSession(profile.id, session);
+  }
+
+  /**
+   * Forgets a profile's sign-in because it was issued by a deployment the
+   * profile no longer points at (#250).
+   *
+   * Both halves go: the access token in memory and the refresh token on disk.
+   * Keeping either one sends a credential from `issuedBy` to the profile's new
+   * endpoint — the access token directly, the refresh token to its token
+   * endpoint — and the deployment's refusal of it reads, on most services, as a
+   * request that carried no credentials at all (Finding 13.50).
+   *
+   * Info, like the expired-without-refresh line in {@link resolve}: it happens
+   * once per edit, since the next read finds nothing, and it answers the
+   * question the user is about to ask.
+   */
+  private async discardMoved(
+    profile: ViyaProfile,
+    issuedBy: string,
+  ): Promise<void> {
+    this.live.delete(profile.id);
+    await this.sessions.clear(profile.id);
+    this.log.info(
+      vscode.l10n.t(
+        "This connection profile now points at {0}, so its sign-in to {1} was discarded. Sign in again to continue.",
+        profile.endpoint,
+        issuedBy,
+      ),
+    );
   }
 
   /**

@@ -190,6 +190,21 @@ describe("cas/client", () => {
     assert.equal(result.problem.problem.code, "session-expired");
   });
 
+  it("reads CAS management's bare challenge as token-rejected (#250)", async () => {
+    // Verbatim from Finding 13.50: CAS management answers a refused token —
+    // garbage, foreign-issued or signature-broken — with no `error` parameter.
+    // This is the 401 the #250 log reported as "without credentials".
+    const { client } = clientWith({
+      status: 401,
+      headers: { "www-authenticate": 'Bearer scope="openid"' },
+    });
+    const result = await client.send({ link: SERVERS });
+    assert.ok(!result.ok);
+    assert.equal(result.problem.code, "unauthorized");
+    assert.equal(result.problem.problem.code, "token-rejected");
+    assert.equal(result.problem.noSession, undefined);
+  });
+
   it("maps a 403 to forbidden and reads the error envelope", async () => {
     const { client } = clientWith({
       status: 403,

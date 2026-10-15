@@ -1140,6 +1140,13 @@ back to the service that issued it.
 
 ### Finding 9 — A dead token is a 401 with an empty body
 
+> **Narrowed 2026-10-15 by
+> [Finding 13.50](phase-13.md#finding-1350--most-services-answer-a-refused-token-with-a-bare-challenge-2026-10-15).**
+> What follows holds for the identities service, where it was measured. CAS
+> management, Folders and Compute send a bare `Bearer scope="openid"` for a
+> refused token as well, so a bare challenge does not mean "nothing was sent"
+> in general.
+
 Two probes, one with a syntactically invalid bearer token and one with no
 `Authorization` header at all. Both returned **401 with a zero-byte body**. The
 diagnosis is only in the response header:

@@ -2245,6 +2245,34 @@ causes, both fixed on `fix/250-stale-token-bare-challenge`.
 651 passing, four of them new endpoint-edit cases in
 `auth-provider.test.ts`.
 
+**Adversarial review (local, before push).** Nothing blocking. Four findings,
+all folded in:
+
+1. **A stale session in memory deleted the stored entry.** The stored entry is
+   shared across windows, so a window still holding the old deployment's
+   session could delete a sign-in another window had just made to the new
+   endpoint. Now a stale in-memory session drops only itself, and the stored
+   entry is judged against its own endpoint. If nothing is stored, the
+   endpoint-edit line is logged rather than the "expired" one.
+2. **A pre-#250 entry still sent its refresh token to the new deployment, on
+   every poll.** It records no endpoint, so it can't be judged, and a failed
+   renewal never cleared it. Probed (Finding 13.51): SASLogon refuses a refresh
+   token with `401` and `invalid_token`, not RFC 6749's `invalid_grant`. When
+   that refusal comes back for an entry with no endpoint, the entry is now
+   cleared, after a re-read so that another window's newer entry survives.
+   **What remains:** an upgraded entry is still sent to the new deployment
+   once, the first time it is renewed. Signing out and in again, as the
+   CHANGELOG says, avoids even that. A refusal of an entry that records its
+   endpoint is left as it was.
+3. **The `not-authenticated` comment in `messages.ts` claimed the token source
+   had always failed.** The comment now also covers the no-session case.
+4. **`establish` compared endpoints exactly.** It now uses `sameEndpoint`, so
+   there is a single rule.
+
+**Verify after the fixes.** `npm run test:integration` 656 passing, five of
+them new in `auth-provider.test.ts`. The unit tier does not reach the
+provider and was not rerun. `npm run check:docs` green.
+
 ---
 
 ## Probe findings
@@ -2253,7 +2281,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.50.
+finding is 13.52.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -3546,3 +3574,35 @@ invalid one, gets from these three services. No expired token was to hand. A
 bare challenge reads as `token-rejected` either way, so the extension's
 behaviour does not depend on the answer. Other Viya services and other
 releases were not probed.
+
+### Finding 13.51 — SASLogon refuses a refresh token with `invalid_token`, not `invalid_grant` (2026-10-15)
+
+Probed for #250's adversarial review, with the developer's approval for the
+`POST`. Two `POST /SASLogon/oauth/token` requests on `verde`, with
+`grant_type=refresh_token`, `client_id=vscode` and an empty secret. Neither
+used a real refresh token, so nothing was revoked or created.
+
+**Documented.** RFC 6749 §5.2 says a refresh token that is invalid, expired,
+revoked or issued to another client gets `400` and `invalid_grant`.
+
+**Observed.**
+
+| Refresh token sent | Status | `error` | `error_description` |
+|---|---|---|---|
+| An opaque string, 35 characters | `401` | `invalid_token` | "The token expired, was revoked, or the token ID is incorrect." |
+| A JWT naming another issuer, with a random signature | `401` | `invalid_token` | "Could not verify token signature." |
+
+Both answers carried `Content-Type: application/json` and a
+`WWW-Authenticate: Bearer error="invalid_token", …` header repeating the body.
+Neither description echoed the token sent.
+
+**What this establishes.** SASLogon departs from RFC 6749 here. A check for a
+refused refresh token that looks only for `invalid_grant` never matches.
+`tokenEndpoint.ts` maps the body to `oauth-rejected` with
+`error: "invalid_token"`, and `refusedRefreshToken` in `authProvider.ts`
+accepts that as a refusal, along with `invalid_grant`.
+
+**What it does not establish.** The answer to a real, expired or revoked
+refresh token that this deployment issued, and to a refresh token from a
+genuinely different deployment, whose key id `verde` would not know. Neither
+was to hand. No other release was probed.

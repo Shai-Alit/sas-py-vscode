@@ -68,7 +68,7 @@ import {
   type IdentityDeps,
   type ViyaUser,
 } from "./identity";
-import { describeAuthProblem } from "./problems";
+import { describeAuthProblem, type AuthProblem } from "./problems";
 import type { SessionStore } from "./sessionStore";
 import {
   needsRefresh,
@@ -654,14 +654,21 @@ export class ViyaAuthenticationProvider
   private async resolve(
     profile: ViyaProfile,
   ): Promise<vscode.AuthenticationSession | undefined> {
-    const held = this.live.get(profile.id);
+    let held = this.live.get(profile.id);
     // Both caches are keyed on the profile's id, and an edit keeps the id while
     // the endpoint changes underneath it — through the edit command or by hand
     // in settings.json. Checked before the expiry, because an unexpired token
     // from the old deployment is exactly the one that would otherwise be served.
+    //
+    // Only the copy in memory goes here. The stored entry is shared with every
+    // other window, and one of them may already have signed in to the new
+    // endpoint, so it is judged against its own endpoint below rather than
+    // against this window's stale one.
+    let movedFrom: string | undefined;
     if (held !== undefined && !sameEndpoint(held.endpoint, profile.endpoint)) {
-      await this.discardMoved(profile, held.endpoint);
-      return undefined;
+      this.live.delete(profile.id);
+      movedFrom = held.endpoint;
+      held = undefined;
     }
     if (held !== undefined && !needsRefresh(held.tokens, Date.now())) {
       return toSession(profile.id, held);
@@ -683,7 +690,13 @@ export class ViyaAuthenticationProvider
       // A stored entry that exists but cannot be parsed is not either of them:
       // `SessionStore.read` has already discarded it and said so at warning
       // level, so what is left here is genuine absence.
-      if (held === undefined) {
+      if (movedFrom !== undefined) {
+        // This window's session was dropped above for an edit, and there is
+        // nothing on disk to say otherwise. Not the expired line below: nothing
+        // expired, and that line would send the user looking for the wrong
+        // cause.
+        this.logMoved(profile, movedFrom);
+      } else if (held === undefined) {
         // Nobody is signed in to this profile — a fresh window, a sign-out, or
         // a profile never used. Debug, and unlocalised like every other debug
         // line, because the Accounts menu polls this for every profile it can
@@ -739,6 +752,18 @@ export class ViyaAuthenticationProvider
         ),
       );
       this.live.delete(profile.id);
+      // An entry with no endpoint is the one that could have been issued by
+      // the deployment this profile used to name: one edited on v0.1.6, before
+      // the field existed. Its refresh token has now gone to the new endpoint
+      // once, and left in place it would go again on every poll. An entry that
+      // records its endpoint was issued here, and a refusal of it is left as it
+      // was before #250.
+      if (
+        stored.endpoint === undefined &&
+        refusedRefreshToken(result.problem)
+      ) {
+        await this.forgetRefused(profile, stored.refreshToken);
+      }
       return undefined;
     }
 
@@ -758,7 +783,10 @@ export class ViyaAuthenticationProvider
   ): Promise<vscode.AuthenticationSession | undefined> {
     const cached =
       identity === "renewed-token" ? this.live.get(profile.id) : undefined;
-    let user = cached?.endpoint === profile.endpoint ? cached.user : undefined;
+    let user =
+      cached !== undefined && sameEndpoint(cached.endpoint, profile.endpoint)
+        ? cached.user
+        : undefined;
 
     if (user === undefined) {
       const result = await fetchCurrentUser(
@@ -804,8 +832,8 @@ export class ViyaAuthenticationProvider
   }
 
   /**
-   * Forgets a profile's sign-in because it was issued by a deployment the
-   * profile no longer points at (#250).
+   * Forgets a profile's sign-in because the stored entry was issued by a
+   * deployment the profile no longer points at (#250).
    *
    * Both halves go: the access token in memory and the refresh token on disk.
    * Keeping either one sends a credential from `issuedBy` to the profile's new
@@ -813,9 +841,9 @@ export class ViyaAuthenticationProvider
    * endpoint — and the deployment's refusal of it reads, on most services, as a
    * request that carried no credentials at all (Finding 13.50).
    *
-   * Info, like the expired-without-refresh line in {@link resolve}: it happens
-   * once per edit, since the next read finds nothing, and it answers the
-   * question the user is about to ask.
+   * Only for a stored entry that names its endpoint. A stale session in memory
+   * alone is dropped in {@link resolve} without touching the disk, because the
+   * stored entry may belong to another window's newer sign-in.
    */
   private async discardMoved(
     profile: ViyaProfile,
@@ -823,11 +851,45 @@ export class ViyaAuthenticationProvider
   ): Promise<void> {
     this.live.delete(profile.id);
     await this.sessions.clear(profile.id);
+    this.logMoved(profile, issuedBy);
+  }
+
+  /**
+   * Says that a sign-in to `issuedBy` was dropped for an endpoint edit.
+   *
+   * Info, like the expired-without-refresh line in {@link resolve}: it happens
+   * once per edit, since the next read finds nothing, and it answers the
+   * question the user is about to ask.
+   */
+  private logMoved(profile: ViyaProfile, issuedBy: string): void {
     this.log.info(
       vscode.l10n.t(
         "This connection profile now points at {0}, so its sign-in to {1} was discarded. Sign in again to continue.",
         profile.endpoint,
         issuedBy,
+      ),
+    );
+  }
+
+  /**
+   * Deletes a stored entry whose refresh token the deployment refused, if it is
+   * still the entry that was sent.
+   *
+   * Read again first because the entry is shared across windows. Another one
+   * may have signed in, or renewed with rotation on, while this renewal was in
+   * flight, and its new entry is not the one that was refused.
+   */
+  private async forgetRefused(
+    profile: ViyaProfile,
+    refreshToken: string,
+  ): Promise<void> {
+    const current = await this.sessions.read(profile.id);
+    if (current?.refreshToken !== refreshToken) return;
+    await this.sessions.clear(profile.id);
+    this.log.info(
+      vscode.l10n.t(
+        "The stored sign-in for {0} was refused, so it was discarded. Sign in again to continue.",
+        profile.endpoint,
       ),
     );
   }
@@ -1011,6 +1073,24 @@ function ownsAccount(
   account: vscode.AuthenticationSessionAccountInformation,
 ): boolean {
   return accountForEndpoint(profile.endpoint, [account]) !== undefined;
+}
+
+/**
+ * Whether a failed renewal was SASLogon refusing the refresh token itself, as
+ * opposed to an answer that never arrived or could not be read.
+ *
+ * SASLogon answers a refresh token it will not take, whether garbage or signed
+ * by another issuer, with a `401` and `invalid_token` (Finding 13.51). That is
+ * not the `invalid_grant` RFC 6749 §5.2 names for the case, so a check written
+ * from the RFC alone would never match. `invalid_grant` stays as well: the RFC
+ * names it, and SASLogon sends it for a bad authorization-code exchange
+ * (phase-1's code-verifier echo).
+ */
+function refusedRefreshToken(problem: AuthProblem): boolean {
+  return (
+    problem.code === "oauth-rejected" &&
+    (problem.error === "invalid_token" || problem.error === "invalid_grant")
+  );
 }
 
 function summarise(session: vscode.AuthenticationSession): SessionSummary {

@@ -136,6 +136,16 @@ function harness(
   options: {
     identityStatus?: number;
     refreshOk?: boolean;
+    /**
+     * The token endpoint's answer to every request, as a status and an OAuth
+     * `error`. `refreshOk: false` is shorthand for `400` and `invalid_grant`.
+     */
+    refreshFailure?: { status: number; error: string };
+    /**
+     * Runs while a token request is in flight, before it is answered: another
+     * window acting on the shared secret store mid-renewal.
+     */
+    beforeTokenAnswer?: () => Promise<void>;
     /** Lifetime of the tokens the fake endpoint issues. Default one hour. */
     expiresIn?: number;
     /**
@@ -220,14 +230,19 @@ function harness(
     }
 
     // The token endpoint.
-    const ok = options.refreshOk ?? true;
+    await options.beforeTokenAnswer?.();
+    const failure =
+      options.refreshFailure ??
+      (options.refreshOk === false
+        ? { status: 400, error: "invalid_grant" }
+        : undefined);
     return Promise.resolve({
-      ok,
-      status: ok ? 200 : 400,
+      ok: failure === undefined,
+      status: failure?.status ?? 200,
       headers: {},
       text: () =>
         Promise.resolve(
-          ok
+          failure === undefined
             ? JSON.stringify({
                 access_token: NEXT_ACCESS,
                 ...(options.refreshToken === false
@@ -236,7 +251,7 @@ function harness(
                 token_type: "bearer",
                 expires_in: options.expiresIn ?? 3600,
               })
-            : JSON.stringify({ error: "invalid_grant" }),
+            : JSON.stringify({ error: failure.error }),
         ),
     });
   };
@@ -576,6 +591,155 @@ describe("Viya authentication provider", () => {
         assert.equal(sessions[0]?.accessToken, NEXT_ACCESS);
         // The renewal writes the endpoint back, so the next edit is caught.
         assert.equal((await h.sessions.read(PROFILE_ID))?.endpoint, ENDPOINT);
+      });
+
+      it("keeps another window's sign-in when only this window's session is stale", async () => {
+        // The stored entry is shared across windows. This one still holds the
+        // old deployment's session in memory; another has since signed in to
+        // the new endpoint and stored that. Only the copy in memory is stale.
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
+        assert.equal((await h.provider.getSessions()).length, 1);
+
+        await pointProfileAt(OTHER_ENDPOINT);
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          OTHER_ENDPOINT,
+        );
+        const before = h.requests.length;
+        const sessions = await h.provider.getSessions();
+
+        assert.equal(sessions.length, 1);
+        assert.equal(
+          sessions[0]?.account.id,
+          accountId(OTHER_ENDPOINT, USER_ID),
+        );
+        assert.equal(
+          (await h.sessions.read(PROFILE_ID))?.endpoint,
+          OTHER_ENDPOINT,
+        );
+        assert.ok(
+          h.requests
+            .slice(before)
+            .every((url) => originOf(url) === originOf(OTHER_ENDPOINT)),
+          "a request went to the old deployment",
+        );
+        assert.equal(linesMatching(h.logged, /now points at/).length, 0);
+      });
+
+      it("says why when this window's stale session was all there was", async () => {
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
+        await h.provider.getSessions();
+        // Another window signed out, so nothing is stored.
+        await h.sessions.clear(PROFILE_ID);
+
+        await pointProfileAt(OTHER_ENDPOINT);
+        const before = h.requests.length;
+
+        assert.deepEqual(await h.provider.getSessions(), []);
+        assert.equal(h.requests.length, before);
+        assert.equal(linesMatching(h.logged, /now points at/).length, 1);
+        // Nothing expired, and saying so would send the user the wrong way.
+        assert.equal(linesMatching(h.logged, /has expired/).length, 0);
+      });
+
+      describe("an entry from before the endpoint was recorded", () => {
+        // Such an entry may have been issued by the deployment the profile used
+        // to name, and its refresh token goes to the new one before anything
+        // can tell. SASLogon refuses a refresh token it will not take with
+        // `401` and `invalid_token` (Finding 13.51).
+        const REFUSED = { status: 401, error: "invalid_token" };
+        const REPLACEMENT_REFRESH = "replacement-refresh-token-0123456789";
+
+        async function storeLegacyEntry(): Promise<void> {
+          await h.secrets.store(
+            sessionSecretKey(PROFILE_ID),
+            JSON.stringify({
+              v: SESSION_SCHEMA_VERSION,
+              refreshToken: FAKE_REFRESH,
+            }),
+          );
+        }
+
+        it("is discarded once the deployment refuses its refresh token", async () => {
+          h.dispose();
+          h = harness({ refreshFailure: REFUSED });
+          await storeLegacyEntry();
+
+          assert.deepEqual(await h.provider.getSessions(), []);
+          assert.equal(await h.sessions.read(PROFILE_ID), undefined);
+          assert.equal(
+            linesMatching(h.logged, /was refused, so it was discarded/).length,
+            1,
+          );
+
+          // Not sent again on the next poll.
+          const before = h.requests.length;
+          await h.provider.getSessions();
+          assert.equal(h.requests.length, before);
+        });
+
+        it("is kept when the renewal fails for another reason", async () => {
+          h.dispose();
+          h = harness({
+            refreshFailure: { status: 503, error: "temporarily_unavailable" },
+          });
+          await storeLegacyEntry();
+
+          assert.deepEqual(await h.provider.getSessions(), []);
+          assert.equal(
+            (await h.sessions.read(PROFILE_ID))?.refreshToken,
+            FAKE_REFRESH,
+          );
+        });
+
+        it("is not confused with a newer entry another window stored meanwhile", async () => {
+          h.dispose();
+          h = harness({
+            refreshFailure: REFUSED,
+            beforeTokenAnswer: () =>
+              h.sessions.write(
+                PROFILE_ID,
+                {
+                  accessToken: FAKE_ACCESS,
+                  refreshToken: REPLACEMENT_REFRESH,
+                  tokenType: "bearer",
+                },
+                ENDPOINT,
+              ),
+          });
+          await storeLegacyEntry();
+
+          assert.deepEqual(await h.provider.getSessions(), []);
+          assert.equal(
+            (await h.sessions.read(PROFILE_ID))?.refreshToken,
+            REPLACEMENT_REFRESH,
+          );
+          assert.equal(
+            linesMatching(h.logged, /was refused, so it was discarded/).length,
+            0,
+          );
+        });
       });
     });
 

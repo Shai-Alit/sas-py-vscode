@@ -90,8 +90,10 @@ export function localiseAuthProblem(problem: AuthProblem): string {
         "Your Viya sign-in has expired. Sign in again to continue.",
       );
     case "not-authenticated":
-      // Nothing reached the deployment: the token source failed first, and the
-      // log has its reason. Not "sign in again" — the caller that raises this
+      // Nothing reached the deployment, because there was no token to send:
+      // either no session is held (signed out, or dropped after an endpoint
+      // edit), or the token source failed and the log has its reason. Not
+      // "sign in again" — the caller that raises this
       // with a live session to offer (SAS Content's `noSession`) words its own
       // prompt, and a broken renewal is not fixed by repeating it.
       return vscode.l10n.t(

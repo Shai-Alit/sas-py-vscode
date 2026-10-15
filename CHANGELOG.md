@@ -19,7 +19,8 @@ called out under **Changed** with a migration note.
   different endpoint now discards the old sign-in and asks you to sign in
   again. Adding a trailing slash to the same endpoint does not. If you changed
   an endpoint on an earlier release, sign out of that account in the Accounts
-  menu and sign in again. See [Troubleshooting](docs/troubleshooting.md)
+  menu and sign in again. Otherwise the old sign-in is discarded the first time
+  the new deployment refuses it. See [Troubleshooting](docs/troubleshooting.md)
   ([#250](https://github.com/Shai-Alit/sas-py-vscode/issues/250)).
 - **A refused sign-in now tells you to sign in again.** Most SAS Viya services
   answer a token they won't accept the same way they answer a request with no

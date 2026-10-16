@@ -2351,6 +2351,9 @@ were fixed in one commit:
 2. **Claude (nit): the `not-authenticated` comment in `messages.ts` read as a
    fragment.** Reworded.
 
+**Merged** 2026-10-16 as [PR #251](https://github.com/Shai-Alit/sas-py-vscode/pull/251),
+squash `58b58fa`, closing #250. Next: release `v0.1.7`.
+
 ---
 
 ## Probe findings

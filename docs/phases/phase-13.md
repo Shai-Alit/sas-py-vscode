@@ -2352,7 +2352,12 @@ were fixed in one commit:
    fragment.** Reworded.
 
 **Merged** 2026-10-16 as [PR #251](https://github.com/Shai-Alit/sas-py-vscode/pull/251),
-squash `58b58fa`, closing #250. Next: release `v0.1.7`.
+squash `58b58fa`, closing #250.
+
+**Released** 2026-10-16 as `v0.1.7`, from release PR
+[#252](https://github.com/Shai-Alit/sas-py-vscode/pull/252), squash
+`0ecc590`: VS Marketplace, Open VSX and the
+[GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.7).
 
 ---
 

@@ -220,7 +220,14 @@ person as a single account, fixed under
 its record are in `phase-13.md`'s "Post-release fix" Runbook entry; the
 adversarial reviews, manual tests 13.89–13.93 and the PR review are done.
 [#249](https://github.com/Shai-Alit/sas-py-vscode/pull/249) (the 0.1.7-dev
-bump) merged first, squash `54611c6`. Next: release `v0.1.7`.
+bump) merged first, squash `54611c6`.
+
+**`v0.1.7` shipped 2026-10-16, a patch release for the #250 fix.**
+`release.yml` published it to the VS Marketplace and Open VSX and created
+the [GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.7),
+from release PR [#252](https://github.com/Shai-Alit/sas-py-vscode/pull/252)
+(squash `0ecc590`). The post-publish manual pass (D7) is Sean's to run. There
+is still no next phase; a patch release follows only if a fix is needed.
 
 ## Phase 5→6 housekeeping — done 2026-09-09
 

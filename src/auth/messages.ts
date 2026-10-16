@@ -92,10 +92,10 @@ export function localiseAuthProblem(problem: AuthProblem): string {
     case "not-authenticated":
       // Nothing reached the deployment, because there was no token to send:
       // either no session is held (signed out, or dropped after an endpoint
-      // edit), or the token source failed and the log has its reason. Not
-      // "sign in again" — the caller that raises this
-      // with a live session to offer (SAS Content's `noSession`) words its own
-      // prompt, and a broken renewal is not fixed by repeating it.
+      // edit), or the token source failed and the log has its reason. The
+      // message does not say "sign in again": a caller with a sign-in to offer
+      // (SAS Content's `noSession`) words its own prompt, and a broken renewal
+      // is not fixed by repeating it.
       return vscode.l10n.t(
         "Could not get a Viya sign-in for this request. See the Python on Viya log for details.",
       );

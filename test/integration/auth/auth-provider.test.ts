@@ -552,6 +552,49 @@ describe("Viya authentication provider", () => {
         assert.equal(await h.sessions.read(PROFILE_ID), undefined);
       });
 
+      it("keeps a sign-in another window stores while the stale entry is discarded", async () => {
+        // The stored entry is shared across windows. Another one signs in to
+        // the new endpoint between this window's read of the old entry and its
+        // clear, so the clear must not take the new entry with it.
+        const otherWindowRefresh = "other-window-refresh-token-0123456789";
+        await h.sessions.write(
+          PROFILE_ID,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          ENDPOINT,
+        );
+        await pointProfileAt(OTHER_ENDPOINT);
+        const read = h.sessions.read.bind(h.sessions);
+        let raced = false;
+        h.sessions.read = async (id) => {
+          const entry = await read(id);
+          if (!raced) {
+            raced = true;
+            await h.sessions.write(
+              PROFILE_ID,
+              {
+                accessToken: FAKE_ACCESS,
+                refreshToken: otherWindowRefresh,
+                tokenType: "bearer",
+              },
+              OTHER_ENDPOINT,
+            );
+          }
+          return entry;
+        };
+
+        await h.provider.getSessions();
+
+        assert.equal(
+          (await h.sessions.read(PROFILE_ID))?.refreshToken,
+          otherWindowRefresh,
+        );
+        assert.equal(linesMatching(h.logged, /now points at/).length, 0);
+      });
+
       it("keeps the session when the edit only respells the same endpoint", async () => {
         await h.sessions.write(
           PROFILE_ID,

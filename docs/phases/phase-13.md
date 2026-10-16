@@ -2338,6 +2338,19 @@ respelling an endpoint, changing it, two windows, two deployments as one
 person, and the upgrade from 0.1.6. They need two real deployments. All five
 passed (Sean, against `verde` and `innovation`) before the branch was pushed.
 
+**PR review ([#251](https://github.com/Shai-Alit/sas-py-vscode/pull/251)).**
+The Claude reviewer found nothing blocking. Two findings were raised and both
+were fixed in one commit:
+
+1. **Codex (blocking): `discardMoved` cleared the stored entry without
+   reading it again.** If another window signed in to the new endpoint between
+   this window's read and its clear, the clear deleted that sign-in. It now
+   reads the entry again and clears it only if the refresh token is still the
+   one judged stale, as `forgetRefused` does. A new case in
+   `auth-provider.test.ts` covers the race.
+2. **Claude (nit): the `not-authenticated` comment in `messages.ts` read as a
+   fragment.** Reworded.
+
 ---
 
 ## Probe findings

@@ -681,7 +681,7 @@ export class ViyaAuthenticationProvider
       stored?.endpoint !== undefined &&
       !sameEndpoint(stored.endpoint, profile.endpoint)
     ) {
-      await this.discardMoved(profile, stored.endpoint);
+      await this.discardMoved(profile, stored.endpoint, stored.refreshToken);
       return undefined;
     }
     if (stored === undefined) {
@@ -844,12 +844,19 @@ export class ViyaAuthenticationProvider
    * Only for a stored entry that names its endpoint. A stale session in memory
    * alone is dropped in {@link resolve} without touching the disk, because the
    * stored entry may belong to another window's newer sign-in.
+   *
+   * The stored entry is read again before it is cleared, as in
+   * {@link forgetRefused}: another window may have signed in to the new
+   * endpoint since `refreshToken` was read, and its entry is not the stale one.
    */
   private async discardMoved(
     profile: ViyaProfile,
     issuedBy: string,
+    refreshToken: string,
   ): Promise<void> {
     this.live.delete(profile.id);
+    const current = await this.sessions.read(profile.id);
+    if (current?.refreshToken !== refreshToken) return;
     await this.sessions.clear(profile.id);
     this.logMoved(profile, issuedBy);
   }

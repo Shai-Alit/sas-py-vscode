@@ -482,16 +482,24 @@ describe("session persistence", () => {
     assert.throws(() => sessionSecretKey("  "), /profile id/);
   });
 
-  it("keeps the refresh token and nothing else", () => {
-    const session = toStoredSession({
-      accessToken: FAKE_ACCESS,
-      refreshToken: FAKE_REFRESH,
-      expiresAt: 1_700_000_000_000,
-      tokenType: "bearer",
-    });
+  it("keeps the refresh token and the deployment that issued it, nothing else", () => {
+    const session = toStoredSession(
+      {
+        accessToken: FAKE_ACCESS,
+        refreshToken: FAKE_REFRESH,
+        expiresAt: 1_700_000_000_000,
+        tokenType: "bearer",
+      },
+      MOCK_VIYA_BASE,
+    );
 
     assert.ok(session);
-    assert.deepEqual(session, { refreshToken: FAKE_REFRESH });
+    // The endpoint is what lets a profile whose endpoint is later edited
+    // notice that this token belongs elsewhere (#250).
+    assert.deepEqual(session, {
+      refreshToken: FAKE_REFRESH,
+      endpoint: MOCK_VIYA_BASE,
+    });
     // The access token is short-lived and re-derivable. Persisting it would put
     // a second long-lived copy of a credential on disk to save a round trip.
     assert.ok(!serializeSession(session).includes(FAKE_ACCESS));
@@ -501,14 +509,28 @@ describe("session persistence", () => {
     // Some deployments are configured that way. An empty record would look like
     // corruption to whoever reads it next.
     assert.equal(
-      toStoredSession({ accessToken: FAKE_ACCESS, tokenType: "bearer" }),
+      toStoredSession(
+        { accessToken: FAKE_ACCESS, tokenType: "bearer" },
+        MOCK_VIYA_BASE,
+      ),
       undefined,
     );
   });
 
   it("round-trips", () => {
+    const session = { refreshToken: FAKE_REFRESH, endpoint: MOCK_VIYA_BASE };
+    assert.deepEqual(parseStoredSession(serializeSession(session)), session);
+  });
+
+  it("still reads an entry written before the endpoint was recorded", () => {
+    // v0.1.6 and earlier wrote no `endpoint`, under the same schema version.
+    // Rejecting those would sign every existing user out on upgrade.
     assert.deepEqual(
       parseStoredSession(serializeSession({ refreshToken: FAKE_REFRESH })),
+      { refreshToken: FAKE_REFRESH },
+    );
+    assert.deepEqual(
+      parseStoredSession(JSON.stringify({ v: 1, refreshToken: FAKE_REFRESH })),
       { refreshToken: FAKE_REFRESH },
     );
   });
@@ -530,6 +552,10 @@ describe("session persistence", () => {
       '{"v":1}',
       '{"v":1,"refreshToken":""}',
       '{"v":1,"refreshToken":42}',
+      '{"v":1,"refreshToken":"x","endpoint":""}',
+      '{"v":1,"refreshToken":"x","endpoint":"   "}',
+      '{"v":1,"refreshToken":"x","endpoint":42}',
+      '{"v":1,"refreshToken":"x","endpoint":null}',
     ]) {
       assert.equal(
         parseStoredSession(raw),

@@ -33,7 +33,7 @@
  * ever added; {@link ContentSession.clear} (sign-out) drops them all at once.
  */
 
-import { accountForEndpoint } from "../auth/identity";
+import { accountBelongsTo, accountForEndpoint } from "../auth/identity";
 import type { HttpTransport } from "../auth/transport";
 import { ContentAdapter } from "./adapter";
 import {
@@ -47,9 +47,10 @@ export interface AccountLike {
   readonly id: string;
 }
 
-/** A resolved auth session, narrowed to the one field the token flow reads. */
+/** A resolved auth session, narrowed to the fields the token flow reads. */
 export interface SessionLike {
   readonly accessToken: string;
+  readonly account: AccountLike;
 }
 
 /**
@@ -112,9 +113,12 @@ export class ContentSession<A extends AccountLike = AccountLike> {
   }
 
   /**
-   * A bearer token for `endpoint`, silently. Throws when there is no session;
-   * the client turns that into `not-authenticated` and the message only ever
-   * reaches the log.
+   * A bearer token for `endpoint`, silently. Throws when there is no session
+   * for it; the client turns that into `not-authenticated` and the message
+   * only ever reaches the log.
+   *
+   * The session's account is checked, for the reason `casSession.ts` gives:
+   * without a hint, VS Code can answer with another deployment's session.
    */
   private async tokenFor(endpoint: string): Promise<string> {
     const account = accountForEndpoint(
@@ -124,6 +128,11 @@ export class ContentSession<A extends AccountLike = AccountLike> {
     const session = await this.deps.getSession(account);
     if (session === undefined) {
       throw new Error("no active SAS Viya session for browsing SAS Content");
+    }
+    if (!accountBelongsTo(endpoint, session.account)) {
+      throw new Error(
+        "the only SAS Viya session on offer is for another deployment, so it was not used for browsing SAS Content",
+      );
     }
     return session.accessToken;
   }

@@ -39,6 +39,15 @@ import { type CasServerItem } from "../../../src/cas/types";
 
 const ENDPOINT = "https://viya.example.com";
 const PROFILE = { version: 1, id: "p1", endpoint: ENDPOINT };
+/** What a silent `getSession` with no hint can return: VS Code's remembered
+ * account, which here belongs to another deployment (#250). */
+const otherDeployment: vscode.AuthenticationSession = {
+  id: "s2",
+  // credential-scan: allow a fake auth session for a fake provider, never sent anywhere real
+  accessToken: "other-deployment-token",
+  account: { id: "https://viya-test.example.com::a1", label: "a" },
+  scopes: [],
+};
 const SESSION_ID = "3f2b1c0a-7d4e-4a91-b6c2-1e5f8a0d9c34-ses0000";
 const SESSION_PATH = `/compute/sessions/${SESSION_ID}`;
 const HOME =
@@ -310,7 +319,7 @@ function harness(): Harness {
                 id: "s1",
                 // credential-scan: allow a fake auth session for a fake provider, never sent anywhere real
                 accessToken: "borrowed-token",
-                account: { id: "a1", label: "a" },
+                account: { id: `${ENDPOINT}::a1`, label: "a" },
                 scopes: [],
               })),
           ...(overrides.showQuickPick === undefined
@@ -671,6 +680,16 @@ describe("pythonOnViya.insertCasConnectionSnippet (8b)", () => {
     assert.match(h.reports[0] ?? "", /sign-in/);
   });
 
+  it("treats another deployment's session as no session (#250)", async () => {
+    await pythonDocument();
+    const h = harness();
+
+    await h.build({ getSession: () => Promise.resolve(otherDeployment) })();
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /has no sign-in/);
+  });
+
   it("reports nothing when the user cancels the connect from the progress notification", async () => {
     // Mirrors `session-manager.test.ts`'s own "says nothing when the user
     // cancels" case: a token already cancelled before `getServers` resolves
@@ -809,7 +828,7 @@ describe("pythonOnViya.refreshCasToken (12n)", () => {
                   id: "s1",
                   // credential-scan: allow a fake auth session for a fake provider, never sent anywhere real
                   accessToken: "borrowed-token",
-                  account: { id: "a1", label: "a" },
+                  account: { id: `${ENDPOINT}::a1`, label: "a" },
                   scopes: [],
                 })),
             tokenFilerefSetting: overrides.tokenFilerefSetting ?? (() => ""),
@@ -914,6 +933,16 @@ describe("pythonOnViya.refreshCasToken (12n)", () => {
     assert.equal(h.reports.length, 1);
     assert.match(h.reports[0] ?? "", /sign-in/);
     assert.equal(h.requests.length, 0);
+  });
+
+  it("does not deliver another deployment's token (#250)", async () => {
+    const h = refreshHarness();
+
+    await h.run({ getSession: () => Promise.resolve(otherDeployment) });
+
+    assert.equal(h.reports.length, 1);
+    assert.match(h.reports[0] ?? "", /has no sign-in/);
+    assert.equal(h.requests.length, 0, "the token was written to the session");
   });
 
   it("reports nothing when the user cancels", async () => {

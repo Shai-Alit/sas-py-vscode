@@ -90,11 +90,20 @@ export function localiseAuthProblem(problem: AuthProblem): string {
         "Your Viya sign-in has expired. Sign in again to continue.",
       );
     case "not-authenticated":
-      // This one is our bug, and the message says so rather than sending the
-      // user to sign in again — they may already be signed in, and doing it
-      // twice will not add the header that was missing.
+      // Nothing reached the deployment, because there was no token to send:
+      // either no session is held (signed out, or dropped after an endpoint
+      // edit), or the token source failed and the log has its reason. The
+      // message does not say "sign in again": a caller with a sign-in to offer
+      // (SAS Content's `noSession`) words its own prompt, and a broken renewal
+      // is not fixed by repeating it.
       return vscode.l10n.t(
-        "The request to Viya was sent without a sign-in and was refused. Please report this, with the Python on Viya log.",
+        "Could not get a Viya sign-in for this request. See the Python on Viya log for details.",
+      );
+    case "token-rejected":
+      // The same remedy as `session-expired`, worded without claiming the
+      // token expired: the deployment only said it would not take it.
+      return vscode.l10n.t(
+        "SAS Viya did not accept your sign-in. Sign in again to continue.",
       );
     case "identity-unavailable":
       // `detail` stays out of the message for the same reason as

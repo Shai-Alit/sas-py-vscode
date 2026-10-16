@@ -75,10 +75,16 @@ describe("describeComputeProblem", () => {
       problem: { code: "not-authenticated" },
     });
 
+    const rejected = describeComputeProblem({
+      code: "unauthorized",
+      problem: { code: "token-rejected" },
+    });
+
     assert.match(expired, /no longer active/);
     assert.match(expired, /Access token expired/);
-    assert.match(missing, /without credentials/);
-    assert.notEqual(expired, missing);
+    assert.match(missing, /no access token was available/);
+    assert.match(rejected, /did not accept the access token/);
+    assert.equal(new Set([expired, missing, rejected]).size, 3);
   });
 
   it("names the status on an unclassified rejection", () => {

@@ -32,7 +32,7 @@
 import * as vscode from "vscode";
 
 import { AUTH_PROVIDER_ID } from "../auth/authProvider";
-import { accountForEndpoint } from "../auth/identity";
+import { accountBelongsTo, accountForEndpoint } from "../auth/identity";
 import { abortOn, type CancellationLike } from "../compute/cancellation";
 import { type ComputeClient } from "../compute/client";
 import { localiseComputeProblem } from "../compute/messages";
@@ -281,6 +281,21 @@ async function deliverToken(
     await resolved.listAccounts(),
   );
   const authSession = await resolved.getSession(account);
+  // Another deployment's session counts as none: without a hint, VS Code can
+  // offer one, and its token would go into this deployment's CAS session (see
+  // `casSession.ts`'s `tokenFor`). Its own message, because nothing ended:
+  // this deployment was never signed in.
+  if (
+    authSession !== undefined &&
+    !accountBelongsTo(active.profile.endpoint, authSession.account)
+  ) {
+    return {
+      ok: false,
+      message: vscode.l10n.t(
+        "This profile's SAS Viya deployment has no sign-in. Sign in, then try again.",
+      ),
+    };
+  }
   if (authSession === undefined) {
     return {
       ok: false,

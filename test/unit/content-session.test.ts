@@ -43,7 +43,11 @@ function harness(
     listAccounts: () => Promise.resolve(over.accounts ?? []),
     getSession:
       over.getSession ??
-      (() => Promise.resolve<SessionLike | undefined>({ accessToken: "tok" })),
+      (() =>
+        Promise.resolve<SessionLike | undefined>({
+          accessToken: "tok",
+          account: { id: `${ENDPOINT}::alex` },
+        })),
   });
   return { session, configs };
 }
@@ -100,7 +104,10 @@ describe("content/ContentSession", () => {
         ],
         getSession: (account) => {
           hints.push(account);
-          return Promise.resolve({ accessToken: "live-token" });
+          return Promise.resolve({
+            accessToken: "live-token",
+            account: { id: `${ENDPOINT}::alex` },
+          });
         },
       });
       session.adapterFor(ENDPOINT);
@@ -123,12 +130,33 @@ describe("content/ContentSession", () => {
         accounts: [],
         getSession: (account) => {
           hints.push(account);
-          return Promise.resolve({ accessToken: "t" });
+          return Promise.resolve({
+            accessToken: "t",
+            account: { id: `${ENDPOINT}::alex` },
+          });
         },
       });
       session.adapterFor(ENDPOINT);
       await configs[0]?.token();
       assert.deepEqual(hints, [undefined]);
+    });
+
+    it("refuses a session issued for another deployment (#250)", async () => {
+      // No hint, so VS Code answers from the account it remembers, and that
+      // can be another deployment's. Its token must not be sent here.
+      const { session, configs } = harness({
+        accounts: [],
+        getSession: () =>
+          Promise.resolve({
+            accessToken: "other-token",
+            account: { id: `${OTHER_ENDPOINT}::sam` },
+          }),
+      });
+      session.adapterFor(ENDPOINT);
+      await assert.rejects(
+        () => Promise.resolve(configs[0]?.token()),
+        /another deployment/,
+      );
     });
   });
 });

@@ -1202,3 +1202,133 @@ See `docs/phases/phase-13.md`'s "13k built" Runbook entry.
    - Expect: `.pythonOnViya/typings` is created again.
 4. Remove the setting and `python.analysis.stubPath` from the workspace
    settings, and delete `.pythonOnViya`.
+
+## #250 — a sign-in after an endpoint edit
+
+See `docs/phases/phase-13.md`'s "Post-release fix: stale sign-in after an
+endpoint edit (#250)" Runbook entry and
+[ADR-0049](../../adr/0049-account-label-names-the-deployment.md). The
+integration tests cover the stored entries. These check what the user sees.
+
+You need two deployments you can sign in to as the same person. Below they
+are **A** (`https://<host A>`) and **B** (`https://<host B>`), for example
+verde and innovation. Use two genuinely different hosts: the edit command
+normalizes the URL, so a default port such as `:443` is dropped on save and
+doesn't change the endpoint.
+
+**Set-up, once.**
+
+1. Build a `.vsix` from this branch, install it, and reload the window.
+2. Keep the connection profiles in your **user** settings, not the
+   workspace's, so a second window sees them.
+3. Have one profile, called P here, pointing at A. Make it active and sign
+   in. Keep **Output → Python on Viya** open.
+4. If VS Code asks whether Python on Viya may sign in using SAS Viya, allow
+   it. It asks once per deployment, because the account label changed
+   (ADR-0049).
+
+### 13.89 — A respelled endpoint keeps the sign-in
+
+- [x] **13.89** Adding a trailing slash to the endpoint signs nobody out.
+
+1. Open your user `settings.json` and add a `/` to the end of P's
+   endpoint. Save.
+2. Open the Accounts menu, then expand **SAS Content**.
+   - Expect: still signed in, with no sign-in prompt and no line in the
+     log saying a sign-in was discarded.
+3. Remove the `/` again.
+
+### 13.90 — A different endpoint discards the sign-in
+
+- [x] **13.90** Pointing a profile at another deployment drops the old
+      sign-in and says why, and nothing sends A's token to B.
+
+1. Run **Edit Connection Profile** and change P's endpoint to
+   `https://<host B>`. Save.
+2. Open the Accounts menu.
+   - Expect: the row for A is gone.
+   - Expect: the log has the line *This connection profile now points at
+     https://&lt;host B&gt;, so its sign-in to https://&lt;host A&gt; was
+     discarded. Sign in again to continue.*, once.
+3. Expand **CAS** and **SAS Content**.
+   - Expect: each asks you to sign in. No error, and no log line saying a
+     request reached the deployment without credentials or that SAS Viya
+     didn't accept your sign-in.
+4. Sign in.
+   - Expect: both views load B's content.
+5. Point P back at `https://<host A>` and sign in.
+
+### 13.91 — Another window's sign-in survives
+
+- [x] **13.91** A window still holding the old sign-in doesn't delete the
+      sign-in another window made to the new endpoint.
+
+1. With P on A and signed in, open a second window (**File → New
+   Window**). Call the first window 1 and the second window 2. Check that
+   both are signed in.
+2. In window 2, run **Edit Connection Profile**, change P's endpoint to
+   `https://<host B>`, and sign in.
+3. In window 1, open the Accounts menu.
+   - Expect: it shows the account for B, without asking you to sign in.
+   - Expect: window 1's log has no line saying a sign-in was discarded.
+4. In window 2, run **Developer: Reload Window**.
+   - Expect: still signed in, without a prompt. Before this fix, window 1
+     deleted window 2's stored sign-in in step 3.
+5. Close window 2, point P back at `https://<host A>`, and sign in.
+
+### 13.92 — Two deployments, one person
+
+- [x] **13.92** With two profiles signed in as the same person, each
+      profile's views use that profile's own sign-in.
+
+This is #250's root cause: one person on two deployments was one account to
+VS Code, so the second profile's views were sent the first one's token.
+
+1. Add a second profile, Q, pointing at B (or use one you have). Make Q
+   active and sign in. Then make P active and sign in.
+2. Open the Accounts menu.
+   - Expect: two rows, `<your name> (<host A>)` and `<your name> (<host
+     B>)`.
+3. Make Q active. Expand **CAS** and **SAS Content**.
+   - Expect: both load B's content. No log line saying SAS Viya didn't
+     accept your sign-in.
+4. Run **Python on Viya: Insert CAS Connection Snippet** in a `.py` file.
+   - Expect: it completes without a sign-in error.
+5. Make P active and repeat step 3.
+   - Expect: both load A's content.
+6. In the Accounts menu, sign out of the row for B.
+   - Expect: the row for A stays, and P's views still load.
+7. Make Q active, which is now signed out. Expand **CAS** and **SAS
+   Content**.
+   - Expect: both views ask you to sign in. No log line says SAS Viya
+     didn't accept your sign-in. This is the step that needs the check on
+     the returned session: VS Code offers A's session here, and it must not
+     be sent to B. (The snippet command's version of this check needs a
+     live compute connection on a profile with no sign-in, which can't be
+     set up by hand; `connect-command.test.ts` covers it.)
+
+### 13.93 — A sign-in from 0.1.6 survives the upgrade
+
+- [x] **13.93** A stored sign-in from 0.1.6, which records no endpoint,
+      still renews after the upgrade.
+
+1. Uninstall the extension and install `v0.1.6` (from the Marketplace, or
+   its `.vsix` from the GitHub Release). With only P configured, on A,
+   reload, sign in, and close VS Code.
+2. Install the `.vsix` from this branch and open VS Code again.
+   - Expect: the Accounts menu shows `<your name> (<host A>)` without
+     asking you to sign in, and the log has no line saying a sign-in was
+     discarded or refused.
+3. Run **Python on Viya: Connect to SAS Viya**.
+   - Expect: VS Code asks once whether Python on Viya may sign in using
+     SAS Viya, because the label changed. Allow it. The session starts,
+     and CAS and SAS Content load.
+4. Run **Edit Connection Profile** and change P's endpoint to
+   `https://<host B>`.
+   - Expect: the same discard line as 13.90. The renewal in step 2
+     recorded the endpoint, so this edit is caught.
+5. Point P back at `https://<host A>` and sign in.
+
+The case where a 0.1.6 entry is sent to a deployment that refuses it is
+covered only by `auth-provider.test.ts`: it needs a profile edited on 0.1.6
+before the upgrade.

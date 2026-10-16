@@ -886,7 +886,11 @@ get written.
     change. The `label` is the display `name`, falling back to the login and then
     to `id`. The `session.id` is separately the profile's generated id rather
     than its name, so renaming a profile does not orphan the session attached to
-    it. Executed in 1c-i.
+    it. Executed in 1c-i. **Amended 2026-10-15 by
+    [ADR-0049](docs/adr/0049-account-label-names-the-deployment.md):** the label
+    is now the person followed by the deployment, because VS Code keys its own
+    account bookkeeping on the label, so a person-only label merged one person's
+    accounts on two deployments (#146, #250).
 11. ~~**How a user chooses Viya rather than the local interpreter**~~ — **SETTLED
     2026-08-14 by [ADR-0011](docs/adr/0011-choosing-where-python-runs.md): a
     per-workspace run target, set from the status bar, which decides whether this

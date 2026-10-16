@@ -41,11 +41,19 @@ profile names an OAuth client whose registered redirect address is not
 clear the client ID from the profile to fall back to the built-in client and
 the paste box.
 
-**You signed in, and then a run says you are not signed in.** A token the
-deployment actively rejected and a request that carried no token at all both
-arrive as a bare `401`, and only the first is fixed by signing in again. The
-log says which one happened. If it was a rejected token, sign in again; if it
-was a missing one, that is a bug worth reporting with the log attached.
+**You signed in, and then a request says SAS Viya did not accept your
+sign-in.** The deployment refused the token the request carried. Most Viya
+services don't say why, and the cause is usually a sign-in that expired or was
+ended by an administrator. Sign in again.
+
+**You changed a profile's endpoint, and it now asks you to sign in.** That is
+expected. A sign-in belongs to the deployment that issued it, so pointing a
+profile at a different endpoint discards the old one rather than sending its
+token to the new deployment. The log notes this when it happens. Releases
+before 0.1.7 kept the old sign-in instead, and the CAS and SAS Content views
+then logged that requests had reached the deployment "without credentials".
+If you see that after changing an endpoint, sign out of the account in the
+Accounts menu and sign in again.
 
 **An account left the Accounts menu on its own.** A background token renewal
 failed — the refresh token was revoked, the deployment was unreachable, or an

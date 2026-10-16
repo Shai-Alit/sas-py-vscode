@@ -397,9 +397,17 @@ export function sessionSecretKey(profileId: string): string {
  * extension that wrote it: an install from six months ago is entitled to have
  * written a different shape, and the alternative to a version is guessing from
  * the keys present.
+ *
+ * `endpoint` is the deployment that issued the refresh token, recorded so a
+ * profile whose endpoint is edited afterwards does not renew against the new
+ * deployment with the old one's token (#250). It is optional, and the schema
+ * version did not move for it, because v0.1.6 and earlier wrote entries without
+ * it: those still parse, and the first renewal writes the field back. An
+ * extension that predates it reads only `refreshToken` and ignores the rest.
  */
 export interface StoredSession {
   readonly refreshToken: string;
+  readonly endpoint?: string;
 }
 
 /** The schema version {@link serializeSession} writes. */
@@ -413,15 +421,19 @@ export const SESSION_SCHEMA_VERSION = 1;
  * configured that way — it just means the next sign-in starts at the browser
  * again. Storing an empty record would make that look like corruption later.
  */
-export function toStoredSession(tokens: Tokens): StoredSession | undefined {
+export function toStoredSession(
+  tokens: Tokens,
+  endpoint: string,
+): StoredSession | undefined {
   const refreshToken = tokens.refreshToken ?? "";
-  return refreshToken === "" ? undefined : { refreshToken };
+  return refreshToken === "" ? undefined : { refreshToken, endpoint };
 }
 
 export function serializeSession(session: StoredSession): string {
   return JSON.stringify({
     v: SESSION_SCHEMA_VERSION,
     refreshToken: session.refreshToken,
+    ...(session.endpoint === undefined ? {} : { endpoint: session.endpoint }),
   });
 }
 
@@ -460,7 +472,17 @@ export function parseStoredSession(
     return undefined;
   }
 
-  return { refreshToken };
+  // Absent is an entry from before the field existed and is still good; present
+  // but not a usable string is the hand-edited or corrupt case above.
+  const endpoint = record.endpoint;
+  if (endpoint === undefined) {
+    return { refreshToken };
+  }
+  if (typeof endpoint !== "string" || endpoint.trim() === "") {
+    return undefined;
+  }
+
+  return { refreshToken, endpoint };
 }
 
 /** Narrows a parsed JSON value to an object without asserting anything about it. */

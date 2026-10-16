@@ -233,7 +233,7 @@ async function sendRequest(
         reason:
           problem.code === "session-expired"
             ? "the access token is no longer active"
-            : "the CAS management service refused a request carrying no credentials",
+            : "the CAS management service did not accept the access token, and gave no reason",
         problem: { code: "unauthorized", problem },
       };
     }

@@ -62,15 +62,32 @@ export type AuthProblem =
    */
   | { code: "session-expired"; description?: string }
   /**
-   * A 401 whose challenge carries no error parameters, which RFC 6750 §3 says
-   * means the request arrived with no credentials at all.
+   * No credentials were presented: the request went out, or would have, with no
+   * access token, because none could be obtained.
    *
-   * Almost always our bug rather than the user's — a request that forgot its
-   * `Authorization` header — and worth distinguishing for exactly that reason.
-   * Telling this user to sign in again sends them round a loop that cannot fix
-   * it. See probe finding 9.
+   * Raised by a client whose token source threw before anything was sent. It
+   * used to be raised for a 401 with a bare challenge too, on the reading that
+   * RFC 6750 §3 gives that challenge — but most Viya services send the bare
+   * challenge for a token they refused as well, so that 401 is now
+   * {@link AuthProblem} `token-rejected` (Finding 13.50).
    */
   | { code: "not-authenticated" }
+  /**
+   * The deployment refused the access token a request carried, without saying
+   * why — a 401 whose challenge has no `error` parameter.
+   *
+   * RFC 6750 §3 reserves that challenge for a request with no credentials, and
+   * the identities service keeps to it (Finding 9). CAS management, Folders and
+   * Compute do not: they answer a garbage token, a token from another
+   * deployment, and a token with a broken signature with the same bare
+   * `Bearer scope="openid"` they send when nothing was presented (Finding
+   * 13.50). Every client attaches a token before it can see a 401, so here the
+   * challenge can only mean the token was not accepted, and the remedy is the
+   * same as for `session-expired`: sign in again. Separate from that code
+   * because the deployment did not say the token had expired, and the log
+   * should not claim it did.
+   */
+  | { code: "token-rejected" }
   /**
    * The current user could not be read, for a reason that is not about the token
    * being dead.
@@ -109,7 +126,9 @@ export function describeAuthProblem(problem: AuthProblem): string {
         ? "the deployment reports the access token is no longer active"
         : `the deployment reports the access token is no longer active: ${problem.description}`;
     case "not-authenticated":
-      return "the request reached the deployment without credentials, so it was refused";
+      return "no access token was available to send with the request";
+    case "token-rejected":
+      return "the deployment did not accept the access token the request carried";
     case "identity-unavailable":
       return `could not read the signed-in user: ${problem.detail}`;
   }
@@ -213,6 +232,7 @@ export function redactSecrets(
     case "token-response-malformed":
     case "state-mismatch":
     case "not-authenticated":
+    case "token-rejected":
     case "identity-unavailable":
       return problem;
   }

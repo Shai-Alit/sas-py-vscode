@@ -79,9 +79,17 @@ export class SessionStore {
    * configured not to issue refresh tokens, and the honest record of that is no
    * stored session at all, so the next window starts at the browser rather than
    * on a token that was never there.
+   *
+   * `endpoint` is the deployment that issued `tokens`, and it is required so
+   * that no write can forget it: it is what lets a later read notice the
+   * profile has since been pointed somewhere else (#250).
    */
-  async write(profileId: string, tokens: Tokens): Promise<void> {
-    const session = toStoredSession(tokens);
+  async write(
+    profileId: string,
+    tokens: Tokens,
+    endpoint: string,
+  ): Promise<void> {
+    const session = toStoredSession(tokens, endpoint);
     if (session === undefined) {
       await this.clear(profileId);
       return;

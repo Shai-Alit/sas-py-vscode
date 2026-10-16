@@ -2214,6 +2214,143 @@ verbatim and rebases only the targets, as the Phase 12 section does.
 `bc2076e`: VS Marketplace, Open VSX and the
 [GitHub Release](https://github.com/Shai-Alit/sas-py-vscode/releases/tag/v0.1.6).
 
+### Post-release fix: stale sign-in after an endpoint edit (#250), 2026-10-15
+
+A customer on `v0.1.6` reported that, right after editing a connection
+profile, the CAS and SAS Content views logged "the request reached the
+deployment without credentials, so it was refused". Tracked as
+[#250](https://github.com/Shai-Alit/sas-py-vscode/issues/250). It had two
+causes, both fixed on `fix/250-stale-token-bare-challenge`.
+
+1. **A sign-in survived an edit of the profile's endpoint.** The provider
+   keeps the live session and the stored refresh token by profile id, and an
+   edit keeps the id. `resolve()` served an unexpired access token without
+   checking which deployment issued it, so the old deployment's token went to
+   the new one. The stored session now records the endpoint that issued it.
+   `resolve()` discards both halves when the held or stored endpoint differs
+   from the profile's, compared with `sameEndpoint` (the rule `accountId`
+   already uses), and logs why. An entry written before the field existed
+   still renews, and the renewal writes the field back. Whether the customer
+   changed the endpoint is not confirmed. This is the only path found that
+   produces the log.
+2. **A bare 401 challenge was read as "no credentials sent".** Finding 9 holds
+   for the identities service only. CAS management, Folders and Compute send
+   the same bare challenge for a refused token (Finding 13.50). A new
+   `AuthProblem`, `token-rejected`, now covers a bare challenge on a request
+   that carried a token, which is every request that can reach one. Its
+   message says to sign in again. `not-authenticated` now means only that no
+   token could be obtained. The troubleshooting page was rewritten to match.
+
+**Verify.** `npm run test:unit` 2,311 passing. `npm run test:integration`
+651 passing, four of them new endpoint-edit cases in
+`auth-provider.test.ts`.
+
+**Adversarial review (local, before push).** Nothing blocking. Four findings,
+all folded in:
+
+1. **A stale session in memory deleted the stored entry.** The stored entry is
+   shared across windows, so a window still holding the old deployment's
+   session could delete a sign-in another window had just made to the new
+   endpoint. Now a stale in-memory session drops only itself, and the stored
+   entry is judged against its own endpoint. If nothing is stored, the
+   endpoint-edit line is logged rather than the "expired" one.
+2. **A pre-#250 entry still sent its refresh token to the new deployment, on
+   every poll.** It records no endpoint, so it can't be judged, and a failed
+   renewal never cleared it. Probed (Finding 13.51): SASLogon refuses a refresh
+   token with `401` and `invalid_token`, not RFC 6749's `invalid_grant`. When
+   that refusal comes back for an entry with no endpoint, the entry is now
+   cleared, after a re-read so that another window's newer entry survives.
+   **What remains:** an upgraded entry is still sent to the new deployment
+   once, the first time it is renewed. Signing out and in again, as the
+   CHANGELOG says, avoids even that. A refusal of an entry that records its
+   endpoint is left as it was.
+3. **The `not-authenticated` comment in `messages.ts` claimed the token source
+   had always failed.** The comment now also covers the no-session case.
+4. **`establish` compared endpoints exactly.** It now uses `sameEndpoint`, so
+   there is a single rule.
+
+**Verify after the fixes.** `npm run test:integration` 656 passing, five of
+them new in `auth-provider.test.ts`. The unit tier does not reach the
+provider and was not rerun. `npm run check:docs` green.
+
+**The manual pass found #250's likely root cause.** The first draft of
+13.90 used the same deployment with `:443` appended as a "different"
+endpoint. The edit command drops a default port on save, so the endpoint
+never changed. Even so, the CAS view logged that SAS Viya did not accept the
+token, after a fresh sign-in and a reload.
+
+The cause was in the window's other profile. `innovation` was active and
+`verde` was signed in as the same person. VS Code keys its account
+bookkeeping on the account label, not the id: `getAccounts` keeps one account
+per label, and its remembered account preference matches by label. The label
+was the person alone, so the two deployments were one account to VS Code.
+`accountForEndpoint` found nothing for `innovation`, and `CasSession.tokenFor`
+asked for a silent session with no account. VS Code returned `verde`'s by its
+remembered label, and `verde`'s token went to `innovation`'s CAS management
+service, which refused it. SAS Content and the CAS connection snippet use
+the same path. Compute was protected by its session-id check. Phase 2a had
+diagnosed the label collision as #146 and held the fix for an ADR.
+
+Fixed under [ADR-0049](../adr/0049-account-label-names-the-deployment.md),
+which amends decision 10:
+
+- `accountLabel` is now `<person> (<deployment>)`, the deployment being the
+  endpoint's root without `https://`.
+- The CAS view, the SAS Content view and the CAS connection snippet check the
+  returned session's account with the new `accountBelongsTo`, and treat
+  another deployment's session as none. Labels alone don't cover an endpoint
+  with no account, where VS Code still answers from its remembered one.
+
+Existing sign-ins lose their VS Code access grant once, because the grant is
+stored under the old label. The next interactive request asks for consent
+again, once per deployment. A customer with two profiles signed in as the
+same person matches the original report (CAS and SAS Content failing after a
+profile change). That is likely, but not confirmed.
+
+**Verify.** `npm run coverage` 2,319 passing, eight of them new: label and
+`accountBelongsTo` cases, and a wrong-deployment case in each of
+`cas-session.test.ts` and `content-session.test.ts`. Coverage
+96.71/96.39/96.54/96.71. `npm run test:integration` 659 passing, three of
+them new: two in `connect-command.test.ts` and the two-deployment label case
+in `auth-provider.test.ts`.
+
+**Adversarial review of the label fix (local, before push).** No blocking
+findings. One medium and four low, handled as follows:
+
+1. **The label is unique per deployment, not per identity.** Two identities
+   sharing a display name on one deployment still collide. This predates the
+   fix. Sean chose to keep `Name (host)`, and ADR-0049 records it as a known
+   limit.
+2. **The CHANGELOG headline named two profiles rather than two
+   deployments.** Reworded.
+3. **The CAS connection snippet said a sign-in "has ended" when it refused
+   another deployment's session.** That case now has its own message: the
+   profile's deployment has no sign-in.
+4. **Manual test 13.92 never reached the case the check exists for.** Step 7
+   now makes the signed-out profile active and checks CAS and SAS Content.
+   The snippet can't reach that case by hand, because it needs a live
+   compute connection, so `connect-command.test.ts` covers it.
+5. **Two ADR claims rest on reading VS Code's source.** They are cited with
+   the date read, and 13.93 step 3 exercises one of them live. No change.
+
+**Manual tests.** 13.89–13.93 in `docs/dev/manual-tests/phase-13.md`:
+respelling an endpoint, changing it, two windows, two deployments as one
+person, and the upgrade from 0.1.6. They need two real deployments. All five
+passed (Sean, against `verde` and `innovation`) before the branch was pushed.
+
+**PR review ([#251](https://github.com/Shai-Alit/sas-py-vscode/pull/251)).**
+The Claude reviewer found nothing blocking. Two findings were raised and both
+were fixed in one commit:
+
+1. **Codex (blocking): `discardMoved` cleared the stored entry without
+   reading it again.** If another window signed in to the new endpoint between
+   this window's read and its clear, the clear deleted that sign-in. It now
+   reads the entry again and clears it only if the refresh token is still the
+   one judged stale, as `forgetRefused` does. A new case in
+   `auth-provider.test.ts` covers the race.
+2. **Claude (nit): the `not-authenticated` comment in `messages.ts` read as a
+   fragment.** Reworded.
+
 ---
 
 ## Probe findings
@@ -2222,7 +2359,7 @@ Numbered phase-scoped as `13.x` (`CLAUDE.md`'s 2026-09-09 rule), starting at
 13.1; nothing here continues another phase's sequence. **13.4 and 13.5 are
 reserved:** they were written for 13m, which never merged (see the "MCP
 server removed" Runbook entry), and are cited by that name. The next new
-finding is 13.50.
+finding is 13.52.
 
 ### Finding 13.1 — After a `SAS.submit()` graph, the step's stdout and traceback arrive typed `note` (2026-09-30)
 
@@ -3481,3 +3618,69 @@ reading, unchecked: Snowflake answers a constant without a warehouse and
 needs one for `GENERATOR`, and `SNOWLIB`'s was unavailable. Nothing about
 a large result set was measured. **Cleanup:** every compute session was
 deleted and read back `404`.
+
+### Finding 13.50 — Most services answer a refused token with a bare challenge (2026-10-15)
+
+Probed for #250. Read-only `GET`s on `verde`, comparing the
+`WWW-Authenticate` header of each `401`.
+
+**Documented.** RFC 6750 §3 says a challenge with no `error` parameter is what
+a resource server sends when the request carried no credentials. A refused
+token gets `error="invalid_token"`. Finding 9 observed this on the identities
+service, and the extension read every bare challenge that way.
+
+**Observed.**
+
+| Request carried | `casManagement/servers` | `folders/folders/@myFolder` | `compute/contexts` | `identities/users/@currentUser` |
+|---|---|---|---|---|
+| A valid token | `200` | `200` | not run | not run |
+| No `Authorization` header | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer` |
+| `Bearer ` with nothing after it | `Bearer scope="openid"` | `Bearer scope="openid"` | not run | not run |
+| A string that is not a JWT | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer scope="openid"` | `error="invalid_token"`, "Provided token isn't active" |
+| A well-formed JWT signed by another issuer | `Bearer scope="openid"` | `Bearer scope="openid"` | not run | not run |
+| A real token with its signature altered | `Bearer scope="openid"` | `Bearer scope="openid"` | `Bearer scope="openid"` | `error="invalid_token"`, "…Signed JWT rejected: Invalid signature" |
+
+**What this establishes.** On CAS management, Folders and Compute, a refused
+token and a missing one look the same. Only the identities service follows
+RFC 6750 §3 and Finding 9. A client that has attached a token must therefore
+read a bare challenge as "not accepted", not "not sent". That reading is
+`token-rejected` in `src/auth/challenge.ts`. Finding 9 still holds for the
+identities service, and only its general reading is superseded.
+
+**What it does not establish.** What an expired token, as opposed to an
+invalid one, gets from these three services. No expired token was to hand. A
+bare challenge reads as `token-rejected` either way, so the extension's
+behaviour does not depend on the answer. Other Viya services and other
+releases were not probed.
+
+### Finding 13.51 — SASLogon refuses a refresh token with `invalid_token`, not `invalid_grant` (2026-10-15)
+
+Probed for #250's adversarial review, with the developer's approval for the
+`POST`. Two `POST /SASLogon/oauth/token` requests on `verde`, with
+`grant_type=refresh_token`, `client_id=vscode` and an empty secret. Neither
+used a real refresh token, so nothing was revoked or created.
+
+**Documented.** RFC 6749 §5.2 says a refresh token that is invalid, expired,
+revoked or issued to another client gets `400` and `invalid_grant`.
+
+**Observed.**
+
+| Refresh token sent | Status | `error` | `error_description` |
+|---|---|---|---|
+| An opaque string, 35 characters | `401` | `invalid_token` | "The token expired, was revoked, or the token ID is incorrect." |
+| A JWT naming another issuer, with a random signature | `401` | `invalid_token` | "Could not verify token signature." |
+
+Both answers carried `Content-Type: application/json` and a
+`WWW-Authenticate: Bearer error="invalid_token", …` header repeating the body.
+Neither description echoed the token sent.
+
+**What this establishes.** SASLogon departs from RFC 6749 here. A check for a
+refused refresh token that looks only for `invalid_grant` never matches.
+`tokenEndpoint.ts` maps the body to `oauth-rejected` with
+`error: "invalid_token"`, and `refusedRefreshToken` in `authProvider.ts`
+accepts that as a refusal, along with `invalid_grant`.
+
+**What it does not establish.** The answer to a real, expired or revoked
+refresh token that this deployment issued, and to a refresh token from a
+genuinely different deployment, whose key id `verde` would not know. Neither
+was to hand. No other release was probed.

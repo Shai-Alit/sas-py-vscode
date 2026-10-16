@@ -184,7 +184,7 @@ export async function signInWithBrowser(
     return undefined;
   }
 
-  await deps.sessions.write(request.profileId, result.tokens);
+  await deps.sessions.write(request.profileId, result.tokens, request.endpoint);
   deps.log.info(vscode.l10n.t("Signed in to {0}.", request.endpoint));
   return result.tokens;
 }

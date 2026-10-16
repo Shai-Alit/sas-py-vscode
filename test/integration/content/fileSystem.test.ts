@@ -411,8 +411,8 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     // With an adapter now built for any endpoint a URI names, "signed out"
     // surfaces as an `unauthorized` problem the wire tags `noSession` (the
     // token was never obtained) rather than a missing adapter — it must still
-    // read as "sign in", not the "please report this" wording
-    // `localiseAuthProblem` uses for a surprise.
+    // read as "sign in" worded for opening a file, not the auth layer's
+    // generic `localiseAuthProblem` wording.
     const { provider } = providerWith({
       readFileContent: () =>
         Promise.resolve(
@@ -432,24 +432,25 @@ describe("SasContentFileSystemProvider — shell mapping", () => {
     assert.doesNotMatch(error.message, /report this/);
   });
 
-  it("keeps the auth layer's wording for a deployment-answered not-authenticated", async () => {
+  it("keeps the auth layer's wording for a token the deployment refused", async () => {
     // A 401 the deployment actually answered with a bare challenge — no
-    // `noSession` tag. The auth layer defines this as a dropped Authorization
-    // header (our bug), so the message must stay "please report this"; a
-    // sign-in prompt here sends the user round a loop that cannot fix it.
+    // `noSession` tag. The auth layer reads it as a refused token (Finding
+    // 13.50), and its own message already says to sign in again; the
+    // open-a-file prompt is reserved for the no-session origin above.
     const { provider } = providerWith({
       readFileContent: () =>
         Promise.resolve(
           fail({
             code: "unauthorized",
-            problem: { code: "not-authenticated" },
+            problem: { code: "token-rejected" },
           }),
         ),
     });
     const error = await rejectionOf(provider.readFile(A_CONTENT_URI));
     assert.equal(error.code, "Unavailable");
-    assert.match(error.message, /report this/);
-    assert.doesNotMatch(error.message, /Sign in to SAS Viya/);
+    assert.match(error.message, /did not accept your sign-in/);
+    assert.doesNotMatch(error.message, /report this/);
+    assert.doesNotMatch(error.message, /to open SAS Content files/);
   });
 
   it("fails every operation with a sign-in hint when there is no adapter", async () => {

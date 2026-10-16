@@ -400,7 +400,7 @@ async function sendRequest(
         reason:
           problem.code === "session-expired"
             ? "the access token is no longer active"
-            : "the compute service refused a request carrying no credentials",
+            : "the compute service did not accept the access token, and gave no reason",
         problem: { code: "unauthorized", problem },
       };
     }

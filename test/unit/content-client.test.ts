@@ -157,18 +157,18 @@ describe("content/client", () => {
     assert.equal(result.problem.problem.code, "session-expired");
   });
 
-  it("reads a bare Bearer 401 as not-authenticated, without noSession", async () => {
+  it("reads a bare-challenge 401 as token-rejected, without noSession", async () => {
+    // Folders' real challenge for a refused token, verbatim from Finding 13.50.
     const { client } = clientWith({
       status: 401,
-      headers: { "www-authenticate": "Bearer" },
+      headers: { "www-authenticate": 'Bearer scope="openid"' },
     });
     const result = await client.send({ link: SELF });
     assert.ok(!result.ok);
     assert.equal(result.problem.code, "unauthorized");
-    assert.equal(result.problem.problem.code, "not-authenticated");
-    // The deployment answered this 401 — a dropped Authorization header, per the
-    // auth layer — so it is *not* the "no session at all" origin, and the
-    // file-system layer must keep the "please report this" wording for it.
+    assert.equal(result.problem.problem.code, "token-rejected");
+    // The deployment answered this 401, so it is *not* the "no session at all"
+    // origin: the file-system layer keeps the auth layer's wording for it.
     assert.equal(result.problem.noSession, undefined);
   });
 

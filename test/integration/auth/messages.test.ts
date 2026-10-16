@@ -38,6 +38,12 @@ const PROBLEMS: AuthProblem[] = [
     detail: "access_token was absent from a 200 response",
   },
   { code: "state-mismatch" },
+  { code: "session-expired" },
+  // The three a 401 or a missing token can produce. `token-rejected` and
+  // `session-expired` share a remedy and must still read differently: one
+  // claims an expiry and the other does not (Finding 13.50).
+  { code: "not-authenticated" },
+  { code: "token-rejected" },
 ];
 
 describe("auth problem messages under the real l10n", () => {
@@ -70,8 +76,8 @@ describe("auth problem messages under the real l10n", () => {
   });
 
   it("gives each code its own message", () => {
-    // Five codes, six cases: the two `oauth-rejected` variants differ from each
-    // other too, which is what proves the description arm is wired up.
+    // Eight codes, nine cases: the two `oauth-rejected` variants differ from
+    // each other too, which is what proves the description arm is wired up.
     const rendered = new Set(PROBLEMS.map(localiseAuthProblem));
     assert.equal(rendered.size, PROBLEMS.length);
   });

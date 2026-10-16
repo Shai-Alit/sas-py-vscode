@@ -20,7 +20,7 @@
  * `pythonOnViyaContent:` filesystem provider holds a file.
  */
 
-import { accountForEndpoint } from "../auth/identity";
+import { accountBelongsTo, accountForEndpoint } from "../auth/identity";
 import type { HttpTransport } from "../auth/transport";
 import { CasAdapter } from "./adapter";
 import {
@@ -34,9 +34,10 @@ export interface AccountLike {
   readonly id: string;
 }
 
-/** A resolved auth session, narrowed to the one field the token flow reads. */
+/** A resolved auth session, narrowed to the fields the token flow reads. */
 export interface SessionLike {
   readonly accessToken: string;
+  readonly account: AccountLike;
 }
 
 /** Generic over the account type so the `vscode`-free unit tier can use the
@@ -91,8 +92,14 @@ export class CasSession<A extends AccountLike = AccountLike> {
   }
 
   /** A bearer token for `endpoint`, silently. Throws when there is no
-   * session; the client turns that into `not-authenticated` and the message
-   * only ever reaches the log. */
+   * session for it; the client turns that into `not-authenticated` and the
+   * message only ever reaches the log.
+   *
+   * The session's account is checked, not trusted. With no hint — this
+   * endpoint is not signed in, or is signed in as two people — VS Code
+   * answers from the account it remembers for this extension, which can
+   * belong to another deployment, and that deployment's token is refused here
+   * (#250). */
   private async tokenFor(endpoint: string): Promise<string> {
     const account = accountForEndpoint(
       endpoint,
@@ -101,6 +108,11 @@ export class CasSession<A extends AccountLike = AccountLike> {
     const session = await this.deps.getSession(account);
     if (session === undefined) {
       throw new Error("no active SAS Viya session for browsing CAS");
+    }
+    if (!accountBelongsTo(endpoint, session.account)) {
+      throw new Error(
+        "the only SAS Viya session on offer is for another deployment, so it was not used for browsing CAS",
+      );
     }
     return session.accessToken;
   }

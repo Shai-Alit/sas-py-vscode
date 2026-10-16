@@ -10,6 +10,42 @@ called out under **Changed** with a migration note.
 
 ## [Unreleased]
 
+### Changed
+
+- **The Accounts menu names the deployment.** A row now reads `Your Name
+  (viya.example.com)` instead of just your name, so a person signed in to two
+  deployments sees two rows. After upgrading, VS Code asks once per
+  deployment whether Python on Viya may sign in using SAS Viya, because the
+  account's name changed. Until you allow it, for example by connecting, the
+  CAS and SAS Content views show their sign-in prompt
+  ([ADR-0049](docs/adr/0049-account-label-names-the-deployment.md)).
+
+### Fixed
+
+- **Changing a profile's endpoint no longer reuses the old sign-in.** The
+  sign-in from the previous deployment was kept and sent to the new one, which
+  refused it. The CAS and SAS Content views then logged that requests had
+  reached the deployment "without credentials". Pointing a profile at a
+  different endpoint now discards the old sign-in and asks you to sign in
+  again. Adding a trailing slash to the same endpoint does not. If you changed
+  an endpoint on an earlier release, sign out of that account in the Accounts
+  menu and sign in again. Otherwise the old sign-in is discarded the first time
+  the new deployment refuses it. See [Troubleshooting](docs/troubleshooting.md)
+  ([#250](https://github.com/Shai-Alit/sas-py-vscode/issues/250)).
+- **One person signed in to two deployments no longer has one deployment's
+  sign-in sent to the other.** VS Code treated one person on two deployments
+  as a single account. The CAS
+  and SAS Content views, and **Insert CAS Connection Snippet**, could then
+  send one deployment's sign-in to the other, which refused it. Each
+  deployment is now its own account, and these features never use a sign-in
+  from another deployment
+  ([#250](https://github.com/Shai-Alit/sas-py-vscode/issues/250)).
+- **A refused sign-in now tells you to sign in again.** Most SAS Viya services
+  answer a token they won't accept the same way they answer a request with no
+  token at all. The extension read every such answer as its own bug and asked
+  you to report it. It now says SAS Viya did not accept your sign-in, and to
+  sign in again.
+
 ## [0.1.6] - 2026-10-02
 
 ### Added

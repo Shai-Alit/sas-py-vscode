@@ -60,7 +60,7 @@ import { signInWithBrowser, type BrowserSignInDeps } from "./browserFlow";
 import { SignInCancelledError } from "./cancellation";
 import { BUILT_IN_CLIENT_ID } from "./clientId";
 import {
-  accountForEndpoint,
+  accountBelongsTo,
   accountId as toAccountId,
   accountLabel,
   fetchCurrentUser,
@@ -1054,7 +1054,7 @@ function toSession(
     accessToken: live.tokens.accessToken,
     account: {
       id: toAccountId(live.endpoint, live.user.id),
-      label: accountLabel(live.user),
+      label: accountLabel(live.user, live.endpoint),
     },
     scopes: NO_SCOPES,
   };
@@ -1072,7 +1072,7 @@ function ownsAccount(
   profile: ViyaProfile,
   account: vscode.AuthenticationSessionAccountInformation,
 ): boolean {
-  return accountForEndpoint(profile.endpoint, [account]) !== undefined;
+  return accountBelongsTo(profile.endpoint, account);
 }
 
 /**

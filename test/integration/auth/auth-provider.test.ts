@@ -457,7 +457,10 @@ describe("Viya authentication provider", () => {
       assert.equal(sessions[0]?.id, PROFILE_ID);
       assert.equal(sessions[0].accessToken, NEXT_ACCESS);
       assert.equal(sessions[0].account.id, accountId(ENDPOINT, USER_ID));
-      assert.equal(sessions[0].account.label, "Dana Whitfield");
+      assert.equal(
+        sessions[0].account.label,
+        "Dana Whitfield (viya.example.com)",
+      );
       assert.deepEqual(h.contexts.at(-1), {
         key: AUTHORIZED_CONTEXT_KEY,
         value: true,
@@ -743,6 +746,37 @@ describe("Viya authentication provider", () => {
       });
     });
 
+    it("labels one person on two deployments as two accounts", async () => {
+      // VS Code keeps one account per label, and matches its account
+      // preference and access grants by label. A person-only label made two
+      // deployments one account to it, so the second lost its account hint
+      // and was handed the first one's token (Phase 2a's #146, #250).
+      await configureBothProfiles();
+      for (const [id, endpoint] of [
+        [PROFILE_ID, ENDPOINT],
+        [OTHER_PROFILE_ID, OTHER_ENDPOINT],
+      ] as const) {
+        await h.sessions.write(
+          id,
+          {
+            accessToken: FAKE_ACCESS,
+            refreshToken: FAKE_REFRESH,
+            tokenType: "bearer",
+          },
+          endpoint,
+        );
+      }
+
+      const labels = (await h.provider.getSessions()).map(
+        (session) => session.account.label,
+      );
+
+      assert.deepEqual(labels, [
+        "Dana Whitfield (viya.example.com)",
+        "Dana Whitfield (viya-test.example.com)",
+      ]);
+    });
+
     it("fires the change event once, on the transition", async () => {
       await h.sessions.write(
         PROFILE_ID,
@@ -901,14 +935,14 @@ describe("Viya authentication provider", () => {
       // opening a browser.
       h.answers.push("first-code");
       const first = await h.provider.createSession();
-      assert.equal(first.account.label, "Dana Whitfield");
+      assert.equal(first.account.label, "Dana Whitfield (viya.example.com)");
 
       h.whoami.id = OTHER_USER_ID;
       h.whoami.name = "Ravi Mehta";
       h.answers.push("second-code");
       const second = await h.provider.createSession();
 
-      assert.equal(second.account.label, "Ravi Mehta");
+      assert.equal(second.account.label, "Ravi Mehta (viya.example.com)");
       assert.equal(second.account.id, accountId(ENDPOINT, OTHER_USER_ID));
       assert.equal(h.prompts.length, 2, "the second sign-in never ran");
       assert.equal(

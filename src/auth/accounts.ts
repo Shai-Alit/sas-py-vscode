@@ -45,7 +45,7 @@ export interface SessionSummary {
   readonly id: string;
   /** From `accountId(endpoint, user.id)` in `./identity`. */
   readonly accountId: string;
-  /** From `accountLabel(user)` in `./identity`. */
+  /** From `accountLabel(user, endpoint)` in `./identity`. */
   readonly accountLabel: string;
 }
 

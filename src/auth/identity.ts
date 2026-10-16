@@ -187,20 +187,57 @@ export function accountForEndpoint<T extends { readonly id: string }>(
 }
 
 /**
- * What to show in the Accounts menu.
+ * What to show in the Accounts menu: the person, then the deployment, as
+ * `Dana Whitfield (viya.example.com)`.
  *
- * Display name, then login, then the raw id. The chain exists because only `id`
- * was established as always present — finding 8 observed `name` on one
- * SCIM-backed deployment, and a directory that does not populate a display name
- * is an ordinary thing rather than a corrupt one. Falling all the way back to
- * the id is ugly, and it is still better than an account row with no label.
+ * The person is the display name, then the login, then the raw id. The chain
+ * exists because only `id` was established as always present — finding 8
+ * observed `name` on one SCIM-backed deployment, and a directory that does not
+ * populate a display name is an ordinary thing rather than a corrupt one.
+ * Falling all the way back to the id is ugly, and it is still better than an
+ * account row with no label.
  *
  * `title` is not in this chain on purpose: it is a **job title**, not a display
  * name. "Principal Software Engineer" in the Accounts menu would be nobody's
  * idea of who is signed in.
+ *
+ * The deployment is not decoration. VS Code keys its own account bookkeeping on
+ * the label, never on {@link accountId}: `getAccounts` keeps one account per
+ * label, and the account preference and access grants match by label. With the
+ * person alone, one person signed in to two deployments was one account to VS
+ * Code, so {@link accountForEndpoint} found nothing for every deployment after
+ * the first (Phase 2a's #146) and that deployment's views were handed the
+ * other's token (#250). See ADR-0049.
  */
-export function accountLabel(user: ViyaUser): string {
-  return firstNonEmpty(user.name, user.login) ?? user.id;
+export function accountLabel(user: ViyaUser, endpoint: string): string {
+  const person = firstNonEmpty(user.name, user.login) ?? user.id;
+  return `${person} (${deploymentName(endpoint)})`;
+}
+
+/**
+ * Whether an account was issued for `endpoint`.
+ *
+ * The check a caller makes on a session VS Code hands back from a silent
+ * lookup. When there is no single account for the endpoint to hint with, VS
+ * Code answers from the account it remembers for this extension, and that can
+ * belong to another deployment. Its token would be refused there, and it is a
+ * credential for somewhere else either way.
+ */
+export function accountBelongsTo(
+  endpoint: string,
+  account: { readonly id: string },
+): boolean {
+  return accountForEndpoint(endpoint, [account]) !== undefined;
+}
+
+/**
+ * The endpoint as a person reads it in a menu: its root, without `https://`.
+ *
+ * Only `https://` comes off. Any other scheme stays, so two labels differ
+ * whenever their roots do.
+ */
+function deploymentName(endpoint: string): string {
+  return root(endpoint).replace(/^https:\/\//i, "");
 }
 
 /**

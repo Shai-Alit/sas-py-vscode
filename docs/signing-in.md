@@ -52,10 +52,12 @@ profile names — so a SAS process started from it would be one you did not ask
 for, on a deployment you were not looking at. Run **Python on Viya: Connect to
 SAS Viya** when you want the session.
 
-The name shown next to the account is your display name as Viya reports it. If
-your identity provider does not publish one, your login name is shown instead,
-and if there is no login name either, the identity service's own id for you. That
-last case is unlovely and it is still better than an unlabelled row.
+The name shown next to the account is your display name as Viya reports it,
+followed by the deployment in parentheses, for example `Dana Whitfield
+(viya.example.com)`. If your identity provider does not publish a display name,
+your login name is shown instead, and if there is no login name either, the
+identity service's own id for you. That last case is unlovely and it is still
+better than an unlabelled row.
 
 ## More than one deployment at once
 

@@ -2273,6 +2273,71 @@ all folded in:
 them new in `auth-provider.test.ts`. The unit tier does not reach the
 provider and was not rerun. `npm run check:docs` green.
 
+**The manual pass found #250's likely root cause.** The first draft of
+13.90 used the same deployment with `:443` appended as a "different"
+endpoint. The edit command drops a default port on save, so the endpoint
+never changed. Even so, the CAS view logged that SAS Viya did not accept the
+token, after a fresh sign-in and a reload.
+
+The cause was in the window's other profile. `innovation` was active and
+`verde` was signed in as the same person. VS Code keys its account
+bookkeeping on the account label, not the id: `getAccounts` keeps one account
+per label, and its remembered account preference matches by label. The label
+was the person alone, so the two deployments were one account to VS Code.
+`accountForEndpoint` found nothing for `innovation`, and `CasSession.tokenFor`
+asked for a silent session with no account. VS Code returned `verde`'s by its
+remembered label, and `verde`'s token went to `innovation`'s CAS management
+service, which refused it. SAS Content and the CAS connection snippet use
+the same path. Compute was protected by its session-id check. Phase 2a had
+diagnosed the label collision as #146 and held the fix for an ADR.
+
+Fixed under [ADR-0049](../adr/0049-account-label-names-the-deployment.md),
+which amends decision 10:
+
+- `accountLabel` is now `<person> (<deployment>)`, the deployment being the
+  endpoint's root without `https://`.
+- The CAS view, the SAS Content view and the CAS connection snippet check the
+  returned session's account with the new `accountBelongsTo`, and treat
+  another deployment's session as none. Labels alone don't cover an endpoint
+  with no account, where VS Code still answers from its remembered one.
+
+Existing sign-ins lose their VS Code access grant once, because the grant is
+stored under the old label. The next interactive request asks for consent
+again, once per deployment. A customer with two profiles signed in as the
+same person matches the original report (CAS and SAS Content failing after a
+profile change). That is likely, but not confirmed.
+
+**Verify.** `npm run coverage` 2,319 passing, eight of them new: label and
+`accountBelongsTo` cases, and a wrong-deployment case in each of
+`cas-session.test.ts` and `content-session.test.ts`. Coverage
+96.71/96.39/96.54/96.71. `npm run test:integration` 659 passing, three of
+them new: two in `connect-command.test.ts` and the two-deployment label case
+in `auth-provider.test.ts`.
+
+**Adversarial review of the label fix (local, before push).** No blocking
+findings. One medium and four low, handled as follows:
+
+1. **The label is unique per deployment, not per identity.** Two identities
+   sharing a display name on one deployment still collide. This predates the
+   fix. Sean chose to keep `Name (host)`, and ADR-0049 records it as a known
+   limit.
+2. **The CHANGELOG headline named two profiles rather than two
+   deployments.** Reworded.
+3. **The CAS connection snippet said a sign-in "has ended" when it refused
+   another deployment's session.** That case now has its own message: the
+   profile's deployment has no sign-in.
+4. **Manual test 13.92 never reached the case the check exists for.** Step 7
+   now makes the signed-out profile active and checks CAS and SAS Content.
+   The snippet can't reach that case by hand, because it needs a live
+   compute connection, so `connect-command.test.ts` covers it.
+5. **Two ADR claims rest on reading VS Code's source.** They are cited with
+   the date read, and 13.93 step 3 exercises one of them live. No change.
+
+**Manual tests.** 13.89–13.93 in `docs/dev/manual-tests/phase-13.md`:
+respelling an endpoint, changing it, two windows, two deployments as one
+person, and the upgrade from 0.1.6. They need two real deployments. All five
+passed (Sean, against `verde` and `innovation`) before the branch was pushed.
+
 ---
 
 ## Probe findings

@@ -9,6 +9,7 @@ import {
   CURRENT_USER_PATH,
   IDENTITY_FULL_TYPE,
   IDENTITY_SUMMARY_TYPE,
+  accountBelongsTo,
   accountForEndpoint,
   accountId,
   accountLabel,
@@ -171,10 +172,15 @@ describe("accountForEndpoint", () => {
 });
 
 describe("accountLabel", () => {
+  const AT = "https://viya.example.com";
+
   it("prefers the display name", () => {
     assert.equal(
-      accountLabel({ id: "abc", name: "Dana Whitfield", login: "dwhitfield" }),
-      "Dana Whitfield",
+      accountLabel(
+        { id: "abc", name: "Dana Whitfield", login: "dwhitfield" },
+        AT,
+      ),
+      "Dana Whitfield (viya.example.com)",
     );
   });
 
@@ -182,19 +188,72 @@ describe("accountLabel", () => {
     // An LDAP-backed deployment is exactly where a missing display name would
     // turn up, which is why `name` is optional.
     assert.equal(
-      accountLabel({ id: "abc", login: "dwhitfield" }),
-      "dwhitfield",
+      accountLabel({ id: "abc", login: "dwhitfield" }, AT),
+      "dwhitfield (viya.example.com)",
     );
   });
 
   it("falls back to the id rather than showing nothing", () => {
-    assert.equal(accountLabel({ id: "abc" }), "abc");
+    assert.equal(accountLabel({ id: "abc" }, AT), "abc (viya.example.com)");
   });
 
   it("treats a blank name as absent", () => {
     assert.equal(
-      accountLabel({ id: "abc", name: "   ", login: "dwhitfield" }),
-      "dwhitfield",
+      accountLabel({ id: "abc", name: "   ", login: "dwhitfield" }, AT),
+      "dwhitfield (viya.example.com)",
+    );
+  });
+
+  it("gives one person on two deployments two labels", () => {
+    // VS Code keeps one account per label, so a shared label is one account
+    // to it, and every deployment after the first loses its hint (ADR-0049).
+    const dana = { id: "abc", name: "Dana Whitfield" };
+    assert.notEqual(
+      accountLabel(dana, AT),
+      accountLabel(dana, "https://viya-test.example.com"),
+    );
+  });
+
+  it("gives two spellings of one endpoint the same label", () => {
+    const dana = { id: "abc", name: "Dana Whitfield" };
+    assert.equal(accountLabel(dana, ` ${AT}/ `), accountLabel(dana, AT));
+  });
+
+  it("keeps the port and path, and any scheme but https", () => {
+    const dana = { id: "abc", name: "Dana" };
+    assert.equal(
+      accountLabel(dana, "https://viya.example.com:8443/sas"),
+      "Dana (viya.example.com:8443/sas)",
+    );
+    assert.equal(
+      accountLabel(dana, "http://viya.example.com"),
+      "Dana (http://viya.example.com)",
+    );
+  });
+});
+
+describe("accountBelongsTo", () => {
+  it("accepts an account issued for the endpoint, however it is spelled", () => {
+    assert.ok(
+      accountBelongsTo("https://viya.example.com/", {
+        id: accountId("https://viya.example.com", "abc"),
+      }),
+    );
+  });
+
+  it("refuses an account issued for another deployment", () => {
+    assert.ok(
+      !accountBelongsTo("https://viya.example.com", {
+        id: accountId("https://viya-test.example.com", "abc"),
+      }),
+    );
+  });
+
+  it("refuses an endpoint that merely starts with this one", () => {
+    assert.ok(
+      !accountBelongsTo("https://viya.example.com", {
+        id: accountId("https://viya.example.com.evil.test", "abc"),
+      }),
     );
   });
 });
@@ -275,7 +334,10 @@ describe("fetchCurrentUser", () => {
 
     assert.ok(result.ok, "a recorded 200 did not resolve a user");
     assert.equal(result.user.id, fixture.id);
-    assert.equal(accountLabel(result.user), fixture.name);
+    assert.equal(
+      accountLabel(result.user, "https://viya.example.com"),
+      `${fixture.name} (viya.example.com)`,
+    );
   });
 
   it("asks for the summary representation, not the full one", async () => {
